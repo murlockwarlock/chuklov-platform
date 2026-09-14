@@ -792,14 +792,16 @@ class LaravelAiWorkflowEngine implements AiWorkflowEngine
                 break;
             }
 
-            $worstCaseExposure = AiRuntimeLimits::worstCaseProviderExposure(
-                maxInputTokens: min(AiRuntimeLimits::PLATFORM_MAX_INPUT_CONTEXT_TOKENS, $capabilityDef->maxInputTokens),
-                maxOutputTokens: $tokenCeiling,
-                maxToolCalls: $maxToolCalls,
-                maxProviderSteps: $maxProviderSteps,
-                maxRagContextTokens: $capabilityDef->maxRagContextTokens,
-            );
             try {
+                $worstCaseExposure = $pricing->boundedReservationExposure(
+                    AiRuntimeLimits::worstCaseProviderExposure(
+                        maxInputTokens: min(AiRuntimeLimits::PLATFORM_MAX_INPUT_CONTEXT_TOKENS, $capabilityDef->maxInputTokens),
+                        maxOutputTokens: $tokenCeiling,
+                        maxToolCalls: $maxToolCalls,
+                        maxProviderSteps: $maxProviderSteps,
+                        maxRagContextTokens: $capabilityDef->maxRagContextTokens,
+                    ),
+                );
                 $worstCaseEstimatedCost = $pricing->calculateCostMinorUnits(
                     promptTokens: $worstCaseExposure['input_tokens'],
                     completionTokens: $worstCaseExposure['output_tokens'],

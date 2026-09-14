@@ -708,9 +708,21 @@ class AiWorkflowEngineTest extends TestCase
         self::assertSame('valid-model-4', $run->actual_model);
     }
 
-    public function test_incomplete_bounded_pricing_candidate_does_not_block_failover(): void
+    public function test_catalog_candidate_with_unpriced_optional_meters_executes_before_failover(): void
     {
-        DynamicWorkflowAgent::fake(['Later candidate after pricing skip']);
+        DynamicWorkflowAgent::fake([
+            new TextResponse(
+                text: 'Catalog candidate with optional meters',
+                usage: new Usage(
+                    promptTokens: 123,
+                    completionTokens: 45,
+                    cacheWriteInputTokens: 7,
+                    cacheReadInputTokens: 8,
+                    reasoningTokens: 9,
+                ),
+                meta: new Meta('openai', 'gpt-5.6-luna'),
+            ),
+        ]);
 
         $first = $this->setupConfiguredModel(
             capability: AiCapability::ClientCompanion,
@@ -723,7 +735,7 @@ class AiWorkflowEngineTest extends TestCase
         self::assertTrue($firstPricing->isComplete());
         $first->activeRelease()->update(['pricing_snapshot' => $firstPricing->toArray()]);
 
-        $second = $this->setupConfiguredModel(
+        $this->setupConfiguredModel(
             capability: AiCapability::ClientCompanion,
             providerName: 'deepseek',
             modelName: 'pricing-valid-second',
@@ -738,10 +750,22 @@ class AiWorkflowEngineTest extends TestCase
 
         self::assertTrue($result->isSuccess(), (string) $result->errorMessageSanitized);
         $run = AiRun::query()->findOrFail($result->runId);
-        self::assertSame($second->activeRelease()->value('provider_name'), $run->actual_provider);
-        self::assertSame('pricing-valid-second', $run->actual_model);
+        self::assertSame($first->activeRelease()->value('provider_name'), $run->actual_provider);
+        self::assertSame('gpt-5.6-luna', $run->actual_model);
         self::assertCount(1, AiRunAttempt::query()->where('ai_run_id', $run->getKey())->get());
-        self::assertSame('deepseek', AiRunAttempt::query()->where('ai_run_id', $run->getKey())->value('provider'));
+        self::assertSame('openai', AiRunAttempt::query()->where('ai_run_id', $run->getKey())->value('provider'));
+        self::assertSame(9, $run->getTokenUsage()->reasoningTokens);
+        self::assertSame(
+            $firstPricing->calculateCostMinorUnits(
+                promptTokens: 123,
+                completionTokens: 45,
+                cacheReadInputTokens: 8,
+                cacheWriteInputTokens: 7,
+                reasoningTokens: 9,
+                providerRequests: 1,
+            ),
+            $run->settled_estimated_cost_minor_units,
+        );
     }
 
     public function test_document_attachment_filters_candidates_before_sync_failover_attempt_limit(): void

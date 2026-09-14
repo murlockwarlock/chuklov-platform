@@ -221,6 +221,35 @@ final readonly class AiPricingSnapshot
         return AiMoney::decimalFromRateUnits($this->outputRatePerMillionUnits());
     }
 
+    /**
+     * @param  array{input_tokens: int, output_tokens: int, cache_read_input_tokens: int, cache_write_input_tokens: int, reasoning_tokens: int, provider_requests: int, total_tokens: int}  $exposure
+     * @return array{input_tokens: int, output_tokens: int, cache_read_input_tokens: int, cache_write_input_tokens: int, reasoning_tokens: int, provider_requests: int, total_tokens: int}
+     */
+    public function boundedReservationExposure(array $exposure): array
+    {
+        $this->assertComplete();
+
+        if ($this->pricingSource !== self::SOURCE_CATALOG) {
+            return $exposure;
+        }
+
+        $rates = $this->ratesForInputTokens($exposure['input_tokens']);
+
+        if ($rates['cache_read'] === null) {
+            $exposure['cache_read_input_tokens'] = 0;
+        }
+
+        if ($rates['cache_write'] === null) {
+            $exposure['cache_write_input_tokens'] = 0;
+        }
+
+        if ($rates['reasoning'] === null) {
+            $exposure['reasoning_tokens'] = 0;
+        }
+
+        return $exposure;
+    }
+
     public function calculateCostMinorUnits(
         int $promptTokens,
         int $completionTokens,
@@ -237,22 +266,13 @@ final readonly class AiPricingSnapshot
         $cacheWriteInputTokens = max(0, $cacheWriteInputTokens);
         $reasoningTokens = max(0, $reasoningTokens);
         $providerRequests = max(0, $providerRequests);
-        $cacheReadRate = $this->cacheReadRatePerMillionUnits();
-        $cacheWriteRate = $this->cacheWriteRatePerMillionUnits();
-        $reasoningRate = $this->reasoningRatePerMillionUnits();
 
-        if (($cacheReadInputTokens > 0 && $cacheReadRate === null)
-            || ($cacheWriteInputTokens > 0 && $cacheWriteRate === null)
-            || ($reasoningTokens > 0 && $reasoningRate === null)) {
-            throw new AiPricingProfileIncompleteException('The billing profile does not define a rate for every reported provider meter.');
-        }
-
-        $tier = $this->pricingTierFor($promptTokens);
-        $inputRate = $tier->inputRatePerMillionUnits ?? $this->inputRatePerMillionUnits();
-        $outputRate = $tier->outputRatePerMillionUnits ?? $this->outputRatePerMillionUnits();
-        $cacheReadRate = $tier->cacheReadRatePerMillionUnits ?? $cacheReadRate;
-        $cacheWriteRate = $tier->cacheWriteRatePerMillionUnits ?? $cacheWriteRate;
-        $reasoningRate = $tier->reasoningRatePerMillionUnits ?? $reasoningRate;
+        $rates = $this->ratesForInputTokens($promptTokens);
+        $inputRate = $rates['input'];
+        $outputRate = $rates['output'];
+        $cacheReadRate = $this->settlementOptionalRate($rates['cache_read']);
+        $cacheWriteRate = $this->settlementOptionalRate($rates['cache_write']);
+        $reasoningRate = $this->settlementOptionalRate($rates['reasoning']);
 
         if (($cacheReadInputTokens > 0 && $cacheReadRate === null)
             || ($cacheWriteInputTokens > 0 && $cacheWriteRate === null)
@@ -341,6 +361,25 @@ final readonly class AiPricingSnapshot
         }
 
         return null;
+    }
+
+    /** @return array{input: int, output: int, cache_read: ?int, cache_write: ?int, reasoning: ?int} */
+    private function ratesForInputTokens(int $inputTokens): array
+    {
+        $tier = $this->pricingTierFor($inputTokens);
+
+        return [
+            'input' => $tier?->inputRatePerMillionUnits ?? $this->inputRatePerMillionUnits(),
+            'output' => $tier?->outputRatePerMillionUnits ?? $this->outputRatePerMillionUnits(),
+            'cache_read' => $tier?->cacheReadRatePerMillionUnits ?? $this->cacheReadRatePerMillionUnits(),
+            'cache_write' => $tier?->cacheWriteRatePerMillionUnits ?? $this->cacheWriteRatePerMillionUnits(),
+            'reasoning' => $tier?->reasoningRatePerMillionUnits ?? $this->reasoningRatePerMillionUnits(),
+        ];
+    }
+
+    private function settlementOptionalRate(?int $rate): ?int
+    {
+        return $rate ?? ($this->pricingSource === self::SOURCE_CATALOG ? 0 : null);
     }
 
     private function validPricingTiers(): bool

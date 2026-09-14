@@ -21,6 +21,7 @@ use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunAttempt;
+use App\Modules\AI\Domain\Registry\AiModelCatalog;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\AI\Domain\ValueObjects\AiPricingSnapshot;
 use App\Modules\AI\Infrastructure\Engine\DynamicWorkflowAgent;
@@ -42,6 +43,9 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Laravel\Ai\Events\PromptingAgent;
+use Laravel\Ai\Responses\Data\Meta;
+use Laravel\Ai\Responses\Data\Usage;
+use Laravel\Ai\Responses\TextResponse;
 use Tests\TestCase;
 
 final class AiAsyncCandidateSnapshotTest extends TestCase
@@ -140,6 +144,45 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
         $this->assertNotNull($attempt);
         $this->assertSame($releaseOne->id, $attempt->model_release_id);
         $this->assertSame('gpt-4o-mini', $attempt->model);
+    }
+
+    public function test_async_catalog_candidate_with_unpriced_optional_meters_executes(): void
+    {
+        [$modelConfig, $release] = $this->candidate('openai', 'OpenAI catalog', 'gpt-5.6-luna', 1);
+        $pricing = AiModelCatalog::find('openai', 'gpt-5.6-luna')?->pricing;
+        self::assertNotNull($pricing);
+        $modelConfig->update(['pricing_snapshot' => $pricing->toArray()]);
+        $release->update(['pricing_snapshot' => $pricing->toArray()]);
+        Queue::fake();
+
+        $run = app(DispatchAsyncAiRun::class)->handle($this->admin, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'catalog-optional-meter-execution',
+            promptVersionId: $this->promptVersion->id,
+            inputVariables: ['query' => 'queued question'],
+        ));
+
+        DynamicWorkflowAgent::fake([
+            new TextResponse(
+                text: 'catalog candidate response',
+                usage: new Usage(
+                    promptTokens: 123,
+                    completionTokens: 45,
+                    cacheWriteInputTokens: 7,
+                    cacheReadInputTokens: 8,
+                    reasoningTokens: 9,
+                ),
+                meta: new Meta('openai', 'gpt-5.6-luna'),
+            ),
+        ]);
+        $this->runQueuedJob($run);
+
+        $run->refresh();
+        self::assertSame(AiRunStatus::Succeeded, $run->status);
+        self::assertSame('openai', $run->actual_provider);
+        self::assertSame('gpt-5.6-luna', $run->actual_model);
+        self::assertSame(9, $run->getTokenUsage()->reasoningTokens);
+        self::assertCount(1, AiRunAttempt::query()->where('ai_run_id', $run->id)->get());
     }
 
     public function test_async_worker_uses_only_the_accepted_failover_order(): void
