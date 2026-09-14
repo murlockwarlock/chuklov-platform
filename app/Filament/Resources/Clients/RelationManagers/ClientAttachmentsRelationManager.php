@@ -5,9 +5,13 @@ namespace App\Filament\Resources\Clients\RelationManagers;
 use App\Filament\Support\ClinicalAiPresentation;
 use App\Filament\Support\ClinicalAiResultAction;
 use App\Models\User;
+use App\Modules\AI\Application\Actions\ReviewAiRun;
 use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\HumanReviewDecision;
+use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
+use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Application\AttachmentAuthorization;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
@@ -24,6 +28,7 @@ use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
@@ -63,6 +68,11 @@ final class ClientAttachmentsRelationManager extends RelationManager
             $actor,
             $organization,
             OrganizationPermission::ViewAiRuns,
+        );
+        $canReviewAiProposals = app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            $organization,
+            OrganizationPermission::ReviewAiProposals,
         );
 
         return $table
@@ -207,6 +217,61 @@ final class ClientAttachmentsRelationManager extends RelationManager
                             : null,
                     )
                         ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canOpenDocumentAnalysisResult($record)),
+                    Action::make('acceptDocumentAnalysisReview')
+                        ->label('Проверено')
+                        ->icon('heroicon-o-check-circle')
+                        ->color('success')
+                        ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns
+                            && $canReviewAiProposals
+                            && $this->canReviewDocumentAnalysis($record))
+                        ->requiresConfirmation()
+                        ->action(function (MedicalAttachment $record) use ($actor): void {
+                            $run = $this->reviewableDocumentAnalysisRun($record);
+                            app(ReviewAiRun::class)->handle(
+                                actor: $actor,
+                                runId: $run->getKey(),
+                                decision: HumanReviewDecision::Accepted,
+                                safeReasonCode: HumanReviewReasonCode::SpecialistConfirmed->value,
+                            );
+                            $this->latestDocumentAnalysisRuns = null;
+                            $this->resetTable();
+                            Notification::make()
+                                ->title('Результат подтверждён специалистом.')
+                                ->success()
+                                ->send();
+                        }),
+                    Action::make('rejectDocumentAnalysisReview')
+                        ->label('Отклонить')
+                        ->icon('heroicon-o-x-circle')
+                        ->color('danger')
+                        ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns
+                            && $canReviewAiProposals
+                            && $this->canReviewDocumentAnalysis($record))
+                        ->schema([
+                            Select::make('reason_code')
+                                ->label('Причина')
+                                ->options(collect(HumanReviewReasonCode::cases())->mapWithKeys(fn (HumanReviewReasonCode $code): array => [$code->value => $code->label()]))
+                                ->required(),
+                            Textarea::make('notes')
+                                ->label('Заметка специалиста')
+                                ->rows(3),
+                        ])
+                        ->action(function (MedicalAttachment $record, array $data) use ($actor): void {
+                            $run = $this->reviewableDocumentAnalysisRun($record);
+                            app(ReviewAiRun::class)->handle(
+                                actor: $actor,
+                                runId: $run->getKey(),
+                                decision: HumanReviewDecision::Rejected,
+                                safeReasonCode: (string) $data['reason_code'],
+                                notes: isset($data['notes']) ? (string) $data['notes'] : null,
+                            );
+                            $this->latestDocumentAnalysisRuns = null;
+                            $this->resetTable();
+                            Notification::make()
+                                ->title('Результат отклонён специалистом.')
+                                ->danger()
+                                ->send();
+                        }),
                 ])
                     ->label('Действия')
                     ->icon('heroicon-m-ellipsis-vertical')
@@ -272,6 +337,26 @@ final class ClientAttachmentsRelationManager extends RelationManager
     {
         return $attachment->attachment_type === AttachmentType::MedicalReport
             && $this->latestDocumentAnalysisRun($attachment)?->status === AiRunStatus::Succeeded;
+    }
+
+    private function canReviewDocumentAnalysis(MedicalAttachment $attachment): bool
+    {
+        $run = $this->latestDocumentAnalysisRun($attachment);
+
+        return $attachment->attachment_type === AttachmentType::MedicalReport
+            && $attachment->evaluation_fixture_key === null
+            && $run instanceof AiRun
+            && $run->status === AiRunStatus::Succeeded
+            && $run->human_review_status === HumanReviewStatus::PendingReview;
+    }
+
+    private function reviewableDocumentAnalysisRun(MedicalAttachment $attachment): AiRun
+    {
+        $run = $this->latestDocumentAnalysisRun($attachment);
+
+        abort_unless($this->canReviewDocumentAnalysis($attachment) && $run instanceof AiRun, 404);
+
+        return $run;
     }
 
     private function latestDocumentAnalysisRun(MedicalAttachment $attachment): ?AiRun

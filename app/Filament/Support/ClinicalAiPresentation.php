@@ -58,6 +58,36 @@ final class ClinicalAiPresentation
         return $status?->label() ?? 'Проверка не определена';
     }
 
+    public static function reviewGuidance(HumanReviewStatus|string $status): string
+    {
+        $status = $status instanceof HumanReviewStatus ? $status : HumanReviewStatus::tryFrom($status);
+
+        return match ($status) {
+            HumanReviewStatus::PendingReview => implode("\n", [
+                'Результат сохранён в истории Клинического AI.',
+                'Он ещё не подтверждён специалистом.',
+                'Клиенту ничего не отправлено.',
+                'В медицинский профиль данные автоматически не внесены.',
+                'Проверьте результат, чтобы использовать его в дальнейшем клиническом анализе.',
+            ]),
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => implode("\n", [
+                'Результат проверен специалистом и сохранён в истории.',
+                'Он может использоваться при формировании клинического резюме.',
+                'В медицинский профиль данные автоматически не внесены.',
+            ]),
+            HumanReviewStatus::Rejected => implode("\n", [
+                'Результат отклонён специалистом и сохранён в истории.',
+                'Он не используется как подтверждённый источник для клинического резюме.',
+            ]),
+            default => implode("\n", [
+                'Результат сохранён в истории Клинического AI.',
+                'Дополнительная проверка специалиста не требуется.',
+                'Клиенту ничего не отправлено.',
+                'В медицинский профиль данные автоматически не внесены.',
+            ]),
+        };
+    }
+
     public static function result(AiCapability|string $capability, ?array $payload, ?string $text): string
     {
         $safeText = self::safeText($text);

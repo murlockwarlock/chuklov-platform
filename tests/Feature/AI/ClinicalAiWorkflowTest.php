@@ -153,6 +153,19 @@ final class ClinicalAiWorkflowTest extends TestCase
                 'practitioner_focus' => [],
                 'limitations' => [],
             ],
+            HumanReviewStatus::EditedAndAccepted,
+        );
+        $pendingDocumentRun = $this->reviewedRun(
+            AiCapability::ClinicalDocumentExtraction,
+            [new AiInputReference('client', $this->client->id)],
+            ['plain_summary' => 'Pending document must not be used.'],
+            HumanReviewStatus::PendingReview,
+        );
+        $rejectedPostureRun = $this->reviewedRun(
+            AiCapability::PostureAnalysis,
+            [new AiInputReference('client', $this->client->id)],
+            ['visual_findings' => [['plane' => 'front', 'observations' => ['Rejected posture must not be used']]]],
+            HumanReviewStatus::Rejected,
         );
 
         $synthesisAction = app(StartClinicalSynthesis::class);
@@ -174,6 +187,8 @@ final class ClinicalAiWorkflowTest extends TestCase
                 ->pluck('id')
                 ->all(),
         );
+        self::assertNotContains($pendingDocumentRun->id, collect($synthesisRun->input_references)->pluck('id')->all());
+        self::assertNotContains($rejectedPostureRun->id, collect($synthesisRun->input_references)->pluck('id')->all());
 
         $synthesisRun->update(['status' => AiRunStatus::Failed]);
         $retrySynthesisRun = $synthesisAction->handle($this->staff, $this->client);
@@ -521,8 +536,12 @@ final class ClinicalAiWorkflowTest extends TestCase
      * @param  list<AiInputReference>  $references
      * @param  array<string, mixed>  $payload
      */
-    private function reviewedRun(AiCapability $capability, array $references, array $payload): AiRun
-    {
+    private function reviewedRun(
+        AiCapability $capability,
+        array $references,
+        array $payload,
+        HumanReviewStatus $reviewStatus = HumanReviewStatus::Accepted,
+    ): AiRun {
         $run = AiRun::create([
             'organization_id' => $this->organization->id,
             'capability' => $capability,
@@ -531,7 +550,7 @@ final class ClinicalAiWorkflowTest extends TestCase
             'execution_mode' => AiExecutionMode::Async,
             'client_id' => $this->client->id,
             'status' => AiRunStatus::Succeeded,
-            'human_review_status' => HumanReviewStatus::Accepted,
+            'human_review_status' => $reviewStatus,
             'input_references' => array_map(static fn (AiInputReference $reference): array => $reference->toArray(), $references),
             'context_provenance' => [],
             'token_usage' => [],

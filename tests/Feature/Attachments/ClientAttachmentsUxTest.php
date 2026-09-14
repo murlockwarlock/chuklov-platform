@@ -162,6 +162,7 @@ final class ClientAttachmentsUxTest extends TestCase
                 'critical_flags' => [],
                 'plain_summary' => 'Человеческое резюме результата.',
             ],
+            reviewStatus: HumanReviewStatus::PendingReview,
         );
 
         $attachments = $this->mount($admin, $client);
@@ -173,6 +174,11 @@ final class ClientAttachmentsUxTest extends TestCase
         $attachmentsData = $attachments->instance()->getMountedAction()->getRawData();
         self::assertStringContainsString('Результат анализа', $attachmentsHtml);
         self::assertStringContainsString('Человеческое резюме результата.', $attachmentsData['result']);
+        self::assertNull($attachments->instance()->getMountedAction()->getModalSubmitAction());
+        self::assertSame('Закрыть', $attachments->instance()->getMountedAction()->getModalCancelActionLabel());
+        self::assertStringContainsString('Результат сохранён в истории Клинического AI.', $attachmentsData['lifecycle']);
+        self::assertStringContainsString('Клиенту ничего не отправлено.', $attachmentsData['lifecycle']);
+        self::assertStringContainsString('В медицинский профиль данные автоматически не внесены.', $attachmentsData['lifecycle']);
 
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $clinicalAi = Livewire::actingAs($admin)->test(ClientClinicalAiRelationManager::class, [
@@ -188,6 +194,143 @@ final class ClientAttachmentsUxTest extends TestCase
         $clinicalAiData = $clinicalAi->instance()->getMountedAction()->getRawData();
         self::assertStringContainsString('Результат анализа', $clinicalAiHtml);
         self::assertStringContainsString('Человеческое резюме результата.', $clinicalAiData['result']);
+        self::assertNull($clinicalAi->instance()->getMountedAction()->getModalSubmitAction());
+        self::assertSame('Закрыть', $clinicalAi->instance()->getMountedAction()->getModalCancelActionLabel());
+        self::assertStringContainsString('Проверьте результат', $clinicalAiData['lifecycle']);
+    }
+
+    public function test_result_lifecycle_uses_human_review_status_without_making_profile_or_delivery_claims(): void
+    {
+        $pending = ClinicalAiPresentation::reviewGuidance(HumanReviewStatus::PendingReview);
+        $accepted = ClinicalAiPresentation::reviewGuidance(HumanReviewStatus::Accepted);
+        $edited = ClinicalAiPresentation::reviewGuidance(HumanReviewStatus::EditedAndAccepted);
+        $rejected = ClinicalAiPresentation::reviewGuidance(HumanReviewStatus::Rejected);
+
+        self::assertStringContainsString('ещё не подтверждён специалистом', $pending);
+        self::assertStringContainsString('Клиенту ничего не отправлено.', $pending);
+        self::assertStringContainsString('может использоваться при формировании клинического резюме', $accepted);
+        self::assertStringContainsString('может использоваться при формировании клинического резюме', $edited);
+        self::assertStringContainsString('не используется как подтверждённый источник', $rejected);
+        self::assertStringNotContainsString('internal', strtolower($pending.$accepted.$edited.$rejected));
+    }
+
+    public function test_files_and_mri_exposes_authoritative_review_actions_and_refreshes_state(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $acceptedAttachment = $this->attachment($organization, $admin, $client, 'accepted.pdf');
+        $rejectedAttachment = $this->attachment($organization, $admin, $client, 'rejected.pdf');
+        $acceptedRun = $this->createAiRun(
+            organization: $organization,
+            client: $client,
+            attachment: $acceptedAttachment,
+            status: AiRunStatus::Succeeded,
+            payload: ['plain_summary' => 'Результат для проверки.'],
+            reviewStatus: HumanReviewStatus::PendingReview,
+        );
+        $rejectedRun = $this->createAiRun(
+            organization: $organization,
+            client: $client,
+            attachment: $rejectedAttachment,
+            status: AiRunStatus::Succeeded,
+            payload: ['plain_summary' => 'Результат для отклонения.'],
+            reviewStatus: HumanReviewStatus::PendingReview,
+        );
+
+        $component = $this->mount($admin, $client);
+
+        $component
+            ->assertTableActionVisible('acceptDocumentAnalysisReview', $acceptedAttachment)
+            ->assertTableActionVisible('rejectDocumentAnalysisReview', $acceptedAttachment)
+            ->assertTableActionHasLabel('acceptDocumentAnalysisReview', 'Проверено')
+            ->assertTableActionHasLabel('rejectDocumentAnalysisReview', 'Отклонить')
+            ->mountTableAction('acceptDocumentAnalysisReview', $acceptedAttachment)
+            ->callMountedTableAction()
+            ->assertNotified('Результат подтверждён специалистом.');
+
+        self::assertSame(HumanReviewStatus::Accepted, $acceptedRun->fresh()->human_review_status);
+        $component
+            ->assertTableActionHidden('acceptDocumentAnalysisReview', $acceptedAttachment)
+            ->assertTableActionHidden('rejectDocumentAnalysisReview', $acceptedAttachment);
+
+        $component
+            ->mountTableAction('rejectDocumentAnalysisReview', $rejectedAttachment)
+            ->setTableActionData([
+                'reason_code' => 'incorrect_content',
+                'notes' => 'Результат требует повторной проверки.',
+            ])
+            ->callMountedTableAction()
+            ->assertNotified('Результат отклонён специалистом.');
+
+        self::assertSame(HumanReviewStatus::Rejected, $rejectedRun->fresh()->human_review_status);
+        $component
+            ->assertTableActionHidden('acceptDocumentAnalysisReview', $rejectedAttachment)
+            ->assertTableActionHidden('rejectDocumentAnalysisReview', $rejectedAttachment);
+    }
+
+    public function test_review_actions_require_review_permission_in_files_and_clinical_ai(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $attachment = $this->attachment($organization, $admin, $client);
+        $run = $this->createAiRun(
+            organization: $organization,
+            client: $client,
+            attachment: $attachment,
+            status: AiRunStatus::Succeeded,
+            payload: ['plain_summary' => 'Результат доступен для просмотра.'],
+            reviewStatus: HumanReviewStatus::PendingReview,
+        );
+        $authorizer = Mockery::mock(OrganizationAuthorizer::class, [app(OrganizationContext::class)])->makePartial();
+        $authorizer->shouldReceive('allows')->andReturnUsing(
+            static fn (User $actor, Organization $currentOrganization, OrganizationPermission $permission): bool => $permission !== OrganizationPermission::ReviewAiProposals,
+        );
+        $this->app->instance(OrganizationAuthorizer::class, $authorizer);
+
+        $attachments = $this->mount($admin, $client);
+        $attachments
+            ->assertTableActionVisible('openDocumentAnalysisResult', $attachment)
+            ->assertTableActionHidden('acceptDocumentAnalysisReview', $attachment)
+            ->assertTableActionHidden('rejectDocumentAnalysisReview', $attachment);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $clinicalAi = Livewire::actingAs($admin)->test(ClientClinicalAiRelationManager::class, [
+            'ownerRecord' => $client,
+            'pageClass' => ViewClient::class,
+        ]);
+        $clinicalAi
+            ->assertTableActionVisible('openResult', $run)
+            ->assertTableActionHidden('acceptReview', $run)
+            ->assertTableActionHidden('rejectReview', $run);
+    }
+
+    public function test_clinical_ai_review_uses_human_confirmation_and_removes_duplicate_actions_after_acceptance(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $attachment = $this->attachment($organization, $admin, $client);
+        $run = $this->createAiRun(
+            organization: $organization,
+            client: $client,
+            attachment: $attachment,
+            status: AiRunStatus::Succeeded,
+            payload: ['plain_summary' => 'Результат клинического анализа.'],
+            reviewStatus: HumanReviewStatus::PendingReview,
+        );
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $clinicalAi = Livewire::actingAs($admin)->test(ClientClinicalAiRelationManager::class, [
+            'ownerRecord' => $client,
+            'pageClass' => ViewClient::class,
+        ]);
+        $clinicalAi
+            ->assertTableActionVisible('acceptReview', $run)
+            ->assertTableActionVisible('rejectReview', $run)
+            ->mountTableAction('acceptReview', $run)
+            ->callMountedTableAction()
+            ->assertNotified('Результат подтверждён специалистом.');
+
+        self::assertSame(HumanReviewStatus::Accepted, $run->fresh()->human_review_status);
+        $clinicalAi
+            ->assertTableActionHidden('acceptReview', $run)
+            ->assertTableActionHidden('rejectReview', $run);
     }
 
     public function test_staff_without_trace_permission_sees_human_result_without_audit_or_internal_payload(): void

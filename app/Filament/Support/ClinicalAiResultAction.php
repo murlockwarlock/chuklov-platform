@@ -27,6 +27,8 @@ final class ClinicalAiResultAction
         return Action::make($name)
             ->label('Открыть результат')
             ->icon('heroicon-o-eye')
+            ->modalSubmitAction(false)
+            ->modalCancelActionLabel('Закрыть')
             ->fillForm(function (Model $record) use ($actor, $client, $resolveRun, $canViewTrace): array {
                 $run = $resolveRun($record);
                 abort_unless($run instanceof AiRun, 404);
@@ -34,6 +36,7 @@ final class ClinicalAiResultAction
                 $form = [
                     'result' => ClinicalAiPresentation::result($run->capability, $result->outputPayload, $result->outputText),
                     'review' => ClinicalAiPresentation::review($run->human_review_status),
+                    'lifecycle' => ClinicalAiPresentation::reviewGuidance($run->human_review_status),
                     'sources' => self::sourceText($run, $result->attachmentProvenance),
                 ];
 
@@ -72,6 +75,11 @@ final class ClinicalAiResultAction
             Textarea::make('review')
                 ->label('Проверка специалиста')
                 ->rows(2)
+                ->disabled()
+                ->dehydrated(false),
+            Textarea::make('lifecycle')
+                ->label('Состояние результата')
+                ->rows(5)
                 ->disabled()
                 ->dehydrated(false),
             Textarea::make('sources')

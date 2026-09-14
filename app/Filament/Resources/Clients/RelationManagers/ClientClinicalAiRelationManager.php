@@ -62,6 +62,12 @@ final class ClientClinicalAiRelationManager extends RelationManager
 
         abort_unless($actor instanceof User, 403);
         abort_unless($client instanceof Client, 404);
+        $organization = app(OrganizationContext::class)->organization();
+        $canReviewAiProposals = app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            $organization,
+            OrganizationPermission::ReviewAiProposals,
+        );
 
         return $table
             ->heading('Клинический AI')
@@ -177,7 +183,9 @@ final class ClientClinicalAiRelationManager extends RelationManager
                 Action::make('acceptReview')
                     ->label('Проверено')
                     ->color('success')
-                    ->visible(fn (AiRun $record): bool => $record->human_review_status === HumanReviewStatus::PendingReview)
+                    ->visible(fn (AiRun $record): bool => $canReviewAiProposals
+                        && $record->status === AiRunStatus::Succeeded
+                        && $record->human_review_status === HumanReviewStatus::PendingReview)
                     ->requiresConfirmation()
                     ->action(function (AiRun $record) use ($actor): void {
                         app(ReviewAiRun::class)->handle(
@@ -186,12 +194,15 @@ final class ClientClinicalAiRelationManager extends RelationManager
                             decision: HumanReviewDecision::Accepted,
                             safeReasonCode: HumanReviewReasonCode::SpecialistConfirmed->value,
                         );
-                        self::success('Результат отмечен как проверенный.');
+                        $this->resetTable();
+                        self::success('Результат подтверждён специалистом.');
                     }),
                 Action::make('rejectReview')
                     ->label('Отклонить')
                     ->color('danger')
-                    ->visible(fn (AiRun $record): bool => $record->human_review_status === HumanReviewStatus::PendingReview)
+                    ->visible(fn (AiRun $record): bool => $canReviewAiProposals
+                        && $record->status === AiRunStatus::Succeeded
+                        && $record->human_review_status === HumanReviewStatus::PendingReview)
                     ->schema([
                         Select::make('reason_code')
                             ->label('Причина')
@@ -207,6 +218,7 @@ final class ClientClinicalAiRelationManager extends RelationManager
                             safeReasonCode: (string) $data['reason_code'],
                             notes: isset($data['notes']) ? (string) $data['notes'] : null,
                         );
+                        $this->resetTable();
                         self::failureNotification('Результат отклонён специалистом.');
                     }),
                 Action::make('rerun')
