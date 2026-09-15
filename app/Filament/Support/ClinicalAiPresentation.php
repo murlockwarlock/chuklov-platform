@@ -5,6 +5,7 @@ namespace App\Filament\Support;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiErrorCategory;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use Illuminate\Support\Str;
@@ -12,9 +13,14 @@ use Throwable;
 
 final class ClinicalAiPresentation
 {
-    public static function capability(AiCapability|string $capability): string
+    public static function capability(AiCapability|string $capability, ?string $workflowKey = null): string
     {
         $capability = $capability instanceof AiCapability ? $capability : AiCapability::tryFrom($capability);
+
+        if ($capability === AiCapability::ClinicalSynthesizer
+            && $workflowKey === ClinicalSynthesizerWorkflow::CourseReport->value) {
+            return 'Итоговый отчёт курса';
+        }
 
         return match ($capability) {
             AiCapability::ClinicalDocumentExtraction => 'Анализ документов',
@@ -138,6 +144,48 @@ final class ClinicalAiPresentation
         };
     }
 
+    public static function courseStatus(?AiRun $run): string
+    {
+        if ($run === null) {
+            return 'Нет отчёта';
+        }
+
+        if (! $run->status->isTerminal()) {
+            return 'Формируется';
+        }
+
+        if ($run->status !== AiRunStatus::Succeeded) {
+            return 'Ошибка';
+        }
+
+        return match ($run->human_review_status) {
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => 'Проверено',
+            HumanReviewStatus::Rejected => 'Отклонено',
+            default => 'Требует проверки',
+        };
+    }
+
+    public static function courseStatusColor(?AiRun $run): string
+    {
+        if ($run === null) {
+            return 'gray';
+        }
+
+        if (! $run->status->isTerminal()) {
+            return 'info';
+        }
+
+        if ($run->status !== AiRunStatus::Succeeded) {
+            return 'danger';
+        }
+
+        return match ($run->human_review_status) {
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => 'success',
+            HumanReviewStatus::Rejected => 'danger',
+            default => 'warning',
+        };
+    }
+
     public static function review(HumanReviewStatus|string $status): string
     {
         $status = $status instanceof HumanReviewStatus ? $status : HumanReviewStatus::tryFrom($status);
@@ -168,9 +216,12 @@ final class ClinicalAiPresentation
         };
     }
 
-    public static function reviewGuidance(HumanReviewStatus|string $status): string
+    public static function reviewGuidance(HumanReviewStatus|string $status, ?string $workflowKey = null): string
     {
         $status = $status instanceof HumanReviewStatus ? $status : HumanReviewStatus::tryFrom($status);
+        $resultName = $workflowKey === ClinicalSynthesizerWorkflow::CourseReport->value
+            ? 'итогового отчёта курса'
+            : 'клинического резюме';
 
         return match ($status) {
             HumanReviewStatus::PendingReview => implode("\n", [
@@ -182,12 +233,12 @@ final class ClinicalAiPresentation
             ]),
             HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => implode("\n", [
                 'Результат проверен специалистом и сохранён в истории.',
-                'Он может использоваться при формировании клинического резюме.',
+                'Он может использоваться при формировании '.$resultName.'.',
                 'В медицинский профиль данные автоматически не внесены.',
             ]),
             HumanReviewStatus::Rejected => implode("\n", [
                 'Результат отклонён специалистом и сохранён в истории.',
-                'Он не используется как подтверждённый источник для клинического резюме.',
+                'Он не используется как подтверждённый источник для '.$resultName.'.',
             ]),
             default => implode("\n", [
                 'Результат сохранён в истории Клинического AI.',
@@ -198,7 +249,7 @@ final class ClinicalAiPresentation
         };
     }
 
-    public static function result(AiCapability|string $capability, ?array $payload, ?string $text): string
+    public static function result(AiCapability|string $capability, ?array $payload, ?string $text, ?string $workflowKey = null): string
     {
         $safeText = self::safeText($text);
         if ($safeText !== null) {
@@ -213,14 +264,16 @@ final class ClinicalAiPresentation
         return match ($capability) {
             AiCapability::ClinicalDocumentExtraction => self::documentResult($payload),
             AiCapability::PostureAnalysis => self::postureResult($payload),
-            AiCapability::ClinicalSynthesizer => self::synthesizerResult($payload),
+            AiCapability::ClinicalSynthesizer => $workflowKey === ClinicalSynthesizerWorkflow::CourseReport->value
+                ? self::courseReportResult($payload)
+                : self::synthesizerResult($payload),
             default => null,
         } ?? 'Результат получен, но не может быть отображён в текущем формате.';
     }
 
-    public static function preview(AiCapability|string $capability, ?array $payload, ?string $text): string
+    public static function preview(AiCapability|string $capability, ?array $payload, ?string $text, ?string $workflowKey = null): string
     {
-        $result = trim(self::result($capability, $payload, $text));
+        $result = trim(self::result($capability, $payload, $text, $workflowKey));
         if ($result === '') {
             return 'Результат получен, но не может быть отображён в текущем формате.';
         }
@@ -257,6 +310,13 @@ final class ClinicalAiPresentation
         }
 
         return 'Не удалось запустить анализ. Проверьте настройки AI или повторите попытку.';
+    }
+
+    public static function resultActionLabel(?string $workflowKey): string
+    {
+        return $workflowKey === ClinicalSynthesizerWorkflow::CourseReport->value
+            ? 'Открыть итоговый отчёт'
+            : 'Открыть результат';
     }
 
     private static function safeText(?string $text): ?string
@@ -307,6 +367,21 @@ final class ClinicalAiPresentation
             self::listSection('Что уточнить', $payload['blind_spots_questions'] ?? null),
             self::listSection('Фокус первой сессии', $payload['recommended_first_session_focus'] ?? null),
             self::listSection('Недостающая информация', $payload['missing_information'] ?? null),
+        ]);
+    }
+
+    private static function courseReportResult(array $payload): ?string
+    {
+        return self::joinSections([
+            self::section('Итоговая сводка курса', $payload['course_summary'] ?? null),
+            self::section('Исходное состояние', $payload['initial_state'] ?? null),
+            self::listSection('Что происходило в течение курса', $payload['course_events'] ?? null),
+            self::listSection('Наблюдаемая динамика', $payload['observed_dynamics'] ?? null),
+            self::section('Текущее состояние', $payload['current_state'] ?? null),
+            self::listSection('Сохраняющиеся ограничения и риски', $payload['ongoing_limitations_risks'] ?? null),
+            self::listSection('Нерешённые вопросы', $payload['unresolved_questions'] ?? null),
+            self::listSection('Гипотезы для профессиональной проверки', $payload['hypotheses'] ?? null),
+            self::listSection('Недостающая информация и ограничения отчёта', $payload['missing_information'] ?? null),
         ]);
     }
 

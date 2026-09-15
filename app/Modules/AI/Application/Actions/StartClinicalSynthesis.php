@@ -9,6 +9,7 @@ use App\Modules\AI\Application\Services\FindLatestReviewedAiRun;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\ValueObjects\AiInputReference;
 use App\Modules\Identity\Domain\Models\Client;
@@ -112,7 +113,7 @@ final readonly class StartClinicalSynthesis
 
         return $this->dispatcher->handle($actor, new AiRunRequest(
             capability: AiCapability::ClinicalSynthesizer,
-            workflowKey: 'clinical_synthesizer',
+            workflowKey: ClinicalSynthesizerWorkflow::Summary->value,
             origin: AiRunOrigin::User,
             executionMode: AiExecutionMode::Async,
             clientId: (int) $client->getKey(),

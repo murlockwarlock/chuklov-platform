@@ -1,0 +1,60 @@
+{
+  "prompt_key": "clinical_course_report",
+  "name": "Agent 3 — Итоговый отчёт курса",
+  "description": "Platform-defined practitioner report for a manually selected course period. This is not an official Chuklov methodology or an automatic course completion rule.",
+  "capability": "clinical_synthesizer",
+  "version": 1,
+  "system_prompt": "Ты готовишь platform-defined итоговый отчёт курса для специалиста по существующим разрешённым данным клиента. Этот формат не является официальной методикой Чуклова и не устанавливает диагноз. Используй только переданные source facts. Разделяй подтверждённые факты, наблюдаемую динамику, гипотезы и ограничения. Не придумывай отсутствующие сведения, проценты прогресса, диагнозы, назначения или выводы по 9 системам/MSQ. Подтверждённые результаты Agent 1 и Agent 2 считай источниками только потому, что они уже прошли human review. Результат требует проверки специалистом, не записывается автоматически в медицинский профиль и не отправляется клиенту.",
+  "user_prompt_template": "Сформируй консервативный итоговый отчёт курса для специалиста. Отчётный период: {{course_period}}\n\nКлиент:\n{{client_name}}\n\nМедицинский профиль:\n{{anamnesis}}\n\nЖалобы и цели:\n{{complaints_goals}}\n\nСеансы за период:\n{{course_sessions}}\n\nЗавершённые результаты опросов за период:\n{{course_surveys}}\n\nПроверенный анализ медицинских документов:\n{{agent_one_result}}\n\nПроверенный анализ осанки:\n{{agent_two_result}}\n\nПоказывай только сведения из источников. Если данных недостаточно, укажи это в missing_information. Наблюдения, требующие профессиональной проверки, помещай в hypotheses.",
+  "variables_schema": {
+    "type": "object",
+    "properties": {
+      "client_name": {"type": "string"},
+      "anamnesis": {"type": "string"},
+      "complaints_goals": {"type": "string"},
+      "course_period": {"type": "string"},
+      "course_sessions": {"type": "string"},
+      "course_surveys": {"type": "string"},
+      "agent_one_result": {"type": "string"},
+      "agent_two_result": {"type": "string"}
+    },
+    "required": ["client_name", "anamnesis", "complaints_goals", "course_period", "course_sessions", "course_surveys", "agent_one_result", "agent_two_result"]
+  },
+  "parameter_config": {
+    "temperature": 0.1,
+    "top_p": 0.9,
+    "max_tokens": 4096,
+    "frequency_penalty": 0.0,
+    "presence_penalty": 0.0,
+    "timeout_seconds": 120
+  },
+  "context_policy": {
+    "include_client_profile": true,
+    "include_medical_summary": true,
+    "include_recent_sessions_count": 0,
+    "include_rag": false,
+    "rag_knowledge_source_ids": [],
+    "rag_max_chunks": 3,
+    "rag_min_similarity": 0.65,
+    "allowed_context_types": ["client_profile", "medical_summary"],
+    "require_grounded_rag": false,
+    "allow_rag_degradation": false
+  },
+  "output_schema": {
+    "type": "object",
+    "properties": {
+      "course_summary": {"type": ["string", "null"]},
+      "initial_state": {"type": ["string", "null"]},
+      "course_events": {"type": "array", "items": {"type": "string"}},
+      "observed_dynamics": {"type": "array", "items": {"type": "string"}},
+      "current_state": {"type": ["string", "null"]},
+      "ongoing_limitations_risks": {"type": "array", "items": {"type": "string"}},
+      "unresolved_questions": {"type": "array", "items": {"type": "string"}},
+      "missing_information": {"type": "array", "items": {"type": "string"}},
+      "hypotheses": {"type": "array", "items": {"type": "string"}}
+    },
+    "required": ["course_summary", "initial_state", "course_events", "observed_dynamics", "current_state", "ongoing_limitations_risks", "unresolved_questions", "missing_information", "hypotheses"]
+  },
+  "allowed_tools": [],
+  "change_notes": "Platform-defined conservative practitioner report. The source confirms the existence of a final integrative course report but does not define its official schema or automatic completion trigger. Phase 1 uses manual generation with explicit start date and server-side generation time as the end boundary."
+}

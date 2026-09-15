@@ -272,12 +272,28 @@ final class ClientWorkspaceUxATest extends TestCase
                 'pageClass' => ViewClient::class,
             ])
             ->assertSuccessful()
-            ->assertTableHeaderActionsExistInOrder(['postureAnalysis', 'clinicalSynthesis'])
+            ->assertTableHeaderActionsExistInOrder(['postureAnalysis', 'clinicalSynthesis', 'clinicalCourseReport'])
             ->assertSee('Клинический AI')
             ->assertSee('Анализы документов')
             ->assertSee('Не запускался')
             ->assertSee('Источники клинического резюме')
             ->assertSee('Анализы ещё не запускались');
+    }
+
+    public function test_client_clinical_ai_workspace_exposes_manual_course_report_action(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ClientClinicalAiRelationManager::class, [
+                'ownerRecord' => $client,
+                'pageClass' => ViewClient::class,
+            ])
+            ->assertSuccessful()
+            ->assertTableHeaderActionsExistInOrder(['postureAnalysis', 'clinicalSynthesis', 'clinicalCourseReport'])
+            ->assertSee('Итоговый отчёт курса');
     }
 
     public function test_client_bookings_view_action_renders_booking_details_in_relation(): void

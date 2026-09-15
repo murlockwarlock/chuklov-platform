@@ -11,6 +11,7 @@ use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
@@ -559,6 +560,30 @@ final class ClientAttachmentsUxTest extends TestCase
                 '{"unknown_internal_key":"secret"}',
             ),
         );
+    }
+
+    public function test_course_report_uses_human_presentation_and_distinct_label(): void
+    {
+        $result = ClinicalAiPresentation::result(
+            AiCapability::ClinicalSynthesizer,
+            [
+                'course_summary' => 'Динамика курса по доступным данным.',
+                'initial_state' => 'Исходное состояние из карточки клиента.',
+                'course_events' => ['Состояние зафиксировано на первой сессии.'],
+                'observed_dynamics' => ['Есть наблюдаемое изменение.'],
+                'missing_information' => ['Нужно уточнить текущие ограничения.'],
+            ],
+            null,
+            ClinicalSynthesizerWorkflow::CourseReport->value,
+        );
+
+        self::assertStringContainsString('Итоговая сводка курса', $result);
+        self::assertStringContainsString('Динамика курса по доступным данным.', $result);
+        self::assertStringNotContainsString('course_summary', $result);
+        self::assertSame('Итоговый отчёт курса', ClinicalAiPresentation::capability(
+            AiCapability::ClinicalSynthesizer,
+            ClinicalSynthesizerWorkflow::CourseReport->value,
+        ));
     }
 
     public function test_clinical_preview_preserves_cyrillic_text_when_shortening_result(): void

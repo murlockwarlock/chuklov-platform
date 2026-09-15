@@ -7,11 +7,13 @@ use App\Filament\Support\ClinicalAiResultAction;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ReviewAiRun;
 use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
+use App\Modules\AI\Application\Actions\StartClinicalCourseReport;
 use App\Modules\AI\Application\Actions\StartClinicalSynthesis;
 use App\Modules\AI\Application\Actions\StartPostureAnalysis;
 use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewDecision;
 use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
@@ -24,6 +26,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -34,6 +37,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\View\View;
+use Carbon\CarbonImmutable;
 use Throwable;
 
 final class ClientClinicalAiRelationManager extends RelationManager
@@ -91,7 +95,7 @@ final class ClientClinicalAiRelationManager extends RelationManager
             ->columns([
                 TextColumn::make('capability')
                     ->label('Анализ')
-                    ->formatStateUsing(fn (AiCapability|string $state): string => ClinicalAiPresentation::capability($state))
+                    ->state(fn (AiRun $record): string => ClinicalAiPresentation::capability($record->capability, $record->workflow_key))
                     ->wrap(),
                 TextColumn::make('status')
                     ->label('Состояние')
@@ -174,6 +178,35 @@ final class ClientClinicalAiRelationManager extends RelationManager
                             self::failure($exception);
                         }
                     }),
+                Action::make('clinicalCourseReport')
+                    ->label('Итоговый отчёт курса')
+                    ->icon('heroicon-o-clipboard-document-list')
+                    ->schema([
+                        DatePicker::make('course_start_date')
+                            ->label('Начало курса')
+                            ->format('Y-m-d')
+                            ->displayFormat('d.m.Y')
+                            ->native(false)
+                            ->maxDate(CarbonImmutable::now(app(OrganizationContext::class)->defaultTimezone())->toDateString())
+                            ->required(),
+                        Placeholder::make('course_period_hint')
+                            ->label('Период отчёта')
+                            ->content('Конец курса будет зафиксирован на момент формирования отчёта.'),
+                    ])
+                    ->modalHeading('Сформировать итоговый отчёт курса')
+                    ->modalSubmitActionLabel('Сформировать отчёт')
+                    ->action(function (array $data) use ($actor, $client): void {
+                        try {
+                            app(StartClinicalCourseReport::class)->handle(
+                                actor: $actor,
+                                client: $client,
+                                courseStartDate: (string) ($data['course_start_date'] ?? ''),
+                            );
+                            self::success('Итоговый отчёт курса создаётся.');
+                        } catch (Throwable $exception) {
+                            self::failure($exception);
+                        }
+                    }),
             ])
             ->recordActions([
                 ClinicalAiResultAction::make(
@@ -229,10 +262,30 @@ final class ClientClinicalAiRelationManager extends RelationManager
                         ->label('Повторить анализ')
                         ->icon('heroicon-o-arrow-path')
                         ->visible(fn (AiRun $record): bool => $record->status->isTerminal())
+                        ->schema(fn (AiRun $record): array => $record->workflow_key === ClinicalSynthesizerWorkflow::CourseReport->value
+                            ? [
+                                DatePicker::make('course_start_date')
+                                    ->label('Начало курса')
+                                    ->format('Y-m-d')
+                                    ->displayFormat('d.m.Y')
+                                    ->native(false)
+                                    ->maxDate(CarbonImmutable::now(app(OrganizationContext::class)->defaultTimezone())->toDateString())
+                                    ->required(),
+                            ]
+                            : [])
                         ->requiresConfirmation()
-                        ->action(function (AiRun $record) use ($actor, $client): void {
+                        ->action(function (AiRun $record, array $data) use ($actor, $client): void {
                             try {
-                                self::rerun($record, $actor, $client);
+                                if ($record->workflow_key === ClinicalSynthesizerWorkflow::CourseReport->value) {
+                                    app(StartClinicalCourseReport::class)->handle(
+                                        actor: $actor,
+                                        client: $client,
+                                        courseStartDate: (string) ($data['course_start_date'] ?? ''),
+                                        rerun: true,
+                                    );
+                                } else {
+                                    self::rerun($record, $actor, $client);
+                                }
                                 self::success('Новый запуск создан. Предыдущий результат сохранён в истории.');
                             } catch (Throwable $exception) {
                                 self::failure($exception);
@@ -248,7 +301,7 @@ final class ClientClinicalAiRelationManager extends RelationManager
             ->defaultSort('created_at', 'desc')
             ->paginated([10, 25])
             ->emptyStateHeading('Анализы ещё не запускались')
-            ->emptyStateDescription('Запустите анализ документа, выберите три фото осанки или подготовьте клиническое резюме.');
+            ->emptyStateDescription('Запустите анализ документа, выберите три фото осанки, подготовьте клиническое резюме или итоговый отчёт курса.');
     }
 
     private function shouldPoll(): bool

@@ -7,6 +7,7 @@ use App\Modules\AI\Application\Actions\GetClinicalAiResult;
 use App\Modules\AI\Application\Actions\ReviewAiRun;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewDecision;
 use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
@@ -35,7 +36,9 @@ final class ClinicalAiResultAction
         $canReview = self::canReview($actor, $client);
 
         return Action::make($name)
-            ->label('Открыть результат')
+            ->label(fn (Model $record): string => ClinicalAiPresentation::resultActionLabel(
+                $resolveRun($record)?->workflow_key,
+            ))
             ->icon('heroicon-o-eye')
             ->modalSubmitAction(false)
             ->modalCancelActionLabel('Закрыть')
@@ -47,9 +50,14 @@ final class ClinicalAiResultAction
                 abort_unless($run instanceof AiRun, 404);
                 $result = app(GetClinicalAiResult::class)->handle($actor, $run->id, $client->id);
                 $form = [
-                    'result' => ClinicalAiPresentation::result($run->capability, $result->outputPayload, $result->outputText),
+                    'result' => ClinicalAiPresentation::result(
+                        $run->capability,
+                        $result->outputPayload,
+                        $result->outputText,
+                        $run->workflow_key,
+                    ),
                     'review' => ClinicalAiPresentation::review($run->human_review_status),
-                    'lifecycle' => ClinicalAiPresentation::reviewGuidance($run->human_review_status),
+                    'lifecycle' => ClinicalAiPresentation::reviewGuidance($run->human_review_status, $run->workflow_key),
                     'sources' => self::sourceText($run, $result->attachmentProvenance),
                 ];
 
@@ -101,7 +109,7 @@ final class ClinicalAiResultAction
                 ->color('success')
                 ->requiresConfirmation()
                 ->modalHeading('Подтвердить результат')
-                ->modalDescription('Результат будет отмечен как проверенный специалистом и сможет использоваться при формировании клинического резюме.')
+                ->modalDescription(fn (Model $record): string => 'Результат будет отмечен как проверенный специалистом и сможет использоваться при формировании '.self::reviewTarget($resolveRun($record)).'.')
                 ->modalSubmitActionLabel('Подтвердить результат')
                 ->modalCancelActionLabel('Отмена')
                 ->cancelParentActions()
@@ -128,7 +136,7 @@ final class ClinicalAiResultAction
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
                 ->modalHeading('Отклонить результат')
-                ->modalDescription('Результат останется в истории, но не будет использоваться как подтверждённый источник для клинического резюме.')
+                ->modalDescription(fn (Model $record): string => 'Результат останется в истории, но не будет использоваться как подтверждённый источник для '.self::reviewTarget($resolveRun($record)).'.')
                 ->modalSubmitActionLabel('Отклонить результат')
                 ->modalCancelActionLabel('Отмена')
                 ->cancelParentActions()
@@ -174,6 +182,13 @@ final class ClinicalAiResultAction
             && $run->human_review_status === HumanReviewStatus::PendingReview
             ? $run
             : null;
+    }
+
+    private static function reviewTarget(?AiRun $run): string
+    {
+        return $run?->workflow_key === ClinicalSynthesizerWorkflow::CourseReport->value
+            ? 'итогового отчёта курса'
+            : 'клинического резюме';
     }
 
     private static function refreshLivewireTable(Component $livewire): void
@@ -232,7 +247,12 @@ final class ClinicalAiResultAction
             $hasSurveys = $references->contains(fn (array $reference): bool => ($reference['type'] ?? null) === 'survey_attempt');
             $hasUpstream = $references->contains(fn (array $reference): bool => ($reference['type'] ?? null) === 'ai_run');
 
+            $title = $record->workflow_key === ClinicalSynthesizerWorkflow::CourseReport->value
+                ? 'Источники итогового отчёта курса'
+                : 'Источники клинического резюме';
+
             return implode("\n", [
+                $title.':',
                 'Профиль клиента: доступен.',
                 'Проверенные результаты предыдущих анализов: '.($hasUpstream ? 'доступны.' : 'отсутствуют.'),
                 'История сеансов: '.($hasSessions ? 'доступна.' : 'отсутствует.'),

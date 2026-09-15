@@ -7,6 +7,7 @@ use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Identity\Domain\Models\Client;
@@ -70,16 +71,61 @@ final class ClinicalAiReviewedSourceSelectionTest extends TestCase
             ?->getKey());
     }
 
+    public function test_clinical_synthesizer_selection_isolated_by_workflow_key(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Clinical Synthesizer workflow selection requires PostgreSQL verification.');
+        }
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $selector = app(FindLatestReviewedAiRun::class);
+        $normal = $this->createRun(
+            $organization,
+            $client,
+            HumanReviewStatus::Accepted,
+            '2026-09-15 10:00:00',
+            ClinicalSynthesizerWorkflow::Summary->value,
+        );
+        $course = $this->createRun(
+            $organization,
+            $client,
+            HumanReviewStatus::Accepted,
+            '2026-09-15 11:00:00',
+            ClinicalSynthesizerWorkflow::CourseReport->value,
+        );
+
+        self::assertSame(
+            $normal->getKey(),
+            $selector->handle(
+                $client,
+                AiCapability::ClinicalSynthesizer,
+                (int) $organization->getKey(),
+                ClinicalSynthesizerWorkflow::Summary->value,
+            )?->getKey(),
+        );
+        self::assertSame(
+            $course->getKey(),
+            $selector->handle(
+                $client,
+                AiCapability::ClinicalSynthesizer,
+                (int) $organization->getKey(),
+                ClinicalSynthesizerWorkflow::CourseReport->value,
+            )?->getKey(),
+        );
+    }
+
     private function createRun(
         Organization $organization,
         Client $client,
         HumanReviewStatus $reviewStatus,
         string $finishedAt,
+        string $workflowKey = 'clinical_synthesizer',
     ): AiRun {
         return AiRun::query()->create([
             'organization_id' => $organization->getKey(),
             'capability' => AiCapability::ClinicalSynthesizer,
-            'workflow_key' => AiCapability::ClinicalSynthesizer->value,
+            'workflow_key' => $workflowKey,
             'origin' => AiRunOrigin::User,
             'execution_mode' => AiExecutionMode::Async,
             'client_id' => $client->getKey(),
