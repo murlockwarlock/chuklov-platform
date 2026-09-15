@@ -296,7 +296,7 @@ final class ClientWorkspaceInfolist
                             ->columnSpanFull()
                             ->wrap(),
                     ])
-                    ->columns(2)
+                    ->columns(1)
                     ->extraAttributes(['class' => 'h-fit']),
             ]);
     }

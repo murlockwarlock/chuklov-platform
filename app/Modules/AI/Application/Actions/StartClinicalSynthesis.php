@@ -4,6 +4,7 @@ namespace App\Modules\AI\Application\Actions;
 
 use App\Models\User;
 use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Application\Services\ClinicalSynthesizerMedicalProfileContext;
 use App\Modules\AI\Application\Services\FindLatestReviewedAiRun;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
@@ -31,6 +32,7 @@ final readonly class StartClinicalSynthesis
         private GetClinicalAiResult $resultReader,
         private FindLatestReviewedAiRun $findLatestReviewedAiRun,
         private GetMedicalProfile $getMedicalProfile,
+        private ClinicalSynthesizerMedicalProfileContext $medicalProfileContext,
         private MedicalSessionAuthorization $sessionAuthorization,
         private GetSession $getSession,
         private SurveyAuthorization $surveyAuthorization,
@@ -80,7 +82,7 @@ final readonly class StartClinicalSynthesis
         [$surveyResults, $surveyReferences] = $this->surveyBundle($actor, $client);
         $inputVariables = [
             'client_name' => (string) ($client->full_name ?: 'Клиент'),
-            'anamnesis' => $this->boundedText($profile->anamnesis ?? '', 400),
+            'anamnesis' => $this->medicalProfileContext->build($profile),
             'complaints_goals' => $this->boundedText($profile->complaintsGoals ?? '', 700),
             'recent_sessions' => $this->sessionsContext($sessionHistory),
             'agent_one_result' => $this->documentContext($documentResult?->outputPayload),

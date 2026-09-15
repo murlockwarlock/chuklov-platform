@@ -33,6 +33,7 @@ use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
+use Filament\Schemas\Components\Section;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -347,6 +348,36 @@ final class ClientWorkspaceUxATest extends TestCase
         ]);
 
         $component->assertSuccessful();
+    }
+
+    public function test_client_medical_profile_fields_use_one_vertical_column(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ViewClient::class, [
+            'record' => (string) $client->getKey(),
+        ]);
+        $schema = $component->instance()->getSchema('infolist');
+        $sections = array_values(array_filter(
+            $schema->getComponents(),
+            static fn (mixed $component): bool => $component instanceof Section
+                && (string) $component->getHeading() === 'Клинический профиль',
+        ));
+
+        self::assertCount(1, $sections);
+        self::assertSame(1, $sections[0]->getColumns('lg'));
+        self::assertSame([
+            'anamnesis',
+            'complaints_goals',
+            'operations_injuries',
+            'medicines',
+            'supplements',
+        ], array_map(
+            static fn (mixed $component): string => $component->getName(),
+            $sections[0]->getChildComponents(),
+        ));
     }
 
     public function test_view_client_uses_full_name_for_header_and_breadcrumb_without_view_label(): void
