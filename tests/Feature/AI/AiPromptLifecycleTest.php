@@ -190,7 +190,7 @@ class AiPromptLifecycleTest extends TestCase
         $files = glob(base_path('docs/product/source-pack/ai-prompt-bundles/*.json'));
 
         self::assertIsArray($files);
-        self::assertCount(4, $files);
+        self::assertCount(5, $files);
 
         foreach ($files as $file) {
             $bundle = PromptBundle::fromArray(json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR));
@@ -202,7 +202,7 @@ class AiPromptLifecycleTest extends TestCase
             self::assertNull($prompt->active_version_id);
         }
 
-        self::assertSame(4, AiPrompt::query()->where('organization_id', $this->organization->id)->count());
-        self::assertSame(4, AiPromptVersion::query()->where('organization_id', $this->organization->id)->where('status', PromptVersionStatus::Draft->value)->count());
+        self::assertSame(5, AiPrompt::query()->where('organization_id', $this->organization->id)->count());
+        self::assertSame(5, AiPromptVersion::query()->where('organization_id', $this->organization->id)->where('status', PromptVersionStatus::Draft->value)->count());
     }
 }

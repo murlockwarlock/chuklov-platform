@@ -3,6 +3,7 @@
 namespace Tests\Feature\AI;
 
 use App\Models\User;
+use App\Modules\AI\Application\Actions\StartClinicalCourseReport;
 use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
 use App\Modules\AI\Application\Actions\StartClinicalSynthesis;
 use App\Modules\AI\Application\Actions\StartPostureAnalysis;
@@ -13,6 +14,7 @@ use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiModelConfiguration;
 use App\Modules\AI\Domain\Models\AiModelRelease;
@@ -37,10 +39,14 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use App\Modules\Sessions\Application\CreateSession;
+use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
+use App\Modules\Surveys\Domain\Models\SurveyReport;
 use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -83,6 +89,12 @@ final class ClinicalAiWorkflowTest extends TestCase
             'synthesizer',
             '{{client_name}} {{anamnesis}} {{complaints_goals}} {{recent_sessions}} {{agent_one_result}} {{agent_two_result}} {{survey_results}}',
         );
+    }
+
+    protected function tearDown(): void
+    {
+        Carbon::setTestNow();
+        parent::tearDown();
     }
 
     public function test_document_and_posture_launches_are_explicit_idempotent_and_tenant_scoped(): void
@@ -288,6 +300,280 @@ final class ClinicalAiWorkflowTest extends TestCase
         self::assertStringNotContainsString('Операция Y', (string) $prompt);
         self::assertStringNotContainsString('Лекарство Z', (string) $prompt);
         self::assertStringNotContainsString('Добавка Q', (string) $prompt);
+    }
+
+    public function test_course_report_uses_full_profile_and_dedicated_prompt_with_server_period(): void
+    {
+        Queue::fake();
+        app(UpdateMedicalProfile::class)->handle($this->staff, $this->client, new UpdateMedicalProfileCommand(
+            anamnesis: 'Курс: анамнез A',
+            complaintsGoals: 'Курс: жалобы B',
+            operationsInjuries: 'Курс: операция C',
+            medicines: 'Курс: лекарство D',
+            supplements: 'Курс: добавка E',
+        ));
+
+        Carbon::setTestNow(Carbon::parse('2026-09-15 08:30:00', 'UTC'));
+        $run = app(StartClinicalCourseReport::class)->handle($this->staff, $this->client, '2026-09-01');
+
+        self::assertSame(AiCapability::ClinicalSynthesizer, $run->capability);
+        self::assertSame('clinical_course_report', $run->workflow_key);
+        self::assertSame('clinical_course_report', $run->promptVersion?->prompt?->key);
+
+        $payload = AiRunPayload::query()->where('ai_run_id', $run->getKey())->firstOrFail();
+        $prompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+
+        self::assertStringContainsString('Курс: анамнез A', (string) $prompt);
+        self::assertStringContainsString('Курс: операция C', (string) $prompt);
+        self::assertStringContainsString('Курс: лекарство D', (string) $prompt);
+        self::assertStringContainsString('Курс: добавка E', (string) $prompt);
+        self::assertStringContainsString('Курс: жалобы B', (string) $prompt);
+        self::assertStringContainsString('01.09.2026', (string) $prompt);
+        self::assertStringContainsString('15.09.2026 08:30', (string) $prompt);
+    }
+
+    public function test_existing_course_prompt_without_active_version_fails_without_using_normal_prompt(): void
+    {
+        AiPrompt::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'clinical_course_report',
+            'name' => 'Course report',
+            'capability' => AiCapability::ClinicalSynthesizer,
+        ]);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('нет активной версии промпта');
+
+        app(StartClinicalCourseReport::class)->handle($this->staff, $this->client, '2026-09-01');
+    }
+
+    public function test_course_report_rejects_a_start_date_after_the_server_generation_instant(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-09-15 08:30:00', 'UTC'));
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('не может быть позже');
+
+        app(StartClinicalCourseReport::class)->handle($this->staff, $this->client, '2026-09-16');
+    }
+
+    public function test_course_report_preserves_an_existing_admin_managed_active_prompt(): void
+    {
+        Queue::fake();
+        Carbon::setTestNow(Carbon::parse('2026-09-15 08:30:00', 'UTC'));
+
+        app(StartClinicalCourseReport::class)->handle($this->staff, $this->client, '2026-09-01');
+        $prompt = AiPrompt::query()->where('organization_id', $this->organization->id)->where('key', 'clinical_course_report')->firstOrFail();
+        $version = AiPromptVersion::query()->findOrFail($prompt->active_version_id);
+        $version->update([
+            'system_prompt' => 'Admin-managed course system prompt.',
+            'user_prompt_template' => 'Admin-managed course template {{course_period}}',
+        ]);
+
+        $run = app(StartClinicalCourseReport::class)->handle($this->staff, $this->client, '2026-09-02');
+        $payload = AiRunPayload::query()->where('ai_run_id', $run->getKey())->firstOrFail();
+        $userPrompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+
+        self::assertSame($version->getKey(), $run->prompt_version_id);
+        self::assertStringContainsString('Admin-managed course template', (string) $userPrompt);
+        self::assertStringNotContainsString('Сформируй консервативный итоговый отчёт курса', (string) $userPrompt);
+    }
+
+    public function test_course_report_uses_one_organization_local_start_boundary_for_sessions(): void
+    {
+        Queue::fake();
+        $this->organization->update(['timezone' => 'Asia/Almaty']);
+        app(OrganizationContext::class)->set($this->organization->fresh());
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        app(CreateSession::class)->handle($this->staff, $this->client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-08-31 19:30:00', 'UTC'),
+            pain: 'Сеанс внутри локального периода',
+        ));
+        app(CreateSession::class)->handle($this->staff, $this->client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-08-31 18:59:00', 'UTC'),
+            pain: 'Сеанс до локальной границы',
+        ));
+
+        Carbon::setTestNow(Carbon::parse('2026-09-01 01:00:00', 'UTC'));
+        $run = app(StartClinicalCourseReport::class)->handle($this->staff, $this->client, '2026-09-01');
+        $payload = AiRunPayload::query()->where('ai_run_id', $run->getKey())->firstOrFail();
+        $userPrompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+
+        self::assertStringContainsString('Начало курса: 01.09.2026', (string) $userPrompt);
+        self::assertStringContainsString('01.09.2026 06:00', (string) $userPrompt);
+        self::assertStringContainsString('Сеанс внутри локального периода', (string) $userPrompt);
+        self::assertStringNotContainsString('Сеанс до локальной границы', (string) $userPrompt);
+    }
+
+    public function test_normal_summary_does_not_use_course_report_runs(): void
+    {
+        $normalRun = $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['client_summary' => 'Обычное клиническое резюме.'],
+            HumanReviewStatus::Accepted,
+            ClinicalSynthesizerWorkflow::Summary->value,
+        );
+        $normalRun->update(['finished_at' => Carbon::parse('2026-09-12 10:00:00', 'UTC')]);
+        $courseRun = $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['course_summary' => 'Итоговый отчёт курса.'],
+            HumanReviewStatus::Accepted,
+            ClinicalSynthesizerWorkflow::CourseReport->value,
+        );
+        $courseRun->update(['finished_at' => Carbon::parse('2026-09-15 10:00:00', 'UTC')]);
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Проверено', $summary['states']['synthesis']['state']);
+        self::assertStringContainsString('Обычное клиническое резюме.', (string) $summary['synthesisPreview']);
+        self::assertStringNotContainsString('Итоговый отчёт курса.', (string) $summary['synthesisPreview']);
+        self::assertSame('Проверено', $summary['states']['courseReport']['state']);
+    }
+
+    public function test_course_report_state_uses_latest_run_review_status_without_exposing_pending_output(): void
+    {
+        $accepted = $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['course_summary' => 'Предыдущий отчёт курса.'],
+            HumanReviewStatus::Accepted,
+            ClinicalSynthesizerWorkflow::CourseReport->value,
+        );
+        $accepted->update(['finished_at' => Carbon::parse('2026-09-12 10:00:00', 'UTC')]);
+        $pending = $this->reviewedRun(
+            AiCapability::ClinicalSynthesizer,
+            [new AiInputReference('client', $this->client->id)],
+            ['course_summary' => 'Непроверенный новый отчёт курса.'],
+            HumanReviewStatus::PendingReview,
+            ClinicalSynthesizerWorkflow::CourseReport->value,
+        );
+        $pending->update(['finished_at' => Carbon::parse('2026-09-15 10:00:00', 'UTC')]);
+
+        $summary = app(ReadClinicalAiClientSummary::class)->handle($this->staff, $this->client);
+
+        self::assertIsArray($summary);
+        self::assertSame('Требует проверки', $summary['states']['courseReport']['state']);
+        self::assertSame('12.09.2026 10:00', $summary['states']['courseReport']['lastReadyAt']);
+        self::assertStringNotContainsString('Непроверенный новый отчёт курса.', serialize($summary));
+    }
+
+    public function test_course_report_uses_bounded_sessions_and_first_latest_completed_survey_results(): void
+    {
+        Queue::fake();
+        $specialist = Specialist::factory()->forOrganization($this->organization)->create();
+        foreach (range(1, 26) as $index) {
+            app(CreateSession::class)->handle($this->staff, $this->client, new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-09-'.$index.' 10:00:00', 'UTC'),
+                pain: 'Сеанс '.$index,
+            ));
+        }
+
+        $definition = SurveyDefinition::create([
+            'organization_id' => $this->organization->id,
+            'definition_key' => 'course-survey',
+            'title' => 'Course survey',
+            'is_available' => true,
+        ]);
+        $version = SurveyVersion::create([
+            'organization_id' => $this->organization->id,
+            'survey_definition_id' => $definition->id,
+            'version' => 1,
+            'status' => SurveyVersionStatus::Published,
+            'title' => 'Course survey',
+            'definition' => ['sections' => []],
+            'scoring' => [],
+            'published_at' => Carbon::now(),
+        ]);
+        $definition->update(['active_version_id' => $version->id]);
+
+        $attempts = [];
+        foreach ([5, 12, 20] as $index) {
+            $attempts[$index] = SurveyAttempt::create([
+                'organization_id' => $this->organization->id,
+                'client_id' => $this->client->id,
+                'survey_definition_id' => $definition->id,
+                'survey_version_id' => $version->id,
+                'status' => SurveyAttemptStatus::Completed,
+                'definition_snapshot' => ['title' => 'Course survey', 'sections' => []],
+                'answers_snapshot' => [],
+                'scoring_snapshot' => [],
+                'result_snapshot' => [
+                    'survey' => ['title' => ['ru' => 'Course survey']],
+                    'summary' => ['short' => ['ru' => 'Survey result '.$index]],
+                    'comparison' => null,
+                ],
+                'metric_schema_key' => 'course-survey-v1',
+                'started_at' => Carbon::parse('2026-09-'.$index.' 09:00:00', 'UTC'),
+                'completed_at' => Carbon::parse('2026-09-'.$index.' 09:30:00', 'UTC'),
+            ]);
+        }
+
+        SurveyReport::create([
+            'organization_id' => $this->organization->id,
+            'client_id' => $this->client->id,
+            'survey_attempt_id' => $attempts[20]->id,
+            'survey_version_id' => $version->id,
+            'title' => 'Course survey',
+            'report_snapshot' => [
+                'comparison' => [
+                    'message' => ['ru' => 'Есть динамика'],
+                    'items' => [[
+                        'label' => ['ru' => 'Боль'],
+                        'before' => 8,
+                        'after' => 3,
+                        'change' => -5,
+                    ]],
+                ],
+            ],
+            'materialized_at' => Carbon::parse('2026-09-20 09:30:00', 'UTC'),
+        ]);
+
+        Carbon::setTestNow(Carbon::parse('2026-09-30 09:00:00', 'UTC'));
+        $run = app(StartClinicalCourseReport::class)->handle($this->staff, $this->client, '2026-09-01');
+        Carbon::setTestNow();
+
+        $payload = AiRunPayload::query()->where('ai_run_id', $run->getKey())->firstOrFail();
+        $prompt = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->id,
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+        $sessionReferences = collect($run->input_references)
+            ->filter(static fn (array $reference): bool => ($reference['type'] ?? null) === 'medical_session')
+            ->pluck('id')
+            ->all();
+        $surveyReferences = collect($run->input_references)
+            ->filter(static fn (array $reference): bool => ($reference['type'] ?? null) === 'survey_attempt')
+            ->pluck('id')
+            ->all();
+
+        self::assertCount(24, $sessionReferences);
+        self::assertStringContainsString('Сеанс 1', (string) $prompt);
+        self::assertStringContainsString('Сеанс 26', (string) $prompt);
+        self::assertStringNotContainsString('Сеанс 13', (string) $prompt);
+        self::assertEqualsCanonicalizing([$attempts[5]->id, $attempts[20]->id], $surveyReferences);
+        self::assertStringContainsString('Survey result 5', (string) $prompt);
+        self::assertStringContainsString('Survey result 20', (string) $prompt);
+        self::assertStringContainsString('Динамика Боль: 8 → 3 (изменение: -5)', (string) $prompt);
+        self::assertStringNotContainsString('Survey result 12', (string) $prompt);
     }
 
     public function test_clinical_client_summary_uses_latest_state_and_human_synthesis_preview(): void
@@ -774,11 +1060,12 @@ final class ClinicalAiWorkflowTest extends TestCase
         array $references,
         array $payload,
         HumanReviewStatus $reviewStatus = HumanReviewStatus::Accepted,
+        string $workflowKey = 'clinical_synthesizer',
     ): AiRun {
         $run = AiRun::create([
             'organization_id' => $this->organization->id,
             'capability' => $capability,
-            'workflow_key' => $capability->value,
+            'workflow_key' => $workflowKey,
             'origin' => AiRunOrigin::User,
             'execution_mode' => AiExecutionMode::Async,
             'client_id' => $this->client->id,

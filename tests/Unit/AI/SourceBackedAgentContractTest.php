@@ -118,16 +118,21 @@ final class SourceBackedAgentContractTest extends TestCase
         $files = glob(base_path('docs/product/source-pack/ai-prompt-bundles/*.json'));
 
         self::assertIsArray($files);
-        self::assertCount(4, $files);
+        self::assertCount(5, $files);
 
         foreach ($files as $file) {
             $data = json_decode((string) file_get_contents($file), true, 512, JSON_THROW_ON_ERROR);
             $bundle = PromptBundle::fromArray($data);
 
-            self::assertSame(
-                AiCapabilityRegistry::get($bundle->capability)->defaultOutputSchema,
-                $bundle->outputSchema,
-            );
+            if ($bundle->promptKey === 'clinical_course_report') {
+                self::assertIsArray($bundle->outputSchema);
+                self::assertArrayHasKey('course_summary', $bundle->outputSchema['properties'] ?? []);
+            } else {
+                self::assertSame(
+                    AiCapabilityRegistry::get($bundle->capability)->defaultOutputSchema,
+                    $bundle->outputSchema,
+                );
+            }
             self::assertStringContainsString('[SOURCE TEXT]', $bundle->systemPrompt);
             self::assertStringContainsString('[CURRENT PLATFORM SAFETY GUARDRAILS]', $bundle->systemPrompt);
             self::assertStringContainsString('[CURRENT RUNTIME CONTRACT]', $bundle->systemPrompt);

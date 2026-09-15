@@ -6,6 +6,7 @@ use App\Filament\Support\ClinicalAiPresentation;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\GetClinicalAiResult;
 use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalProfileAuthorization;
@@ -39,7 +40,8 @@ final readonly class ReadClinicalAiClientSummary
      *     states: array{
      *         documents: array{label: string, state: string, color: string},
      *         posture: array{label: string, state: string, color: string},
-     *         synthesis: array{label: string, state: string, color: string, lastReadyAt: string|null}
+     *         synthesis: array{label: string, state: string, color: string, lastReadyAt: string|null},
+     *         courseReport: array{label: string, state: string, color: string, lastReadyAt: string|null}
      *     },
      *     readiness: list<array{label: string, available: bool, availability: string}>,
      *     synthesisPreview: string|null,
@@ -56,7 +58,18 @@ final readonly class ReadClinicalAiClientSummary
         $organizationId = (int) $organization->getKey();
         $documentRun = $this->latestRun($client, AiCapability::ClinicalDocumentExtraction, $organizationId);
         $postureRun = $this->latestRun($client, AiCapability::PostureAnalysis, $organizationId);
-        $synthesisRun = $this->latestRun($client, AiCapability::ClinicalSynthesizer, $organizationId);
+        $synthesisRun = $this->latestRun(
+            $client,
+            AiCapability::ClinicalSynthesizer,
+            $organizationId,
+            ClinicalSynthesizerWorkflow::Summary->value,
+        );
+        $courseReportRun = $this->latestRun(
+            $client,
+            AiCapability::ClinicalSynthesizer,
+            $organizationId,
+            ClinicalSynthesizerWorkflow::CourseReport->value,
+        );
         $documentReviewedRun = $this->findLatestReviewedAiRun->handle(
             $client,
             AiCapability::ClinicalDocumentExtraction,
@@ -71,6 +84,13 @@ final readonly class ReadClinicalAiClientSummary
             $client,
             AiCapability::ClinicalSynthesizer,
             $organizationId,
+            ClinicalSynthesizerWorkflow::Summary->value,
+        );
+        $courseReportReviewedRun = $this->findLatestReviewedAiRun->handle(
+            $client,
+            AiCapability::ClinicalSynthesizer,
+            $organizationId,
+            ClinicalSynthesizerWorkflow::CourseReport->value,
         );
 
         return [
@@ -91,6 +111,12 @@ final readonly class ReadClinicalAiClientSummary
                     'state' => ClinicalAiPresentation::synthesisStatus($synthesisRun),
                     'color' => ClinicalAiPresentation::synthesisStatusColor($synthesisRun),
                     'lastReadyAt' => $this->dateLabel($synthesisReviewedRun?->finished_at ?? $synthesisReviewedRun?->created_at),
+                ],
+                'courseReport' => [
+                    'label' => 'Итоговый отчёт курса',
+                    'state' => ClinicalAiPresentation::courseStatus($courseReportRun),
+                    'color' => ClinicalAiPresentation::courseStatusColor($courseReportRun),
+                    'lastReadyAt' => $this->dateLabel($courseReportReviewedRun?->finished_at ?? $courseReportReviewedRun?->created_at),
                 ],
             ],
             'readiness' => $this->readinessFor(
@@ -178,19 +204,27 @@ final readonly class ReadClinicalAiClientSummary
         }
     }
 
-    private function latestRun(Client $client, AiCapability $capability, int $organizationId): ?AiRun
+    private function latestRun(Client $client, AiCapability $capability, int $organizationId, ?string $workflowKey = null): ?AiRun
     {
-        return AiRun::query()
+        $query = AiRun::query()
             ->where('organization_id', $organizationId)
             ->where('client_id', $client->getKey())
             ->where('capability', $capability)
             ->orderByDesc('created_at')
-            ->orderByDesc('id')
-            ->first([
+            ->orderByDesc('id');
+
+        if ($capability === AiCapability::ClinicalSynthesizer) {
+            $query->where('workflow_key', $workflowKey ?? ClinicalSynthesizerWorkflow::Summary->value);
+        } elseif ($workflowKey !== null) {
+            $query->where('workflow_key', $workflowKey);
+        }
+
+        return $query->first([
                 'id',
                 'organization_id',
                 'client_id',
                 'capability',
+                'workflow_key',
                 'status',
                 'human_review_status',
                 'finished_at',
@@ -279,7 +313,12 @@ final readonly class ReadClinicalAiClientSummary
         try {
             $result = $this->resultReader->handle($actor, (int) $run->getKey(), (int) $client->getKey());
 
-            return ClinicalAiPresentation::preview($run->capability, $result->outputPayload, $result->outputText);
+            return ClinicalAiPresentation::preview(
+                $run->capability,
+                $result->outputPayload,
+                $result->outputText,
+                $run->workflow_key,
+            );
         } catch (Throwable) {
             return null;
         }
