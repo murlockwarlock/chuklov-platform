@@ -115,6 +115,41 @@ final class ClinicalAiReviewedSourceSelectionTest extends TestCase
         );
     }
 
+    public function test_course_workflow_uses_the_previous_reviewed_run_when_the_latest_run_is_not_eligible(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Clinical Synthesizer workflow review fallback requires PostgreSQL verification.');
+        }
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $selector = app(FindLatestReviewedAiRun::class);
+        $accepted = $this->createRun(
+            $organization,
+            $client,
+            HumanReviewStatus::Accepted,
+            '2026-09-12 10:00:00',
+            ClinicalSynthesizerWorkflow::CourseReport->value,
+        );
+        $this->createRun(
+            $organization,
+            $client,
+            HumanReviewStatus::Rejected,
+            '2026-09-14 10:00:00',
+            ClinicalSynthesizerWorkflow::CourseReport->value,
+        );
+
+        self::assertSame(
+            $accepted->getKey(),
+            $selector->handle(
+                $client,
+                AiCapability::ClinicalSynthesizer,
+                (int) $organization->getKey(),
+                ClinicalSynthesizerWorkflow::CourseReport->value,
+            )?->getKey(),
+        );
+    }
+
     private function createRun(
         Organization $organization,
         Client $client,

@@ -26,9 +26,8 @@ final readonly class EnsureClinicalCourseReportPrompt
     public function handle(): AiPromptVersion
     {
         $organization = $this->context->organization();
-        $bundle = $this->bundle();
 
-        return DB::transaction(function () use ($bundle, $organization): AiPromptVersion {
+        return DB::transaction(function () use ($organization): AiPromptVersion {
             $prompt = AiPrompt::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('key', self::PROMPT_KEY)
@@ -36,6 +35,7 @@ final readonly class EnsureClinicalCourseReportPrompt
                 ->first();
 
             if ($prompt === null) {
+                $bundle = $this->bundle();
                 $created = AiPrompt::query()->insertOrIgnore([
                     'organization_id' => $organization->getKey(),
                     'key' => $bundle->promptKey,

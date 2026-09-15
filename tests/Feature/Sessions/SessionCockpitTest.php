@@ -14,6 +14,7 @@ use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
@@ -443,6 +444,28 @@ final class SessionCockpitTest extends TestCase
                 'relation' => (string) $clinicalRelation,
             ]), false)
             ->assertDontSee('"client_summary"');
+    }
+
+    public function test_session_cockpit_keeps_normal_summary_separate_from_course_report(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $session = $this->createSession($admin, $client, $specialist);
+        $this->clinicalSynthesisRun($organization->getKey(), $client->getKey(), HumanReviewStatus::Accepted, [
+            'client_summary' => 'Обычная сводка сеанса.',
+        ], ClinicalSynthesizerWorkflow::Summary->value);
+        $this->clinicalSynthesisRun($organization->getKey(), $client->getKey(), HumanReviewStatus::Accepted, [
+            'course_summary' => 'Итоговый отчёт курса не должен подменять сводку.',
+        ], ClinicalSynthesizerWorkflow::CourseReport->value);
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Обычная сводка сеанса.')
+            ->assertDontSee('Итоговый отчёт курса не должен подменять сводку.');
     }
 
     public function test_filament_session_cockpit_shows_a_human_empty_state_without_a_reviewed_summary(): void
@@ -942,11 +965,12 @@ final class SessionCockpitTest extends TestCase
         int $clientId,
         HumanReviewStatus $reviewStatus,
         array $payload,
+        string $workflowKey = ClinicalSynthesizerWorkflow::Summary->value,
     ): AiRun {
         $run = AiRun::create([
             'organization_id' => $organizationId,
             'capability' => AiCapability::ClinicalSynthesizer,
-            'workflow_key' => AiCapability::ClinicalSynthesizer->value,
+            'workflow_key' => $workflowKey,
             'origin' => AiRunOrigin::User,
             'execution_mode' => AiExecutionMode::Async,
             'client_id' => $clientId,

@@ -12,6 +12,7 @@ use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
@@ -280,6 +281,58 @@ final class MessagesWorkspaceTest extends TestCase
             ->assertSee('Требует проверки')
             ->assertDontSee('Последнее проверенное клиническое резюме:')
             ->assertDontSee('Непроверенная сводка.');
+    }
+
+    public function test_messages_sidebar_keeps_normal_summary_separate_from_course_report(): void
+    {
+        $encryptor = app(MedicalEncryptorInterface::class);
+        $normalRun = AiRun::create([
+            'organization_id' => $this->organization->getKey(),
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => ClinicalSynthesizerWorkflow::Summary->value,
+            'origin' => AiRunOrigin::User,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $this->client->getKey(),
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::Accepted,
+            'input_references' => [['type' => 'client', 'id' => $this->client->getKey()]],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        AiRunPayload::create([
+            'organization_id' => $this->organization->getKey(),
+            'ai_run_id' => $normalRun->getKey(),
+            'encryption_key_version' => 1,
+            'encrypted_output_payload' => $encryptor->encryptField($this->organization->getKey(), json_encode(['client_summary' => 'Обычная сводка перед приёмом.'], JSON_THROW_ON_ERROR), 1),
+            'encrypted_output_text' => $encryptor->encryptField($this->organization->getKey(), json_encode(['client_summary' => 'Обычная сводка перед приёмом.'], JSON_THROW_ON_ERROR), 1),
+        ]);
+        $courseRun = AiRun::create([
+            'organization_id' => $this->organization->getKey(),
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => ClinicalSynthesizerWorkflow::CourseReport->value,
+            'origin' => AiRunOrigin::User,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $this->client->getKey(),
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::Accepted,
+            'input_references' => [['type' => 'client', 'id' => $this->client->getKey()]],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        AiRunPayload::create([
+            'organization_id' => $this->organization->getKey(),
+            'ai_run_id' => $courseRun->getKey(),
+            'encryption_key_version' => 1,
+            'encrypted_output_payload' => $encryptor->encryptField($this->organization->getKey(), json_encode(['course_summary' => 'Итоговый отчёт курса.'], JSON_THROW_ON_ERROR), 1),
+            'encrypted_output_text' => $encryptor->encryptField($this->organization->getKey(), json_encode(['course_summary' => 'Итоговый отчёт курса.'], JSON_THROW_ON_ERROR), 1),
+        ]);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($this->admin)
+            ->test(Messages::class)
+            ->call('selectClient', $this->client->getKey())
+            ->assertSee('Обычная сводка перед приёмом.')
+            ->assertDontSee('Итоговый отчёт курса.');
     }
 
     public function test_crm_reply_uses_verified_telegram_binding_for_the_existing_companion_conversation(): void

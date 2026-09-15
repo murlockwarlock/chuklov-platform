@@ -49,6 +49,8 @@ Platform safety guardrails:
 
 Capability: `clinical_synthesizer`.
 
+The source also confirms a final integrative course report, but does not define an authoritative schema, medical methodology, or automatic completion trigger. Phase 1 uses a manually selected start date and the server-side generation instant as the end boundary, with a separate `clinical_course_report` workflow on the same capability. The platform report is conservative and practitioner-facing; it is not presented as an official Chuklov methodology.
+
 The source input bundle is the client profile, complaints/goals, Agent 1 result, Agent 2 result, survey results, and past session history. Existing reference validation and context assembly remain the boundary for these inputs.
 
 The practitioner-facing result sections are:

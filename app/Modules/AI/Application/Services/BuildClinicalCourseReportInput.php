@@ -13,11 +13,12 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Sessions\Application\GetSession;
-use App\Modules\Sessions\Application\MedicalSessionAuthorization;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Surveys\Application\SurveyAuthorization;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
+use App\Modules\Surveys\Domain\Models\SurveyReport;
+use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 
@@ -34,7 +35,6 @@ final readonly class BuildClinicalCourseReportInput
         private ClinicalSynthesizerMedicalProfileContext $medicalProfileContext,
         private FindLatestReviewedAiRun $findLatestReviewedAiRun,
         private GetClinicalAiResult $resultReader,
-        private MedicalSessionAuthorization $sessionAuthorization,
         private GetSession $getSession,
         private SurveyAuthorization $surveyAuthorization,
         private OrganizationContext $context,
@@ -248,8 +248,20 @@ final readonly class BuildClinicalCourseReportInput
             }
         }
 
+        $reports = $attempts->isEmpty()
+            ? collect()
+            : SurveyReport::query()
+                ->where('organization_id', $client->organization_id)
+                ->where('client_id', $client->getKey())
+                ->whereIn('survey_attempt_id', $attempts->pluck('id'))
+                ->get(['id', 'survey_attempt_id', 'report_snapshot'])
+                ->keyBy('survey_attempt_id');
+
         $contexts = $attempts
-            ->map(fn (SurveyAttempt $attempt): string => $this->surveyContext($attempt))
+            ->map(fn (SurveyAttempt $attempt): string => $this->surveyContext(
+                $attempt,
+                $reports->get($attempt->getKey()),
+            ))
             ->filter()
             ->values()
             ->all();
@@ -276,7 +288,7 @@ final readonly class BuildClinicalCourseReportInput
         ];
     }
 
-    private function surveyContext(SurveyAttempt $attempt): string
+    private function surveyContext(SurveyAttempt $attempt, ?SurveyReport $report = null): string
     {
         $result = is_array($attempt->result_snapshot) ? $attempt->result_snapshot : [];
         $title = $this->localizedText(data_get($result, 'survey.title'), 100);
@@ -305,9 +317,32 @@ final readonly class BuildClinicalCourseReportInput
             $lines[] = 'Зоны внимания: '.implode('; ', $areas);
         }
 
-        $comparisonMessage = $this->localizedText(data_get($result, 'comparison.message'), 180);
-        if ($comparisonMessage !== '') {
-            $lines[] = 'Сравнение: '.$comparisonMessage;
+        $comparison = $result['comparison'] ?? null;
+        if (! is_array($comparison)) {
+            $reportSnapshot = is_array($report?->report_snapshot) ? $report->report_snapshot : [];
+            $comparison = $reportSnapshot['comparison'] ?? null;
+        }
+        if (is_array($comparison)) {
+            $comparisonMessage = $this->localizedText($comparison['message'] ?? null, 180);
+            if ($comparisonMessage !== '') {
+                $lines[] = 'Сравнение: '.$comparisonMessage;
+            }
+
+            foreach (array_slice((array) ($comparison['items'] ?? []), 0, 9) as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $label = $this->localizedText($item['label'] ?? null, 80);
+                $before = is_numeric($item['before'] ?? null) ? (string) $item['before'] : null;
+                $after = is_numeric($item['after'] ?? null) ? (string) $item['after'] : null;
+                $change = is_numeric($item['change'] ?? null) ? (string) $item['change'] : null;
+                if ($label === '' || ($before === null && $after === null && $change === null)) {
+                    continue;
+                }
+
+                $lines[] = 'Динамика '.$label.': '.implode(' → ', array_filter([$before, $after])).($change === null ? '' : ' (изменение: '.$change.')');
+            }
         }
 
         return $this->boundedText(implode("\n", $lines), 650);
@@ -367,7 +402,7 @@ final readonly class BuildClinicalCourseReportInput
     private function sessionContext(array $session): string
     {
         $occurredAt = isset($session['occurred_at'])
-            ? $this->boundedText($session['occurred_at'], 40)
+            ? $this->sessionDate($session['occurred_at'])
             : '';
         $parts = array_filter([
             $occurredAt,
@@ -380,6 +415,17 @@ final readonly class BuildClinicalCourseReportInput
         ]);
 
         return $this->boundedText(implode(' · ', $parts), 900);
+    }
+
+    private function sessionDate(mixed $value): string
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return '';
+        }
+
+        return CarbonImmutable::parse($value, 'UTC')
+            ->setTimezone($this->context->defaultTimezone())
+            ->format('d.m.Y H:i');
     }
 
     private function fieldLabel(string $label, mixed $value, int $limit): ?string
