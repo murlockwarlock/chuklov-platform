@@ -3,6 +3,7 @@
 namespace App\Modules\Scheduling\Application;
 
 use App\Models\User;
+use App\Modules\Finance\Application\CreateFinancialObligation;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
@@ -22,6 +23,7 @@ final class ConfirmBooking
         private readonly BookingAuthorization $authorization,
         private readonly RecordBookingEvent $events,
         private readonly RecordScenarioEvent $scenarioEvents,
+        private readonly CreateFinancialObligation $financialObligations,
         private readonly AppointmentReminderScheduler $reminders,
         private readonly RecordAuditEvent $audit,
     ) {}
@@ -61,6 +63,11 @@ final class ConfirmBooking
                 oldValues: $oldValues,
                 newValues: $this->events->snapshot($lockedBooking),
                 reason: $reason,
+            );
+            $this->financialObligations->handle(
+                actor: $actor,
+                booking: $lockedBooking,
+                causationId: (string) $bookingEvent->getKey(),
             );
             $scenarioEvent = $this->scenarioEvents->bookingConfirmed(
                 booking: $lockedBooking,

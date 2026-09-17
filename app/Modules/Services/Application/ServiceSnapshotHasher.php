@@ -28,6 +28,7 @@ final class ServiceSnapshotHasher
             'price_minor' => $service->getRawOriginal('price_minor'),
             'price_currency' => $service->getRawOriginal('price_currency'),
             'payment_policy' => $service->getRawOriginal('payment_policy'),
+            'payment_requirement' => $service->getRawOriginal('payment_requirement'),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 }

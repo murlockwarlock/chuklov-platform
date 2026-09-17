@@ -7,6 +7,7 @@ use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
+use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use App\Modules\Services\Domain\Models\Service;
 use App\Rules\HttpsImageUrl;
 use App\Rules\MajorUnitPrice;
@@ -109,6 +110,14 @@ class ServiceForm
                             ->label('Условия оплаты')
                             ->maxLength(64)
                             ->columnSpanFull(),
+                        Select::make('payment_requirement')
+                            ->label('Требование оплаты')
+                            ->options([
+                                ServicePaymentRequirement::Postpay->value => 'После сеанса',
+                                ServicePaymentRequirement::PrepayFull->value => 'Полная предоплата',
+                            ])
+                            ->required()
+                            ->default(ServicePaymentRequirement::Postpay->value),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),

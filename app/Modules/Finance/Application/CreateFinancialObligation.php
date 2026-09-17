@@ -11,6 +11,7 @@ use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Security\Application\RecordAuditEvent;
+use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -34,8 +35,8 @@ final class CreateFinancialObligation
             throw ValidationException::withMessages(['booking' => 'Запись не относится к текущей организации.']);
         }
 
-        if ($booking->status !== BookingStatus::Completed) {
-            throw ValidationException::withMessages(['booking' => 'Финансовое обязательство создаётся только после завершённого визита.']);
+        if (! $this->shouldCreate($booking)) {
+            return null;
         }
 
         $service = $booking->service;
@@ -51,9 +52,12 @@ final class CreateFinancialObligation
         $currencyConfiguration = $this->configuration->configuration($organization);
         $baseSnapshot = $this->configuration->convert($organization, $price, $currencyConfiguration->base_currency);
         $displaySnapshot = $this->configuration->convert($organization, $price, $currencyConfiguration->display_currency);
-        $creationKey = 'booking.completed:'.$organization->getKey().':'.$booking->getKey();
+        $creationKey = 'booking.payment:'.$organization->getKey().':'.$booking->getKey();
+        $source = $booking->status === BookingStatus::Confirmed
+            ? 'booking.confirmed'
+            : 'booking.completed';
 
-        return DB::transaction(function () use ($actor, $booking, $organization, $service, $price, $priceCurrency, $baseSnapshot, $displaySnapshot, $creationKey, $causationId): FinancialObligation {
+        return DB::transaction(function () use ($actor, $booking, $organization, $service, $price, $priceCurrency, $baseSnapshot, $displaySnapshot, $creationKey, $causationId, $source): FinancialObligation {
             $existing = FinancialObligation::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('booking_id', $booking->getKey())
@@ -85,6 +89,7 @@ final class CreateFinancialObligation
                     'amount_minor' => $price->minorUnitsString(),
                     'currency' => $priceCurrency->value,
                     'payment_policy' => $service->payment_policy,
+                    'payment_requirement' => $service->payment_requirement->value,
                     'captured_at' => CarbonImmutable::now()->toIso8601String(),
                 ], JSON_THROW_ON_ERROR),
                 'conversion_snapshots' => json_encode([
@@ -118,12 +123,22 @@ final class CreateFinancialObligation
                 targetType: FinancialObligation::class,
                 targetId: (string) $obligation->getKey(),
                 metadata: [
-                    'source' => 'booking.completed',
+                    'source' => $source,
                     'currency' => $priceCurrency->value,
                 ],
             );
 
             return $obligation->refresh();
         });
+    }
+
+    private function shouldCreate(Booking $booking): bool
+    {
+        if ($booking->status === BookingStatus::Completed) {
+            return true;
+        }
+
+        return $booking->status === BookingStatus::Confirmed
+            && $booking->service?->payment_requirement === ServicePaymentRequirement::PrepayFull;
     }
 }

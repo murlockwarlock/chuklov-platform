@@ -5,6 +5,7 @@ namespace App\Modules\Services\Domain\ValueObjects;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
+use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use InvalidArgumentException;
 
 final readonly class ServiceConfiguration
@@ -28,6 +29,7 @@ final readonly class ServiceConfiguration
         public ?int $priceMinor,
         public ?string $priceCurrency,
         public ?string $paymentPolicy,
+        public ServicePaymentRequirement $paymentRequirement,
     ) {}
 
     /** @param array<string, mixed> $attributes */
@@ -101,6 +103,7 @@ final readonly class ServiceConfiguration
             'The service payment policy is invalid.',
             64,
         );
+        $paymentRequirement = self::paymentRequirement($attributes['payment_requirement'] ?? null);
 
         return new self(
             name: $name,
@@ -120,6 +123,7 @@ final readonly class ServiceConfiguration
             priceMinor: $priceMinor,
             priceCurrency: $priceCurrency,
             paymentPolicy: $paymentPolicy,
+            paymentRequirement: $paymentRequirement,
         );
     }
 
@@ -144,6 +148,7 @@ final readonly class ServiceConfiguration
             'price_minor' => $this->priceMinor,
             'price_currency' => $this->priceCurrency,
             'payment_policy' => $this->paymentPolicy,
+            'payment_requirement' => $this->paymentRequirement->value,
         ];
     }
 
@@ -380,5 +385,19 @@ final readonly class ServiceConfiguration
         }
 
         return $currency;
+    }
+
+    private static function paymentRequirement(mixed $value): ServicePaymentRequirement
+    {
+        if ($value === null || $value === '') {
+            return ServicePaymentRequirement::Postpay;
+        }
+
+        if (! is_string($value)) {
+            throw new InvalidArgumentException('The service payment requirement is invalid.');
+        }
+
+        return ServicePaymentRequirement::tryFrom($value)
+            ?? throw new InvalidArgumentException('The service payment requirement is invalid.');
     }
 }

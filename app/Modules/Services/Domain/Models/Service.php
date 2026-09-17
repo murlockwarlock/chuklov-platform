@@ -6,6 +6,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
+use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use Database\Factories\ServiceFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -33,6 +34,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'price_minor',
     'price_currency',
     'payment_policy',
+    'payment_requirement',
 ])]
 class Service extends Model
 {
@@ -100,6 +102,7 @@ class Service extends Model
             'duration_minutes' => 'integer',
             'buffer_minutes' => 'integer',
             'price_minor' => 'integer',
+            'payment_requirement' => ServicePaymentRequirement::class,
         ];
     }
 }
