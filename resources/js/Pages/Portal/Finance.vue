@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
+import { onBeforeUnmount, onMounted } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
@@ -28,6 +29,23 @@ type Obligation = {
     statusLabel: string;
     history: FinanceHistory[];
     demoPayment: DemoPayment | null;
+    lavaPayment: LavaPayment | null;
+    purchaseFulfillment: PurchaseFulfillment | null;
+};
+
+type LavaPayment = {
+    stateLabel: string;
+    canStart: boolean;
+    canContinue: boolean;
+    checkoutUrl: string | null;
+    startUrl: string;
+    poll: boolean;
+};
+
+type PurchaseFulfillment = {
+    statusLabel: string;
+    message: string;
+    accessUrl: string | null;
 };
 
 type DemoPayment = {
@@ -54,6 +72,11 @@ const props = defineProps<{
 
 const { t, locale } = usePortalLocale();
 
+const pollingStartedAt = Date.now();
+let pollingTimer: ReturnType<typeof setTimeout> | null = null;
+let pollingInFlight = false;
+let pollingMounted = false;
+
 function demoKey(): string {
     const value = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
         ? crypto.randomUUID()
@@ -77,6 +100,68 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
         ? t('finance.entryUnavailable')
         : formatMoney(minor, currency);
 }
+
+function lavaKey(): string {
+    return `portal-lava-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+}
+
+function stopPolling(): void {
+    if (pollingTimer === null) {
+        return;
+    }
+
+    window.clearTimeout(pollingTimer);
+    pollingTimer = null;
+}
+
+function hasPendingLavaPayment(): boolean {
+    return props.obligations.some((obligation) => obligation.lavaPayment?.poll === true);
+}
+
+function schedulePolling(): void {
+    if (!pollingMounted
+        || !hasPendingLavaPayment()
+        || pollingTimer !== null
+        || Date.now() - pollingStartedAt >= 30000) {
+        if (!hasPendingLavaPayment() || Date.now() - pollingStartedAt >= 30000) {
+            stopPolling();
+        }
+
+        return;
+    }
+
+    pollingTimer = window.setTimeout(() => {
+        pollingTimer = null;
+        refreshFinance();
+    }, 5000);
+}
+
+function refreshFinance(): void {
+    if (!pollingMounted || !hasPendingLavaPayment() || pollingInFlight || Date.now() - pollingStartedAt >= 30000) {
+        schedulePolling();
+
+        return;
+    }
+
+    pollingInFlight = true;
+    router.reload({
+        only: ['obligations', 'totals', 'hasUnavailableObligations'],
+        onFinish: () => {
+            pollingInFlight = false;
+            schedulePolling();
+        },
+    });
+}
+
+onMounted(() => {
+    pollingMounted = true;
+    schedulePolling();
+});
+
+onBeforeUnmount(() => {
+    pollingMounted = false;
+    stopPolling();
+});
 </script>
 
 <template>
@@ -155,8 +240,8 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
       </EmptyState>
 
       <section
-        v-for="obligation in props.obligations"
-        :key="obligation.bookingUrl ?? obligation.serviceName + obligation.completedAt"
+        v-for="(obligation, obligationIndex) in props.obligations"
+        :key="obligation.bookingUrl ?? obligation.serviceName + obligation.completedAt + obligationIndex"
         class="portal-content-section portal-stack portal-stack--tight min-w-0 max-w-full"
       >
         <header class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -165,7 +250,7 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
               {{ obligation.serviceName }}
             </h2>
             <p class="portal-copy portal-copy--small max-w-full break-words">
-              {{ obligation.completedAt ?? t('finance.visitDateUnavailable') }}
+              {{ obligation.completedAt ?? (obligation.purchaseFulfillment ? t('finance.digitalProduct') : t('finance.visitDateUnavailable')) }}
               <span v-if="obligation.originalCurrency && obligation.displayCurrency && obligation.originalCurrency !== obligation.displayCurrency">
                 · {{ obligation.originalCurrency }}
               </span>
@@ -203,6 +288,56 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
             <dd>{{ formatNullableMoney(obligation.outstandingMinor, obligation.displayCurrency) }}</dd>
           </div>
         </dl>
+
+        <section
+          v-if="obligation.lavaPayment"
+          class="portal-stack portal-stack--tight min-w-0 max-w-full rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)] bg-[var(--portal-color-surface-muted)] p-4"
+          :aria-label="t('finance.onlinePayment')"
+        >
+          <div class="flex min-w-0 max-w-full flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+            <h3 class="min-w-0 break-words font-semibold text-[var(--portal-color-ink)]">
+              {{ t('finance.onlinePayment') }}
+            </h3>
+            <span class="min-w-0 max-w-full break-words text-sm text-[var(--portal-color-ink-soft)]">
+              {{ obligation.lavaPayment.stateLabel }}
+            </span>
+          </div>
+          <div class="flex min-w-0 flex-wrap gap-2">
+            <Link
+              v-if="obligation.lavaPayment.canStart"
+              :href="obligation.lavaPayment.startUrl"
+              method="post"
+              as="button"
+              class="portal-button portal-button--primary max-w-full whitespace-normal break-words"
+              :data="{ idempotency_key: lavaKey() }"
+            >
+              {{ t('finance.payOnline') }}
+            </Link>
+            <a
+              v-if="obligation.lavaPayment.canContinue && obligation.lavaPayment.checkoutUrl"
+              :href="obligation.lavaPayment.checkoutUrl"
+              class="portal-button portal-button--primary max-w-full whitespace-normal break-words"
+            >
+              {{ t('finance.continuePayment') }}
+            </a>
+          </div>
+        </section>
+
+        <section
+          v-if="obligation.purchaseFulfillment"
+          class="portal-notice min-w-0 max-w-full break-words"
+          role="status"
+        >
+          <strong class="block">{{ obligation.purchaseFulfillment.statusLabel }}</strong>
+          <span>{{ obligation.purchaseFulfillment.message }}</span>
+          <a
+            v-if="obligation.purchaseFulfillment.accessUrl"
+            :href="obligation.purchaseFulfillment.accessUrl"
+            class="portal-link mt-2 inline-flex"
+          >
+            {{ t('finance.openProduct') }}
+          </a>
+        </section>
 
         <section
           v-if="obligation.demoPayment"

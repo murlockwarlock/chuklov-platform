@@ -124,6 +124,16 @@ final class PortalCommercePaymentTest extends TestCase
             ->handle($organization->getKey(), $obligation->getKey())
             ->status
             ->value);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.finance.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('obligations.0.lavaPayment.canContinue', true)
+                ->where('obligations.0.lavaPayment.checkoutUrl', 'https://pay.lava.top/session')
+                ->where('obligations.0.status', 'outstanding')
+                ->missing('obligations.0.provider_reference'))
+            ->assertDontSee('a1b2c3d4-e5f6-7890-abcd-ef1234567890');
     }
 
     public function test_client_cannot_start_lava_payment_for_another_clients_obligation(): void
