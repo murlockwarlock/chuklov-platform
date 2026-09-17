@@ -43,9 +43,9 @@ final class TrackerPlanCrmTest extends TestCase
         $component = Livewire::actingAs($admin)->test(CreateTrackerPlan::class)->assertSuccessful();
         $sections = $component->instance()->getSchema('form')->getComponents();
 
-        self::assertCount(2, $sections);
+        self::assertCount(3, $sections);
         self::assertContainsOnlyInstancesOf(Section::class, $sections);
-        self::assertSame(['Основное', 'Публикация и доступ'], array_map(
+        self::assertSame(['Основное', 'Публикация и доступ', 'Онлайн-оплата'], array_map(
             static fn (Section $section): string => (string) $section->getHeading(),
             $sections,
         ));
@@ -57,6 +57,11 @@ final class TrackerPlanCrmTest extends TestCase
             ['is_active', 'is_visible', 'included_access', 'display_order'],
             array_map(static fn ($component): string => $component->getName(), $sections[1]->getChildComponents()),
         );
+        self::assertSame(
+            ['lava_enabled', 'lava_currency'],
+            array_map(static fn ($component): string => $component->getName(), $sections[2]->getChildComponents()),
+        );
+        self::assertNotNull($component->instance()->getSchema('form')->getComponent('lava_offer_id', withHidden: true));
 
         foreach ($sections[1]->getChildComponents() as $component) {
             if ($component instanceof Toggle) {
