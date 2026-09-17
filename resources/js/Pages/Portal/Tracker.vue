@@ -13,7 +13,7 @@ type Access = {
     startsAt: string | null;
     endsAt: string | null;
 };
-type Plan = { name: string; price: string | null; description: string | null; durationDays: number };
+type Plan = { versionId: number; name: string; price: string | null; description: string | null; durationDays: number; purchaseUrl: string | null };
 type Task = {
     id: number;
     title: string;
@@ -60,6 +60,7 @@ const { t, locale } = usePortalLocale();
 const activeView = ref<View>('today');
 const checkInForm = useForm<{ note: string }>({ note: '' });
 const taskForms = reactive<Record<number, ReturnType<typeof useForm<{ status: string; comment: string }>>>>({});
+const purchaseKeys = new Map<number, string>();
 const hasTests = props.surveys.definitions.length > 0 || props.surveys.attempts.length > 0;
 const formatDate = (value: string): string => new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
 const formatDay = (value: string): string => new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium' }).format(new Date(value));
@@ -85,6 +86,16 @@ function setTaskStatus(task: Task, status: 'completed' | 'not_completed'): void 
 
 function saveCheckIn(): void {
     checkInForm.post(props.urls.checkIn, { preserveScroll: true, onSuccess: () => checkInForm.reset() });
+}
+
+function purchaseIdempotencyKey(versionId: number): string {
+    if (!purchaseKeys.has(versionId)) {
+        purchaseKeys.set(versionId, `portal-tracker-purchase-${versionId}-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : Math.random().toString(36).slice(2)}`);
+    }
+
+    return purchaseKeys.get(versionId) ?? `portal-tracker-purchase-${versionId}`;
 }
 </script>
 
@@ -361,7 +372,23 @@ function saveCheckIn(): void {
                 class="portal-list__summary"
               >{{ plan.description }}</span>
             </span>
-            <span class="portal-copy portal-copy--small">{{ plan.price }} · {{ plan.durationDays }} {{ t('tracker.days') }}</span>
+            <span class="flex min-w-0 flex-col items-end gap-2 text-right">
+              <span class="portal-copy portal-copy--small">{{ plan.price }} · {{ plan.durationDays }} {{ t('tracker.days') }}</span>
+              <Link
+                v-if="plan.purchaseUrl"
+                :href="plan.purchaseUrl"
+                method="post"
+                as="button"
+                class="portal-link portal-link--button"
+                :data="{ idempotency_key: purchaseIdempotencyKey(plan.versionId) }"
+              >
+                {{ t('tracker.buy') }}
+              </Link>
+              <span
+                v-else
+                class="portal-copy portal-copy--small"
+              >{{ t('tracker.paymentUnavailable') }}</span>
+            </span>
           </div>
         </div>
       </section>

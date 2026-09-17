@@ -152,6 +152,9 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/surveys', [SurveyController::class, 'index'])->name('portal.surveys.index');
             Route::get('/portal/companion', [CompanionController::class, 'index'])->name('portal.companion');
             Route::get('/portal/tracker', [TrackerController::class, 'index'])->name('portal.tracker');
+            Route::post('/portal/tracker/plans/{versionId}/purchase', [TrackerController::class, 'purchase'])
+                ->whereNumber('versionId')
+                ->name('portal.tracker.purchase');
             Route::post('/portal/tracker/check-in', [TrackerController::class, 'checkIn'])->name('portal.tracker.check-in');
             Route::post('/portal/tracker/tasks/{taskId}/entry', [TrackerController::class, 'taskEntry'])
                 ->whereNumber('taskId')
