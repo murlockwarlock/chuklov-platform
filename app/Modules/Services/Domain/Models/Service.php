@@ -63,7 +63,9 @@ class Service extends Model
     {
         $value = $this->getAttribute('catalog_type');
 
-        return $value instanceof CatalogItemType ? $value : CatalogItemType::from((string) $value);
+        return $value instanceof CatalogItemType
+            ? $value
+            : (CatalogItemType::tryFrom((string) $value) ?? CatalogItemType::Service);
     }
 
     public function durationMinutes(): ?int
