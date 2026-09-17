@@ -9,6 +9,7 @@ use App\Http\Controllers\AdminMedicalAttachmentController;
 use App\Http\Controllers\AiRunExportController;
 use App\Http\Controllers\CompanionExportController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\LavaWebhookController;
 use App\Http\Controllers\Portal\AttributionController;
 use App\Http\Controllers\Portal\AvailabilityController;
 use App\Http\Controllers\Portal\B2bController;
@@ -42,9 +43,13 @@ use App\Http\Middleware\RequireClientPortalSession;
 use App\Http\Middleware\ResolveClientPortalSession;
 use App\Http\Middleware\ResolveOrganization;
 use Filament\Http\Middleware\Authenticate;
+use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class)->name('health');
+Route::post('/webhooks/lava', LavaWebhookController::class)
+    ->withoutMiddleware([ValidateCsrfToken::class])
+    ->name('webhooks.lava');
 Route::middleware(ResolveOrganization::class)->group(function (): void {
     Route::get('/admin/finance/receipts/{receiptId}', AdminFinanceReceiptController::class)
         ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])
