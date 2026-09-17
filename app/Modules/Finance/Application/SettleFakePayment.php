@@ -5,6 +5,7 @@ namespace App\Modules\Finance\Application;
 use App\Modules\Finance\Domain\Contracts\PaymentGateway;
 use App\Modules\Finance\Domain\Enums\FinancialEntrySource;
 use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
+use App\Modules\Finance\Domain\Enums\PaymentGatewayEventStatus;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayEventType;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayStatus;
 use App\Modules\Finance\Domain\Enums\ProviderVerificationStatus;
@@ -12,6 +13,7 @@ use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
 use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
+use App\Modules\Finance\Domain\Services\PaymentGatewayEventIdentity;
 use App\Modules\Finance\Domain\ValueObjects\FinancialLedgerEntryData;
 use App\Modules\Finance\Domain\ValueObjects\GatewaySettlementEvidence;
 use App\Modules\Finance\Domain\ValueObjects\Money;
@@ -121,11 +123,23 @@ final class SettleFakePayment
                 'gateway' => $this->gateway->name(),
                 'event_type' => PaymentGatewayEventType::Settlement->value,
                 'provider_event_id' => $verified->providerEventId,
+                'provider_event_key' => PaymentGatewayEventIdentity::providerKey(
+                    $this->gateway->name(),
+                    PaymentGatewayEventType::Settlement->value,
+                    $verified->providerEventId,
+                ),
                 'provider_reference' => $verified->providerReference,
                 'verification_status' => ProviderVerificationStatus::Verified->value,
+                'processing_status' => PaymentGatewayEventStatus::Processed->value,
                 'amount_minor' => $verified->amountMinor,
                 'currency' => $verified->currency->value,
                 'payload_hash' => $payloadHash,
+                'payload' => [
+                    'provider_event_id' => $verified->providerEventId,
+                    'provider_reference' => $verified->providerReference,
+                    'amount_minor' => $verified->amountMinor,
+                    'currency' => $verified->currency->value,
+                ],
             ]);
             $event->save();
             $entry = $this->ledger->handle(
