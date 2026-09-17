@@ -44,12 +44,12 @@ use App\Http\Middleware\RequireClientPortalSession;
 use App\Http\Middleware\ResolveClientPortalSession;
 use App\Http\Middleware\ResolveOrganization;
 use Filament\Http\Middleware\Authenticate;
-use Illuminate\Foundation\Http\Middleware\ValidateCsrfToken;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class)->name('health');
 Route::post('/webhooks/lava', LavaWebhookController::class)
-    ->withoutMiddleware([ValidateCsrfToken::class])
+    ->withoutMiddleware([PreventRequestForgery::class])
     ->name('webhooks.lava');
 Route::middleware(ResolveOrganization::class)->group(function (): void {
     Route::get('/admin/finance/receipts/{receiptId}', AdminFinanceReceiptController::class)

@@ -10,8 +10,10 @@ use App\Modules\Finance\Infrastructure\Lava\LavaWebhookAuthenticator;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
 use InvalidArgumentException;
 use Tests\TestCase;
 
@@ -136,6 +138,14 @@ final class LavaWebhookInboxTest extends TestCase
             'provider_event_key' => 'lava:payment.success:7ea82675-4ded-4133-95a7-a6efbaf165cc',
             'processing_status' => PaymentGatewayEventStatus::PendingLink->value,
         ]);
+    }
+
+    public function test_webhook_route_excludes_laravel_request_forgery_middleware(): void
+    {
+        $route = Route::getRoutes()->getByName('webhooks.lava');
+
+        self::assertNotNull($route);
+        self::assertContains(PreventRequestForgery::class, $route->excludedMiddleware());
     }
 
     public function test_lava_api_key_can_authenticate_webhooks_without_a_separate_webhook_key(): void
