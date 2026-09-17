@@ -6,6 +6,7 @@ use App\Modules\B2B\Application\ScheduleBookingProviderSyncEvents;
 use App\Modules\Broadcasts\Application\ScheduleBroadcastWork;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Conversations\Application\AdoptLegacyCompanionConversations;
+use App\Modules\Finance\Application\ReprocessPendingPaymentGatewayEvents;
 use App\Modules\Knowledge\Application\ScheduleKnowledgeStorageCleanup;
 use App\Modules\Referrals\Application\ScheduleReferralIntegrationEvents;
 use App\Modules\Scenarios\Application\ScheduleScenarioWork;
@@ -19,6 +20,12 @@ Artisan::command('bookings:prune-idempotency', function (PruneBookingIdempotency
 
 Schedule::command('horizon:snapshot')->everyFiveMinutes();
 Schedule::command('bookings:prune-idempotency')->daily();
+
+Artisan::command('payments:events-reprocess', function (ReprocessPendingPaymentGatewayEvents $reprocessor): void {
+    $this->info('Processed '.$reprocessor->handle().' pending payment gateway event(s).');
+})->purpose('Retry pending payment gateway event links with bounded attempts.');
+
+Schedule::command('payments:events-reprocess')->everyMinute()->withoutOverlapping()->onOneServer();
 
 Artisan::command('ai:runs-reclaim', function (ReclaimExpiredAiRuns $reclaimer): void {
     $result = $reclaimer->handle();

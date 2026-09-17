@@ -4,6 +4,7 @@ namespace App\Modules\Finance\Infrastructure\Lava;
 
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayEventType;
+use App\Modules\Finance\Domain\Services\PaymentGatewayEventIdentity;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
@@ -34,8 +35,8 @@ final class LavaWebhookParser
         };
         $providerReference = $contractId;
         $providerEventKey = $contractId !== null
-            ? 'lava:'.$eventType.':'.$contractId
-            : 'lava:unknown:'.hash('sha256', json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+            ? PaymentGatewayEventIdentity::paymentKey('lava', $eventType, $contractId)
+            : 'lava:unknown:'.PaymentGatewayEventIdentity::payloadHash($payload);
 
         return new LavaWebhookEvent(
             eventType: $eventType,
