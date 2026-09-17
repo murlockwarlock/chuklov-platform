@@ -99,7 +99,7 @@ final class CompletePaidPurchase
                     'status' => CommerceFulfillmentStatus::Fulfilled->value,
                     'fulfilled_at' => now(),
                 ])->save();
-                $this->event($fulfillment, $from, CommerceFulfillmentStatus::Fulfilled, $transaction);
+                $this->event($fulfillment, CommerceFulfillmentStatus::Processing->value, CommerceFulfillmentStatus::Fulfilled, $transaction);
             }
 
             return $purchase->refresh();

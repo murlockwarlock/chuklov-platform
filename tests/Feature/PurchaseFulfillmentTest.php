@@ -90,6 +90,12 @@ final class PurchaseFulfillmentTest extends TestCase
         $endsAt = $entitlement->ends_at;
         self::assertSame(30, $entitlement->applied_duration_days);
         self::assertSame(CommerceFulfillmentStatus::Fulfilled, $checkout->purchase->items()->sole()->fulfillment->status);
+        $events = FulfillmentEvent::query()
+            ->where('fulfillment_id', $checkout->purchase->items()->sole()->fulfillment->getKey())
+            ->orderBy('id')
+            ->get();
+        self::assertSame(['pending', 'processing'], $events->pluck('from_status')->all());
+        self::assertSame(['processing', 'fulfilled'], $events->pluck('to_status')->all());
 
         app(ReceiveLavaWebhook::class)->handle($organization->getKey(), $payload);
         app(DrainPaymentGatewayEvents::class)->handle($organization->getKey(), 'lava', $checkout->transaction->provider_reference);

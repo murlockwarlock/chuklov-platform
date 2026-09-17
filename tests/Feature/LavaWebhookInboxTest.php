@@ -138,6 +138,24 @@ final class LavaWebhookInboxTest extends TestCase
         ]);
     }
 
+    public function test_lava_api_key_can_authenticate_webhooks_without_a_separate_webhook_key(): void
+    {
+        $organization = $this->organizationWithWebhookCredential();
+        $credential = OrganizationCredential::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('provider', 'lava')
+            ->firstOrFail();
+        $credential->forceFill([
+            'credentials' => ['api_key' => 'lava-webhook-key'],
+        ])->save();
+
+        $request = Request::create('/webhooks/lava', 'POST', [], [], [], [
+            'HTTP_X_API_KEY' => 'lava-webhook-key',
+        ]);
+
+        self::assertSame($organization->getKey(), app(LavaWebhookAuthenticator::class)->authenticate($request));
+    }
+
     public function test_invalid_payload_is_not_accepted_as_a_payment_event(): void
     {
         $organization = $this->organizationWithWebhookCredential();

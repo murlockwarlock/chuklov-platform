@@ -21,7 +21,9 @@ final class LavaWebhookAuthenticator
             ->where('status', CredentialStatus::Active->value)
             ->get(['id', 'organization_id', 'credentials']);
         foreach ($credentials as $credential) {
-            $expected = $credential->credentials['webhook_api_key'] ?? null;
+            $webhookKey = $credential->credentials['webhook_api_key'] ?? null;
+            $apiKey = $credential->credentials['api_key'] ?? null;
+            $expected = is_string($webhookKey) && trim($webhookKey) !== '' ? $webhookKey : $apiKey;
             if (is_string($expected) && $expected !== '' && hash_equals($expected, trim($provided))) {
                 $matches[] = (int) $credential->organization_id;
             }

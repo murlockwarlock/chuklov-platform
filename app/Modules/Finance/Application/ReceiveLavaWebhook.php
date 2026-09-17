@@ -40,8 +40,7 @@ final class ReceiveLavaWebhook
             $status = $event->canAutomaticLink
                 ? PaymentGatewayEventStatus::PendingLink
                 : PaymentGatewayEventStatus::ReconciliationRequired;
-            $inbox = new PaymentGatewayEvent;
-            $inbox->forceFill([
+            DB::table('payment_gateway_events')->insertOrIgnore([
                 'organization_id' => $organizationId,
                 'gateway_transaction_id' => null,
                 'gateway' => 'lava',
@@ -55,12 +54,28 @@ final class ReceiveLavaWebhook
                 'amount_minor' => $event->amountMinor,
                 'currency' => $event->currency?->value,
                 'payload_hash' => $payloadHash,
-                'payload' => $event->payload,
+                'payload' => json_encode($event->payload, JSON_THROW_ON_ERROR),
                 'next_attempt_at' => $status === PaymentGatewayEventStatus::PendingLink ? now() : null,
                 'reconciliation_reason' => $status === PaymentGatewayEventStatus::ReconciliationRequired
                     ? 'manual_reconciliation_required'
                     : null,
-            ])->save();
+                'created_at' => now(),
+            ]);
+
+            $inbox = PaymentGatewayEvent::query()
+                ->where('organization_id', $organizationId)
+                ->where('gateway', 'lava')
+                ->where('provider_event_key', $event->providerEventKey)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            if ($inbox->payload_hash !== $payloadHash) {
+                $inbox->forceFill([
+                    'processing_status' => PaymentGatewayEventStatus::ReconciliationRequired->value,
+                    'reconciliation_reason' => 'provider_event_key_payload_conflict',
+                    'last_error' => 'The same Lava event key arrived with a different payload.',
+                ])->save();
+            }
 
             return $inbox->refresh();
         });
