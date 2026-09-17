@@ -44,10 +44,12 @@ use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Content\Infrastructure\Storage\FilesystemContentMediaStorage;
 use App\Modules\Finance\Domain\Contracts\PaymentGateway;
+use App\Modules\Finance\Domain\Contracts\PaymentGatewayRegistry;
 use App\Modules\Finance\Domain\Contracts\ReceiptStorage;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\FinancialReceipt;
 use App\Modules\Finance\Infrastructure\Fake\FakePaymentGateway;
+use App\Modules\Finance\Infrastructure\Lava\LavaPaymentGateway;
 use App\Modules\Finance\Infrastructure\Storage\PrivateReceiptStorage;
 use App\Modules\Identity\Domain\Contracts\EmailVerificationCodeSender;
 use App\Modules\Identity\Domain\Models\Client;
@@ -183,6 +185,13 @@ class AppServiceProvider extends ServiceProvider
             ]),
         );
         $this->app->bind(PaymentGateway::class, FakePaymentGateway::class);
+        $this->app->singleton(
+            PaymentGatewayRegistry::class,
+            fn (Application $app): PaymentGatewayRegistry => new PaymentGatewayRegistry([
+                $app->make(FakePaymentGateway::class),
+                $app->make(LavaPaymentGateway::class),
+            ]),
+        );
         $this->app->bind(ReceiptStorage::class, PrivateReceiptStorage::class);
         $this->app->bind(MedicalKeyResolverInterface::class, AppKeyMedicalKeyResolver::class);
         $this->app->bind(MedicalEncryptorInterface::class, MedicalDataEncryptor::class);
