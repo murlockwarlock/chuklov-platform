@@ -31,7 +31,7 @@ final class PurchaseCheckoutTest extends TestCase
     public function test_online_product_creates_snapshot_purchase_obligation_and_lava_checkout_without_booking(): void
     {
         [$organization, $client, $product] = $this->onlineProductFixture();
-        $this->mapping($organization, Service::class, $product->getKey(), 'offer-course');
+        $this->mapping($organization, Service::class, $product->getKey(), '836b9fc5-7ae9-4a27-9642-592bc44072b7');
         Http::fake([
             '*' => Http::response([
                 'id' => '7ea82675-4ded-4133-95a7-a6efbaf165cc',
@@ -72,7 +72,7 @@ final class PurchaseCheckoutTest extends TestCase
     public function test_duplicate_checkout_is_idempotent_and_does_not_create_a_second_invoice(): void
     {
         [$organization, $client, $product] = $this->onlineProductFixture();
-        $this->mapping($organization, Service::class, $product->getKey(), 'offer-course');
+        $this->mapping($organization, Service::class, $product->getKey(), '836b9fc5-7ae9-4a27-9642-592bc44072b7');
         Http::fake([
             '*' => Http::response([
                 'id' => '7ea82675-4ded-4133-95a7-a6efbaf165cc',
@@ -120,7 +120,7 @@ final class PurchaseCheckoutTest extends TestCase
             'created_at' => now(),
         ])->save();
         $plan->forceFill(['current_version_id' => $version->getKey()])->save();
-        $this->mapping($organization, TrackerPlanVersion::class, $version->getKey(), 'offer-tracker');
+        $this->mapping($organization, TrackerPlanVersion::class, $version->getKey(), '836b9fc5-7ae9-4a27-9642-592bc44072b7');
         Http::fake([
             '*' => Http::response([
                 'id' => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',

@@ -17,6 +17,7 @@ use Illuminate\Support\Facades\Http;
 use InvalidArgumentException;
 use LogicException;
 use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
 use Tests\TestCase;
 
 final class LavaPaymentGatewayTest extends TestCase
@@ -84,6 +85,23 @@ final class LavaPaymentGatewayTest extends TestCase
         ));
     }
 
+    public function test_invalid_lava_offer_id_fails_closed_before_http(): void
+    {
+        $organization = $this->organizationWithLavaCredential();
+        Http::fake();
+
+        $this->expectException(InvalidArgumentException::class);
+        app(LavaPaymentGateway::class)->initiate(new GatewayInitiationRequest(
+            organizationId: $organization->getKey(),
+            obligationId: 42,
+            amountMinor: 1250,
+            currency: CurrencyCode::USD,
+            idempotencyKey: 'lava-invalid-offer',
+            buyerEmail: 'client@example.com',
+            providerOfferId: 'not-a-uuid',
+        ));
+    }
+
     public function test_lava_invoice_lookup_maps_completed_and_preserves_amount_currency(): void
     {
         $organization = $this->organizationWithLavaCredential();
@@ -103,6 +121,24 @@ final class LavaPaymentGatewayTest extends TestCase
         self::assertSame('settled', $result->status);
         self::assertSame(1250, $result->amountMinor);
         self::assertSame(CurrencyCode::USD, $result->currency);
+    }
+
+    public function test_lava_invoice_lookup_rejects_a_different_response_contract_reference(): void
+    {
+        $organization = $this->organizationWithLavaCredential();
+        Http::fake([
+            'https://gate.lava.top/api/v1/invoices/7ea82675-4ded-4133-95a7-a6efbaf165cc' => Http::response([
+                'id' => 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
+                'status' => 'completed',
+                'receipt' => ['amount' => 12.5, 'currency' => 'USD'],
+            ]),
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        app(LavaPaymentGateway::class)->reconcile(
+            '7ea82675-4ded-4133-95a7-a6efbaf165cc',
+            $organization->getKey(),
+        );
     }
 
     public function test_lava_does_not_offer_refund_initiation(): void

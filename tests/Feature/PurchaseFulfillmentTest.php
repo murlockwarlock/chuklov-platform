@@ -33,7 +33,7 @@ final class PurchaseFulfillmentTest extends TestCase
     public function test_manual_fulfillment_requires_paid_purchase_and_is_idempotent(): void
     {
         [$organization, $admin, $client, $product] = $this->fixture();
-        $this->mapping($organization, Service::class, $product->getKey(), 'offer-course');
+        $this->mapping($organization, Service::class, $product->getKey(), '836b9fc5-7ae9-4a27-9642-592bc44072b7');
         $checkout = $this->checkout($organization, $client, $product, 'fulfillment-manual-1');
         $fulfillment = $checkout->purchase->items()->sole()->fulfillment;
 
@@ -44,7 +44,7 @@ final class PurchaseFulfillmentTest extends TestCase
     public function test_manual_fulfillment_completes_only_after_settlement_and_replay_is_idempotent(): void
     {
         [$organization, $admin, $client, $product] = $this->fixture();
-        $this->mapping($organization, Service::class, $product->getKey(), 'offer-course');
+        $this->mapping($organization, Service::class, $product->getKey(), '836b9fc5-7ae9-4a27-9642-592bc44072b7');
         $checkout = $this->checkout($organization, $client, $product, 'fulfillment-manual-2');
         $fulfillment = $checkout->purchase->items()->sole()->fulfillment;
         $this->settle($organization, $checkout->transaction->provider_reference, 8000, 'manual');
@@ -80,7 +80,7 @@ final class PurchaseFulfillmentTest extends TestCase
             'created_at' => now(),
         ])->save();
         $plan->forceFill(['current_version_id' => $version->getKey()])->save();
-        $this->mapping($organization, TrackerPlanVersion::class, $version->getKey(), 'offer-tracker');
+        $this->mapping($organization, TrackerPlanVersion::class, $version->getKey(), '836b9fc5-7ae9-4a27-9642-592bc44072b7');
         $checkout = $this->trackerCheckout($organization, $client, $version);
         $payload = $this->paymentPayload($checkout->transaction->provider_reference, 30);
         app(ReceiveLavaWebhook::class)->handle($organization->getKey(), $payload);

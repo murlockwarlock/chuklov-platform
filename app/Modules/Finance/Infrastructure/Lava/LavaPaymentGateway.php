@@ -35,13 +35,16 @@ final class LavaPaymentGateway implements PaymentGateway
     public function initiate(GatewayInitiationRequest $request): GatewayInitiationResult
     {
         $this->assertSupportedCurrency($request->currency);
-        if ($request->amountMinor <= 0 || $request->buyerEmail === null || $request->providerOfferId === null) {
+        if ($request->amountMinor <= 0
+            || $request->buyerEmail === null
+            || $request->providerOfferId === null
+            || ! Str::isUuid(trim($request->providerOfferId))) {
             throw new InvalidArgumentException('Lava invoice data is incomplete.');
         }
 
         $payload = [
             'email' => $request->buyerEmail,
-            'offerId' => $request->providerOfferId,
+            'offerId' => trim($request->providerOfferId),
             'currency' => $request->currency->value,
             'amount' => Money::ofMinor($request->amountMinor, $request->currency)->toDecimalString(),
             'periodicity' => 'ONE_TIME',
@@ -113,6 +116,10 @@ final class LavaPaymentGateway implements PaymentGateway
         if (! is_array($data)) {
             throw new RuntimeException('Lava invoice lookup returned an invalid response.');
         }
+        if (array_key_exists('id', $data)
+            && (! is_string($data['id']) || ! hash_equals($providerReference, $data['id']))) {
+            throw new RuntimeException('Lava invoice lookup returned a different contract reference.');
+        }
         $amountTotal = is_array($data['amountTotal'] ?? null) ? $data['amountTotal'] : [];
         $currencyValue = $amountTotal['currency'] ?? data_get($data, 'receipt.currency');
         $amountValue = $amountTotal['amount'] ?? data_get($data, 'receipt.amount');
@@ -152,7 +159,13 @@ final class LavaPaymentGateway implements PaymentGateway
             throw new InvalidArgumentException('The active Lava API credential is not configured.');
         }
 
-        return Http::baseUrl(rtrim((string) config('payments.lava.base_url', 'https://gate.lava.top'), '/'))
+        $baseUrl = rtrim((string) config('payments.lava.base_url', 'https://gate.lava.top'), '/');
+        $parts = parse_url($baseUrl);
+        if (($parts['scheme'] ?? null) !== 'https' || ! is_string($parts['host'] ?? null) || $parts['host'] === '') {
+            throw new InvalidArgumentException('The Lava API base URL must use HTTPS.');
+        }
+
+        return Http::baseUrl($baseUrl)
             ->acceptJson()
             ->withHeaders(['X-Api-Key' => $apiKey])
             ->timeout(max(1, (int) config('payments.lava.timeout_seconds', 10)));
