@@ -62,8 +62,8 @@ return new class extends Migration
             $table->timestampTz('fulfilled_at')->nullable();
             $table->timestampsTz();
             $table->unique(['organization_id', 'id']);
-            $table->unique(['organization_id', 'purchase_item_id']);
-            $table->foreign(['organization_id', 'purchase_item_id'])
+            $table->unique(['organization_id', 'purchase_item_id'], 'commerce_purchase_fulfillments_org_item_unique');
+            $table->foreign(['organization_id', 'purchase_item_id'], 'commerce_purchase_fulfillments_org_item_foreign')
                 ->references(['organization_id', 'id'])
                 ->on('commerce_purchase_items')
                 ->restrictOnDelete();
