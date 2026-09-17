@@ -18,6 +18,7 @@ use Illuminate\Support\Carbon;
  * @property string $gateway
  * @property string|null $provider_reference
  * @property string|null $checkout_url
+ * @property string|null $last_error
  * @property int $amount_minor
  * @property CurrencyCode $currency
  * @property int $settlement_amount_minor

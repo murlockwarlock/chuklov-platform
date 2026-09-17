@@ -2,6 +2,7 @@
 
 namespace App\Modules\Finance\Application;
 
+use App\Modules\Commerce\Application\CompletePaidPurchase;
 use App\Modules\Finance\Domain\Enums\FinancialEntrySource;
 use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayEventStatus;
@@ -18,6 +19,7 @@ use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 final class ProcessPaymentGatewayEvent
 {
@@ -27,11 +29,12 @@ final class ProcessPaymentGatewayEvent
         private readonly AppendFinancialLedgerEntry $ledger,
         private readonly RecordFinancialSettlementEvent $settlementEvents,
         private readonly RecordAuditEvent $audit,
+        private readonly CompletePaidPurchase $purchaseCompletion,
     ) {}
 
     public function handle(int $organizationId, int $eventId): PaymentGatewayEvent
     {
-        return DB::transaction(function () use ($organizationId, $eventId): PaymentGatewayEvent {
+        $event = DB::transaction(function () use ($organizationId, $eventId): PaymentGatewayEvent {
             $event = PaymentGatewayEvent::query()
                 ->where('organization_id', $organizationId)
                 ->whereKey($eventId)
@@ -94,6 +97,22 @@ final class ProcessPaymentGatewayEvent
                 default => $this->markReconciliationRequired($event, 'unsupported_automatic_event', 'The provider event is not eligible for automatic processing.'),
             };
         });
+
+        if ($event->processing_status === PaymentGatewayEventStatus::Processed
+            && $event->event_type === PaymentGatewayEventType::Settlement
+            && $event->gateway_transaction_id !== null) {
+            try {
+                $this->purchaseCompletion->handle($organizationId, (int) $event->gateway_transaction_id);
+            } catch (\Throwable $exception) {
+                Log::warning('payment.purchase_fulfillment_failed', [
+                    'organization_id' => $organizationId,
+                    'gateway_transaction_id' => (int) $event->gateway_transaction_id,
+                    'exception_class' => $exception::class,
+                ]);
+            }
+        }
+
+        return $event;
     }
 
     private function processFailure(

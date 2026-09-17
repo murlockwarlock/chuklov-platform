@@ -14,4 +14,7 @@ return [
         'max_attempts' => (int) env('PAYMENT_EVENT_MAX_ATTEMPTS', 20),
         'retry_seconds' => (int) env('PAYMENT_EVENT_RETRY_SECONDS', 60),
     ],
+    'fulfillment' => [
+        'batch_limit' => (int) env('PAYMENT_FULFILLMENT_BATCH_LIMIT', 100),
+    ],
 ];
