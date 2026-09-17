@@ -39,6 +39,9 @@ final class StartPurchaseCheckout
         string $idempotencyKey,
         string $buyerEmail,
         ?User $actor = null,
+        ?string $successfulReturnUrl = null,
+        ?string $failureReturnUrl = null,
+        ?string $cancelReturnUrl = null,
     ): CommercePurchaseCheckoutResult {
         if ((int) $product->organization_id !== (int) $organization->getKey()
             || ! $product->is_active
@@ -70,6 +73,9 @@ final class StartPurchaseCheckout
             ],
             fulfillmentProvider: 'manual',
             actor: $actor,
+            successfulReturnUrl: $successfulReturnUrl,
+            failureReturnUrl: $failureReturnUrl,
+            cancelReturnUrl: $cancelReturnUrl,
         );
     }
 
@@ -81,6 +87,9 @@ final class StartPurchaseCheckout
         string $idempotencyKey,
         string $buyerEmail,
         ?User $actor = null,
+        ?string $successfulReturnUrl = null,
+        ?string $failureReturnUrl = null,
+        ?string $cancelReturnUrl = null,
     ): CommercePurchaseCheckoutResult {
         $version->loadMissing('plan');
         if ((int) $version->organization_id !== (int) $organization->getKey()
@@ -119,6 +128,9 @@ final class StartPurchaseCheckout
             purchaseSnapshot: $planSnapshot,
             fulfillmentProvider: 'tracker_entitlement',
             actor: $actor,
+            successfulReturnUrl: $successfulReturnUrl,
+            failureReturnUrl: $failureReturnUrl,
+            cancelReturnUrl: $cancelReturnUrl,
         );
     }
 
@@ -135,6 +147,9 @@ final class StartPurchaseCheckout
         array $purchaseSnapshot,
         string $fulfillmentProvider,
         ?User $actor,
+        ?string $successfulReturnUrl,
+        ?string $failureReturnUrl,
+        ?string $cancelReturnUrl,
     ): CommercePurchaseCheckoutResult {
         if ((int) $client->organization_id !== (int) $organization->getKey()) {
             throw ValidationException::withMessages(['client' => 'Клиент не относится к текущей организации.']);
@@ -259,6 +274,9 @@ final class StartPurchaseCheckout
             idempotencyKey: $idempotencyKey,
             buyerEmail: $buyerEmail,
             providerOfferId: $mapping->external_offer_id,
+            successfulReturnUrl: $successfulReturnUrl,
+            failureReturnUrl: $failureReturnUrl,
+            cancelReturnUrl: $cancelReturnUrl,
             actor: $actor,
             source: 'commerce_checkout',
         );

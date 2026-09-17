@@ -24,6 +24,7 @@ use App\Http\Controllers\Portal\HomeController;
 use App\Http\Controllers\Portal\LocaleController;
 use App\Http\Controllers\Portal\MoreController;
 use App\Http\Controllers\Portal\OnboardingController;
+use App\Http\Controllers\Portal\PortalCommerceController;
 use App\Http\Controllers\Portal\ProfileController;
 use App\Http\Controllers\Portal\ReferralController;
 use App\Http\Controllers\Portal\ReferralPartnerController;
@@ -121,6 +122,12 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/health', PortalHealthController::class)->name('portal.health');
             Route::get('/portal/more', MoreController::class)->name('portal.more');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
+            Route::post('/portal/finance/{obligationId}/lava/start', [FinanceController::class, 'startLavaPayment'])
+                ->whereNumber('obligationId')
+                ->name('portal.finance.lava.start');
+            Route::post('/portal/services/{serviceId}/purchase', [PortalCommerceController::class, 'purchase'])
+                ->whereNumber('serviceId')
+                ->name('portal.services.purchase');
             Route::post('/portal/finance/fake/{obligationId}/start', [FinanceController::class, 'startDemoPayment'])
                 ->whereNumber('obligationId')
                 ->name('portal.finance.fake.start');

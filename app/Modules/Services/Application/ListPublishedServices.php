@@ -6,6 +6,7 @@ use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
+use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use Illuminate\Database\Eloquent\Collection;
 
@@ -29,7 +30,10 @@ class ListPublishedServices
         return Service::query()
             ->where('organization_id', $organization->getKey())
             ->where('is_active', true)
-            ->where('catalog_type', 'service')
+            ->whereIn('catalog_type', [
+                CatalogItemType::Service->value,
+                CatalogItemType::OnlineProduct->value,
+            ])
             ->orderBy('name')
             ->get()
             ->filter(fn (Service $service): bool => $this->currencies->isServicePriceAvailable($organization, $service))

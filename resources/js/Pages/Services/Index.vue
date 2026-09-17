@@ -7,12 +7,14 @@ import type { PortalShell } from '../../types/portal';
 
 type Service = {
     id: number;
+    catalogType: 'service' | 'online_product';
     name: string;
     summary: string | null;
     imageUrl: string | null;
     durationMinutes: number | null;
     priceMajor: string | null;
     priceCurrency: string | null;
+    purchaseUrl: string | null;
 };
 
 const props = defineProps<{
@@ -51,6 +53,8 @@ const bookingUrl = props.portal.authenticated ? props.urls.booking : props.urls.
           :service="service"
           :locale="locale"
           :booking-url="bookingUrl"
+          :authenticated="props.portal.authenticated"
+          :home-url="props.urls.home"
         />
       </div>
       <EmptyState
