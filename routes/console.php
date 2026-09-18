@@ -7,6 +7,7 @@ use App\Modules\Broadcasts\Application\ScheduleBroadcastWork;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Commerce\Application\ReprocessPaidPurchaseFulfillments;
 use App\Modules\Conversations\Application\AdoptLegacyCompanionConversations;
+use App\Modules\Finance\Application\ReconcileStaleGatewayInitiations;
 use App\Modules\Finance\Application\ReprocessPendingPaymentGatewayEvents;
 use App\Modules\Knowledge\Application\ScheduleKnowledgeStorageCleanup;
 use App\Modules\Referrals\Application\ScheduleReferralIntegrationEvents;
@@ -27,6 +28,12 @@ Artisan::command('payments:events-reprocess', function (ReprocessPendingPaymentG
 })->purpose('Retry pending payment gateway event links with bounded attempts.');
 
 Schedule::command('payments:events-reprocess')->everyMinute()->withoutOverlapping()->onOneServer();
+
+Artisan::command('payments:initiations-reconcile', function (ReconcileStaleGatewayInitiations $reconciler): void {
+    $this->info('Reconciled '.$reconciler->handle().' stale payment initiation(s).');
+})->purpose('Quarantine payment initiations that did not complete after the external request boundary.');
+
+Schedule::command('payments:initiations-reconcile')->everyMinute()->withoutOverlapping()->onOneServer();
 
 Artisan::command('commerce:fulfill-paid', function (ReprocessPaidPurchaseFulfillments $reprocessor): void {
     $this->info('Processed '.$reprocessor->handle().' paid purchase fulfillment(s).');

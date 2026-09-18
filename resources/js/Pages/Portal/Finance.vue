@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
-import { onBeforeUnmount, onMounted } from 'vue';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { computed, onBeforeUnmount, onMounted } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
@@ -62,6 +62,10 @@ type DemoPayment = {
 
 type Total = { amountMinor: number; currency: string };
 
+type PortalPageProps = {
+    errors?: Record<string, string | string[]>;
+};
+
 const props = defineProps<{
     portal: PortalShell;
     obligations: Obligation[];
@@ -71,6 +75,12 @@ const props = defineProps<{
 }>();
 
 const { t, locale } = usePortalLocale();
+const page = usePage<PortalPageProps>();
+const paymentError = computed(() => {
+    const error = page.props.errors?.payment;
+
+    return Array.isArray(error) ? error[0] ?? null : error ?? null;
+});
 
 const pollingStartedAt = Date.now();
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -185,6 +195,14 @@ onBeforeUnmount(() => {
           {{ t('finance.backBookings') }}
         </Link>
       </header>
+
+      <div
+        v-if="paymentError"
+        class="portal-notice portal-notice--error min-w-0 max-w-full break-words"
+        role="alert"
+      >
+        {{ paymentError }}
+      </div>
 
       <div
         v-if="props.hasUnavailableObligations"

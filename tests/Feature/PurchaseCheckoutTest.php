@@ -21,6 +21,7 @@ use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Tracker\Domain\Models\TrackerPlan;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
@@ -93,12 +94,52 @@ final class PurchaseCheckoutTest extends TestCase
         ];
 
         $first = $checkout->onlineProduct(...$arguments);
-        $second = $checkout->onlineProduct(...$arguments);
+        CarbonImmutable::setTestNow(CarbonImmutable::now()->addMinute());
+
+        try {
+            $second = $checkout->onlineProduct(...$arguments);
+        } finally {
+            CarbonImmutable::setTestNow();
+        }
 
         self::assertSame($first->purchase->getKey(), $second->purchase->getKey());
         self::assertSame($first->transaction->getKey(), $second->transaction->getKey());
         self::assertSame(1, Purchase::query()->count());
         Http::assertSentCount(1);
+    }
+
+    public function test_duplicate_checkout_with_changed_buyer_email_fails_closed(): void
+    {
+        [$organization, $client, $product] = $this->onlineProductFixture();
+        $this->mapping($organization, Service::class, $product->getKey(), '836b9fc5-7ae9-4a27-9642-592bc44072b7');
+        Http::fake([
+            '*' => Http::response([
+                'id' => '7ea82675-4ded-4133-95a7-a6efbaf165cc',
+                'status' => 'in-progress',
+                'paymentUrl' => 'https://pay.lava.top/course',
+            ], 201),
+        ]);
+        $checkout = app(StartPurchaseCheckout::class);
+        $arguments = [
+            'organization' => $organization,
+            'client' => $client,
+            'product' => $product,
+            'gateway' => 'lava',
+            'idempotencyKey' => 'course-checkout-payload-conflict',
+            'buyerEmail' => (string) $client->email,
+        ];
+        $checkout->onlineProduct(...$arguments);
+
+        $this->expectException(ValidationException::class);
+        try {
+            $checkout->onlineProduct(...[
+                ...$arguments,
+                'buyerEmail' => 'different@example.com',
+            ]);
+        } finally {
+            Http::assertSentCount(1);
+            self::assertSame(1, PaymentGatewayTransaction::query()->count());
+        }
     }
 
     public function test_tracker_plan_checkout_pins_immutable_version_and_uses_tracker_fulfillment(): void

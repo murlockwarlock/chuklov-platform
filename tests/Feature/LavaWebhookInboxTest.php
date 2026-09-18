@@ -125,6 +125,24 @@ final class LavaWebhookInboxTest extends TestCase
         self::assertNull(app(LavaWebhookAuthenticator::class)->authenticate($request));
     }
 
+    public function test_webhook_authentication_ignores_another_lava_credential_name(): void
+    {
+        $organization = $this->organizationWithWebhookCredential();
+        $alternate = OrganizationCredential::factory()->forOrganization($organization)->make([
+            'provider' => 'lava',
+            'credential_name' => 'alternate',
+            'status' => CredentialStatus::Active->value,
+        ]);
+        $alternate->forceFill([
+            'credentials' => ['webhook_api_key' => 'alternate-webhook-key'],
+        ])->save();
+        $request = Request::create('/webhooks/lava', 'POST', [], [], [], [
+            'HTTP_X_API_KEY' => 'alternate-webhook-key',
+        ]);
+
+        self::assertNull(app(LavaWebhookAuthenticator::class)->authenticate($request));
+    }
+
     public function test_webhook_route_authenticates_and_persists_before_responding(): void
     {
         $organization = $this->organizationWithWebhookCredential();
@@ -146,6 +164,31 @@ final class LavaWebhookInboxTest extends TestCase
 
         self::assertNotNull($route);
         self::assertContains(PreventRequestForgery::class, $route->excludedMiddleware());
+    }
+
+    public function test_authenticated_malformed_webhook_returns_422_without_persisting_an_event(): void
+    {
+        $this->organizationWithWebhookCredential();
+
+        $this->withHeader('X-Api-Key', 'lava-webhook-key')
+            ->postJson('/webhooks/lava', ['eventType' => 'payment.success'])
+            ->assertStatus(422)
+            ->assertJson(['message' => 'Invalid webhook payload']);
+
+        self::assertDatabaseCount('payment_gateway_events', 0);
+    }
+
+    public function test_webhook_amount_with_unsupported_precision_is_reconciliation_only(): void
+    {
+        $organization = $this->organizationWithWebhookCredential();
+        $payload = $this->paymentPayload();
+        $payload['amount'] = '12.345';
+
+        $event = app(ReceiveLavaWebhook::class)->handle($organization->getKey(), $payload);
+
+        self::assertSame(PaymentGatewayEventStatus::ReconciliationRequired, $event->processing_status);
+        self::assertSame('manual_reconciliation_required', $event->reconciliation_reason);
+        self::assertNull($event->amount_minor);
     }
 
     public function test_lava_api_key_can_authenticate_webhooks_without_a_separate_webhook_key(): void

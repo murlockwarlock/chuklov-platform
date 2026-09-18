@@ -31,4 +31,9 @@ final class PaymentGatewayProviderException extends RuntimeException implements 
     {
         return $this->notifyOperations;
     }
+
+    public function isAmbiguous(): bool
+    {
+        return true;
+    }
 }

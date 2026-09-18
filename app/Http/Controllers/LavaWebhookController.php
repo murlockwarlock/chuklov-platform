@@ -6,6 +6,7 @@ use App\Modules\Finance\Application\ReceiveLavaWebhook;
 use App\Modules\Finance\Infrastructure\Lava\LavaWebhookAuthenticator;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use InvalidArgumentException;
 
 final class LavaWebhookController extends Controller
 {
@@ -24,7 +25,11 @@ final class LavaWebhookController extends Controller
             return response()->json(['message' => 'Invalid webhook payload'], 422);
         }
 
-        $receive->handle($organizationId, $payload);
+        try {
+            $receive->handle($organizationId, $payload);
+        } catch (InvalidArgumentException) {
+            return response()->json(['message' => 'Invalid webhook payload'], 422);
+        }
 
         return response()->json([], 204);
     }

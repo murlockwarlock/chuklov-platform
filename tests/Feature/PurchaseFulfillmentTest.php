@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Modules\Commerce\Application\CompletePaidPurchase;
 use App\Modules\Commerce\Application\FulfillManualPurchaseItem;
 use App\Modules\Commerce\Application\StartPurchaseCheckout;
 use App\Modules\Commerce\Domain\Enums\CommerceFulfillmentStatus;
@@ -14,6 +15,8 @@ use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
@@ -102,6 +105,55 @@ final class PurchaseFulfillmentTest extends TestCase
 
         self::assertSame(1, TrackerEntitlement::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->count());
         self::assertTrue($endsAt->equalTo(TrackerEntitlement::query()->whereKey($entitlement->getKey())->value('ends_at')));
+    }
+
+    public function test_tracker_fulfillment_failure_retries_are_bounded_without_duplicate_failure_events(): void
+    {
+        [$organization, , $client] = $this->baseFixture();
+        $plan = TrackerPlan::factory()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Tracker 30',
+        ]);
+        $version = new TrackerPlanVersion;
+        $version->forceFill([
+            'organization_id' => $organization->getKey(),
+            'tracker_plan_id' => $plan->getKey(),
+            'version' => 1,
+            'price_minor' => 3000,
+            'currency' => 'USD',
+            'duration_days' => 30,
+            'description' => '30 days',
+            'included_access' => true,
+            'display_order' => 1,
+            'created_at' => now(),
+        ])->save();
+        $plan->forceFill(['current_version_id' => $version->getKey()])->save();
+        $this->mapping($organization, TrackerPlanVersion::class, $version->getKey(), '836b9fc5-7ae9-4a27-9642-592bc44072b7');
+        $checkout = $this->trackerCheckout($organization, $client, $version);
+        $item = $checkout->purchase->items()->sole();
+        $item->forceFill([
+            'product_snapshot' => [
+                ...$item->product_snapshot,
+                'plan_version_id' => 999999,
+            ],
+        ])->save();
+        $this->settle($organization, $checkout->transaction->provider_reference, 30, 'bounded-failure');
+
+        $maxAttempts = max(1, (int) config('payments.fulfillment.max_attempts', 5));
+        for ($attempt = 0; $attempt < $maxAttempts + 2; $attempt++) {
+            app(CompletePaidPurchase::class)->handle($organization->getKey(), $checkout->transaction->getKey());
+        }
+
+        self::assertSame($maxAttempts, $item->fulfillment->refresh()->attempts);
+        self::assertSame(CommerceFulfillmentStatus::Failed, $item->fulfillment->status);
+        self::assertSame(
+            1,
+            ScenarioEvent::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('event_name', ScenarioEventType::FulfillmentFailed->value)
+                ->count(),
+        );
+        self::assertSame(0, TrackerEntitlement::query()->where('organization_id', $organization->getKey())->count());
     }
 
     private function checkout(Organization $organization, Client $client, Service $product, string $key): mixed

@@ -9,6 +9,7 @@ use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayStatus;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -43,13 +44,20 @@ final class PortalCommercePaymentTest extends TestCase
         $this->mapping($organization, $product, 'RUB');
         $this->credential($organization);
         $this->currency($organization, $admin, 'RUB');
-        Http::fake([
-            '*' => Http::response([
-                'id' => '7ea82675-4ded-4133-95a7-a6efbaf165cc',
+        $invoiceNumber = 0;
+        Http::fake(function () use (&$invoiceNumber) {
+            $invoiceNumber++;
+
+            return Http::response([
+                'id' => $invoiceNumber === 1
+                    ? '7ea82675-4ded-4133-95a7-a6efbaf165cc'
+                    : 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
                 'status' => 'in-progress',
-                'paymentUrl' => 'https://pay.lava.top/course',
-            ], 201),
-        ]);
+                'paymentUrl' => $invoiceNumber === 1
+                    ? 'https://pay.lava.top/course'
+                    : 'https://pay.lava.top/course-retry',
+            ], 201);
+        });
 
         $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->get(route('portal.services.index'))
@@ -78,6 +86,24 @@ final class PortalCommercePaymentTest extends TestCase
             'amount_minor' => 150000,
             'currency' => 'RUB',
         ]);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.finance.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('obligations.0.lavaPayment.canContinue', true)
+                ->where('obligations.0.lavaPayment.checkoutUrl', 'https://pay.lava.top/course')
+                ->where('obligations.0.purchaseFulfillment.statusLabel', 'Waiting for payment'));
+
+        $transaction = PaymentGatewayTransaction::query()->sole();
+        $transaction->forceFill(['status' => PaymentGatewayStatus::Failed->value])->save();
+        $response = $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.finance.lava.start', $transaction->obligation_id), [
+                'idempotency_key' => 'portal-course-retry-1',
+            ]);
+
+        $response->assertRedirect('https://pay.lava.top/course-retry');
+        self::assertSame(2, PaymentGatewayTransaction::query()->count());
     }
 
     public function test_prepay_full_booking_can_start_server_defined_full_lava_payment(): void

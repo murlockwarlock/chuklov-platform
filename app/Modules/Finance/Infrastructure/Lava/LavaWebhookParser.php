@@ -4,6 +4,7 @@ namespace App\Modules\Finance\Infrastructure\Lava;
 
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayEventType;
+use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Finance\Domain\Services\PaymentGatewayEventIdentity;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use Illuminate\Support\Str;
@@ -105,19 +106,51 @@ final class LavaWebhookParser
             return null;
         }
 
+        $decimal = $this->decimalString($amount, $currency);
+        if ($decimal === null) {
+            return null;
+        }
+
         try {
-            return Money::fromDecimal($this->decimalString($amount), $currency);
+            $money = Money::fromDecimal($decimal, $currency);
+            $money->assertPositive();
+
+            return $money;
         } catch (InvalidArgumentException) {
             return null;
         }
     }
 
-    private function decimalString(int|float|string $value): string
+    private function decimalString(int|float|string $value, CurrencyCode $currency): ?string
     {
-        if (is_string($value) || is_int($value)) {
+        $scale = app(CurrencyCatalog::class)->scale($currency);
+        if (is_int($value)) {
             return (string) $value;
         }
 
-        return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');
+        if (is_string($value)) {
+            $value = trim($value);
+            if (preg_match('/^-?(0|[1-9][0-9]*)(?:\.([0-9]+))?$/', $value, $matches) !== 1) {
+                return null;
+            }
+
+            $fraction = rtrim($matches[2] ?? '', '0');
+            if (strlen($fraction) > $scale) {
+                return null;
+            }
+
+            return $value;
+        }
+
+        if (! is_finite($value)) {
+            return null;
+        }
+
+        $formatted = number_format($value, $scale, '.', '');
+        if ((float) $formatted !== $value) {
+            return null;
+        }
+
+        return rtrim(rtrim($formatted, '0'), '.');
     }
 }

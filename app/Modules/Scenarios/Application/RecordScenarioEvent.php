@@ -579,7 +579,7 @@ final class RecordScenarioEvent
             transition: $transition,
             occurredAt: $occurredAt,
             payload: ['reason' => $reason],
-            idempotencyKey: 'commerce.fulfillment.failed:'.$fulfillment->organization_id.':'.$fulfillment->getKey().':'.$transition->getKey(),
+            idempotencyKey: 'commerce.fulfillment.failed:'.$fulfillment->organization_id.':'.$fulfillment->getKey().':'.$reason,
         );
     }
 

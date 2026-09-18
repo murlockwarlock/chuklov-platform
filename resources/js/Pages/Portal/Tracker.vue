@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Link, useForm } from '@inertiajs/vue3';
-import { reactive, ref } from 'vue';
+import { Link, useForm, usePage } from '@inertiajs/vue3';
+import { computed, reactive, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
@@ -41,6 +41,10 @@ type Surveys = {
     attempts: Array<{ id: number; title: string; status: string; reportId: number | null }>;
 };
 
+type PortalPageProps = {
+    errors?: Record<string, string | string[]>;
+};
+
 const props = defineProps<{
     portal: PortalShell;
     tracker: {
@@ -57,6 +61,12 @@ const props = defineProps<{
 }>();
 
 const { t, locale } = usePortalLocale();
+const page = usePage<PortalPageProps>();
+const paymentError = computed(() => {
+    const error = page.props.errors?.payment;
+
+    return Array.isArray(error) ? error[0] ?? null : error ?? null;
+});
 const activeView = ref<View>('today');
 const checkInForm = useForm<{ note: string }>({ note: '' });
 const taskForms = reactive<Record<number, ReturnType<typeof useForm<{ status: string; comment: string }>>>>({});
@@ -111,6 +121,14 @@ function purchaseIdempotencyKey(versionId: number): string {
           {{ t('tracker.title') }}
         </h1>
       </header>
+
+      <div
+        v-if="paymentError"
+        class="portal-notice portal-notice--error min-w-0 max-w-full break-words"
+        role="alert"
+      >
+        {{ paymentError }}
+      </div>
 
       <template v-if="props.tracker.access.allowed">
         <nav

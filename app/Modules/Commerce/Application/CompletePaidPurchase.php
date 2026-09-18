@@ -73,6 +73,11 @@ final class CompletePaidPurchase
                     continue;
                 }
 
+                if ($fulfillment->status === CommerceFulfillmentStatus::Failed
+                    && (int) $fulfillment->attempts >= $this->maxAttempts()) {
+                    continue;
+                }
+
                 if ($fulfillment->provider_type !== 'tracker_entitlement') {
                     continue;
                 }
@@ -130,11 +135,18 @@ final class CompletePaidPurchase
         $from = $fulfillment->status->value;
         $fulfillment->forceFill([
             'status' => CommerceFulfillmentStatus::Failed->value,
-            'attempts' => (int) $fulfillment->attempts + 1,
+            'attempts' => $fulfillment->status === CommerceFulfillmentStatus::Processing
+                ? $fulfillment->attempts
+                : (int) $fulfillment->attempts + 1,
             'last_error' => $message,
         ])->save();
         $transition = $this->event($fulfillment, $from, CommerceFulfillmentStatus::Failed, $transaction);
         $this->scenarioEvents->fulfillmentFailed($fulfillment, $transition, $reason, now()->toImmutable());
+    }
+
+    private function maxAttempts(): int
+    {
+        return max(1, (int) config('payments.fulfillment.max_attempts', 5));
     }
 
     private function event(

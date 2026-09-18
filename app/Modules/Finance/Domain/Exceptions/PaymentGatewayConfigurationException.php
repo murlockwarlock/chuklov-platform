@@ -31,4 +31,9 @@ final class PaymentGatewayConfigurationException extends InvalidArgumentExceptio
     {
         return $this->notifyOperations;
     }
+
+    public function isAmbiguous(): bool
+    {
+        return false;
+    }
 }

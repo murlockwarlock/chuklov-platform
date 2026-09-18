@@ -20,6 +20,7 @@ use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -43,6 +44,14 @@ final class StartPurchaseCheckout
         ?string $failureReturnUrl = null,
         ?string $cancelReturnUrl = null,
     ): CommercePurchaseCheckoutResult {
+        if ((int) $product->organization_id !== (int) $organization->getKey()) {
+            throw ValidationException::withMessages(['product' => 'Выбранный товар не относится к текущей организации.']);
+        }
+
+        if ((int) $client->organization_id !== (int) $organization->getKey()) {
+            throw ValidationException::withMessages(['client' => 'Клиент не относится к текущей организации.']);
+        }
+
         if ((int) $product->organization_id !== (int) $organization->getKey()
             || ! $product->is_active
             || $product->catalogItemType() !== CatalogItemType::OnlineProduct) {
@@ -91,6 +100,14 @@ final class StartPurchaseCheckout
         ?string $failureReturnUrl = null,
         ?string $cancelReturnUrl = null,
     ): CommercePurchaseCheckoutResult {
+        if ((int) $version->organization_id !== (int) $organization->getKey()) {
+            throw ValidationException::withMessages(['plan' => 'Выбранный тариф не относится к текущей организации.']);
+        }
+
+        if ((int) $client->organization_id !== (int) $organization->getKey()) {
+            throw ValidationException::withMessages(['client' => 'Клиент не относится к текущей организации.']);
+        }
+
         $version->loadMissing('plan');
         if ((int) $version->organization_id !== (int) $organization->getKey()
             || ! $version->plan?->is_active
@@ -169,102 +186,128 @@ final class StartPurchaseCheckout
             'amount_minor' => $amount->minorUnitsString(),
             'currency' => $amount->currency()->value,
             'fulfillment_provider' => $fulfillmentProvider,
-            'purchase_snapshot' => $purchaseSnapshot,
+            'provider_offer_id' => $mapping->external_offer_id,
+            'buyer_email' => mb_strtolower(trim($buyerEmail)),
+            'successful_return_url' => $successfulReturnUrl,
+            'failure_return_url' => $failureReturnUrl,
+            'cancel_return_url' => $cancelReturnUrl,
+            'purchase_snapshot' => $this->requestSnapshot($purchaseSnapshot),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
-        $purchase = DB::transaction(function () use (
-            $organization,
-            $client,
-            $idempotencyKey,
-            $requestHash,
-            $amount,
-            $itemSnapshot,
-            $purchaseSnapshot,
-            $fulfillmentProvider,
-            $actor,
-        ): Purchase {
-            $existing = Purchase::query()
-                ->where('organization_id', $organization->getKey())
-                ->where('checkout_idempotency_key', $idempotencyKey)
-                ->lockForUpdate()
-                ->first();
-            if ($existing instanceof Purchase) {
-                if ($existing->checkout_request_hash !== $requestHash
-                    || (int) $existing->client_id !== (int) $client->getKey()) {
-                    throw ValidationException::withMessages(['idempotency_key' => 'Этот ключ уже использован для другой покупки.']);
+        try {
+            $purchase = DB::transaction(function () use (
+                $organization,
+                $client,
+                $idempotencyKey,
+                $requestHash,
+                $amount,
+                $itemSnapshot,
+                $purchaseSnapshot,
+                $fulfillmentProvider,
+                $actor,
+            ): Purchase {
+                $existing = Purchase::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->where('checkout_idempotency_key', $idempotencyKey)
+                    ->lockForUpdate()
+                    ->first();
+                if ($existing instanceof Purchase) {
+                    if ($existing->checkout_request_hash !== $requestHash
+                        || (int) $existing->client_id !== (int) $client->getKey()) {
+                        throw ValidationException::withMessages(['idempotency_key' => 'Этот ключ уже использован для другой покупки.']);
+                    }
+
+                    return $existing;
                 }
 
-                return $existing;
+                $configuration = $this->configuration->configuration($organization);
+                $baseSnapshot = $this->configuration->convert($organization, $amount, $configuration->base_currency);
+                $displaySnapshot = $this->configuration->convert($organization, $amount, $configuration->display_currency);
+                $purchase = new Purchase;
+                $purchase->forceFill([
+                    'organization_id' => $organization->getKey(),
+                    'client_id' => $client->getKey(),
+                    'status' => PurchaseStatus::PendingPayment->value,
+                    'total_amount_minor' => $amount->minorUnits(),
+                    'currency' => $amount->currency()->value,
+                    'checkout_idempotency_key' => $idempotencyKey,
+                    'checkout_request_hash' => $requestHash,
+                    'purchase_snapshot' => [
+                        ...$purchaseSnapshot,
+                        'captured_at' => CarbonImmutable::now('UTC')->toIso8601String(),
+                    ],
+                ])->save();
+                $item = new PurchaseItem;
+                $item->forceFill([
+                    'organization_id' => $organization->getKey(),
+                    'purchase_id' => $purchase->getKey(),
+                    'sellable_type' => $this->sellableType($itemSnapshot),
+                    'sellable_id' => $this->sellableId($itemSnapshot),
+                    'quantity' => 1,
+                    'amount_minor' => $amount->minorUnits(),
+                    'currency' => $amount->currency()->value,
+                    'product_snapshot' => $itemSnapshot,
+                    'fulfillment_provider' => $fulfillmentProvider,
+                ])->save();
+                $fulfillment = new PurchaseFulfillment;
+                $fulfillment->forceFill([
+                    'organization_id' => $organization->getKey(),
+                    'purchase_item_id' => $item->getKey(),
+                    'provider_type' => $fulfillmentProvider,
+                    'status' => CommerceFulfillmentStatus::Pending->value,
+                    'attempts' => 0,
+                ])->save();
+                $obligation = new FinancialObligation;
+                $obligation->forceFill([
+                    'organization_id' => $organization->getKey(),
+                    'client_id' => $client->getKey(),
+                    'booking_id' => null,
+                    'service_id' => null,
+                    'purchase_id' => $purchase->getKey(),
+                    'amount_minor' => $amount->minorUnits(),
+                    'currency' => $amount->currency()->value,
+                    'base_amount_minor' => (int) $baseSnapshot->targetAmountMinor,
+                    'base_currency' => $baseSnapshot->targetCurrency->value,
+                    'display_amount_minor' => (int) $displaySnapshot->targetAmountMinor,
+                    'display_currency' => $displaySnapshot->targetCurrency->value,
+                    'payment_amount_minor' => $amount->minorUnits(),
+                    'payment_currency' => $amount->currency()->value,
+                    'settlement_amount_minor' => $amount->minorUnits(),
+                    'settlement_currency' => $amount->currency()->value,
+                    'price_snapshot' => [
+                        'purchase_id' => (int) $purchase->getKey(),
+                        'item_id' => (int) $item->getKey(),
+                        'snapshot' => $itemSnapshot,
+                    ],
+                    'conversion_snapshots' => [
+                        'base' => $baseSnapshot->toArray(),
+                        'display' => $displaySnapshot->toArray(),
+                    ],
+                    'creation_key' => 'purchase.payment:'.$organization->getKey().':'.$purchase->getKey(),
+                    'created_by_user_id' => $actor?->getKey(),
+                ])->save();
+
+                return $purchase->refresh();
+            });
+        } catch (QueryException $exception) {
+            if (! $this->isCheckoutIdempotencyConflict($exception)) {
+                throw $exception;
             }
 
-            $configuration = $this->configuration->configuration($organization);
-            $baseSnapshot = $this->configuration->convert($organization, $amount, $configuration->base_currency);
-            $displaySnapshot = $this->configuration->convert($organization, $amount, $configuration->display_currency);
-            $purchase = new Purchase;
-            $purchase->forceFill([
-                'organization_id' => $organization->getKey(),
-                'client_id' => $client->getKey(),
-                'status' => PurchaseStatus::PendingPayment->value,
-                'total_amount_minor' => $amount->minorUnits(),
-                'currency' => $amount->currency()->value,
-                'checkout_idempotency_key' => $idempotencyKey,
-                'checkout_request_hash' => $requestHash,
-                'purchase_snapshot' => [
-                    ...$purchaseSnapshot,
-                    'captured_at' => CarbonImmutable::now('UTC')->toIso8601String(),
-                ],
-            ])->save();
-            $item = new PurchaseItem;
-            $item->forceFill([
-                'organization_id' => $organization->getKey(),
-                'purchase_id' => $purchase->getKey(),
-                'sellable_type' => $this->sellableType($itemSnapshot),
-                'sellable_id' => $this->sellableId($itemSnapshot),
-                'quantity' => 1,
-                'amount_minor' => $amount->minorUnits(),
-                'currency' => $amount->currency()->value,
-                'product_snapshot' => $itemSnapshot,
-                'fulfillment_provider' => $fulfillmentProvider,
-            ])->save();
-            $fulfillment = new PurchaseFulfillment;
-            $fulfillment->forceFill([
-                'organization_id' => $organization->getKey(),
-                'purchase_item_id' => $item->getKey(),
-                'provider_type' => $fulfillmentProvider,
-                'status' => CommerceFulfillmentStatus::Pending->value,
-                'attempts' => 0,
-            ])->save();
-            $obligation = new FinancialObligation;
-            $obligation->forceFill([
-                'organization_id' => $organization->getKey(),
-                'client_id' => $client->getKey(),
-                'booking_id' => null,
-                'service_id' => null,
-                'purchase_id' => $purchase->getKey(),
-                'amount_minor' => $amount->minorUnits(),
-                'currency' => $amount->currency()->value,
-                'base_amount_minor' => (int) $baseSnapshot->targetAmountMinor,
-                'base_currency' => $baseSnapshot->targetCurrency->value,
-                'display_amount_minor' => (int) $displaySnapshot->targetAmountMinor,
-                'display_currency' => $displaySnapshot->targetCurrency->value,
-                'payment_amount_minor' => $amount->minorUnits(),
-                'payment_currency' => $amount->currency()->value,
-                'settlement_amount_minor' => $amount->minorUnits(),
-                'settlement_currency' => $amount->currency()->value,
-                'price_snapshot' => [
-                    'purchase_id' => (int) $purchase->getKey(),
-                    'item_id' => (int) $item->getKey(),
-                    'snapshot' => $itemSnapshot,
-                ],
-                'conversion_snapshots' => [
-                    'base' => $baseSnapshot->toArray(),
-                    'display' => $displaySnapshot->toArray(),
-                ],
-                'creation_key' => 'purchase.payment:'.$organization->getKey().':'.$purchase->getKey(),
-                'created_by_user_id' => $actor?->getKey(),
-            ])->save();
+            $purchase = $this->existingPurchase(
+                organization: $organization,
+                client: $client,
+                idempotencyKey: $idempotencyKey,
+                sellableType: $sellableType,
+                sellableId: $sellableId,
+            );
+            if (! $purchase instanceof Purchase) {
+                throw $exception;
+            }
 
-            return $purchase->refresh();
-        });
+            if ($purchase->checkout_request_hash !== $requestHash) {
+                throw ValidationException::withMessages(['idempotency_key' => 'Этот ключ уже использован для другой покупки.']);
+            }
+        }
 
         $obligation = $purchase->obligation()->firstOrFail();
         $transaction = $this->payments->handle(
@@ -282,6 +325,53 @@ final class StartPurchaseCheckout
         );
 
         return new CommercePurchaseCheckoutResult($purchase->refresh(), $transaction);
+    }
+
+    private function existingPurchase(
+        Organization $organization,
+        Client $client,
+        string $idempotencyKey,
+        string $sellableType,
+        int $sellableId,
+    ): ?Purchase {
+        $purchase = Purchase::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('checkout_idempotency_key', $idempotencyKey)
+            ->with('items')
+            ->first();
+        if (! $purchase instanceof Purchase) {
+            return null;
+        }
+
+        if ((int) $purchase->client_id !== (int) $client->getKey()) {
+            throw ValidationException::withMessages(['idempotency_key' => 'Этот ключ уже использован для другого клиента.']);
+        }
+
+        $item = $purchase->items->sole();
+        if ($item->sellable_type !== $sellableType || (int) $item->sellable_id !== $sellableId) {
+            throw ValidationException::withMessages(['idempotency_key' => 'Этот ключ уже использован для другой покупки.']);
+        }
+
+        return $purchase;
+    }
+
+    private function isCheckoutIdempotencyConflict(QueryException $exception): bool
+    {
+        $sqlState = (string) ($exception->errorInfo[0] ?? $exception->getCode());
+
+        return in_array($sqlState, ['19', '23000', '23505'], true)
+            && (str_contains($exception->getMessage(), 'commerce_purchases_checkout_idempotency_unique')
+                || str_contains($exception->getMessage(), 'checkout_idempotency_key'));
+    }
+
+    private function requestSnapshot(array $snapshot): array
+    {
+        unset($snapshot['captured_at']);
+        if (is_array($snapshot['product'] ?? null)) {
+            unset($snapshot['product']['captured_at']);
+        }
+
+        return $snapshot;
     }
 
     private function onlineProductSnapshot(Service $product, CurrencyCode $currency): array

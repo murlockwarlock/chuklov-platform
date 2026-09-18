@@ -6,8 +6,6 @@ use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Organizations\Application\OrganizationContext;
-use App\Modules\Services\Domain\Enums\CatalogItemType;
-use App\Modules\Services\Domain\Models\Service;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Validation\ValidationException;
 
@@ -17,6 +15,7 @@ final class InitiateClientLavaPayment
         private readonly ClientPortalContext $clientContext,
         private readonly OrganizationContext $organizationContext,
         private readonly ResolvePaymentProviderOfferMapping $mappings,
+        private readonly ResolveLavaPaymentSellable $sellable,
         private readonly CreateGatewayPaymentAttempt $createAttempt,
     ) {}
 
@@ -33,23 +32,23 @@ final class InitiateClientLavaPayment
             ->where('organization_id', $organization->getKey())
             ->where('client_id', $client->getKey())
             ->whereKey($obligationId)
-            ->with('booking.service')
+            ->with(['booking.service', 'purchase.items'])
             ->first();
 
         if (! $obligation instanceof FinancialObligation) {
             throw (new ModelNotFoundException)->setModel(FinancialObligation::class, [$obligationId]);
         }
 
-        $service = $obligation->booking?->service;
-        if (! $service instanceof Service || $service->catalogItemType() !== CatalogItemType::Service) {
-            throw ValidationException::withMessages(['obligation' => 'Эту задолженность нельзя оплатить как услугу.']);
+        $target = $this->sellable->handle($obligation);
+        if ($target === null) {
+            throw ValidationException::withMessages(['obligation' => 'Эту задолженность нельзя оплатить онлайн.']);
         }
 
         $mapping = $this->mappings->handle(
             (int) $organization->getKey(),
             'lava',
-            Service::class,
-            (int) $service->getKey(),
+            $target['type'],
+            $target['id'],
             $obligation->payment_currency,
         );
 

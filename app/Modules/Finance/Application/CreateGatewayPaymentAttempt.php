@@ -41,6 +41,10 @@ final class CreateGatewayPaymentAttempt
         ?User $actor = null,
         string $source = 'application',
     ): PaymentGatewayTransaction {
+        if ((int) $obligation->organization_id !== (int) $organization->getKey()) {
+            throw ValidationException::withMessages(['obligation' => 'Задолженность не относится к текущей организации.']);
+        }
+
         $this->assertIdempotencyKey($idempotencyKey);
         $this->assertBuyerEmail($buyerEmail);
         $this->assertProviderOfferId($providerOfferId);
@@ -96,6 +100,20 @@ final class CreateGatewayPaymentAttempt
                     'transaction' => $existingTransaction,
                     'initiate' => false,
                 ];
+            }
+
+            $activeTransaction = PaymentGatewayTransaction::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('obligation_id', $lockedObligation->getKey())
+                ->whereIn('status', [
+                    PaymentGatewayStatus::Initiating->value,
+                    PaymentGatewayStatus::Pending->value,
+                    PaymentGatewayStatus::Unknown->value,
+                ])
+                ->lockForUpdate()
+                ->first();
+            if ($activeTransaction instanceof PaymentGatewayTransaction) {
+                throw ValidationException::withMessages(['obligation' => 'Для этой задолженности уже есть операция онлайн-оплаты.']);
             }
 
             $current = $this->reconciliation->handle(
@@ -209,7 +227,7 @@ final class CreateGatewayPaymentAttempt
                 return $locked->refresh();
             });
         } catch (Throwable $exception) {
-            $this->markUnknown($organization, $transaction, $exception);
+            $this->markFailure($organization, $transaction, $exception);
 
             if ($exception instanceof PaymentGatewayInitiationFailure && $exception->shouldNotifyOperations()) {
                 $this->scenarioEvents->paymentInitiationUnavailable(
@@ -250,20 +268,29 @@ final class CreateGatewayPaymentAttempt
         return $transaction->refresh();
     }
 
-    private function markUnknown(Organization $organization, PaymentGatewayTransaction $transaction, Throwable $exception): void
+    private function markFailure(Organization $organization, PaymentGatewayTransaction $transaction, Throwable $exception): void
     {
-        DB::transaction(function () use ($organization, $transaction, $exception): void {
-            PaymentGatewayTransaction::query()
+        $status = $exception instanceof PaymentGatewayInitiationFailure && ! $exception->isAmbiguous()
+            ? PaymentGatewayStatus::Failed
+            : PaymentGatewayStatus::Unknown;
+        DB::transaction(function () use ($organization, $transaction, $exception, $status): void {
+            $locked = PaymentGatewayTransaction::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($transaction->getKey())
                 ->lockForUpdate()
-                ->update([
-                    'status' => PaymentGatewayStatus::Unknown->value,
-                    'last_error' => $exception instanceof PaymentGatewayInitiationFailure
-                        ? $exception->getMessage()
-                        : 'Payment initiation failed.',
-                    'updated_at' => now(),
-                ]);
+                ->first();
+
+            if ($locked === null || $locked->status !== PaymentGatewayStatus::Initiating) {
+                return;
+            }
+
+            $locked->forceFill([
+                'status' => $status->value,
+                'last_error' => $exception instanceof PaymentGatewayInitiationFailure
+                    ? $exception->getMessage()
+                    : 'Payment initiation failed.',
+                'updated_at' => now(),
+            ])->save();
         });
     }
 

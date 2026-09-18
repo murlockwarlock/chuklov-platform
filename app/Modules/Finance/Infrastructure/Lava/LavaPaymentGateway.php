@@ -6,6 +6,7 @@ use App\Modules\Finance\Domain\Contracts\PaymentGateway;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Exceptions\PaymentGatewayConfigurationException;
 use App\Modules\Finance\Domain\Exceptions\PaymentGatewayProviderException;
+use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Finance\Domain\ValueObjects\GatewayFailureEvidence;
 use App\Modules\Finance\Domain\ValueObjects\GatewayInitiationRequest;
 use App\Modules\Finance\Domain\ValueObjects\GatewayInitiationResult;
@@ -40,6 +41,8 @@ final class LavaPaymentGateway implements PaymentGateway
         $this->assertSupportedCurrency($request->currency);
         if ($request->amountMinor <= 0
             || $request->buyerEmail === null
+            || filter_var($request->buyerEmail, FILTER_VALIDATE_EMAIL) === false
+            || mb_strlen($request->buyerEmail) > 320
             || $request->providerOfferId === null
             || ! Str::isUuid(trim($request->providerOfferId))) {
             throw new PaymentGatewayConfigurationException(
@@ -192,7 +195,16 @@ final class LavaPaymentGateway implements PaymentGateway
             throw new InvalidArgumentException('Lava returned an unsupported currency.');
         }
         $this->assertSupportedCurrency($currency);
-        $amount = Money::fromDecimal($this->decimalString($amountValue), $currency);
+        $decimal = $this->decimalString($amountValue, $currency);
+        if ($decimal === null) {
+            throw new RuntimeException('Lava invoice lookup returned an amount with unsupported precision.');
+        }
+        try {
+            $amount = Money::fromDecimal($decimal, $currency);
+            $amount->assertPositive();
+        } catch (InvalidArgumentException $exception) {
+            throw new RuntimeException('Lava invoice lookup returned an invalid amount.', previous: $exception);
+        }
         $status = match (strtolower((string) ($data['status'] ?? ''))) {
             'completed', 'success', 'paid' => 'settled',
             'failed', 'cancelled' => 'failed',
@@ -264,12 +276,36 @@ final class LavaPaymentGateway implements PaymentGateway
             && strlen($url) <= 2048;
     }
 
-    private function decimalString(int|float|string $value): string
+    private function decimalString(int|float|string $value, CurrencyCode $currency): ?string
     {
-        if (is_string($value) || is_int($value)) {
+        $scale = app(CurrencyCatalog::class)->scale($currency);
+        if (is_int($value)) {
             return (string) $value;
         }
 
-        return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');
+        if (is_string($value)) {
+            $value = trim($value);
+            if (preg_match('/^-?(0|[1-9][0-9]*)(?:\.([0-9]+))?$/', $value, $matches) !== 1) {
+                return null;
+            }
+
+            $fraction = rtrim($matches[2] ?? '', '0');
+            if (strlen($fraction) > $scale) {
+                return null;
+            }
+
+            return $value;
+        }
+
+        if (! is_finite($value)) {
+            return null;
+        }
+
+        $formatted = number_format($value, $scale, '.', '');
+        if ((float) $formatted !== $value) {
+            return null;
+        }
+
+        return rtrim(rtrim($formatted, '0'), '.');
     }
 }

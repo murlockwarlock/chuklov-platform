@@ -9,4 +9,6 @@ interface PaymentGatewayInitiationFailure
     public function clientMessage(): string;
 
     public function shouldNotifyOperations(): bool;
+
+    public function isAmbiguous(): bool;
 }

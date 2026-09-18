@@ -45,6 +45,7 @@ final class PaymentGatewayReconciliationReason
             'invalid_offer' => 'Offer ID Lava отклонён провайдером.',
             'invalid_provider_response' => 'Lava вернула некорректный ответ при создании оплаты.',
             'provider_rejected_request' => 'Провайдер отклонил создание оплаты.',
+            'payment_initiation_stale' => 'Создание оплаты не завершилось вовремя. Проверьте платёж вручную.',
             'provider_timeout' => 'Провайдер не ответил вовремя, операция требует проверки.',
             'provider_unavailable' => 'Провайдер временно недоступен, настройка оплаты требует проверки.',
             'unsupported_automatic_event', 'unknown_provider_event' => 'Событие провайдера требует ручной сверки.',

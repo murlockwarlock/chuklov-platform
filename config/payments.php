@@ -14,7 +14,12 @@ return [
         'max_attempts' => (int) env('PAYMENT_EVENT_MAX_ATTEMPTS', 20),
         'retry_seconds' => (int) env('PAYMENT_EVENT_RETRY_SECONDS', 60),
     ],
+    'initiation' => [
+        'batch_limit' => (int) env('PAYMENT_INITIATION_RECONCILIATION_BATCH_LIMIT', 100),
+        'stale_after_seconds' => (int) env('PAYMENT_INITIATION_STALE_AFTER_SECONDS', 300),
+    ],
     'fulfillment' => [
         'batch_limit' => (int) env('PAYMENT_FULFILLMENT_BATCH_LIMIT', 100),
+        'max_attempts' => (int) env('PAYMENT_FULFILLMENT_MAX_ATTEMPTS', 5),
     ],
 ];

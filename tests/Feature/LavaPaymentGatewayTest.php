@@ -141,6 +141,24 @@ final class LavaPaymentGatewayTest extends TestCase
         );
     }
 
+    public function test_lava_invoice_lookup_rejects_unsupported_amount_precision(): void
+    {
+        $organization = $this->organizationWithLavaCredential();
+        Http::fake([
+            'https://gate.lava.top/api/v1/invoices/7ea82675-4ded-4133-95a7-a6efbaf165cc' => Http::response([
+                'id' => '7ea82675-4ded-4133-95a7-a6efbaf165cc',
+                'status' => 'completed',
+                'amountTotal' => ['amount' => '12.345', 'currency' => 'USD'],
+            ]),
+        ]);
+
+        $this->expectException(RuntimeException::class);
+        app(LavaPaymentGateway::class)->reconcile(
+            '7ea82675-4ded-4133-95a7-a6efbaf165cc',
+            $organization->getKey(),
+        );
+    }
+
     public function test_lava_does_not_offer_refund_initiation(): void
     {
         $gateway = app(LavaPaymentGateway::class);

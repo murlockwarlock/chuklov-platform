@@ -18,6 +18,7 @@ final class LavaWebhookAuthenticator
         $matches = [];
         $credentials = OrganizationCredential::query()
             ->where('provider', 'lava')
+            ->where('credential_name', (string) config('payments.lava.credential_name', 'default'))
             ->where('status', CredentialStatus::Active->value)
             ->get(['id', 'organization_id', 'credentials']);
         foreach ($credentials as $credential) {

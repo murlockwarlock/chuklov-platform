@@ -10,8 +10,6 @@ use App\Modules\Finance\Domain\Enums\PaymentGatewayStatus;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
-use App\Modules\Services\Domain\Enums\CatalogItemType;
-use App\Modules\Services\Domain\Models\Service;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Log;
 use UnexpectedValueException;
@@ -22,6 +20,7 @@ final class ListClientFinance
         private readonly ClientPortalContext $clientContext,
         private readonly ReconcileFinancialObligation $reconciliation,
         private readonly FinancialReconciliationContract $contract,
+        private readonly ResolveLavaPaymentSellable $sellable,
     ) {}
 
     /** @return array{obligations: list<array<string, mixed>>, totals: list<array<string, mixed>>, hasUnavailableObligations: bool} */
@@ -181,15 +180,15 @@ final class ListClientFinance
         Client $client,
         ?string $locale,
     ): ?array {
-        $service = $obligation->booking?->service;
-        if (! $hasOutstanding || ! $service instanceof Service || $service->catalogItemType() !== CatalogItemType::Service) {
+        $target = $this->sellable->handle($obligation);
+        if (! $hasOutstanding || $target === null) {
             return null;
         }
 
         $currency = $obligation->payment_currency->value;
         $mappingCount = in_array($currency, ['RUB', 'USD', 'EUR'], true)
             ? PaymentProviderOfferMapping::query()
-                ->activeFor((int) $obligation->organization_id, 'lava', Service::class, (int) $service->getKey(), $currency)
+                ->activeFor((int) $obligation->organization_id, 'lava', (string) $target['type'], (int) $target['id'], $currency)
                 ->count()
             : 0;
         $available = $mappingCount === 1 && filter_var($client->email, FILTER_VALIDATE_EMAIL) !== false;
@@ -212,7 +211,7 @@ final class ListClientFinance
             && is_string($checkoutParts['host'] ?? null)
             ? $checkoutUrl
             : null;
-        $canContinue = $available && $status === PaymentGatewayStatus::Pending && $checkoutUrl !== null;
+        $canContinue = $status === PaymentGatewayStatus::Pending && $checkoutUrl !== null;
         $canStart = $available && ($transaction === null || in_array($status, [
             PaymentGatewayStatus::Failed,
             PaymentGatewayStatus::Refunded,
@@ -221,7 +220,7 @@ final class ListClientFinance
         $poll = in_array($status, [PaymentGatewayStatus::Initiating, PaymentGatewayStatus::Pending, PaymentGatewayStatus::Unknown], true);
 
         return [
-            'stateLabel' => $this->lavaStateLabel($status, $available, $locale),
+            'stateLabel' => $this->lavaStateLabel($status, $available || $canContinue, $locale),
             'canStart' => $canStart,
             'canContinue' => $canContinue,
             'checkoutUrl' => $canContinue ? $checkoutUrl : null,
@@ -395,7 +394,8 @@ final class ListClientFinance
         if ($locale === 'en') {
             return match ($status) {
                 PaymentGatewayStatus::Pending => 'Payment is waiting for confirmation',
-                PaymentGatewayStatus::Initiating, PaymentGatewayStatus::Unknown => 'Payment is being checked',
+                PaymentGatewayStatus::Initiating => 'Payment is being checked',
+                PaymentGatewayStatus::Unknown => 'Payment needs review',
                 PaymentGatewayStatus::Failed => 'Payment failed',
                 PaymentGatewayStatus::Refunded => 'Payment can be started again',
                 default => 'Pay online',
@@ -404,7 +404,8 @@ final class ListClientFinance
 
         return match ($status) {
             PaymentGatewayStatus::Pending => 'Оплата ожидает подтверждения',
-            PaymentGatewayStatus::Initiating, PaymentGatewayStatus::Unknown => 'Проверяем оплату',
+            PaymentGatewayStatus::Initiating => 'Проверяем оплату',
+            PaymentGatewayStatus::Unknown => 'Платёж требует проверки',
             PaymentGatewayStatus::Failed => 'Оплата не прошла',
             PaymentGatewayStatus::Refunded => 'Оплату можно начать снова',
             default => 'Оплатить онлайн',

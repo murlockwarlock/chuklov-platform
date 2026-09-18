@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Modules\Finance\Application\CreateGatewayPaymentAttempt;
+use App\Modules\Finance\Application\ReconcileStaleGatewayInitiations;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayStatus;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
@@ -22,6 +23,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use RuntimeException;
 use Tests\TestCase;
@@ -78,6 +80,28 @@ final class GatewayPaymentInitiationTest extends TestCase
         });
     }
 
+    public function test_obligation_from_another_organization_is_rejected_before_gateway_access(): void
+    {
+        [$organization, $obligation] = $this->fixture();
+        $otherOrganization = Organization::factory()->create();
+        Http::fake();
+
+        $this->expectException(ValidationException::class);
+        try {
+            app(CreateGatewayPaymentAttempt::class)->handle(
+                organization: $otherOrganization,
+                obligation: $obligation,
+                gatewayName: 'lava',
+                idempotencyKey: 'cross-org-obligation',
+                buyerEmail: 'client@example.com',
+                providerOfferId: '836b9fc5-7ae9-4a27-9642-592bc44072b7',
+            );
+        } finally {
+            self::assertSame(0, PaymentGatewayTransaction::query()->count());
+            Http::assertNothingSent();
+        }
+    }
+
     public function test_ambiguous_lava_creation_becomes_unknown_and_is_not_blindly_retried(): void
     {
         [$organization, $obligation] = $this->fixture();
@@ -121,6 +145,38 @@ final class GatewayPaymentInitiationTest extends TestCase
         Http::assertSentCount(0);
     }
 
+    public function test_initiation_failure_does_not_overwrite_a_transaction_changed_after_provider_call_started(): void
+    {
+        [$organization, $obligation] = $this->fixture();
+        Http::fake(function () use ($organization) {
+            $transaction = PaymentGatewayTransaction::query()
+                ->where('organization_id', $organization->getKey())
+                ->sole();
+            $transaction->forceFill([
+                'status' => PaymentGatewayStatus::Pending->value,
+                'provider_reference' => 'late-provider-reference',
+            ])->save();
+
+            return Http::response(['message' => 'temporary upstream failure'], 500);
+        });
+
+        try {
+            app(CreateGatewayPaymentAttempt::class)->handle(
+                organization: $organization,
+                obligation: $obligation,
+                gatewayName: 'lava',
+                idempotencyKey: 'lava-init-race',
+                buyerEmail: 'client@example.com',
+                providerOfferId: '836b9fc5-7ae9-4a27-9642-592bc44072b7',
+            );
+            self::fail('The failed Lava request should be surfaced.');
+        } catch (RuntimeException) {
+            $transaction = PaymentGatewayTransaction::query()->sole();
+            self::assertSame(PaymentGatewayStatus::Pending, $transaction->status);
+            self::assertSame('late-provider-reference', $transaction->provider_reference);
+        }
+    }
+
     public function test_existing_initiating_idempotency_state_returns_without_a_second_external_creation(): void
     {
         [$organization, $obligation] = $this->fixture();
@@ -156,6 +212,42 @@ final class GatewayPaymentInitiationTest extends TestCase
         Http::assertSentCount(1);
     }
 
+    public function test_different_idempotency_key_cannot_create_a_second_active_payment(): void
+    {
+        [$organization, $obligation] = $this->fixture();
+        Http::fake([
+            '*' => Http::response([
+                'id' => '7ea82675-4ded-4133-95a7-a6efbaf165cc',
+                'status' => 'in-progress',
+                'paymentUrl' => 'https://pay.lava.top/invoice',
+            ], 201),
+        ]);
+        $service = app(CreateGatewayPaymentAttempt::class);
+        $service->handle(
+            organization: $organization,
+            obligation: $obligation,
+            gatewayName: 'lava',
+            idempotencyKey: 'lava-init-first',
+            buyerEmail: 'client@example.com',
+            providerOfferId: '836b9fc5-7ae9-4a27-9642-592bc44072b7',
+        );
+
+        $this->expectException(ValidationException::class);
+        try {
+            $service->handle(
+                organization: $organization,
+                obligation: $obligation,
+                gatewayName: 'lava',
+                idempotencyKey: 'lava-init-second',
+                buyerEmail: 'client@example.com',
+                providerOfferId: '836b9fc5-7ae9-4a27-9642-592bc44072b7',
+            );
+        } finally {
+            self::assertSame(1, PaymentGatewayTransaction::query()->count());
+            Http::assertSentCount(1);
+        }
+    }
+
     public function test_lava_configuration_failure_has_safe_state_and_one_operational_event(): void
     {
         [$organization, $obligation] = $this->fixture();
@@ -180,7 +272,7 @@ final class GatewayPaymentInitiationTest extends TestCase
         }
 
         $transaction = PaymentGatewayTransaction::query()->sole();
-        self::assertSame(PaymentGatewayStatus::Unknown, $transaction->status);
+        self::assertSame(PaymentGatewayStatus::Failed, $transaction->status);
         self::assertStringNotContainsString('lava-api-key', (string) $transaction->last_error);
         self::assertSame(
             1,
@@ -206,6 +298,37 @@ final class GatewayPaymentInitiationTest extends TestCase
             ScenarioEvent::query()->where('event_name', ScenarioEventType::PaymentInitiationUnavailable->value)->count(),
         );
         Http::assertNothingSent();
+    }
+
+    public function test_stale_initiation_is_quarantined_for_manual_reconciliation(): void
+    {
+        [$organization, $obligation] = $this->fixture();
+        Http::fake([
+            '*' => Http::response([
+                'id' => '7ea82675-4ded-4133-95a7-a6efbaf165cc',
+                'status' => 'in-progress',
+                'paymentUrl' => 'https://pay.lava.top/invoice',
+            ], 201),
+        ]);
+        $transaction = app(CreateGatewayPaymentAttempt::class)->handle(
+            organization: $organization,
+            obligation: $obligation,
+            gatewayName: 'lava',
+            idempotencyKey: 'lava-init-stale',
+            buyerEmail: 'client@example.com',
+            providerOfferId: '836b9fc5-7ae9-4a27-9642-592bc44072b7',
+        );
+        $transaction->forceFill([
+            'status' => PaymentGatewayStatus::Initiating->value,
+            'provider_reference' => null,
+            'checkout_url' => null,
+            'initiated_at' => now()->subMinutes(10),
+        ])->save();
+
+        self::assertSame(1, app(ReconcileStaleGatewayInitiations::class)->handle());
+        self::assertSame(PaymentGatewayStatus::Unknown, $transaction->refresh()->status);
+        self::assertSame('payment_initiation_stale', $transaction->events()->sole()->reconciliation_reason);
+        self::assertSame(1, ScenarioEvent::query()->where('event_name', ScenarioEventType::PaymentReconciliationRequired->value)->count());
     }
 
     private function fixture(): array
