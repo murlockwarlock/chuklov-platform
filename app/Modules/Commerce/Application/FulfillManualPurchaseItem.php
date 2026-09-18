@@ -7,13 +7,17 @@ use App\Modules\Commerce\Domain\Enums\CommerceFulfillmentStatus;
 use App\Modules\Commerce\Domain\Models\FulfillmentEvent;
 use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
 use App\Modules\Finance\Application\FinanceAuthorization;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 final class FulfillManualPurchaseItem
 {
-    public function __construct(private readonly FinanceAuthorization $authorization) {}
+    public function __construct(
+        private readonly FinanceAuthorization $authorization,
+        private readonly RecordScenarioEvent $scenarioEvents,
+    ) {}
 
     public function handle(User $actor, PurchaseFulfillment $fulfillment): PurchaseFulfillment
     {
@@ -55,6 +59,7 @@ final class FulfillManualPurchaseItem
                 'actor_user_id' => $actor->getKey(),
                 'metadata' => ['source' => 'manual_crm_action'],
             ])->save();
+            $this->scenarioEvents->fulfillmentCompleted($locked, $event->refresh(), now()->toImmutable());
 
             return $locked->refresh();
         });

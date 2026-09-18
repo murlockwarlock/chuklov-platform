@@ -2,6 +2,7 @@
 
 namespace App\Filament\Support;
 
+use App\Modules\Finance\Application\PaymentGatewayReconciliationReason;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayEventType;
 use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
 use App\Modules\Identity\Domain\Models\Client;
@@ -22,12 +23,7 @@ final class PaymentGatewayReconciliationPresentation
 
     public static function reason(PaymentGatewayEvent $record): string
     {
-        return match ($record->reconciliation_reason) {
-            'amount_or_currency_mismatch' => 'Сумма или валюта не совпала',
-            'pending_link_stale' => 'Операция оплаты не найдена вовремя',
-            'provider_event_key_payload_conflict' => 'Повтор события содержит другие данные',
-            default => 'Требуется ручная сверка',
-        };
+        return PaymentGatewayReconciliationReason::label($record->reconciliation_reason, $record->event_type);
     }
 
     public static function client(PaymentGatewayEvent $record): ?Client

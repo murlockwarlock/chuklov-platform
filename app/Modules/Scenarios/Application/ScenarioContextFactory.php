@@ -9,9 +9,15 @@ use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
+use App\Modules\Commerce\Domain\Enums\CommerceFulfillmentStatus;
+use App\Modules\Commerce\Domain\Models\Purchase;
+use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
+use App\Modules\Commerce\Domain\Models\PurchaseItem;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
+use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
@@ -20,6 +26,7 @@ use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Referrals\Application\BuildClientReferralLink;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
+use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -28,7 +35,9 @@ use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
+use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
 use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -56,6 +65,13 @@ final class ScenarioContextFactory
             ScenarioEventType::BookingCompleted => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::OnboardingStarted => $this->onboardingContext($event, $evaluationEndsAt),
             ScenarioEventType::FinancialObligationCreated => $this->financialContext($event, $evaluationEndsAt),
+            ScenarioEventType::PaymentSucceeded,
+            ScenarioEventType::PaymentFailed,
+            ScenarioEventType::PaymentInitiationUnavailable,
+            ScenarioEventType::PaymentReconciliationRequired => $this->paymentContext($event, $evaluationEndsAt),
+            ScenarioEventType::FulfillmentFailed,
+            ScenarioEventType::FulfillmentCompleted => $this->fulfillmentContext($event, $evaluationEndsAt),
+            ScenarioEventType::ReferralRewardEarned => $this->rewardContext($event, $evaluationEndsAt),
             ScenarioEventType::SurveyCompleted, ScenarioEventType::TestStagnationDetected => $this->surveyContext($event, $evaluationEndsAt),
             ScenarioEventType::B2bLeadSubmitted => $this->b2bLeadContext($event, $evaluationEndsAt),
             ScenarioEventType::B2bSalesCallReady => $this->b2bSalesCallContext($event, $evaluationEndsAt),
@@ -235,6 +251,26 @@ final class ScenarioContextFactory
             ];
         }
 
+        if (in_array($context->event->event_name, [
+            ScenarioEventType::PaymentSucceeded,
+            ScenarioEventType::PaymentFailed,
+            ScenarioEventType::PaymentInitiationUnavailable,
+            ScenarioEventType::PaymentReconciliationRequired,
+        ], true)) {
+            $renderContext['payment'] = $this->paymentRenderContext($context, $recipient);
+        }
+
+        if (in_array($context->event->event_name, [
+            ScenarioEventType::FulfillmentFailed,
+            ScenarioEventType::FulfillmentCompleted,
+        ], true)) {
+            $renderContext['fulfillment'] = $this->fulfillmentRenderContext($context, $recipient);
+        }
+
+        if ($context->event->event_name === ScenarioEventType::ReferralRewardEarned) {
+            $renderContext['reward'] = $this->rewardRenderContext($context);
+        }
+
         if ($context->surveyAttempt !== null) {
             $renderContext['survey'] = [
                 'title' => $context->surveyAttempt->surveyVersion->title,
@@ -268,7 +304,7 @@ final class ScenarioContextFactory
             }
         }
 
-        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance']) && ! isset($renderContext['survey']) && ! isset($renderContext['sales_call']) && ! isset($renderContext['companion']) && ! isset($renderContext['payout']) && ! isset($renderContext['tracker']) && ! isset($renderContext['knowledge']) && ! $this->allowsClientlessOperationalEvent($context->event->event_name)) {
+        if (! isset($renderContext['booking']) && ! isset($renderContext['onboarding']) && ! isset($renderContext['finance']) && ! isset($renderContext['payment']) && ! isset($renderContext['fulfillment']) && ! isset($renderContext['reward']) && ! isset($renderContext['survey']) && ! isset($renderContext['sales_call']) && ! isset($renderContext['companion']) && ! isset($renderContext['payout']) && ! isset($renderContext['tracker']) && ! isset($renderContext['knowledge']) && ! $this->allowsClientlessOperationalEvent($context->event->event_name)) {
             throw (new ModelNotFoundException)->setModel(Booking::class);
         }
 
@@ -327,6 +363,283 @@ final class ScenarioContextFactory
             evaluationEndsAt: $evaluationEndsAt,
             obligation: $obligation,
         );
+    }
+
+    private function paymentContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
+    {
+        $gatewayEventId = $this->optionalPayloadId($event, 'gateway_event_id');
+        $gatewayEvent = $gatewayEventId === null
+            ? null
+            : PaymentGatewayEvent::query()
+                ->where('organization_id', $event->organization_id)
+                ->whereKey($gatewayEventId)
+                ->first();
+        $transactionId = $gatewayEvent instanceof PaymentGatewayEvent
+            ? $gatewayEvent->gateway_transaction_id
+            : $this->optionalPayloadId($event, 'transaction_id');
+        $transaction = $transactionId === null
+            ? null
+            : PaymentGatewayTransaction::query()
+                ->where('organization_id', $event->organization_id)
+                ->whereKey($transactionId)
+                ->first();
+        $obligationId = $this->optionalPayloadId($event, 'obligation_id') ?? $transaction?->obligation_id;
+        $obligation = $obligationId === null
+            ? null
+            : FinancialObligation::query()
+                ->where('organization_id', $event->organization_id)
+                ->whereKey($obligationId)
+                ->with(['client', 'booking.service', 'service', 'purchase.items.fulfillment'])
+                ->first();
+        $clientId = $obligation instanceof FinancialObligation
+            ? $obligation->client_id
+            : $this->optionalPayloadId($event, 'client_id');
+        $client = $obligation?->client;
+        if (! $client instanceof Client && $clientId !== null) {
+            $client = Client::query()
+                ->where('organization_id', $event->organization_id)
+                ->whereKey($clientId)
+                ->first();
+        }
+
+        return new ScenarioEvaluationContext(
+            event: $event,
+            booking: $obligation?->booking,
+            client: $client,
+            evaluationEndsAt: $evaluationEndsAt,
+            obligation: $obligation,
+            paymentGatewayEvent: $gatewayEvent,
+        );
+    }
+
+    private function fulfillmentContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
+    {
+        $fulfillmentId = $this->optionalPayloadId($event, 'fulfillment_id');
+        $fulfillment = $fulfillmentId === null
+            ? null
+            : PurchaseFulfillment::query()
+                ->where('organization_id', $event->organization_id)
+                ->whereKey($fulfillmentId)
+                ->with(['item.purchase.client', 'item.purchase.obligation', 'item.purchase.items.fulfillment'])
+                ->first();
+        $purchase = $fulfillment?->item?->purchase;
+
+        return new ScenarioEvaluationContext(
+            event: $event,
+            booking: null,
+            client: $purchase?->client,
+            evaluationEndsAt: $evaluationEndsAt,
+            obligation: $purchase?->obligation,
+            fulfillment: $fulfillment,
+        );
+    }
+
+    private function rewardContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
+    {
+        $rewardId = $this->optionalPayloadId($event, 'reward_entry_id');
+        $reward = $rewardId === null
+            ? null
+            : ReferralRewardLedgerEntry::query()
+                ->where('organization_id', $event->organization_id)
+                ->whereKey($rewardId)
+                ->with('beneficiary')
+                ->first();
+
+        return new ScenarioEvaluationContext(
+            event: $event,
+            booking: null,
+            client: $reward?->beneficiary,
+            evaluationEndsAt: $evaluationEndsAt,
+            reward: $reward,
+        );
+    }
+
+    /** @return array<string, scalar|null> */
+    private function paymentRenderContext(ScenarioEvaluationContext $context, ScenarioRecipient $recipient): array
+    {
+        $event = $context->event;
+        $currency = $context->obligation?->payment_currency->value ?? (string) ($event->payload['currency'] ?? '');
+        $amountMinor = $event->payload['amount_minor'] ?? $context->obligation?->payment_amount_minor;
+        $purchase = $context->obligation?->purchase;
+        $productName = $this->obligationProductName($context->obligation);
+        if ($productName === 'Покупка') {
+            $productName = $this->sellableProductName($event);
+        }
+        $message = match ($event->event_name) {
+            ScenarioEventType::PaymentSucceeded => $purchase !== null && $this->purchaseFulfilled($purchase)
+                ? 'Оплата прошла. Доступ открыт.'
+                : ($purchase !== null
+                    ? 'Оплата получена. Доступ готовится — повторно оплачивать не нужно.'
+                    : 'Оплата получена.'),
+            ScenarioEventType::PaymentFailed => 'Оплату завершить не удалось. Попробуйте ещё раз. Если деньги уже списались, не оплачивайте повторно — мы проверим платёж.',
+            ScenarioEventType::PaymentInitiationUnavailable => (string) ($event->payload['message'] ?? 'Онлайн-оплата сейчас временно недоступна. Попробуйте позже.'),
+            default => 'Платёж требует проверки.',
+        };
+
+        return [
+            'amount' => $this->formatAmount($amountMinor, $currency),
+            'currency' => $currency,
+            'product_name' => $productName,
+            'status_label' => match ($event->event_name) {
+                ScenarioEventType::PaymentSucceeded => 'Оплачено',
+                ScenarioEventType::PaymentFailed => 'Оплата не прошла',
+                ScenarioEventType::PaymentInitiationUnavailable => 'Онлайн-оплата недоступна',
+                default => 'Требует сверки',
+            },
+            'reason' => (string) ($event->payload['reason'] ?? 'Платёж требует проверки.'),
+            'client_label' => $context->client instanceof Client
+                ? $this->clientDisplayName($context->client)
+                : 'Клиент не сопоставлен',
+            'message' => $message,
+            'crm_url' => $recipient->type === 'internal'
+                ? ($event->event_name === ScenarioEventType::PaymentInitiationUnavailable
+                    ? url('/admin/finance-configuration')
+                    : url('/admin/payment-gateway-reconciliation'))
+                : null,
+        ];
+    }
+
+    /** @return array<string, scalar|null> */
+    private function fulfillmentRenderContext(ScenarioEvaluationContext $context, ScenarioRecipient $recipient): array
+    {
+        $fulfillment = $context->fulfillment;
+        $purchase = $fulfillment?->item?->purchase;
+        $failed = $context->event->event_name === ScenarioEventType::FulfillmentFailed;
+
+        return [
+            'product_name' => $this->purchaseItemProductName($fulfillment?->item),
+            'status_label' => $failed ? 'Ошибка выдачи' : 'Доступ выдан',
+            'reason' => $failed
+                ? $this->fulfillmentReason((string) ($context->event->payload['reason'] ?? ''))
+                : '',
+            'message' => $failed
+                ? 'Оплата получена. Доступ пока готовится. Повторно оплачивать не нужно.'
+                : 'Доступ готов.',
+            'crm_url' => $recipient->type === 'internal'
+                ? ($purchase?->obligation?->getKey() === null
+                    ? url('/admin/financial-obligations')
+                    : url('/admin/financial-obligations/'.$purchase->obligation->getKey()))
+                : null,
+        ];
+    }
+
+    /** @return array<string, scalar|null> */
+    private function rewardRenderContext(ScenarioEvaluationContext $context): array
+    {
+        $reward = $context->reward;
+        $currency = $reward instanceof ReferralRewardLedgerEntry
+            ? $reward->currency->value
+            : (string) ($context->event->payload['currency'] ?? '');
+        $amountMinor = $reward instanceof ReferralRewardLedgerEntry
+            ? $reward->amount_minor
+            : ($context->event->payload['amount_minor'] ?? null);
+
+        return [
+            'amount' => $this->formatAmount($amountMinor, $currency),
+            'currency' => $currency,
+            'portal_url' => url('/portal/referrals'),
+        ];
+    }
+
+    private function obligationProductName(?FinancialObligation $obligation): string
+    {
+        $booking = $obligation?->getRelationValue('booking');
+        $service = $booking instanceof Booking ? $booking->service : $obligation?->service;
+        if ($service !== null && trim((string) $service->name) !== '') {
+            return trim((string) $service->name);
+        }
+
+        return $this->purchaseItemProductName($obligation?->purchase?->items?->first());
+    }
+
+    private function sellableProductName(ScenarioEvent $event): string
+    {
+        $sellableType = $event->payload['sellable_type'] ?? null;
+        $sellableId = $event->payload['sellable_id'] ?? null;
+        if (! is_string($sellableType) || ! is_numeric($sellableId)) {
+            return 'Покупка';
+        }
+
+        $id = (int) $sellableId;
+        if ($sellableType === Service::class) {
+            $service = Service::query()
+                ->where('organization_id', $event->organization_id)
+                ->whereKey($id)
+                ->first();
+
+            return $service instanceof Service && trim((string) $service->name) !== ''
+                ? trim((string) $service->name)
+                : 'Покупка';
+        }
+
+        if ($sellableType === TrackerPlanVersion::class) {
+            $version = TrackerPlanVersion::query()
+                ->where('organization_id', $event->organization_id)
+                ->whereKey($id)
+                ->with('plan')
+                ->first();
+
+            return $version instanceof TrackerPlanVersion && $version->plan !== null && trim((string) $version->plan->name) !== ''
+                ? trim((string) $version->plan->name)
+                : 'Покупка';
+        }
+
+        return 'Покупка';
+    }
+
+    private function purchaseItemProductName(?PurchaseItem $item): string
+    {
+        $snapshot = $item?->getRawOriginal('product_snapshot');
+        if (is_string($snapshot)) {
+            $snapshot = json_decode($snapshot, true);
+        }
+        if (is_array($snapshot)) {
+            foreach (['name', 'plan_name', 'title'] as $key) {
+                if (is_string($snapshot[$key] ?? null) && trim($snapshot[$key]) !== '') {
+                    return trim($snapshot[$key]);
+                }
+            }
+        }
+
+        return 'Покупка';
+    }
+
+    private function purchaseFulfilled(?Purchase $purchase): bool
+    {
+        if ($purchase === null) {
+            return false;
+        }
+
+        $items = $purchase->items;
+
+        return $items->isNotEmpty() && $items->every(static function (PurchaseItem $item): bool {
+            $fulfillment = $item->getRelationValue('fulfillment');
+
+            return $fulfillment instanceof PurchaseFulfillment
+                && CommerceFulfillmentStatus::tryFrom((string) $fulfillment->getRawOriginal('status')) === CommerceFulfillmentStatus::Fulfilled;
+        });
+    }
+
+    private function fulfillmentReason(string $reason): string
+    {
+        return match ($reason) {
+            'tracker_plan_version_unavailable' => 'Не удалось найти сохранённую версию тарифа трекера.',
+            'provider_failed' => 'Не удалось выдать доступ автоматически.',
+            default => 'Не удалось выдать доступ автоматически.',
+        };
+    }
+
+    private function formatAmount(mixed $amountMinor, mixed $currency): string
+    {
+        if (! is_numeric($amountMinor)) {
+            return '—';
+        }
+        $code = CurrencyCode::tryFrom((string) $currency);
+        if (! $code instanceof CurrencyCode) {
+            return '—';
+        }
+
+        return Money::ofMinor((int) $amountMinor, $code)->toDecimalString().' '.$code->value;
     }
 
     private function surveyContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
@@ -427,6 +740,13 @@ final class ScenarioContextFactory
             ScenarioEventType::KnowledgeIngestionFailed,
             ScenarioEventType::ReferralLinkVisited,
             ScenarioEventType::PaymentProviderEventPrepared,
+            ScenarioEventType::PaymentSucceeded,
+            ScenarioEventType::PaymentFailed,
+            ScenarioEventType::PaymentInitiationUnavailable,
+            ScenarioEventType::PaymentReconciliationRequired,
+            ScenarioEventType::FulfillmentFailed,
+            ScenarioEventType::FulfillmentCompleted,
+            ScenarioEventType::ReferralRewardEarned,
         ], true);
     }
 
@@ -556,5 +876,20 @@ final class ScenarioContextFactory
         }
 
         throw new InvalidArgumentException('The scenario event payload identifier is invalid.');
+    }
+
+    private function optionalPayloadId(ScenarioEvent $event, string $key): ?int
+    {
+        $value = $event->payload[$key] ?? null;
+
+        if (is_int($value) && $value > 0) {
+            return $value;
+        }
+
+        if (is_string($value) && ctype_digit($value) && (int) $value > 0) {
+            return (int) $value;
+        }
+
+        return null;
     }
 }

@@ -10,15 +10,18 @@ use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayStatus;
 use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Tracker\Application\GrantPaidTrackerAccess;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 final class CompletePaidPurchase
 {
     public function __construct(
         private readonly ReconcileFinancialObligation $reconciliation,
         private readonly GrantPaidTrackerAccess $trackerAccess,
+        private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
 
     public function handle(int $organizationId, int $transactionId): ?Purchase
@@ -81,7 +84,12 @@ final class CompletePaidPurchase
                     ->whereKey($versionId)
                     ->first();
                 if (! $version instanceof TrackerPlanVersion) {
-                    $this->markFailed($fulfillment, 'The immutable tracker plan version is unavailable.', $transaction);
+                    $this->markFailed(
+                        $fulfillment,
+                        'The immutable tracker plan version is unavailable.',
+                        'tracker_plan_version_unavailable',
+                        $transaction,
+                    );
 
                     continue;
                 }
@@ -93,28 +101,40 @@ final class CompletePaidPurchase
                     'last_error' => null,
                 ])->save();
                 $this->event($fulfillment, $from, CommerceFulfillmentStatus::Processing, $transaction);
-                $client = $purchase->client()->firstOrFail();
-                $this->trackerAccess->handle($purchase->organization()->firstOrFail(), $client, $version);
+                try {
+                    $client = $purchase->client()->firstOrFail();
+                    $this->trackerAccess->handle($purchase->organization()->firstOrFail(), $client, $version);
+                } catch (Throwable) {
+                    $this->markFailed($fulfillment, 'Tracker access could not be granted.', 'provider_failed', $transaction);
+
+                    continue;
+                }
                 $fulfillment->forceFill([
                     'status' => CommerceFulfillmentStatus::Fulfilled->value,
                     'fulfilled_at' => now(),
                 ])->save();
-                $this->event($fulfillment, CommerceFulfillmentStatus::Processing->value, CommerceFulfillmentStatus::Fulfilled, $transaction);
+                $transition = $this->event($fulfillment, CommerceFulfillmentStatus::Processing->value, CommerceFulfillmentStatus::Fulfilled, $transaction);
+                $this->scenarioEvents->fulfillmentCompleted($fulfillment, $transition, now()->toImmutable());
             }
 
             return $purchase->refresh();
         });
     }
 
-    private function markFailed(PurchaseFulfillment $fulfillment, string $message, PaymentGatewayTransaction $transaction): void
-    {
+    private function markFailed(
+        PurchaseFulfillment $fulfillment,
+        string $message,
+        string $reason,
+        PaymentGatewayTransaction $transaction,
+    ): void {
         $from = $fulfillment->status->value;
         $fulfillment->forceFill([
             'status' => CommerceFulfillmentStatus::Failed->value,
             'attempts' => (int) $fulfillment->attempts + 1,
             'last_error' => $message,
         ])->save();
-        $this->event($fulfillment, $from, CommerceFulfillmentStatus::Failed, $transaction);
+        $transition = $this->event($fulfillment, $from, CommerceFulfillmentStatus::Failed, $transaction);
+        $this->scenarioEvents->fulfillmentFailed($fulfillment, $transition, $reason, now()->toImmutable());
     }
 
     private function event(
@@ -122,7 +142,7 @@ final class CompletePaidPurchase
         string $from,
         CommerceFulfillmentStatus $to,
         PaymentGatewayTransaction $transaction,
-    ): void {
+    ): FulfillmentEvent {
         $event = new FulfillmentEvent;
         $event->forceFill([
             'organization_id' => $fulfillment->organization_id,
@@ -135,5 +155,7 @@ final class CompletePaidPurchase
                 'transaction_id' => (int) $transaction->getKey(),
             ],
         ])->save();
+
+        return $event->refresh();
     }
 }

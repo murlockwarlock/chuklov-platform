@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Portal;
 use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Commerce\Application\StartPurchaseCheckout;
+use App\Modules\Finance\Domain\Exceptions\PaymentGatewayInitiationFailure;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -91,17 +92,21 @@ final class TrackerController extends Controller
             throw (new ModelNotFoundException)->setModel(TrackerPlanVersion::class, [$versionId]);
         }
 
-        $result = $checkout->trackerPlan(
-            organization: $organization,
-            client: $clientContext->client(),
-            version: $version,
-            gateway: 'lava',
-            idempotencyKey: (string) $data['idempotency_key'],
-            buyerEmail: (string) $clientContext->client()->email,
-            successfulReturnUrl: route('portal.finance.index'),
-            failureReturnUrl: route('portal.finance.index'),
-            cancelReturnUrl: route('portal.finance.index'),
-        );
+        try {
+            $result = $checkout->trackerPlan(
+                organization: $organization,
+                client: $clientContext->client(),
+                version: $version,
+                gateway: 'lava',
+                idempotencyKey: (string) $data['idempotency_key'],
+                buyerEmail: (string) $clientContext->client()->email,
+                successfulReturnUrl: route('portal.finance.index'),
+                failureReturnUrl: route('portal.finance.index'),
+                cancelReturnUrl: route('portal.finance.index'),
+            );
+        } catch (PaymentGatewayInitiationFailure $exception) {
+            return back()->withErrors(['payment' => $exception->clientMessage()]);
+        }
 
         if (! is_string($result->transaction->checkout_url) || $result->transaction->checkout_url === '') {
             return back()->withErrors(['payment' => 'Платёж уже проверяется. Обновите страницу немного позже.']);

@@ -7,6 +7,7 @@ use App\Modules\Finance\Application\InitiateClientFakePayment;
 use App\Modules\Finance\Application\InitiateClientLavaPayment;
 use App\Modules\Finance\Application\ListClientFinance;
 use App\Modules\Finance\Application\SimulateClientFakePayment;
+use App\Modules\Finance\Domain\Exceptions\PaymentGatewayInitiationFailure;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -46,13 +47,17 @@ final class FinanceController extends Controller
         $data = $request->validate([
             'idempotency_key' => ['required', 'string', 'max:180', 'regex:/^[A-Za-z0-9._:-]+$/'],
         ]);
-        $transaction = $initiate->handle(
-            obligationId: $obligationId,
-            idempotencyKey: (string) $data['idempotency_key'],
-            successfulReturnUrl: route('portal.finance.index'),
-            failureReturnUrl: route('portal.finance.index'),
-            cancelReturnUrl: route('portal.finance.index'),
-        );
+        try {
+            $transaction = $initiate->handle(
+                obligationId: $obligationId,
+                idempotencyKey: (string) $data['idempotency_key'],
+                successfulReturnUrl: route('portal.finance.index'),
+                failureReturnUrl: route('portal.finance.index'),
+                cancelReturnUrl: route('portal.finance.index'),
+            );
+        } catch (PaymentGatewayInitiationFailure $exception) {
+            return back()->withErrors(['payment' => $exception->clientMessage()]);
+        }
 
         if (! is_string($transaction->checkout_url) || $transaction->checkout_url === '') {
             return back()->withErrors(['payment' => 'Платёж уже проверяется. Обновите страницу немного позже.']);

@@ -15,6 +15,8 @@ use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\CompleteBooking;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
@@ -46,6 +48,10 @@ final class PaymentGatewayEventProcessingTest extends TestCase
         self::assertSame(PaymentGatewayStatus::Settled, $transaction->fresh()->status);
         self::assertSame(PaymentGatewayEventStatus::Processed, $event->fresh()->processing_status);
         self::assertSame(1, DB::table('financial_ledger_entries')->where('organization_id', $organization->getKey())->count());
+        self::assertSame(1, ScenarioEvent::query()->where('event_name', ScenarioEventType::PaymentSucceeded->value)->count());
+
+        app(ReceiveLavaWebhook::class)->handle($organization->getKey(), $this->paymentPayload());
+        self::assertSame(1, ScenarioEvent::query()->where('event_name', ScenarioEventType::PaymentSucceeded->value)->count());
     }
 
     public function test_reprocessor_recovers_event_after_reference_save_before_drain(): void
@@ -73,6 +79,11 @@ final class PaymentGatewayEventProcessingTest extends TestCase
         self::assertSame('amount_or_currency_mismatch', $event->fresh()->reconciliation_reason);
         self::assertSame(PaymentGatewayStatus::Pending, $transaction->fresh()->status);
         self::assertSame(0, DB::table('financial_ledger_entries')->where('organization_id', $organization->getKey())->count());
+        self::assertSame(1, ScenarioEvent::query()->where('event_name', ScenarioEventType::PaymentReconciliationRequired->value)->count());
+        self::assertStringContainsString(
+            'Сумма или валюта платежа',
+            (string) ScenarioEvent::query()->where('event_name', ScenarioEventType::PaymentReconciliationRequired->value)->sole()->payload['reason'],
+        );
     }
 
     public function test_failure_event_marks_pending_transaction_failed_without_ledger_entry(): void
@@ -89,6 +100,9 @@ final class PaymentGatewayEventProcessingTest extends TestCase
         self::assertSame(PaymentGatewayEventStatus::Processed, $event->fresh()->processing_status);
         self::assertSame(PaymentGatewayStatus::Failed, $transaction->fresh()->status);
         self::assertSame(0, DB::table('financial_ledger_entries')->where('organization_id', $organization->getKey())->count());
+        $scenarioEvent = ScenarioEvent::query()->where('event_name', ScenarioEventType::PaymentFailed->value)->sole();
+        self::assertNotEmpty($scenarioEvent->payload['client_id'] ?? null);
+        self::assertArrayNotHasKey('provider_event_key', $scenarioEvent->payload);
     }
 
     public function test_stale_pending_link_becomes_visible_reconciliation_required(): void

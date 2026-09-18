@@ -15,6 +15,7 @@ use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Finance\Domain\ValueObjects\FinancialLedgerEntryData;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -30,6 +31,7 @@ final class ProcessPaymentGatewayEvent
         private readonly RecordFinancialSettlementEvent $settlementEvents,
         private readonly RecordAuditEvent $audit,
         private readonly CompletePaidPurchase $purchaseCompletion,
+        private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
 
     public function handle(int $organizationId, int $eventId): PaymentGatewayEvent
@@ -158,6 +160,8 @@ final class ProcessPaymentGatewayEvent
                 'currency' => $transaction->currency->value,
             ],
         );
+
+        $this->scenarioEvents->paymentFailed($event, $transaction, $now);
 
         return $event->refresh();
     }
@@ -331,7 +335,10 @@ final class ProcessPaymentGatewayEvent
             'last_error' => $message,
         ])->save();
 
-        return $event->refresh();
+        $event = $event->refresh();
+        $this->scenarioEvents->paymentReconciliationRequired($event, CarbonImmutable::now());
+
+        return $event;
     }
 
     private function maxAttempts(): int

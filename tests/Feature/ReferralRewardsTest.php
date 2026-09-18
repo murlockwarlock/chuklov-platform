@@ -4,13 +4,16 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Modules\Attribution\Application\AcceptManualAttribution;
+use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Finance\Application\CorrectFinancialPayment;
 use App\Modules\Finance\Application\RecordFinancialSettlementEvent;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Integration\Domain\Models\IntegrationEvent;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -34,6 +37,12 @@ use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
 use App\Modules\Referrals\Domain\Models\ReferralRewardProgramVersion;
+use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
+use App\Modules\Scenarios\Application\ExecuteScenarioAction;
+use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
+use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -41,6 +50,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpKernel\Exception\HttpException;
+use Tests\Support\RecordingNotificationChannel;
 use Tests\TestCase;
 
 final class ReferralRewardsTest extends TestCase
@@ -74,6 +84,42 @@ final class ReferralRewardsTest extends TestCase
         self::assertSame(ReferralRewardLedgerEntryType::Earned, $entry->entry_type);
         self::assertSame($referred->getKey(), $entry->referred_client_id);
         self::assertSame($referrer->getKey(), $entry->beneficiary_client_id);
+        app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
+        $scenarioEvent = ScenarioEvent::query()->where('event_name', ScenarioEventType::ReferralRewardEarned->value)->sole();
+        self::assertSame($referrer->getKey(), $scenarioEvent->payload['client_id']);
+        self::assertSame(1500, $scenarioEvent->payload['amount_minor']);
+        self::assertSame('USD', $scenarioEvent->payload['currency']);
+    }
+
+    public function test_new_earned_reward_sends_one_notification_to_the_beneficiary(): void
+    {
+        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        $this->relationship($organization, $referrer, $referred);
+        $this->configureFixed($organization, $admin, '10.00', 'USD');
+        ClientChannelIdentity::factory()->forClient($referrer)->create([
+            'verification_status' => ChannelIdentityStatus::Verified->value,
+            'external_id' => 'referral-reward-chat',
+        ]);
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $telegram = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$telegram]));
+
+        $event = $this->settledEvent($organization, $referred, 'reward-notification');
+        app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
+        app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
+
+        $scenarioEvent = ScenarioEvent::query()->where('event_name', ScenarioEventType::ReferralRewardEarned->value)->sole();
+        app(MaterializeScenarioEvent::class)->handle($scenarioEvent->getKey());
+        foreach (ScenarioAction::query()->where('scenario_event_id', $scenarioEvent->getKey())->get() as $action) {
+            $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+            $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+        }
+
+        self::assertCount(1, $telegram->messages);
+        self::assertSame('referral-reward-chat', $telegram->messages[0]->recipientExternalId);
+        self::assertStringContainsString('10.00 USD', $telegram->messages[0]->body);
+        self::assertStringNotContainsString((string) $referred->getKey(), $telegram->messages[0]->body);
     }
 
     public function test_percentage_reward_uses_settlement_minor_units_and_configured_rounding(): void

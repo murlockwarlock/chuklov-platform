@@ -5,8 +5,11 @@ namespace App\Modules\Scenarios\Domain\ValueObjects;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
+use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
@@ -21,6 +24,9 @@ final readonly class ScenarioEvaluationContext
         public ?ClientOnboarding $onboarding = null,
         public ?CarbonImmutable $evaluationEndsAt = null,
         public ?FinancialObligation $obligation = null,
+        public ?PaymentGatewayEvent $paymentGatewayEvent = null,
+        public ?PurchaseFulfillment $fulfillment = null,
+        public ?ReferralRewardLedgerEntry $reward = null,
         public ?SurveyAttempt $surveyAttempt = null,
         public ?B2bLead $b2bLead = null,
         public ?B2bSalesCall $b2bSalesCall = null,
@@ -35,6 +41,9 @@ final readonly class ScenarioEvaluationContext
             onboarding: $this->onboarding,
             evaluationEndsAt: $evaluationEndsAt,
             obligation: $this->obligation,
+            paymentGatewayEvent: $this->paymentGatewayEvent,
+            fulfillment: $this->fulfillment,
+            reward: $this->reward,
             surveyAttempt: $this->surveyAttempt,
             b2bLead: $this->b2bLead,
             b2bSalesCall: $this->b2bSalesCall,

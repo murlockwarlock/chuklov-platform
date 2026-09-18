@@ -4,6 +4,8 @@ namespace App\Modules\Finance\Infrastructure\Lava;
 
 use App\Modules\Finance\Domain\Contracts\PaymentGateway;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
+use App\Modules\Finance\Domain\Exceptions\PaymentGatewayConfigurationException;
+use App\Modules\Finance\Domain\Exceptions\PaymentGatewayProviderException;
 use App\Modules\Finance\Domain\ValueObjects\GatewayFailureEvidence;
 use App\Modules\Finance\Domain\ValueObjects\GatewayInitiationRequest;
 use App\Modules\Finance\Domain\ValueObjects\GatewayInitiationResult;
@@ -18,6 +20,7 @@ use App\Modules\Finance\Domain\ValueObjects\VerifiedGatewayRefund;
 use App\Modules\Finance\Domain\ValueObjects\VerifiedGatewaySettlement;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
@@ -39,7 +42,12 @@ final class LavaPaymentGateway implements PaymentGateway
             || $request->buyerEmail === null
             || $request->providerOfferId === null
             || ! Str::isUuid(trim($request->providerOfferId))) {
-            throw new InvalidArgumentException('Lava invoice data is incomplete.');
+            throw new PaymentGatewayConfigurationException(
+                failureReason: 'invalid_payment_request',
+                safeClientMessage: 'Онлайн-оплата сейчас временно недоступна. Попробуйте позже.',
+                notifyOperations: true,
+                safeOperatorMessage: 'Lava invoice configuration is incomplete.',
+            );
         }
 
         $payload = [
@@ -59,19 +67,72 @@ final class LavaPaymentGateway implements PaymentGateway
             }
         }
 
-        $response = $this->client($request->organizationId)->post('/api/v3/invoice', $payload);
+        try {
+            $response = $this->client($request->organizationId)->post('/api/v3/invoice', $payload);
+        } catch (ConnectionException $exception) {
+            throw new PaymentGatewayProviderException(
+                failureReason: 'provider_timeout',
+                safeClientMessage: 'Не удалось открыть страницу оплаты. Если деньги уже списались, не оплачивайте повторно — мы проверим платёж.',
+                notifyOperations: true,
+                safeOperatorMessage: 'Lava did not respond while creating an invoice.',
+                previous: $exception,
+            );
+        }
+
+        if (in_array($response->status(), [401, 403], true)) {
+            throw new PaymentGatewayConfigurationException(
+                failureReason: 'invalid_credential',
+                safeClientMessage: 'Онлайн-оплата сейчас временно недоступна. Попробуйте позже.',
+                notifyOperations: true,
+                safeOperatorMessage: 'Lava rejected the configured API credential.',
+            );
+        }
+
+        if ($response->status() === 429 || $response->serverError()) {
+            throw new PaymentGatewayProviderException(
+                failureReason: 'provider_unavailable',
+                safeClientMessage: 'Не удалось открыть страницу оплаты. Если деньги уже списались, не оплачивайте повторно — мы проверим платёж.',
+                notifyOperations: true,
+                safeOperatorMessage: 'Lava was temporarily unavailable while creating an invoice.',
+            );
+        }
+
+        if ($response->status() === 400 || $response->status() === 422) {
+            throw new PaymentGatewayConfigurationException(
+                failureReason: 'invalid_offer',
+                safeClientMessage: 'Онлайн-оплата сейчас временно недоступна. Попробуйте позже.',
+                notifyOperations: true,
+                safeOperatorMessage: 'Lava rejected the configured offer or invoice parameters.',
+            );
+        }
+
         if (! $response->successful()) {
-            throw new RuntimeException('Lava invoice creation failed with status '.$response->status().'.');
+            throw new PaymentGatewayProviderException(
+                failureReason: 'provider_rejected_request',
+                safeClientMessage: 'Не удалось открыть страницу оплаты. Если деньги уже списались, не оплачивайте повторно — мы проверим платёж.',
+                notifyOperations: true,
+                safeOperatorMessage: 'Lava rejected invoice creation.',
+            );
         }
 
         $data = $response->json();
         $providerReference = is_array($data) ? ($data['id'] ?? null) : null;
         $checkoutUrl = is_array($data) ? ($data['paymentUrl'] ?? null) : null;
         if (! is_string($providerReference) || ! Str::isUuid($providerReference)) {
-            throw new RuntimeException('Lava invoice response has no valid contract reference.');
+            throw new PaymentGatewayProviderException(
+                failureReason: 'invalid_provider_response',
+                safeClientMessage: 'Не удалось открыть страницу оплаты. Если деньги уже списались, не оплачивайте повторно — мы проверим платёж.',
+                notifyOperations: true,
+                safeOperatorMessage: 'Lava invoice response has no valid contract reference.',
+            );
         }
         if (! is_string($checkoutUrl) || ! $this->isHttpsUrl($checkoutUrl)) {
-            throw new RuntimeException('Lava invoice response has no valid checkout URL.');
+            throw new PaymentGatewayProviderException(
+                failureReason: 'invalid_provider_response',
+                safeClientMessage: 'Не удалось открыть страницу оплаты. Если деньги уже списались, не оплачивайте повторно — мы проверим платёж.',
+                notifyOperations: true,
+                safeOperatorMessage: 'Lava invoice response has no valid checkout URL.',
+            );
         }
 
         return new GatewayInitiationResult(
@@ -156,13 +217,23 @@ final class LavaPaymentGateway implements PaymentGateway
             ->first();
         $apiKey = $credential?->credentials['api_key'] ?? null;
         if (! is_string($apiKey) || trim($apiKey) === '') {
-            throw new InvalidArgumentException('The active Lava API credential is not configured.');
+            throw new PaymentGatewayConfigurationException(
+                failureReason: 'missing_credential',
+                safeClientMessage: 'Онлайн-оплата сейчас временно недоступна. Попробуйте позже.',
+                notifyOperations: true,
+                safeOperatorMessage: 'The active Lava API credential is not configured.',
+            );
         }
 
         $baseUrl = rtrim((string) config('payments.lava.base_url', 'https://gate.lava.top'), '/');
         $parts = parse_url($baseUrl);
         if (($parts['scheme'] ?? null) !== 'https' || ! is_string($parts['host'] ?? null) || $parts['host'] === '') {
-            throw new InvalidArgumentException('The Lava API base URL must use HTTPS.');
+            throw new PaymentGatewayConfigurationException(
+                failureReason: 'invalid_configuration',
+                safeClientMessage: 'Онлайн-оплата сейчас временно недоступна. Попробуйте позже.',
+                notifyOperations: true,
+                safeOperatorMessage: 'The Lava API base URL must use HTTPS.',
+            );
         }
 
         return Http::baseUrl($baseUrl)
@@ -174,7 +245,12 @@ final class LavaPaymentGateway implements PaymentGateway
     private function assertSupportedCurrency(CurrencyCode $currency): void
     {
         if (! in_array($currency, [CurrencyCode::RUB, CurrencyCode::USD, CurrencyCode::EUR], true)) {
-            throw new InvalidArgumentException('Lava supports only RUB, USD, and EUR for this integration.');
+            throw new PaymentGatewayConfigurationException(
+                failureReason: 'unsupported_currency',
+                safeClientMessage: 'Онлайн-оплата сейчас временно недоступна. Попробуйте позже.',
+                notifyOperations: true,
+                safeOperatorMessage: 'Lava supports only RUB, USD, and EUR for this integration.',
+            );
         }
     }
 

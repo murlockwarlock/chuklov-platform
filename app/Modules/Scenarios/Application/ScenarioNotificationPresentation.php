@@ -28,7 +28,11 @@ final class ScenarioNotificationPresentation
             ScenarioEventType::CompanionFallbackFailed,
             ScenarioEventType::AiEvaluationFailed,
             ScenarioEventType::KnowledgeIngestionFailed,
-            ScenarioEventType::BroadcastDeliveryFailed => NotificationSeverity::Critical,
+            ScenarioEventType::BroadcastDeliveryFailed,
+            ScenarioEventType::PaymentInitiationUnavailable,
+            ScenarioEventType::PaymentReconciliationRequired,
+            ScenarioEventType::FulfillmentFailed => NotificationSeverity::Critical,
+            ScenarioEventType::PaymentFailed => NotificationSeverity::Action,
             default => NotificationSeverity::Info,
         };
     }

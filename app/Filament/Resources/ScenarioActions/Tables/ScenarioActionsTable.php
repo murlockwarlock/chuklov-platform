@@ -89,6 +89,13 @@ final class ScenarioActionsTable
             'onboarding.started' => 'Начало оформления',
             'finance.obligation.created' => 'Задолженность за визит',
             'survey.completed' => 'Завершение теста',
+            'finance.payment.succeeded' => 'Оплата получена',
+            'finance.payment.failed' => 'Оплата не прошла',
+            'finance.payment.initiation_unavailable' => 'Онлайн-оплата недоступна',
+            'finance.payment.reconciliation_required' => 'Платёж требует сверки',
+            'commerce.fulfillment.failed' => 'Доступ не выдан',
+            'commerce.fulfillment.completed' => 'Доступ выдан',
+            'referral.reward.earned' => 'Начисление по партнёрской программе',
             default => 'Автоматическое сообщение',
         };
     }

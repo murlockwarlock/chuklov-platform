@@ -17,7 +17,9 @@ use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
 use App\Modules\Referrals\Domain\Models\ReferralRewardProgram;
 use App\Modules\Referrals\Domain\Models\ReferralRewardProgramVersion;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 
 final class QualifyReferralReward
@@ -27,6 +29,7 @@ final class QualifyReferralReward
         private readonly FinancialReconciliationContract $contract,
         private readonly ReferralRewardCalculator $calculator,
         private readonly RecordAuditEvent $audit,
+        private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
 
     public function handle(ReferralCommercialEvidence $evidence): ?ReferralRewardLedgerEntry
@@ -174,6 +177,10 @@ final class QualifyReferralReward
                 'occurred_at' => $evidence->observed_at,
             ]);
             $entry->save();
+            $this->scenarioEvents->referralRewardEarned(
+                $entry,
+                CarbonImmutable::parse((string) $entry->occurred_at)->utc(),
+            );
             $this->audit->handle(
                 organization: $organization,
                 actor: null,

@@ -11,6 +11,8 @@ use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\CompleteBooking;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
@@ -20,6 +22,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use InvalidArgumentException;
 use RuntimeException;
 use Tests\TestCase;
 
@@ -151,6 +154,58 @@ final class GatewayPaymentInitiationTest extends TestCase
         self::assertSame($transaction->getKey(), $again->getKey());
         self::assertSame(PaymentGatewayStatus::Initiating, $again->status);
         Http::assertSentCount(1);
+    }
+
+    public function test_lava_configuration_failure_has_safe_state_and_one_operational_event(): void
+    {
+        [$organization, $obligation] = $this->fixture();
+        OrganizationCredential::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('provider', 'lava')
+            ->update(['status' => CredentialStatus::Disabled->value]);
+        Http::fake();
+
+        try {
+            app(CreateGatewayPaymentAttempt::class)->handle(
+                organization: $organization,
+                obligation: $obligation,
+                gatewayName: 'lava',
+                idempotencyKey: 'lava-init-missing-credential',
+                buyerEmail: 'client@example.com',
+                providerOfferId: '836b9fc5-7ae9-4a27-9642-592bc44072b7',
+            );
+            self::fail('A missing credential must stop checkout initiation.');
+        } catch (InvalidArgumentException $exception) {
+            self::assertSame('The active Lava API credential is not configured.', $exception->getMessage());
+        }
+
+        $transaction = PaymentGatewayTransaction::query()->sole();
+        self::assertSame(PaymentGatewayStatus::Unknown, $transaction->status);
+        self::assertStringNotContainsString('lava-api-key', (string) $transaction->last_error);
+        self::assertSame(
+            1,
+            ScenarioEvent::query()->where('event_name', ScenarioEventType::PaymentInitiationUnavailable->value)->count(),
+        );
+        self::assertStringContainsString(
+            'API-ключ Lava не настроен',
+            (string) ScenarioEvent::query()->where('event_name', ScenarioEventType::PaymentInitiationUnavailable->value)->sole()->payload['reason'],
+        );
+
+        $again = app(CreateGatewayPaymentAttempt::class)->handle(
+            organization: $organization,
+            obligation: $obligation,
+            gatewayName: 'lava',
+            idempotencyKey: 'lava-init-missing-credential',
+            buyerEmail: 'client@example.com',
+            providerOfferId: '836b9fc5-7ae9-4a27-9642-592bc44072b7',
+        );
+
+        self::assertSame($transaction->getKey(), $again->getKey());
+        self::assertSame(
+            1,
+            ScenarioEvent::query()->where('event_name', ScenarioEventType::PaymentInitiationUnavailable->value)->count(),
+        );
+        Http::assertNothingSent();
     }
 
     private function fixture(): array

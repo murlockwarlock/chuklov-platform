@@ -7,8 +7,9 @@ use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Integration\Application\RecordIntegrationEvent;
 use App\Modules\Integration\Domain\Enums\IntegrationEventType;
 use App\Modules\Integration\Domain\ValueObjects\IntegrationEventData;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use Carbon\CarbonImmutable;
 use DateTimeInterface;
-use Illuminate\Support\Carbon;
 use RuntimeException;
 
 final class RecordFinancialSettlementEvent
@@ -16,6 +17,7 @@ final class RecordFinancialSettlementEvent
     public function __construct(
         private readonly ReconcileFinancialObligation $reconciliation,
         private readonly RecordIntegrationEvent $events,
+        private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
 
     public function handle(
@@ -39,7 +41,7 @@ final class RecordFinancialSettlementEvent
         }
 
         $organization = $obligation->organization()->firstOrFail();
-        $occurred = Carbon::instance($occurredAt)->utc();
+        $occurred = CarbonImmutable::instance($occurredAt)->utc();
 
         $this->events->handle(
             organization: $organization,
@@ -59,5 +61,7 @@ final class RecordFinancialSettlementEvent
                 occurredAt: $occurred,
             ),
         );
+
+        $this->scenarioEvents->paymentSucceeded($obligation, $ledgerEntry, $occurred);
     }
 }

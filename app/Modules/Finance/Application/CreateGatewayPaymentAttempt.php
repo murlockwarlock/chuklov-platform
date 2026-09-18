@@ -5,12 +5,14 @@ namespace App\Modules\Finance\Application;
 use App\Models\User;
 use App\Modules\Finance\Domain\Contracts\PaymentGatewayRegistry;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayStatus;
+use App\Modules\Finance\Domain\Exceptions\PaymentGatewayInitiationFailure;
 use App\Modules\Finance\Domain\Models\FinanceIdempotencyKey;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Finance\Domain\ValueObjects\GatewayInitiationRequest;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -23,6 +25,7 @@ final class CreateGatewayPaymentAttempt
         private readonly PaymentGatewayRegistry $gateways,
         private readonly RecordAuditEvent $audit,
         private readonly DrainPaymentGatewayEvents $drain,
+        private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
 
     public function handle(
@@ -208,6 +211,18 @@ final class CreateGatewayPaymentAttempt
         } catch (Throwable $exception) {
             $this->markUnknown($organization, $transaction, $exception);
 
+            if ($exception instanceof PaymentGatewayInitiationFailure && $exception->shouldNotifyOperations()) {
+                $this->scenarioEvents->paymentInitiationUnavailable(
+                    organizationId: (int) $organization->getKey(),
+                    gateway: $transaction->gateway,
+                    reason: $exception->reasonCode(),
+                    occurredAt: now()->toImmutable(),
+                    obligation: $obligation,
+                    transaction: $transaction,
+                    deduplicationKey: 'gateway:'.$transaction->gateway.':'.$exception->reasonCode(),
+                );
+            }
+
             throw $exception;
         }
 
@@ -244,7 +259,9 @@ final class CreateGatewayPaymentAttempt
                 ->lockForUpdate()
                 ->update([
                     'status' => PaymentGatewayStatus::Unknown->value,
-                    'last_error' => mb_substr($exception->getMessage(), 0, 2000),
+                    'last_error' => $exception instanceof PaymentGatewayInitiationFailure
+                        ? $exception->getMessage()
+                        : 'Payment initiation failed.',
                     'updated_at' => now(),
                 ]);
         });

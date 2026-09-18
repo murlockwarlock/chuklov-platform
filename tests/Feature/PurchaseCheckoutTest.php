@@ -13,6 +13,8 @@ use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Security\Domain\Enums\CredentialStatus;
 use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
@@ -165,6 +167,30 @@ final class PurchaseCheckoutTest extends TestCase
             idempotencyKey: 'cross-org-checkout',
             buyerEmail: (string) $client->email,
         );
+    }
+
+    public function test_missing_lava_offer_mapping_records_one_safe_operational_event(): void
+    {
+        [$organization, $client, $product] = $this->onlineProductFixture();
+
+        $this->expectException(ValidationException::class);
+        try {
+            app(StartPurchaseCheckout::class)->onlineProduct(
+                organization: $organization,
+                client: $client,
+                product: $product,
+                gateway: 'lava',
+                idempotencyKey: 'missing-offer-mapping',
+                buyerEmail: (string) $client->email,
+            );
+        } finally {
+            $event = ScenarioEvent::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('event_name', ScenarioEventType::PaymentInitiationUnavailable->value)
+                ->sole();
+            self::assertStringContainsString('не настроено', (string) $event->payload['reason']);
+            self::assertArrayNotHasKey('provider_offer_id', $event->payload);
+        }
     }
 
     private function onlineProductFixture(): array
