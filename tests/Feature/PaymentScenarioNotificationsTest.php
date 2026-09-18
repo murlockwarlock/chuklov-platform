@@ -28,7 +28,10 @@ use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
 use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -36,6 +39,7 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\Support\RecordingNotificationChannel;
 use Tests\TestCase;
 
@@ -43,9 +47,10 @@ final class PaymentScenarioNotificationsTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_payment_success_materializes_one_safe_client_notification(): void
+    #[DataProvider('clientLocales')]
+    public function test_payment_success_materializes_one_safe_client_notification(string $locale): void
     {
-        [$organization, $client, $obligation, $ledgerEntry] = $this->paymentFixture();
+        [$organization, $client, $obligation, $ledgerEntry] = $this->paymentFixture($locale);
         ClientChannelIdentity::factory()->forClient($client)->create([
             'verification_status' => ChannelIdentityStatus::Verified->value,
             'external_id' => 'client-payment-chat',
@@ -73,8 +78,10 @@ final class PaymentScenarioNotificationsTest extends TestCase
         self::assertCount(1, $telegram->messages);
         self::assertStringContainsString('35.00 USD', $telegram->messages[0]->body);
         self::assertStringContainsString('Сеанс восстановления', $telegram->messages[0]->body);
+        self::assertStringContainsString($locale === 'en' ? 'Payment received' : 'Оплата получена', $telegram->messages[0]->body);
         self::assertStringNotContainsString('provider_event_key', $telegram->messages[0]->body);
         self::assertStringNotContainsString('lava-secret', $telegram->messages[0]->body);
+        self::assertSame($locale, ScenarioAction::query()->sole()->templateVersion()->firstOrFail()->template->locale);
     }
 
     public function test_reconciliation_alert_is_visible_to_finance_users_without_provider_payload(): void
@@ -126,9 +133,10 @@ final class PaymentScenarioNotificationsTest extends TestCase
         );
     }
 
-    public function test_authoritative_payment_failure_sends_safe_client_notification_once(): void
+    #[DataProvider('clientLocales')]
+    public function test_authoritative_payment_failure_sends_safe_client_notification_once(string $locale): void
     {
-        [$organization, $client, $obligation] = $this->paymentFixture();
+        [$organization, $client, $obligation] = $this->paymentFixture($locale);
         ClientChannelIdentity::factory()->forClient($client)->create([
             'verification_status' => ChannelIdentityStatus::Verified->value,
             'external_id' => 'client-payment-failure-chat',
@@ -185,9 +193,13 @@ final class PaymentScenarioNotificationsTest extends TestCase
 
         self::assertSame($event->getKey(), $duplicate->getKey());
         self::assertCount(1, $telegram->messages);
-        self::assertStringContainsString('Оплату завершить не удалось', $telegram->messages[0]->body);
+        self::assertStringContainsString(
+            $locale === 'en' ? "We couldn't complete the payment" : 'Оплату завершить не удалось',
+            $telegram->messages[0]->body,
+        );
         self::assertStringNotContainsString('7ea82675-4ded-4133-95a7-a6efbaf165cc', $telegram->messages[0]->body);
         self::assertStringNotContainsString('provider_event_key', $telegram->messages[0]->body);
+        self::assertSame($locale, ScenarioAction::query()->sole()->templateVersion()->firstOrFail()->template->locale);
     }
 
     public function test_payment_initiation_configuration_alert_reaches_finance_users_without_client_message(): void
@@ -218,11 +230,15 @@ final class PaymentScenarioNotificationsTest extends TestCase
         self::assertSame(1, $admin->fresh()->notifications()->count());
     }
 
-    public function test_fulfillment_failure_notifies_client_and_finance_once(): void
+    #[DataProvider('clientLocales')]
+    public function test_fulfillment_failure_notifies_client_and_finance_once(string $locale): void
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
-        $client = Client::factory()->forOrganization($organization)->create(['full_name' => 'Клиент курса']);
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Клиент курса',
+            'language' => $locale,
+        ]);
         ClientChannelIdentity::factory()->forClient($client)->create([
             'verification_status' => ChannelIdentityStatus::Verified->value,
             'external_id' => 'client-fulfillment-chat',
@@ -290,11 +306,157 @@ final class PaymentScenarioNotificationsTest extends TestCase
         $financeMessage = collect($telegram->messages)->firstWhere('recipientExternalId', 'finance-fulfillment-chat');
         self::assertNotNull($clientMessage);
         self::assertNotNull($financeMessage);
-        self::assertStringContainsString('Повторно оплачивать не нужно', $clientMessage->body);
+        $clientBody = html_entity_decode($clientMessage->body, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        self::assertStringContainsString(
+            $locale === 'en' ? "You don't need to pay again" : 'Повторно оплачивать не нужно',
+            $clientBody,
+        );
         self::assertStringContainsString('Не удалось выдать доступ автоматически', $financeMessage->body);
         self::assertStringNotContainsString('internal-provider-secret', $clientMessage->body);
         self::assertStringNotContainsString('internal-provider-secret', $financeMessage->body);
         self::assertSame(1, $admin->fresh()->notifications()->count());
+    }
+
+    #[DataProvider('clientLocales')]
+    public function test_fulfillment_completed_notifies_client_in_their_locale(string $locale): void
+    {
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create(['language' => $locale]);
+        ClientChannelIdentity::factory()->forClient($client)->create([
+            'verification_status' => ChannelIdentityStatus::Verified->value,
+            'external_id' => 'client-fulfillment-completed-'.$locale,
+        ]);
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $telegram = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$telegram]));
+
+        $purchase = new Purchase;
+        $purchase->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'status' => 'paid',
+            'total_amount_minor' => 3500,
+            'currency' => 'USD',
+            'purchase_snapshot' => ['name' => 'Курс восстановления'],
+            'paid_at' => now(),
+        ])->save();
+        $item = new PurchaseItem;
+        $item->forceFill([
+            'organization_id' => $organization->getKey(),
+            'purchase_id' => $purchase->getKey(),
+            'sellable_type' => Service::class,
+            'sellable_id' => 1,
+            'quantity' => 1,
+            'amount_minor' => 3500,
+            'currency' => 'USD',
+            'product_snapshot' => ['name' => 'Курс восстановления'],
+        ])->save();
+        $fulfillment = new PurchaseFulfillment;
+        $fulfillment->forceFill([
+            'organization_id' => $organization->getKey(),
+            'purchase_item_id' => $item->getKey(),
+            'provider_type' => 'manual',
+            'status' => CommerceFulfillmentStatus::Fulfilled->value,
+            'attempts' => 1,
+        ])->save();
+        $transition = new FulfillmentEvent;
+        $transition->forceFill([
+            'organization_id' => $organization->getKey(),
+            'fulfillment_id' => $fulfillment->getKey(),
+            'from_status' => CommerceFulfillmentStatus::Processing->value,
+            'to_status' => CommerceFulfillmentStatus::Fulfilled->value,
+            'actor_user_id' => null,
+            'metadata' => ['source' => 'test'],
+        ])->save();
+
+        $event = app(RecordScenarioEvent::class)->fulfillmentCompleted(
+            $fulfillment->refresh(),
+            $transition->refresh(),
+            CarbonImmutable::now(),
+        );
+        $duplicate = app(RecordScenarioEvent::class)->fulfillmentCompleted(
+            $fulfillment->refresh(),
+            $transition->refresh(),
+            CarbonImmutable::now(),
+        );
+        $this->materializeAndDeliver($event);
+        $this->materializeAndDeliver($duplicate);
+
+        self::assertSame($event->getKey(), $duplicate->getKey());
+        self::assertCount(1, $telegram->messages);
+        self::assertStringContainsString($locale === 'en' ? 'Your access is ready.' : 'Доступ готов.', $telegram->messages[0]->body);
+        self::assertSame($locale, ScenarioAction::query()->sole()->templateVersion()->firstOrFail()->template->locale);
+    }
+
+    public function test_payment_client_template_defaults_are_ru_and_en_and_repeat_safe(): void
+    {
+        $organization = Organization::factory()->create();
+
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+
+        foreach ([
+            'finance-payment-succeeded',
+            'finance-payment-failed',
+            'commerce-fulfillment-failed-client',
+            'commerce-fulfillment-completed-client',
+            'referral-reward-earned-client',
+        ] as $templateKey) {
+            self::assertSame(2, NotificationTemplate::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('template_key', $templateKey)
+                ->count());
+            self::assertSame(2, NotificationTemplateVersion::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereHas('template', fn ($query) => $query->where('template_key', $templateKey))
+                ->count());
+        }
+
+        self::assertSame(
+            '{{ payment.message }} Amount: {{ payment.amount }} for "{{ payment.product_name }}".',
+            (string) NotificationTemplate::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('template_key', 'finance-payment-succeeded')
+                ->where('locale', 'en')
+                ->firstOrFail()
+                ->latestVersion
+                ->body,
+        );
+    }
+
+    public function test_payment_client_template_defaults_do_not_overwrite_existing_english_version(): void
+    {
+        $organization = Organization::factory()->create();
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $template = NotificationTemplate::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('template_key', 'finance-payment-failed')
+            ->where('locale', 'en')
+            ->firstOrFail();
+        $version = new NotificationTemplateVersion;
+        $version->forceFill([
+            'organization_id' => $organization->getKey(),
+            'template_id' => $template->getKey(),
+            'version' => 2,
+            'status' => NotificationTemplateStatus::Published->value,
+            'subject' => 'Custom payment failure',
+            'body' => 'Custom manager-edited payment message.',
+            'variables' => [],
+            'published_at' => now(),
+        ])->save();
+
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+
+        self::assertSame('Custom manager-edited payment message.', $version->refresh()->body);
+        self::assertSame(2, $template->refresh()->versions()->count());
+    }
+
+    public static function clientLocales(): array
+    {
+        return [
+            'ru' => ['ru'],
+            'en' => ['en'],
+        ];
     }
 
     private function materializeAndDeliver(ScenarioEvent $event): void
@@ -308,10 +470,10 @@ final class PaymentScenarioNotificationsTest extends TestCase
         }
     }
 
-    private function paymentFixture(): array
+    private function paymentFixture(string $language = 'ru'): array
     {
         $organization = Organization::factory()->create();
-        $client = Client::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create(['language' => $language]);
         $service = Service::factory()->forOrganization($organization)->create([
             'name' => 'Сеанс восстановления',
             'price_minor' => 3500,

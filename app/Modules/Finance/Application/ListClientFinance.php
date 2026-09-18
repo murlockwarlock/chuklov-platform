@@ -247,7 +247,7 @@ final class ListClientFinance
                 ? ($purchaseName
                     ?? (is_array($priceSnapshot) && is_string($priceSnapshot['service_name'] ?? null)
                         ? $priceSnapshot['service_name']
-                        : 'Покупка'))
+                        : $this->defaultProductName($locale)))
                 : $service->name,
             'bookingUrl' => $obligation->booking === null ? null : route('portal.bookings.show', $obligation->booking->getKey()),
             'completedAt' => $obligation->booking?->endsAtUtc()->setTimezone($client->timezone)->format('d.m.Y H:i'),
@@ -362,6 +362,11 @@ final class ListClientFinance
     private function unavailableLabel(?string $locale): string
     {
         return $locale === 'en' ? 'Calculation unavailable' : 'Расчёт недоступен';
+    }
+
+    private function defaultProductName(?string $locale): string
+    {
+        return $locale === 'en' ? 'Purchase' : 'Покупка';
     }
 
     private function demoStateLabel(?string $status, ?string $locale): string

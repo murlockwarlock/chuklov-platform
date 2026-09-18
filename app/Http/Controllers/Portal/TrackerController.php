@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\PortalPaymentErrorMessages;
 use App\Modules\Commerce\Application\StartPurchaseCheckout;
 use App\Modules\Finance\Domain\Exceptions\PaymentGatewayInitiationFailure;
 use App\Modules\Finance\Domain\ValueObjects\Money;
@@ -20,6 +21,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -68,6 +70,7 @@ final class TrackerController extends Controller
         ClientPortalContext $clientContext,
         OrganizationContext $organizationContext,
         StartPurchaseCheckout $checkout,
+        PortalPaymentErrorMessages $paymentErrors,
         int $versionId,
     ): RedirectResponse {
         $data = $request->validate([
@@ -105,11 +108,13 @@ final class TrackerController extends Controller
                 cancelReturnUrl: route('portal.finance.index'),
             );
         } catch (PaymentGatewayInitiationFailure $exception) {
-            return back()->withErrors(['payment' => $exception->clientMessage()]);
+            return back()->withErrors(['payment' => $paymentErrors->gateway($exception)]);
+        } catch (ValidationException $exception) {
+            return back()->withErrors(['payment' => $paymentErrors->validation($exception)]);
         }
 
         if (! is_string($result->transaction->checkout_url) || $result->transaction->checkout_url === '') {
-            return back()->withErrors(['payment' => 'Платёж уже проверяется. Обновите страницу немного позже.']);
+            return back()->withErrors(['payment' => $paymentErrors->message('payment_checking')]);
         }
 
         return redirect()->away($result->transaction->checkout_url);

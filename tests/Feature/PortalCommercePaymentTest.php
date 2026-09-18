@@ -25,15 +25,17 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 final class PortalCommercePaymentTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_online_product_is_published_in_catalog_and_starts_lava_checkout_without_booking(): void
+    #[DataProvider('portalLocales')]
+    public function test_online_product_is_published_in_catalog_and_starts_lava_checkout_without_booking(string $locale): void
     {
-        [$organization, $admin, $client] = $this->organizationFixture();
+        [$organization, $admin, $client] = $this->organizationFixture($locale);
         $product = Service::factory()->forOrganization($organization)->create([
             'name' => 'Целительство',
             'catalog_type' => CatalogItemType::OnlineProduct->value,
@@ -93,7 +95,7 @@ final class PortalCommercePaymentTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
                 ->where('obligations.0.lavaPayment.canContinue', true)
                 ->where('obligations.0.lavaPayment.checkoutUrl', 'https://pay.lava.top/course')
-                ->where('obligations.0.purchaseFulfillment.statusLabel', 'Waiting for payment'));
+                ->where('obligations.0.purchaseFulfillment.statusLabel', $locale === 'en' ? 'Waiting for payment' : 'Ожидает оплаты'));
 
         $transaction = PaymentGatewayTransaction::query()->sole();
         $transaction->forceFill(['status' => PaymentGatewayStatus::Failed->value])->save();
@@ -104,6 +106,33 @@ final class PortalCommercePaymentTest extends TestCase
 
         $response->assertRedirect('https://pay.lava.top/course-retry');
         self::assertSame(2, PaymentGatewayTransaction::query()->count());
+    }
+
+    #[DataProvider('portalLocales')]
+    public function test_lava_configuration_error_is_safe_and_localized(string $locale): void
+    {
+        [$organization, $admin, $client] = $this->organizationFixture($locale);
+        $product = Service::factory()->forOrganization($organization)->create([
+            'catalog_type' => CatalogItemType::OnlineProduct->value,
+            'price_minor' => 150000,
+            'price_currency' => 'RUB',
+            'duration_minutes' => null,
+        ]);
+        $this->mapping($organization, $product, 'RUB');
+        $this->currency($organization, $admin, 'RUB');
+
+        $response = $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.services.purchase', $product->getKey()), [
+                'idempotency_key' => 'portal-missing-credential-'.$locale,
+            ]);
+
+        $response->assertSessionHasErrors([
+            'payment' => $locale === 'en'
+                ? 'Online payment is temporarily unavailable. Please try again later.'
+                : 'Онлайн-оплата сейчас временно недоступна. Попробуйте позже.',
+        ]);
+        $response->assertDontSee('Lava');
+        $response->assertDontSee('invalid_credential');
     }
 
     public function test_prepay_full_booking_can_start_server_defined_full_lava_payment(): void
@@ -189,12 +218,21 @@ final class PortalCommercePaymentTest extends TestCase
     }
 
     /** @return array{Organization, User, Client} */
-    private function organizationFixture(): array
+    public static function portalLocales(): array
+    {
+        return [
+            'ru' => ['ru'],
+            'en' => ['en'],
+        ];
+    }
+
+    private function organizationFixture(string $language = 'en'): array
     {
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
         $admin = User::factory()->forOrganization($organization)->create();
         $client = Client::factory()->forOrganization($organization)->create([
             'email' => 'client@example.com',
+            'language' => $language,
         ]);
         OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
             'feature_key' => OrganizationFeature::ServiceCatalog->value,

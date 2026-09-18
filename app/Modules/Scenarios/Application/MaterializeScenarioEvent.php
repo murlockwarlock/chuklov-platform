@@ -172,6 +172,8 @@ final class MaterializeScenarioEvent
         ScenarioRecipient $recipient,
         CarbonImmutable $scheduledFor,
     ): void {
+        $template = $this->templateForRecipient($event, $template, $recipient);
+        $renderRecipient = $this->recipientForTemplate($recipient, $template);
         $materializationKey = ScenarioIdempotencyKey::materialization(
             (int) $event->organization_id,
             (int) $event->getKey(),
@@ -183,11 +185,11 @@ final class MaterializeScenarioEvent
         try {
             $renderContext = $this->contextFactory->renderContext(
                 $context,
-                $recipient,
+                $renderRecipient,
                 $template->template?->template_key === 'booking-completed-feedback',
             );
         } catch (FeedbackMiniAppConfigurationException) {
-            $renderContext = $this->contextFactory->renderContext($context, $recipient);
+            $renderContext = $this->contextFactory->renderContext($context, $renderRecipient);
             $renderContext['feedback'] = [
                 'url' => null,
                 'configuration_error' => FeedbackMiniAppConfigurationException::ERROR_CODE,
@@ -243,6 +245,59 @@ final class MaterializeScenarioEvent
                 'updated_at' => $timestamp,
             ]);
         }
+    }
+
+    private function templateForRecipient(
+        ScenarioEvent $event,
+        NotificationTemplateVersion $template,
+        ScenarioRecipient $recipient,
+    ): NotificationTemplateVersion {
+        if ($recipient->type !== 'client'
+            || ! in_array($event->event_name, [
+                ScenarioEventType::PaymentSucceeded,
+                ScenarioEventType::PaymentFailed,
+                ScenarioEventType::FulfillmentFailed,
+                ScenarioEventType::FulfillmentCompleted,
+                ScenarioEventType::ReferralRewardEarned,
+            ], true)
+            || $template->template === null) {
+            return $template;
+        }
+
+        $locale = $recipient->locale === 'en' ? 'en' : 'ru';
+        if ($template->template->locale === $locale) {
+            return $template;
+        }
+
+        return NotificationTemplateVersion::query()
+            ->where('organization_id', $event->organization_id)
+            ->where('status', NotificationTemplateStatus::Published->value)
+            ->whereHas('template', fn ($query) => $query
+                ->where('organization_id', $event->organization_id)
+                ->where('template_key', $template->template->template_key)
+                ->where('locale', $locale)
+                ->where('purpose', $template->template->purpose)
+                ->where('is_active', true))
+            ->with('template')
+            ->latest('id')
+            ->first() ?? $template;
+    }
+
+    private function recipientForTemplate(
+        ScenarioRecipient $recipient,
+        NotificationTemplateVersion $template,
+    ): ScenarioRecipient {
+        $locale = $template->template?->locale;
+        if ($recipient->type !== 'client' || ! is_string($locale) || $locale === $recipient->locale) {
+            return $recipient;
+        }
+
+        return new ScenarioRecipient(
+            type: $recipient->type,
+            clientId: $recipient->clientId,
+            userId: $recipient->userId,
+            locale: $locale,
+        );
     }
 
     private function claim(int $scenarioEventId): ?ScenarioEvent

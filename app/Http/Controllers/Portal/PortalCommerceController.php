@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\PortalPaymentErrorMessages;
 use App\Modules\Commerce\Application\StartPurchaseCheckout;
 use App\Modules\Finance\Domain\Exceptions\PaymentGatewayInitiationFailure;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -11,6 +12,7 @@ use App\Modules\Services\Domain\Models\Service;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 
 final class PortalCommerceController extends Controller
 {
@@ -19,6 +21,7 @@ final class PortalCommerceController extends Controller
         ClientPortalContext $clientContext,
         OrganizationContext $organizationContext,
         StartPurchaseCheckout $checkout,
+        PortalPaymentErrorMessages $paymentErrors,
         int $serviceId,
     ): RedirectResponse {
         $data = $request->validate([
@@ -48,11 +51,13 @@ final class PortalCommerceController extends Controller
                 cancelReturnUrl: route('portal.finance.index'),
             );
         } catch (PaymentGatewayInitiationFailure $exception) {
-            return back()->withErrors(['payment' => $exception->clientMessage()]);
+            return back()->withErrors(['payment' => $paymentErrors->gateway($exception)]);
+        } catch (ValidationException $exception) {
+            return back()->withErrors(['payment' => $paymentErrors->validation($exception)]);
         }
 
         if (! is_string($result->transaction->checkout_url) || $result->transaction->checkout_url === '') {
-            return back()->withErrors(['payment' => 'Платёж уже проверяется. Обновите страницу немного позже.']);
+            return back()->withErrors(['payment' => $paymentErrors->message('payment_checking')]);
         }
 
         return redirect()->away($result->transaction->checkout_url);

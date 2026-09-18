@@ -220,6 +220,18 @@ final class EnsureOperationalNotificationDefaults
                 ),
             ];
 
+            foreach ($this->englishPaymentTemplateDefinitions() as $definition) {
+                $this->ensureTemplate(
+                    organization: $organization,
+                    key: $definition['key'],
+                    name: $definition['name'],
+                    body: $definition['body'],
+                    variables: $definition['variables'],
+                    subject: $definition['subject'],
+                    locale: 'en',
+                );
+            }
+
             foreach ([
                 [
                     'key' => 'companion-handoff-database',
@@ -549,6 +561,48 @@ final class EnsureOperationalNotificationDefaults
         });
     }
 
+    /** @return list<array{key: string, name: string, body: string, variables: list<string>, subject: string}> */
+    private function englishPaymentTemplateDefinitions(): array
+    {
+        return [
+            [
+                'key' => 'finance-payment-succeeded',
+                'name' => 'Payment received',
+                'body' => '{{ payment.message }} Amount: {{ payment.amount }} for "{{ payment.product_name }}".',
+                'variables' => ['payment.message', 'payment.amount', 'payment.product_name'],
+                'subject' => 'Payment received',
+            ],
+            [
+                'key' => 'finance-payment-failed',
+                'name' => 'Payment failed',
+                'body' => "We couldn't complete the payment. Please try again. If the money has already been charged, don't pay again — we'll check the payment.",
+                'variables' => [],
+                'subject' => 'Payment failed',
+            ],
+            [
+                'key' => 'commerce-fulfillment-failed-client',
+                'name' => 'Access being prepared',
+                'body' => '{{ fulfillment.message }}',
+                'variables' => ['fulfillment.message'],
+                'subject' => 'Access being prepared',
+            ],
+            [
+                'key' => 'commerce-fulfillment-completed-client',
+                'name' => 'Access ready',
+                'body' => '{{ fulfillment.message }}',
+                'variables' => ['fulfillment.message'],
+                'subject' => 'Access ready',
+            ],
+            [
+                'key' => 'referral-reward-earned-client',
+                'name' => 'Referral reward earned',
+                'body' => 'You received {{ reward.amount }} through the referral program.',
+                'variables' => ['reward.amount'],
+                'subject' => 'Referral reward earned',
+            ],
+        ];
+    }
+
     /** @param list<string> $variables */
     private function ensureTemplate(
         Organization $organization,
@@ -557,11 +611,12 @@ final class EnsureOperationalNotificationDefaults
         string $body,
         array $variables,
         ?string $subject = null,
+        string $locale = 'ru',
     ): NotificationTemplateVersion {
         $template = NotificationTemplate::query()
             ->where('organization_id', $organization->getKey())
             ->where('template_key', $key)
-            ->where('locale', 'ru')
+            ->where('locale', $locale)
             ->first();
 
         if ($template === null) {
@@ -570,7 +625,7 @@ final class EnsureOperationalNotificationDefaults
                 'organization_id' => $organization->getKey(),
                 'template_key' => $key,
                 'name' => $name,
-                'locale' => 'ru',
+                'locale' => $locale,
                 'purpose' => ScenarioRulePurpose::Transactional->value,
                 'is_active' => true,
             ])->save();

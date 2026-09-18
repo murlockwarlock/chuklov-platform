@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Modules\ClientPortal\Application\PortalPaymentErrorMessages;
 use App\Modules\Finance\Application\InitiateClientFakePayment;
 use App\Modules\Finance\Application\InitiateClientLavaPayment;
 use App\Modules\Finance\Application\ListClientFinance;
@@ -10,6 +11,7 @@ use App\Modules\Finance\Application\SimulateClientFakePayment;
 use App\Modules\Finance\Domain\Exceptions\PaymentGatewayInitiationFailure;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -42,6 +44,7 @@ final class FinanceController extends Controller
     public function startLavaPayment(
         Request $request,
         InitiateClientLavaPayment $initiate,
+        PortalPaymentErrorMessages $paymentErrors,
         int $obligationId,
     ): RedirectResponse {
         $data = $request->validate([
@@ -56,11 +59,13 @@ final class FinanceController extends Controller
                 cancelReturnUrl: route('portal.finance.index'),
             );
         } catch (PaymentGatewayInitiationFailure $exception) {
-            return back()->withErrors(['payment' => $exception->clientMessage()]);
+            return back()->withErrors(['payment' => $paymentErrors->gateway($exception)]);
+        } catch (ValidationException $exception) {
+            return back()->withErrors(['payment' => $paymentErrors->validation($exception)]);
         }
 
         if (! is_string($transaction->checkout_url) || $transaction->checkout_url === '') {
-            return back()->withErrors(['payment' => 'Платёж уже проверяется. Обновите страницу немного позже.']);
+            return back()->withErrors(['payment' => $paymentErrors->message('payment_checking')]);
         }
 
         return redirect()->away($transaction->checkout_url);

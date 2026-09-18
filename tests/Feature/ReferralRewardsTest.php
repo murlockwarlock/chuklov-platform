@@ -49,6 +49,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\Support\RecordingNotificationChannel;
 use Tests\TestCase;
@@ -91,9 +92,10 @@ final class ReferralRewardsTest extends TestCase
         self::assertSame('USD', $scenarioEvent->payload['currency']);
     }
 
-    public function test_new_earned_reward_sends_one_notification_to_the_beneficiary(): void
+    #[DataProvider('clientLocales')]
+    public function test_new_earned_reward_sends_one_notification_to_the_beneficiary(string $locale): void
     {
-        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        [$organization, $admin, $referrer, $referred] = $this->fixture($locale);
         $this->relationship($organization, $referrer, $referred);
         $this->configureFixed($organization, $admin, '10.00', 'USD');
         ClientChannelIdentity::factory()->forClient($referrer)->create([
@@ -119,7 +121,12 @@ final class ReferralRewardsTest extends TestCase
         self::assertCount(1, $telegram->messages);
         self::assertSame('referral-reward-chat', $telegram->messages[0]->recipientExternalId);
         self::assertStringContainsString('10.00 USD', $telegram->messages[0]->body);
+        self::assertStringContainsString(
+            $locale === 'en' ? 'You received 10.00 USD through the referral program.' : 'Вам начислено 10.00 USD по партнёрской программе.',
+            $telegram->messages[0]->body,
+        );
         self::assertStringNotContainsString((string) $referred->getKey(), $telegram->messages[0]->body);
+        self::assertSame($locale, ScenarioAction::query()->sole()->templateVersion()->firstOrFail()->template->locale);
     }
 
     public function test_percentage_reward_uses_settlement_minor_units_and_configured_rounding(): void
@@ -514,11 +521,19 @@ final class ReferralRewardsTest extends TestCase
     }
 
     /** @return array{Organization, User, Client, Client} */
-    private function fixture(): array
+    public static function clientLocales(): array
+    {
+        return [
+            'ru' => ['ru'],
+            'en' => ['en'],
+        ];
+    }
+
+    private function fixture(string $language = 'en'): array
     {
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
         $admin = User::factory()->forOrganization($organization)->create();
-        $referrer = Client::factory()->forOrganization($organization)->create();
+        $referrer = Client::factory()->forOrganization($organization)->create(['language' => $language]);
         $referred = Client::factory()->forOrganization($organization)->create();
         config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);

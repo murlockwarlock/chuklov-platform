@@ -9,8 +9,6 @@ use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
-use App\Modules\Commerce\Domain\Enums\CommerceFulfillmentStatus;
-use App\Modules\Commerce\Domain\Models\Purchase;
 use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
 use App\Modules\Commerce\Domain\Models\PurchaseItem;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
@@ -460,18 +458,16 @@ final class ScenarioContextFactory
         $event = $context->event;
         $currency = $context->obligation?->payment_currency->value ?? (string) ($event->payload['currency'] ?? '');
         $amountMinor = $event->payload['amount_minor'] ?? $context->obligation?->payment_amount_minor;
-        $purchase = $context->obligation?->purchase;
-        $productName = $this->obligationProductName($context->obligation);
-        if ($productName === 'Покупка') {
-            $productName = $this->sellableProductName($event);
+        $productName = $this->obligationProductName($context->obligation, $recipient);
+        if ($productName === $this->defaultProductName($recipient)) {
+            $productName = $this->sellableProductName($event, $recipient);
         }
+        $isEnglishClient = $this->isEnglishClient($recipient);
         $message = match ($event->event_name) {
-            ScenarioEventType::PaymentSucceeded => $purchase !== null && $this->purchaseFulfilled($purchase)
-                ? 'Оплата прошла. Доступ открыт.'
-                : ($purchase !== null
-                    ? 'Оплата получена. Доступ готовится — повторно оплачивать не нужно.'
-                    : 'Оплата получена.'),
-            ScenarioEventType::PaymentFailed => 'Оплату завершить не удалось. Попробуйте ещё раз. Если деньги уже списались, не оплачивайте повторно — мы проверим платёж.',
+            ScenarioEventType::PaymentSucceeded => $isEnglishClient ? 'Payment received.' : 'Оплата получена.',
+            ScenarioEventType::PaymentFailed => $isEnglishClient
+                ? "We couldn't complete the payment. Please try again. If the money has already been charged, don't pay again — we'll check the payment."
+                : 'Оплату завершить не удалось. Попробуйте ещё раз. Если деньги уже списались, не оплачивайте повторно — мы проверим платёж.',
             ScenarioEventType::PaymentInitiationUnavailable => (string) ($event->payload['message'] ?? 'Онлайн-оплата сейчас временно недоступна. Попробуйте позже.'),
             default => 'Платёж требует проверки.',
         };
@@ -481,10 +477,10 @@ final class ScenarioContextFactory
             'currency' => $currency,
             'product_name' => $productName,
             'status_label' => match ($event->event_name) {
-                ScenarioEventType::PaymentSucceeded => 'Оплачено',
-                ScenarioEventType::PaymentFailed => 'Оплата не прошла',
-                ScenarioEventType::PaymentInitiationUnavailable => 'Онлайн-оплата недоступна',
-                default => 'Требует сверки',
+                ScenarioEventType::PaymentSucceeded => $isEnglishClient ? 'Paid' : 'Оплачено',
+                ScenarioEventType::PaymentFailed => $isEnglishClient ? 'Payment failed' : 'Оплата не прошла',
+                ScenarioEventType::PaymentInitiationUnavailable => $isEnglishClient ? 'Online payment is unavailable' : 'Онлайн-оплата недоступна',
+                default => $isEnglishClient ? 'Needs review' : 'Требует сверки',
             },
             'reason' => (string) ($event->payload['reason'] ?? 'Платёж требует проверки.'),
             'client_label' => $context->client instanceof Client
@@ -505,16 +501,21 @@ final class ScenarioContextFactory
         $fulfillment = $context->fulfillment;
         $purchase = $fulfillment?->item?->purchase;
         $failed = $context->event->event_name === ScenarioEventType::FulfillmentFailed;
+        $isEnglishClient = $this->isEnglishClient($recipient);
 
         return [
-            'product_name' => $this->purchaseItemProductName($fulfillment?->item),
-            'status_label' => $failed ? 'Ошибка выдачи' : 'Доступ выдан',
+            'product_name' => $this->purchaseItemProductName($fulfillment?->item, $recipient),
+            'status_label' => $failed
+                ? ($isEnglishClient ? 'Access issue' : 'Ошибка выдачи')
+                : ($isEnglishClient ? 'Access ready' : 'Доступ выдан'),
             'reason' => $failed
                 ? $this->fulfillmentReason((string) ($context->event->payload['reason'] ?? ''))
                 : '',
             'message' => $failed
-                ? 'Оплата получена. Доступ пока готовится. Повторно оплачивать не нужно.'
-                : 'Доступ готов.',
+                ? ($isEnglishClient
+                    ? "Payment received. Your access is still being prepared. You don't need to pay again."
+                    : 'Оплата получена. Доступ пока готовится. Повторно оплачивать не нужно.')
+                : ($isEnglishClient ? 'Your access is ready.' : 'Доступ готов.'),
             'crm_url' => $recipient->type === 'internal'
                 ? ($purchase?->obligation?->getKey() === null
                     ? url('/admin/financial-obligations')
@@ -541,7 +542,7 @@ final class ScenarioContextFactory
         ];
     }
 
-    private function obligationProductName(?FinancialObligation $obligation): string
+    private function obligationProductName(?FinancialObligation $obligation, ScenarioRecipient $recipient): string
     {
         $booking = $obligation?->getRelationValue('booking');
         $service = $booking instanceof Booking ? $booking->service : $obligation?->service;
@@ -549,15 +550,15 @@ final class ScenarioContextFactory
             return trim((string) $service->name);
         }
 
-        return $this->purchaseItemProductName($obligation?->purchase?->items?->first());
+        return $this->purchaseItemProductName($obligation?->purchase?->items?->first(), $recipient);
     }
 
-    private function sellableProductName(ScenarioEvent $event): string
+    private function sellableProductName(ScenarioEvent $event, ScenarioRecipient $recipient): string
     {
         $sellableType = $event->payload['sellable_type'] ?? null;
         $sellableId = $event->payload['sellable_id'] ?? null;
         if (! is_string($sellableType) || ! is_numeric($sellableId)) {
-            return 'Покупка';
+            return $this->defaultProductName($recipient);
         }
 
         $id = (int) $sellableId;
@@ -569,7 +570,7 @@ final class ScenarioContextFactory
 
             return $service instanceof Service && trim((string) $service->name) !== ''
                 ? trim((string) $service->name)
-                : 'Покупка';
+                : $this->defaultProductName($recipient);
         }
 
         if ($sellableType === TrackerPlanVersion::class) {
@@ -581,13 +582,13 @@ final class ScenarioContextFactory
 
             return $version instanceof TrackerPlanVersion && $version->plan !== null && trim((string) $version->plan->name) !== ''
                 ? trim((string) $version->plan->name)
-                : 'Покупка';
+                : $this->defaultProductName($recipient);
         }
 
-        return 'Покупка';
+        return $this->defaultProductName($recipient);
     }
 
-    private function purchaseItemProductName(?PurchaseItem $item): string
+    private function purchaseItemProductName(?PurchaseItem $item, ScenarioRecipient $recipient): string
     {
         $snapshot = $item?->getRawOriginal('product_snapshot');
         if (is_string($snapshot)) {
@@ -601,23 +602,17 @@ final class ScenarioContextFactory
             }
         }
 
-        return 'Покупка';
+        return $this->defaultProductName($recipient);
     }
 
-    private function purchaseFulfilled(?Purchase $purchase): bool
+    private function defaultProductName(ScenarioRecipient $recipient): string
     {
-        if ($purchase === null) {
-            return false;
-        }
+        return $this->isEnglishClient($recipient) ? 'Purchase' : 'Покупка';
+    }
 
-        $items = $purchase->items;
-
-        return $items->isNotEmpty() && $items->every(static function (PurchaseItem $item): bool {
-            $fulfillment = $item->getRelationValue('fulfillment');
-
-            return $fulfillment instanceof PurchaseFulfillment
-                && CommerceFulfillmentStatus::tryFrom((string) $fulfillment->getRawOriginal('status')) === CommerceFulfillmentStatus::Fulfilled;
-        });
+    private function isEnglishClient(ScenarioRecipient $recipient): bool
+    {
+        return $recipient->type === 'client' && $recipient->locale === 'en';
     }
 
     private function fulfillmentReason(string $reason): string
