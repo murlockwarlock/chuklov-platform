@@ -53,6 +53,7 @@ class EditService extends EditRecord
         abort_unless($record instanceof Service, 404);
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
+        $data['payment_policy'] = $record->getRawOriginal('payment_policy');
         $mapping = $this->mappingData($data);
         unset($data['lava_enabled'], $data['lava_offer_id']);
 
