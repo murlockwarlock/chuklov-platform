@@ -15,6 +15,7 @@ final class ProjectPortalService
     {
         return [
             'id' => $service->getKey(),
+            'catalogType' => $service->catalogItemType()->value,
             'name' => $this->localizedValue($service, 'name', $locale) ?? (string) $service->name,
             'summary' => $this->localizedValue($service, 'description', $locale)
                 ?? (string) $service->summary,

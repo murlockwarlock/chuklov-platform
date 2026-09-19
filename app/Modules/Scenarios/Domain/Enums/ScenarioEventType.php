@@ -27,6 +27,13 @@ enum ScenarioEventType: string
     case KnowledgeIngestionFailed = 'knowledge.ingestion.failed';
     case ReferralLinkVisited = 'referral.link.visited';
     case PaymentProviderEventPrepared = 'payment.provider.event.prepared';
+    case PaymentSucceeded = 'finance.payment.succeeded';
+    case PaymentFailed = 'finance.payment.failed';
+    case PaymentInitiationUnavailable = 'finance.payment.initiation_unavailable';
+    case PaymentReconciliationRequired = 'finance.payment.reconciliation_required';
+    case FulfillmentFailed = 'commerce.fulfillment.failed';
+    case FulfillmentCompleted = 'commerce.fulfillment.completed';
+    case ReferralRewardEarned = 'referral.reward.earned';
     case TrackerDailyTaskAssigned = 'tracker.task.daily_assigned';
     case TrackerWeeklyTaskAssigned = 'tracker.task.weekly_assigned';
 }

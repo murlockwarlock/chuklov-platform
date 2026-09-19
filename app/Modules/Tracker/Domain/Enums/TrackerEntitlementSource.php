@@ -6,12 +6,14 @@ enum TrackerEntitlementSource: string
 {
     case Manual = 'manual';
     case FreeMode = 'free_mode';
+    case PaidPurchase = 'paid_purchase';
 
     public function label(): string
     {
         return match ($this) {
             self::Manual => 'Выдан сотрудником',
             self::FreeMode => 'Бесплатный режим',
+            self::PaidPurchase => 'Оплаченная покупка',
         };
     }
 }

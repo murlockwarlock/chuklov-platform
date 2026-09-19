@@ -2,6 +2,7 @@
 
 namespace App\Modules\Finance\Domain\Models;
 
+use App\Modules\Commerce\Domain\Models\Purchase;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -17,8 +18,9 @@ use Illuminate\Support\Carbon;
 /**
  * @property int $organization_id
  * @property int $client_id
- * @property int $booking_id
- * @property int $service_id
+ * @property int|null $booking_id
+ * @property int|null $service_id
+ * @property int|null $purchase_id
  * @property int $amount_minor
  * @property CurrencyCode $currency
  * @property int $base_amount_minor
@@ -58,6 +60,12 @@ class FinancialObligation extends Model
     public function service(): BelongsTo
     {
         return $this->belongsTo(Service::class);
+    }
+
+    /** @return BelongsTo<Purchase, $this> */
+    public function purchase(): BelongsTo
+    {
+        return $this->belongsTo(Purchase::class, 'purchase_id');
     }
 
     /** @return HasMany<FinancialLedgerEntry, $this> */

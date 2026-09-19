@@ -9,6 +9,7 @@ use App\Http\Controllers\AdminMedicalAttachmentController;
 use App\Http\Controllers\AiRunExportController;
 use App\Http\Controllers\CompanionExportController;
 use App\Http\Controllers\HealthController;
+use App\Http\Controllers\LavaWebhookController;
 use App\Http\Controllers\Portal\AttributionController;
 use App\Http\Controllers\Portal\AvailabilityController;
 use App\Http\Controllers\Portal\B2bController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Portal\HomeController;
 use App\Http\Controllers\Portal\LocaleController;
 use App\Http\Controllers\Portal\MoreController;
 use App\Http\Controllers\Portal\OnboardingController;
+use App\Http\Controllers\Portal\PortalCommerceController;
 use App\Http\Controllers\Portal\ProfileController;
 use App\Http\Controllers\Portal\ReferralController;
 use App\Http\Controllers\Portal\ReferralPartnerController;
@@ -42,9 +44,13 @@ use App\Http\Middleware\RequireClientPortalSession;
 use App\Http\Middleware\ResolveClientPortalSession;
 use App\Http\Middleware\ResolveOrganization;
 use Filament\Http\Middleware\Authenticate;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/health', HealthController::class)->name('health');
+Route::post('/webhooks/lava', LavaWebhookController::class)
+    ->withoutMiddleware([PreventRequestForgery::class])
+    ->name('webhooks.lava');
 Route::middleware(ResolveOrganization::class)->group(function (): void {
     Route::get('/admin/finance/receipts/{receiptId}', AdminFinanceReceiptController::class)
         ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])
@@ -116,6 +122,12 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/health', PortalHealthController::class)->name('portal.health');
             Route::get('/portal/more', MoreController::class)->name('portal.more');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
+            Route::post('/portal/finance/{obligationId}/lava/start', [FinanceController::class, 'startLavaPayment'])
+                ->whereNumber('obligationId')
+                ->name('portal.finance.lava.start');
+            Route::post('/portal/services/{serviceId}/purchase', [PortalCommerceController::class, 'purchase'])
+                ->whereNumber('serviceId')
+                ->name('portal.services.purchase');
             Route::post('/portal/finance/fake/{obligationId}/start', [FinanceController::class, 'startDemoPayment'])
                 ->whereNumber('obligationId')
                 ->name('portal.finance.fake.start');
@@ -140,6 +152,9 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/surveys', [SurveyController::class, 'index'])->name('portal.surveys.index');
             Route::get('/portal/companion', [CompanionController::class, 'index'])->name('portal.companion');
             Route::get('/portal/tracker', [TrackerController::class, 'index'])->name('portal.tracker');
+            Route::post('/portal/tracker/plans/{versionId}/purchase', [TrackerController::class, 'purchase'])
+                ->whereNumber('versionId')
+                ->name('portal.tracker.purchase');
             Route::post('/portal/tracker/check-in', [TrackerController::class, 'checkIn'])->name('portal.tracker.check-in');
             Route::post('/portal/tracker/tasks/{taskId}/entry', [TrackerController::class, 'taskEntry'])
                 ->whereNumber('taskId')

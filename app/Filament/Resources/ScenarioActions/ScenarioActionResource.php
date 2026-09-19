@@ -252,7 +252,14 @@ final class ScenarioActionResource extends Resource
             'booking.home_visit.changed' => 'При изменении выездного визита',
             'ai.evaluation.failed' => 'При сбое проверки AI',
             'referral.link.visited' => 'При переходе по реферальной ссылке',
-            'payment.provider.event.prepared' => 'Событие платёжного провайдера (подготовлено)',
+            'payment.provider.event.prepared' => 'Устаревшее событие платёжного провайдера',
+            'finance.payment.succeeded' => 'После подтверждённой оплаты',
+            'finance.payment.failed' => 'При неуспешной оплате',
+            'finance.payment.initiation_unavailable' => 'Когда онлайн-оплата недоступна',
+            'finance.payment.reconciliation_required' => 'Когда платёж требует сверки',
+            'commerce.fulfillment.failed' => 'Если доступ не выдан',
+            'commerce.fulfillment.completed' => 'Когда доступ выдан',
+            'referral.reward.earned' => 'При начислении по партнёрской программе',
             default => 'Событие',
         };
     }

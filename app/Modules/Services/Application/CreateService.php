@@ -48,6 +48,7 @@ class CreateService
         ?string $priceCurrency = null,
         ?string $paymentPolicy = null,
         string $catalogType = 'service',
+        ?string $paymentRequirement = null,
     ): Service {
         $organization = $this->context->organization();
         $this->features->authorize($organization, OrganizationFeature::ServiceCatalog);
@@ -69,6 +70,7 @@ class CreateService
             'price_minor' => $priceMinor,
             'price_currency' => $priceCurrency,
             'payment_policy' => $paymentPolicy,
+            'payment_requirement' => $paymentRequirement,
         ];
         $uploadedFile = $this->uploadedFile($attributes);
         $removeImage = (bool) ($attributes['remove_image'] ?? false);

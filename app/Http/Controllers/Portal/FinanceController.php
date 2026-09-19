@@ -3,11 +3,15 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Modules\ClientPortal\Application\PortalPaymentErrorMessages;
 use App\Modules\Finance\Application\InitiateClientFakePayment;
+use App\Modules\Finance\Application\InitiateClientLavaPayment;
 use App\Modules\Finance\Application\ListClientFinance;
 use App\Modules\Finance\Application\SimulateClientFakePayment;
+use App\Modules\Finance\Domain\Exceptions\PaymentGatewayInitiationFailure;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -35,6 +39,36 @@ final class FinanceController extends Controller
         $initiate->handle($obligationId, (string) $data['idempotency_key']);
 
         return back();
+    }
+
+    public function startLavaPayment(
+        Request $request,
+        InitiateClientLavaPayment $initiate,
+        PortalPaymentErrorMessages $paymentErrors,
+        int $obligationId,
+    ): RedirectResponse {
+        $data = $request->validate([
+            'idempotency_key' => ['required', 'string', 'max:180', 'regex:/^[A-Za-z0-9._:-]+$/'],
+        ]);
+        try {
+            $transaction = $initiate->handle(
+                obligationId: $obligationId,
+                idempotencyKey: (string) $data['idempotency_key'],
+                successfulReturnUrl: route('portal.finance.index'),
+                failureReturnUrl: route('portal.finance.index'),
+                cancelReturnUrl: route('portal.finance.index'),
+            );
+        } catch (PaymentGatewayInitiationFailure $exception) {
+            return back()->withErrors(['payment' => $paymentErrors->gateway($exception)]);
+        } catch (ValidationException $exception) {
+            return back()->withErrors(['payment' => $paymentErrors->validation($exception)]);
+        }
+
+        if (! is_string($transaction->checkout_url) || $transaction->checkout_url === '') {
+            return back()->withErrors(['payment' => $paymentErrors->message('payment_checking')]);
+        }
+
+        return redirect()->away($transaction->checkout_url);
     }
 
     public function simulateDemoPayment(

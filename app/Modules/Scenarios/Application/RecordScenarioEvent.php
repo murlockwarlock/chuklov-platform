@@ -8,12 +8,19 @@ use App\Modules\ClientCompanion\Domain\Enums\CompanionFailureCode;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
+use App\Modules\Commerce\Domain\Models\FulfillmentEvent;
+use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
+use App\Modules\Finance\Application\PaymentGatewayReconciliationReason;
+use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
+use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
+use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -406,6 +413,244 @@ final class RecordScenarioEvent
         );
 
         return $this->record((int) $obligation->organization_id, $data);
+    }
+
+    public function paymentSucceeded(
+        FinancialObligation $obligation,
+        FinancialLedgerEntry $ledgerEntry,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::PaymentSucceeded,
+            aggregateType: FinancialObligation::class,
+            aggregateId: (string) $obligation->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'obligation_id' => (int) $obligation->getKey(),
+                'client_id' => (int) $obligation->client_id,
+                'ledger_entry_id' => (int) $ledgerEntry->getKey(),
+                'amount_minor' => (int) $ledgerEntry->payment_amount_minor,
+                'currency' => $ledgerEntry->payment_currency->value,
+            ],
+            idempotencyKey: 'finance.payment.succeeded:'.$obligation->organization_id.':'.$obligation->getKey().':'.$ledgerEntry->getKey(),
+            correlationId: 'finance:obligation:'.$obligation->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $obligation->organization_id, $data);
+    }
+
+    public function paymentFailed(
+        PaymentGatewayEvent $event,
+        PaymentGatewayTransaction $transaction,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        $obligation = $transaction->obligation()->first();
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::PaymentFailed,
+            aggregateType: PaymentGatewayEvent::class,
+            aggregateId: (string) $event->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'gateway_event_id' => (int) $event->getKey(),
+                'transaction_id' => (int) $transaction->getKey(),
+                'obligation_id' => $obligation?->getKey(),
+                'client_id' => $obligation?->client_id,
+                'amount_minor' => $event->amount_minor,
+                'currency' => $event->currency?->value,
+            ],
+            idempotencyKey: 'finance.payment.failed:'.$event->organization_id.':'.$event->getKey(),
+            correlationId: 'finance:gateway-event:'.$event->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $event->organization_id, $data);
+    }
+
+    public function paymentInitiationUnavailable(
+        int $organizationId,
+        string $gateway,
+        string $reason,
+        CarbonImmutable $occurredAt,
+        ?FinancialObligation $obligation = null,
+        ?PaymentGatewayTransaction $transaction = null,
+        ?string $sellableType = null,
+        ?int $sellableId = null,
+        ?string $currency = null,
+        ?string $deduplicationKey = null,
+    ): ScenarioEvent {
+        if ($transaction instanceof PaymentGatewayTransaction) {
+            $organizationId = $transaction->organization_id;
+        } elseif ($obligation instanceof FinancialObligation) {
+            $organizationId = $obligation->organization_id;
+        }
+        $transactionId = $transaction?->getKey();
+        $obligationId = $obligation?->getKey() ?? $transaction?->obligation_id;
+        $clientId = $obligation?->client_id;
+        $amountMinor = $transaction instanceof PaymentGatewayTransaction
+            ? $transaction->amount_minor
+            : $obligation?->payment_amount_minor;
+        if ($currency === null) {
+            $currency = $transaction instanceof PaymentGatewayTransaction
+                ? $transaction->currency->value
+                : $obligation?->payment_currency?->value;
+        }
+        $deduplicationKey ??= implode(':', array_filter([
+            'gateway',
+            $gateway,
+            $reason,
+            $sellableType,
+            $sellableId === null ? null : (string) $sellableId,
+            $currency,
+        ], static fn (?string $part): bool => $part !== null && $part !== ''));
+        $idempotencySuffix = hash('sha256', $deduplicationKey);
+        $aggregateType = $transaction instanceof PaymentGatewayTransaction
+            ? PaymentGatewayTransaction::class
+            : ($obligation instanceof FinancialObligation ? FinancialObligation::class : 'payment_configuration');
+        $aggregateId = $transaction?->getKey() ?? $obligation?->getKey() ?? ($sellableId === null ? $gateway : (string) $sellableId);
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::PaymentInitiationUnavailable,
+            aggregateType: $aggregateType,
+            aggregateId: (string) $aggregateId,
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'gateway' => $gateway,
+                'reason' => PaymentGatewayReconciliationReason::label($reason),
+                'client_id' => $clientId,
+                'transaction_id' => $transactionId,
+                'obligation_id' => $obligationId,
+                'amount_minor' => $amountMinor,
+                'currency' => $currency,
+                'sellable_type' => $sellableType,
+                'sellable_id' => $sellableId,
+                'message' => 'Онлайн-оплата сейчас временно недоступна. Попробуйте позже.',
+            ],
+            idempotencyKey: 'finance.payment.initiation_unavailable:'.$organizationId.':'.$idempotencySuffix,
+            correlationId: 'finance:payment-initiation:'.$organizationId.':'.$idempotencySuffix,
+            causationId: null,
+        );
+
+        return $this->record((int) $organizationId, $data);
+    }
+
+    public function paymentReconciliationRequired(PaymentGatewayEvent $event, CarbonImmutable $occurredAt): ScenarioEvent
+    {
+        $transaction = $event->gateway_transaction_id === null
+            ? null
+            : PaymentGatewayTransaction::query()
+                ->where('organization_id', $event->organization_id)
+                ->whereKey($event->gateway_transaction_id)
+                ->first();
+        $obligation = $transaction?->obligation()->first();
+        $reason = PaymentGatewayReconciliationReason::label($event->reconciliation_reason, $event->event_type);
+
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::PaymentReconciliationRequired,
+            aggregateType: PaymentGatewayEvent::class,
+            aggregateId: (string) $event->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'gateway_event_id' => (int) $event->getKey(),
+                'transaction_id' => $transaction?->getKey(),
+                'obligation_id' => $obligation?->getKey(),
+                'client_id' => $obligation?->client_id,
+                'amount_minor' => $event->amount_minor,
+                'currency' => $event->currency?->value,
+                'event_type' => $event->event_type->value,
+                'reason' => $reason,
+            ],
+            idempotencyKey: 'finance.payment.reconciliation_required:'.$event->organization_id.':'.$event->getKey().':'.($event->reconciliation_reason ?: 'unknown'),
+            correlationId: 'finance:gateway-event:'.$event->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $event->organization_id, $data);
+    }
+
+    public function fulfillmentFailed(
+        PurchaseFulfillment $fulfillment,
+        FulfillmentEvent $transition,
+        string $reason,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        return $this->fulfillmentEvent(
+            eventType: ScenarioEventType::FulfillmentFailed,
+            fulfillment: $fulfillment,
+            transition: $transition,
+            occurredAt: $occurredAt,
+            payload: ['reason' => $reason],
+            idempotencyKey: 'commerce.fulfillment.failed:'.$fulfillment->organization_id.':'.$fulfillment->getKey().':'.$reason,
+        );
+    }
+
+    public function fulfillmentCompleted(
+        PurchaseFulfillment $fulfillment,
+        FulfillmentEvent $transition,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        return $this->fulfillmentEvent(
+            eventType: ScenarioEventType::FulfillmentCompleted,
+            fulfillment: $fulfillment,
+            transition: $transition,
+            occurredAt: $occurredAt,
+            payload: [],
+            idempotencyKey: 'commerce.fulfillment.completed:'.$fulfillment->organization_id.':'.$fulfillment->getKey().':'.$transition->getKey(),
+        );
+    }
+
+    public function referralRewardEarned(
+        ReferralRewardLedgerEntry $entry,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::ReferralRewardEarned,
+            aggregateType: ReferralRewardLedgerEntry::class,
+            aggregateId: (string) $entry->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'reward_entry_id' => (int) $entry->getKey(),
+                'client_id' => (int) $entry->beneficiary_client_id,
+                'amount_minor' => (int) $entry->amount_minor,
+                'currency' => $entry->currency->value,
+            ],
+            idempotencyKey: 'referral.reward.earned:'.$entry->organization_id.':'.$entry->getKey(),
+            correlationId: 'referral:reward:'.$entry->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $entry->organization_id, $data);
+    }
+
+    /** @param array<string, scalar|null> $payload */
+    private function fulfillmentEvent(
+        ScenarioEventType $eventType,
+        PurchaseFulfillment $fulfillment,
+        FulfillmentEvent $transition,
+        CarbonImmutable $occurredAt,
+        array $payload,
+        string $idempotencyKey,
+    ): ScenarioEvent {
+        $item = $fulfillment->item()->first();
+        $purchase = $item?->purchase()->first();
+        $data = new ScenarioEventData(
+            eventType: $eventType,
+            aggregateType: PurchaseFulfillment::class,
+            aggregateId: (string) $fulfillment->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'fulfillment_id' => (int) $fulfillment->getKey(),
+                'fulfillment_event_id' => (int) $transition->getKey(),
+                'purchase_item_id' => $item?->getKey(),
+                'purchase_id' => $purchase?->getKey(),
+                'client_id' => $purchase?->client_id,
+                ...$payload,
+            ],
+            idempotencyKey: $idempotencyKey,
+            correlationId: 'commerce:fulfillment:'.$fulfillment->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $fulfillment->organization_id, $data);
     }
 
     private function record(int $organizationId, ScenarioEventData $data): ScenarioEvent

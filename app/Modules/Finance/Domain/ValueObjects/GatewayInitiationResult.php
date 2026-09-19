@@ -7,5 +7,6 @@ final readonly class GatewayInitiationResult
     public function __construct(
         public string $gateway,
         public string $providerReference,
+        public ?string $checkoutUrl = null,
     ) {}
 }

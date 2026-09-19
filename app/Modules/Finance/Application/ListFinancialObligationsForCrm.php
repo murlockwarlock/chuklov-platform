@@ -30,7 +30,7 @@ final class ListFinancialObligationsForCrm
                 'crm_applied_settlement_minor' => $appliedSettlement,
                 'crm_incompatible_ledger_rows' => $incompatibleLedgerRows,
             ])
-            ->with(['client', 'booking.service', 'service'])
+            ->with(['client', 'booking.service', 'service', 'purchase.items.fulfillment'])
             ->orderByDesc(
                 Booking::query()
                     ->select($bookingTable.'.starts_at')

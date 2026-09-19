@@ -5,6 +5,8 @@ namespace App\Filament\Resources\FinancialObligations\Tables;
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Support\BookingLocalDateRange;
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\CommerceFulfillmentActions;
+use App\Filament\Support\CommerceFulfillmentPresentation;
 use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\FinancePaymentActions;
 use App\Filament\Support\FinancePresentation;
@@ -43,7 +45,8 @@ final class FinancialObligationsTable
                     ->color(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (FinancialObligation $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('service.name')
-                    ->label('Услуга')
+                    ->label('Товар / услуга')
+                    ->state(fn (FinancialObligation $record): string => CommerceFulfillmentPresentation::productName($record))
                     ->searchable()
                     ->sortable()
                     ->wrap(),
@@ -73,6 +76,17 @@ final class FinancialObligationsTable
                     ->color(fn (FinancialObligation $record): string => app(FinancePresentation::class)->statusColor(
                         app(FinancePresentation::class)->reconciliation($record),
                     )),
+                TextColumn::make('fulfillment_status')
+                    ->label('Выдача')
+                    ->state(fn (FinancialObligation $record): string => CommerceFulfillmentPresentation::status($record))
+                    ->badge()
+                    ->color(fn (FinancialObligation $record): string => match (CommerceFulfillmentPresentation::status($record)) {
+                        'Доступ выдан' => 'success',
+                        'Требуется выдача' => 'warning',
+                        'Ошибка выдачи' => 'danger',
+                        'Выдаётся', 'Выдаётся автоматически' => 'info',
+                        default => 'gray',
+                    }),
             ])
             ->filters([
                 SelectFilter::make('status')
@@ -124,6 +138,10 @@ final class FinancialObligationsTable
                         DatePicker::make('until')->label('По'),
                     ])
                     ->query(function (Builder $query, array $data): Builder {
+                        if (blank($data['from'] ?? null) && blank($data['until'] ?? null)) {
+                            return $query;
+                        }
+
                         return $query->whereHas('booking', function (Builder $bookingQuery) use ($data): void {
                             $bookingQuery->where('organization_id', app(OrganizationContext::class)->id());
                             BookingLocalDateRange::apply(
@@ -143,6 +161,7 @@ final class FinancialObligationsTable
                     ->tooltip('Открыть расчёт'),
                 ActionGroup::make([
                     FinancePaymentActions::forObligation(),
+                    CommerceFulfillmentActions::forObligation(),
                     Action::make('openBooking')
                         ->label('Открыть запись')
                         ->color('gray')
@@ -157,6 +176,6 @@ final class FinancialObligationsTable
                     ->color('gray'),
             ])
             ->emptyStateHeading('Оплат пока нет')
-            ->emptyStateDescription('Расчёты появятся после завершения визита.');
+            ->emptyStateDescription('Расчёты появятся после покупки или завершения визита.');
     }
 }

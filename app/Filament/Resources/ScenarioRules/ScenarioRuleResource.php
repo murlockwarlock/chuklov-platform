@@ -199,7 +199,14 @@ final class ScenarioRuleResource extends Resource
             ScenarioEventType::AiEvaluationFailed->value => 'При сбое проверки AI',
             ScenarioEventType::KnowledgeIngestionFailed->value => 'При ошибке обработки материала',
             ScenarioEventType::ReferralLinkVisited->value => 'При переходе по реферальной ссылке',
-            ScenarioEventType::PaymentProviderEventPrepared->value => 'Событие платёжного провайдера (подготовлено)',
+            ScenarioEventType::PaymentProviderEventPrepared->value => 'Устаревшее событие платёжного провайдера',
+            ScenarioEventType::PaymentSucceeded->value => 'После подтверждённой оплаты',
+            ScenarioEventType::PaymentFailed->value => 'При неуспешной оплате',
+            ScenarioEventType::PaymentInitiationUnavailable->value => 'Когда онлайн-оплата недоступна',
+            ScenarioEventType::PaymentReconciliationRequired->value => 'Когда платёж требует сверки',
+            ScenarioEventType::FulfillmentFailed->value => 'Если доступ не выдан',
+            ScenarioEventType::FulfillmentCompleted->value => 'Когда доступ выдан',
+            ScenarioEventType::ReferralRewardEarned->value => 'При начислении по партнёрской программе',
             default => 'Событие',
         };
     }

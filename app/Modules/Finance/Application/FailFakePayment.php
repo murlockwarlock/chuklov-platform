@@ -3,11 +3,13 @@
 namespace App\Modules\Finance\Application;
 
 use App\Modules\Finance\Domain\Contracts\PaymentGateway;
+use App\Modules\Finance\Domain\Enums\PaymentGatewayEventStatus;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayEventType;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayStatus;
 use App\Modules\Finance\Domain\Enums\ProviderVerificationStatus;
 use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
 use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
+use App\Modules\Finance\Domain\Services\PaymentGatewayEventIdentity;
 use App\Modules\Finance\Domain\ValueObjects\GatewayFailureEvidence;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -82,11 +84,23 @@ final class FailFakePayment
                 'gateway' => $this->gateway->name(),
                 'event_type' => PaymentGatewayEventType::Failure->value,
                 'provider_event_id' => $verified->providerEventId,
+                'provider_event_key' => PaymentGatewayEventIdentity::providerKey(
+                    $this->gateway->name(),
+                    PaymentGatewayEventType::Failure->value,
+                    $verified->providerEventId,
+                ),
                 'provider_reference' => $verified->providerReference,
                 'verification_status' => ProviderVerificationStatus::Verified->value,
+                'processing_status' => PaymentGatewayEventStatus::Processed->value,
                 'amount_minor' => $verified->amountMinor,
                 'currency' => $verified->currency->value,
                 'payload_hash' => $payloadHash,
+                'payload' => [
+                    'provider_event_id' => $verified->providerEventId,
+                    'provider_reference' => $verified->providerReference,
+                    'amount_minor' => $verified->amountMinor,
+                    'currency' => $verified->currency->value,
+                ],
             ])->save();
             $transaction->forceFill([
                 'status' => PaymentGatewayStatus::Failed->value,

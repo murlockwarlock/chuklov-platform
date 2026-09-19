@@ -6,12 +6,16 @@ use App\Models\User;
 use App\Modules\Finance\Application\CurrentCurrencyConfigurationIntegrity;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
+use App\Modules\Finance\Application\SaveLavaConfiguration;
 use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
 use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Security\Domain\Enums\CredentialStatus;
+use App\Modules\Security\Domain\Models\OrganizationCredential;
 use App\Modules\Services\Domain\Models\Service;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -28,6 +32,7 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use LogicException;
@@ -51,6 +56,8 @@ final class FinanceConfiguration extends Page
     public ?array $data = null;
 
     public bool $configurationUnavailable = false;
+
+    public string $lavaStatus = 'Не подключена';
 
     protected string $view = 'filament.pages.finance-configuration';
 
@@ -158,6 +165,9 @@ final class FinanceConfiguration extends Page
             return;
         }
 
+        $lavaCredential = $this->lavaCredential($organizationId);
+        $this->lavaStatus = $this->lavaStatusLabel($lavaCredential);
+
         $this->form->fill([
             'base_currency' => $base,
             'display_currency' => $display,
@@ -165,6 +175,10 @@ final class FinanceConfiguration extends Page
             'force_single_currency' => $forceSingle,
             'rounding_mode' => $rounding,
             'rates' => $rates,
+            'lava_enabled' => $lavaCredential?->status === CredentialStatus::Active,
+            'lava_api_key' => null,
+            'lava_webhook_key' => null,
+            'lava_webhook_url' => route('webhooks.lava'),
         ]);
     }
 
@@ -304,6 +318,51 @@ final class FinanceConfiguration extends Page
                     ->visible(fn (Get $get): bool => ! (bool) $get('force_single_currency'))
                     ->columns(2)
                     ->columnSpanFull(),
+
+                Section::make('Платёжные системы')
+                    ->schema([
+                        Section::make('Lava')
+                            ->description('Подключите Lava для разовой онлайн-оплаты. Сохранённые ключи не отображаются обратно в форме.')
+                            ->schema([
+                                Placeholder::make('lava_status')
+                                    ->label('Статус')
+                                    ->content(fn (): string => $this->lavaStatus),
+                                Toggle::make('lava_enabled')
+                                    ->label('Lava активна')
+                                    ->helperText('Отключение сохраняет историю платежей и только прекращает новые обращения к Lava.')
+                                    ->disabled(fn (): bool => ! self::canManage()),
+                                TextInput::make('lava_api_key')
+                                    ->label('API-ключ')
+                                    ->password()
+                                    ->revealable()
+                                    ->autocomplete('new-password')
+                                    ->maxLength(2048)
+                                    ->nullable()
+                                    ->dehydrated(fn (mixed $state): bool => filled($state))
+                                    ->disabled(fn (): bool => ! self::canManage())
+                                    ->helperText('Оставьте пустым, чтобы сохранить текущий ключ.'),
+                                TextInput::make('lava_webhook_key')
+                                    ->label('Ключ для webhook')
+                                    ->password()
+                                    ->revealable()
+                                    ->autocomplete('new-password')
+                                    ->maxLength(2048)
+                                    ->nullable()
+                                    ->dehydrated(fn (mixed $state): bool => filled($state))
+                                    ->disabled(fn (): bool => ! self::canManage())
+                                    ->helperText('Оставьте пустым, чтобы сохранить текущий ключ. Если отдельный ключ не задан, используется API-ключ.'),
+                                TextInput::make('lava_webhook_url')
+                                    ->label('Webhook URL')
+                                    ->default(fn (): string => route('webhooks.lava'))
+                                    ->disabled()
+                                    ->dehydrated(false)
+                                    ->helperText('Укажите этот адрес в настройках webhook Lava.')
+                                    ->columnSpanFull(),
+                            ])
+                            ->columns(2)
+                            ->columnSpanFull(),
+                    ])
+                    ->columnSpanFull(),
             ])
             ->statePath('data');
     }
@@ -361,7 +420,16 @@ final class FinanceConfiguration extends Page
         }
 
         try {
-            app(SaveCurrencyConfiguration::class)->handle($actor, $data);
+            DB::transaction(function () use ($actor, $data): void {
+                app(SaveCurrencyConfiguration::class)->handle($actor, $data);
+                app(SaveLavaConfiguration::class)->handle(
+                    actor: $actor,
+                    apiKey: isset($data['lava_api_key']) && is_string($data['lava_api_key']) ? $data['lava_api_key'] : null,
+                    webhookKey: isset($data['lava_webhook_key']) && is_string($data['lava_webhook_key']) ? $data['lava_webhook_key'] : null,
+                    enabled: filter_var($data['lava_enabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
+                );
+            });
+            $this->lavaStatus = $this->lavaStatusLabel($this->lavaCredential(app(OrganizationContext::class)->id()));
         } catch (ValidationException $exception) {
             $firstMessage = null;
 
@@ -459,5 +527,27 @@ final class FinanceConfiguration extends Page
         sort($allowed);
         $set('display_currency', $display);
         $set('allowed_currencies', $allowed);
+    }
+
+    private function lavaCredential(int $organizationId): ?OrganizationCredential
+    {
+        return OrganizationCredential::query()
+            ->where('organization_id', $organizationId)
+            ->where('provider', 'lava')
+            ->where('credential_name', (string) config('payments.lava.credential_name', 'default'))
+            ->first();
+    }
+
+    private function lavaStatusLabel(?OrganizationCredential $credential): string
+    {
+        if ($credential === null || $credential->status !== CredentialStatus::Active) {
+            return 'Не подключена';
+        }
+
+        $apiKey = $credential->credentials['api_key'] ?? null;
+
+        return is_string($apiKey) && trim($apiKey) !== ''
+            ? 'Подключена'
+            : 'Ошибка настройки';
     }
 }
