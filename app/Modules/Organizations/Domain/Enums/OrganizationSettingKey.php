@@ -18,6 +18,7 @@ enum OrganizationSettingKey: string
     case CompanionContextRecentExchanges = 'companion_context_recent_exchanges';
     case TrackerFreeMode = 'tracker_free_mode';
     case TrackerEnabled = 'tracker_enabled';
+    case OnlineConsultationServiceId = 'online_consultation_service_id';
 
     public function type(): OrganizationSettingType
     {
@@ -28,7 +29,8 @@ enum OrganizationSettingKey: string
             self::HomeVisitTransportDepositAmountMinor,
             self::HomeVisitOccupiedBufferMinutes,
             self::CompanionContextFirstExchanges,
-            self::CompanionContextRecentExchanges => OrganizationSettingType::Integer,
+            self::CompanionContextRecentExchanges,
+            self::OnlineConsultationServiceId => OrganizationSettingType::Integer,
             self::B2bZoomHostLicensed,
             self::TrackerFreeMode,
             self::TrackerEnabled => OrganizationSettingType::Boolean,

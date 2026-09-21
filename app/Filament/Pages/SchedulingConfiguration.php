@@ -27,6 +27,9 @@ use App\Modules\Scheduling\Application\SetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Application\UpdateSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
+use App\Modules\Services\Domain\Enums\CatalogItemType;
+use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
+use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
@@ -123,6 +126,9 @@ class SchedulingConfiguration extends Page
             'lead_time_minutes' => app(GetBookingLeadTime::class)->handle(),
             'cancellation_cutoff_minutes' => app(GetBookingCancellationCutoff::class)->handle(),
             'b2b_sales_call_duration_minutes' => app(GetB2bSalesCallDuration::class)->handle(),
+            'online_consultation_service_id' => $organization->settings()
+                ->where('setting_key', OrganizationSettingKey::OnlineConsultationServiceId->value)
+                ->value('integer_value'),
             'default_timezone' => $organization->defaultTimezone(),
             'viewer_timezone' => $viewerSpecialist?->viewer_timezone,
             'viewer_timezone_suggestion' => $viewerSpecialist?->viewer_timezone_suggestion,
@@ -212,6 +218,13 @@ class SchedulingConfiguration extends Page
                     ->maxValue(1440)
                     ->helperText('Укажите длительность разговора. Для автоматической встречи доступная длительность зависит от тарифа Zoom.')
                     ->nullable(),
+                Select::make('online_consultation_service_id')
+                    ->label('Онлайн-консультация из Road Map')
+                    ->options(fn (): array => $this->onlineConsultationServices())
+                    ->searchable()
+                    ->nullable()
+                    ->placeholder('Не настроено')
+                    ->helperText('Выберите обычную онлайн-услугу с полной предоплатой. CTA появится в результатах теста только при активной услуге и назначенном специалисте.'),
                 Select::make('default_timezone')
                     ->label('Часовой пояс организации')
                     ->options(fn (Get $get): array => TimezoneOptions::options(
@@ -402,6 +415,12 @@ class SchedulingConfiguration extends Page
                         OrganizationSettingKey::B2bSalesCallDurationMinutes,
                     );
                 }
+                app(SetOnlineConsultationService::class)->handle(
+                    $actor,
+                    isset($data['online_consultation_service_id']) && $data['online_consultation_service_id'] !== ''
+                        ? (int) $data['online_consultation_service_id']
+                        : null,
+                );
                 if (array_key_exists('b2b_zoom_host_licensed', $data)) {
                     app(SetOrganizationSetting::class)->handle(
                         $actor,
@@ -480,6 +499,26 @@ class SchedulingConfiguration extends Page
             ->success()
             ->title('Расписание сохранено')
             ->send();
+    }
+
+    /** @return array<int, string> */
+    private function onlineConsultationServices(): array
+    {
+        return Service::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('is_active', true)
+            ->where('catalog_type', CatalogItemType::Service->value)
+            ->where('payment_requirement', ServicePaymentRequirement::PrepayFull->value)
+            ->whereJsonContains('formats', 'online')
+            ->whereHas('specialistServiceAssignments', fn ($query) => $query->whereHas(
+                'specialist',
+                fn ($specialists) => $specialists->where('organization_id', app(OrganizationContext::class)->id())
+                    ->where('is_active', true),
+            ))
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->mapWithKeys(fn (mixed $name, mixed $id): array => [(int) $id => (string) $name])
+            ->all();
     }
 
     public function useDeviceTimezone(?string $timezone = null): void

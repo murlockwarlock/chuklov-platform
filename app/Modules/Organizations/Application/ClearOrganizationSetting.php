@@ -27,6 +27,7 @@ final class ClearOrganizationSetting
                 OrganizationSettingKey::B2bSalesCallDurationMinutes,
                 OrganizationSettingKey::B2bZoomHostLicensed,
                 OrganizationSettingKey::DefaultTimezone,
+                OrganizationSettingKey::OnlineConsultationServiceId,
             ], true)
                 ? OrganizationPermission::ManageScheduling
                 : OrganizationPermission::ManageSettings,

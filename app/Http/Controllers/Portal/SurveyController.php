@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\Scheduling\Application\ResolveOnlineConsultationService;
 use App\Modules\Surveys\Application\CompleteSurveyAttempt;
 use App\Modules\Surveys\Application\GetClientSurveyAttempt;
 use App\Modules\Surveys\Application\ListClientSurveys;
@@ -81,8 +82,12 @@ final class SurveyController extends Controller
         return redirect()->route('portal.surveys.report', $attempt->report()->value('id'));
     }
 
-    public function report(int $reportId, ClientPortalContext $context, ProjectSurveyContent $content): Response
-    {
+    public function report(
+        int $reportId,
+        ClientPortalContext $context,
+        ProjectSurveyContent $content,
+        ResolveOnlineConsultationService $consultations,
+    ): Response {
         $client = $context->client();
         $report = SurveyReport::query()
             ->where('organization_id', $client->organization_id)
@@ -91,6 +96,7 @@ final class SurveyController extends Controller
         $attempt = $report->attempt()->firstOrFail();
 
         $snapshot = $content->report($report->report_snapshot, app()->getLocale());
+        $consultation = $consultations->handle((int) $client->organization_id);
 
         return Inertia::render('Portal/SurveyReport', [
             'report' => [
@@ -102,6 +108,12 @@ final class SurveyController extends Controller
                 'index' => route('portal.surveys.index'),
                 'companion' => route('portal.companion'),
                 'repeat' => route('portal.surveys.start', ['definitionId' => $attempt->survey_definition_id]),
+                'consultation' => $consultation === null
+                    ? null
+                    : route('portal.bookings.create', [
+                        'service_id' => $consultation->getKey(),
+                        'format' => 'online',
+                    ]),
             ],
         ]);
     }
