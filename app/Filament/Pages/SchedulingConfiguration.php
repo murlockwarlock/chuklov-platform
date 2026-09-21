@@ -24,6 +24,7 @@ use App\Modules\Scheduling\Application\GetBookingLeadTime;
 use App\Modules\Scheduling\Application\GetHomeVisitOccupiedBuffer;
 use App\Modules\Scheduling\Application\SetBookingCancellationCutoff;
 use App\Modules\Scheduling\Application\SetBookingLeadTime;
+use App\Modules\Scheduling\Application\SetOnlineConsultationService;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Application\UpdateSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
