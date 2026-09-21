@@ -28,6 +28,13 @@ final class KnowledgeRevisionsFilamentPostgresTest extends TestCase
 {
     use DatabaseTruncation;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        app()->setLocale('ru');
+    }
+
     public function test_knowledge_filament_tables_use_postgres_safe_projection_and_tenant_scoping(): void
     {
         $this->requirePostgres('Knowledge Filament PostgreSQL projection requires PostgreSQL.');
