@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -23,10 +24,6 @@ class RequestClientEmailCodeRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return [
-            'email.required' => 'Введите email.',
-            'email.email' => 'Введите корректный email.',
-            'email.max' => 'Email слишком длинный.',
-        ];
+        return app(PortalClientMessages::class)->validationMessages('email_request');
     }
 }

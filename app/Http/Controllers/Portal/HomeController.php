@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Portal;
 use App\Http\Controllers\Controller;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scheduling\Application\ListClientBookings;
 use App\Modules\Surveys\Application\ListClientSurveys;
@@ -23,6 +24,7 @@ class HomeController extends Controller
         ListClientTrackerOverview $tracker,
         ListClientSurveys $surveys,
         ResolveTelegramMiniAppEntry $telegramEntries,
+        PortalClientMessages $messages,
     ): Response {
         try {
             $client = $clientContext->client();
@@ -49,7 +51,7 @@ class HomeController extends Controller
         $upcoming = $bookings->handle(app()->getLocale())['upcoming'];
         $trackerData = $tracker->handle();
         $surveyData = $surveys->handle($client);
-        $healthAction = $this->healthAction($trackerData, $surveyData);
+        $healthAction = $this->healthAction($trackerData, $surveyData, $messages);
 
         return Inertia::render('Portal/Home', [
             'upcomingBooking' => $upcoming[0] ?? null,
@@ -62,7 +64,7 @@ class HomeController extends Controller
      * @param  array<string, mixed>  $surveys
      * @return array{title: string, titleKey?: string, summary?: string, summaryKey?: string, url: string}|null
      */
-    private function healthAction(array $tracker, array $surveys): ?array
+    private function healthAction(array $tracker, array $surveys, PortalClientMessages $messages): ?array
     {
         $today = $tracker['today'][0] ?? null;
         if (is_array($today)) {
@@ -76,7 +78,7 @@ class HomeController extends Controller
         $definition = $surveys['definitions'][0] ?? null;
         if (is_array($definition)) {
             return [
-                'title' => (string) ($definition['title'] ?? 'Тест'),
+                'title' => (string) ($definition['title'] ?? $messages->message('health_test_title')),
                 'summaryKey' => 'home.newTest',
                 'url' => route('portal.health'),
             ];

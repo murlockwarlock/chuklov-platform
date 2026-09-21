@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -23,8 +24,6 @@ class CancelReferralPayoutRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return [
-            'idempotency_key.required' => 'Повторите отправку операции.',
-        ];
+        return app(PortalClientMessages::class)->validationMessages('payout_cancel');
     }
 }

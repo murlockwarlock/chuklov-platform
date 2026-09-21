@@ -8,6 +8,7 @@ use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Channels\Infrastructure\Telegram\InvalidTelegramInitData;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramInitDataVerifier;
 use App\Modules\ClientPortal\Application\ApplyClientPortalLocale;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\ClientPortal\Application\StartClientOnboarding;
 use App\Modules\Identity\Application\AuthenticateClientWithVerifiedChannel;
 use App\Modules\Identity\Domain\Models\Client;
@@ -27,6 +28,7 @@ class TelegramAuthenticationController extends Controller
         CapturePreAuthAttribution $captureAttribution,
         FinalizeClientAcquisition $finalizeAcquisition,
         ResolveTelegramMiniAppEntry $telegramEntries,
+        PortalClientMessages $messages,
     ): RedirectResponse {
         $validated = $request->validate([
             'initData' => ['required', 'string', 'max:8192'],
@@ -67,7 +69,7 @@ class TelegramAuthenticationController extends Controller
 
             return $errorRedirect->with(
                 'telegram_auth_error',
-                $this->localizedAuthError($request),
+                $messages->message('telegram_auth_failed'),
             );
         }
 
@@ -90,12 +92,5 @@ class TelegramAuthenticationController extends Controller
         if (is_string($locale) && in_array($locale, ['ru', 'en'], true)) {
             $applyLocale->handle($client, $locale);
         }
-    }
-
-    private function localizedAuthError(Request $request): string
-    {
-        return $request->session()->get('portal.locale') === 'en'
-            ? 'Telegram sign-in failed. Close the app and open it again.'
-            : 'Не удалось войти через Telegram. Закройте приложение и откройте его снова.';
     }
 }

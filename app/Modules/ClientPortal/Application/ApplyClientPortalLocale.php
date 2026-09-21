@@ -15,7 +15,7 @@ final class ApplyClientPortalLocale
         $locale = strtolower(trim($locale));
 
         if (! in_array($locale, ['ru', 'en'], true)) {
-            throw ValidationException::withMessages(['locale' => 'Выберите доступный язык.']);
+            throw ValidationException::withMessages(['locale' => app(PortalClientMessages::class)->message('locale_unavailable')]);
         }
 
         return $this->updateProfile->handle($client, ['language' => $locale], ['language']);

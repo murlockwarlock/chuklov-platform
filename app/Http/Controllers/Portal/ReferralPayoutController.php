@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\CancelReferralPayoutRequest;
 use App\Http\Requests\RequestReferralPayoutRequest;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Referrals\Application\RequestReferralPayout;
@@ -22,6 +23,7 @@ final class ReferralPayoutController extends Controller
         RequestReferralPayoutRequest $request,
         ClientPortalContext $context,
         RequestReferralPayout $action,
+        PortalClientMessages $messages,
     ): RedirectResponse {
         try {
             $client = $context->client();
@@ -37,10 +39,10 @@ final class ReferralPayoutController extends Controller
                 idempotencyKey: (string) $request->validated('idempotency_key'),
             );
         } catch (ValidationException $exception) {
-            throw $exception;
+            throw ValidationException::withMessages($messages->validationException('payout', $exception));
         } catch (Throwable) {
             return back()->withErrors([
-                'payout' => 'Не удалось отправить заявку. Попробуйте ещё раз.',
+                'payout' => $messages->message('referral_payout_failed'),
             ]);
         }
 
@@ -50,12 +52,12 @@ final class ReferralPayoutController extends Controller
             : Money::ofMinor((int) $payout->amount_minor, $currency)->toDecimalString().' '.$currency->value;
 
         return back()
-            ->with('success', 'Заявка на выплату отправлена')
+            ->with('success', $messages->message('referral_payout_requested'))
             ->with('payout_feedback', [
-                'message' => 'Заявка на выплату отправлена',
+                'message' => $messages->message('referral_payout_requested'),
                 'amount' => $amount,
                 'currency' => $currency?->value,
-                'status' => ReferralPayoutRequestStatus::Requested->label(),
+                'status' => $messages->message('referral_payout_requested'),
                 'requested_at' => $payout->requested_at->toIso8601String(),
             ]);
     }
@@ -65,6 +67,7 @@ final class ReferralPayoutController extends Controller
         CancelReferralPayoutRequest $request,
         ClientPortalContext $context,
         TransitionReferralPayoutRequest $transition,
+        PortalClientMessages $messages,
     ): RedirectResponse {
         try {
             $client = $context->client();
@@ -72,13 +75,17 @@ final class ReferralPayoutController extends Controller
             abort(401);
         }
 
-        $transition->handle(
-            request: $payoutRequestId,
-            target: ReferralPayoutRequestStatus::Cancelled,
-            actor: $client,
-            idempotencyKey: (string) $request->validated('idempotency_key'),
-        );
+        try {
+            $transition->handle(
+                request: $payoutRequestId,
+                target: ReferralPayoutRequestStatus::Cancelled,
+                actor: $client,
+                idempotencyKey: (string) $request->validated('idempotency_key'),
+            );
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages($messages->validationException('payout', $exception));
+        }
 
-        return back()->with('success', 'Запрос на выплату отменён.');
+        return back()->with('success', $messages->message('referral_payout_cancelled'));
     }
 }

@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Portal;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RecordNpsSubmissionRequest;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Feedback\Application\GetFeedbackConfiguration;
 use App\Modules\Feedback\Application\GetPortalFeedback;
 use App\Modules\Feedback\Application\RecordNpsSubmission;
@@ -41,6 +42,7 @@ class FeedbackController extends Controller
         RecordNpsSubmission $record,
         GetFeedbackConfiguration $configuration,
         ReviewDestinationIconResolver $icons,
+        PortalClientMessages $messages,
     ): RedirectResponse {
         try {
             $client = $context->client();
@@ -69,7 +71,7 @@ class FeedbackController extends Controller
         if ($settings['reviewDestinations'] === []) {
             $reviewDestinations = array_values(array_map(
                 fn (string $link): array => [
-                    'label' => 'Оставить отзыв',
+                    'label' => $messages->message('feedback_review'),
                     'url' => $link,
                     'icon' => $icons->resolve($link),
                 ],

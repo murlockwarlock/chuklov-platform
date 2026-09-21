@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -37,14 +38,6 @@ class SaveClientOnboardingStepRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return [
-            'full_name.max' => 'Имя слишком длинное.',
-            'email.email' => 'Введите корректный email.',
-            'email.max' => 'Email слишком длинный.',
-            'phone.max' => 'Телефон слишком длинный.',
-            'consents.array' => 'Проверьте согласия с документами.',
-            'consents.*.legal_document_id.required' => 'Выберите документ.',
-            'consents.*.granted.required' => 'Подтвердите согласие.',
-        ];
+        return app(PortalClientMessages::class)->validationMessages('onboarding');
     }
 }

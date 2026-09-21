@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\RequestClientEmailCodeRequest;
 use App\Http\Requests\VerifyClientEmailCodeRequest;
 use App\Modules\ClientPortal\Application\ApplyClientPortalLocale;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Identity\Application\AuthenticateClientWithEmailVerificationCode;
 use App\Modules\Identity\Application\InvalidEmailAuthenticationCode;
 use App\Modules\Identity\Application\RequestClientEmailVerificationCode;
@@ -31,6 +32,7 @@ class EmailAuthenticationController extends Controller
         AuthenticateClientWithEmailVerificationCode $authenticate,
         ApplyClientPortalLocale $applyLocale,
         FinalizeClientAcquisition $finalizeAcquisition,
+        PortalClientMessages $messages,
     ): RedirectResponse {
         try {
             $client = $authenticate->handle(
@@ -42,7 +44,7 @@ class EmailAuthenticationController extends Controller
             $request->session()->flash('email_code_sent', true);
 
             throw ValidationException::withMessages([
-                'code' => 'Код неверный или уже истёк.',
+                'code' => $messages->message('email_code_invalid'),
             ]);
         }
 

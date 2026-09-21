@@ -44,7 +44,7 @@ class SaveClientOnboardingStep
 
             if (! $b2bAnswer instanceof B2bSpecialistAnswer) {
                 throw ValidationException::withMessages([
-                    'b2b_specialist_answer' => 'Choose yes or no for the B2B specialist question.',
+                    'b2b_specialist_answer' => app(PortalClientMessages::class)->message('onboarding_b2b_answer'),
                 ]);
             }
         }
@@ -55,26 +55,26 @@ class SaveClientOnboardingStep
 
         if ($onboarding->current_stage !== $stage) {
             throw ValidationException::withMessages([
-                'stage' => 'Complete the current onboarding stage first.',
+                'stage' => app(PortalClientMessages::class)->message('onboarding_stage_current'),
             ]);
         }
 
         if ($onboarding->completed_at !== null) {
             throw ValidationException::withMessages([
-                'stage' => 'This onboarding flow is already complete.',
+                'stage' => app(PortalClientMessages::class)->message('onboarding_complete'),
             ]);
         }
 
         if ($stage !== ClientOnboardingStage::Contacts && $stage !== ClientOnboardingStage::Goals
             && ($attributes !== [] || $confirmedFields !== [] || $consents !== [])) {
             throw ValidationException::withMessages([
-                'stage' => 'This onboarding stage does not accept profile fields.',
+                'stage' => app(PortalClientMessages::class)->message('onboarding_fields'),
             ]);
         }
 
         if ($stage === ClientOnboardingStage::Goals && $attributes !== []) {
             throw ValidationException::withMessages([
-                'stage' => 'This onboarding stage does not accept profile fields.',
+                'stage' => app(PortalClientMessages::class)->message('onboarding_fields'),
             ]);
         }
 
