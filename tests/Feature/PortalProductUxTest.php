@@ -47,14 +47,18 @@ class PortalProductUxTest extends TestCase
                 ->missing('onboardingUrl'));
     }
 
-    public function test_health_omits_empty_tests_destination_and_secondary_functions_live_under_more(): void
+    public function test_health_keeps_an_empty_state_and_secondary_functions_live_under_more(): void
     {
         $organization = $this->organizationWithClientRecords();
         $client = Client::factory()->forOrganization($organization)->create();
         $this->withSession(['client_portal.client_id' => $client->getKey()]);
 
         $this->get(route('portal.health'))
-            ->assertRedirect(route('portal.tracker'));
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Health')
+                ->where('health.hasData', false)
+                ->missing('surveys.attempts.0'));
 
         $this->get(route('portal.surveys.index'))
             ->assertRedirect(route('portal.health'));
