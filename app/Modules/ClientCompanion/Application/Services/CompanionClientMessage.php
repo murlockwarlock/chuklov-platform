@@ -2,6 +2,8 @@
 
 namespace App\Modules\ClientCompanion\Application\Services;
 
+use App\Support\SupportedLocale;
+
 final class CompanionClientMessage
 {
     public function __construct(
@@ -12,7 +14,7 @@ final class CompanionClientMessage
 
     public static function from(?string $locale): self
     {
-        $isRussian = str_starts_with(strtolower((string) $locale), 'ru');
+        $isRussian = SupportedLocale::normalize($locale) === 'ru';
 
         return $isRussian
             ? new self(

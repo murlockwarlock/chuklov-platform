@@ -14,6 +14,7 @@ use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Support\SupportedLocale;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -132,7 +133,7 @@ final class B2bController extends Controller
     {
         $language ??= $request->session()->get('portal.locale');
 
-        return str_starts_with(strtolower((string) $language), 'ru') ? 'ru' : 'en';
+        return SupportedLocale::normalize($language);
     }
 
     /** @return array{0: string, 1: string} */

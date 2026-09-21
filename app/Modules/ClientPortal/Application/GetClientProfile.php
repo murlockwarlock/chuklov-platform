@@ -10,6 +10,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\Identity\Domain\Models\LegalDocument;
 use App\Support\RichText\RichTextDocument;
+use App\Support\SupportedLocale;
 use Illuminate\Support\Collection;
 
 final class GetClientProfile
@@ -88,19 +89,7 @@ final class GetClientProfile
 
     private function locale(?string $language): string
     {
-        $normalized = strtolower((string) $language);
-
-        if (str_starts_with($normalized, 'ru')) {
-            return 'ru';
-        }
-
-        if (str_starts_with($normalized, 'en')) {
-            return 'en';
-        }
-
-        $default = config('portal.default_locale', 'ru');
-
-        return in_array($default, ['ru', 'en'], true) ? $default : 'ru';
+        return SupportedLocale::normalize($language, (string) config('portal.default_locale', 'ru'));
     }
 
     /** @return list<array{value: string, label: string}> */

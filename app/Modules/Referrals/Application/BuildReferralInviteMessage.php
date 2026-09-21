@@ -9,6 +9,7 @@ use App\Modules\Scenarios\Application\NotificationTemplateMedia;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
+use App\Support\SupportedLocale;
 
 final readonly class BuildReferralInviteMessage
 {
@@ -20,7 +21,7 @@ final readonly class BuildReferralInviteMessage
 
     public function handle(Client $client, string $recipientExternalId): NotificationMessage
     {
-        $locale = str_starts_with(strtolower((string) $client->language), 'en') ? 'en' : 'ru';
+        $locale = SupportedLocale::normalize($client->language);
         $template = $this->template($client, $locale);
         $referralLink = $this->referralLinks->handle($client);
         if ($template === null) {

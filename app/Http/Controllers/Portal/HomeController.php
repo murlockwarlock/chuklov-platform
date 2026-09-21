@@ -60,14 +60,15 @@ class HomeController extends Controller
     /**
      * @param  array<string, mixed>  $tracker
      * @param  array<string, mixed>  $surveys
-     * @return array<string, string>|null
+     * @return array{title: string, titleKey?: string, summary?: string, summaryKey?: string, url: string}|null
      */
     private function healthAction(array $tracker, array $surveys): ?array
     {
         $today = $tracker['today'][0] ?? null;
         if (is_array($today)) {
             return [
-                'title' => 'Сегодня',
+                'title' => (string) ($today['title'] ?? ''),
+                'titleKey' => 'tracker.today',
                 'summary' => (string) ($today['title'] ?? ''),
                 'url' => route('portal.tracker'),
             ];
@@ -76,14 +77,15 @@ class HomeController extends Controller
         if (is_array($definition)) {
             return [
                 'title' => (string) ($definition['title'] ?? 'Тест'),
-                'summary' => 'Доступен новый тест',
+                'summaryKey' => 'home.newTest',
                 'url' => route('portal.health'),
             ];
         }
         if (is_string($tracker['monthlyPractice'] ?? null) && trim($tracker['monthlyPractice']) !== '') {
             return [
-                'title' => 'Моя программа',
-                'summary' => 'Есть материал для этого месяца',
+                'title' => '',
+                'titleKey' => 'tracker.program',
+                'summaryKey' => 'home.monthlyPractice',
                 'url' => route('portal.tracker'),
             ];
         }

@@ -14,6 +14,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
+use App\Support\SupportedLocale;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Carbon\CarbonImmutable;
@@ -351,7 +352,7 @@ final class AppointmentReminderScheduler
 
     private function locale(string $language): string
     {
-        return str_starts_with(strtolower(trim($language)), 'en') ? 'en' : 'ru';
+        return SupportedLocale::normalize($language);
     }
 
     private function offsetLabel(int $value, ScenarioDelayUnit $unit): string

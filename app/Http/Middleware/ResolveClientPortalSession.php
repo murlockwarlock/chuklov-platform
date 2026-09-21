@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Support\SupportedLocale;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -42,15 +43,10 @@ class ResolveClientPortalSession
     private function resolveLocale(Request $request, ?Client $client): string
     {
         $language = $client->language ?? $request->session()->get('portal.locale');
-        $language = is_string($language) ? strtolower(trim($language)) : '';
-        $locale = str_starts_with($language, 'ru') ? 'ru' : (str_starts_with($language, 'en') ? 'en' : null);
 
-        if ($locale !== null) {
-            return $locale;
-        }
-
-        $default = config('portal.default_locale', 'ru');
-
-        return in_array($default, config('portal.locales', ['ru', 'en']), true) ? $default : 'ru';
+        return SupportedLocale::normalize(
+            is_string($language) ? $language : null,
+            (string) config('portal.default_locale', 'ru'),
+        );
     }
 }

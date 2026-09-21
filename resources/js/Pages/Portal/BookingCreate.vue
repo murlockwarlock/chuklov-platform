@@ -249,26 +249,17 @@ const locationDaySummary = computed(() => {
         .sort((first, second) => first - second);
 
     if (weekdays.length > 0) {
-        const russianWeekdays = [
-            'по понедельникам',
-            'по вторникам',
-            'по средам',
-            'по четвергам',
-            'по пятницам',
-            'по субботам',
-            'по воскресеньям',
-        ];
-        const englishWeekdays = [
-            'on Mondays',
-            'on Tuesdays',
-            'on Wednesdays',
-            'on Thursdays',
-            'on Fridays',
-            'on Saturdays',
-            'on Sundays',
+        const weekdayKeys = [
+            'booking.weekday.monday',
+            'booking.weekday.tuesday',
+            'booking.weekday.wednesday',
+            'booking.weekday.thursday',
+            'booking.weekday.friday',
+            'booking.weekday.saturday',
+            'booking.weekday.sunday',
         ];
         const labels = weekdays
-            .map((weekday) => (locale.value === 'ru' ? russianWeekdays[weekday - 1] : englishWeekdays[weekday - 1]))
+            .map((weekday) => weekdayKeys[weekday - 1] ? t(weekdayKeys[weekday - 1]) : undefined)
             .filter((label): label is string => label !== undefined)
             .join(', ');
 

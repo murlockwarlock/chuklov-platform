@@ -10,6 +10,7 @@ use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Services\Application\ListPublishedServices;
 use App\Support\RichText\RichTextDocument;
+use App\Support\SupportedLocale;
 
 class GetClientOnboarding
 {
@@ -49,7 +50,7 @@ class GetClientOnboarding
             return [
                 'id' => $document->getKey(),
                 'documentType' => $document->document_type,
-                'title' => $subject?->label(str_starts_with(strtolower((string) $document->locale), 'ru') ? 'ru' : 'en') ?? $document->purpose,
+                'title' => $subject?->label(SupportedLocale::normalize($document->locale)) ?? $document->purpose,
                 'purpose' => $document->purpose,
                 'content' => $document->content,
                 'contentHtml' => RichTextDocument::canonicalHtml($document->content),

@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Support\SupportedLocale;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use LogicException;
@@ -17,10 +18,10 @@ class HandleInertiaRequests extends Middleware
         $client = $this->clientFromSession($request);
 
         $language = $client->language ?? $request->session()->get('portal.locale');
-        $language = is_string($language) ? strtolower(trim($language)) : '';
-        $locale = str_starts_with($language, 'ru') ? 'ru' : (str_starts_with($language, 'en') ? 'en' : null);
-        $default = config('portal.default_locale', 'ru');
-        $locale ??= in_array($default, ['ru', 'en'], true) ? $default : 'ru';
+        $locale = SupportedLocale::normalize(
+            is_string($language) ? $language : null,
+            (string) config('portal.default_locale', 'ru'),
+        );
 
         app()->setLocale($locale);
 
