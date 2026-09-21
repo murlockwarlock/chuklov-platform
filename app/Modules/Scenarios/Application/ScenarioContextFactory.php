@@ -146,7 +146,7 @@ final class ScenarioContextFactory
                 'amount' => $amount,
                 'currency' => $currency instanceof CurrencyCode ? $currency->value : '',
                 'status' => $request->status->value,
-                'status_label' => $request->status->label(),
+                'status_label' => $this->payoutStatusLabel($request->status, $recipient),
                 'requested_at' => $request->requested_at->toIso8601String(),
                 'processed_at' => $processedAt?->toIso8601String(),
                 'reason' => $request->rejection_reason,
@@ -608,6 +608,21 @@ final class ScenarioContextFactory
     private function defaultProductName(ScenarioRecipient $recipient): string
     {
         return $this->isEnglishClient($recipient) ? 'Purchase' : 'Покупка';
+    }
+
+    private function payoutStatusLabel(ReferralPayoutRequestStatus $status, ScenarioRecipient $recipient): string
+    {
+        if (! $this->isEnglishClient($recipient)) {
+            return $status->label();
+        }
+
+        return match ($status) {
+            ReferralPayoutRequestStatus::Requested => 'requested',
+            ReferralPayoutRequestStatus::Approved => 'approved',
+            ReferralPayoutRequestStatus::Paid => 'marked as paid',
+            ReferralPayoutRequestStatus::Rejected => 'rejected',
+            ReferralPayoutRequestStatus::Cancelled => 'cancelled',
+        };
     }
 
     private function isEnglishClient(ScenarioRecipient $recipient): bool

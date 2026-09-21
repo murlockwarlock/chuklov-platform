@@ -15,6 +15,10 @@ use App\Modules\Referrals\Application\SendReferralPayoutStatusNotification;
 use App\Modules\Referrals\Application\TransitionReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
+use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
+use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -116,6 +120,32 @@ final class ReferralPayoutNotificationTest extends TestCase
         Queue::assertPushed(ProcessScenarioEvent::class, function (ProcessScenarioEvent $job) use ($event): bool {
             return $job->scenarioEventId === $event->getKey();
         });
+    }
+
+    public function test_scenario_payout_status_uses_the_english_client_template(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $partner = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $request = $this->payout($organization, $partner, $admin, ReferralPayoutRequestStatus::Approved);
+
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $event = app(RecordScenarioEvent::class)->payoutStatusChanged(
+            request: $request,
+            status: ReferralPayoutRequestStatus::Approved,
+            previousStatus: ReferralPayoutRequestStatus::Requested,
+            occurredAt: now()->toImmutable(),
+        );
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+
+        $action = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->where('recipient_type', 'client')
+            ->sole();
+
+        self::assertSame('en', $action->templateVersion()->firstOrFail()->template->locale);
+        self::assertSame('approved', $action->render_context['payout']['status_label']);
     }
 
     private function payout(

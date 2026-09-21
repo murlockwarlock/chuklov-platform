@@ -220,7 +220,7 @@ final class EnsureOperationalNotificationDefaults
                 ),
             ];
 
-            foreach ($this->englishPaymentTemplateDefinitions() as $definition) {
+            foreach ($this->englishClientTemplateDefinitions() as $definition) {
                 $this->ensureTemplate(
                     organization: $organization,
                     key: $definition['key'],
@@ -562,9 +562,30 @@ final class EnsureOperationalNotificationDefaults
     }
 
     /** @return list<array{key: string, name: string, body: string, variables: list<string>, subject: string}> */
-    private function englishPaymentTemplateDefinitions(): array
+    private function englishClientTemplateDefinitions(): array
     {
         return [
+            [
+                'key' => 'referral-payout-status',
+                'name' => 'Referral payout status',
+                'body' => 'Your payout of {{ payout.amount }} is {{ payout.status_label }}.',
+                'variables' => ['payout.amount', 'payout.status_label'],
+                'subject' => 'Referral payout status',
+            ],
+            [
+                'key' => 'tracker-task-daily',
+                'name' => 'Daily tracker task',
+                'body' => 'Reminder: {{ tracker.task_title }} is scheduled for today.',
+                'variables' => ['tracker.task_title'],
+                'subject' => 'Daily tracker task',
+            ],
+            [
+                'key' => 'tracker-task-weekly',
+                'name' => 'Weekly tracker task',
+                'body' => 'Reminder: {{ tracker.task_title }} is scheduled for this week.',
+                'variables' => ['tracker.task_title'],
+                'subject' => 'Weekly tracker task',
+            ],
             [
                 'key' => 'finance-payment-succeeded',
                 'name' => 'Payment received',

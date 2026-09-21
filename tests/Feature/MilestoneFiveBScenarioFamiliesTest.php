@@ -499,13 +499,16 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'referral-invite:en',
             'referral-invite:ru',
             'referral-payout-request:ru',
+            'referral-payout-status:en',
             'referral-payout-status:ru',
             'referral-payout-status-crm:ru',
             'referral-reward-earned-client:en',
             'referral-reward-earned-client:ru',
             'survey-completed-crm:ru',
             'survey-stagnation-crm:ru',
+            'tracker-task-daily:en',
             'tracker-task-daily:ru',
+            'tracker-task-weekly:en',
             'tracker-task-weekly:ru',
         ], NotificationTemplate::query()
             ->where('organization_id', $organization->id)
