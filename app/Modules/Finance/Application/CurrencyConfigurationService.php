@@ -81,7 +81,9 @@ final class CurrencyConfigurationService
             }
         }
 
-        return $service->price_minor === null && $service->getAttribute('price_matrix') === [];
+        $priceMatrix = $service->getAttribute('price_matrix');
+
+        return $service->price_minor === null && ($priceMatrix === null || $priceMatrix === []);
     }
 
     /**
