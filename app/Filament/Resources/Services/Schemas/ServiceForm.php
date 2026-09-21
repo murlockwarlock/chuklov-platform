@@ -17,7 +17,9 @@ use App\Rules\ServicePriceCurrencyPair;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\KeyValue;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -108,6 +110,14 @@ class ServiceForm
                             ->rules(fn (Get $get): array => [
                                 new ServicePriceCurrencyPair($get('price')),
                             ]),
+                        KeyValue::make('price_matrix')
+                            ->label('Фиксированные цены по валютам')
+                            ->helperText('Необязательно. Если цена для валюты не указана, используется настроенный курс.')
+                            ->keyLabel('Валюта')
+                            ->valueLabel('Цена')
+                            ->keyPlaceholder('RUB')
+                            ->valuePlaceholder('10000.00')
+                            ->columnSpanFull(),
                         Select::make('payment_requirement')
                             ->label('Когда клиент оплачивает')
                             ->options([
@@ -141,6 +151,26 @@ class ServiceForm
                             ->required(fn (Get $get): bool => (bool) $get('lava_enabled'))
                             ->visible(fn (Get $get): bool => (bool) $get('lava_enabled'))
                             ->disabled(fn (): bool => ! self::canManageFinance()),
+                        Repeater::make('lava_offers')
+                            ->label('Дополнительные предложения Lava')
+                            ->helperText('Добавьте отдельный Offer ID для каждой дополнительной валюты из фиксированной матрицы цены.')
+                            ->schema([
+                                Select::make('currency')
+                                    ->label('Валюта')
+                                    ->options(fn (): array => self::priceCurrencyOptions())
+                                    ->required()
+                                    ->searchable(),
+                                TextInput::make('offer_id')
+                                    ->label('Offer ID в Lava')
+                                    ->uuid()
+                                    ->required(),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->addActionLabel('Добавить валюту')
+                            ->visible(fn (Get $get): bool => (bool) $get('lava_enabled'))
+                            ->disabled(fn (): bool => ! self::canManageFinance())
+                            ->columnSpanFull(),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
@@ -223,16 +253,9 @@ class ServiceForm
     {
         $options = [
             CatalogItemType::Service->value => 'Услуга',
+            CatalogItemType::PhysicalProduct->value => 'Физический товар',
             CatalogItemType::OnlineProduct->value => 'Онлайн-товар',
         ];
-
-        if ($record?->catalogItemType() === CatalogItemType::PhysicalProduct) {
-            return [
-                CatalogItemType::Service->value => 'Услуга',
-                CatalogItemType::PhysicalProduct->value => 'Физический товар',
-                CatalogItemType::OnlineProduct->value => 'Онлайн-товар',
-            ];
-        }
 
         return $options;
     }
@@ -249,8 +272,7 @@ class ServiceForm
     private static function activeLabel(mixed $catalogType): string
     {
         return match (self::catalogType($catalogType)) {
-            CatalogItemType::OnlineProduct => 'Показывать клиентам',
-            CatalogItemType::PhysicalProduct => 'Активен',
+            CatalogItemType::OnlineProduct, CatalogItemType::PhysicalProduct => 'Показывать клиентам',
             default => 'Доступна для записи',
         };
     }

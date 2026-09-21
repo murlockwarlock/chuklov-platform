@@ -56,7 +56,7 @@ final class CommerceFulfillmentPresentation
         }
 
         if ($fulfillments->every(fn (PurchaseFulfillment $fulfillment): bool => $fulfillment->status === CommerceFulfillmentStatus::Fulfilled)) {
-            return 'Доступ выдан';
+            return self::isPhysical($record) ? 'Товар передан' : 'Доступ выдан';
         }
 
         if ($purchase->status !== PurchaseStatus::Paid) {
@@ -72,7 +72,7 @@ final class CommerceFulfillmentPresentation
         }
 
         if ($fulfillments->contains(fn (PurchaseFulfillment $fulfillment): bool => $fulfillment->provider_type === 'manual')) {
-            return 'Требуется выдача';
+            return self::isPhysical($record) ? 'Ожидает передачи' : 'Требуется выдача';
         }
 
         return 'Выдаётся автоматически';
@@ -88,5 +88,12 @@ final class CommerceFulfillmentPresentation
             ->values();
 
         return $fulfillments?->count() === 1 ? $fulfillments->first() : null;
+    }
+
+    public static function isPhysical(FinancialObligation $record): bool
+    {
+        $snapshot = $record->purchase?->items->first()?->product_snapshot;
+
+        return is_array($snapshot) && ($snapshot['catalog_type'] ?? null) === 'physical_product';
     }
 }

@@ -62,6 +62,17 @@ final class ServiceConfigurationTest extends TestCase
         self::assertNull($configuration->priceCurrency);
     }
 
+    public function test_price_matrix_is_normalized_to_minor_units(): void
+    {
+        $configuration = ServiceConfiguration::from([
+            ...$this->baseAttributes(),
+            'price_matrix' => ['RUB' => '10000.50', 'JPY' => '1200'],
+        ]);
+
+        self::assertSame(['JPY' => 1200, 'RUB' => 1000050], $configuration->priceMatrix);
+        self::assertSame(['JPY' => 1200, 'RUB' => 1000050], $configuration->attributes()['price_matrix']);
+    }
+
     /** @return array<string, mixed> */
     private function baseAttributes(): array
     {

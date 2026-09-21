@@ -2,13 +2,16 @@
 
 namespace App\Modules\ClientPortal\Application;
 
-use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Services\Application\ServiceImageUrlResolver;
+use App\Modules\Services\Application\ServicePriceResolver;
 use App\Modules\Services\Domain\Models\Service;
 
 final class ProjectPortalService
 {
-    public function __construct(private readonly ServiceImageUrlResolver $imageResolver) {}
+    public function __construct(
+        private readonly ServiceImageUrlResolver $imageResolver,
+        private readonly ServicePriceResolver $prices,
+    ) {}
 
     /** @return array<string, mixed> */
     public function handle(Service $service, string $locale): array
@@ -22,8 +25,7 @@ final class ProjectPortalService
             'imageUrl' => $this->imageResolver->resolve($service),
             'category' => $this->stringValue($service->getAttribute('category')),
             'durationMinutes' => $service->durationMinutes(),
-            'priceMajor' => $this->priceMajor($service),
-            'priceCurrency' => $this->stringValue($service->getAttribute('price_currency')),
+            ...$this->price($service),
         ];
     }
 
@@ -54,19 +56,14 @@ final class ProjectPortalService
         return trim($value);
     }
 
-    private function priceMajor(Service $service): ?string
+    /** @return array{priceMajor: ?string, priceCurrency: ?string} */
+    private function price(Service $service): array
     {
-        $minor = $service->getAttribute('price_minor');
-        $currency = $this->stringValue($service->getAttribute('price_currency'));
+        $money = $this->prices->preferred($service, $service->organization_id);
 
-        if ($minor === null || $currency === null) {
-            return null;
-        }
-
-        try {
-            return Money::ofMinor($minor, $currency)->toDecimalString();
-        } catch (\InvalidArgumentException) {
-            return null;
-        }
+        return [
+            'priceMajor' => $money?->toDecimalString(),
+            'priceCurrency' => $money?->currency()->value,
+        ];
     }
 }

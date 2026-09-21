@@ -81,8 +81,8 @@ final class FinancialObligationsTable
                     ->state(fn (FinancialObligation $record): string => CommerceFulfillmentPresentation::status($record))
                     ->badge()
                     ->color(fn (FinancialObligation $record): string => match (CommerceFulfillmentPresentation::status($record)) {
-                        'Доступ выдан' => 'success',
-                        'Требуется выдача' => 'warning',
+                        'Доступ выдан', 'Товар передан' => 'success',
+                        'Требуется выдача', 'Ожидает передачи' => 'warning',
                         'Ошибка выдачи' => 'danger',
                         'Выдаётся', 'Выдаётся автоматически' => 'info',
                         default => 'gray',

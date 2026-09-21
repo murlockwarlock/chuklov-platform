@@ -33,6 +33,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'formats',
     'price_minor',
     'price_currency',
+    'price_matrix',
     'payment_policy',
     'payment_requirement',
 ])]
@@ -104,6 +105,7 @@ class Service extends Model
             'duration_minutes' => 'integer',
             'buffer_minutes' => 'integer',
             'price_minor' => 'integer',
+            'price_matrix' => 'array',
             'payment_requirement' => ServicePaymentRequirement::class,
         ];
     }

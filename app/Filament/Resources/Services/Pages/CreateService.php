@@ -46,13 +46,24 @@ class CreateService extends CreateRecord
     private function mappingData(array $data): array
     {
         $enabled = (bool) ($data['lava_enabled'] ?? false);
+        $mappings = [];
+
+        if ($enabled) {
+            $mappings[] = [
+                'currency' => $data['price_currency'] ?? null,
+                'offer_id' => $data['lava_offer_id'] ?? null,
+            ];
+
+            foreach ((array) ($data['lava_offers'] ?? []) as $mapping) {
+                if (is_array($mapping)) {
+                    $mappings[] = $mapping;
+                }
+            }
+        }
 
         return [
             'enabled' => $enabled,
-            'mappings' => $enabled ? [[
-                'currency' => $data['price_currency'] ?? null,
-                'offer_id' => $data['lava_offer_id'] ?? null,
-            ]] : [],
+            'mappings' => $mappings,
         ];
     }
 }

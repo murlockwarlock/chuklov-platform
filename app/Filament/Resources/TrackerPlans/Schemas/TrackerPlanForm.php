@@ -26,7 +26,14 @@ final class TrackerPlanForm
                     TextInput::make('name')->label('Название')->required()->maxLength(160),
                     TextInput::make('price')->label('Цена')->required()->inputMode('decimal')->maxLength(32)->regex('/^(?:0|[1-9][0-9]{0,18})(?:\.[0-9]{1,2})?$/'),
                     Select::make('currency')->label('Валюта')->options(fn (): array => self::currencyOptions())->required()->searchable(),
-                    TextInput::make('duration_days')->label('Срок доступа (дни)')->integer()->minValue(1)->maxValue(3650)->required(),
+                    TextInput::make('duration_days')
+                        ->label('Срок доступа (дни)')
+                        ->helperText('Для месячного тарифа укажите 30 дней. Продление оформляется отдельной покупкой.')
+                        ->integer()
+                        ->minValue(1)
+                        ->maxValue(3650)
+                        ->default(30)
+                        ->required(),
                     Textarea::make('description')->label('Короткое описание для клиента')->maxLength(500)->rows(3)->columnSpanFull(),
                     Textarea::make('monthly_practice')->label('Месячная практика или содержание')->maxLength(5000)->rows(4)->columnSpanFull(),
                 ])

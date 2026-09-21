@@ -12,6 +12,7 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Services\Application\ServiceSnapshotHasher;
 use App\Modules\Services\Application\UpdateService;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Services\Domain\ValueObjects\ServicePriceMatrix;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
@@ -29,6 +30,7 @@ class EditService extends EditRecord
         abort_unless($record instanceof Service, 404);
 
         $data['price'] = null;
+        $data['price_matrix'] = ServicePriceMatrix::fromMinor($record->getAttribute('price_matrix'))->majorUnits();
 
         if (($data['price_minor'] ?? null) !== null && is_string($data['price_currency'] ?? null)) {
             try {
@@ -44,6 +46,7 @@ class EditService extends EditRecord
         $mapping = $this->mappingFor($record);
         $data['lava_enabled'] = $mapping['enabled'];
         $data['lava_offer_id'] = $mapping['offer_id'];
+        $data['lava_offers'] = $mapping['offers'];
 
         return $data;
     }
@@ -89,22 +92,31 @@ class EditService extends EditRecord
         }
     }
 
-    /** @return array{enabled: bool, offer_id: string|null} */
+    /** @return array{enabled: bool, offer_id: string|null, offers: list<array{currency: string, offer_id: string}>} */
     private function mappingFor(Service $service): array
     {
-        $mapping = PaymentProviderOfferMapping::query()
-            ->activeFor(
-                (int) $service->organization_id,
-                'lava',
-                Service::class,
-                (int) $service->getKey(),
-                (string) $service->price_currency,
-            )
-            ->first();
+        $mappings = PaymentProviderOfferMapping::query()
+            ->where('organization_id', $service->organization_id)
+            ->where('gateway', 'lava')
+            ->where('sellable_type', Service::class)
+            ->where('sellable_id', $service->getKey())
+            ->where('is_active', true)
+            ->orderBy('id')
+            ->get();
+        $primary = $mappings->first(fn (PaymentProviderOfferMapping $mapping): bool => $mapping->currency->value === (string) $service->price_currency)
+            ?? $mappings->first();
 
         return [
-            'enabled' => $mapping !== null,
-            'offer_id' => $mapping?->external_offer_id,
+            'enabled' => $primary !== null,
+            'offer_id' => $primary?->external_offer_id,
+            'offers' => $mappings
+                ->reject(fn (PaymentProviderOfferMapping $mapping): bool => $primary !== null && $mapping->getKey() === $primary->getKey())
+                ->map(fn (PaymentProviderOfferMapping $mapping): array => [
+                    'currency' => $mapping->currency->value,
+                    'offer_id' => (string) $mapping->external_offer_id,
+                ])
+                ->values()
+                ->all(),
         ];
     }
 
@@ -112,13 +124,24 @@ class EditService extends EditRecord
     private function mappingData(array $data): array
     {
         $enabled = (bool) ($data['lava_enabled'] ?? false);
+        $mappings = [];
+
+        if ($enabled) {
+            $mappings[] = [
+                'currency' => $data['price_currency'] ?? null,
+                'offer_id' => $data['lava_offer_id'] ?? null,
+            ];
+
+            foreach ((array) ($data['lava_offers'] ?? []) as $mapping) {
+                if (is_array($mapping)) {
+                    $mappings[] = $mapping;
+                }
+            }
+        }
 
         return [
             'enabled' => $enabled,
-            'mappings' => $enabled ? [[
-                'currency' => $data['price_currency'] ?? null,
-                'offer_id' => $data['lava_offer_id'] ?? null,
-            ]] : [],
+            'mappings' => $mappings,
         ];
     }
 }
