@@ -29,35 +29,35 @@ final class NotificationTemplateForm
         return $schema
             ->components([
                 Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
-                Section::make('Основная информация')
-                    ->description('Сообщение может состоять из текста, медиа или их комбинации. Формат и подпись сохраняются в версии шаблона.')
+                Section::make(__('Основная информация'))
+                    ->description(__('Сообщение может состоять из текста, медиа или их комбинации. Формат и подпись сохраняются в версии шаблона.'))
                     ->schema([
                         TextInput::make('name')
-                            ->label('Название')
+                            ->label(__('Название'))
                             ->required()
                             ->maxLength(160),
                         Select::make('locale')
                             ->options([
-                                'ru' => 'Русский',
-                                'en' => 'Английский',
+                                'ru' => __('Русский'),
+                                'en' => __('Английский'),
                             ])
-                            ->label('Язык')
+                            ->label(__('Язык'))
                             ->required()
                             ->default('ru')
                             ->disabled(fn (string $operation): bool => $operation === 'edit'),
                         Select::make('purpose')
-                            ->label('Для чего сообщение')
+                            ->label(__('Для чего сообщение'))
                             ->options([
-                                ScenarioRulePurpose::Service->value => 'Сервисное сообщение',
-                                ScenarioRulePurpose::Transactional->value => 'Системное сообщение',
-                                ScenarioRulePurpose::Marketing->value => 'Маркетинговая рассылка',
+                                ScenarioRulePurpose::Service->value => __('Сервисное сообщение'),
+                                ScenarioRulePurpose::Transactional->value => __('Системное сообщение'),
+                                ScenarioRulePurpose::Marketing->value => __('Маркетинговая рассылка'),
                             ])
-                            ->helperText('Категория сообщения. Получатель и время отправки настраиваются отдельно в авто-сообщении.')
+                            ->helperText(__('Категория сообщения. Получатель и время отправки настраиваются отдельно в авто-сообщении.'))
                             ->live()
                             ->required(),
                         Toggle::make('is_active')
-                            ->label('Включён')
-                            ->helperText('Новые отправки с этим шаблоном создаваться не будут. Уже запланированные сообщения также не будут отправлены, пока шаблон отключён.')
+                            ->label(__('Включён'))
+                            ->helperText(__('Новые отправки с этим шаблоном создаваться не будут. Уже запланированные сообщения также не будут отправлены, пока шаблон отключён.'))
                             ->required()
                             ->default(true),
                     ])
@@ -65,9 +65,9 @@ final class NotificationTemplateForm
                     ->columnSpanFull(),
 
                 TextInput::make('subject')
-                    ->label('Тема')
+                    ->label(__('Тема'))
                     ->maxLength(255)
-                    ->helperText('Необязательно для мессенджеров. Можно использовать подстановочные данные.')
+                    ->helperText(__('Необязательно для мессенджеров. Можно использовать подстановочные данные.'))
                     ->columnSpanFull(),
                 ...MessageComposer::make(
                     bodyField: 'body',
@@ -78,7 +78,7 @@ final class NotificationTemplateForm
                     preview: fn (Get $get, ?Model $record): NotificationMessage => self::previewMessage($get, $record),
                     additionalMediaComponents: [
                         Placeholder::make('template_current_media')
-                            ->label('Сохранённое медиа')
+                            ->label(__('Сохранённое медиа'))
                             ->content(fn (?NotificationTemplate $record): string => self::currentMediaSummary($record))
                             ->visible(fn (?NotificationTemplate $record): bool => $record instanceof NotificationTemplate && $record->latestVersion?->media !== null)
                             ->columnSpanFull(),
@@ -130,7 +130,9 @@ final class NotificationTemplateForm
         $media = $template?->latestVersion?->media;
         $items = $media === null || ! is_array($media['items'] ?? null) ? [] : $media['items'];
 
-        return $items === [] ? 'Медиа не добавлено.' : 'Сохранено файлов: '.count($items).'. Новые файлы создадут новую версию шаблона.';
+        return $items === []
+            ? __('Медиа не добавлено.')
+            : __('Сохранено файлов: :count. Новые файлы создадут новую версию шаблона.', ['count' => count($items)]);
     }
 
     /** @return list<NotificationMedia> */

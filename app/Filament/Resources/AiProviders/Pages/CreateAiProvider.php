@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\AiProviders\Pages;
 
 use App\Filament\Resources\AiProviders\AiProviderResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ConnectAiProvider;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class CreateAiProvider extends CreateRecord
+class CreateAiProvider extends LocalizedCreateRecord
 {
     protected static string $resource = AiProviderResource::class;
 

@@ -3,13 +3,13 @@
 namespace App\Filament\Resources\BroadcastCampaigns\Pages;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\CreateBroadcastCampaign as Action;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
-final class CreateBroadcastCampaign extends CreateRecord
+final class CreateBroadcastCampaign extends LocalizedCreateRecord
 {
     protected static string $resource = BroadcastCampaignResource::class;
 
@@ -31,13 +31,13 @@ final class CreateBroadcastCampaign extends CreateRecord
     {
         if (array_key_exists('segment_definition', $data)
             && (! is_array($data['segment_definition']) || ! array_is_list($data['segment_definition']))) {
-            throw ValidationException::withMessages(['segment_definition' => 'Сегмент имеет неверный формат.']);
+            throw ValidationException::withMessages(['segment_definition' => __('Сегмент имеет неверный формат.')]);
         }
         $filters = $data['segment_definition'] ?? [];
         $normalized = [];
         foreach ($filters as $filter) {
             if (! is_array($filter)) {
-                throw ValidationException::withMessages(['segment_definition' => 'Условие сегмента имеет неверный формат.']);
+                throw ValidationException::withMessages(['segment_definition' => __('Условие сегмента имеет неверный формат.')]);
             }
             $key = is_string($filter['key'] ?? null) ? $filter['key'] : '';
             $operator = is_string($filter['operator'] ?? null) ? $filter['operator'] : '';

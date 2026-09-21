@@ -8,6 +8,8 @@ use App\Filament\Resources\ScenarioRules\Pages\ListScenarioRules;
 use App\Filament\Resources\ScenarioRules\Pages\ViewScenarioRule;
 use App\Filament\Resources\ScenarioRules\Schemas\ScenarioRuleForm;
 use App\Filament\Resources\ScenarioRules\Tables\ScenarioRulesTable;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -18,7 +20,6 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -26,7 +27,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-final class ScenarioRuleResource extends Resource
+final class ScenarioRuleResource extends LocalizedResource
 {
     protected static ?string $model = ScenarioRule::class;
 
@@ -53,54 +54,61 @@ final class ScenarioRuleResource extends Resource
     {
         return $schema
             ->components([
-                TextEntry::make('name')->label('Название'),
+                TextEntry::make('name')->label(__('Название')),
                 TextEntry::make('trigger_event')
-                    ->label('Когда')
+                    ->label(__('Когда'))
                     ->formatStateUsing(fn (mixed $state): string => self::eventLabel($state)),
-                TextEntry::make('is_enabled')->label('Активно')->formatStateUsing(fn (bool $state): string => $state ? 'Да' : 'Нет'),
+                TextEntry::make('is_enabled')->label(__('Активно'))->formatStateUsing(fn (bool $state): string => $state ? __('Да') : __('Нет')),
                 TextEntry::make('delay_summary')
-                    ->label('Через')
-                    ->state(fn (ScenarioRule $record): string => $record->delay_value.' '.self::delayUnitLabel($record->delay_unit)),
+                    ->label(__('Через'))
+                    ->state(fn (ScenarioRule $record): string => __(':delay :unit', [
+                        'delay' => $record->delay_value,
+                        'unit' => self::delayUnitLabel($record->delay_unit),
+                    ])),
                 TextEntry::make('repeat_summary')
-                    ->label('Повторения')
+                    ->label(__('Повторения'))
                     ->state(fn (ScenarioRule $record): string => $record->max_occurrences > 1
-                        ? $record->max_occurrences.' раза, каждые '.$record->repeat_interval_value.' '.self::delayUnitLabel($record->repeat_interval_unit)
-                        : 'Одно сообщение'),
+                        ? __('До :count отправок, каждые :interval :unit', [
+                            'count' => $record->max_occurrences,
+                            'interval' => $record->repeat_interval_value,
+                            'unit' => self::delayUnitLabel($record->repeat_interval_unit),
+                        ])
+                        : __('Одно сообщение')),
                 TextEntry::make('template_summary')
-                    ->label('Сообщение')
+                    ->label(__('Сообщение'))
                     ->state(function (ScenarioRule $record): string {
                         $template = $record->templateVersion?->template;
 
                         if ($template === null) {
-                            return 'Не выбрано';
+                            return __('Не выбрано');
                         }
 
-                        return ($template->name ?: 'Не выбрано').' — '.self::localeLabel($template->locale)
-                            .' · версия '.$record->templateVersion->version;
+                        return ($template->name ?: __('Не выбрано')).' — '.self::localeLabel($template->locale)
+                            .' · '.__('Версия: :version', ['version' => $record->templateVersion->version]);
                     }),
                 TextEntry::make('recipient_summary')
-                    ->label('Кому')
+                    ->label(__('Кому'))
                     ->state(fn (ScenarioRule $record): string => self::recipientSummary($record->recipient_strategy))
                     ->columnSpanFull(),
-                Section::make('Дополнительные настройки')
+                Section::make(__('Дополнительные настройки'))
                     ->schema([
                         TextEntry::make('purpose')
-                            ->label('Тип сообщения')
+                            ->label(__('Тип сообщения'))
                             ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
                         TextEntry::make('conditions_summary')
-                            ->label('Дополнительные условия')
+                            ->label(__('Дополнительные условия'))
                             ->state(fn (ScenarioRule $record): string => self::conditionsSummary($record->conditions))
                             ->columnSpanFull(),
                         TextEntry::make('channel_priority')
-                            ->label('Способ связи')
+                            ->label(__('Способ связи'))
                             ->formatStateUsing(fn (mixed $state): string => self::channelSummary($state))
                             ->columnSpanFull(),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
-                TextEntry::make('actions_count')->label('Отправок'),
-                TextEntry::make('created_at')->label('Создано')->dateTime('d.m.Y H:i'),
-                TextEntry::make('updated_at')->label('Изменено')->dateTime('d.m.Y H:i'),
+                TextEntry::make('actions_count')->label(__('Отправок')),
+                TextEntry::make('created_at')->label(__('Создано'))->dateTime('d.m.Y H:i'),
+                TextEntry::make('updated_at')->label(__('Изменено'))->dateTime('d.m.Y H:i'),
             ]);
     }
 
@@ -164,14 +172,14 @@ final class ScenarioRuleResource extends Resource
         }
 
         if ($unit->value === 'minutes') {
-            return 'мин.';
+            return __('мин.');
         }
 
         if ($unit->value === 'hours') {
-            return 'ч.';
+            return __('ч.');
         }
 
-        return 'дн.';
+        return __('дн.');
     }
 
     private static function eventLabel(mixed $event): string
@@ -179,35 +187,35 @@ final class ScenarioRuleResource extends Resource
         $value = $event instanceof BackedEnum ? $event->value : (string) $event;
 
         return match ($value) {
-            ScenarioEventType::BookingCreated->value => 'После новой записи',
-            ScenarioEventType::BookingConfirmed->value => 'После подтверждения записи',
-            ScenarioEventType::BookingRescheduled->value => 'После переноса записи',
-            ScenarioEventType::BookingCancelled->value => 'После отмены записи',
-            ScenarioEventType::BookingRejected->value => 'После отклонения записи',
-            ScenarioEventType::BookingCompleted->value => 'После завершения визита',
-            ScenarioEventType::OnboardingStarted->value => 'После начала оформления',
-            ScenarioEventType::FinancialObligationCreated->value => 'После появления задолженности',
-            ScenarioEventType::SurveyCompleted->value => 'После завершения теста',
-            ScenarioEventType::TestStagnationDetected->value => 'При отсутствии снижения показателей',
-            ScenarioEventType::CompanionRequestedSpecialist->value => 'Когда клиент просит специалиста',
-            ScenarioEventType::CompanionFallbackFailed->value => 'Когда AI не смог ответить',
-            ScenarioEventType::BroadcastDeliveryFailed->value => 'При сбое операционной рассылки',
-            ScenarioEventType::ClientFeedbackSubmitted->value => 'После обратной связи клиента',
-            ScenarioEventType::PayoutRequested->value => 'При запросе выплаты партнёра',
-            ScenarioEventType::PayoutStatusChanged->value => 'При изменении статуса выплаты',
-            ScenarioEventType::HomeVisitChanged->value => 'При изменении выездного визита',
-            ScenarioEventType::AiEvaluationFailed->value => 'При сбое проверки AI',
-            ScenarioEventType::KnowledgeIngestionFailed->value => 'При ошибке обработки материала',
-            ScenarioEventType::ReferralLinkVisited->value => 'При переходе по реферальной ссылке',
-            ScenarioEventType::PaymentProviderEventPrepared->value => 'Устаревшее событие платёжного провайдера',
-            ScenarioEventType::PaymentSucceeded->value => 'После подтверждённой оплаты',
-            ScenarioEventType::PaymentFailed->value => 'При неуспешной оплате',
-            ScenarioEventType::PaymentInitiationUnavailable->value => 'Когда онлайн-оплата недоступна',
-            ScenarioEventType::PaymentReconciliationRequired->value => 'Когда платёж требует сверки',
-            ScenarioEventType::FulfillmentFailed->value => 'Если доступ не выдан',
-            ScenarioEventType::FulfillmentCompleted->value => 'Когда доступ выдан',
-            ScenarioEventType::ReferralRewardEarned->value => 'При начислении по партнёрской программе',
-            default => 'Событие',
+            ScenarioEventType::BookingCreated->value => __('После новой записи'),
+            ScenarioEventType::BookingConfirmed->value => __('После подтверждения записи'),
+            ScenarioEventType::BookingRescheduled->value => __('После переноса записи'),
+            ScenarioEventType::BookingCancelled->value => __('После отмены записи'),
+            ScenarioEventType::BookingRejected->value => __('После отклонения записи'),
+            ScenarioEventType::BookingCompleted->value => __('После завершения визита'),
+            ScenarioEventType::OnboardingStarted->value => __('После начала оформления'),
+            ScenarioEventType::FinancialObligationCreated->value => __('После появления задолженности'),
+            ScenarioEventType::SurveyCompleted->value => __('После завершения теста'),
+            ScenarioEventType::TestStagnationDetected->value => __('При отсутствии снижения показателей'),
+            ScenarioEventType::CompanionRequestedSpecialist->value => __('Когда клиент просит специалиста'),
+            ScenarioEventType::CompanionFallbackFailed->value => __('Когда AI не смог ответить'),
+            ScenarioEventType::BroadcastDeliveryFailed->value => __('При сбое операционной рассылки'),
+            ScenarioEventType::ClientFeedbackSubmitted->value => __('После обратной связи клиента'),
+            ScenarioEventType::PayoutRequested->value => __('При запросе выплаты партнёра'),
+            ScenarioEventType::PayoutStatusChanged->value => __('При изменении статуса выплаты'),
+            ScenarioEventType::HomeVisitChanged->value => __('При изменении выездного визита'),
+            ScenarioEventType::AiEvaluationFailed->value => __('При сбое проверки AI'),
+            ScenarioEventType::KnowledgeIngestionFailed->value => __('При ошибке обработки материала'),
+            ScenarioEventType::ReferralLinkVisited->value => __('При переходе по реферальной ссылке'),
+            ScenarioEventType::PaymentProviderEventPrepared->value => __('Устаревшее событие платёжного провайдера'),
+            ScenarioEventType::PaymentSucceeded->value => __('После подтверждённой оплаты'),
+            ScenarioEventType::PaymentFailed->value => __('При неуспешной оплате'),
+            ScenarioEventType::PaymentInitiationUnavailable->value => __('Когда онлайн-оплата недоступна'),
+            ScenarioEventType::PaymentReconciliationRequired->value => __('Когда платёж требует сверки'),
+            ScenarioEventType::FulfillmentFailed->value => __('Если доступ не выдан'),
+            ScenarioEventType::FulfillmentCompleted->value => __('Когда доступ выдан'),
+            ScenarioEventType::ReferralRewardEarned->value => __('При начислении по партнёрской программе'),
+            default => __('Событие'),
         };
     }
 
@@ -215,49 +223,45 @@ final class ScenarioRuleResource extends Resource
     {
         $purpose = $purpose instanceof ScenarioRulePurpose ? $purpose : ScenarioRulePurpose::tryFrom($purpose);
 
-        return match ($purpose) {
-            ScenarioRulePurpose::Service => 'Сервисное сообщение',
-            ScenarioRulePurpose::Transactional => 'Системное сообщение',
-            default => 'Не указано',
-        };
+        return CrmLabel::enum($purpose) ?? __('Не указано');
     }
 
     private static function localeLabel(?string $locale): string
     {
         return match ($locale) {
-            'ru' => 'Русский',
-            'en' => 'Английский',
-            default => 'Другой язык',
+            'ru' => __('Русский'),
+            'en' => __('Английский'),
+            default => __('Другой язык'),
         };
     }
 
     private static function conditionsSummary(mixed $conditions): string
     {
         if (! is_array($conditions) || $conditions === []) {
-            return 'Без дополнительного условия';
+            return __('Без дополнительного условия');
         }
 
         return collect($conditions)->map(function (mixed $condition): string {
             if (! is_array($condition)) {
-                return 'Условие';
+                return __('Условие');
             }
 
             $type = match ($condition['type'] ?? null) {
-                'booking.status' => 'статус записи',
-                'booking.has_qualifying_next_booking' => 'подходящая следующая запись',
-                'client.language' => 'язык клиента',
-                'client.marketing_consent' => 'согласие на маркетинговые сообщения',
-                'onboarding.completed' => 'завершение оформления',
-                'onboarding.stage' => 'этап оформления',
-                'finance.has_outstanding_debt' => 'непогашенная задолженность',
-                default => 'условие',
+                'booking.status' => __('статус записи'),
+                'booking.has_qualifying_next_booking' => __('подходящая следующая запись'),
+                'client.language' => __('язык клиента'),
+                'client.marketing_consent' => __('согласие на маркетинговые сообщения'),
+                'onboarding.completed' => __('завершение оформления'),
+                'onboarding.stage' => __('этап оформления'),
+                'finance.has_outstanding_debt' => __('непогашенная задолженность'),
+                default => __('условие'),
             };
             $operator = match ($condition['operator'] ?? null) {
-                'equals' => 'равно',
-                'not_equals' => 'не равно',
-                'in' => 'одно из',
-                'exists' => 'заполнено',
-                default => 'проверяется',
+                'equals' => __('равно'),
+                'not_equals' => __('не равно'),
+                'in' => __('одно из'),
+                'exists' => __('заполнено'),
+                default => __('проверяется'),
             };
 
             return ucfirst($type).' '.$operator.(array_key_exists('value', $condition) ? ' '.self::conditionValue($condition['value']) : '');
@@ -269,19 +273,19 @@ final class ScenarioRuleResource extends Resource
         $values = is_array($value) ? $value : [$value];
 
         return collect($values)->map(static fn (mixed $item): string => match ((string) $item) {
-            'requested' => 'ожидает подтверждения',
-            'pending_review' => 'на рассмотрении',
-            'confirmed' => 'подтверждена',
-            'completed' => 'завершена',
-            'cancelled' => 'отменена',
-            'ru' => 'русский',
-            'en' => 'английский',
-            'true' => 'да',
-            'false' => 'нет',
-            'contacts' => 'контакты',
-            'profile' => 'профиль',
-            'service' => 'услуга',
-            'goals' => 'цели',
+            'requested' => __('ожидает подтверждения'),
+            'pending_review' => __('на рассмотрении'),
+            'confirmed' => __('подтверждена'),
+            'completed' => __('завершена'),
+            'cancelled' => __('отменена'),
+            'ru' => __('русский'),
+            'en' => __('английский'),
+            'true' => __('да'),
+            'false' => __('нет'),
+            'contacts' => __('контакты'),
+            'profile' => __('профиль'),
+            'service' => __('услуга'),
+            'goals' => __('цели'),
             default => (string) $item,
         })->implode(', ');
     }
@@ -291,11 +295,11 @@ final class ScenarioRuleResource extends Resource
         $type = is_array($strategy) ? ($strategy['type'] ?? null) : null;
 
         return match ($type) {
-            'client' => 'Клиент записи',
-            'assigned_specialist' => 'Назначенный специалист',
-            'members' => 'Выбранные сотрудники',
-            'roles' => 'Сотрудники по роли',
-            default => 'Не указано',
+            'client' => __('Клиент записи'),
+            'assigned_specialist' => __('Назначенный специалист'),
+            'members' => __('Выбранные сотрудники'),
+            'roles' => __('Сотрудники по роли'),
+            default => __('Не указано'),
         };
     }
 
@@ -303,7 +307,7 @@ final class ScenarioRuleResource extends Resource
     {
         return collect(is_array($channels) ? $channels : [])->map(static fn (mixed $channel): string => match ((string) $channel) {
             'telegram' => 'Telegram',
-            default => 'Другой способ связи',
+            default => __('Другой способ связи'),
         })->implode(' → ');
     }
 }

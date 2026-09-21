@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Bookings\Pages;
 
 use App\Filament\Resources\Bookings\BookingResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -13,11 +14,10 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Livewire\Attributes\Url;
 
-class CreateBooking extends CreateRecord
+class CreateBooking extends LocalizedCreateRecord
 {
     protected static string $resource = BookingResource::class;
 

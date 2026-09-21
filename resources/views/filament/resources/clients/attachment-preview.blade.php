@@ -1,6 +1,6 @@
 <div class="min-w-0">
     @if ($url === null)
-        <p class="text-sm text-gray-600 dark:text-gray-300">Предпросмотр для этого типа файла недоступен.</p>
+        <p class="text-sm text-gray-600 dark:text-gray-300">{{ __('Предпросмотр для этого типа файла недоступен.') }}</p>
     @elseif ($mimeType === 'application/pdf')
         <iframe
             src="{{ $url }}"
@@ -23,6 +23,6 @@
             class="h-[70vh] min-h-96 w-full rounded-lg border border-gray-200 dark:border-white/10"
         ></iframe>
     @else
-        <p class="text-sm text-gray-600 dark:text-gray-300">Предпросмотр для этого типа файла недоступен.</p>
+        <p class="text-sm text-gray-600 dark:text-gray-300">{{ __('Предпросмотр для этого типа файла недоступен.') }}</p>
     @endif
 </div>

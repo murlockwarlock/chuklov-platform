@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\LocalizedPage;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
@@ -42,7 +43,6 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\TimePicker;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
@@ -62,7 +62,7 @@ use UnitEnum;
 /**
  * @property-read Schema $form
  */
-class SchedulingConfiguration extends Page
+class SchedulingConfiguration extends LocalizedPage
 {
     protected static ?string $title = 'Настройки расписания';
 
@@ -160,7 +160,7 @@ class SchedulingConfiguration extends Page
         return $schema
             ->components([
                 Select::make('specialist_id')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->options(fn (): array => $this->specialists())
                     ->required()
                     ->searchable()
@@ -187,100 +187,102 @@ class SchedulingConfiguration extends Page
                         $set('viewer_timezone_suggestion', $specialist?->viewer_timezone_suggestion);
                     }),
                 Select::make('viewer_timezone')
-                    ->label('Часовой пояс CRM')
+                    ->label(__('Часовой пояс CRM'))
                     ->options(fn (Get $get): array => TimezoneOptions::options(
                         current: $get('viewer_timezone'),
                         organization: app(OrganizationContext::class)->defaultTimezone(),
                     ))
                     ->searchable()
                     ->nullable()
-                    ->helperText('Меняет только отображение времени в CRM и уведомлениях. Уже созданные записи не сдвигаются.'),
+                    ->helperText(__('Меняет только отображение времени в CRM и уведомлениях. Уже созданные записи не сдвигаются.')),
                 TextInput::make('home_visit_occupied_buffer_minutes')
-                    ->label('Буфер выезда после консультации (минуты)')
+                    ->label(__('Буфер выезда после консультации (минуты)'))
                     ->integer()
                     ->minValue(0)
                     ->maxValue(1440),
                 TextInput::make('lead_time_minutes')
-                    ->label('Минимальный срок до записи (минуты)')
+                    ->label(__('Минимальный срок до записи (минуты)'))
                     ->integer()
                     ->minValue(0)
-                    ->helperText('За сколько минут до начала визита клиент может оформить запись.')
+                    ->helperText(__('За сколько минут до начала визита клиент может оформить запись.'))
                     ->required(),
                 TextInput::make('cancellation_cutoff_minutes')
-                    ->label('Срок отмены или переноса (минуты)')
+                    ->label(__('Срок отмены или переноса (минуты)'))
                     ->integer()
                     ->minValue(0)
-                    ->helperText('За сколько минут до визита клиент может бесплатно отменить или перенести запись.')
+                    ->helperText(__('За сколько минут до визита клиент может бесплатно отменить или перенести запись.'))
                     ->required(),
                 TextInput::make('b2b_sales_call_duration_minutes')
-                    ->label('Длительность B2B-разговора (минуты)')
+                    ->label(__('Длительность B2B-разговора (минуты)'))
                     ->integer()
                     ->minValue(1)
                     ->maxValue(1440)
-                    ->helperText('Укажите длительность разговора. Для автоматической встречи доступная длительность зависит от тарифа Zoom.')
+                    ->helperText(__('Укажите длительность разговора. Для автоматической встречи доступная длительность зависит от тарифа Zoom.'))
                     ->nullable(),
                 Select::make('online_consultation_service_id')
-                    ->label('Онлайн-консультация из Road Map')
+                    ->label(__('Онлайн-консультация из Road Map'))
                     ->options(fn (): array => $this->onlineConsultationServices())
                     ->searchable()
                     ->nullable()
-                    ->placeholder('Не настроено')
-                    ->helperText('Выберите обычную онлайн-услугу с полной предоплатой. CTA появится в результатах теста только при активной услуге и назначенном специалисте.'),
+                    ->placeholder(__('Не настроено'))
+                    ->helperText(__('Выберите обычную онлайн-услугу с полной предоплатой. CTA появится в результатах теста только при активной услуге и назначенном специалисте.')),
                 Select::make('default_timezone')
-                    ->label('Часовой пояс организации')
+                    ->label(__('Часовой пояс организации'))
                     ->options(fn (Get $get): array => TimezoneOptions::options(
                         current: $get('default_timezone'),
                         organization: app(OrganizationContext::class)->organization()->defaultTimezone(),
                     ))
                     ->searchable()
                     ->required()
-                    ->helperText('Используется для расписаний и уведомлений в CRM.'),
+                    ->helperText(__('Используется для расписаний и уведомлений в CRM.')),
                 Checkbox::make('b2b_zoom_host_licensed')
-                    ->label('У Zoom-хоста есть лицензия Meetings')
-                    ->helperText('Не включайте, если хост использует бесплатный тариф Zoom.'),
+                    ->label(__('У Zoom-хоста есть лицензия Meetings'))
+                    ->helperText(__('Не включайте, если хост использует бесплатный тариф Zoom.')),
                 TextInput::make('office_location')
-                    ->label('Адрес по умолчанию')
-                    ->helperText('Подставляется в новые записи в кабинете. Адрес уже созданных записей не изменится.')
+                    ->label(__('Адрес по умолчанию'))
+                    ->helperText(__('Подставляется в новые записи в кабинете. Адрес уже созданных записей не изменится.'))
                     ->maxLength(500),
-                Section::make('Напоминания о записи')
-                    ->description('Выберите, кому и за сколько до визита отправлять напоминание. Напоминания строятся от времени начала записи и отправляются автоматически. Если время уже прошло, уведомление задним числом не отправляется. Для ранее созданных записей сохраните настройки ещё раз.')
+                Section::make(__('Напоминания о записи'))
+                    ->description(__('Выберите, кому и за сколько до визита отправлять напоминание. Напоминания строятся от времени начала записи и отправляются автоматически. Если время уже прошло, уведомление задним числом не отправляется. Для ранее созданных записей сохраните настройки ещё раз.'))
                     ->schema([
                         Repeater::make('client_reminders')
-                            ->label('Клиенту')
+                            ->label(__('Клиенту'))
                             ->schema($this->reminderSchema())
                             ->columns(3)
                             ->defaultItems(0)
                             ->reorderable(false)
-                            ->addActionLabel('Добавить напоминание'),
+                            ->addActionLabel(__('Добавить напоминание')),
                         Repeater::make('specialist_reminders')
-                            ->label('Себе / специалисту')
+                            ->label(__('Себе / специалисту'))
                             ->schema($this->reminderSchema())
                             ->columns(3)
                             ->defaultItems(0)
                             ->reorderable(false)
-                            ->addActionLabel('Добавить напоминание'),
+                            ->addActionLabel(__('Добавить напоминание')),
                     ])
                     ->columns(1)
                     ->columnSpanFull(),
-                Section::make('Подключение Zoom')
-                    ->description('Подключите Zoom для автоматического создания встреч. Если подключение не настроено, используйте ручную ссылку.')
+                Section::make(__('Подключение Zoom'))
+                    ->description(__('Подключите Zoom для автоматического создания встреч. Если подключение не настроено, используйте ручную ссылку.'))
                     ->schema([
                         Placeholder::make('zoom_instructions')
-                            ->label('Что увидит клиент')
-                            ->content('Встреча создаётся автоматически, а ссылка появится у клиента.'),
+                            ->label(__('Что увидит клиент'))
+                            ->content(__('Встреча создаётся автоматически, а ссылка появится у клиента.')),
                         Placeholder::make('zoom_status')
-                            ->label('Текущее состояние')
+                            ->label(__('Текущее состояние'))
                             ->content(function (): string {
                                 $configuration = app(GetB2bZoomConfiguration::class)->handle();
                                 $readiness = app(GetB2bSalesCallReadiness::class)->handle();
 
-                                return ($configuration['configured'] ? 'Zoom подключён' : 'Zoom не подключён')
-                                    .' · длительность: '.($readiness['durationConfigured'] ? 'настроена' : 'не настроена')
-                                    .' · календарь: '.($readiness['calendarConfigured'] ? 'настроен' : 'не настроен');
+                                return __(':zoom · длительность: :duration · календарь: :calendar', [
+                                    'zoom' => $configuration['configured'] ? __('Zoom подключён') : __('Zoom не подключён'),
+                                    'duration' => $readiness['durationConfigured'] ? __('настроена') : __('не настроена'),
+                                    'calendar' => $readiness['calendarConfigured'] ? __('настроен') : __('не настроен'),
+                                ]);
                             }),
                         Checkbox::make('zoom_enabled')
-                            ->label('Разрешить автоматическое создание Zoom-встреч')
-                            ->helperText('Включите после заполнения данных Zoom. Если не включать, используйте ручную ссылку.')
+                            ->label(__('Разрешить автоматическое создание Zoom-встреч'))
+                            ->helperText(__('Включите после заполнения данных Zoom. Если не включать, используйте ручную ссылку.'))
                             ->columnSpanFull(),
                         TextInput::make('zoom_account_id')
                             ->label('Account ID')
@@ -293,67 +295,67 @@ class SchedulingConfiguration extends Page
                             ->password()
                             ->revealable()
                             ->maxLength(2048)
-                            ->helperText('Оставьте пустым, чтобы не менять текущий ключ.'),
+                            ->helperText(__('Оставьте пустым, чтобы не менять текущий ключ.')),
                         TextInput::make('zoom_host_user_id')
-                            ->label('User ID ведущего Zoom')
+                            ->label(__('User ID ведущего Zoom'))
                             ->maxLength(255)
-                            ->helperText('Укажите пользователя Zoom, от имени которого создаются встречи.'),
+                            ->helperText(__('Укажите пользователя Zoom, от имени которого создаются встречи.')),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
                 Repeater::make('working_hours')
-                    ->label('Рабочие интервалы')
+                    ->label(__('Рабочие интервалы'))
                     ->schema([
                         Select::make('weekday')
-                            ->label('День недели')
+                            ->label(__('День недели'))
                             ->options([
-                                1 => 'Понедельник',
-                                2 => 'Вторник',
-                                3 => 'Среда',
-                                4 => 'Четверг',
-                                5 => 'Пятница',
-                                6 => 'Суббота',
-                                7 => 'Воскресенье',
+                                1 => __('Понедельник'),
+                                2 => __('Вторник'),
+                                3 => __('Среда'),
+                                4 => __('Четверг'),
+                                5 => __('Пятница'),
+                                6 => __('Суббота'),
+                                7 => __('Воскресенье'),
                             ])
                             ->required(),
                         TimePicker::make('start_time')
-                            ->label('Начало')
+                            ->label(__('Начало'))
                             ->seconds(false)
                             ->required(),
                         TimePicker::make('end_time')
-                            ->label('Окончание')
+                            ->label(__('Окончание'))
                             ->seconds(false)
                             ->required(),
                         DatePicker::make('starts_on')
-                            ->label('Действует с')
+                            ->label(__('Действует с'))
                             ->format('Y-m-d')
                             ->displayFormat('d.m.Y')
                             ->native(false)
                             ->nullable()
                             ->default(today())
-                            ->helperText('Пусто — с самого начала.'),
+                            ->helperText(__('Пусто — с самого начала.')),
                         DatePicker::make('ends_on')
-                            ->label('До')
+                            ->label(__('До'))
                             ->format('Y-m-d')
                             ->displayFormat('d.m.Y')
                             ->native(false)
                             ->nullable()
                             ->afterOrEqual('starts_on')
-                            ->helperText('Пусто — бессрочно.'),
+                            ->helperText(__('Пусто — бессрочно.')),
                     ])
                     ->columns(5)
                     ->defaultItems(0)
-                    ->addActionLabel('+ Добавить интервал')
+                    ->addActionLabel(__('+ Добавить интервал'))
                     ->reorderable(false)
                     ->columnSpanFull(),
                 Hidden::make('working_hours_digest')->dehydrated(),
                 Placeholder::make('specialist_schedule_timezone')
-                    ->label('Часовой пояс графика')
+                    ->label(__('Часовой пояс графика'))
                     ->content(fn (): string => $this->specialistScheduleTimezoneLabel())
                     ->columnSpanFull(),
                 Checkbox::make('clear_working_hours')
-                    ->label('Удалить всё рабочее расписание')
-                    ->helperText('Отметьте и сохраните, только если действительно нужно удалить все рабочие часы выбранного специалиста.')
+                    ->label(__('Удалить всё рабочее расписание'))
+                    ->helperText(__('Отметьте и сохраните, только если действительно нужно удалить все рабочие часы выбранного специалиста.'))
                     ->columnSpanFull(),
                 ...ScheduleImpactPreview::components(),
             ])
@@ -373,7 +375,7 @@ class SchedulingConfiguration extends Page
             ->footer([
                 Actions::make([
                     Action::make('save')
-                        ->label('Сохранить расписание')
+                        ->label(__('Сохранить расписание'))
                         ->submit('save'),
                 ]),
             ]);
@@ -498,7 +500,7 @@ class SchedulingConfiguration extends Page
 
         Notification::make()
             ->success()
-            ->title('Расписание сохранено')
+            ->title(__('Расписание сохранено'))
             ->send();
     }
 
@@ -649,18 +651,18 @@ class SchedulingConfiguration extends Page
     private function reminderSchema(): array
     {
         return [
-            Checkbox::make('is_enabled')->label('Включено')->default(true),
+            Checkbox::make('is_enabled')->label(__('Включено'))->default(true),
             TextInput::make('offset_value')
-                ->label('За сколько до визита')
+                ->label(__('За сколько до визита'))
                 ->integer()
                 ->minValue(1)
                 ->required(),
             Select::make('offset_unit')
-                ->label('Единица времени')
+                ->label(__('Единица времени'))
                 ->options([
-                    ScenarioDelayUnit::Minutes->value => 'минут',
-                    ScenarioDelayUnit::Hours->value => 'часов',
-                    ScenarioDelayUnit::Days->value => 'дней',
+                    ScenarioDelayUnit::Minutes->value => __('минут'),
+                    ScenarioDelayUnit::Hours->value => __('часов'),
+                    ScenarioDelayUnit::Days->value => __('дней'),
                 ])
                 ->required(),
         ];
@@ -675,13 +677,13 @@ class SchedulingConfiguration extends Page
             ? 'UTC'
             : 'UTC'.($offsetHours > 0 ? '+' : '').rtrim(rtrim(number_format($offsetHours, 2, '.', ''), '0'), '.');
 
-        return 'График задан по времени: '.TimezoneOptions::label($timezone).' ('.$offset.') · '.$timezone;
+        return __('График задан по времени: ').TimezoneOptions::label($timezone).' ('.$offset.') · '.$timezone;
     }
 
     private function humanScheduleError(string $message): string
     {
         return str_contains(mb_strtolower($message), 'overlap')
-            ? 'Рабочие интервалы не должны пересекаться.'
+            ? __('Рабочие интервалы не должны пересекаться.')
             : $message;
     }
 

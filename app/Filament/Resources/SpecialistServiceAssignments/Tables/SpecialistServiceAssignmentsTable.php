@@ -24,17 +24,17 @@ class SpecialistServiceAssignmentsTable
         return $table
             ->columns([
                 TextColumn::make('specialist.display_name')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->sortable()
                     ->url(fn (SpecialistServiceAssignment $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
                     ->color(fn (SpecialistServiceAssignment $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (SpecialistServiceAssignment $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
-                TextColumn::make('service.name')->label('Услуга')->sortable(),
-                TextColumn::make('created_at')->label('Назначено')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('service.name')->label(__('Услуга'))->sortable(),
+                TextColumn::make('created_at')->label(__('Назначено'))->dateTime('d.m.Y H:i')->sortable(),
             ])
             ->recordActions([
                 Action::make('remove')
-                    ->label('Убрать услугу')
+                    ->label(__('Убрать услугу'))
                     ->color('danger')
                     ->requiresConfirmation()
                     ->schema([

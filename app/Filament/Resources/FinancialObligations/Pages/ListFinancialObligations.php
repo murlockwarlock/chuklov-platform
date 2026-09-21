@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\FinancialObligations\Pages;
 
 use App\Filament\Resources\FinancialObligations\FinancialObligationResource;
-use Filament\Resources\Pages\ListRecords;
+use App\Filament\Support\LocalizedListRecords;
 
-final class ListFinancialObligations extends ListRecords
+final class ListFinancialObligations extends LocalizedListRecords
 {
     protected static string $resource = FinancialObligationResource::class;
 

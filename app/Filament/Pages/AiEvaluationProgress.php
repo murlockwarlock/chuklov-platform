@@ -2,17 +2,17 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use BackedEnum;
-use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 
-final class AiEvaluationProgress extends Page
+final class AiEvaluationProgress extends LocalizedPage
 {
     protected static ?string $slug = 'ai-evaluation-progress/{progressKey}';
 
@@ -55,12 +55,12 @@ final class AiEvaluationProgress extends Page
 
     public function getHeading(): string
     {
-        return 'Проверка AI';
+        return __('Проверка AI');
     }
 
     public function getSubheading(): string
     {
-        return 'Результат обновляется автоматически.';
+        return __('Результат обновляется автоматически.');
     }
 
     /** @return array<string, mixed> */
@@ -72,7 +72,7 @@ final class AiEvaluationProgress extends Page
         }
 
         return $progress === []
-            ? ['status' => 'expired', 'message' => 'Ссылка на прогресс больше недоступна.']
+            ? ['status' => 'expired', 'message' => __('Ссылка на прогресс больше недоступна.')]
             : $progress;
     }
 }

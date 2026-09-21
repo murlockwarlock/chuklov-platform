@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\AiEvaluations\Pages;
 
 use App\Filament\Resources\AiEvaluations\AiEvaluationResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\CreateAiEvaluationSuite;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class CreateAiEvaluation extends CreateRecord
+class CreateAiEvaluation extends LocalizedCreateRecord
 {
     protected static string $resource = AiEvaluationResource::class;
 

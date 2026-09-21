@@ -4,10 +4,10 @@ namespace App\Filament\Resources\ReferralPartnerProfiles\Pages;
 
 use App\Filament\Pages\ReferralRewardConfiguration;
 use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\Action;
-use Filament\Resources\Pages\ListRecords;
 
-final class ListReferralPartnerProfiles extends ListRecords
+final class ListReferralPartnerProfiles extends LocalizedListRecords
 {
     protected static string $resource = ReferralPartnerProfileResource::class;
 
@@ -17,7 +17,7 @@ final class ListReferralPartnerProfiles extends ListRecords
     {
         return [
             Action::make('openReferralSettings')
-                ->label('Настройки партнёрской программы')
+                ->label(__('Настройки партнёрской программы'))
                 ->icon('heroicon-o-cog-6-tooth')
                 ->url(ReferralRewardConfiguration::getUrl()),
         ];

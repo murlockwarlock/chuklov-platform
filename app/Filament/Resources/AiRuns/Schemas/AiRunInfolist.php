@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\AiRuns\Schemas;
 
 use App\Filament\Support\ClinicalAiPresentation;
+use App\Filament\Support\CrmLabel;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\GetAiRunProtectedTrace;
 use App\Modules\AI\Application\Data\AiRunProtectedTraceData;
@@ -24,16 +25,16 @@ class AiRunInfolist
     {
         return $schema
             ->components([
-                Section::make('Сводка запуска')
+                Section::make(__('Сводка запуска'))
                     ->schema([
                         TextEntry::make('capability')
-                            ->label('Возможность')
-                            ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? $state->label() : (string) $state),
+                            ->label(__('Возможность'))
+                            ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? CrmLabel::enum($state) : (string) $state),
                         TextEntry::make('origin')
-                            ->label('Источник')
-                            ->formatStateUsing(fn ($state) => $state?->label() ?? (string) $state),
+                            ->label(__('Источник'))
+                            ->formatStateUsing(fn ($state) => CrmLabel::enum($state) ?? (string) $state),
                         TextEntry::make('status')
-                            ->label('Статус')
+                            ->label(__('Статус'))
                             ->badge()
                             ->wrap()
                             ->color(fn ($state): string => match ($state instanceof AiRunStatus ? $state->value : (string) $state) {
@@ -44,37 +45,37 @@ class AiRunInfolist
                                 'failed', 'timed_out' => 'danger',
                                 default => 'gray',
                             })
-                            ->formatStateUsing(fn ($state) => $state instanceof AiRunStatus ? $state->label() : (string) $state),
-                        TextEntry::make('actual_provider')->label('Провайдер')->placeholder('—'),
-                        TextEntry::make('actual_model')->label('Модель')->placeholder('—'),
+                            ->formatStateUsing(fn ($state) => $state instanceof AiRunStatus ? CrmLabel::enum($state) : (string) $state),
+                        TextEntry::make('actual_provider')->label(__('Провайдер'))->placeholder('—'),
+                        TextEntry::make('actual_model')->label(__('Модель'))->placeholder('—'),
                         TextEntry::make('latency_ms')
-                            ->label('Время выполнения')
-                            ->formatStateUsing(fn ($state) => $state ? ($state > 1000 ? round($state / 1000, 2).' с' : $state.' мс') : '—'),
+                            ->label(__('Время выполнения'))
+                            ->formatStateUsing(fn ($state) => $state ? ($state > 1000 ? round($state / 1000, 2).' '.__('с') : $state.' '.__('мс')) : '—'),
                         TextEntry::make('settled_estimated_cost_minor_units')
-                            ->label('Оценочная стоимость')
+                            ->label(__('Оценочная стоимость'))
                             ->formatStateUsing(fn ($state) => $state !== null ? '$'.number_format($state / 10000, 4) : '—'),
                         TextEntry::make('human_review_status')
-                            ->label('Статус проверки')
+                            ->label(__('Статус проверки'))
                             ->badge()
                             ->wrap()
                             ->columnSpanFull()
-                            ->formatStateUsing(fn ($state) => $state instanceof HumanReviewStatus ? $state->label() : (string) $state),
+                            ->formatStateUsing(fn ($state) => $state instanceof HumanReviewStatus ? CrmLabel::enum($state) : (string) $state),
                     ])
                     ->columns(2),
 
-                Section::make('Технические данные')
+                Section::make(__('Технические данные'))
                     ->collapsed()
                     ->schema([
-                        TextEntry::make('id')->label('ID запуска')->fontFamily('mono'),
-                        TextEntry::make('prompt_version_id')->label('ID версии промпта')->fontFamily('mono')->placeholder('—'),
-                        TextEntry::make('model_release_id')->label('ID релиза модели')->fontFamily('mono')->placeholder('—'),
-                        TextEntry::make('rendered_prompt_digest')->label('Хеш промпта')->fontFamily('mono')->placeholder('—')->wrap(),
+                        TextEntry::make('id')->label(__('ID запуска'))->fontFamily('mono'),
+                        TextEntry::make('prompt_version_id')->label(__('ID версии промпта'))->fontFamily('mono')->placeholder('—'),
+                        TextEntry::make('model_release_id')->label(__('ID релиза модели'))->fontFamily('mono')->placeholder('—'),
+                        TextEntry::make('rendered_prompt_digest')->label(__('Хеш промпта'))->fontFamily('mono')->placeholder('—')->wrap(),
                         TextEntry::make('context_hash')
-                            ->label('Хеш контекста')
+                            ->label(__('Хеш контекста'))
                             ->state(fn (AiRun $record): string => self::contextHash($record))
                             ->fontFamily('mono'),
                         TextEntry::make('technical_input_references')
-                            ->label('Ссылки на источники')
+                            ->label(__('Ссылки на источники'))
                             ->state(fn (AiRun $record): string => self::pretty($record->input_references))
                             ->columnSpanFull()
                             ->wrap(),
@@ -82,25 +83,33 @@ class AiRunInfolist
                     ->columns(3)
                     ->columnSpanFull(),
 
-                Section::make('Ошибки и попытки выполнения')
+                Section::make(__('Ошибки и попытки выполнения'))
                     ->schema([
                         TextEntry::make('error_message_sanitized')
-                            ->label('Сообщение об ошибке')
-                            ->placeholder('Ошибок нет')
+                            ->label(__('Сообщение об ошибке'))
+                            ->placeholder(__('Ошибок нет'))
                             ->columnSpanFull()
                             ->wrap(),
                         TextEntry::make('attempts_summary')
-                            ->label('История попыток')
+                            ->label(__('История попыток'))
                             ->state(function (AiRun $record): string {
                                 $attempts = $record->attempts()->orderBy('attempt_number')->get();
                                 if ($attempts->isEmpty()) {
-                                    return 'Нет записей о попытках.';
+                                    return __('Нет записей о попытках.');
                                 }
                                 $lines = [];
                                 foreach ($attempts as $att) {
                                     $rev = $att->credential_revision ? substr($att->credential_revision, 0, 8).'…' : '—';
                                     $cost = '$'.number_format($att->settled_estimated_cost_minor_units / 10000, 4);
-                                    $lines[] = "#{$att->attempt_number} · {$att->provider}/{$att->model} · Статус: {$att->status} · {$att->latency_ms}мс · Стоимость: {$cost} · Ревизия ключа: {$rev}";
+                                    $lines[] = __('#:attempt · :provider/:model · Статус: :status · :latencyмс · Стоимость: :cost · Ревизия ключа: :revision', [
+                                        'attempt' => $att->attempt_number,
+                                        'provider' => $att->provider,
+                                        'model' => $att->model,
+                                        'status' => $att->status,
+                                        'latency' => $att->latency_ms,
+                                        'cost' => $cost,
+                                        'revision' => $rev,
+                                    ]);
                                 }
 
                                 return implode("\n", $lines);
@@ -109,18 +118,23 @@ class AiRunInfolist
                             ->wrap(),
                     ]),
 
-                Section::make('База знаний (RAG)')
+                Section::make(__('База знаний (RAG)'))
                     ->schema([
                         TextEntry::make('rag_summary')
-                            ->label('Использованные фрагменты')
+                            ->label(__('Использованные фрагменты'))
                             ->state(function (AiRun $record): string {
                                 $refs = $record->ragReferences()->orderBy('reference_index')->get();
                                 if ($refs->isEmpty()) {
-                                    return 'База знаний не использовалась.';
+                                    return __('База знаний не использовалась.');
                                 }
                                 $lines = [];
                                 foreach ($refs as $ref) {
-                                    $lines[] = "#{$ref->reference_index} · Источник #{$ref->knowledge_source_id} (Фрагмент #{$ref->knowledge_chunk_id}) · Сходство: ".round($ref->similarity_score * 100, 1).'%';
+                                    $lines[] = __('#:reference · Источник #:source (Фрагмент #:chunk) · Сходство: :similarity%', [
+                                        'reference' => $ref->reference_index,
+                                        'source' => $ref->knowledge_source_id,
+                                        'chunk' => $ref->knowledge_chunk_id,
+                                        'similarity' => round($ref->similarity_score * 100, 1),
+                                    ]);
                                 }
 
                                 return implode("\n", $lines);
@@ -129,60 +143,60 @@ class AiRunInfolist
                             ->wrap(),
                     ]),
 
-                Section::make('Защищённый след (Protected Trace)')
+                Section::make(__('Защищённый след (Protected Trace)'))
                     ->schema([
                         TextEntry::make('protected_trace_request')
-                            ->label('Запрос / ввод')
-                            ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->userPrompt ?: 'Ввод отсутствует.'))
+                            ->label(__('Запрос / ввод'))
+                            ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->userPrompt ?: __('Ввод отсутствует.')))
                             ->columnSpanFull()
                             ->wrap()
                             ->markdown(),
                         TextEntry::make('protected_trace_sources')
-                            ->label('Источники ввода')
+                            ->label(__('Источники ввода'))
                             ->state(fn (AiRun $record): string => self::traceText($record, [self::class, 'sourceText']))
                             ->columnSpanFull()
                             ->wrap()
                             ->markdown(),
-                        Section::make('Промпт')
+                        Section::make(__('Промпт'))
                             ->schema([
                                 TextEntry::make('protected_trace_prompt_name')
-                                    ->label('Промпт и версия')
-                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => trim(($trace->promptName ?? '—').' · версия '.($trace->promptVersion ?? '—')))),
+                                    ->label(__('Промпт и версия'))
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => __(':name · версия :version', ['name' => $trace->promptName ?? '—', 'version' => $trace->promptVersion ?? '—']))),
                                 TextEntry::make('protected_trace_source_prompt')
-                                    ->label('Исходный текст промпта')
-                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->sourcePrompt ?: 'Исходный текст недоступен.'))
+                                    ->label(__('Исходный текст промпта'))
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->sourcePrompt ?: __('Исходный текст недоступен.')))
                                     ->columnSpanFull()
                                     ->wrap()
                                     ->markdown(),
                                 TextEntry::make('protected_trace_guardrails')
-                                    ->label('Платформенные защитные правила')
-                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->platformSafetyGuardrails ?: 'Отдельные правила не записаны.'))
+                                    ->label(__('Платформенные защитные правила'))
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->platformSafetyGuardrails ?: __('Отдельные правила не записаны.')))
                                     ->columnSpanFull()
                                     ->wrap()
                                     ->markdown(),
                             ])
                             ->columns(2),
-                        Section::make('Модель и контекст')
+                        Section::make(__('Модель и контекст'))
                             ->schema([
                                 TextEntry::make('protected_trace_model')
-                                    ->label('Модель')
+                                    ->label(__('Модель'))
                                     ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => self::pretty($trace->model)))
                                     ->wrap(),
                                 TextEntry::make('protected_trace_context')
-                                    ->label('Снимок контекста')
+                                    ->label(__('Снимок контекста'))
                                     ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => self::pretty($trace->contextProvenance)))
                                     ->wrap(),
                                 TextEntry::make('protected_trace_rag')
-                                    ->label('Источники базы знаний')
-                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->ragReferences === [] ? 'База знаний не использовалась.' : self::pretty($trace->ragReferences)))
+                                    ->label(__('Источники базы знаний'))
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => $trace->ragReferences === [] ? __('База знаний не использовалась.') : self::pretty($trace->ragReferences)))
                                     ->columnSpanFull()
                                     ->wrap(),
                             ])
                             ->columns(2),
-                        Section::make('Результат')
+                        Section::make(__('Результат'))
                             ->schema([
                                 TextEntry::make('protected_trace_output')
-                                    ->label('Результат для специалиста')
+                                    ->label(__('Результат для специалиста'))
                                     ->state(fn (AiRun $record): string => self::traceText(
                                         $record,
                                         fn (AiRunProtectedTraceData $trace): string => ClinicalAiPresentation::result(
@@ -195,20 +209,20 @@ class AiRunInfolist
                                     ->wrap()
                                     ->markdown(),
                                 TextEntry::make('protected_trace_review')
-                                    ->label('Проверка специалиста')
+                                    ->label(__('Проверка специалиста'))
                                     ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => implode("\n\n", array_filter([
-                                        $trace->humanReviewNotes !== null ? 'Заметки: '.$trace->humanReviewNotes : null,
-                                        $trace->humanEditedOutput !== null ? 'Исправленный результат: '.$trace->humanEditedOutput : null,
-                                    ])) ?: 'Дополнительных заметок нет.'))
+                                        $trace->humanReviewNotes !== null ? __('Заметки: :notes', ['notes' => $trace->humanReviewNotes]) : null,
+                                        $trace->humanEditedOutput !== null ? __('Исправленный результат: :result', ['result' => $trace->humanEditedOutput]) : null,
+                                    ])) ?: __('Дополнительных заметок нет.')))
                                     ->columnSpanFull()
                                     ->wrap()
                                     ->markdown(),
                             ]),
-                        Section::make('Показать исходный JSON')
+                        Section::make(__('Показать исходный JSON'))
                             ->collapsed()
                             ->schema([
                                 TextEntry::make('protected_trace_raw_json')
-                                    ->label('Исходный JSON')
+                                    ->label(__('Исходный JSON'))
                                     ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => self::pretty($trace->outputPayload)))
                                     ->columnSpanFull()
                                     ->wrap(),
@@ -266,7 +280,7 @@ class AiRunInfolist
     {
         $trace = self::trace($record);
         if ($trace === null) {
-            return 'Доступ к защищённому следу ограничен политикой безопасности.';
+            return __('Доступ к защищённому следу ограничен политикой безопасности.');
         }
 
         return $resolver($trace);
@@ -275,18 +289,18 @@ class AiRunInfolist
     private static function sourceText(AiRunProtectedTraceData $trace): string
     {
         $labels = [
-            'client' => 'Профиль клиента',
-            'medical_attachment' => 'Медицинское вложение',
-            'companion_attachment' => 'Вложение диалога',
-            'medical_session' => 'Медицинский сеанс',
-            'survey_attempt' => 'Результат опроса',
-            'booking' => 'Запись на приём',
-            'ai_run' => 'Предыдущий AI-анализ',
-            'knowledge_source' => 'Источник базы знаний',
+            'client' => __('Профиль клиента'),
+            'medical_attachment' => __('Медицинское вложение'),
+            'companion_attachment' => __('Вложение диалога'),
+            'medical_session' => __('Медицинский сеанс'),
+            'survey_attempt' => __('Результат опроса'),
+            'booking' => __('Запись на приём'),
+            'ai_run' => __('Предыдущий AI-анализ'),
+            'knowledge_source' => __('Источник базы знаний'),
         ];
         $references = collect($trace->inputReferences)
             ->map(static function (array $reference) use ($labels): string {
-                $type = (string) ($reference['type'] ?? 'Источник');
+                $type = (string) ($reference['type'] ?? __('Источник'));
                 $label = $labels[$type] ?? $type;
                 $role = isset($reference['role']) ? ' · '.(string) $reference['role'] : '';
                 $details = collect([
@@ -300,13 +314,13 @@ class AiRunInfolist
             ->implode("\n");
 
         return implode("\n\n", array_filter([
-            $references !== '' ? $references : 'Явные ссылки на источники не записаны.',
-            'Извлечённый контекст: '.self::pretty($trace->contextProvenance),
+            $references !== '' ? $references : __('Явные ссылки на источники не записаны.'),
+            __('Извлечённый контекст: :context', ['context' => self::pretty($trace->contextProvenance)]),
         ]));
     }
 
     private static function pretty(mixed $value): string
     {
-        return json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: 'Нет данных.';
+        return json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?: __('Нет данных.');
     }
 }

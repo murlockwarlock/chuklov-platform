@@ -12,7 +12,7 @@
                 <summary class="cursor-pointer px-4 py-3 text-sm font-semibold text-gray-950 dark:text-white">
                     <span class="flex min-w-0 items-center gap-2">
                         <x-filament::icon icon="heroicon-o-tag" class="size-5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
-                        <span>Категории</span>
+                        <span>{{ __('Категории') }}</span>
                     </span>
                 </summary>
                 <div class="border-t border-gray-200 p-3 dark:border-gray-800">
@@ -30,7 +30,7 @@
             <div class="hidden rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 xl:block">
                 <div class="flex items-center gap-2">
                     <x-filament::icon icon="heroicon-o-tag" class="size-5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true" />
-                    <h2 class="text-base font-semibold text-gray-950 dark:text-white">Категории</h2>
+                    <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Категории') }}</h2>
                 </div>
                 <div class="mt-3 grid gap-1">
                     @foreach ($labels as $key => $label)
@@ -40,7 +40,7 @@
                         </button>
                     @endforeach
                 </div>
-                <p class="mt-4 text-xs leading-5 text-gray-500 dark:text-gray-400">Сегменты пересекаются: один клиент может одновременно быть новым и не иметь завершённых визитов.</p>
+                <p class="mt-4 text-xs leading-5 text-gray-500 dark:text-gray-400">{{ __('Сегменты пересекаются: один клиент может одновременно быть новым и не иметь завершённых визитов.') }}</p>
             </div>
         </aside>
     </div>

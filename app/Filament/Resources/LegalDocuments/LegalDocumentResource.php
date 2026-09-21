@@ -6,6 +6,7 @@ use App\Filament\Resources\LegalDocuments\Pages\CreateLegalDocument;
 use App\Filament\Resources\LegalDocuments\Pages\EditLegalDocument;
 use App\Filament\Resources\LegalDocuments\Pages\ListLegalDocuments;
 use App\Filament\Resources\LegalDocuments\Pages\ViewLegalDocument;
+use App\Filament\Support\LocalizedResource;
 use App\Filament\Support\RichTextEditor;
 use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
@@ -20,7 +21,6 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -30,7 +30,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-final class LegalDocumentResource extends Resource
+final class LegalDocumentResource extends LocalizedResource
 {
     protected static ?string $model = LegalDocument::class;
 
@@ -49,40 +49,40 @@ final class LegalDocumentResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Документ')->schema([
+            Section::make(__('Документ'))->schema([
                 Select::make('document_type')
-                    ->label('Тип документа')
+                    ->label(__('Тип документа'))
                     ->options(self::subjectOptions())
                     ->required()
                     ->disabled(fn (string $operation): bool => $operation === 'edit')
                     ->native(false),
                 TextInput::make('purpose')
-                    ->label('Внутреннее назначение')
-                    ->helperText('Техническая метка документа. Юридический текст задаёт владелец организации.')
+                    ->label(__('Внутреннее назначение'))
+                    ->helperText(__('Техническая метка документа. Юридический текст задаёт владелец организации.'))
                     ->required()
                     ->disabled(fn (string $operation): bool => $operation === 'edit')
                     ->maxLength(120),
                 Select::make('locale')
-                    ->label('Язык')
-                    ->options(['ru' => 'Русский', 'en' => 'Английский'])
+                    ->label(__('Язык'))
+                    ->options(['ru' => __('Русский'), 'en' => __('Английский')])
                     ->required()
                     ->disabled(fn (string $operation): bool => $operation === 'edit')
                     ->native(false),
                 TextInput::make('version')
-                    ->label('Версия')
-                    ->helperText('Опубликованная версия неизменяема. Для изменения создайте новую draft-версию.')
+                    ->label(__('Версия'))
+                    ->helperText(__('Опубликованная версия неизменяема. Для изменения создайте новую draft-версию.'))
                     ->required()
                     ->disabled(fn (string $operation): bool => $operation === 'edit')
                     ->maxLength(64),
                 Placeholder::make('required_state')
-                    ->label('Подтверждение при записи')
+                    ->label(__('Подтверждение при записи'))
                     ->content(fn (Get $get): string => self::requiredLabel($get('document_type'))),
             ])->columns(2)->columnSpanFull(),
-            Section::make('Текст документа')->schema([
+            Section::make(__('Текст документа'))->schema([
                 RichTextEditor::make('content')
-                    ->label('Текст')
+                    ->label(__('Текст'))
                     ->required()
-                    ->helperText('Не добавляйте сюда данные клиентов. Текст должен быть подготовлен владельцем организации.')
+                    ->helperText(__('Не добавляйте сюда данные клиентов. Текст должен быть подготовлен владельцем организации.'))
                     ->columnSpanFull(),
             ])->columnSpanFull(),
         ]);
@@ -92,24 +92,24 @@ final class LegalDocumentResource extends Resource
     {
         return $schema->components([
             TextEntry::make('document_type')
-                ->label('Тип документа')
+                ->label(__('Тип документа'))
                 ->formatStateUsing(fn (string $state): string => self::subjectOptions()[$state] ?? $state),
-            TextEntry::make('purpose')->label('Внутреннее назначение'),
-            TextEntry::make('locale')->label('Язык')->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
-            TextEntry::make('version')->label('Версия'),
-            TextEntry::make('status')->label('Состояние')->badge()->formatStateUsing(fn ($state): string => self::statusLabel($state instanceof LegalDocumentStatus ? $state : LegalDocumentStatus::from((string) $state))),
+            TextEntry::make('purpose')->label(__('Внутреннее назначение')),
+            TextEntry::make('locale')->label(__('Язык'))->formatStateUsing(fn (string $state): string => $state === 'ru' ? __('Русский') : __('Английский')),
+            TextEntry::make('version')->label(__('Версия')),
+            TextEntry::make('status')->label(__('Состояние'))->badge()->formatStateUsing(fn ($state): string => self::statusLabel($state instanceof LegalDocumentStatus ? $state : LegalDocumentStatus::from((string) $state))),
             TextEntry::make('is_required')
-                ->label('Обязателен при записи')
+                ->label(__('Обязателен при записи'))
                 ->state(fn (LegalDocument $record): string => self::requiredLabel($record->document_type)),
             TextEntry::make('content')
-                ->label('Текст')
+                ->label(__('Текст'))
                 ->formatStateUsing(fn (?string $state): string => RichTextPresentation::html($state))
                 ->html()
                 ->columnSpanFull()
                 ->prose()
                 ->wrap(),
-            TextEntry::make('published_at')->label('Опубликован')->dateTime('d.m.Y H:i')->placeholder('Не опубликован'),
-            TextEntry::make('archived_at')->label('Архивирован')->dateTime('d.m.Y H:i')->placeholder('—'),
+            TextEntry::make('published_at')->label(__('Опубликован'))->dateTime('d.m.Y H:i')->placeholder(__('Не опубликован')),
+            TextEntry::make('archived_at')->label(__('Архивирован'))->dateTime('d.m.Y H:i')->placeholder('—'),
         ]);
     }
 
@@ -117,18 +117,18 @@ final class LegalDocumentResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('document_type')->label('Документ')->formatStateUsing(fn (string $state): string => self::subjectOptions()[$state] ?? $state)->searchable(),
-                TextColumn::make('locale')->label('Язык')->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
-                TextColumn::make('version')->label('Версия'),
-                TextColumn::make('status')->label('Состояние')->badge()->formatStateUsing(fn ($state): string => self::statusLabel($state instanceof LegalDocumentStatus ? $state : LegalDocumentStatus::from((string) $state))),
+                TextColumn::make('document_type')->label(__('Документ'))->formatStateUsing(fn (string $state): string => self::subjectOptions()[$state] ?? $state)->searchable(),
+                TextColumn::make('locale')->label(__('Язык'))->formatStateUsing(fn (string $state): string => $state === 'ru' ? __('Русский') : __('Английский')),
+                TextColumn::make('version')->label(__('Версия')),
+                TextColumn::make('status')->label(__('Состояние'))->badge()->formatStateUsing(fn ($state): string => self::statusLabel($state instanceof LegalDocumentStatus ? $state : LegalDocumentStatus::from((string) $state))),
                 TextColumn::make('is_required')
-                    ->label('Обязателен')
-                    ->state(fn (LegalDocument $record): string => ConsentSubject::tryFrom((string) $record->document_type)?->isRequired() === true ? 'Да' : 'Нет'),
-                TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable(),
+                    ->label(__('Обязателен'))
+                    ->state(fn (LegalDocument $record): string => ConsentSubject::tryFrom((string) $record->document_type)?->isRequired() === true ? __('Да') : __('Нет')),
+                TextColumn::make('updated_at')->label(__('Изменён'))->dateTime('d.m.Y H:i')->sortable(),
             ])
             ->defaultSort('updated_at', 'desc')
-            ->emptyStateHeading('Документов пока нет')
-            ->emptyStateDescription('Добавьте текст документа здесь. Согласие клиента фиксируется в его карточке, в разделе «Маркетинговые рассылки».');
+            ->emptyStateHeading(__('Документов пока нет'))
+            ->emptyStateDescription(__('Добавьте текст документа здесь. Согласие клиента фиксируется в его карточке, в разделе «Маркетинговые рассылки».'));
     }
 
     public static function canAccess(): bool
@@ -173,7 +173,7 @@ final class LegalDocumentResource extends Resource
     public static function subjectOptions(): array
     {
         return collect(ConsentSubject::cases())
-            ->mapWithKeys(fn (ConsentSubject $subject): array => [$subject->value => $subject->label('ru')])
+            ->mapWithKeys(fn (ConsentSubject $subject): array => [$subject->value => $subject->label(app()->getLocale())])
             ->all();
     }
 
@@ -181,15 +181,17 @@ final class LegalDocumentResource extends Resource
     {
         $subject = is_string($documentType) ? ConsentSubject::tryFrom($documentType) : null;
 
-        return $subject?->isRequired() === true ? 'Да — требуется при создании записи' : 'Нет — отдельное необязательное согласие';
+        return $subject?->isRequired() === true
+            ? __('Да — требуется при создании записи')
+            : __('Нет — отдельное необязательное согласие');
     }
 
     private static function statusLabel(LegalDocumentStatus $status): string
     {
         return match ($status) {
-            LegalDocumentStatus::Draft => 'Черновик',
-            LegalDocumentStatus::Published => 'Опубликован',
-            LegalDocumentStatus::Archived => 'Архив',
+            LegalDocumentStatus::Draft => __('Черновик'),
+            LegalDocumentStatus::Published => __('Опубликован'),
+            LegalDocumentStatus::Archived => __('Архив'),
         };
     }
 }

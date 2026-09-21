@@ -20,16 +20,16 @@ final class SessionForm
     {
         return $schema
             ->components([
-                Section::make('Сеанс')
+                Section::make(__('Сеанс'))
                     ->schema([
                         DateTimePicker::make('occurred_at')
-                            ->label('Дата и время сеанса')
+                            ->label(__('Дата и время сеанса'))
                             ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                             ->required()
                             ->seconds(false)
-                            ->placeholder('Выберите дату и время сеанса'),
+                            ->placeholder(__('Выберите дату и время сеанса')),
                         Select::make('specialist_id')
-                            ->label('Специалист')
+                            ->label(__('Специалист'))
                             ->required()
                             ->searchable()
                             ->native(false)
@@ -39,22 +39,22 @@ final class SessionForm
                             ->getSearchResultsUsing(static fn (string $search): array => self::specialistResults($search))
                             ->getOptionLabelUsing(static fn (mixed $value): ?string => self::specialistLabel($value)),
                         Select::make('booking_id')
-                            ->label('Запись на приём (необязательно)')
-                            ->helperText('Связан только с записями этого клиента и выбранного специалиста.')
-                            ->placeholder('Без записи на приём')
+                            ->label(__('Запись на приём (необязательно)'))
+                            ->helperText(__('Связан только с записями этого клиента и выбранного специалиста.'))
+                            ->placeholder(__('Без записи на приём'))
                             ->searchable()
                             ->native(false)
                             ->getSearchResultsUsing(static fn (string $search, Select $component): array => self::bookingResults($search, $component))
                             ->getOptionLabelUsing(static fn (mixed $value, Select $component): ?string => self::bookingLabel($value, $component)),
                     ])->columns(2)->columnSpanFull(),
-                Section::make('Клинические заметки (опционально)')
+                Section::make(__('Клинические заметки (опционально)'))
                     ->schema([
-                        Textarea::make('pain')->label('Боль')->rows(3)->placeholder('Что беспокоит клиента и где'),
-                        Textarea::make('tests')->label('Тесты')->rows(3)->placeholder('Проведённые проверки и их результаты'),
-                        Textarea::make('observations')->label('Наблюдения')->rows(3)->placeholder('Субъективные и объективные наблюдения'),
-                        Textarea::make('root_cause_hypothesis')->label('Гипотеза первопричины')->rows(3)->placeholder('Предполагаемая причина состояния'),
-                        Textarea::make('protocol')->label('Протокол')->rows(3)->placeholder('Назначенные процедуры и план'),
-                        Textarea::make('result')->label('Результат')->rows(3)->placeholder('Эффект после процедур/до следующего сеанса'),
+                        Textarea::make('pain')->label(__('Боль'))->rows(3)->placeholder(__('Что беспокоит клиента и где')),
+                        Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
+                        Textarea::make('observations')->label(__('Наблюдения'))->rows(3)->placeholder(__('Субъективные и объективные наблюдения')),
+                        Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),
+                        Textarea::make('protocol')->label(__('Протокол'))->rows(3)->placeholder(__('Назначенные процедуры и план')),
+                        Textarea::make('result')->label(__('Результат'))->rows(3)->placeholder(__('Эффект после процедур/до следующего сеанса')),
                     ])->columnSpanFull(),
             ]);
     }
@@ -82,7 +82,7 @@ final class SessionForm
 
         return $query->get(['id', 'display_name', 'is_active'])
             ->mapWithKeys(static fn (Specialist $specialist): array => [
-                $specialist->getKey() => $specialist->display_name.' '.($specialist->is_active ? '(активен)' : '(неактивен)'),
+                $specialist->getKey() => self::specialistPresentation($specialist),
             ])
             ->all();
     }
@@ -98,9 +98,15 @@ final class SessionForm
             ->whereKey((int) $value)
             ->first();
 
-        return $specialist instanceof Specialist
-            ? $specialist->display_name.' '.($specialist->is_active ? '(активен)' : '(неактивен)')
-            : null;
+        return $specialist instanceof Specialist ? self::specialistPresentation($specialist) : null;
+    }
+
+    private static function specialistPresentation(Specialist $specialist): string
+    {
+        return __(':name (:status)', [
+            'name' => $specialist->display_name,
+            'status' => $specialist->is_active ? __('активен') : __('неактивен'),
+        ]);
     }
 
     /** @return array<int|string, string> */

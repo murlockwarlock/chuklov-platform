@@ -3,14 +3,14 @@
 namespace App\Filament\Resources\BroadcastCampaigns\Pages;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\UpdateBroadcastCampaign as Action;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
-final class EditBroadcastCampaign extends EditRecord
+final class EditBroadcastCampaign extends LocalizedEditRecord
 {
     protected static string $resource = BroadcastCampaignResource::class;
 
@@ -38,7 +38,7 @@ final class EditBroadcastCampaign extends EditRecord
 
     protected function getSavedNotificationTitle(): string
     {
-        return 'Рассылка сохранена';
+        return __('Рассылка сохранена');
     }
 
     /**
@@ -49,13 +49,13 @@ final class EditBroadcastCampaign extends EditRecord
     {
         if (array_key_exists('segment_definition', $data)
             && (! is_array($data['segment_definition']) || ! array_is_list($data['segment_definition']))) {
-            throw ValidationException::withMessages(['segment_definition' => 'Сегмент имеет неверный формат.']);
+            throw ValidationException::withMessages(['segment_definition' => __('Сегмент имеет неверный формат.')]);
         }
         $filters = $data['segment_definition'] ?? [];
         $mapped = [];
         foreach ($filters as $filter) {
             if (! is_array($filter)) {
-                throw ValidationException::withMessages(['segment_definition' => 'Условие сегмента имеет неверный формат.']);
+                throw ValidationException::withMessages(['segment_definition' => __('Условие сегмента имеет неверный формат.')]);
             }
             $value = $filter['value'] ?? null;
             $filter['value_bool'] = is_bool($value) ? ($value ? '1' : '0') : null;

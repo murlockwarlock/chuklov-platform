@@ -11,8 +11,8 @@
     <button
         type="button"
         x-on:click="$dispatch('messages-remove-attachment')"
-        aria-label="Удалить вложение"
-        title="Удалить вложение"
+        aria-label="{{ __('Удалить вложение') }}"
+        title="{{ __('Удалить вложение') }}"
     >
         <x-filament::icon icon="heroicon-o-x-mark" class="block size-4 shrink-0" />
     </button>

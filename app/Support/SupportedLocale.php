@@ -4,6 +4,8 @@ namespace App\Support;
 
 final class SupportedLocale
 {
+    public const AdminSessionKey = 'admin.locale';
+
     /** @return list<string> */
     public static function all(): array
     {

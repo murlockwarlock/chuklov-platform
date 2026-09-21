@@ -8,6 +8,7 @@ use App\Filament\Resources\NotificationTemplates\Pages\ListNotificationTemplates
 use App\Filament\Resources\NotificationTemplates\Pages\ViewNotificationTemplate;
 use App\Filament\Resources\NotificationTemplates\Schemas\NotificationTemplateForm;
 use App\Filament\Resources\NotificationTemplates\Tables\NotificationTemplatesTable;
+use App\Filament\Support\LocalizedResource;
 use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
@@ -19,13 +20,12 @@ use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-final class NotificationTemplateResource extends Resource
+final class NotificationTemplateResource extends LocalizedResource
 {
     protected static ?string $model = NotificationTemplate::class;
 
@@ -52,28 +52,28 @@ final class NotificationTemplateResource extends Resource
     {
         return $schema
             ->components([
-                TextEntry::make('name')->label('Сообщение'),
+                TextEntry::make('name')->label(__('Сообщение')),
                 TextEntry::make('locale')
-                    ->label('Язык')
-                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
+                    ->label(__('Язык'))
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? __('Русский') : __('Английский')),
                 TextEntry::make('purpose')
-                    ->label('Для чего')
+                    ->label(__('Для чего'))
                     ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
-                TextEntry::make('is_active')->label('Включён')->formatStateUsing(fn (bool $state): string => $state ? 'Да' : 'Нет'),
+                TextEntry::make('is_active')->label(__('Включён'))->formatStateUsing(fn (bool $state): string => $state ? __('Да') : __('Нет')),
                 TextEntry::make('version_summary')
-                    ->label('Состояние текста')
-                    ->state(fn (NotificationTemplate $record): string => $record->latestVersion === null ? 'Сообщение не добавлено' : 'Версия сохранена'),
+                    ->label(__('Состояние текста'))
+                    ->state(fn (NotificationTemplate $record): string => $record->latestVersion === null ? __('Сообщение не добавлено') : __('Версия сохранена')),
                 TextEntry::make('delivery_mode')
-                    ->label('Формат сообщения')
+                    ->label(__('Формат сообщения'))
                     ->state(fn (NotificationTemplate $record): string => self::deliveryModeLabel($record->latestVersion?->delivery_mode)),
                 TextEntry::make('media_summary')
-                    ->label('Медиа')
+                    ->label(__('Медиа'))
                     ->state(fn (NotificationTemplate $record): string => self::mediaSummary($record)),
                 TextEntry::make('latest_subject')
-                    ->label('Тема')
+                    ->label(__('Тема'))
                     ->state(fn (NotificationTemplate $record): ?string => $record->latestVersion?->subject),
                 TextEntry::make('latest_body')
-                    ->label('Текст сообщения')
+                    ->label(__('Текст сообщения'))
                     ->state(fn (NotificationTemplate $record): ?string => $record->latestVersion?->body)
                     ->formatStateUsing(fn (?string $state): string => RichTextPresentation::html($state))
                     ->html()
@@ -81,13 +81,13 @@ final class NotificationTemplateResource extends Resource
                     ->wrap()
                     ->columnSpanFull(),
                 TextEntry::make('latest_variables')
-                    ->label('Доступные данные')
+                    ->label(__('Доступные данные'))
                     ->state(function (NotificationTemplate $record): string {
                         $latest = $record->latestVersion;
 
                         return $latest === null
                             ? ''
-                            : collect($latest->variables)->map(fn (string $variable): string => ScenarioTemplateVariableCatalog::labels()[$variable] ?? 'Данные')->implode(', ');
+                            : collect($latest->variables)->map(fn (string $variable): string => ScenarioTemplateVariableCatalog::labels()[$variable] ?? __('Данные'))->implode(', ');
                     })
                     ->columnSpanFull(),
             ]);
@@ -148,10 +148,10 @@ final class NotificationTemplateResource extends Resource
         $purpose = $purpose instanceof ScenarioRulePurpose ? $purpose : ScenarioRulePurpose::tryFrom($purpose);
 
         return match ($purpose) {
-            ScenarioRulePurpose::Service => 'Сервисное сообщение',
-            ScenarioRulePurpose::Transactional => 'Системное сообщение',
-            ScenarioRulePurpose::Marketing => 'Маркетинговая рассылка',
-            default => 'Не указано',
+            ScenarioRulePurpose::Service => __('Сервисное сообщение'),
+            ScenarioRulePurpose::Transactional => __('Системное сообщение'),
+            ScenarioRulePurpose::Marketing => __('Маркетинговая рассылка'),
+            default => __('Не указано'),
         };
     }
 
@@ -160,12 +160,12 @@ final class NotificationTemplateResource extends Resource
         $mode = $mode instanceof NotificationMessageMode ? $mode : NotificationMessageMode::tryFrom((string) $mode);
 
         return match ($mode) {
-            NotificationMessageMode::Text => 'Только текст',
-            NotificationMessageMode::Image => 'Только медиа',
-            NotificationMessageMode::ImageThenText => 'Медиа, затем текст',
-            NotificationMessageMode::TextThenImage => 'Текст, затем медиа',
-            NotificationMessageMode::ImageWithCaption => 'Медиа с подписью',
-            default => 'Не указано',
+            NotificationMessageMode::Text => __('Только текст'),
+            NotificationMessageMode::Image => __('Только медиа'),
+            NotificationMessageMode::ImageThenText => __('Медиа, затем текст'),
+            NotificationMessageMode::TextThenImage => __('Текст, затем медиа'),
+            NotificationMessageMode::ImageWithCaption => __('Медиа с подписью'),
+            default => __('Не указано'),
         };
     }
 
@@ -174,6 +174,6 @@ final class NotificationTemplateResource extends Resource
         $media = $template->latestVersion?->media;
         $items = $media === null || ! is_array($media['items'] ?? null) ? [] : $media['items'];
 
-        return $items === [] ? 'Не добавлено' : 'Файлов: '.count($items);
+        return $items === [] ? __('Не добавлено') : __('Файлов: :count', ['count' => count($items)]);
     }
 }

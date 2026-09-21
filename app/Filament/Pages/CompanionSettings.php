@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\ClientCompanion\Application\Services\GetCompanionContextSettings;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -12,7 +13,6 @@ use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use Filament\Actions\Action;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
@@ -24,7 +24,7 @@ use LogicException;
 use UnitEnum;
 
 /** @property-read Schema $form */
-final class CompanionSettings extends Page
+final class CompanionSettings extends LocalizedPage
 {
     protected static ?string $title = 'Настройки AI-компаньона';
 
@@ -70,15 +70,15 @@ final class CompanionSettings extends Page
         return $schema
             ->components([
                 TextInput::make('first_exchanges')
-                    ->label('Сохранять начало диалога')
-                    ->helperText('Количество первых обменов текущего диалога, которые сохраняются в контексте.')
+                    ->label(__('Сохранять начало диалога'))
+                    ->helperText(__('Количество первых обменов текущего диалога, которые сохраняются в контексте.'))
                     ->integer()
                     ->minValue(0)
                     ->maxValue(20)
                     ->required(),
                 TextInput::make('recent_exchanges')
-                    ->label('Использовать последние обмены')
-                    ->helperText('При длинной переписке середина перестаёт передаваться модели. Платформа также ограничивает общий объём контекста.')
+                    ->label(__('Использовать последние обмены'))
+                    ->helperText(__('При длинной переписке середина перестаёт передаваться модели. Платформа также ограничивает общий объём контекста.'))
                     ->integer()
                     ->minValue(0)
                     ->maxValue(20)
@@ -99,7 +99,7 @@ final class CompanionSettings extends Page
             ->livewireSubmitHandler('save')
             ->footer([
                 Actions::make([
-                    Action::make('save')->label('Сохранить настройки')->submit('save'),
+                    Action::make('save')->label(__('Сохранить настройки'))->submit('save'),
                 ]),
             ]);
     }
@@ -113,6 +113,6 @@ final class CompanionSettings extends Page
         $action->handle($actor, OrganizationSettingKey::CompanionContextFirstExchanges, (int) $data['first_exchanges']);
         $action->handle($actor, OrganizationSettingKey::CompanionContextRecentExchanges, (int) $data['recent_exchanges']);
 
-        Notification::make()->success()->title('Настройки AI-компаньона сохранены')->send();
+        Notification::make()->success()->title(__('Настройки AI-компаньона сохранены'))->send();
     }
 }

@@ -19,11 +19,11 @@ final class TelegramPreviewAction
     public static function make(Closure $messageBuilder): Action
     {
         return Action::make('telegramPreview')
-            ->label('Предпросмотр Telegram')
+            ->label(__('Предпросмотр Telegram'))
             ->icon(Heroicon::OutlinedEye)
-            ->modalHeading('Предпросмотр Telegram')
+            ->modalHeading(__('Предпросмотр Telegram'))
             ->modalSubmitAction(false)
-            ->modalCancelActionLabel('Закрыть')
+            ->modalCancelActionLabel(__('Закрыть'))
             ->modalContent(function (Get $get, ?Model $record) use ($messageBuilder): View {
                 try {
                     $message = $messageBuilder($get, $record);
@@ -35,13 +35,13 @@ final class TelegramPreviewAction
                     $error = null;
                 } catch (ValidationException $exception) {
                     $preview = null;
-                    $error = collect($exception->errors())->flatten()->first() ?: 'Заполните обязательные поля.';
+                    $error = collect($exception->errors())->flatten()->first() ?: __('Заполните обязательные поля.');
                 } catch (InvalidArgumentException $exception) {
                     $preview = null;
                     $error = self::messageFor($exception);
                 } catch (Throwable) {
                     $preview = null;
-                    $error = 'Предпросмотр пока недоступен. Проверьте текст и медиа.';
+                    $error = __('Предпросмотр пока недоступен. Проверьте текст и медиа.');
                 }
 
                 return view('filament.resources.broadcasts.preview', [
@@ -58,9 +58,9 @@ final class TelegramPreviewAction
         $message = mb_strtolower($exception->getMessage());
 
         return match (true) {
-            str_contains($message, 'too long') => 'Текст превышает лимит Telegram для выбранного формата.',
-            str_contains($message, 'media') => 'Проверьте вложение: добавьте поддерживаемый файл или ссылку.',
-            default => 'Проверьте текст сообщения и доступные данные.',
+            str_contains($message, 'too long') => __('Текст превышает лимит Telegram для выбранного формата.'),
+            str_contains($message, 'media') => __('Проверьте вложение: добавьте поддерживаемый файл или ссылку.'),
+            default => __('Проверьте текст сообщения и доступные данные.'),
         };
     }
 }

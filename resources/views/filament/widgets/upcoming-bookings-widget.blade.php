@@ -11,19 +11,19 @@
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200/80 dark:border-white/10">
                 <div>
                     <h2 class="text-base sm:text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-                        Ближайшие записи
+                        {{ __('Ближайшие записи') }}
                     </h2>
                     <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-gray-400 mt-0.5 font-medium">
-                        <span>Сегодня: <strong class="text-slate-900 dark:text-white font-mono">{{ $data->todayCount }}</strong></span>
+                        <span>{{ __('Сегодня:') }} <strong class="text-slate-900 dark:text-white font-mono">{{ $data->todayCount }}</strong></span>
                         <span>·</span>
-                        <span>Завтра: <strong class="text-slate-900 dark:text-white font-mono">{{ $data->tomorrowCount }}</strong></span>
+                        <span>{{ __('Завтра:') }} <strong class="text-slate-900 dark:text-white font-mono">{{ $data->tomorrowCount }}</strong></span>
                         <span>·</span>
-                        <span>Время: <strong class="text-slate-900 dark:text-white">{{ $data->timezone }}</strong></span>
+                        <span>{{ __('Время:') }} <strong class="text-slate-900 dark:text-white">{{ $data->timezone }}</strong></span>
                     </div>
                 </div>
                 <div>
                     <a href="{{ \App\Filament\Resources\Bookings\BookingResource::getUrl('index') }}" class="text-xs font-semibold text-amber-600 hover:text-amber-700 dark:text-amber-400 dark:hover:text-amber-300 inline-flex items-center gap-1 hover:underline">
-                        Все записи на приём →
+                        {{ __('Все записи на приём') }} →
                     </a>
                 </div>
             </div>
@@ -54,10 +54,10 @@
                                     $clientUrl = \App\Filament\Support\CrmEntityLinks::clientUrl($booking->client, $canViewClients);
                                     $specialistUrl = \App\Filament\Support\CrmEntityLinks::specialistUrl($booking->specialist, $canViewSpecialists);
                                     $clientName = trim((string) ($booking->client?->full_name ?? ''));
-                                    $clientName = $clientName !== '' ? $clientName : ($booking->client ? 'Клиент без имени' : 'Клиент недоступен');
+                                    $clientName = $clientName !== '' ? $clientName : ($booking->client ? __('Клиент без имени') : __('Клиент недоступен'));
                                 @endphp
                                 <div class="relative block bg-slate-50/70 dark:bg-white/[0.03] hover:bg-slate-100/90 dark:hover:bg-white/[0.06] border border-slate-200/80 dark:border-white/10 hover:border-amber-400/80 dark:hover:border-amber-500/80 rounded-[6px] p-3 transition duration-150 group shadow-none min-w-0">
-                                    <a href="{{ $bookingUrl }}" aria-label="Открыть запись" class="absolute inset-0 z-0 rounded-[6px]"></a>
+                                    <a href="{{ $bookingUrl }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-[6px]"></a>
                                     <div class="relative z-10 pointer-events-none">
                                     {{-- Row 1: Time & Format --}}
                                     <div class="flex items-center justify-between gap-2 mb-1.5">
@@ -87,7 +87,7 @@
 
                                     {{-- Row 4: Service Name (no truncate, wraps) --}}
                                     <div class="text-xs text-slate-600 dark:text-gray-300 break-words mb-1.5 leading-snug">
-                                        {{ $booking->service?->name ?: 'Услуга' }}
+                                        {{ $booking->service?->name ?: __('Услуга') }}
                                     </div>
 
                                     <div class="text-[11px] text-slate-500 dark:text-gray-400 break-words mb-1.5 leading-snug">
@@ -97,23 +97,23 @@
                                     {{-- Row 6: Specialist (subtle top divider, secondary text) --}}
                                     <div class="text-[11px] text-slate-500 dark:text-gray-400 pt-1.5 border-t border-slate-200/60 dark:border-white/5 break-words">
                                         @if ($specialistUrl)
-                                            <a href="{{ $specialistUrl }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking->specialist?->display_name ?: 'Специалист' }}</a>
+                                            <a href="{{ $specialistUrl }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking->specialist?->display_name ?: __('Специалист') }}</a>
                                         @else
-                                            {{ $booking->specialist?->display_name ?: 'Специалист' }}
+                                            {{ $booking->specialist?->display_name ?: __('Специалист') }}
                                         @endif
                                     </div>
                                     </div>
                                 </div>
                             @empty
                                 <div class="py-8 text-center text-xs text-slate-400 dark:text-gray-500 bg-slate-50/40 dark:bg-white/[0.01] rounded-[6px] border border-dashed border-slate-200/60 dark:border-white/5">
-                                    Записей нет
+                                    {{ __('Записей нет') }}
                                 </div>
                             @endforelse
 
                             @if($day->totalCount > 10)
                                 <div class="text-center pt-1">
                                     <a href="{{ \App\Filament\Resources\Bookings\BookingResource::getUrl('index') }}" class="text-xs font-medium text-amber-600 dark:text-amber-400 hover:underline">
-                                        + ещё {{ $day->totalCount - 10 }} записей →
+                                        {{ __('+ ещё :count записей', ['count' => $day->totalCount - 10]) }} →
                                     </a>
                                 </div>
                             @endif

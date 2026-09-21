@@ -3,16 +3,16 @@
 namespace App\Filament\Resources\ScheduleExceptions\Pages;
 
 use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\CreateScheduleException as CreateScheduleExceptionAction;
 use App\Modules\Specialists\Domain\Models\Specialist;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
-class CreateScheduleException extends CreateRecord
+class CreateScheduleException extends LocalizedCreateRecord
 {
     protected static string $resource = ScheduleExceptionResource::class;
 

@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\KnowledgeSources\Pages;
 
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Knowledge\Application\CreateKnowledgeSource as CreateKnowledgeSourceAction;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-final class CreateKnowledgeSource extends CreateRecord
+final class CreateKnowledgeSource extends LocalizedCreateRecord
 {
     protected static string $resource = KnowledgeSourceResource::class;
 

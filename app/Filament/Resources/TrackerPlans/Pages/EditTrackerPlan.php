@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\TrackerPlans\Pages;
 
 use App\Filament\Resources\TrackerPlans\TrackerPlanResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Commerce\Domain\Models\PaymentProviderOfferMapping;
 use App\Modules\Finance\Application\FinanceAuthorization;
@@ -11,10 +12,9 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Tracker\Application\SaveTrackerPlan;
 use App\Modules\Tracker\Domain\Models\TrackerPlan;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
-final class EditTrackerPlan extends EditRecord
+final class EditTrackerPlan extends LocalizedEditRecord
 {
     protected static string $resource = TrackerPlanResource::class;
 

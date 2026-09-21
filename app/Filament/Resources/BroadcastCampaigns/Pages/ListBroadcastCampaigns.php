@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\BroadcastCampaigns\Pages;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-final class ListBroadcastCampaigns extends ListRecords
+final class ListBroadcastCampaigns extends LocalizedListRecords
 {
     protected static string $resource = BroadcastCampaignResource::class;
 

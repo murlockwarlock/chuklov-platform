@@ -62,7 +62,7 @@ final class MessageComposer
         $messageComponents = [];
         if ($showDeliveryMode) {
             $messageComponents[] = Radio::make($deliveryModeField)
-                ->label('Формат отправки')
+                ->label(__('Формат отправки'))
                 ->options(self::deliveryOptions())
                 ->default(NotificationMessageMode::Text->value)
                 ->live()
@@ -77,8 +77,8 @@ final class MessageComposer
         if (! $compact) {
             $messageComponents[] =
                 Radio::make('caption_position')
-                    ->label('Положение подписи')
-                    ->options(['above' => 'Над медиа', 'below' => 'Под медиа'])
+                    ->label(__('Положение подписи'))
+                    ->options(['above' => __('Над медиа'), 'below' => __('Под медиа')])
                     ->default('below')
                     ->inline()
                     ->columnSpanFull()
@@ -88,15 +88,15 @@ final class MessageComposer
 
         if ($allowSavedTemplates) {
             $messageComponents[] = Radio::make($messageModeField)
-                ->label('Источник текста')
+                ->label(__('Источник текста'))
                 ->options([
-                    'compose' => 'Написать сообщение',
-                    'saved_template' => 'Использовать сохранённый шаблон',
+                    'compose' => __('Написать сообщение'),
+                    'saved_template' => __('Использовать сохранённый шаблон'),
                 ])
                 ->default('compose')
                 ->live()
                 ->inline()
-                ->helperText('Для разовой отправки оставьте «Написать сообщение».')
+                ->helperText(__('Для разовой отправки оставьте «Написать сообщение».'))
                 ->columnSpanFull()
                 ->visible(fn (Get $get): bool => self::includesText($get, $deliveryModeField))
                 ->required(fn (Get $get): bool => self::includesText($get, $deliveryModeField));
@@ -104,24 +104,24 @@ final class MessageComposer
 
         $bodyEditor = $compact
             ? Textarea::make($bodyField)
-                ->label($bodyLabel)
+                ->label(__($bodyLabel))
                 ->hiddenLabel()
-                ->placeholder('Напишите сообщение...')
+                ->placeholder(__('Напишите сообщение...'))
                 ->rows(1)
                 ->autosize()
             : RichTextEditor::make($bodyField, $variables)
-                ->label($bodyLabel);
+                ->label(__($bodyLabel));
 
         $messageComponents[] = $bodyEditor
             ->maxLength(100000)
             ->live(debounce: 300)
-            ->helperText($compact ? null : $bodyHelper)
+            ->helperText($compact ? null : __($bodyHelper))
             ->columnSpanFull()
             ->visible(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField))
             ->required(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField));
         if (! $compact) {
             $messageComponents[] = Placeholder::make('message_counter')
-                ->label('Лимит Telegram')
+                ->label(__('Лимит Telegram'))
                 ->content(fn (Get $get): string => self::messageCounter(
                     $get,
                     $bodyField,
@@ -134,7 +134,7 @@ final class MessageComposer
                 ->columnSpanFull()
                 ->visible(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField));
             $messageComponents[] = Placeholder::make('message_preview')
-                ->label('Предпросмотр')
+                ->label(__('Предпросмотр'))
                 ->content(fn (Get $get): string => self::messagePreview($get, $bodyField))
                 ->prose()
                 ->html()
@@ -155,7 +155,7 @@ final class MessageComposer
         }
 
         $fileUpload = FileUpload::make($mediaField)
-            ->label($mediaUploadLabel)
+            ->label(__($mediaUploadLabel))
             ->multiple($mediaMultiple)
             ->maxFiles($mediaMultiple ? 10 : 1)
             ->reorderable()
@@ -173,7 +173,7 @@ final class MessageComposer
             ->afterStateUpdated(function (Set $set): void {
                 $set('remove_media', false);
             })
-            ->helperText($compact ? null : ($mediaHelperText ?? 'Фото до 10 МБ; MP4 и другие файлы до 50 МБ. От 2 до 10 фото или видео одного типа отправятся альбомом Telegram.'))
+            ->helperText($compact ? null : __($mediaHelperText ?? 'Фото до 10 МБ; MP4 и другие файлы до 50 МБ. От 2 до 10 фото или видео одного типа отправятся альбомом Telegram.'))
             ->columnSpanFull();
         if ($mediaAcceptedFileTypes !== null) {
             $fileUpload->acceptedFileTypes($mediaAcceptedFileTypes);
@@ -218,7 +218,7 @@ final class MessageComposer
                         })
                     JS,
                 ])
-                ->extraInputAttributes(['aria-label' => 'Добавить вложение']);
+                ->extraInputAttributes(['aria-label' => __('Добавить вложение')]);
         }
 
         $mediaComponents = [
@@ -229,7 +229,7 @@ final class MessageComposer
         if ($includeMediaUrl) {
             array_splice($mediaComponents, 1, 0, [
                 TextInput::make($mediaUrlField)
-                    ->label('Ссылка на медиа (одна)')
+                    ->label(__('Ссылка на медиа (одна)'))
                     ->url()
                     ->maxLength(2000)
                     ->live()
@@ -240,7 +240,7 @@ final class MessageComposer
                         $set('remove_media', false);
                     })
                     ->dehydrated(fn (mixed $state): bool => filled($state))
-                    ->helperText('Укажите прямую ссылку на файл.')
+                    ->helperText(__('Укажите прямую ссылку на файл.'))
                     ->columnSpanFull(),
             ]);
         }
@@ -254,7 +254,7 @@ final class MessageComposer
                 $bodyEditor->grow(),
                 $attachmentTrigger,
                 Action::make('sendMessage')
-                    ->label('Отправить')
+                    ->label(__('Отправить'))
                     ->submit('sendMessage')
                     ->extraAttributes(['class' => 'messages-send-action']),
             ])
@@ -277,13 +277,13 @@ final class MessageComposer
         }
 
         return [
-            Section::make($compact ? null : 'Сообщение')
+            Section::make($compact ? null : __('Сообщение'))
                 ->schema($messageComponents)
                 ->columns(1)
                 ->compact($compact)
                 ->columnSpanFull(),
-            Section::make($compact ? null : $mediaSectionTitle)
-                ->description($compact ? null : ($mediaSectionDescription ?? 'Можно отправить только медиа, медиа с подписью или текст и медиа в выбранном порядке. Telegram ограничивает подпись 1024 символами, текст — 4096.'))
+            Section::make($compact ? null : __($mediaSectionTitle))
+                ->description($compact ? null : __($mediaSectionDescription ?? 'Можно отправить только медиа, медиа с подписью или текст и медиа в выбранном порядке. Telegram ограничивает подпись 1024 символами, текст — 4096.'))
                 ->schema($mediaComponents)
                 ->compact($compact)
                 ->columnSpanFull(),
@@ -294,11 +294,11 @@ final class MessageComposer
     private static function deliveryOptions(): array
     {
         return [
-            NotificationMessageMode::Text->value => 'Только текст',
-            NotificationMessageMode::Image->value => 'Только медиа',
-            NotificationMessageMode::ImageThenText->value => 'Медиа, затем текст',
-            NotificationMessageMode::TextThenImage->value => 'Текст, затем медиа',
-            NotificationMessageMode::ImageWithCaption->value => 'Медиа с подписью',
+            NotificationMessageMode::Text->value => __('Только текст'),
+            NotificationMessageMode::Image->value => __('Только медиа'),
+            NotificationMessageMode::ImageThenText->value => __('Медиа, затем текст'),
+            NotificationMessageMode::TextThenImage->value => __('Текст, затем медиа'),
+            NotificationMessageMode::ImageWithCaption->value => __('Медиа с подписью'),
         ];
     }
 
@@ -361,7 +361,7 @@ final class MessageComposer
 
             return RichTextDocument::telegramLength($body).' / '.$limit;
         } catch (\InvalidArgumentException) {
-            return 'Проверьте формат текста · лимит '.$limit;
+            return __('Проверьте формат текста · лимит ').$limit;
         }
     }
 
@@ -369,9 +369,9 @@ final class MessageComposer
     {
         try {
             return RichTextPresentation::html(RichTextDocument::canonicalHtmlFromState($get($bodyField)))
-                ?: 'Текст появится здесь.';
+                ?: __('Текст появится здесь.');
         } catch (\InvalidArgumentException) {
-            return 'Проверьте формат текста.';
+            return __('Проверьте формат текста.');
         }
     }
 

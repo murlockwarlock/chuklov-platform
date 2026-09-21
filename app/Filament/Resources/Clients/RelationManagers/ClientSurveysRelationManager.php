@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\Clients\RelationManagers;
 
 use App\Filament\Resources\SurveyAttempts\SurveyAttemptResource;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Surveys\Application\ListClientSurveyAttemptsForCrm;
@@ -10,13 +12,12 @@ use App\Modules\Surveys\Application\SurveyAuthorization;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use Filament\Actions\Action;
-use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-final class ClientSurveysRelationManager extends RelationManager
+final class ClientSurveysRelationManager extends LocalizedRelationManager
 {
     protected static string $relationship = 'surveyAttempts';
 
@@ -40,42 +41,42 @@ final class ClientSurveysRelationManager extends RelationManager
         abort_unless($client instanceof Client, 404);
 
         return $table
-            ->heading('Опросы и отчёты')
+            ->heading(__('Опросы и отчёты'))
             ->stackedOnMobile()
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => app(ListClientSurveyAttemptsForCrm::class)->apply($actor, $client, $query),
             )
             ->columns([
                 TextColumn::make('surveyDefinition.title')
-                    ->label('Опрос')
-                    ->placeholder('Без названия')
+                    ->label(__('Опрос'))
+                    ->placeholder(__('Без названия'))
                     ->wrap(),
-                TextColumn::make('surveyVersion.version')->label('Версия')->visibleFrom('sm'),
+                TextColumn::make('surveyVersion.version')->label(__('Версия'))->visibleFrom('sm'),
                 TextColumn::make('status')
-                    ->label('Статус')
+                    ->label(__('Статус'))
                     ->badge()
-                    ->formatStateUsing(fn ($state): string => ($state instanceof SurveyAttemptStatus ? $state->value : (string) $state) === 'completed'
-                        ? 'Завершён'
-                        : 'Не завершён'),
-                TextColumn::make('started_at')->label('Начат')->dateTime('d.m.Y H:i'),
+                    ->formatStateUsing(fn ($state): string => CrmLabel::enum(
+                        $state instanceof SurveyAttemptStatus ? $state : SurveyAttemptStatus::tryFrom((string) $state),
+                    ) ?? __('Неизвестный статус')),
+                TextColumn::make('started_at')->label(__('Начат'))->dateTime('d.m.Y H:i'),
                 TextColumn::make('completed_at')
-                    ->label('Завершён')
+                    ->label(__('Завершён'))
                     ->dateTime('d.m.Y H:i')
                     ->placeholder('—')
                     ->visibleFrom('sm'),
                 TextColumn::make('report.title')
-                    ->label('Отчёт')
-                    ->placeholder('Не сформирован')
+                    ->label(__('Отчёт'))
+                    ->placeholder(__('Не сформирован'))
                     ->wrap(),
             ])
             ->recordActions([
                 Action::make('open')
-                    ->label('Открыть')
+                    ->label(__('Открыть'))
                     ->url(fn (SurveyAttempt $record): string => SurveyAttemptResource::getUrl('view', ['record' => $record])),
             ])
             ->paginated([10, 25])
             ->defaultSort('started_at', 'desc')
-            ->emptyStateHeading('Опросов пока нет')
-            ->emptyStateDescription('Результаты и отчёты этого клиента появятся здесь.');
+            ->emptyStateHeading(__('Опросов пока нет'))
+            ->emptyStateDescription(__('Результаты и отчёты этого клиента появятся здесь.'));
     }
 }

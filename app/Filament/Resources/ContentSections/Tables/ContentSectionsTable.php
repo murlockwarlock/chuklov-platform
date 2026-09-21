@@ -17,23 +17,23 @@ class ContentSectionsTable
         return $table
             ->columns([
                 TextColumn::make('section_key')
-                    ->label('Раздел')
+                    ->label(__('Раздел'))
                     ->formatStateUsing(fn (string $state): string => self::sectionLabel($state))
                     ->searchable()
                     ->sortable(),
                 TextColumn::make('locale')
-                    ->label('Язык')
-                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
+                    ->label(__('Язык'))
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? __('Русский') : __('Английский'))
                     ->sortable(),
-                TextColumn::make('title')->label('Название')->searchable(),
-                TextColumn::make('sort_order')->label('Порядок показа')->sortable(),
-                IconColumn::make('is_visible')->label('Показывать')->boolean()->sortable(),
+                TextColumn::make('title')->label(__('Название'))->searchable(),
+                TextColumn::make('sort_order')->label(__('Порядок показа'))->sortable(),
+                IconColumn::make('is_visible')->label(__('Показывать'))->boolean()->sortable(),
                 TextColumn::make('media')
-                    ->label('Изображение')
-                    ->state(fn (ContentSection $record): string => $record->media === null ? '—' : 'Добавлено'),
+                    ->label(__('Изображение'))
+                    ->state(fn (ContentSection $record): string => $record->media === null ? '—' : __('Добавлено')),
             ])
             ->filters([
-                TernaryFilter::make('is_visible')->label('Показывать'),
+                TernaryFilter::make('is_visible')->label(__('Показывать')),
             ])
             ->recordActions([
                 ViewAction::make(),
@@ -44,13 +44,13 @@ class ContentSectionsTable
     private static function sectionLabel(string $section): string
     {
         return match ($section) {
-            'author' => 'Об академии',
-            'method' => 'Методика',
-            'b2b' => 'Для бизнеса',
-            'partner' => 'Партнёрам',
-            'communities' => 'Сообщества',
-            'hidden' => 'Скрытый раздел',
-            default => 'Раздел',
+            'author' => __('Об академии'),
+            'method' => __('Методика'),
+            'b2b' => __('Для бизнеса'),
+            'partner' => __('Партнёрам'),
+            'communities' => __('Сообщества'),
+            'hidden' => __('Скрытый раздел'),
+            default => __('Раздел'),
         };
     }
 }

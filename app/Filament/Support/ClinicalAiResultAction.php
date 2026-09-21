@@ -41,7 +41,7 @@ final class ClinicalAiResultAction
             ))
             ->icon('heroicon-o-eye')
             ->modalSubmitAction(false)
-            ->modalCancelActionLabel('Закрыть')
+            ->modalCancelActionLabel(__('Закрыть'))
             ->extraModalFooterActions(fn (): array => $canReview
                 ? self::reviewActions($actor, $resolveRun)
                 : [])
@@ -104,14 +104,14 @@ final class ClinicalAiResultAction
     {
         return [
             Action::make('confirmClinicalAiResult')
-                ->label('Подтвердить результат')
+                ->label(__('Подтвердить результат'))
                 ->icon('heroicon-o-check-circle')
                 ->color('success')
                 ->requiresConfirmation()
-                ->modalHeading('Подтвердить результат')
-                ->modalDescription(fn (Model $record): string => 'Результат будет отмечен как проверенный специалистом и сможет использоваться при формировании '.self::reviewTarget($resolveRun($record)).'.')
-                ->modalSubmitActionLabel('Подтвердить результат')
-                ->modalCancelActionLabel('Отмена')
+                ->modalHeading(__('Подтвердить результат'))
+                ->modalDescription(fn (Model $record): string => __('Результат будет отмечен как проверенный специалистом и сможет использоваться при формировании :target.', ['target' => self::reviewTarget($resolveRun($record))]))
+                ->modalSubmitActionLabel(__('Подтвердить результат'))
+                ->modalCancelActionLabel(__('Отмена'))
                 ->cancelParentActions()
                 ->visible(fn (Model $record): bool => self::reviewableRun($record, $resolveRun) instanceof AiRun)
                 ->action(function (Model $record, Component $livewire) use ($actor, $resolveRun): void {
@@ -127,28 +127,28 @@ final class ClinicalAiResultAction
 
                     self::refreshLivewireTable($livewire);
                     Notification::make()
-                        ->title('Результат подтверждён специалистом.')
+                        ->title(__('Результат подтверждён специалистом.'))
                         ->success()
                         ->send();
                 }),
             Action::make('rejectClinicalAiResult')
-                ->label('Отклонить результат')
+                ->label(__('Отклонить результат'))
                 ->icon('heroicon-o-x-circle')
                 ->color('danger')
-                ->modalHeading('Отклонить результат')
-                ->modalDescription(fn (Model $record): string => 'Результат останется в истории, но не будет использоваться как подтверждённый источник для '.self::reviewTarget($resolveRun($record)).'.')
-                ->modalSubmitActionLabel('Отклонить результат')
-                ->modalCancelActionLabel('Отмена')
+                ->modalHeading(__('Отклонить результат'))
+                ->modalDescription(fn (Model $record): string => __('Результат останется в истории, но не будет использоваться как подтверждённый источник для :target.', ['target' => self::reviewTarget($resolveRun($record))]))
+                ->modalSubmitActionLabel(__('Отклонить результат'))
+                ->modalCancelActionLabel(__('Отмена'))
                 ->cancelParentActions()
                 ->schema([
                     Select::make('reason_code')
-                        ->label('Причина')
+                        ->label(__('Причина'))
                         ->options(collect(HumanReviewReasonCode::cases())->mapWithKeys(
-                            fn (HumanReviewReasonCode $code): array => [$code->value => $code->label()],
+                            fn (HumanReviewReasonCode $code): array => [$code->value => CrmLabel::enum($code)],
                         ))
                         ->required(),
                     Textarea::make('notes')
-                        ->label('Заметка специалиста')
+                        ->label(__('Заметка специалиста'))
                         ->rows(3),
                 ])
                 ->visible(fn (Model $record): bool => self::reviewableRun($record, $resolveRun) instanceof AiRun)
@@ -166,7 +166,7 @@ final class ClinicalAiResultAction
 
                     self::refreshLivewireTable($livewire);
                     Notification::make()
-                        ->title('Результат отклонён специалистом.')
+                        ->title(__('Результат отклонён специалистом.'))
                         ->danger()
                         ->send();
                 }),
@@ -187,8 +187,8 @@ final class ClinicalAiResultAction
     private static function reviewTarget(?AiRun $run): string
     {
         return $run?->workflow_key === ClinicalSynthesizerWorkflow::CourseReport->value
-            ? 'итогового отчёта курса'
-            : 'клинического резюме';
+            ? __('итогового отчёта курса')
+            : __('клинического резюме');
     }
 
     private static function refreshLivewireTable(Component $livewire): void
@@ -202,32 +202,32 @@ final class ClinicalAiResultAction
     {
         $schema = [
             Textarea::make('result')
-                ->label('Результат анализа')
+                ->label(__('Результат анализа'))
                 ->rows(14)
                 ->disabled()
                 ->dehydrated(false),
             Placeholder::make('review')
-                ->label('Проверка специалиста')
+                ->label(__('Проверка специалиста'))
                 ->badge()
                 ->color(fn (mixed $state): string => ClinicalAiPresentation::reviewColor((string) $state))
                 ->dehydrated(false),
             Textarea::make('lifecycle')
-                ->label('Состояние результата')
+                ->label(__('Состояние результата'))
                 ->rows(5)
                 ->disabled()
                 ->dehydrated(false),
             Textarea::make('sources')
-                ->label('Источники')
+                ->label(__('Источники'))
                 ->rows(4)
                 ->disabled()
                 ->dehydrated(false),
         ];
 
         if ($canViewTrace) {
-            $schema[] = Section::make('Техническая информация (аудит)')
+            $schema[] = Section::make(__('Техническая информация (аудит)'))
                 ->schema([
                     Textarea::make('technical')
-                        ->label('Версии и время запуска')
+                        ->label(__('Версии и время запуска'))
                         ->rows(4)
                         ->disabled()
                         ->dehydrated(false),
@@ -248,39 +248,39 @@ final class ClinicalAiResultAction
             $hasUpstream = $references->contains(fn (array $reference): bool => ($reference['type'] ?? null) === 'ai_run');
 
             $title = $record->workflow_key === ClinicalSynthesizerWorkflow::CourseReport->value
-                ? 'Источники итогового отчёта курса'
-                : 'Источники клинического резюме';
+                ? __('Источники итогового отчёта курса')
+                : __('Источники клинического резюме');
 
             return implode("\n", [
                 $title.':',
-                'Профиль клиента: доступен.',
-                'Проверенные результаты предыдущих анализов: '.($hasUpstream ? 'доступны.' : 'отсутствуют.'),
-                'История сеансов: '.($hasSessions ? 'доступна.' : 'отсутствует.'),
-                'Совместимые опросы: '.($hasSurveys ? 'доступны.' : 'отсутствуют.'),
-                'Источник 9 систем/MSQ и его оценивание: отсутствует в авторитетных материалах.',
+                __('Профиль клиента: доступен.'),
+                __('Проверенные результаты предыдущих анализов: :state.', ['state' => $hasUpstream ? __('доступны') : __('отсутствуют')]),
+                __('История сеансов: :state.', ['state' => $hasSessions ? __('доступна') : __('отсутствует')]),
+                __('Совместимые опросы: :state.', ['state' => $hasSurveys ? __('доступны') : __('отсутствуют')]),
+                __('Источник 9 систем/MSQ и его оценивание: отсутствует в авторитетных материалах.'),
             ]);
         }
 
         if ($provenance === []) {
-            return 'Профиль клиента и выбранные источники анализа.';
+            return __('Профиль клиента и выбранные источники анализа.');
         }
 
         $sources = collect($provenance)
             ->map(static function (array $source): string {
                 $role = match ($source['role'] ?? null) {
-                    'front' => 'Спереди',
-                    'side' => 'Сбоку',
-                    'back' => 'Сзади',
+                    'front' => __('Спереди'),
+                    'side' => __('Сбоку'),
+                    'back' => __('Сзади'),
                     default => null,
                 };
                 $type = match ($source['attachment_type'] ?? null) {
-                    AttachmentType::MedicalReport->value => 'Медицинский документ',
-                    AttachmentType::PosturePhoto->value => 'Фото осанки',
-                    default => 'Защищённый файл',
+                    AttachmentType::MedicalReport->value => __('Медицинский документ'),
+                    AttachmentType::PosturePhoto->value => __('Фото осанки'),
+                    default => __('Защищённый файл'),
                 };
                 $format = match (strtolower((string) ($source['mime_type'] ?? ''))) {
                     'application/pdf' => 'PDF',
-                    'image/jpeg', 'image/png', 'image/webp' => 'Изображение',
+                    'image/jpeg', 'image/png', 'image/webp' => __('Изображение'),
                     default => null,
                 };
 
@@ -289,17 +289,17 @@ final class ClinicalAiResultAction
             ->filter()
             ->implode("\n");
 
-        return $sources !== '' ? $sources : 'Профиль клиента и выбранные источники анализа.';
+        return $sources !== '' ? $sources : __('Профиль клиента и выбранные источники анализа.');
     }
 
     private static function technicalText(AiRun $record): string
     {
         return implode("\n", [
-            'Запуск: #'.$record->getKey(),
-            'Версия промпта: '.($record->prompt_version_id ?? '—'),
-            'Релиз модели: '.($record->model_release_id ?? '—'),
-            'Сгенерирован: '.($record->finished_at?->format('d.m.Y H:i:s') ?? '—'),
-            'Проверка: '.ClinicalAiPresentation::review($record->human_review_status),
+            __('Запуск: #:id', ['id' => $record->getKey()]),
+            __('Версия промпта: :id', ['id' => $record->prompt_version_id ?? '—']),
+            __('Релиз модели: :id', ['id' => $record->model_release_id ?? '—']),
+            __('Сгенерирован: :date', ['date' => $record->finished_at?->format('d.m.Y H:i:s') ?? '—']),
+            __('Проверка: :status', ['status' => ClinicalAiPresentation::review($record->human_review_status)]),
         ]);
     }
 }

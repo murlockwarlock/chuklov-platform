@@ -4,6 +4,8 @@ namespace App\Filament\Resources\Clients\RelationManagers;
 
 use App\Filament\Support\ClinicalAiPresentation;
 use App\Filament\Support\ClinicalAiResultAction;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ReviewAiRun;
 use App\Modules\AI\Application\Actions\StartClinicalDocumentAnalysis;
@@ -30,7 +32,6 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
-use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -39,7 +40,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\View\View;
 use Throwable;
 
-final class ClientAttachmentsRelationManager extends RelationManager
+final class ClientAttachmentsRelationManager extends LocalizedRelationManager
 {
     private ?array $latestDocumentAnalysisRuns = null;
 
@@ -76,7 +77,7 @@ final class ClientAttachmentsRelationManager extends RelationManager
         );
 
         return $table
-            ->heading('Файлы и МРТ')
+            ->heading(__('Файлы и МРТ'))
             ->poll(fn (): ?string => $canViewAiRuns && $this->shouldPoll() ? '5s' : null)
             ->stackedOnMobile()
             ->modifyQueryUsing(
@@ -84,25 +85,25 @@ final class ClientAttachmentsRelationManager extends RelationManager
             )
             ->columns([
                 TextColumn::make('original_filename')
-                    ->label('Файл')
+                    ->label(__('Файл'))
                     ->limit(36)
                     ->wrap(),
                 TextColumn::make('attachment_type')
-                    ->label('Тип')
+                    ->label(__('Тип'))
                     ->badge()
                     ->formatStateUsing(fn (AttachmentType|string $state): string => $state instanceof AttachmentType
-                        ? $state->label()
-                        : (AttachmentType::tryFrom($state)?->label() ?? 'Файл')),
+                        ? CrmLabel::enum($state)
+                        : (CrmLabel::enum(AttachmentType::tryFrom($state)) ?? __('Файл'))),
                 TextColumn::make('size_bytes')
-                    ->label('Размер')
+                    ->label(__('Размер'))
                     ->formatStateUsing(fn (int|string $state): string => self::formatBytes((int) $state))
                     ->visibleFrom('sm'),
                 TextColumn::make('created_at')
-                    ->label('Загружен')
+                    ->label(__('Загружен'))
                     ->dateTime('d.m.Y H:i')
                     ->visibleFrom('md'),
                 TextColumn::make('analysis_status')
-                    ->label('Статус анализа')
+                    ->label(__('Статус анализа'))
                     ->state(fn (MedicalAttachment $record): string => $this->analysisStatus($record))
                     ->badge()
                     ->color(fn (MedicalAttachment $record): string => $this->analysisStatusColor($record))
@@ -110,18 +111,18 @@ final class ClientAttachmentsRelationManager extends RelationManager
             ])
             ->headerActions([
                 Action::make('upload')
-                    ->label('Загрузить файл')
+                    ->label(__('Загрузить файл'))
                     ->icon('heroicon-o-arrow-up-tray')
                     ->schema([
                         Select::make('attachment_type')
-                            ->label('Тип файла')
+                            ->label(__('Тип файла'))
                             ->options([
-                                AttachmentType::MedicalReport->value => AttachmentType::MedicalReport->label(),
-                                AttachmentType::PosturePhoto->value => AttachmentType::PosturePhoto->label(),
+                                AttachmentType::MedicalReport->value => CrmLabel::enum(AttachmentType::MedicalReport),
+                                AttachmentType::PosturePhoto->value => CrmLabel::enum(AttachmentType::PosturePhoto),
                             ])
                             ->required(),
                         FileUpload::make('file')
-                            ->label('Файл')
+                            ->label(__('Файл'))
                             ->acceptedFileTypes([
                                 'application/pdf',
                                 'text/plain',
@@ -151,10 +152,10 @@ final class ClientAttachmentsRelationManager extends RelationManager
             ])
             ->recordActions([
                 Action::make('preview')
-                    ->label('Просмотр')
+                    ->label(__('Просмотр'))
                     ->icon('heroicon-o-eye')
                     ->modalSubmitAction(false)
-                    ->modalCancelActionLabel('Закрыть')
+                    ->modalCancelActionLabel(__('Закрыть'))
                     ->modalWidth('7xl')
                     ->modalContent(fn (MedicalAttachment $record): View => view('filament.resources.clients.attachment-preview', [
                         'url' => app(GetTemporaryAttachmentUrl::class)->handlePreview($actor, $record),
@@ -173,12 +174,12 @@ final class ClientAttachmentsRelationManager extends RelationManager
                     ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canOpenDocumentAnalysisResult($record)),
                 ActionGroup::make([
                     Action::make('download')
-                        ->label('Скачать')
+                        ->label(__('Скачать'))
                         ->action(function (MedicalAttachment $record) use ($actor): mixed {
                             return redirect()->to(app(GetTemporaryAttachmentUrl::class)->handle($actor, $record));
                         }),
                     Action::make('startDocumentAnalysis')
-                        ->label('Запустить анализ')
+                        ->label(__('Запустить анализ'))
                         ->icon('heroicon-o-sparkles')
                         ->requiresConfirmation()
                         ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canStartDocumentAnalysis($record))
@@ -187,7 +188,7 @@ final class ClientAttachmentsRelationManager extends RelationManager
                                 app(StartClinicalDocumentAnalysis::class)->handle($actor, $record);
                                 $this->latestDocumentAnalysisRuns = null;
                                 Notification::make()
-                                    ->title('Анализ документа запущен')
+                                    ->title(__('Анализ документа запущен'))
                                     ->success()
                                     ->send();
                             } catch (Throwable $exception) {
@@ -198,7 +199,7 @@ final class ClientAttachmentsRelationManager extends RelationManager
                             }
                         }),
                     Action::make('retryDocumentAnalysis')
-                        ->label('Повторить анализ')
+                        ->label(__('Повторить анализ'))
                         ->icon('heroicon-o-arrow-path')
                         ->requiresConfirmation()
                         ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns && $this->canRetryDocumentAnalysis($record))
@@ -207,7 +208,7 @@ final class ClientAttachmentsRelationManager extends RelationManager
                                 app(StartClinicalDocumentAnalysis::class)->handle($actor, $record, true);
                                 $this->latestDocumentAnalysisRuns = null;
                                 Notification::make()
-                                    ->title('Повторный анализ поставлен в очередь')
+                                    ->title(__('Повторный анализ поставлен в очередь'))
                                     ->success()
                                     ->send();
                             } catch (Throwable $exception) {
@@ -218,7 +219,7 @@ final class ClientAttachmentsRelationManager extends RelationManager
                             }
                         }),
                     Action::make('acceptDocumentAnalysisReview')
-                        ->label('Проверено')
+                        ->label(__('Проверено'))
                         ->icon('heroicon-o-check-circle')
                         ->color('success')
                         ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns
@@ -236,12 +237,12 @@ final class ClientAttachmentsRelationManager extends RelationManager
                             $this->latestDocumentAnalysisRuns = null;
                             $this->resetTable();
                             Notification::make()
-                                ->title('Результат подтверждён специалистом.')
+                                ->title(__('Результат подтверждён специалистом.'))
                                 ->success()
                                 ->send();
                         }),
                     Action::make('rejectDocumentAnalysisReview')
-                        ->label('Отклонить')
+                        ->label(__('Отклонить'))
                         ->icon('heroicon-o-x-circle')
                         ->color('danger')
                         ->visible(fn (MedicalAttachment $record): bool => $canViewAiRuns
@@ -249,11 +250,11 @@ final class ClientAttachmentsRelationManager extends RelationManager
                             && $this->canReviewDocumentAnalysis($record))
                         ->schema([
                             Select::make('reason_code')
-                                ->label('Причина')
-                                ->options(collect(HumanReviewReasonCode::cases())->mapWithKeys(fn (HumanReviewReasonCode $code): array => [$code->value => $code->label()]))
+                                ->label(__('Причина'))
+                                ->options(collect(HumanReviewReasonCode::cases())->mapWithKeys(fn (HumanReviewReasonCode $code): array => [$code->value => CrmLabel::enum($code)]))
                                 ->required(),
                             Textarea::make('notes')
-                                ->label('Заметка специалиста')
+                                ->label(__('Заметка специалиста'))
                                 ->rows(3),
                         ])
                         ->action(function (MedicalAttachment $record, array $data) use ($actor): void {
@@ -268,20 +269,20 @@ final class ClientAttachmentsRelationManager extends RelationManager
                             $this->latestDocumentAnalysisRuns = null;
                             $this->resetTable();
                             Notification::make()
-                                ->title('Результат отклонён специалистом.')
+                                ->title(__('Результат отклонён специалистом.'))
                                 ->danger()
                                 ->send();
                         }),
                 ])
-                    ->label('Действия')
+                    ->label(__('Действия'))
                     ->icon('heroicon-m-ellipsis-vertical')
                     ->button()
                     ->color('gray')
                     ->size('sm'),
             ])
             ->paginated([10, 25])
-            ->emptyStateHeading('Файлов пока нет')
-            ->emptyStateDescription('Загрузите медицинское заключение или фото осанки.');
+            ->emptyStateHeading(__('Файлов пока нет'))
+            ->emptyStateDescription(__('Загрузите медицинское заключение или фото осанки.'));
     }
 
     private function shouldPoll(): bool
@@ -432,20 +433,20 @@ final class ClientAttachmentsRelationManager extends RelationManager
     private static function formatBytes(int $bytes): string
     {
         if ($bytes < 1024) {
-            return $bytes.' Б';
+            return $bytes.' '.__('Б');
         }
 
         if ($bytes < 1024 * 1024) {
-            return round($bytes / 1024, 1).' КБ';
+            return round($bytes / 1024, 1).' '.__('КБ');
         }
 
-        return round($bytes / (1024 * 1024), 1).' МБ';
+        return round($bytes / (1024 * 1024), 1).' '.__('МБ');
     }
 
     private static function sendUploadNotification(): void
     {
         Notification::make()
-            ->title('Файл загружен')
+            ->title(__('Файл загружен'))
             ->success()
             ->send();
     }

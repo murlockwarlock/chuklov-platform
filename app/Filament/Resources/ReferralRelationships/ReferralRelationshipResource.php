@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ReferralRelationships;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\ReferralRelationships\Pages\ListReferralRelationships;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Attribution\Application\AttributionSourcePresentation;
 use App\Modules\Identity\Domain\Models\Client;
@@ -15,7 +16,6 @@ use App\Modules\Referrals\Application\ListReferralRelationshipsForCrm;
 use App\Modules\Referrals\Domain\Enums\ReferralEstablishmentMethod;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -24,7 +24,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 /** @extends resource<ReferralRelationship> */
-final class ReferralRelationshipResource extends Resource
+final class ReferralRelationshipResource extends LocalizedResource
 {
     protected static ?string $model = ReferralRelationship::class;
 
@@ -67,17 +67,17 @@ final class ReferralRelationshipResource extends Resource
 
         return $table
             ->stackedOnMobile()
-            ->description('Кто пригласил клиента и как была зафиксирована рекомендация.')
+            ->description(__('Кто пригласил клиента и как была зафиксирована рекомендация.'))
             ->columns([
                 TextColumn::make('referrer.full_name')
-                    ->label('Кто пригласил')
+                    ->label(__('Кто пригласил'))
                     ->searchable()
                     ->wrap()
                     ->url(fn (ReferralRelationship $record): ?string => CrmEntityLinks::clientUrl($record->referrer, $canViewClients))
                     ->color(fn (ReferralRelationship $record): ?string => CrmEntityLinks::clientUrl($record->referrer, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (ReferralRelationship $record): bool => CrmEntityLinks::clientUrl($record->referrer, $canViewClients) === null),
                 TextColumn::make('referred.full_name')
-                    ->label('Кого пригласил')
+                    ->label(__('Кого пригласил'))
                     ->searchable()
                     ->wrap()
                     ->url(fn (ReferralRelationship $record): ?string => CrmEntityLinks::clientUrl($record->referred, $canViewClients))
@@ -85,24 +85,24 @@ final class ReferralRelationshipResource extends Resource
                     ->disabledClick(fn (ReferralRelationship $record): bool => CrmEntityLinks::clientUrl($record->referred, $canViewClients) === null)
                     ->description(fn (ReferralRelationship $record): string => self::establishmentMethodLabel($record->establishment_method)),
                 TextColumn::make('establishment_method')
-                    ->label('Как зафиксировано')
+                    ->label(__('Как зафиксировано'))
                     ->formatStateUsing(fn (ReferralEstablishmentMethod|string $state): string => self::establishmentMethodLabel($state))
                     ->badge()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('referred.attribution.source')
-                    ->label('Источник')
-                    ->placeholder('Не указан')
+                    ->label(__('Источник'))
+                    ->placeholder(__('Не указан'))
                     ->formatStateUsing(fn (mixed $state): string => AttributionSourcePresentation::label(is_string($state) ? $state : null))
                     ->wrap()
                     ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('registered_at')->label('Регистрация')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('registered_at')->label(__('Регистрация'))->dateTime('d.m.Y H:i')->sortable(),
                 TextColumn::make('commercial_evidence_count')
-                    ->label('Финансовый результат')
-                    ->state(fn (ReferralRelationship $record): string => (int) ($record->commercial_evidence_count ?? 0) > 0 ? 'Оплата зафиксирована' : 'Пока нет')
+                    ->label(__('Финансовый результат'))
+                    ->state(fn (ReferralRelationship $record): string => (int) ($record->commercial_evidence_count ?? 0) > 0 ? __('Оплата зафиксирована') : __('Пока нет'))
                     ->badge()
-                    ->color(fn (string $state): string => $state === 'Оплата зафиксирована' ? 'success' : 'gray'),
+                    ->color(fn (string $state): string => $state === __('Оплата зафиксирована') ? 'success' : 'gray'),
                 TextColumn::make('commercial_evidence_max_observed_at')
-                    ->label('Дата зафиксированной оплаты')
+                    ->label(__('Дата зафиксированной оплаты'))
                     ->dateTime('d.m.Y H:i')
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
@@ -127,22 +127,22 @@ final class ReferralRelationshipResource extends Resource
     public static function getRecordTitle(?Model $record): string
     {
         if (! $record instanceof ReferralRelationship) {
-            return 'Приглашение клиента';
+            return __('Приглашение клиента');
         }
 
         $referred = $record->getRelation('referred');
 
         return $referred instanceof Client
-            ? trim((string) ($referred->full_name ?? '')) ?: 'Приглашение клиента'
-            : 'Приглашение клиента';
+            ? trim((string) ($referred->full_name ?? '')) ?: __('Приглашение клиента')
+            : __('Приглашение клиента');
     }
 
     private static function establishmentMethodLabel(ReferralEstablishmentMethod|string $state): string
     {
         return match ($state instanceof ReferralEstablishmentMethod ? $state->value : $state) {
-            ReferralEstablishmentMethod::AutomaticReferralLink->value => 'Автоматическая ссылка',
-            ReferralEstablishmentMethod::ManualCrm->value => 'Назначено в CRM',
-            default => 'Неизвестно',
+            ReferralEstablishmentMethod::AutomaticReferralLink->value => __('Автоматическая ссылка'),
+            ReferralEstablishmentMethod::ManualCrm->value => __('Назначено в CRM'),
+            default => __('Неизвестно'),
         };
     }
 

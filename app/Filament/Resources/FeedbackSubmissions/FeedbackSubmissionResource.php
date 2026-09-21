@@ -6,6 +6,7 @@ use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\FeedbackSubmissions\Pages\ListFeedbackSubmissions;
 use App\Filament\Resources\FeedbackSubmissions\Pages\ViewFeedbackSubmission;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Feedback\Application\ListFeedbackSubmissionsForCrm;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
@@ -15,7 +16,6 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use BackedEnum;
 use Filament\Actions\ViewAction;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -24,7 +24,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 /** @extends resource<FeedbackSubmission> */
-final class FeedbackSubmissionResource extends Resource
+final class FeedbackSubmissionResource extends LocalizedResource
 {
     protected static ?string $model = FeedbackSubmission::class;
 
@@ -69,23 +69,23 @@ final class FeedbackSubmissionResource extends Resource
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('client.full_name')
-                    ->label('Клиент')
+                    ->label(__('Клиент'))
                     ->searchable()
                     ->wrap()
                     ->url(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
                     ->color(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (FeedbackSubmission $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
-                TextColumn::make('score')->label('Оценка')->badge()->sortable(),
-                TextColumn::make('source')->label('Источник')->wrap(),
+                TextColumn::make('score')->label(__('Оценка'))->badge()->sortable(),
+                TextColumn::make('source')->label(__('Источник'))->wrap(),
                 TextColumn::make('internal_feedback_present')
-                    ->label('Внутренний текст')
-                    ->state(fn (FeedbackSubmission $record): string => $record->getRawOriginal('internal_feedback') === null ? 'Нет' : 'Есть')
+                    ->label(__('Внутренний текст'))
+                    ->state(fn (FeedbackSubmission $record): string => $record->getRawOriginal('internal_feedback') === null ? __('Нет') : __('Есть'))
                     ->badge()
-                    ->color(fn (string $state): string => $state === 'Есть' ? 'warning' : 'gray'),
-                TextColumn::make('submitted_at')->label('Отправлено')->dateTime('d.m.Y H:i')->sortable(),
+                    ->color(fn (string $state): string => $state === __('Есть') ? 'warning' : 'gray'),
+                TextColumn::make('submitted_at')->label(__('Отправлено'))->dateTime('d.m.Y H:i')->sortable(),
             ])
             ->recordActions([
-                ViewAction::make()->label('Открыть'),
+                ViewAction::make()->label(__('Открыть')),
             ])
             ->defaultSort('submitted_at', 'desc')
             ->paginated([10, 25, 50]);
@@ -94,23 +94,23 @@ final class FeedbackSubmissionResource extends Resource
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Структурные данные')
+            Section::make(__('Структурные данные'))
                 ->schema([
                     TextEntry::make('client.full_name')
-                        ->label('Клиент')
+                        ->label(__('Клиент'))
                         ->url(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client))
                         ->color(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary'),
-                    TextEntry::make('score')->label('Оценка'),
-                    TextEntry::make('source')->label('Источник'),
-                    TextEntry::make('submitted_at')->label('Отправлено')->dateTime('d.m.Y H:i'),
+                    TextEntry::make('score')->label(__('Оценка')),
+                    TextEntry::make('source')->label(__('Источник')),
+                    TextEntry::make('submitted_at')->label(__('Отправлено'))->dateTime('d.m.Y H:i'),
                 ])
                 ->columns(2),
-            Section::make('Внутренняя обратная связь')
-                ->description('Текст доступен только в авторизованном просмотре клиента и не участвует в поиске или аудите.')
+            Section::make(__('Внутренняя обратная связь'))
+                ->description(__('Текст доступен только в авторизованном просмотре клиента и не участвует в поиске или аудите.'))
                 ->schema([
                     TextEntry::make('internal_feedback')
-                        ->label('Текст')
-                        ->placeholder('Текст не оставлен')
+                        ->label(__('Текст'))
+                        ->placeholder(__('Текст не оставлен'))
                         ->columnSpanFull()
                         ->wrap(),
                 ]),

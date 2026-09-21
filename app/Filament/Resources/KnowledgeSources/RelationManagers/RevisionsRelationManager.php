@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\KnowledgeSources\RelationManagers;
 
 use App\Filament\Support\KnowledgeSourcePresentation;
+use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\Knowledge\Application\GetTemporaryKnowledgeRevisionUrl;
 use App\Modules\Knowledge\Application\ReprocessKnowledgeForSearch;
@@ -17,13 +18,12 @@ use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
-use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 
-final class RevisionsRelationManager extends RelationManager
+final class RevisionsRelationManager extends LocalizedRelationManager
 {
     protected static bool $isLazy = false;
 
@@ -44,34 +44,34 @@ final class RevisionsRelationManager extends RelationManager
 
         return $table
             ->columns([
-                TextColumn::make('version')->label('Версия')->sortable(["{$revisionTable}.version"]),
+                TextColumn::make('version')->label(__('Версия'))->sortable(["{$revisionTable}.version"]),
                 TextColumn::make('original_filename')
-                    ->label('Материал')
+                    ->label(__('Материал'))
                     ->state(fn (KnowledgeRevision $record): string => $presentation->materialName($record))
                     ->limit(42)
                     ->wrap(),
                 TextColumn::make('status')
-                    ->label('Состояние')
+                    ->label(__('Состояние'))
                     ->formatStateUsing(fn (KnowledgeRevisionStatus|string $state): string => $presentation->revisionStatus($state)),
                 TextColumn::make('extraction_status')
-                    ->label('Извлечение')
+                    ->label(__('Извлечение'))
                     ->formatStateUsing(fn (?string $state): string => match ($state) {
-                        KnowledgeExtractionStatus::Ready->value => 'Текст извлечён',
-                        KnowledgeExtractionStatus::TextNotFound->value => 'Текст не найден',
-                        KnowledgeExtractionStatus::Suspicious->value => 'Нужна проверка',
-                        KnowledgeExtractionStatus::Failed->value => 'Ошибка извлечения',
-                        KnowledgeExtractionStatus::AiParseRequested->value => 'AI-разбор запрошен',
-                        default => 'Неизвестно',
+                        KnowledgeExtractionStatus::Ready->value => __('Текст извлечён'),
+                        KnowledgeExtractionStatus::TextNotFound->value => __('Текст не найден'),
+                        KnowledgeExtractionStatus::Suspicious->value => __('Нужна проверка'),
+                        KnowledgeExtractionStatus::Failed->value => __('Ошибка извлечения'),
+                        KnowledgeExtractionStatus::AiParseRequested->value => __('AI-разбор запрошен'),
+                        default => __('Неизвестно'),
                     })
                     ->wrap(),
                 TextColumn::make('processing_result')
-                    ->label('Результат обработки')
+                    ->label(__('Результат обработки'))
                     ->state(fn (KnowledgeRevision $record): string => $presentation->errorMessage($record->latestIngestionRun?->error_code)),
                 TextColumn::make('latestIngestionRun.completed_at')
-                    ->label('Обработана')
+                    ->label(__('Обработана'))
                     ->dateTime('d.m.Y H:i')
                     ->placeholder('—'),
-                TextColumn::make('created_at')->label('Создана')->dateTime('d.m.Y H:i'),
+                TextColumn::make('created_at')->label(__('Создана'))->dateTime('d.m.Y H:i'),
             ])
             ->modifyQueryUsing(function (Builder $query) use ($revisionTable, $ingestionRunTable): Builder {
                 $configuration = EmbeddingConfiguration::active();
@@ -129,45 +129,45 @@ final class RevisionsRelationManager extends RelationManager
             })
             ->recordActions([
                 Action::make('download')
-                    ->label('Скачать файл')
+                    ->label(__('Скачать файл'))
                     ->visible(fn (KnowledgeRevision $record): bool => $presentation->canDownload($source, $record))
                     ->action(function (KnowledgeRevision $record) use ($actor, $source): mixed {
                         return redirect()->to(app(GetTemporaryKnowledgeRevisionUrl::class)->handle($actor, $source, $record));
                     }),
                 Action::make('requestAiParsing')
-                    ->label('Запустить AI-разбор')
+                    ->label(__('Запустить AI-разбор'))
                     ->color('warning')
                     ->requiresConfirmation()
-                    ->modalHeading('Запустить AI-разбор PDF?')
-                    ->modalDescription('Это явный запрос владельца. Автоматический разбор не запускается скрыто и требует отдельной настроенной версии AI.')
+                    ->modalHeading(__('Запустить AI-разбор PDF?'))
+                    ->modalDescription(__('Это явный запрос владельца. Автоматический разбор не запускается скрыто и требует отдельной настроенной версии AI.'))
                     ->visible(fn (KnowledgeRevision $record): bool => $record->extraction_status === KnowledgeExtractionStatus::TextNotFound->value)
                     ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
                         app(RequestKnowledgeAiParsing::class)->handle($actor, $source, $record->getKey());
-                        Notification::make()->title('Запрос на AI-разбор сохранён')->success()->send();
+                        Notification::make()->title(__('Запрос на AI-разбор сохранён'))->success()->send();
                     }),
                 Action::make('retry')
-                    ->label('Повторить обработку')
+                    ->label(__('Повторить обработку'))
                     ->color('warning')
                     ->visible(fn (KnowledgeRevision $record): bool => app(KnowledgeSourcePresentation::class)->canRetry($source, $record))
                     ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
                         app(RetryKnowledgeIngestion::class)->handle($actor, $source, $record->getKey());
-                        Notification::make()->title('Повторная обработка запущена')->success()->send();
+                        Notification::make()->title(__('Повторная обработка запущена'))->success()->send();
                     }),
                 Action::make('startPending')
-                    ->label('Запустить обработку')
+                    ->label(__('Запустить обработку'))
                     ->color('warning')
                     ->visible(fn (KnowledgeRevision $record): bool => $presentation->canStartPending($source, $record))
                     ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
                         app(StartPendingKnowledgeIngestion::class)->handle($actor, $source, $record->getKey());
-                        Notification::make()->title('Обработка запущена')->success()->send();
+                        Notification::make()->title(__('Обработка запущена'))->success()->send();
                     }),
                 Action::make('reprocessForSearch')
-                    ->label('Подготовить материал к поиску')
+                    ->label(__('Подготовить материал к поиску'))
                     ->color('warning')
                     ->visible(fn (KnowledgeRevision $record): bool => $presentation->canReprocessForSearch($source, $record))
                     ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
                         app(ReprocessKnowledgeForSearch::class)->handle($actor, $source, $record->getKey());
-                        Notification::make()->title('Индексация материала запущена')->success()->send();
+                        Notification::make()->title(__('Индексация материала запущена'))->success()->send();
                     }),
             ])
             ->defaultSort(

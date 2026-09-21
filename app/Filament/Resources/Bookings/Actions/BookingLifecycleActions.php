@@ -46,10 +46,10 @@ final class BookingLifecycleActions
 
         return [
             Action::make('confirm')
-                ->label('Подтвердить запись')
+                ->label(__('Подтвердить запись'))
                 ->color('success')
                 ->icon('heroicon-o-check')
-                ->schema([Textarea::make('reason')->label('Комментарий')->maxLength(500)])
+                ->schema([Textarea::make('reason')->label(__('Комментарий'))->maxLength(500)])
                 ->visible(fn (Booking $record): bool => $canManageScheduling
                     && $record->status === BookingStatus::Requested
                     && in_array($record->visit_format, [VisitFormat::Office, VisitFormat::Online], true))
@@ -60,27 +60,27 @@ final class BookingLifecycleActions
                     try {
                         app(ConfirmBooking::class)->handle($actor, $record, $data['reason'] ?? null);
                         $record->refresh();
-                        Notification::make()->success()->title('Запись подтверждена')->send();
+                        Notification::make()->success()->title(__('Запись подтверждена'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
                     }
                 }),
 
             Action::make('approveHomeVisit')
-                ->label('Подтвердить выезд')
+                ->label(__('Подтвердить выезд'))
                 ->color('success')
                 ->icon('heroicon-o-truck')
                 ->requiresConfirmation()
-                ->modalDescription('Выезд будет подтверждён, а выбранное условие оплаты сохранится в записи.')
+                ->modalDescription(__('Выезд будет подтверждён, а выбранное условие оплаты сохранится в записи.'))
                 ->schema([
                     Textarea::make('reason')
-                        ->label('Комментарий')
+                        ->label(__('Комментарий'))
                         ->maxLength(500),
                     Select::make('payment_requirement')
-                        ->label('Условие оплаты')
+                        ->label(__('Условие оплаты'))
                         ->options([
-                            PaymentRequirementType::FullPayment->value => 'Полная оплата',
-                            PaymentRequirementType::TransportDeposit->value => 'Депозит за выезд',
+                            PaymentRequirementType::FullPayment->value => __('Полная оплата'),
+                            PaymentRequirementType::TransportDeposit->value => __('Депозит за выезд'),
                         ])
                         ->nullable(),
                 ])
@@ -99,21 +99,21 @@ final class BookingLifecycleActions
                             $data['payment_requirement'] ?? null,
                         );
                         $record->refresh();
-                        Notification::make()->success()->title('Выезд подтверждён')->send();
+                        Notification::make()->success()->title(__('Выезд подтверждён'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
                     }
                 }),
 
             Action::make('rejectHomeVisit')
-                ->label('Отклонить заявку')
+                ->label(__('Отклонить заявку'))
                 ->color('danger')
                 ->icon('heroicon-o-x-mark')
                 ->requiresConfirmation()
-                ->modalDescription('Заявка будет отклонена и перестанет участвовать в работе.')
+                ->modalDescription(__('Заявка будет отклонена и перестанет участвовать в работе.'))
                 ->schema([
                     Textarea::make('reason')
-                        ->label('Причина отказа')
+                        ->label(__('Причина отказа'))
                         ->required()
                         ->maxLength(500),
                 ])
@@ -127,23 +127,23 @@ final class BookingLifecycleActions
                     try {
                         app(RejectHomeVisitBooking::class)->handle($actor, $record, (string) $data['reason']);
                         $record->refresh();
-                        Notification::make()->success()->title('Заявка на выезд отклонена')->send();
+                        Notification::make()->success()->title(__('Заявка на выезд отклонена'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
                     }
                 }),
 
             Action::make('reschedule')
-                ->label('Перенести')
+                ->label(__('Перенести'))
                 ->icon('heroicon-o-calendar')
                 ->schema([
                     DateTimePicker::make('starts_at')
-                        ->label('Новая дата и время')
+                        ->label(__('Новая дата и время'))
                         ->timezone(fn (): string => self::viewerTimezone())
                         ->seconds(false)
                         ->required(),
                     Select::make('working_location_id')
-                        ->label('Локация')
+                        ->label(__('Локация'))
                         ->options(fn (): array => WorkingLocation::query()
                             ->where('organization_id', app(OrganizationContext::class)->id())
                             ->where('is_active', true)
@@ -169,19 +169,19 @@ final class BookingLifecycleActions
                         })
                         ->visible(fn (Booking $record): bool => $record->visit_format === VisitFormat::Office),
                     TextInput::make('location_area')
-                        ->label('Район выезда')
+                        ->label(__('Район выезда'))
                         ->default(fn (Booking $record): ?string => $record->location_area)
                         ->maxLength(160)
                         ->visible(fn (Booking $record): bool => $record->visit_format === VisitFormat::HomeVisit),
                     TextInput::make('location')
-                        ->label(fn (Booking $record): string => $record->visit_format === VisitFormat::Office ? 'Адрес приёма' : 'Адрес выезда')
+                        ->label(fn (Booking $record): string => $record->visit_format === VisitFormat::Office ? __('Адрес приёма') : __('Адрес выезда'))
                         ->default(fn (Booking $record): ?string => $record->location)
                         ->visible(fn (Booking $record): bool => in_array($record->visit_format, [VisitFormat::Office, VisitFormat::HomeVisit], true))
                         ->maxLength(500),
                     Hidden::make('expected_event_version')
                         ->default(fn (Booking $record): int => $record->event_version)
                         ->required(),
-                    Textarea::make('reason')->label('Причина')->maxLength(500),
+                    Textarea::make('reason')->label(__('Причина'))->maxLength(500),
                 ])
                 ->visible(fn (Booking $record): bool => $canManageScheduling
                     && ! in_array($record->status->value, BookingStatus::terminalValues(), true))
@@ -207,19 +207,19 @@ final class BookingLifecycleActions
                             locationArea: isset($data['location_area']) ? (string) $data['location_area'] : null,
                         );
                         $record->refresh();
-                        Notification::make()->success()->title('Запись успешно перенесена')->send();
+                        Notification::make()->success()->title(__('Запись успешно перенесена'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
                     }
                 }),
 
             Action::make('complete')
-                ->label('Завершить визит')
+                ->label(__('Завершить визит'))
                 ->color('success')
                 ->icon('heroicon-o-check-circle')
                 ->requiresConfirmation()
-                ->modalDescription('Визит будет переведён в завершённое состояние. Проверьте клиента и время.')
-                ->schema([Textarea::make('reason')->label('Комментарий')->maxLength(500)])
+                ->modalDescription(__('Визит будет переведён в завершённое состояние. Проверьте клиента и время.'))
+                ->schema([Textarea::make('reason')->label(__('Комментарий'))->maxLength(500)])
                 ->visible(fn (Booking $record): bool => $canManageScheduling && $record->status === BookingStatus::Confirmed)
                 ->action(function (Booking $record, array $data): void {
                     $actor = auth()->user();
@@ -228,19 +228,19 @@ final class BookingLifecycleActions
                     try {
                         app(CompleteBooking::class)->handle($actor, $record, $data['reason'] ?? null);
                         $record->refresh();
-                        Notification::make()->success()->title('Визит успешно завершён')->send();
+                        Notification::make()->success()->title(__('Визит успешно завершён'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
                     }
                 }),
 
             Action::make('noShow')
-                ->label('Отметить неявку')
+                ->label(__('Отметить неявку'))
                 ->color('danger')
                 ->icon('heroicon-o-user-minus')
                 ->requiresConfirmation()
-                ->modalDescription('Запись будет отмечена как не состоявшаяся. Проверьте клиента и время.')
-                ->schema([Textarea::make('reason')->label('Комментарий')->maxLength(500)])
+                ->modalDescription(__('Запись будет отмечена как не состоявшаяся. Проверьте клиента и время.'))
+                ->schema([Textarea::make('reason')->label(__('Комментарий'))->maxLength(500)])
                 ->visible(fn (Booking $record): bool => $canManageScheduling
                     && in_array($record->status, [BookingStatus::Requested, BookingStatus::Confirmed], true))
                 ->action(function (Booking $record, array $data): void {
@@ -250,18 +250,18 @@ final class BookingLifecycleActions
                     try {
                         app(MarkBookingNoShow::class)->handle($actor, $record, $data['reason'] ?? null);
                         $record->refresh();
-                        Notification::make()->success()->title('Запись отмечена как не состоявшаяся')->send();
+                        Notification::make()->success()->title(__('Запись отмечена как не состоявшаяся'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
                     }
                 }),
 
             Action::make('meetingUrl')
-                ->label('Ссылка на встречу')
+                ->label(__('Ссылка на встречу'))
                 ->icon('heroicon-o-video-camera')
                 ->schema([
-                    TextInput::make('meeting_url')->label('Ссылка на встречу')->url()->required()->maxLength(2000),
-                    Textarea::make('reason')->label('Комментарий')->maxLength(500),
+                    TextInput::make('meeting_url')->label(__('Ссылка на встречу'))->url()->required()->maxLength(2000),
+                    Textarea::make('reason')->label(__('Комментарий'))->maxLength(500),
                 ])
                 ->visible(fn (Booking $record): bool => $canManageScheduling
                     && $record->visit_format === VisitFormat::Online
@@ -274,19 +274,19 @@ final class BookingLifecycleActions
                     try {
                         app(SetOnlineMeetingUrl::class)->handle($actor, $record, (string) $data['meeting_url'], $data['reason'] ?? null);
                         $record->refresh();
-                        Notification::make()->success()->title('Ссылка на встречу обновлена')->send();
+                        Notification::make()->success()->title(__('Ссылка на встречу обновлена'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
                     }
                 }),
 
             Action::make('cancel')
-                ->label('Отменить')
+                ->label(__('Отменить'))
                 ->color('danger')
                 ->icon('heroicon-o-x-circle')
                 ->requiresConfirmation()
-                ->modalDescription('Запись будет отменена и перестанет участвовать в расписании. Проверьте выбранную запись.')
-                ->schema([Textarea::make('reason')->label('Причина')->maxLength(500)])
+                ->modalDescription(__('Запись будет отменена и перестанет участвовать в расписании. Проверьте выбранную запись.'))
+                ->schema([Textarea::make('reason')->label(__('Причина'))->maxLength(500)])
                 ->visible(fn (Booking $record): bool => $canManageScheduling
                     && ! in_array($record->status->value, BookingStatus::terminalValues(), true))
                 ->action(function (Booking $record, array $data): void {
@@ -296,7 +296,7 @@ final class BookingLifecycleActions
                     try {
                         app(CancelBooking::class)->handle($actor, $record, $data['reason'] ?? null);
                         $record->refresh();
-                        Notification::make()->success()->title('Запись отменена')->send();
+                        Notification::make()->success()->title(__('Запись отменена'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
                     }
@@ -306,11 +306,11 @@ final class BookingLifecycleActions
 
     private static function sendErrorNotification(ValidationException $exception): void
     {
-        $message = collect($exception->errors())->flatten()->first() ?: 'Не удалось выполнить действие.';
+        $message = collect($exception->errors())->flatten()->first() ?: __('Не удалось выполнить действие.');
 
         Notification::make()
             ->danger()
-            ->title('Действие отклонено')
+            ->title(__('Действие отклонено'))
             ->body($message)
             ->send();
     }

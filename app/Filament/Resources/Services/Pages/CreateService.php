@@ -3,15 +3,15 @@
 namespace App\Filament\Resources\Services\Pages;
 
 use App\Filament\Resources\Services\ServiceResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\SavePaymentProviderOfferMappings;
 use App\Modules\Services\Application\CreateService as CreateServiceAction;
 use App\Modules\Services\Domain\Models\Service;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class CreateService extends CreateRecord
+class CreateService extends LocalizedCreateRecord
 {
     protected static string $resource = ServiceResource::class;
 

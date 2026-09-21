@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\AiPrompts\Pages;
 
 use App\Filament\Resources\AiPrompts\AiPromptResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\CreateAiPrompt as CreateAiPromptAction;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class CreateAiPrompt extends CreateRecord
+class CreateAiPrompt extends LocalizedCreateRecord
 {
     protected static string $resource = AiPromptResource::class;
 

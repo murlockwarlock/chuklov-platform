@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\NotificationTemplates\Pages;
 
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
+use App\Filament\Support\LocalizedViewRecord;
 use Filament\Actions\EditAction;
-use Filament\Resources\Pages\ViewRecord;
 
-final class ViewNotificationTemplate extends ViewRecord
+final class ViewNotificationTemplate extends LocalizedViewRecord
 {
     protected static string $resource = NotificationTemplateResource::class;
 
@@ -16,7 +16,7 @@ final class ViewNotificationTemplate extends ViewRecord
     {
         return [
             EditAction::make()
-                ->label('Редактировать шаблон')
+                ->label(__('Редактировать шаблон'))
                 ->icon('heroicon-o-pencil-square')
                 ->color('primary'),
         ];

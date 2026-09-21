@@ -9,6 +9,8 @@ use App\Filament\Resources\BroadcastCampaigns\Pages\ViewBroadcastCampaign;
 use App\Filament\Resources\BroadcastCampaigns\RelationManagers\RecipientsRelationManager;
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
 use App\Filament\Support\BroadcastFailurePresentation;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedResource;
 use App\Filament\Support\MessageComposer;
 use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
@@ -47,7 +49,6 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Resources\Resource;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Schemas\Components\Section;
@@ -63,7 +64,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 
-final class BroadcastCampaignResource extends Resource
+final class BroadcastCampaignResource extends LocalizedResource
 {
     protected static ?string $model = BroadcastCampaign::class;
 
@@ -82,25 +83,25 @@ final class BroadcastCampaignResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Рассылка')->schema([
-                TextInput::make('name')->label('Название рассылки')->required()->maxLength(160),
+            Section::make(__('Рассылка'))->schema([
+                TextInput::make('name')->label(__('Название рассылки'))->required()->maxLength(160),
                 Hidden::make('channel_priority')->default(['telegram']),
             ])->columns(1)->columnSpanFull(),
-            Section::make('Кому отправить')->description('Согласие на маркетинговые сообщения и доступный Telegram проверяются перед отправкой.')->schema([
+            Section::make(__('Кому отправить'))->description(__('Согласие на маркетинговые сообщения и доступный Telegram проверяются перед отправкой.'))->schema([
                 Radio::make('audience_type')
-                    ->label('Выбор клиентов')
+                    ->label(__('Выбор клиентов'))
                     ->options([
-                        'selected' => 'Выбрать клиентов',
-                        'all' => 'Всем клиентам с согласием',
-                        'segment' => 'По группе или метке',
+                        'selected' => __('Выбрать клиентов'),
+                        'all' => __('Всем клиентам с согласием'),
+                        'segment' => __('По группе или метке'),
                     ])
                     ->default('selected')
                     ->live()
                     ->required()
                     ->columns(1),
                 Select::make('selected_client_ids')
-                    ->label('Клиенты')
-                    ->placeholder('Начните вводить имя, телефон или Telegram')
+                    ->label(__('Клиенты'))
+                    ->placeholder(__('Начните вводить имя, телефон или Telegram'))
                     ->multiple()
                     ->searchable()
                     ->options(fn (): array => self::clientOptions())
@@ -111,17 +112,17 @@ final class BroadcastCampaignResource extends Resource
                     ->visible(fn (Get $get): bool => $get('audience_type') === 'selected')
                     ->required(fn (Get $get): bool => $get('audience_type') === 'selected'),
                 Placeholder::make('recipient_preview')
-                    ->label('Получателей')
+                    ->label(__('Получателей'))
                     ->content(fn (Get $get): string => self::recipientPreview($get)),
-                Section::make('Расширенный выбор')
-                    ->description('Выберите понятные условия. Все условия применяются одновременно. Медицинские и клинические данные недоступны для маркетингового отбора.')
+                Section::make(__('Расширенный выбор'))
+                    ->description(__('Выберите понятные условия. Все условия применяются одновременно. Медицинские и клинические данные недоступны для маркетингового отбора.'))
                     ->schema([
                         Repeater::make('segment_definition')
-                            ->label('Условия')
+                            ->label(__('Условия'))
                             ->schema([
-                                Select::make('key')->label('Что проверить')->options(self::filterOptions())->required()->live(),
-                                Select::make('operator')->label('Проверка')->options(fn (Get $get): array => self::operatorOptions((string) $get('key')))->required()->live(),
-                                Select::make('value_bool')->label('Ответ')->options(['1' => 'Да', '0' => 'Нет'])->live()->visible(fn (Get $get): bool => self::isBooleanFilter((string) $get('key')))->required(fn (Get $get): bool => self::isBooleanFilter((string) $get('key'))),
+                                Select::make('key')->label(__('Что проверить'))->options(self::filterOptions())->required()->live(),
+                                Select::make('operator')->label(__('Проверка'))->options(fn (Get $get): array => self::operatorOptions((string) $get('key')))->required()->live(),
+                                Select::make('value_bool')->label(__('Ответ'))->options(['1' => __('Да'), '0' => __('Нет')])->live()->visible(fn (Get $get): bool => self::isBooleanFilter((string) $get('key')))->required(fn (Get $get): bool => self::isBooleanFilter((string) $get('key'))),
                                 Select::make('value_select')
                                     ->label(fn (Get $get): string => self::conditionValueLabel((string) $get('key')))
                                     ->options(fn (Get $get): array => self::controlledValueOptions((string) $get('key')))
@@ -148,14 +149,14 @@ final class BroadcastCampaignResource extends Resource
                                     ->live()
                                     ->maxLength(120),
                                 Placeholder::make('condition_preview')
-                                    ->label('Понятное описание')
+                                    ->label(__('Понятное описание'))
                                     ->content(fn (Get $get): string => self::conditionPreview($get))
                                     ->columnSpanFull(),
                             ])
                             ->columns(3)
                             ->defaultItems(0)
                             ->reorderable(false)
-                            ->addActionLabel('Добавить условие')
+                            ->addActionLabel(__('Добавить условие'))
                             ->columnSpanFull(),
                     ])
                     ->collapsible()
@@ -173,24 +174,24 @@ final class BroadcastCampaignResource extends Resource
                 allowSavedTemplates: true,
                 savedTemplateSchema: fn (): array => [
                     Select::make('template_version_ru_id')
-                        ->label('Сохранённый шаблон')
+                        ->label(__('Сохранённый шаблон'))
                         ->options(fn (): array => self::templateOptions('ru'))
-                        ->placeholder('Нет опубликованных сообщений')
+                        ->placeholder(__('Нет опубликованных сообщений'))
                         ->searchable()
                         ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
                     Select::make('template_version_en_id')
-                        ->label('Шаблон для английского текста')
+                        ->label(__('Шаблон для английского текста'))
                         ->options(fn (): array => self::templateOptions('en'))
-                        ->placeholder('Нет опубликованных сообщений')
+                        ->placeholder(__('Нет опубликованных сообщений'))
                         ->searchable()
                         ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
                     Placeholder::make('template_empty')
-                        ->label('Готовые сообщения')
-                        ->content('Нет готовых шаблонов для этого типа сообщения.')
+                        ->label(__('Готовые сообщения'))
+                        ->content(__('Нет готовых шаблонов для этого типа сообщения.'))
                         ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get) && self::templateOptions('ru') === [] && self::templateOptions('en') === []),
                     Actions::make([
                         Action::make('createMessage')
-                            ->label('Создать сообщение')
+                            ->label(__('Создать сообщение'))
                             ->icon(Heroicon::OutlinedPlus)
                             ->url(fn (): string => NotificationTemplateResource::getUrl('create')),
                     ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
@@ -209,18 +210,18 @@ final class BroadcastCampaignResource extends Resource
                         ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasSinglePhoto($record) && ! $get('remove_media') && ! self::hasPendingMedia($get))
                         ->columnSpanFull(),
                     Placeholder::make('current_media_status')
-                        ->label('Текущее медиа')
+                        ->label(__('Текущее медиа'))
                         ->content(fn (?BroadcastCampaign $record): string => self::mediaStatus($record))
                         ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get))
                         ->columnSpanFull(),
                     Placeholder::make('media_replacement_status')
-                        ->label('Новое медиа')
-                        ->content('Новое медиа выбрано и заменит текущее после сохранения.')
+                        ->label(__('Новое медиа'))
+                        ->content(__('Новое медиа выбрано и заменит текущее после сохранения.'))
                         ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && self::hasPendingMedia($get))
                         ->columnSpanFull(),
                     Actions::make([
                         Action::make('removeMedia')
-                            ->label('Удалить текущее медиа')
+                            ->label(__('Удалить текущее медиа'))
                             ->icon(Heroicon::OutlinedTrash)
                             ->color('danger')
                             ->action(function (Set $set): void {
@@ -228,7 +229,7 @@ final class BroadcastCampaignResource extends Resource
                             })
                             ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && ! $get('remove_media') && ! self::hasPendingMedia($get)),
                         Action::make('restoreMedia')
-                            ->label('Оставить текущее медиа')
+                            ->label(__('Оставить текущее медиа'))
                             ->icon(Heroicon::OutlinedArrowUturnLeft)
                             ->color('gray')
                             ->action(function (Set $set): void {
@@ -238,21 +239,21 @@ final class BroadcastCampaignResource extends Resource
                     ])
                         ->columnSpanFull(),
                     Placeholder::make('media_removal_notice')
-                        ->label('Изменение медиа')
-                        ->content('Текущее медиа будет удалено после сохранения. Если выбран режим с изображением, добавьте замену или выберите «Только текст».')
+                        ->label(__('Изменение медиа'))
+                        ->content(__('Текущее медиа будет удалено после сохранения. Если выбран режим с изображением, добавьте замену или выберите «Только текст».'))
                         ->visible(fn (?BroadcastCampaign $record, Get $get): bool => self::hasMedia($record) && $get('remove_media') && ! self::hasPendingMedia($get))
                         ->columnSpanFull(),
                 ],
                 bodyLabel: 'Текст сообщения в Telegram',
                 bodyHelper: 'Для рассылки доступны имя, язык и персональная реферальная ссылка клиента. Нажмите «Добавить данные» в редакторе, чтобы вставить поле в место курсора.',
             ),
-            Section::make('Запуск')->schema([
-                Select::make('send_mode')->label('Когда отправить')->options(['immediate' => 'Сейчас', 'scheduled' => 'Запланировать'])->default('immediate')->required()->live(),
+            Section::make(__('Запуск'))->schema([
+                Select::make('send_mode')->label(__('Когда отправить'))->options(['immediate' => __('Сейчас'), 'scheduled' => __('Запланировать')])->default('immediate')->required()->live(),
                 DateTimePicker::make('scheduled_at')
-                    ->label(fn (): string => 'Дата и время ('.app(OrganizationContext::class)->defaultTimezone().')')
+                    ->label(fn (): string => __('Дата и время (').app(OrganizationContext::class)->defaultTimezone().')')
                     ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                     ->seconds(false)
-                    ->helperText(fn (): string => 'Время указывается по часовому поясу организации: '.app(OrganizationContext::class)->defaultTimezone().'.')
+                    ->helperText(fn (): string => __('Время указывается по часовому поясу организации: ').app(OrganizationContext::class)->defaultTimezone().'.')
                     ->visible(fn (Get $get): bool => $get('send_mode') === 'scheduled')
                     ->required(fn (Get $get): bool => $get('send_mode') === 'scheduled'),
             ])->columns(2)->columnSpanFull(),
@@ -262,31 +263,31 @@ final class BroadcastCampaignResource extends Resource
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components([
-            TextEntry::make('name')->label('Рассылка'),
-            TextEntry::make('state')->label('Состояние')->formatStateUsing(fn ($state): string => self::stateLabel($state instanceof BroadcastCampaignState ? $state : BroadcastCampaignState::from((string) $state)))->badge(),
-            TextEntry::make('segment_summary')->label('Получатели')->columnSpanFull(),
+            TextEntry::make('name')->label(__('Рассылка')),
+            TextEntry::make('state')->label(__('Состояние'))->formatStateUsing(fn ($state): string => self::stateLabel($state instanceof BroadcastCampaignState ? $state : BroadcastCampaignState::from((string) $state)))->badge(),
+            TextEntry::make('segment_summary')->label(__('Получатели'))->columnSpanFull(),
             TextEntry::make('message_preview')
-                ->label('Сообщение')
+                ->label(__('Сообщение'))
                 ->state(function (BroadcastCampaign $record): string {
                     $body = trim((string) ($record->message_body ?: $record->russianTemplateVersion?->body ?: $record->englishTemplateVersion?->body));
 
-                    return $body === '' ? 'Сообщение не выбрано' : RichTextPresentation::html($body);
+                    return $body === '' ? __('Сообщение не выбрано') : RichTextPresentation::html($body);
                 })
                 ->columnSpanFull()
                 ->prose()
                 ->html()
                 ->wrap(),
             TextEntry::make('media_summary')
-                ->label('Медиа')
+                ->label(__('Медиа'))
                 ->state(fn (BroadcastCampaign $record): string => self::mediaSummary($record)),
-            TextEntry::make('scheduled_at')->label(fn (): string => 'Запланировано ('.app(OrganizationContext::class)->defaultTimezone().')')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder('Сразу'),
-            TextEntry::make('audience_count')->label('Найдено'),
-            TextEntry::make('delivered_count')->label('Доставлено'),
-            TextEntry::make('failed_count')->label('Ошибки'),
-            TextEntry::make('suppressed_count')->label('Исключено (нет согласия или Telegram)'),
-            TextEntry::make('audienceSnapshot.materialized_at')->label('Список получателей зафиксирован')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder('Ещё не зафиксирован'),
+            TextEntry::make('scheduled_at')->label(fn (): string => __('Запланировано (').app(OrganizationContext::class)->defaultTimezone().')')->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder(__('Сразу')),
+            TextEntry::make('audience_count')->label(__('Найдено')),
+            TextEntry::make('delivered_count')->label(__('Доставлено')),
+            TextEntry::make('failed_count')->label(__('Ошибки')),
+            TextEntry::make('suppressed_count')->label(__('Исключено (нет согласия или Telegram)')),
+            TextEntry::make('audienceSnapshot.materialized_at')->label(__('Список получателей зафиксирован'))->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())->placeholder(__('Ещё не зафиксирован')),
             TextEntry::make('failure_summary')
-                ->label('Последние ошибки')
+                ->label(__('Последние ошибки'))
                 ->state(fn (BroadcastCampaign $record): string => $record->recipients()
                     ->whereNotNull('last_error_code')
                     ->latest('updated_at')
@@ -294,17 +295,17 @@ final class BroadcastCampaignResource extends Resource
                     ->pluck('last_error_code')
                     ->map(fn (string $code): string => self::failureLabel($code))
                     ->unique()
-                    ->implode(', ') ?: 'Нет')
+                    ->implode(', ') ?: __('Нет'))
                 ->columnSpanFull(),
             TextEntry::make('dispatch_issue')
-                ->label('Проблема запуска')
+                ->label(__('Проблема запуска'))
                 ->state(fn (BroadcastCampaign $record): string => BroadcastFailurePresentation::label($record->last_dispatch_error_code))
                 ->visible(fn (BroadcastCampaign $record): bool => filled($record->last_dispatch_error_code))
                 ->columnSpanFull()
                 ->wrap(),
-            TextEntry::make('creator.name')->label('Создал')->placeholder('Сотрудник удалён'),
-            TextEntry::make('created_at')->label('Создано')->dateTime('d.m.Y H:i'),
-            TextEntry::make('updated_at')->label('Изменено')->dateTime('d.m.Y H:i'),
+            TextEntry::make('creator.name')->label(__('Создал'))->placeholder(__('Сотрудник удалён')),
+            TextEntry::make('created_at')->label(__('Создано'))->dateTime('d.m.Y H:i'),
+            TextEntry::make('updated_at')->label(__('Изменено'))->dateTime('d.m.Y H:i'),
         ]);
     }
 
@@ -314,7 +315,7 @@ final class BroadcastCampaignResource extends Resource
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('name')
-                    ->label('Рассылка')
+                    ->label(__('Рассылка'))
                     ->searchable()
                     ->sortable()
                     ->formatStateUsing(fn (?string $state): string => app(BroadcastCampaignName::class)->displayName($state))
@@ -323,40 +324,48 @@ final class BroadcastCampaignResource extends Resource
                     ->wrap()
                     ->width('16rem'),
                 TextColumn::make('state')
-                    ->label('Состояние')
+                    ->label(__('Состояние'))
                     ->badge()
                     ->formatStateUsing(fn ($state): string => self::stateLabel($state instanceof BroadcastCampaignState ? $state : BroadcastCampaignState::from((string) $state)))
                     ->width('9rem'),
                 TextColumn::make('scheduled_at')
-                    ->label(fn (): string => 'Запуск ('.app(OrganizationContext::class)->defaultTimezone().')')
+                    ->label(fn (): string => __('Запуск (').app(OrganizationContext::class)->defaultTimezone().')')
                     ->dateTime('d.m.Y H:i')
                     ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
-                    ->placeholder('Сразу')
+                    ->placeholder(__('Сразу'))
                     ->sortable()
                     ->width('12rem'),
-                TextColumn::make('audience_count')->label('Получатели')->numeric()->sortable()->width('7rem'),
+                TextColumn::make('audience_count')->label(__('Получатели'))->numeric()->sortable()->width('7rem'),
                 TextColumn::make('delivery_summary')
-                    ->label('Результат')
-                    ->state(fn (BroadcastCampaign $record): string => "Доставлено {$record->delivered_count} · ошибок {$record->failed_count} · исключено {$record->suppressed_count}")
+                    ->label(__('Результат'))
+                    ->state(fn (BroadcastCampaign $record): string => __('Доставлено :delivered · ошибок :failed · исключено :suppressed', [
+                        'delivered' => $record->delivered_count,
+                        'failed' => $record->failed_count,
+                        'suppressed' => $record->suppressed_count,
+                    ]))
                     ->limit(48)
-                    ->tooltip(fn (BroadcastCampaign $record): string => "Доставлено {$record->delivered_count} · ошибок {$record->failed_count} · исключено {$record->suppressed_count}")
+                    ->tooltip(fn (BroadcastCampaign $record): string => __('Доставлено :delivered · ошибок :failed · исключено :suppressed', [
+                        'delivered' => $record->delivered_count,
+                        'failed' => $record->failed_count,
+                        'suppressed' => $record->suppressed_count,
+                    ]))
                     ->wrap()
                     ->width('14rem'),
-                TextColumn::make('creator.name')->label('Создал')->placeholder('—')->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('updated_at')->label('Изменено')->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('creator.name')->label(__('Создал'))->placeholder('—')->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('updated_at')->label(__('Изменено'))->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
             ->defaultSort(fn (Builder $query): Builder => $query->orderByDesc('updated_at')->orderByDesc('id'))
             ->recordActions([
                 ViewAction::make()
-                    ->label('Открыть')
+                    ->label(__('Открыть'))
                     ->icon(Heroicon::OutlinedEye)
                     ->iconButton()
-                    ->tooltip('Открыть рассылку'),
+                    ->tooltip(__('Открыть рассылку')),
                 EditAction::make()
-                    ->label('Редактировать')
+                    ->label(__('Редактировать'))
                     ->icon(Heroicon::OutlinedPencil)
                     ->iconButton()
-                    ->tooltip('Редактировать рассылку')
+                    ->tooltip(__('Редактировать рассылку'))
                     ->visible(fn (BroadcastCampaign $record): bool => $record->state === BroadcastCampaignState::Draft),
             ]);
     }
@@ -426,21 +435,21 @@ final class BroadcastCampaignResource extends Resource
                     return false;
                 }
             })
-            ->mapWithKeys(fn (NotificationTemplateVersion $version): array => [$version->getKey() => ($version->template?->name ?: 'Сообщение').' · '.Str::limit(RichTextPresentation::text($version->body), 80).' · '.self::localeLabel($locale)])
+            ->mapWithKeys(fn (NotificationTemplateVersion $version): array => [$version->getKey() => ($version->template?->name ?: __('Сообщение')).' · '.Str::limit(RichTextPresentation::text($version->body), 80).' · '.self::localeLabel($locale)])
             ->all();
     }
 
     /** @return array<string, string> */
     private static function filterOptions(): array
     {
-        return ['tag' => 'Метка клиента', 'b2b_role' => 'B2B-роль', 'b2b_specialist_answer' => 'B2B-сегмент специалиста', 'survey_completed' => 'Завершён тест', 'visit_count' => 'Количество завершённых визитов', 'booking_status' => 'Статус записи', 'last_visit' => 'Дата последнего визита', 'no_future_booking' => 'Нет будущей записи', 'referral_relationship' => 'Пришёл по рекомендации', 'attribution_source' => 'Источник привлечения', 'language' => 'Язык', 'verified_channel' => 'Подтверждённый канал'];
+        return ['tag' => __('Метка клиента'), 'b2b_role' => __('B2B-роль'), 'b2b_specialist_answer' => __('B2B-сегмент специалиста'), 'survey_completed' => __('Завершён тест'), 'visit_count' => __('Количество завершённых визитов'), 'booking_status' => __('Статус записи'), 'last_visit' => __('Дата последнего визита'), 'no_future_booking' => __('Нет будущей записи'), 'referral_relationship' => __('Пришёл по рекомендации'), 'attribution_source' => __('Источник привлечения'), 'language' => __('Язык'), 'verified_channel' => __('Подтверждённый канал')];
     }
 
     /** @return array<string, string> */
     private static function operatorOptions(string $key): array
     {
         return match ($key) {
-            'tag', 'b2b_role', 'b2b_specialist_answer', 'booking_status', 'attribution_source', 'language' => ['equals' => 'Равно', 'in' => 'Одно из'], 'visit_count' => ['gte' => 'Не меньше'], 'last_visit' => ['before' => 'Раньше', 'after' => 'Позже'], default => ['equals' => 'Равно']
+            'tag', 'b2b_role', 'b2b_specialist_answer', 'booking_status', 'attribution_source', 'language' => ['equals' => __('Равно'), 'in' => __('Одно из')], 'visit_count' => ['gte' => __('Не меньше')], 'last_visit' => ['before' => __('Раньше'), 'after' => __('Позже')], default => ['equals' => __('Равно')]
         };
     }
 
@@ -457,16 +466,16 @@ final class BroadcastCampaignResource extends Resource
     private static function conditionValueLabel(string $key, bool $multiple = false): string
     {
         return match ($key) {
-            'tag' => 'Метка клиента',
-            'b2b_specialist_answer' => 'Ответ по B2B',
-            'language' => 'Язык',
-            'verified_channel' => 'Канал',
-            'booking_status' => 'Статус записи',
-            'b2b_role' => 'B2B-роль',
-            'visit_count' => 'Количество визитов',
-            'last_visit' => 'Дата последнего визита',
-            'attribution_source' => 'Источник привлечения',
-            default => $multiple ? 'Значения условия' : 'Значение условия',
+            'tag' => __('Метка клиента'),
+            'b2b_specialist_answer' => __('Ответ по B2B'),
+            'language' => __('Язык'),
+            'verified_channel' => __('Канал'),
+            'booking_status' => __('Статус записи'),
+            'b2b_role' => __('B2B-роль'),
+            'visit_count' => __('Количество визитов'),
+            'last_visit' => __('Дата последнего визита'),
+            'attribution_source' => __('Источник привлечения'),
+            default => $multiple ? __('Значения условия') : __('Значение условия'),
         };
     }
 
@@ -480,8 +489,8 @@ final class BroadcastCampaignResource extends Resource
                 ->distinct()
                 ->pluck('tag', 'tag')
                 ->all(),
-            'b2b_specialist_answer' => ['yes' => 'Да', 'no' => 'Нет'],
-            'language' => ['ru' => 'Русский', 'en' => 'Английский'],
+            'b2b_specialist_answer' => ['yes' => __('Да'), 'no' => __('Нет')],
+            'language' => ['ru' => __('Русский'), 'en' => __('Английский')],
             'verified_channel' => ['telegram' => 'Telegram'],
             'booking_status' => collect(BookingStatus::cases())->mapWithKeys(fn (BookingStatus $status): array => [
                 $status->value => self::bookingStatusLabel($status),
@@ -492,24 +501,16 @@ final class BroadcastCampaignResource extends Resource
 
     private static function bookingStatusLabel(BookingStatus $status): string
     {
-        return match ($status) {
-            BookingStatus::Requested => 'Ожидает подтверждения',
-            BookingStatus::PendingReview => 'На рассмотрении',
-            BookingStatus::Confirmed => 'Подтверждена',
-            BookingStatus::Rejected => 'Отклонена',
-            BookingStatus::Cancelled => 'Отменена',
-            BookingStatus::Completed => 'Завершена',
-            BookingStatus::NoShow => 'Не состоялась',
-        };
+        return CrmLabel::enum($status) ?? __('Неизвестно');
     }
 
     private static function recipientPreview(Get $get): string
     {
         return match ($get('audience_type')) {
-            'selected' => 'Получателей: '.(is_array($get('selected_client_ids')) ? count($get('selected_client_ids')) : 0),
-            'all' => 'Получателей: все клиенты с согласием',
-            'segment' => 'Получателей: количество будет рассчитано после сохранения',
-            default => 'Выберите клиентов',
+            'selected' => __('Получателей: ').(is_array($get('selected_client_ids')) ? count($get('selected_client_ids')) : 0),
+            'all' => __('Получателей: все клиенты с согласием'),
+            'segment' => __('Получателей: количество будет рассчитано после сохранения'),
+            default => __('Выберите клиентов'),
         };
     }
 
@@ -517,18 +518,25 @@ final class BroadcastCampaignResource extends Resource
     {
         $key = (string) $get('key');
         if ($key === '') {
-            return 'Выберите, что проверить.';
+            return __('Выберите, что проверить.');
         }
 
         $values = self::conditionValues($get);
         if ($values === '') {
-            return 'Укажите значение условия.';
+            return __('Укажите значение условия.');
         }
 
         $operator = (string) $get('operator');
-        $comparison = $operator === 'in' ? ' — один из: ' : ' — ';
 
-        return 'Будут выбраны клиенты, у которых '.mb_strtolower(self::filterOptions()[$key] ?? 'условие').$comparison.$values.'.';
+        return $operator === 'in'
+            ? __('Будут выбраны клиенты, для которых значение «:condition» входит в список: :values.', [
+                'condition' => self::conditionValueLabel($key),
+                'values' => $values,
+            ])
+            : __('Будут выбраны клиенты, для которых значение «:condition» соответствует: :values.', [
+                'condition' => self::conditionValueLabel($key),
+                'values' => $values,
+            ]);
     }
 
     private static function conditionValues(Get $get): string
@@ -536,7 +544,7 @@ final class BroadcastCampaignResource extends Resource
         $key = (string) $get('key');
         $operator = (string) $get('operator');
         $value = self::isBooleanFilter($key)
-            ? (($get('value_bool') === '1' || $get('value_bool') === 1) ? 'Да' : (($get('value_bool') === '0' || $get('value_bool') === 0) ? 'Нет' : ''))
+            ? (($get('value_bool') === '1' || $get('value_bool') === 1) ? __('Да') : (($get('value_bool') === '0' || $get('value_bool') === 0) ? __('Нет') : ''))
             : ($operator === 'in' ? ($get('value_select_list') ?: $get('value_list')) : ($get('value_select') ?: $get('value_text')));
         $values = is_array($value) ? $value : [$value];
 
@@ -600,7 +608,7 @@ final class BroadcastCampaignResource extends Resource
 
     private static function clientDisplayLabel(Client $client): string
     {
-        $parts = [trim((string) $client->full_name) ?: 'Клиент #'.$client->getKey()];
+        $parts = [trim((string) $client->full_name) ?: __('Клиент #:id', ['id' => $client->getKey()])];
         if (filled($client->phone)) {
             $parts[] = (string) $client->phone;
         }
@@ -689,8 +697,8 @@ final class BroadcastCampaignResource extends Resource
     private static function singlePhotoAlt(?BroadcastCampaign $campaign): string
     {
         return self::hasSinglePhoto($campaign)
-            ? (self::mediaPreviewItems($campaign)[0]['alt'] ?: 'Фото рассылки')
-            : 'Фото рассылки';
+            ? (self::mediaPreviewItems($campaign)[0]['alt'] ?: __('Фото рассылки'))
+            : __('Фото рассылки');
     }
 
     private static function externalMediaUrl(string $url): ?string
@@ -706,36 +714,39 @@ final class BroadcastCampaignResource extends Resource
     {
         $items = self::mediaPreviewItems($campaign);
         if ($items === []) {
-            return 'Медиа не добавлено.';
+            return __('Медиа не добавлено.');
         }
 
         $managed = collect($items)->where('managed', true)->count();
         $external = count($items) - $managed;
         $kind = match (true) {
-            $managed > 0 && $external > 0 => 'Загруженные файлы и внешние ссылки',
-            $managed > 0 => 'Загруженные файлы',
-            default => 'Внешние ссылки',
+            $managed > 0 && $external > 0 => __('Загруженные файлы и внешние ссылки'),
+            $managed > 0 => __('Загруженные файлы'),
+            default => __('Внешние ссылки'),
         };
         $typeSummary = collect($items)
             ->countBy('type')
             ->map(fn (int $count, string $type): string => match ($type) {
-                'photo' => 'фото: '.$count,
-                'video' => 'видео: '.$count,
-                default => 'файлы: '.$count,
+                'photo' => __('Фото: :count', ['count' => $count]),
+                'video' => __('Видео: :count', ['count' => $count]),
+                default => __('Файлы: :count', ['count' => $count]),
             })
             ->implode(', ');
 
-        return $kind.' · '.$typeSummary.'. Удаление и замена применяются после сохранения.';
+        return __(':kind · :types. Удаление и замена применяются после сохранения.', [
+            'kind' => $kind,
+            'types' => $typeSummary,
+        ]);
     }
 
     private static function mediaSummary(BroadcastCampaign $campaign): string
     {
         $items = app(BroadcastCampaignMedia::class)->items($campaign->media);
         if ($items === []) {
-            return 'Не добавлено';
+            return __('Не добавлено');
         }
 
-        return 'Добавлено файлов: '.count($items);
+        return __('Добавлено файлов: ').count($items);
     }
 
     private static function previewMessage(Get $get, ?Model $record): NotificationMessage
@@ -865,14 +876,12 @@ final class BroadcastCampaignResource extends Resource
 
     private static function localeLabel(string $locale): string
     {
-        return $locale === 'ru' ? 'Русский' : 'Английский';
+        return $locale === 'ru' ? __('Русский') : __('Английский');
     }
 
     private static function stateLabel(BroadcastCampaignState $state): string
     {
-        return match ($state) {
-            BroadcastCampaignState::Draft => 'Черновик', BroadcastCampaignState::Scheduled => 'Запланирована', BroadcastCampaignState::Dispatching => 'Отправляется', BroadcastCampaignState::Completed => 'Завершена', BroadcastCampaignState::Cancelled => 'Отменена'
-        };
+        return CrmLabel::enum($state) ?? __('Неизвестно');
     }
 
     private static function failureLabel(string $code): string

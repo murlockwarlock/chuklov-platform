@@ -6,11 +6,11 @@ use App\Filament\Resources\SurveyDefinitions\Pages\CreateSurveyDefinition;
 use App\Filament\Resources\SurveyDefinitions\Pages\EditSurveyDefinition;
 use App\Filament\Resources\SurveyDefinitions\Pages\ListSurveyDefinitions;
 use App\Filament\Resources\SurveyDefinitions\Schemas\SurveyDefinitionForm;
+use App\Filament\Support\LocalizedResource;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use BackedEnum;
 use Filament\Actions\EditAction;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
@@ -18,7 +18,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-final class SurveyDefinitionResource extends Resource
+final class SurveyDefinitionResource extends LocalizedResource
 {
     protected static ?string $model = SurveyDefinition::class;
 
@@ -46,13 +46,13 @@ final class SurveyDefinitionResource extends Resource
     public static function table(Table $table): Table
     {
         return $table->columns([
-            TextColumn::make('title')->label('Название')->searchable()->sortable(),
-            TextColumn::make('activeVersion.version')->label('Опубликованная версия')->placeholder('Нет'),
-            TextColumn::make('versions_count')->label('Всего версий'),
-            IconColumn::make('is_available')->label('Доступен')->boolean(),
+            TextColumn::make('title')->label(__('Название'))->searchable()->sortable(),
+            TextColumn::make('activeVersion.version')->label(__('Опубликованная версия'))->placeholder(__('Нет')),
+            TextColumn::make('versions_count')->label(__('Всего версий')),
+            IconColumn::make('is_available')->label(__('Доступен'))->boolean(),
         ])
-            ->emptyStateHeading('Опросников пока нет')
-            ->emptyStateDescription('Создайте психологический опросник или тест для оценки динамики состояния клиентов.')
+            ->emptyStateHeading(__('Опросников пока нет'))
+            ->emptyStateDescription(__('Создайте психологический опросник или тест для оценки динамики состояния клиентов.'))
             ->recordActions([
                 EditAction::make(),
             ])->defaultSort('title');

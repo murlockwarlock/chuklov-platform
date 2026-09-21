@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\ScenarioRules\Pages;
 
 use App\Filament\Resources\ScenarioRules\ScenarioRuleResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Scenarios\Application\CreateScenarioRule as CreateScenarioRuleAction;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-final class CreateScenarioRule extends CreateRecord
+final class CreateScenarioRule extends LocalizedCreateRecord
 {
     protected static string $resource = ScenarioRuleResource::class;
 

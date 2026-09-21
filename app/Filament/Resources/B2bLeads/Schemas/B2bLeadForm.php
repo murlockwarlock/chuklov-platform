@@ -19,9 +19,9 @@ final class B2bLeadForm
     public static function configure(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('B2B-запрос')->schema([
+            Section::make(__('B2B-запрос'))->schema([
                 Select::make('client_id')
-                    ->label('Клиент')
+                    ->label(__('Клиент'))
                     ->options(fn (): array => Client::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->whereExists(fn ($query) => $query
@@ -37,9 +37,9 @@ final class B2bLeadForm
                     ->preload()
                     ->optionsLimit(50)
                     ->required()
-                    ->helperText('Клиент должен иметь сохранённый ответ «Да» на вопрос о специалисте.'),
+                    ->helperText(__('Клиент должен иметь сохранённый ответ «Да» на вопрос о специалисте.')),
                 Select::make('specialist_id')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->options(fn (): array => Specialist::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->where('is_active', true)
@@ -52,26 +52,26 @@ final class B2bLeadForm
                     ->optionsLimit(50)
                     ->required(),
                 DateTimePicker::make('starts_at')
-                    ->label('Дата и время разговора')
+                    ->label(__('Дата и время разговора'))
                     ->timezone(fn (): string => app(OrganizationContext::class)->organization()->defaultTimezone())
                     ->seconds(false)
                     ->required(),
                 Select::make('meeting_mode')
-                    ->label('Режим встречи')
+                    ->label(__('Режим встречи'))
                     ->options([
-                        VideoMeetingMode::Automatic->value => 'Zoom автоматически',
-                        VideoMeetingMode::Manual->value => 'Ручная ссылка',
+                        VideoMeetingMode::Automatic->value => __('Zoom автоматически'),
+                        VideoMeetingMode::Manual->value => __('Ручная ссылка'),
                     ])
                     ->default(VideoMeetingMode::Automatic->value)
                     ->live()
                     ->required(),
                 TextInput::make('manual_meeting_url')
-                    ->label('Ссылка на встречу')
+                    ->label(__('Ссылка на встречу'))
                     ->url()
                     ->maxLength(2000)
                     ->visible(fn (Get $get): bool => $get('meeting_mode') === VideoMeetingMode::Manual->value)
                     ->required(fn (Get $get): bool => $get('meeting_mode') === VideoMeetingMode::Manual->value)
-                    ->helperText('Вставьте ссылку, по которой клиент присоединится к разговору.'),
+                    ->helperText(__('Вставьте ссылку, по которой клиент присоединится к разговору.')),
                 Hidden::make('requested_timezone')
                     ->default(fn (): string => app(OrganizationContext::class)->organization()->defaultTimezone()),
             ])->columns(2)->columnSpanFull(),

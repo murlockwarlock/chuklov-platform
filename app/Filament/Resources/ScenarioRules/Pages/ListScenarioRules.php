@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\ScenarioRules\Pages;
 
 use App\Filament\Resources\ScenarioRules\ScenarioRuleResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-final class ListScenarioRules extends ListRecords
+final class ListScenarioRules extends LocalizedListRecords
 {
     protected static string $resource = ScenarioRuleResource::class;
 

@@ -6,6 +6,7 @@ use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\LocalizedPage;
 use App\Filament\Support\MessageComposer;
 use App\Models\User;
 use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
@@ -30,7 +31,6 @@ use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Utilities\Get;
@@ -45,7 +45,7 @@ use LogicException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /** @property-read Schema $form */
-final class Messages extends Page
+final class Messages extends LocalizedPage
 {
     protected static ?string $title = 'Сообщения';
 
@@ -170,13 +170,13 @@ final class Messages extends Page
             mediaHelperText: 'PDF, TXT, JPG, PNG или WebP; до 20 МБ.',
             additionalMediaComponents: [
                 Select::make('existing_attachment_id')
-                    ->label('Выбрать ранее загруженный файл')
+                    ->label(__('Выбрать ранее загруженный файл'))
                     ->options(fn (): array => $actor instanceof User
                         && $client instanceof Client
                         && $this->canManage($actor)
                         ? app(ListCompanionCommunicationAttachments::class)->options($actor, $client)
                         : [])
-                    ->placeholder('Без файла')
+                    ->placeholder(__('Без файла'))
                     ->native(false)
                     ->searchable(),
             ],
@@ -199,18 +199,18 @@ final class Messages extends Page
     {
         return [
             Action::make('export')
-                ->label('Скачать историю')
+                ->label(__('Скачать историю'))
                 ->color('gray')
                 ->visible(fn (): bool => $this->selectedClient() instanceof Client && $this->canExport())
                 ->schema([
                     Select::make('format')
-                        ->label('Формат')
+                        ->label(__('Формат'))
                         ->options(['txt' => 'TXT', 'json' => 'JSON'])
                         ->default('txt')
                         ->required(),
                     Select::make('identity')
-                        ->label('Данные клиента')
-                        ->options(['identified' => 'Идентифицированные', 'pseudonymized' => 'Без прямых идентификаторов'])
+                        ->label(__('Данные клиента'))
+                        ->options(['identified' => __('Идентифицированные'), 'pseudonymized' => __('Без прямых идентификаторов')])
                         ->default('identified')
                         ->required(),
                 ])
@@ -235,12 +235,12 @@ final class Messages extends Page
                     );
                 }),
             Action::make('technicalMetadata')
-                ->label('Дополнительные сведения')
+                ->label(__('Дополнительные сведения'))
                 ->color('gray')
                 ->visible(fn (): bool => $this->selectedClient() instanceof Client && $this->canExportMetadata())
-                ->modalHeading('Дополнительные сведения')
+                ->modalHeading(__('Дополнительные сведения'))
                 ->modalSubmitAction(false)
-                ->modalCancelActionLabel('Закрыть')
+                ->modalCancelActionLabel(__('Закрыть'))
                 ->slideOver()
                 ->modalContent(function (): View {
                     $actor = Auth::user();
@@ -343,8 +343,8 @@ final class Messages extends Page
         if ($channel === 'telegram') {
             Notification::make()
                 ->success()
-                ->title('Сообщение принято к отправке в Telegram')
-                ->body('Состояние доставки обновится в истории.')
+                ->title(__('Сообщение принято к отправке в Telegram'))
+                ->body(__('Состояние доставки обновится в истории.'))
                 ->send();
 
             return;
@@ -352,8 +352,8 @@ final class Messages extends Page
 
         Notification::make()
             ->info()
-            ->title('Сообщение сохранено в истории')
-            ->body('Telegram не подключён.')
+            ->title(__('Сообщение сохранено в истории'))
+            ->body(__('Telegram не подключён.'))
             ->send();
     }
 
@@ -608,7 +608,7 @@ final class Messages extends Page
     {
         return [
             'state' => $history['state'] ?? 'ai_active',
-            'stateLabel' => $history['stateLabel'] ?? 'AI отвечает',
+            'stateLabel' => $history['stateLabel'] ?? __('AI отвечает'),
             'mode' => $history['mode'] ?? 'ai_active',
             'pending' => (bool) ($history['pending'] ?? false),
             'hasOlder' => (bool) ($history['hasOlder'] ?? false),
@@ -642,25 +642,25 @@ final class Messages extends Page
     private function dateLabel(CarbonImmutable $date, CarbonImmutable $today, CarbonImmutable $yesterday): string
     {
         if ($date->isSameDay($today)) {
-            return 'Сегодня';
+            return __('Сегодня');
         }
         if ($date->isSameDay($yesterday)) {
-            return 'Вчера';
+            return __('Вчера');
         }
 
         $months = [
-            1 => 'января',
-            2 => 'февраля',
-            3 => 'марта',
-            4 => 'апреля',
-            5 => 'мая',
-            6 => 'июня',
-            7 => 'июля',
-            8 => 'августа',
-            9 => 'сентября',
-            10 => 'октября',
-            11 => 'ноября',
-            12 => 'декабря',
+            1 => __('января'),
+            2 => __('февраля'),
+            3 => __('марта'),
+            4 => __('апреля'),
+            5 => __('мая'),
+            6 => __('июня'),
+            7 => __('июля'),
+            8 => __('августа'),
+            9 => __('сентября'),
+            10 => __('октября'),
+            11 => __('ноября'),
+            12 => __('декабря'),
         ];
 
         return $date->format('j').' '.$months[(int) $date->format('n')];

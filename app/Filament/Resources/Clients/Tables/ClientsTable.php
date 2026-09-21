@@ -30,7 +30,7 @@ class ClientsTable
             ->defaultSort(fn (Builder $query): Builder => $query
                 ->orderByDesc('created_at')
                 ->orderByDesc('id'))
-            ->searchPlaceholder('Имя, email, телефон или ID клиента')
+            ->searchPlaceholder(__('Имя, email, телефон или ID клиента'))
             ->searchUsing(function (Builder $query, string $search): void {
                 app(ClientSearch::class)->apply($query, $search);
             })
@@ -42,70 +42,72 @@ class ClientsTable
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('full_name')
-                    ->label('Имя')
+                    ->label(__('Имя'))
                     ->sortable()
                     ->wrap()
                     ->url(fn (Client $record): ?string => CrmEntityLinks::clientUrl($record, $canViewClients))
                     ->color(fn (Client $record): ?string => CrmEntityLinks::clientUrl($record, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (Client $record): bool => CrmEntityLinks::clientUrl($record, $canViewClients) === null),
-                TextColumn::make('phone')->label('Телефон')->fontFamily('mono')->placeholder('—')->visibleFrom('sm'),
+                TextColumn::make('phone')->label(__('Телефон'))->fontFamily('mono')->placeholder('—')->visibleFrom('sm'),
                 TextColumn::make('email')
                     ->label('Email')
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('channel_identities_count')
-                    ->label('Способы связи')
+                    ->label(__('Способы связи'))
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('timezone')
-                    ->label('Часовой пояс')
+                    ->label(__('Часовой пояс'))
                     ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state))
                     ->sortable()
                     ->visibleFrom('lg'),
                 TextColumn::make('language')
-                    ->label('Язык')
-                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
+                    ->label(__('Язык'))
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? __('Русский') : __('Английский'))
                     ->sortable()
                     ->toggleable()
                     ->visibleFrom('sm'),
                 IconColumn::make('activeBookingRestriction')
-                    ->label('Запись')
+                    ->label(__('Запись'))
                     ->boolean()
                     ->state(fn (Client $record): bool => $record->activeBookingRestriction === null)
                     ->trueIcon('heroicon-o-check-circle')
                     ->falseIcon('heroicon-o-x-circle')
                     ->trueColor('success')
                     ->falseColor('danger')
-                    ->tooltip(fn (Client $record): string => $record->activeBookingRestriction === null ? 'Запись разрешена' : 'Запись ограничена: '.$record->activeBookingRestriction->reason),
+                    ->tooltip(fn (Client $record): string => $record->activeBookingRestriction === null
+                        ? __('Запись разрешена')
+                        : __('Запись ограничена: :reason', ['reason' => $record->activeBookingRestriction->reason])),
             ])
             ->filters([
                 SelectFilter::make('segment')
-                    ->label('Категория')
+                    ->label(__('Категория'))
                     ->options(ClientSegment::labels())
                     ->query(fn (Builder $query, array $data): Builder => app(ClientSegmentQuery::class)->apply($query, $data['value'] ?? null)),
                 TernaryFilter::make('activeBookingRestriction')
-                    ->label('Самостоятельная запись')
-                    ->placeholder('Все клиенты')
-                    ->trueLabel('Только разрешённые')
-                    ->falseLabel('Только с ограничениями')
+                    ->label(__('Самостоятельная запись'))
+                    ->placeholder(__('Все клиенты'))
+                    ->trueLabel(__('Только разрешённые'))
+                    ->falseLabel(__('Только с ограничениями'))
                     ->queries(
                         true: fn ($query) => $query->whereDoesntHave('activeBookingRestriction'),
                         false: fn ($query) => $query->whereHas('activeBookingRestriction'),
                     ),
             ])
-            ->emptyStateHeading('Клиентов пока нет')
-            ->emptyStateDescription('Добавьте клиента вручную или он появится автоматически после первой записи.')
+            ->emptyStateHeading(__('Клиентов пока нет'))
+            ->emptyStateDescription(__('Добавьте клиента вручную или он появится автоматически после первой записи.'))
             ->recordActions([
                 ViewAction::make()
-                    ->label('Открыть')
+                    ->label(__('Открыть'))
                     ->icon(Heroicon::OutlinedEye)
                     ->iconButton()
-                    ->tooltip('Открыть клиента'),
+                    ->tooltip(__('Открыть клиента')),
                 EditAction::make()
-                    ->label('Редактировать')
+                    ->label(__('Редактировать'))
                     ->icon(Heroicon::OutlinedPencil)
                     ->iconButton()
-                    ->tooltip('Редактировать клиента'),
+                    ->tooltip(__('Редактировать клиента')),
             ]);
     }
 }

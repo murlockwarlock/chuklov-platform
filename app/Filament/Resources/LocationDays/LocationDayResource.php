@@ -7,20 +7,20 @@ use App\Filament\Resources\LocationDays\Pages\EditLocationDay;
 use App\Filament\Resources\LocationDays\Pages\ListLocationDays;
 use App\Filament\Resources\LocationDays\Schemas\LocationDayForm;
 use App\Filament\Resources\LocationDays\Tables\LocationDaysTable;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-class LocationDayResource extends Resource
+class LocationDayResource extends LocalizedResource
 {
     protected static ?string $model = LocationDay::class;
 

@@ -26,11 +26,17 @@ final class AnalyticsKpiWidget extends StatsOverviewWidget
 {
     use InteractsWithPageFilters;
 
-    protected ?string $heading = 'Ключевые показатели';
-
-    protected ?string $description = 'Главные показатели бизнеса за выбранный период';
-
     protected static ?int $sort = 2;
+
+    protected function getHeading(): ?string
+    {
+        return __('Ключевые показатели');
+    }
+
+    protected function getDescription(): ?string
+    {
+        return __('Главные показатели бизнеса за выбранный период');
+    }
 
     public static function canView(): bool
     {
@@ -96,28 +102,28 @@ final class AnalyticsKpiWidget extends StatsOverviewWidget
         $finance = $data['finance'] ?? null;
 
         if ($acquisition instanceof AcquisitionAnalyticsData) {
-            $stats[] = Stat::make('Новые клиенты', (string) $acquisition->newClients)
-                ->description('Созданы за выбранный период');
+            $stats[] = Stat::make(__('Новые клиенты'), (string) $acquisition->newClients)
+                ->description(__('Созданы за выбранный период'));
         }
 
         if ($scheduling instanceof SchedulingAnalyticsData) {
-            $stats[] = Stat::make('Завершённые визиты', (string) $scheduling->visits)
-                ->description('По подтверждённой истории записей');
+            $stats[] = Stat::make(__('Завершённые визиты'), (string) $scheduling->visits)
+                ->description(__('По подтверждённой истории записей'));
         }
 
         if ($finance instanceof FinanceAnalyticsData) {
             $currency = $finance->baseCurrency;
             $unavailable = ! $finance->available;
 
-            $stats[] = Stat::make('Выручка', $this->financeValue($finance->revenueMinor, $currency, $unavailable))
-                ->description($unavailable ? 'Расчёт недоступен' : 'По подтверждённым платежам');
-            $stats[] = Stat::make('Средний чек', $this->financeValue($finance->averageReceiptMinor, $currency, $unavailable))
+            $stats[] = Stat::make(__('Выручка'), $this->financeValue($finance->revenueMinor, $currency, $unavailable))
+                ->description($unavailable ? __('Расчёт недоступен') : __('По подтверждённым платежам'));
+            $stats[] = Stat::make(__('Средний чек'), $this->financeValue($finance->averageReceiptMinor, $currency, $unavailable))
                 ->description($this->receiptDescription($finance, $unavailable));
-            $stats[] = Stat::make('LTV новых клиентов', $this->financeValue($finance->realizedLtvMinor, $currency, $unavailable))
+            $stats[] = Stat::make(__('LTV новых клиентов'), $this->financeValue($finance->realizedLtvMinor, $currency, $unavailable))
                 ->description($this->ltvDescription($finance, $unavailable));
 
-            $debt = Stat::make('Дебиторская задолженность', $this->financeValue($finance->debtMinor, $currency, $unavailable))
-                ->description($unavailable ? 'Расчёт недоступен' : 'Показать должников');
+            $debt = Stat::make(__('Дебиторская задолженность'), $this->financeValue($finance->debtMinor, $currency, $unavailable))
+                ->description($unavailable ? __('Расчёт недоступен') : __('Показать должников'));
 
             if (! $unavailable) {
                 $debt->url(FinancialObligationResource::getUrl('index', [
@@ -134,11 +140,11 @@ final class AnalyticsKpiWidget extends StatsOverviewWidget
     private function financeValue(?string $minor, string $currency, bool $unavailable): string
     {
         if ($unavailable) {
-            return 'Расчёт недоступен';
+            return __('Расчёт недоступен');
         }
 
         if ($minor === null || $currency === '') {
-            return 'Нет данных';
+            return __('Нет данных');
         }
 
         try {
@@ -148,29 +154,29 @@ final class AnalyticsKpiWidget extends StatsOverviewWidget
                 ->toScale($scale)
                 ->toString().' '.$currency;
         } catch (\Throwable) {
-            return 'Нет данных';
+            return __('Нет данных');
         }
     }
 
     private function receiptDescription(FinanceAnalyticsData $data, bool $unavailable): string
     {
         if ($unavailable) {
-            return 'Расчёт недоступен';
+            return __('Расчёт недоступен');
         }
 
         return $data->receiptCount === 0
-            ? 'Нет подтверждённых платежей за период'
-            : 'Подтверждённых платежей: '.$data->receiptCount;
+            ? __('Нет подтверждённых платежей за период')
+            : __('Подтверждённых платежей: :count', ['count' => $data->receiptCount]);
     }
 
     private function ltvDescription(FinanceAnalyticsData $data, bool $unavailable): string
     {
         if ($unavailable) {
-            return 'Расчёт недоступен';
+            return __('Расчёт недоступен');
         }
 
         return $data->cohortClientCount === 0
-            ? 'Нет новых клиентов за период'
-            : 'Фактически полученный доход · клиентов в когорте: '.$data->cohortClientCount;
+            ? __('Нет новых клиентов за период')
+            : __('Фактически полученный доход · клиентов в когорте: :count', ['count' => $data->cohortClientCount]);
     }
 }

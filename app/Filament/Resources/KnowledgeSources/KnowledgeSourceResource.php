@@ -8,6 +8,7 @@ use App\Filament\Resources\KnowledgeSources\Pages\ListKnowledgeSources;
 use App\Filament\Resources\KnowledgeSources\RelationManagers\RevisionsRelationManager;
 use App\Filament\Resources\KnowledgeSources\Schemas\KnowledgeSourceForm;
 use App\Filament\Support\KnowledgeSourcePresentation;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Knowledge\Application\DeleteKnowledgeSource;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
@@ -18,7 +19,6 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Notifications\Notification;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -26,7 +26,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 
-final class KnowledgeSourceResource extends Resource
+final class KnowledgeSourceResource extends LocalizedResource
 {
     protected static ?string $model = KnowledgeSource::class;
 
@@ -59,35 +59,35 @@ final class KnowledgeSourceResource extends Resource
             ->stackedOnMobile()
             ->description($presentation->semanticSearchSummary())
             ->columns([
-                TextColumn::make('title')->label('Название')->searchable()->sortable()->wrap(),
-                TextColumn::make('type')->label('Тип')->formatStateUsing(fn ($state): string => $presentation->sourceType($state)),
-                TextColumn::make('material_status')->label('Материал')->state(fn (KnowledgeSource $record): string => $presentation->materialStatus($record)),
-                TextColumn::make('search_availability')->label('Состояние поиска')->state(fn (KnowledgeSource $record): string => $presentation->searchAvailability($record))->wrap(),
-                TextColumn::make('latest_processing')->label('Обработка')->state(fn (KnowledgeSource $record): string => $presentation->latestProcessing($record))->wrap(),
-                TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('title')->label(__('Название'))->searchable()->sortable()->wrap(),
+                TextColumn::make('type')->label(__('Тип'))->formatStateUsing(fn ($state): string => $presentation->sourceType($state)),
+                TextColumn::make('material_status')->label(__('Материал'))->state(fn (KnowledgeSource $record): string => $presentation->materialStatus($record)),
+                TextColumn::make('search_availability')->label(__('Состояние поиска'))->state(fn (KnowledgeSource $record): string => $presentation->searchAvailability($record))->wrap(),
+                TextColumn::make('latest_processing')->label(__('Обработка'))->state(fn (KnowledgeSource $record): string => $presentation->latestProcessing($record))->wrap(),
+                TextColumn::make('updated_at')->label(__('Изменён'))->dateTime('d.m.Y H:i')->sortable(),
             ])
-            ->emptyStateHeading('В базе знаний пока нет материалов')
-            ->emptyStateDescription('Добавьте текст или загрузите TXT, Markdown, PDF или таблицу, чтобы использовать материал в ответах клиентам.')
+            ->emptyStateHeading(__('В базе знаний пока нет материалов'))
+            ->emptyStateDescription(__('Добавьте текст или загрузите TXT, Markdown, PDF или таблицу, чтобы использовать материал в ответах клиентам.'))
             ->recordActions([
                 EditAction::make()
-                    ->label('Открыть')
+                    ->label(__('Открыть'))
                     ->icon(Heroicon::OutlinedPencil)
                     ->iconButton()
-                    ->tooltip('Открыть материал'),
+                    ->tooltip(__('Открыть материал')),
                 Action::make('delete')
-                    ->label('Удалить')
+                    ->label(__('Удалить'))
                     ->icon(Heroicon::OutlinedTrash)
                     ->iconButton()
-                    ->tooltip('Удалить материал')
+                    ->tooltip(__('Удалить материал'))
                     ->color('danger')
                     ->requiresConfirmation()
-                    ->modalHeading('Удалить материал из базы знаний?')
-                    ->modalDescription('Материал, его поисковые фрагменты и загруженный файл будут удалены. Это действие нельзя отменить.')
+                    ->modalHeading(__('Удалить материал из базы знаний?'))
+                    ->modalDescription(__('Материал, его поисковые фрагменты и загруженный файл будут удалены. Это действие нельзя отменить.'))
                     ->action(function (KnowledgeSource $record): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
                         app(DeleteKnowledgeSource::class)->handle($actor, $record);
-                        Notification::make()->title('Материал удалён из базы знаний')->success()->send();
+                        Notification::make()->title(__('Материал удалён из базы знаний'))->success()->send();
                     }),
             ])->defaultSort('updated_at', 'desc');
     }

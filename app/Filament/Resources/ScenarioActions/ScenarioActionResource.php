@@ -6,6 +6,8 @@ use App\Filament\Resources\ScenarioActions\Pages\ListScenarioActions;
 use App\Filament\Resources\ScenarioActions\Pages\ViewScenarioAction;
 use App\Filament\Resources\ScenarioActions\Tables\ScenarioActionsTable;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -19,14 +21,13 @@ use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioDeliveryAttempt;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-final class ScenarioActionResource extends Resource
+final class ScenarioActionResource extends LocalizedResource
 {
     protected static ?string $model = ScenarioAction::class;
 
@@ -48,61 +49,68 @@ final class ScenarioActionResource extends Resource
     {
         return $schema
             ->components([
-                Section::make('Контекст события')
+                Section::make(__('Контекст события'))
                     ->schema([
                         TextEntry::make('business_client')
-                            ->label('Клиент')
+                            ->label(__('Клиент'))
                             ->state(fn (ScenarioAction $record): string => $record->client?->full_name ?: '—')
                             ->url(fn (ScenarioAction $record): ?string => CrmEntityLinks::clientUrl($record->client))
                             ->color(fn (ScenarioAction $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary')
                             ->visible(fn (ScenarioAction $record): bool => $record->client instanceof Client),
                         TextEntry::make('business_event')
-                            ->label('Событие')
+                            ->label(__('Событие'))
                             ->state(fn (ScenarioAction $record): string => self::eventLabel($record->event?->event_name)),
                         TextEntry::make('business_reason')
-                            ->label('Причина')
+                            ->label(__('Причина'))
                             ->state(fn (ScenarioAction $record): string => self::eventReason($record)),
                         TextEntry::make('business_channel')
-                            ->label('Канал')
+                            ->label(__('Канал'))
                             ->state(fn (ScenarioAction $record): string => self::channelSummary($record->channel_priority)),
                         TextEntry::make('business_recipient')
-                            ->label('Получатель')
+                            ->label(__('Получатель'))
                             ->state(fn (ScenarioAction $record): string => self::businessRecipient($record)),
                         TextEntry::make('business_delivery')
-                            ->label('Доставка')
+                            ->label(__('Доставка'))
                             ->state(fn (ScenarioAction $record): string => self::deliverySummary($record)),
                         TextEntry::make('business_occurred_at')
-                            ->label('Событие произошло')
+                            ->label(__('Событие произошло'))
                             ->state(fn (ScenarioAction $record): mixed => $record->event?->occurred_at)
                             ->dateTime('d.m.Y H:i'),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
-                TextEntry::make('rule.name')->label('Правило'),
+                TextEntry::make('rule.name')->label(__('Правило')),
                 TextEntry::make('sequence_summary')
-                    ->label('Сообщение в серии')
-                    ->state(fn (ScenarioAction $record): string => $record->sequence_number.' из '.$record->max_occurrences),
+                    ->label(__('Сообщение в серии'))
+                    ->state(fn (ScenarioAction $record): string => __(':current из :total', [
+                        'current' => $record->sequence_number,
+                        'total' => $record->max_occurrences,
+                    ])),
                 TextEntry::make('template_summary')
-                    ->label('Версия сообщения')
+                    ->label(__('Версия сообщения'))
                     ->state(function (ScenarioAction $record): string {
                         $template = $record->templateVersion?->template;
 
                         return $template === null
-                            ? 'Недоступно'
-                            : ($template->name ?: 'Сообщение').' — версия '.$record->templateVersion->version.' — '.self::localeLabel($template->locale);
+                            ? __('Недоступно')
+                            : __(':name — версия :version — :locale', [
+                                'name' => $template->name ?: __('Сообщение'),
+                                'version' => $record->templateVersion->version,
+                                'locale' => self::localeLabel($template->locale),
+                            ]);
                     }),
                 TextEntry::make('recipient_summary')
-                    ->label('Получатель')
+                    ->label(__('Получатель'))
                     ->state(function (ScenarioAction $record): string {
                         if ($record->recipient_type === 'client') {
                             $client = $record->client;
 
-                            return 'Клиент: '.($client instanceof Client ? $client->full_name : 'недоступен');
+                            return __('Клиент: :name', ['name' => $client instanceof Client ? $client->full_name : __('недоступен')]);
                         }
 
                         $user = $record->recipientUser;
 
-                        return 'Сотрудник: '.($user instanceof User ? $user->name : 'недоступен');
+                        return __('Сотрудник: :name', ['name' => $user instanceof User ? $user->name : __('недоступен')]);
                     })
                     ->url(fn (ScenarioAction $record): ?string => $record->recipient_type === 'client'
                         ? CrmEntityLinks::clientUrl($record->client)
@@ -111,58 +119,58 @@ final class ScenarioActionResource extends Resource
                         ? null
                         : (CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary')),
                 TextEntry::make('purpose')
-                    ->label('Тип сообщения')
+                    ->label(__('Тип сообщения'))
                     ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
-                TextEntry::make('scheduled_for')->label('Запланировано')->dateTime('d.m.Y H:i'),
+                TextEntry::make('scheduled_for')->label(__('Запланировано'))->dateTime('d.m.Y H:i'),
                 TextEntry::make('status')
-                    ->label('Статус')
+                    ->label(__('Статус'))
                     ->badge()
                     ->formatStateUsing(fn (ScenarioActionStatus|string $state): string => self::statusLabel($state)),
-                TextEntry::make('delivered_at')->label('Отправлено')->dateTime('d.m.Y H:i')->placeholder('—'),
+                TextEntry::make('delivered_at')->label(__('Отправлено'))->dateTime('d.m.Y H:i')->placeholder('—'),
                 TextEntry::make('terminal_reason')
-                    ->label('Результат')
+                    ->label(__('Результат'))
                     ->formatStateUsing(fn (?string $state): string => self::reasonLabel($state))
                     ->placeholder('—'),
                 TextEntry::make('channel_order')
-                    ->label('Способ связи')
+                    ->label(__('Способ связи'))
                     ->state(fn (ScenarioAction $record): string => self::channelSummary($record->channel_priority)),
                 TextEntry::make('conditions_summary')
-                    ->label('Условия на момент запуска')
+                    ->label(__('Условия на момент запуска'))
                     ->state(fn (ScenarioAction $record): string => self::conditionsSummary($record->condition_snapshot))
                     ->columnSpanFull(),
                 TextEntry::make('delivery_history')
-                    ->label('История отправки')
+                    ->label(__('История отправки'))
                     ->state(fn (ScenarioAction $record): string => $record->deliveries
                         ->sortBy('priority')
                         ->map(fn (ScenarioDelivery $delivery): string => self::formatDelivery($delivery))
                         ->implode("\n"))
                     ->columnSpanFull(),
-                Section::make('Технические детали')
+                Section::make(__('Технические детали'))
                     ->collapsed()
                     ->schema([
                         TextEntry::make('technical_action_id')
-                            ->label('ID сообщения')
+                            ->label(__('ID сообщения'))
                             ->state(fn (ScenarioAction $record): string => (string) $record->getKey()),
                         TextEntry::make('technical_event_id')
-                            ->label('ID события')
+                            ->label(__('ID события'))
                             ->state(fn (ScenarioAction $record): string => (string) $record->scenario_event_id),
                         TextEntry::make('technical_rule_id')
-                            ->label('ID авто-сообщения')
+                            ->label(__('ID авто-сообщения'))
                             ->state(fn (ScenarioAction $record): string => (string) $record->scenario_rule_id),
                         TextEntry::make('technical_booking_id')
-                            ->label('ID записи')
+                            ->label(__('ID записи'))
                             ->state(fn (ScenarioAction $record): string => $record->booking_id === null ? '—' : (string) $record->booking_id),
                         TextEntry::make('technical_rule_key')
-                            ->label('Ключ авто-сообщения')
+                            ->label(__('Ключ авто-сообщения'))
                             ->state(fn (ScenarioAction $record): string => $record->rule?->rule_key ?: '—'),
                         TextEntry::make('technical_event_key')
-                            ->label('Системное событие')
+                            ->label(__('Системное событие'))
                             ->state(fn (ScenarioAction $record): string => $record->event?->event_name?->value ?: '—'),
                         TextEntry::make('technical_delivery_attempts')
-                            ->label('Попыток отправки')
+                            ->label(__('Попыток отправки'))
                             ->state(fn (ScenarioAction $record): string => (string) $record->deliveries->sum('attempt_count')),
                         TextEntry::make('technical_error_codes')
-                            ->label('Коды ошибок')
+                            ->label(__('Коды ошибок'))
                             ->state(fn (ScenarioAction $record): string => self::errorCodes($record))
                             ->columnSpanFull(),
                     ])
@@ -224,10 +232,18 @@ final class ScenarioActionResource extends Resource
     {
         $attempts = $delivery->attempts
             ->sortBy('attempt_number')
-            ->map(fn (ScenarioDeliveryAttempt $attempt): string => 'Попытка '.$attempt->attempt_number.': '.self::attemptLabel($attempt->outcome->value))
+            ->map(fn (ScenarioDeliveryAttempt $attempt): string => __('Попытка :number: :outcome', [
+                'number' => $attempt->attempt_number,
+                'outcome' => self::attemptLabel($attempt->outcome->value),
+            ]))
             ->implode(', ');
 
-        return ($delivery->priority + 1).'. '.self::channelLabel($delivery->channel).' — '.self::deliveryLabel($delivery->status).' — '.($attempts === '' ? 'попыток ещё не было' : $attempts);
+        return __(':priority. :channel — :status — :attempts', [
+            'priority' => $delivery->priority + 1,
+            'channel' => self::channelLabel($delivery->channel),
+            'status' => self::deliveryLabel($delivery->status),
+            'attempts' => $attempts === '' ? __('попыток ещё не было') : $attempts,
+        ]);
     }
 
     private static function eventLabel(mixed $event): string
@@ -235,32 +251,32 @@ final class ScenarioActionResource extends Resource
         $value = $event instanceof BackedEnum ? $event->value : (string) $event;
 
         return match ($value) {
-            'booking.created' => 'После новой записи',
-            'booking.confirmed' => 'После подтверждения записи',
-            'booking.rescheduled' => 'После переноса записи',
-            'booking.cancelled' => 'После отмены записи',
-            'booking.rejected' => 'После отклонения записи',
-            'booking.completed' => 'После завершения визита',
-            'onboarding.started' => 'После начала оформления',
-            'finance.obligation.created' => 'После появления задолженности',
-            'companion.requested_specialist' => 'Клиент запросил специалиста',
-            'companion.fallback_failed' => 'Когда AI не смог ответить',
-            'broadcast.delivery_failed' => 'При сбое операционной рассылки',
-            'feedback.submitted' => 'После обратной связи клиента',
-            'referral.payout.requested' => 'При запросе выплаты партнёра',
-            'referral.payout.status_changed' => 'При изменении статуса выплаты',
-            'booking.home_visit.changed' => 'При изменении выездного визита',
-            'ai.evaluation.failed' => 'При сбое проверки AI',
-            'referral.link.visited' => 'При переходе по реферальной ссылке',
-            'payment.provider.event.prepared' => 'Устаревшее событие платёжного провайдера',
-            'finance.payment.succeeded' => 'После подтверждённой оплаты',
-            'finance.payment.failed' => 'При неуспешной оплате',
-            'finance.payment.initiation_unavailable' => 'Когда онлайн-оплата недоступна',
-            'finance.payment.reconciliation_required' => 'Когда платёж требует сверки',
-            'commerce.fulfillment.failed' => 'Если доступ не выдан',
-            'commerce.fulfillment.completed' => 'Когда доступ выдан',
-            'referral.reward.earned' => 'При начислении по партнёрской программе',
-            default => 'Событие',
+            'booking.created' => __('После новой записи'),
+            'booking.confirmed' => __('После подтверждения записи'),
+            'booking.rescheduled' => __('После переноса записи'),
+            'booking.cancelled' => __('После отмены записи'),
+            'booking.rejected' => __('После отклонения записи'),
+            'booking.completed' => __('После завершения визита'),
+            'onboarding.started' => __('После начала оформления'),
+            'finance.obligation.created' => __('После появления задолженности'),
+            'companion.requested_specialist' => __('Клиент запросил специалиста'),
+            'companion.fallback_failed' => __('Когда AI не смог ответить'),
+            'broadcast.delivery_failed' => __('При сбое операционной рассылки'),
+            'feedback.submitted' => __('После обратной связи клиента'),
+            'referral.payout.requested' => __('При запросе выплаты партнёра'),
+            'referral.payout.status_changed' => __('При изменении статуса выплаты'),
+            'booking.home_visit.changed' => __('При изменении выездного визита'),
+            'ai.evaluation.failed' => __('При сбое проверки AI'),
+            'referral.link.visited' => __('При переходе по реферальной ссылке'),
+            'payment.provider.event.prepared' => __('Устаревшее событие платёжного провайдера'),
+            'finance.payment.succeeded' => __('После подтверждённой оплаты'),
+            'finance.payment.failed' => __('При неуспешной оплате'),
+            'finance.payment.initiation_unavailable' => __('Когда онлайн-оплата недоступна'),
+            'finance.payment.reconciliation_required' => __('Когда платёж требует сверки'),
+            'commerce.fulfillment.failed' => __('Если доступ не выдан'),
+            'commerce.fulfillment.completed' => __('Когда доступ выдан'),
+            'referral.reward.earned' => __('При начислении по партнёрской программе'),
+            default => __('Событие'),
         };
     }
 
@@ -268,60 +284,39 @@ final class ScenarioActionResource extends Resource
     {
         $status = $status instanceof ScenarioActionStatus ? $status : ScenarioActionStatus::tryFrom($status);
 
-        return match ($status) {
-            ScenarioActionStatus::Scheduled => 'Запланировано',
-            ScenarioActionStatus::Processing => 'Отправляется',
-            ScenarioActionStatus::Delivered => 'Отправлено',
-            ScenarioActionStatus::Retryable => 'Повторим позже',
-            ScenarioActionStatus::Failed, ScenarioActionStatus::Suppressed => 'Не отправлено',
-            ScenarioActionStatus::Cancelled => 'Отменено',
-            default => 'Неизвестный статус',
-        };
+        return CrmLabel::enum($status) ?? __('Неизвестный статус');
     }
 
     private static function purposeLabel(ScenarioRulePurpose|string $purpose): string
     {
         $purpose = $purpose instanceof ScenarioRulePurpose ? $purpose : ScenarioRulePurpose::tryFrom($purpose);
 
-        return match ($purpose) {
-            ScenarioRulePurpose::Service => 'Сервисное сообщение',
-            ScenarioRulePurpose::Transactional => 'Системное сообщение',
-            default => 'Не указано',
-        };
+        return CrmLabel::enum($purpose) ?? __('Не указано');
     }
 
     private static function deliveryLabel(ScenarioDeliveryStatus|string $status): string
     {
         $status = $status instanceof ScenarioDeliveryStatus ? $status : ScenarioDeliveryStatus::tryFrom($status);
 
-        return match ($status) {
-            ScenarioDeliveryStatus::Pending => 'Ожидает отправки',
-            ScenarioDeliveryStatus::Processing => 'Отправляется',
-            ScenarioDeliveryStatus::Delivered => 'Отправлено',
-            ScenarioDeliveryStatus::Retryable => 'Повторим позже',
-            ScenarioDeliveryStatus::PermanentFailure => 'Не отправлено',
-            ScenarioDeliveryStatus::Unavailable => 'Канал недоступен',
-            ScenarioDeliveryStatus::Suppressed => 'Получатель отключил сообщения',
-            default => 'Неизвестный статус',
-        };
+        return CrmLabel::enum($status) ?? __('Неизвестный статус');
     }
 
     private static function attemptLabel(string $outcome): string
     {
         return match ($outcome) {
-            'delivered' => 'отправлено',
-            'retryable' => 'повторим позже',
-            'permanent_failure' => 'не отправлено',
-            'unavailable' => 'канал недоступен',
-            'suppressed' => 'получатель отключил сообщения',
-            'in_flight' => 'результат не определён',
-            default => 'результат не определён',
+            'delivered' => __('отправлено'),
+            'retryable' => __('повторим позже'),
+            'permanent_failure' => __('не отправлено'),
+            'unavailable' => __('канал недоступен'),
+            'suppressed' => __('получатель отключил сообщения'),
+            'in_flight' => __('результат не определён'),
+            default => __('результат не определён'),
         };
     }
 
     private static function channelLabel(string $channel): string
     {
-        return $channel === 'telegram' ? 'Telegram' : 'Другой способ связи';
+        return $channel === 'telegram' ? 'Telegram' : __('Другой способ связи');
     }
 
     /** @param list<string> $channels */
@@ -333,14 +328,14 @@ final class ScenarioActionResource extends Resource
     private static function reasonLabel(?string $reason): string
     {
         return match ($reason) {
-            'current_conditions_not_met' => 'Условие больше не выполнено',
-            'provider_suppressed' => 'Получатель отключил сообщения',
-            'recipient_unavailable', 'verified_identity_unavailable', 'no_available_channel', 'channel_unavailable' => 'Нет доступного Telegram',
-            'booking_changed' => 'Запись уже изменилась',
-            'booking_meeting_pending' => 'Ссылка на Zoom ещё готовится',
-            'template_unavailable' => 'Сообщение больше недоступно',
+            'current_conditions_not_met' => __('Условие больше не выполнено'),
+            'provider_suppressed' => __('Получатель отключил сообщения'),
+            'recipient_unavailable', 'verified_identity_unavailable', 'no_available_channel', 'channel_unavailable' => __('Нет доступного Telegram'),
+            'booking_changed' => __('Запись уже изменилась'),
+            'booking_meeting_pending' => __('Ссылка на Zoom ещё готовится'),
+            'template_unavailable' => __('Сообщение больше недоступно'),
             null => '—',
-            default => 'Не удалось отправить',
+            default => __('Не удалось отправить'),
         };
     }
 
@@ -351,11 +346,11 @@ final class ScenarioActionResource extends Resource
             ?? $record->terminal_reason;
 
         return match ((string) $reason) {
-            'human_requested' => 'Клиент явно попросил специалиста',
-            'urgent_safety_concern' => 'Обнаружена срочная ситуация, требующая специалиста',
-            'out_of_scope' => 'Вопрос не входит в безопасный сценарий AI',
-            'repeated_execution_failure' => 'AI не смог ответить после повторной ошибки',
-            'verified_identity_unavailable', 'no_available_channel', 'channel_unavailable' => 'Для получателя нет доступного канала',
+            'human_requested' => __('Клиент явно попросил специалиста'),
+            'urgent_safety_concern' => __('Обнаружена срочная ситуация, требующая специалиста'),
+            'out_of_scope' => __('Вопрос не входит в безопасный сценарий AI'),
+            'repeated_execution_failure' => __('AI не смог ответить после повторной ошибки'),
+            'verified_identity_unavailable', 'no_available_channel', 'channel_unavailable' => __('Для получателя нет доступного канала'),
             '' => '—',
             default => self::reasonLabel(is_string($reason) ? $reason : null),
         };
@@ -364,16 +359,16 @@ final class ScenarioActionResource extends Resource
     private static function businessRecipient(ScenarioAction $record): string
     {
         if ($record->recipient_type === 'client') {
-            return $record->client?->full_name ?: 'Клиент недоступен';
+            return $record->client?->full_name ?: __('Клиент недоступен');
         }
 
-        return $record->recipientUser?->name ?: 'Сотрудник недоступен';
+        return $record->recipientUser?->name ?: __('Сотрудник недоступен');
     }
 
     private static function deliverySummary(ScenarioAction $record): string
     {
         if ($record->deliveries->isEmpty()) {
-            return self::statusLabel($record->status).' — доставка ещё не создана';
+            return __(':status — доставка ещё не создана', ['status' => self::statusLabel($record->status)]);
         }
 
         return $record->deliveries
@@ -390,44 +385,44 @@ final class ScenarioActionResource extends Resource
             ->unique()
             ->values();
 
-        return $codes->isEmpty() ? 'Нет' : $codes->implode(', ');
+        return $codes->isEmpty() ? __('Нет') : $codes->implode(', ');
     }
 
     private static function localeLabel(?string $locale): string
     {
         return match ($locale) {
-            'ru' => 'русский',
-            'en' => 'английский',
-            default => 'другой язык',
+            'ru' => __('русский'),
+            'en' => __('английский'),
+            default => __('другой язык'),
         };
     }
 
     private static function conditionsSummary(mixed $conditions): string
     {
         if (! is_array($conditions) || $conditions === []) {
-            return 'Без дополнительного условия';
+            return __('Без дополнительного условия');
         }
 
         return collect($conditions)->map(function (mixed $condition): string {
             if (! is_array($condition)) {
-                return 'Условие';
+                return __('Условие');
             }
 
             $type = match ($condition['type'] ?? null) {
-                'booking.status' => 'статус записи',
-                'booking.has_qualifying_next_booking' => 'подходящая следующая запись',
-                'client.language' => 'язык клиента',
-                'client.marketing_consent' => 'согласие на маркетинговые сообщения',
-                'onboarding.completed' => 'завершение оформления',
-                'onboarding.stage' => 'этап оформления',
-                default => 'условие',
+                'booking.status' => __('статус записи'),
+                'booking.has_qualifying_next_booking' => __('подходящая следующая запись'),
+                'client.language' => __('язык клиента'),
+                'client.marketing_consent' => __('согласие на маркетинговые сообщения'),
+                'onboarding.completed' => __('завершение оформления'),
+                'onboarding.stage' => __('этап оформления'),
+                default => __('условие'),
             };
             $operator = match ($condition['operator'] ?? null) {
-                'equals' => 'равно',
-                'not_equals' => 'не равно',
-                'in' => 'одно из',
-                'exists' => 'заполнено',
-                default => 'проверяется',
+                'equals' => __('равно'),
+                'not_equals' => __('не равно'),
+                'in' => __('одно из'),
+                'exists' => __('заполнено'),
+                default => __('проверяется'),
             };
 
             return ucfirst($type).' '.$operator.(array_key_exists('value', $condition) ? ' '.self::conditionValue($condition['value']) : '');
@@ -439,12 +434,12 @@ final class ScenarioActionResource extends Resource
         $values = is_array($value) ? $value : [$value];
 
         return collect($values)->map(static fn (mixed $item): string => match ((string) $item) {
-            'true' => 'да',
-            'false' => 'нет',
-            'contacts' => 'контакты',
-            'profile' => 'профиль',
-            'service' => 'услуга',
-            'goals' => 'цели',
+            'true' => __('да'),
+            'false' => __('нет'),
+            'contacts' => __('контакты'),
+            'profile' => __('профиль'),
+            'service' => __('услуга'),
+            'goals' => __('цели'),
             default => (string) $item,
         })->implode(', ');
     }

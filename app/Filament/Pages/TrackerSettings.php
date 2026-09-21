@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Support\KnowledgeSourcePresentation;
+use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Models\AiPrompt;
@@ -16,7 +17,6 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
@@ -27,7 +27,7 @@ use Filament\Support\Icons\Heroicon;
 use UnitEnum;
 
 /** @property-read Schema $form */
-final class TrackerSettings extends Page
+final class TrackerSettings extends LocalizedPage
 {
     protected static ?string $title = 'Настройки трекера';
 
@@ -60,21 +60,21 @@ final class TrackerSettings extends Page
     public function form(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Трекер')
-                ->description('Бесплатный режим относится только к трекеру и не меняет цены, записи или финансовые операции.')
+            Section::make(__('Трекер'))
+                ->description(__('Бесплатный режим относится только к трекеру и не меняет цены, записи или финансовые операции.'))
                 ->schema([
-                    Toggle::make('enabled')->label('Трекер включён')->inline(),
-                    Toggle::make('free_mode')->label('Бесплатный режим трекера')->helperText('Все подходящие клиенты получают доступ без оплаты и без создания финансовых записей.')->inline(),
+                    Toggle::make('enabled')->label(__('Трекер включён'))->inline(),
+                    Toggle::make('free_mode')->label(__('Бесплатный режим трекера'))->helperText(__('Все подходящие клиенты получают доступ без оплаты и без создания финансовых записей.'))->inline(),
                 ])
                 ->columns(1)
                 ->columnSpanFull(),
-            Section::make('Готовность функций')
+            Section::make(__('Готовность функций'))
                 ->schema([
                     Placeholder::make('tracker_ai_status')
-                        ->label('AI-помощник трекера')
+                        ->label(__('AI-помощник трекера'))
                         ->content(fn (): string => $this->aiStatus()),
                     Placeholder::make('tracker_search_status')
-                        ->label('Семантический поиск')
+                        ->label(__('Семантический поиск'))
                         ->content(fn (): string => app(KnowledgeSourcePresentation::class)->semanticSearchStatus()),
                 ])
                 ->columns(2)
@@ -92,7 +92,7 @@ final class TrackerSettings extends Page
         return Form::make([EmbeddedSchema::make('form')])
             ->id('tracker-settings-form')
             ->livewireSubmitHandler('save')
-            ->footer([Actions::make([Action::make('save')->label('Сохранить настройки')->submit('save')])]);
+            ->footer([Actions::make([Action::make('save')->label(__('Сохранить настройки'))->submit('save')])]);
     }
 
     public function save(): void
@@ -103,7 +103,7 @@ final class TrackerSettings extends Page
         $setter = app(SetOrganizationSetting::class);
         $setter->handle($actor, OrganizationSettingKey::TrackerEnabled, (bool) ($data['enabled'] ?? false));
         $setter->handle($actor, OrganizationSettingKey::TrackerFreeMode, (bool) ($data['free_mode'] ?? false));
-        Notification::make()->success()->title('Настройки трекера сохранены')->send();
+        Notification::make()->success()->title(__('Настройки трекера сохранены'))->send();
     }
 
     private function aiStatus(): string
@@ -115,7 +115,7 @@ final class TrackerSettings extends Page
             ->exists();
 
         return $configured
-            ? 'Настроен через клиентский AI-компаньон.'
-            : 'Не настроен. Доступ к трекеру и отметкам не зависит от AI.';
+            ? __('Настроен через клиентский AI-компаньон.')
+            : __('Не настроен. Доступ к трекеру и отметкам не зависит от AI.');
     }
 }

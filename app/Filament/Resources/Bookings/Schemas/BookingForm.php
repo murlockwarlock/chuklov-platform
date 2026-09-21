@@ -36,7 +36,7 @@ class BookingForm
         return $schema
             ->components([
                 Select::make('specialist_id')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->options(fn (): array => Specialist::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->where('is_active', true)
@@ -64,7 +64,7 @@ class BookingForm
                         }
                     }),
                 Select::make('service_id')
-                    ->label('Услуга')
+                    ->label(__('Услуга'))
                     ->options(fn (Get $get): array => Service::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->where('is_active', true)
@@ -84,7 +84,7 @@ class BookingForm
                     ->required()
                     ->live(),
                 Select::make('client_id')
-                    ->label('Клиент')
+                    ->label(__('Клиент'))
                     ->options(fn (): array => Client::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->orderBy('full_name')
@@ -96,11 +96,11 @@ class BookingForm
                         ->all())
                     ->searchable()
                     ->required()
-                    ->helperText('Нажмите +, если клиента ещё нет в базе. Telegram подключается отдельной подтверждённой ссылкой после создания.')
-                    ->createOptionModalHeading('Добавить клиента')
+                    ->helperText(__('Нажмите +, если клиента ещё нет в базе. Telegram подключается отдельной подтверждённой ссылкой после создания.'))
+                    ->createOptionModalHeading(__('Добавить клиента'))
                     ->createOptionForm([
                         TextInput::make('full_name')
-                            ->label('Имя и фамилия')
+                            ->label(__('Имя и фамилия'))
                             ->required()
                             ->maxLength(160),
                         TextInput::make('email')
@@ -108,19 +108,19 @@ class BookingForm
                             ->email()
                             ->maxLength(320),
                         TextInput::make('phone')
-                            ->label('Телефон')
+                            ->label(__('Телефон'))
                             ->tel()
                             ->maxLength(32),
                         Select::make('language')
-                            ->label('Язык')
+                            ->label(__('Язык'))
                             ->options([
-                                'ru' => 'Русский',
-                                'en' => 'Английский',
+                                'ru' => __('Русский'),
+                                'en' => __('Английский'),
                             ])
                             ->default(fn (): string => (string) config('portal.default_locale', 'ru'))
                             ->required(),
                         Select::make('timezone')
-                            ->label('Часовой пояс')
+                            ->label(__('Часовой пояс'))
                             ->options(fn (Get $get): array => TimezoneOptions::options(
                                 current: $get('timezone'),
                                 organization: app(OrganizationContext::class)->defaultTimezone(),
@@ -129,8 +129,8 @@ class BookingForm
                             ->searchable()
                             ->required(),
                         TextInput::make('lead_source')
-                            ->label('Источник клиента')
-                            ->placeholder('Например: Telegram, Instagram, рекомендация')
+                            ->label(__('Источник клиента'))
+                            ->placeholder(__('Например: Telegram, Instagram, рекомендация'))
                             ->maxLength(120),
                     ])
                     ->createOptionUsing(function (array $data): int {
@@ -150,9 +150,9 @@ class BookingForm
                         return (int) $client->getKey();
                     }),
                 DateTimePicker::make('starts_at')
-                    ->label('Дата и время')
+                    ->label(__('Дата и время'))
                     ->timezone(fn (): string => self::viewerTimezone())
-                    ->helperText(fn (): string => 'Часовой пояс CRM: '.self::viewerTimezoneLabel().'.')
+                    ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
                     ->live(onBlur: true)
                     ->seconds(false)
                     ->afterStateUpdated(function (Set $set): void {
@@ -160,25 +160,25 @@ class BookingForm
                     })
                     ->required(),
                 TextEntry::make('backdated_warning')
-                    ->label('Внимание')
+                    ->label(__('Внимание'))
                     ->state(fn (Get $get): string => self::backdatedWarning($get))
                     ->visible(fn (Get $get): bool => self::isBackdated($get))
                     ->columnSpanFull(),
                 Checkbox::make('confirm_backdated')
-                    ->label('Подтверждаю создание записи задним числом')
+                    ->label(__('Подтверждаю создание записи задним числом'))
                     ->default(false)
                     ->accepted(fn (Get $get): bool => self::isBackdated($get))
                     ->validationMessages([
-                        'accepted' => 'Подтвердите создание записи задним числом.',
+                        'accepted' => __('Подтвердите создание записи задним числом.'),
                     ])
                     ->visible(fn (Get $get): bool => self::isBackdated($get))
                     ->columnSpanFull(),
                 Select::make('visit_format')
-                    ->label('Формат визита')
+                    ->label(__('Формат визита'))
                     ->options([
-                        VisitFormat::Office->value => 'В клинике',
-                        VisitFormat::HomeVisit->value => 'Выезд на дом',
-                        VisitFormat::Online->value => 'Онлайн',
+                        VisitFormat::Office->value => __('В клинике'),
+                        VisitFormat::HomeVisit->value => __('Выезд на дом'),
+                        VisitFormat::Online->value => __('Онлайн'),
                     ])
                     ->required()
                     ->live()
@@ -201,7 +201,7 @@ class BookingForm
                         }
                     }),
                 Select::make('working_location_id')
-                    ->label('Локация')
+                    ->label(__('Локация'))
                     ->options(fn (): array => WorkingLocation::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->where('is_active', true)
@@ -225,29 +225,29 @@ class BookingForm
                         $set('location', $location?->address);
                     })
                     ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::Office->value)
-                    ->helperText('Время доступности рассчитывается по часовому поясу выбранной локации.'),
+                    ->helperText(__('Время доступности рассчитывается по часовому поясу выбранной локации.')),
                 TextInput::make('location_area')
-                    ->label('Район выезда')
+                    ->label(__('Район выезда'))
                     ->maxLength(160)
                     ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
                 TextInput::make('party_size')
-                    ->label('Количество участников выезда')
+                    ->label(__('Количество участников выезда'))
                     ->integer()
                     ->minValue(1)
                     ->maxValue(20)
                     ->nullable()
                     ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
-                    ->helperText('Сколько человек будет на выезде. Для обычного приёма поле не нужно.')
+                    ->helperText(__('Сколько человек будет на выезде. Для обычного приёма поле не нужно.'))
                     ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
                 TextInput::make('location')
-                    ->label(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value ? 'Адрес приёма' : 'Адрес выезда')
+                    ->label(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value ? __('Адрес приёма') : __('Адрес выезда'))
                     ->default(fn (Get $get): ?string => $get('visit_format') === VisitFormat::Office->value
                         ? app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value')
                         : null)
                     ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
                     ->helperText(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value
-                        ? 'Можно изменить адрес только для этой записи.'
-                        : 'Укажите место выезда для этой записи.')
+                        ? __('Можно изменить адрес только для этой записи.')
+                        : __('Укажите место выезда для этой записи.'))
                     ->maxLength(500)
                     ->visible(fn (Get $get): bool => in_array($get('visit_format'), [VisitFormat::Office->value, VisitFormat::HomeVisit->value], true)),
             ]);
@@ -285,7 +285,7 @@ class BookingForm
 
         $timezone = self::scheduleTimezone($get, $startsAt);
 
-        return 'Вы создаёте запись задним числом: '.$startsAt->setTimezone($timezone)->format('d.m.Y H:i').'.';
+        return __('Вы создаёте запись задним числом: ').$startsAt->setTimezone($timezone)->format('d.m.Y H:i').'.';
     }
 
     private static function startsAt(mixed $state): ?CarbonImmutable

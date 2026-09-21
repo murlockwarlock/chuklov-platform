@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\PaymentGatewayReconciliation\Pages;
 
 use App\Filament\Resources\PaymentGatewayReconciliation\PaymentGatewayReconciliationResource;
-use Filament\Resources\Pages\ListRecords;
+use App\Filament\Support\LocalizedListRecords;
 
-final class ListPaymentGatewayReconciliation extends ListRecords
+final class ListPaymentGatewayReconciliation extends LocalizedListRecords
 {
     protected static string $resource = PaymentGatewayReconciliationResource::class;
 

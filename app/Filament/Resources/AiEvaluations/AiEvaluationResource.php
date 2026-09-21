@@ -9,6 +9,8 @@ use App\Filament\Resources\AiEvaluations\Pages\ListAiEvaluations;
 use App\Filament\Resources\AiEvaluations\RelationManagers\CasesRelationManager;
 use App\Filament\Resources\AiEvaluations\RelationManagers\RunsRelationManager;
 use App\Filament\Resources\AiEvaluations\Schemas\AiEvaluationForm;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\PromptVersionStatus;
@@ -24,7 +26,6 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -37,7 +38,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 use Livewire\Component;
 
-final class AiEvaluationResource extends Resource
+final class AiEvaluationResource extends LocalizedResource
 {
     protected static ?string $model = AiEvalSuite::class;
 
@@ -92,44 +93,44 @@ final class AiEvaluationResource extends Resource
         return $table
             ->stackedOnMobile()
             ->columns([
-                TextColumn::make('name')->label('Название')->searchable()->sortable(),
+                TextColumn::make('name')->label(__('Название'))->searchable()->sortable(),
                 TextColumn::make('capability')
-                    ->label('Что проверяем')
-                    ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? $state->label() : (string) $state),
+                    ->label(__('Что проверяем'))
+                    ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? CrmLabel::enum($state) : (string) $state),
                 TextColumn::make('demo_status')
-                    ->label('Тип данных')
+                    ->label(__('Тип данных'))
                     ->state(fn (AiEvalSuite $record): string => str_starts_with($record->key, 'source_agent_')
-                        ? 'Демонстрационный тест · Синтетические данные'
-                        : 'Рабочая проверка')
+                        ? __('Демонстрационный тест · Синтетические данные')
+                        : __('Рабочая проверка'))
                     ->badge()
-                    ->color(fn (string $state): string => $state === 'Рабочая проверка' ? 'gray' : 'info'),
+                    ->color(fn (string $state): string => $state === __('Рабочая проверка') ? 'gray' : 'info'),
                 TextColumn::make('description')
-                    ->label('Описание')
+                    ->label(__('Описание'))
                     ->limit(80)
                     ->placeholder('—')
                     ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('cases_count')->counts('cases')->label('Примеров')->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('runs_count')->counts('runs')->label('Запусков')->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('cases_count')->counts('cases')->label(__('Примеров'))->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('runs_count')->counts('runs')->label(__('Запусков'))->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('updated_at')->label(__('Изменён'))->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
             ->recordActions([
                 EditAction::make()
-                    ->label('Редактировать')
+                    ->label(__('Редактировать'))
                     ->icon(Heroicon::OutlinedPencil)
                     ->iconButton()
-                    ->tooltip('Редактировать проверку'),
+                    ->tooltip(__('Редактировать проверку')),
                 Action::make('run_evals')
-                    ->label('Запустить тесты')
+                    ->label(__('Запустить тесты'))
                     ->color('success')
                     ->icon(Heroicon::OutlinedPlay)
                     ->iconButton()
-                    ->tooltip('Запустить проверку')
+                    ->tooltip(__('Запустить проверку'))
                     ->requiresConfirmation()
-                    ->modalHeading('Проверить качество AI')
-                    ->modalDescription('Будут последовательно выполнены все активные примеры проверки. Данные должны оставаться искусственными или обезличенными.')
+                    ->modalHeading(__('Проверить качество AI'))
+                    ->modalDescription(__('Будут последовательно выполнены все активные примеры проверки. Данные должны оставаться искусственными или обезличенными.'))
                     ->form([
                         Select::make('prompt_version_id')
-                            ->label('Версия промпта')
+                            ->label(__('Версия промпта'))
                             ->options(fn (AiEvalSuite $record): array => self::promptVersionOptions($record))
                             ->getSearchResultsUsing(fn (string $search, AiEvalSuite $record): array => self::promptVersionOptions($record, $search))
                             ->getOptionLabelUsing(fn (mixed $value, AiEvalSuite $record): ?string => self::promptVersionLabel($record, $value))
@@ -138,7 +139,7 @@ final class AiEvaluationResource extends Resource
                             ->native(false)
                             ->required(),
                         Select::make('model_release_id')
-                            ->label('Модель для проверки')
+                            ->label(__('Модель для проверки'))
                             ->options(fn (AiEvalSuite $record): array => self::modelReleaseOptions($record))
                             ->getSearchResultsUsing(fn (string $search, AiEvalSuite $record): array => self::modelReleaseOptions($record, $search))
                             ->getOptionLabelUsing(fn (mixed $value, AiEvalSuite $record): ?string => self::modelReleaseLabel($record, $value))
@@ -177,13 +178,13 @@ final class AiEvaluationResource extends Resource
             ])
             ->filters([
                 SelectFilter::make('capability')
-                    ->label('Что проверяем')
+                    ->label(__('Что проверяем'))
                     ->options(collect(AiCapability::cases())->mapWithKeys(
-                        fn (AiCapability $capability): array => [$capability->value => $capability->label()],
+                        fn (AiCapability $capability): array => [$capability->value => CrmLabel::enum($capability)],
                     )),
             ])
-            ->emptyStateHeading('Проверок AI пока нет')
-            ->emptyStateDescription('Создайте набор примеров, чтобы проверить качество ответов AI перед использованием нового промпта или модели.')
+            ->emptyStateHeading(__('Проверок AI пока нет'))
+            ->emptyStateDescription(__('Создайте набор примеров, чтобы проверить качество ответов AI перед использованием нового промпта или модели.'))
             ->defaultSort('updated_at', 'desc');
     }
 
@@ -249,7 +250,7 @@ final class AiEvaluationResource extends Resource
 
         return $version instanceof AiPromptVersion
             ? self::promptVersionDisplayLabel($version)
-            : 'Сохранённая версия промпта недоступна';
+            : __('Сохранённая версия промпта недоступна');
     }
 
     /** @return array<int|string, string> */
@@ -295,12 +296,12 @@ final class AiEvaluationResource extends Resource
 
         return $release instanceof AiModelRelease
             ? self::modelReleaseDisplayLabel($release)
-            : 'Сохранённая модель недоступна';
+            : __('Сохранённая модель недоступна');
     }
 
     private static function promptVersionDisplayLabel(AiPromptVersion $version): string
     {
-        return "v{$version->version} · ".$version->status->label();
+        return "v{$version->version} · ".CrmLabel::enum($version->status);
     }
 
     private static function modelReleaseDisplayLabel(AiModelRelease $release): string
@@ -308,9 +309,9 @@ final class AiEvaluationResource extends Resource
         try {
             $provider = AiProviderCatalog::label($release->provider_name);
         } catch (\InvalidArgumentException) {
-            $provider = 'Провайдер требует проверки';
+            $provider = __('Провайдер требует проверки');
         }
 
-        return $provider.' · '.$release->modelConfiguration->display_name.' · версия '.$release->release_number;
+        return $provider.' · '.$release->modelConfiguration->display_name.' · '.__('Версия: :version', ['version' => $release->release_number]);
     }
 }

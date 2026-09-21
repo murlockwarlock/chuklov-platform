@@ -16,12 +16,12 @@
             <div class="mt-1 flex flex-wrap items-center gap-2">
                 <h2 class="min-w-0 text-xl font-semibold text-gray-950 dark:text-white">{{ $prompt->name }}</h2>
                 @if ($activeVersion)
-                    <x-filament::badge color="success">Активная версия: v{{ $activeVersion->version }}</x-filament::badge>
+                    <x-filament::badge color="success">{{ __('Активная версия: v:version', ['version' => $activeVersion->version]) }}</x-filament::badge>
                 @else
-                    <x-filament::badge color="warning">Нет активной версии</x-filament::badge>
+                    <x-filament::badge color="warning">{{ __('Нет активной версии') }}</x-filament::badge>
                 @endif
             </div>
-            <p class="mt-1 text-sm font-medium text-success-700 dark:text-success-400">Этот промпт сейчас используется AI</p>
+            <p class="mt-1 text-sm font-medium text-success-700 dark:text-success-400">{{ __('Этот промпт сейчас используется AI') }}</p>
         </div>
 
         <div class="flex max-w-full flex-wrap gap-2" data-testid="prompt-primary-actions">
@@ -34,11 +34,11 @@
 
     @if ($activeVersion)
         <div class="min-w-0 border-b border-gray-200 dark:border-white/10">
-            <div class="flex max-w-full gap-1 overflow-x-auto" role="tablist" aria-label="Разделы активного промпта">
+            <div class="flex max-w-full gap-1 overflow-x-auto" role="tablist" aria-label="{{ __('Разделы активного промпта') }}">
                 @foreach ([
-                    'full' => 'Полный промпт',
+                    'full' => __('Полный промпт'),
                     'safety' => 'Safety guardrails',
-                    'runtime' => 'Runtime-контракт',
+                    'runtime' => __('Runtime-контракт'),
                 ] as $key => $label)
                     <button
                         type="button"
@@ -69,13 +69,13 @@
                     type="button"
                     class="mt-2 text-sm font-medium text-primary-600 hover:text-primary-500 dark:text-primary-400"
                     x-on:click="expanded = ! expanded"
-                    x-text="expanded ? 'Свернуть' : 'Показать полностью'"
+                    x-text="expanded ? @js(__('Свернуть')) : @js(__('Показать полностью'))"
                 ></button>
             </div>
         @endforeach
     @else
         <div class="rounded-lg border border-warning-200 bg-warning-50 p-4 text-sm text-warning-800 dark:border-warning-500/20 dark:bg-warning-500/10 dark:text-warning-300">
-            Создайте и активируйте версию, чтобы AI получил рабочую инструкцию.
+            {{ __('Создайте и активируйте версию, чтобы AI получил рабочую инструкцию.') }}
         </div>
     @endif
 

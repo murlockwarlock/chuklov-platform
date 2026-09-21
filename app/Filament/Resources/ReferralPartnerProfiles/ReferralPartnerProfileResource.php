@@ -6,6 +6,7 @@ use App\Filament\Resources\ReferralPartnerProfiles\Pages\ListReferralPartnerProf
 use App\Filament\Resources\ReferralPartnerProfiles\Pages\ViewReferralPartnerProfile;
 use App\Filament\Resources\ReferralPartnerProfiles\Schemas\ReferralPartnerProfileInfolist;
 use App\Filament\Resources\ReferralPartnerProfiles\Tables\ReferralPartnerProfilesTable;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -13,7 +14,6 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Referrals\Application\ListReferralPartnersForCrm;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
@@ -21,7 +21,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 /** @extends resource<ReferralPartnerProfile> */
-final class ReferralPartnerProfileResource extends Resource
+final class ReferralPartnerProfileResource extends LocalizedResource
 {
     protected static ?string $model = ReferralPartnerProfile::class;
 
@@ -89,10 +89,10 @@ final class ReferralPartnerProfileResource extends Resource
     public static function getRecordTitle(?Model $record): string
     {
         if (! $record instanceof ReferralPartnerProfile) {
-            return 'Партнёр';
+            return __('Партнёр');
         }
 
-        return trim((string) $record->client?->full_name) ?: 'Партнёр';
+        return trim((string) $record->client?->full_name) ?: __('Партнёр');
     }
 
     public static function getPages(): array

@@ -4,11 +4,11 @@ namespace App\Filament\Resources\B2bLeads\Pages;
 
 use App\Filament\Resources\B2bLeads\Actions\B2bLeadActions;
 use App\Filament\Resources\B2bLeads\B2bLeadResource;
+use App\Filament\Support\LocalizedViewRecord;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\Organizations\Application\OrganizationContext;
-use Filament\Resources\Pages\ViewRecord;
 
-final class ViewB2bLead extends ViewRecord
+final class ViewB2bLead extends LocalizedViewRecord
 {
     protected static string $resource = B2bLeadResource::class;
 

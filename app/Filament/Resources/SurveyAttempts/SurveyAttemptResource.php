@@ -6,6 +6,8 @@ use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\SurveyAttempts\Pages\ListSurveyAttempts;
 use App\Filament\Resources\SurveyAttempts\Pages\ViewSurveyAttempt;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedResource;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
@@ -13,7 +15,6 @@ use BackedEnum;
 use Filament\Actions\ViewAction;
 use Filament\Infolists\Components\KeyValueEntry;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -21,7 +22,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-final class SurveyAttemptResource extends Resource
+final class SurveyAttemptResource extends LocalizedResource
 {
     protected static ?string $model = SurveyAttempt::class;
 
@@ -52,52 +53,52 @@ final class SurveyAttemptResource extends Resource
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('client.full_name')
-                    ->label('Клиент')
+                    ->label(__('Клиент'))
                     ->searchable()
                     ->sortable()
                     ->wrap()
                     ->url(fn (SurveyAttempt $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
                     ->color(fn (SurveyAttempt $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (SurveyAttempt $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
-                TextColumn::make('surveyDefinition.title')->label('Тест')->sortable()->wrap(),
-                TextColumn::make('surveyVersion.version')->label('Версия')->visibleFrom('sm'),
+                TextColumn::make('surveyDefinition.title')->label(__('Тест'))->sortable()->wrap(),
+                TextColumn::make('surveyVersion.version')->label(__('Версия'))->visibleFrom('sm'),
                 TextColumn::make('status')
-                    ->label('Статус')
+                    ->label(__('Статус'))
                     ->badge()
-                    ->formatStateUsing(fn (SurveyAttemptStatus $state): string => $state === SurveyAttemptStatus::Completed ? 'Завершён' : 'Не завершён'),
-                TextColumn::make('completed_at')->label('Завершён')->dateTime('d.m.Y H:i')->placeholder('—')->sortable(),
+                    ->formatStateUsing(fn (SurveyAttemptStatus $state): string => CrmLabel::enum($state) ?? __('Неизвестный статус')),
+                TextColumn::make('completed_at')->label(__('Завершён'))->dateTime('d.m.Y H:i')->placeholder('—')->sortable(),
             ])
-            ->recordActions([ViewAction::make()->label('Открыть')])
+            ->recordActions([ViewAction::make()->label(__('Открыть'))])
             ->defaultSort('started_at', 'desc');
     }
 
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Параметры теста')
+            Section::make(__('Параметры теста'))
                 ->schema([
                     TextEntry::make('client.full_name')
-                        ->label('Клиент')
+                        ->label(__('Клиент'))
                         ->wrap()
                         ->url(fn (SurveyAttempt $record): ?string => CrmEntityLinks::clientUrl($record->client))
                         ->color(fn (SurveyAttempt $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary'),
-                    TextEntry::make('surveyDefinition.title')->label('Тест')->wrap(),
-                    TextEntry::make('surveyVersion.version')->label('Версия'),
-                    TextEntry::make('started_at')->label('Начат')->dateTime('d.m.Y H:i'),
-                    TextEntry::make('completed_at')->label('Завершён')->dateTime('d.m.Y H:i')->placeholder('—'),
+                    TextEntry::make('surveyDefinition.title')->label(__('Тест'))->wrap(),
+                    TextEntry::make('surveyVersion.version')->label(__('Версия')),
+                    TextEntry::make('started_at')->label(__('Начат'))->dateTime('d.m.Y H:i'),
+                    TextEntry::make('completed_at')->label(__('Завершён'))->dateTime('d.m.Y H:i')->placeholder('—'),
                 ])
                 ->columns(2),
 
-            Section::make('Результаты и метрики')
+            Section::make(__('Результаты и метрики'))
                 ->schema([
                     KeyValueEntry::make('result_metrics')
-                        ->label('Показатели')
+                        ->label(__('Показатели'))
                         ->state(fn (SurveyAttempt $record): array => self::metricDisplay($record))
                         ->columnSpanFull(),
                     TextEntry::make('result_thresholds')
-                        ->label('Пороговые результаты')
+                        ->label(__('Пороговые результаты'))
                         ->state(fn (SurveyAttempt $record): string => self::thresholdDisplay($record))
-                        ->placeholder('Нет')
+                        ->placeholder(__('Нет'))
                         ->columnSpanFull(),
                 ]),
         ]);
@@ -130,7 +131,7 @@ final class SurveyAttemptResource extends Resource
         foreach ($metrics as $metric) {
             if (is_array($metric)) {
                 $metricNumber++;
-                $label = self::humanLabel($metric['label'] ?? null, 'Показатель '.$metricNumber);
+                $label = self::humanLabel($metric['label'] ?? null, __('Показатель :number', ['number' => $metricNumber]));
                 $display[$label] = (string) ($metric['value'] ?? '');
             }
         }

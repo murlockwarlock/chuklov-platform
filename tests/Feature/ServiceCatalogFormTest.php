@@ -23,6 +23,20 @@ final class ServiceCatalogFormTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        app()->setLocale('ru');
+    }
+
+    protected function tearDown(): void
+    {
+        app()->setLocale('ru');
+
+        parent::tearDown();
+    }
+
     public function test_service_form_exposes_booking_fields_and_hides_legacy_payment_policy(): void
     {
         [, $admin] = $this->fixture();
@@ -50,6 +64,19 @@ final class ServiceCatalogFormTest extends TestCase
         self::assertInstanceOf(Select::class, $paymentRequirementField);
         self::assertSame('Доступна для записи', $activeField->getLabel());
         self::assertSame('Когда клиент оплачивает', $paymentRequirementField->getLabel());
+    }
+
+    public function test_service_form_labels_follow_the_english_crm_locale(): void
+    {
+        [, $admin] = $this->fixture();
+        app()->setLocale('en');
+
+        Testable::actingAs($admin);
+        $page = Testable::create(CreateService::class)->instance();
+
+        self::assertSame('Offer type', $page->getSchemaComponent('form.catalog_type')->getLabel());
+        self::assertSame('Available for booking', $page->getSchemaComponent('form.is_active')->getLabel());
+        self::assertSame('When the customer pays', $page->getSchemaComponent('form.payment_requirement')->getLabel());
     }
 
     public function test_online_product_form_hides_booking_configuration_and_uses_product_copy(): void

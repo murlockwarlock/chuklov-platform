@@ -1,6 +1,6 @@
 <x-filament-panels::page>
     @php
-        $clientName = $client->full_name ?: 'Клиент';
+        $clientName = $client->full_name ?: __('Клиент');
         $clientUrl = \App\Filament\Support\CrmEntityLinks::clientUrl($client);
         $clientHeading = $clientUrl === null
             ? $clientName
@@ -10,7 +10,7 @@
     <div class="space-y-6">
         @if (session('companion_status'))
             <div class="rounded-xl border border-success-200 bg-success-50 px-4 py-3 text-sm text-success-800 dark:border-success-800 dark:bg-success-950/30 dark:text-success-200">
-                {{ session('companion_status') }}
+                {{ __(session('companion_status')) }}
             </div>
         @endif
 
@@ -20,10 +20,10 @@
         >
             <div class="flex flex-wrap items-center gap-2">
                 <span class="rounded-full bg-primary-50 px-3 py-1 text-sm font-semibold text-primary-700 dark:bg-primary-950/40 dark:text-primary-200">
-                    {{ $companion['stateLabel'] }}
+                    {{ __($companion['stateLabel']) }}
                 </span>
                 @if ($companion['pending'])
-                    <span class="text-sm text-gray-500 dark:text-gray-400">AI обрабатывает сообщение</span>
+                    <span class="text-sm text-gray-500 dark:text-gray-400">{{ __('AI обрабатывает сообщение') }}</span>
                 @endif
             </div>
 
@@ -32,35 +32,35 @@
                     @if ($companion['state'] === 'human_handoff' && $companion['openEscalation'])
                         <form method="post" action="{{ $urls['resolveAndResume'] }}">
                             @csrf
-                            <x-filament::button type="submit" color="primary" size="sm">Закрыть обращение и вернуть AI</x-filament::button>
+                            <x-filament::button type="submit" color="primary" size="sm">{{ __('Закрыть обращение и вернуть AI') }}</x-filament::button>
                         </form>
                         <form method="post" action="{{ $urls['resolve'] }}">
                             @csrf
-                            <x-filament::button type="submit" color="gray" outlined size="sm">Закрыть, но оставить AI выключенным</x-filament::button>
+                            <x-filament::button type="submit" color="gray" outlined size="sm">{{ __('Закрыть, но оставить AI выключенным') }}</x-filament::button>
                         </form>
                     @elseif ($companion['state'] === 'human_handoff')
                         <form method="post" action="{{ $urls['resume'] }}">
                             @csrf
-                            <x-filament::button type="submit" color="success" size="sm">Возобновить AI-помощника</x-filament::button>
+                            <x-filament::button type="submit" color="success" size="sm">{{ __('Возобновить AI-помощника') }}</x-filament::button>
                         </form>
                     @endif
-                    <form method="post" action="{{ $urls['reset'] }}" onsubmit="return confirm('История останется сохранённой, но AI не будет использовать предыдущие сообщения как память нового контекста. Продолжить?')">
+                    <form method="post" action="{{ $urls['reset'] }}" onsubmit="return confirm(@js(__('История останется сохранённой, но AI не будет использовать предыдущие сообщения как память нового контекста. Продолжить?'))) ">
                         @csrf
-                        <x-filament::button type="submit" color="warning" outlined size="sm">Очистить контекст AI</x-filament::button>
+                        <x-filament::button type="submit" color="warning" outlined size="sm">{{ __('Очистить контекст AI') }}</x-filament::button>
                     </form>
                 </div>
-                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">История не удаляется. AI начнёт следующий контекст без прежних сообщений.</p>
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ __('История не удаляется. AI начнёт следующий контекст без прежних сообщений.') }}</p>
             @endif
 
         </x-filament::section>
 
         @if ($canManage)
-            <x-filament::section heading="Написать сообщение" description="Сообщение уйдёт в тот же канал, что и последнее сообщение клиента. Специалист может написать вручную, даже когда AI отвечает.">
+            <x-filament::section :heading="__('Написать сообщение')" :description="__('Сообщение уйдёт в тот же канал, что и последнее сообщение клиента. Специалист может написать вручную, даже когда AI отвечает.')">
                 {{ $this->composer }}
             </x-filament::section>
         @endif
 
-        <x-filament::section heading="Диалог" description="Сначала показаны последние сообщения. Более ранняя история загружается отдельно.">
+        <x-filament::section :heading="__('Диалог')" :description="__('Сначала показаны последние сообщения. Более ранняя история загружается отдельно.')">
             <div class="space-y-3">
                 @forelse ($companion['messages'] as $message)
                     @php
@@ -75,36 +75,36 @@
                     <div class="flex {{ $isSystem ? 'justify-center' : ($isClient ? 'justify-start' : 'justify-end') }}">
                         <article class="min-w-0 max-w-3xl rounded-2xl px-4 py-3 {{ $isSystem ? 'border border-gray-200 bg-gray-50 text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300' : $bubbleClass }}">
                             <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold">
-                                <span>{{ $message['roleLabel'] }}</span>
+                                <span>{{ __($message['roleLabel']) }}</span>
                                 @if ($message['transportLabel'])
-                                    <span class="font-normal opacity-70">{{ $message['transportLabel'] }}</span>
+                                    <span class="font-normal opacity-70">{{ __($message['transportLabel']) }}</span>
                                 @endif
                                 <time class="font-normal opacity-60">{{ $message['occurredAt'] }}</time>
                                 @if ($message['feedback'])
-                                    <span class="font-normal opacity-70">Оценка: {{ $message['feedback'] === 'helpful' ? 'полезно' : 'не помогло' }}</span>
+                                    <span class="font-normal opacity-70">{{ __('Оценка: :feedback', ['feedback' => __($message['feedback'] === 'helpful' ? 'полезно' : 'не помогло')]) }}</span>
                                 @endif
                             </div>
                             <div class="mt-2 break-words text-sm leading-6">{!! \App\Filament\Support\RichTextPresentation::html($message['content']) !!}</div>
                             @if ($message['attachmentCount'] > 0)
-                                <p class="mt-2 text-xs opacity-70">{{ $message['attachmentCount'] === 1 ? 'Изображение' : $message['attachmentCount'].' изображений' }}</p>
+                                <p class="mt-2 text-xs opacity-70">{{ __('Вложений: :count', ['count' => $message['attachmentCount']]) }}</p>
                             @endif
                             @if ($message['deliveryNotice'])
                                 <div class="mt-3 rounded-lg border border-warning-200 bg-warning-50 p-3 text-sm text-warning-800 dark:border-warning-800 dark:bg-warning-950/30 dark:text-warning-200">
-                                    <p class="font-semibold">{{ $message['deliveryNotice']['title'] }}</p>
-                                    <p class="mt-1 leading-5">{{ $message['deliveryNotice']['body'] }}</p>
+                                    <p class="font-semibold">{{ __($message['deliveryNotice']['title']) }}</p>
+                                    <p class="mt-1 leading-5">{{ __($message['deliveryNotice']['body']) }}</p>
                                 </div>
                             @endif
                             @if ($message['traceUrl'])
-                                <x-filament::button tag="a" size="sm" color="gray" outlined class="mt-3" href="{{ $message['traceUrl'] }}">Открыть подробности AI</x-filament::button>
+                                <x-filament::button tag="a" size="sm" color="gray" outlined class="mt-3" href="{{ $message['traceUrl'] }}">{{ __('Открыть подробности AI') }}</x-filament::button>
                             @endif
                         </article>
                     </div>
                 @empty
-                    <div class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">История общения пока пуста.</div>
+                    <div class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">{{ __('История общения пока пуста.') }}</div>
                 @endforelse
             </div>
             @if ($companion['hasOlder'])
-                <x-filament::button tag="a" size="sm" color="gray" outlined class="mt-5" href="{{ $urls['history'] }}?before={{ $companion['nextBeforeMessageId'] }}">Загрузить более ранние сообщения</x-filament::button>
+                <x-filament::button tag="a" size="sm" color="gray" outlined class="mt-5" href="{{ $urls['history'] }}?before={{ $companion['nextBeforeMessageId'] }}">{{ __('Загрузить более ранние сообщения') }}</x-filament::button>
             @endif
         </x-filament::section>
     </div>

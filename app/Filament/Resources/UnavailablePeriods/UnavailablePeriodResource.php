@@ -6,16 +6,16 @@ use App\Filament\Resources\UnavailablePeriods\Pages\CreateUnavailablePeriod;
 use App\Filament\Resources\UnavailablePeriods\Pages\ListUnavailablePeriods;
 use App\Filament\Resources\UnavailablePeriods\Schemas\UnavailablePeriodForm;
 use App\Filament\Resources\UnavailablePeriods\Tables\UnavailablePeriodsTable;
+use App\Filament\Support\LocalizedResource;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-class UnavailablePeriodResource extends Resource
+class UnavailablePeriodResource extends LocalizedResource
 {
     protected static ?string $model = UnavailablePeriod::class;
 

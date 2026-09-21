@@ -3,13 +3,13 @@
 namespace App\Filament\Resources\LegalDocuments\Pages;
 
 use App\Filament\Resources\LegalDocuments\LegalDocumentResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Identity\Application\UpdateLegalDocumentDraft;
 use App\Modules\Identity\Domain\Models\LegalDocument;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
-final class EditLegalDocument extends EditRecord
+final class EditLegalDocument extends LocalizedEditRecord
 {
     protected static string $resource = LegalDocumentResource::class;
 

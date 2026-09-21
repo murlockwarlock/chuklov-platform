@@ -29,16 +29,16 @@
             x-show="deviceTimezone !== null && deviceTimezone !== currentTimezone && !dismissed"
             class="flex flex-col gap-3 rounded-xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-100 sm:flex-row sm:items-center sm:justify-between"
         >
-            <span x-text="'Мы определили ваш часовой пояс как '+deviceTimezone+'.'"></span>
+            <span>{{ __('Мы определили ваш часовой пояс как') }} <span x-text="deviceTimezone"></span>.</span>
             <div class="flex flex-wrap gap-2">
-                <button type="button" class="rounded-lg bg-amber-600 px-3 py-2 font-medium text-white" @click="useDevice()">Использовать <span x-text="deviceTimezone"></span></button>
-                <button type="button" class="rounded-lg border border-amber-400 px-3 py-2" @click="dismiss()">Оставить <span x-text="currentTimezone"></span></button>
-                <button type="button" class="rounded-lg border border-transparent px-3 py-2 underline" @click="dismissed = true; document.querySelector('[name=\'data[viewer_timezone]\']')?.focus()">Выбрать другой</button>
+                <button type="button" class="rounded-lg bg-amber-600 px-3 py-2 font-medium text-white" @click="useDevice()">{{ __('Использовать') }} <span x-text="deviceTimezone"></span></button>
+                <button type="button" class="rounded-lg border border-amber-400 px-3 py-2" @click="dismiss()">{{ __('Оставить') }} <span x-text="currentTimezone"></span></button>
+                <button type="button" class="rounded-lg border border-transparent px-3 py-2 underline" @click="dismissed = true; document.querySelector('[name=\'data[viewer_timezone]\']')?.focus()">{{ __('Выбрать другой') }}</button>
             </div>
         </div>
 
         <div class="rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
-            Время: <span class="font-semibold">{{ $this->currentViewerTimezone() }}</span>
+            {{ __('Время') }}: <span class="font-semibold">{{ $this->currentViewerTimezone() }}</span>
         </div>
 
         {{ $this->content }}

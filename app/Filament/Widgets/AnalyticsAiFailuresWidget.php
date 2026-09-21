@@ -17,13 +17,19 @@ class AnalyticsAiFailuresWidget extends StatsOverviewWidget
 {
     use InteractsWithPageFilters;
 
-    protected ?string $heading = 'Состояние ИИ';
-
-    protected ?string $description = 'Ошибки при обработке запросов за выбранный период';
-
     protected int|string|array $columnSpan = ['default' => 'full', 'lg' => 1];
 
     protected static ?int $sort = 6;
+
+    protected function getHeading(): ?string
+    {
+        return __('Состояние ИИ');
+    }
+
+    protected function getDescription(): ?string
+    {
+        return __('Ошибки при обработке запросов за выбранный период');
+    }
 
     public static function canView(): bool
     {
@@ -64,8 +70,8 @@ class AnalyticsAiFailuresWidget extends StatsOverviewWidget
     protected function getStats(): array
     {
         return [
-            Stat::make('Ошибки запусков ИИ', (string) ($this->getData() ?? 0))
-                ->description('Ошибки при обработке запросов'),
+            Stat::make(__('Ошибки запусков ИИ'), (string) ($this->getData() ?? 0))
+                ->description(__('Ошибки при обработке запросов')),
         ];
     }
 }

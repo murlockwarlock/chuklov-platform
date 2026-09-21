@@ -32,58 +32,58 @@ final class ClientWorkspaceInfolist
         return $schema
             ->extraAttributes(['class' => 'grid grid-cols-1 lg:grid-cols-2 gap-6 items-start'])
             ->components([
-                Section::make('Клиент')
+                Section::make(__('Клиент'))
                     ->schema([
                         TextEntry::make('phone')
-                            ->label('Телефон')
-                            ->placeholder('Не указан')
+                            ->label(__('Телефон'))
+                            ->placeholder(__('Не указан'))
                             ->fontFamily('mono')
                             ->wrap(),
                         TextEntry::make('email')
                             ->label('Email')
-                            ->placeholder('Не указан')
+                            ->placeholder(__('Не указан'))
                             ->wrap(),
                         TextEntry::make('communication_identities')
-                            ->label('Каналы связи')
+                            ->label(__('Каналы связи'))
                             ->state(function (Client $record): string {
                                 $actor = auth()->user();
 
                                 if (! $actor instanceof User) {
-                                    return 'Требуется авторизация';
+                                    return __('Требуется авторизация');
                                 }
 
                                 $identities = app(GetClientCommunicationIdentities::class)->handle($actor, $record);
 
                                 if ($identities === []) {
-                                    return 'Каналы не подключены';
+                                    return __('Каналы не подключены');
                                 }
 
                                 return collect($identities)
                                     ->map(fn (array $item): string => $item['summary'])
                                     ->implode("\n");
                             })
-                            ->placeholder('Каналы не подключены')
+                            ->placeholder(__('Каналы не подключены'))
                             ->columnSpanFull()
                             ->wrap(),
                         TextEntry::make('language')
-                            ->label('Язык')
-                            ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
+                            ->label(__('Язык'))
+                            ->formatStateUsing(fn (string $state): string => $state === 'ru' ? __('Русский') : __('Английский')),
                         TextEntry::make('timezone')
-                            ->label('Часовой пояс')
+                            ->label(__('Часовой пояс'))
                             ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state))
                             ->wrap(),
                         TextEntry::make('lead_source')
-                            ->label('Источник визита')
-                            ->placeholder('Не указан')
+                            ->label(__('Источник визита'))
+                            ->placeholder(__('Не указан'))
                             ->formatStateUsing(fn (mixed $state): string => AttributionSourcePresentation::label(is_string($state) ? $state : null))
                             ->wrap(),
                         TextEntry::make('referral_code')
-                            ->label('Код рекомендации')
+                            ->label(__('Код рекомендации'))
                             ->fontFamily('mono')
-                            ->placeholder('Не указан')
+                            ->placeholder(__('Не указан'))
                             ->wrap(),
                         TextEntry::make('attribution_source')
-                            ->label('Первая атрибуция')
+                            ->label(__('Первая атрибуция'))
                             ->state(function (Client $record): string {
                                 $attribution = $record->getRelationValue('attribution');
 
@@ -92,20 +92,20 @@ final class ClientWorkspaceInfolist
                                         $attribution->source,
                                         $attribution->source_type,
                                     )
-                                    : 'Не указан';
+                                    : __('Не указан');
                             })
-                            ->placeholder('Не указан')
+                            ->placeholder(__('Не указан'))
                             ->wrap(),
                         TextEntry::make('referrer_summary')
-                            ->label('Пригласил')
+                            ->label(__('Пригласил'))
                             ->state(function (Client $record): string {
                                 $relationship = $record->getRelationValue('referralRelationship');
                                 $referrer = $relationship?->getRelationValue('referrer');
                                 $name = trim((string) $referrer?->full_name);
 
                                 return $name !== '' ? $name : ($referrer instanceof Client
-                                    ? 'Клиент без имени'
-                                    : ($relationship === null ? 'Не указан' : 'Клиент недоступен'));
+                                    ? __('Клиент без имени')
+                                    : ($relationship === null ? __('Не указан') : __('Клиент недоступен')));
                             })
                             ->url(function (Client $record): ?string {
                                 $relationship = $record->getRelationValue('referralRelationship');
@@ -123,29 +123,31 @@ final class ClientWorkspaceInfolist
                                 $relationship = $record->getRelationValue('referralRelationship');
 
                                 return $relationship === null ? null : match ($relationship->establishment_method?->value) {
-                                    'manual_crm' => 'Указан в CRM',
+                                    'manual_crm' => __('Указан в CRM'),
                                     'automatic_referral_link' => $relationship->referral_campaign_link_id === null
-                                        ? 'Персональная ссылка'
-                                        : 'Кампания: '.(($campaign = $relationship->getRelationValue('referralCampaignLink')) instanceof ReferralCampaignLink
-                                            ? ($campaign->name ?: 'не указана')
-                                            : 'не указана'),
-                                    default => 'Источник зафиксирован',
+                                        ? __('Персональная ссылка')
+                                        : __('Кампания: :name', [
+                                            'name' => ($campaign = $relationship->getRelationValue('referralCampaignLink')) instanceof ReferralCampaignLink
+                                                ? ($campaign->name ?: __('не указана'))
+                                                : __('не указана'),
+                                        ]),
+                                    default => __('Источник зафиксирован'),
                                 };
                             })
                             ->wrap(),
                         TextEntry::make('marketing_consent_summary')
-                            ->label('Маркетинговые сообщения')
+                            ->label(__('Маркетинговые сообщения'))
                             ->state(function (Client $record): array {
                                 $actor = auth()->user();
 
                                 if (! $actor instanceof User) {
-                                    return ['Требуется авторизация'];
+                                    return [__('Требуется авторизация')];
                                 }
 
                                 $consent = app(GetLatestClientMarketingConsent::class)->handle($actor, $record);
 
                                 if (! $consent instanceof ClientConsent) {
-                                    return ['Согласие не зафиксировано'];
+                                    return [__('Согласие не зафиксировано')];
                                 }
 
                                 $recordedAt = $consent->recorded_at
@@ -155,60 +157,63 @@ final class ClientWorkspaceInfolist
                                 $recordedBy = $consent->getRelationValue('recordedBy');
 
                                 return [
-                                    $consent->granted ? 'Согласие есть' : 'Согласие отозвано',
-                                    'Зафиксировано: '.$recordedAt,
-                                    'Источник: '.self::marketingConsentEvidenceLabel((string) $consent->evidence),
-                                    'Версия: '.$consent->version,
-                                    'Кем: '.($recordedBy instanceof User ? $recordedBy->name : 'Клиентом через портал'),
+                                    $consent->granted ? __('Согласие есть') : __('Согласие отозвано'),
+                                    __('Зафиксировано: :date', ['date' => $recordedAt]),
+                                    __('Источник: :source', ['source' => self::marketingConsentEvidenceLabel((string) $consent->evidence)]),
+                                    __('Версия: :version', ['version' => $consent->version]),
+                                    __('Кем: :actor', ['actor' => $recordedBy instanceof User ? $recordedBy->name : __('Клиентом через портал')]),
                                 ];
                             })
                             ->listWithLineBreaks()
                             ->columnSpanFull()
                             ->wrap(),
                         TextEntry::make('booking_restriction_status')
-                            ->label('Самостоятельная запись')
-                            ->state(fn (Client $record): string => $record->activeBookingRestriction === null ? 'Разрешена' : 'Ограничена')
+                            ->label(__('Самостоятельная запись'))
+                            ->state(fn (Client $record): string => $record->activeBookingRestriction === null ? 'allowed' : 'restricted')
+                            ->formatStateUsing(fn (string $state): string => $state === 'allowed' ? __('Разрешена') : __('Ограничена'))
                             ->badge()
-                            ->color(fn (string $state): string => $state === 'Разрешена' ? 'success' : 'danger')
-                            ->helperText(fn (Client $record): ?string => $record->activeBookingRestriction?->reason ? 'Причина: '.$record->activeBookingRestriction->reason : null)
+                            ->color(fn (string $state): string => $state === 'allowed' ? 'success' : 'danger')
+                            ->helperText(fn (Client $record): ?string => $record->activeBookingRestriction?->reason
+                                ? __('Причина: :reason', ['reason' => $record->activeBookingRestriction->reason])
+                                : null)
                             ->wrap(),
                         TextEntry::make('balance_summary')
-                            ->label('К оплате')
+                            ->label(__('К оплате'))
                             ->state(function (Client $record): string {
                                 $actor = auth()->user();
 
                                 if (! $actor instanceof User || ! app(FinanceAuthorization::class)->allowsView($actor)) {
-                                    return 'Недоступно';
+                                    return __('Недоступно');
                                 }
 
                                 $summary = app(GetClientBalanceSummary::class)->handle($actor, $record);
 
                                 if ($summary === null) {
-                                    return 'Расчёт недоступен';
+                                    return __('Расчёт недоступен');
                                 }
 
                                 if ($summary === []) {
-                                    return 'Открытых начислений нет';
+                                    return __('Открытых начислений нет');
                                 }
 
                                 return collect($summary)
                                     ->map(fn (array $item): string => Money::ofMinor($item['outstandingMinor'], $item['currency'])->toDecimalString().' '.$item['currency'])
                                     ->implode(', ');
                             })
-                            ->placeholder('Нет данных')
+                            ->placeholder(__('Нет данных'))
                             ->wrap(),
                         TextEntry::make('finance_link')
-                            ->label('Оплаты')
-                            ->state('Открыть оплаты')
+                            ->label(__('Оплаты'))
+                            ->state(__('Открыть оплаты'))
                             ->url(fn (Client $record): string => app(FinancePresentation::class)->clientFinanceUrl($record))
                             ->visible(fn (): bool => app(FinancePresentation::class)->canViewFinance()),
                         TextEntry::make('tracker_access')
-                            ->label('Доступ к трекеру')
+                            ->label(__('Доступ к трекеру'))
                             ->state(fn (Client $record): string => app(ResolveTrackerAccess::class)->handle($record)->statusLabel())
                             ->badge()
                             ->color(fn (Client $record): string => app(ResolveTrackerAccess::class)->handle($record)->allowed() ? 'success' : 'gray'),
                         TextEntry::make('tracker_history')
-                            ->label('История трекера')
+                            ->label(__('История трекера'))
                             ->state(fn (Client $record): string => TrackerCheckIn::query()
                                 ->where('organization_id', $record->organization_id)
                                 ->where('client_id', $record->getKey())
@@ -217,82 +222,82 @@ final class ClientWorkspaceInfolist
                                 ->get()
                                 ->map(fn (TrackerCheckIn $entry): string => CarbonImmutable::parse((string) $entry->getRawOriginal('occurred_at'))->format('d.m.Y H:i').' — '.$entry->note)
                                 ->implode("\n"))
-                            ->placeholder('Отметок пока нет')
+                            ->placeholder(__('Отметок пока нет'))
                             ->columnSpanFull()
                             ->wrap(),
                     ])
                     ->columns(2)
                     ->extraAttributes(['class' => 'h-fit']),
 
-                Section::make('Клинический профиль')
-                    ->description('Защищённые данные')
+                Section::make(__('Клинический профиль'))
+                    ->description(__('Защищённые данные'))
                     ->schema([
                         TextEntry::make('anamnesis')
-                            ->label('Клинический анамнез')
+                            ->label(__('Клинический анамнез'))
                             ->state(function (Client $record): ?string {
                                 $actor = auth()->user();
 
                                 if (! $actor instanceof User) {
-                                    return 'Требуется авторизация';
+                                    return __('Требуется авторизация');
                                 }
 
                                 return app(GetMedicalProfile::class)->handle($actor, $record)?->anamnesis;
                             })
-                            ->placeholder('Не заполнен')
+                            ->placeholder(__('Не заполнен'))
                             ->columnSpanFull()
                             ->wrap(),
                         TextEntry::make('complaints_goals')
-                            ->label('Жалобы, ВАШ и цели')
+                            ->label(__('Жалобы, ВАШ и цели'))
                             ->state(function (Client $record): ?string {
                                 $actor = auth()->user();
 
                                 if (! $actor instanceof User) {
-                                    return 'Требуется авторизация';
+                                    return __('Требуется авторизация');
                                 }
 
                                 return app(GetMedicalProfile::class)->handle($actor, $record)?->complaintsGoals;
                             })
-                            ->placeholder('Не указаны')
+                            ->placeholder(__('Не указаны'))
                             ->columnSpanFull()
                             ->wrap(),
                         TextEntry::make('operations_injuries')
-                            ->label('Операции и травмы')
+                            ->label(__('Операции и травмы'))
                             ->state(function (Client $record): ?string {
                                 $actor = auth()->user();
 
                                 if (! $actor instanceof User) {
-                                    return 'Требуется авторизация';
+                                    return __('Требуется авторизация');
                                 }
 
                                 return app(GetMedicalProfile::class)->handle($actor, $record)?->operationsInjuries;
                             })
-                            ->placeholder('Не указаны')
+                            ->placeholder(__('Не указаны'))
                             ->wrap(),
                         TextEntry::make('medicines')
-                            ->label('Лекарственные препараты')
+                            ->label(__('Лекарственные препараты'))
                             ->state(function (Client $record): ?string {
                                 $actor = auth()->user();
 
                                 if (! $actor instanceof User) {
-                                    return 'Требуется авторизация';
+                                    return __('Требуется авторизация');
                                 }
 
                                 return app(GetMedicalProfile::class)->handle($actor, $record)?->medicines;
                             })
-                            ->placeholder('Не указаны')
+                            ->placeholder(__('Не указаны'))
                             ->wrap(),
                         TextEntry::make('supplements')
-                            ->label('Нутрицевтики и БАДы')
+                            ->label(__('Нутрицевтики и БАДы'))
                             ->state(function (Client $record): ?string {
                                 $actor = auth()->user();
 
                                 if (! $actor instanceof User) {
-                                    return 'Требуется авторизация';
+                                    return __('Требуется авторизация');
                                 }
 
                                 return app(GetMedicalProfile::class)->handle($actor, $record)?->supplements;
                             })
-                            ->placeholder('Не указаны')
+                            ->placeholder(__('Не указаны'))
                             ->columnSpanFull()
                             ->wrap(),
                     ])
@@ -304,12 +309,12 @@ final class ClientWorkspaceInfolist
     private static function marketingConsentEvidenceLabel(string $evidence): string
     {
         return match ($evidence) {
-            'crm' => 'Зафиксировано оператором в CRM',
-            'telegram' => 'Сообщение клиента в Telegram',
-            'phone' => 'Телефонный разговор',
-            'written' => 'Письменное согласие',
-            'portal' => 'Подтверждено клиентом в портале',
-            default => 'Источник не указан',
+            'crm' => __('Зафиксировано оператором в CRM'),
+            'telegram' => __('Сообщение клиента в Telegram'),
+            'phone' => __('Телефонный разговор'),
+            'written' => __('Письменное согласие'),
+            'portal' => __('Подтверждено клиентом в портале'),
+            default => __('Источник не указан'),
         };
     }
 }

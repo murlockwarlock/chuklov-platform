@@ -18,36 +18,36 @@ final class KnowledgeSourcePresentation
     {
         $value = $type instanceof KnowledgeSourceType ? $type->value : $type;
 
-        return $value === KnowledgeSourceType::AuthoredText->value ? 'Текст' : 'Документ';
+        return $value === KnowledgeSourceType::AuthoredText->value ? __('Текст') : __('Документ');
     }
 
     public function searchAvailability(KnowledgeSource $source): string
     {
         if ($source->status === KnowledgeSourceStatus::Retired) {
-            return 'Индексация недоступна';
+            return __('Индексация недоступна');
         }
 
         $activeRevision = $source->activeRevision;
         if (! $activeRevision instanceof KnowledgeRevision || $activeRevision->status !== KnowledgeRevisionStatus::Ready) {
-            return 'Ожидает индексации';
+            return __('Ожидает индексации');
         }
         $extractionStatus = $activeRevision->getAttribute('extraction_status');
         if ($extractionStatus !== null && $extractionStatus !== KnowledgeExtractionStatus::Ready->value) {
-            return 'Ошибка индексации';
+            return __('Ошибка индексации');
         }
-        if ($this->semanticSearchStatus() !== 'Готов') {
-            return 'Индексация недоступна';
+        if ($this->semanticSearchStatus() !== __('Готов')) {
+            return __('Индексация недоступна');
         }
         if (! $this->hasCompatibleReadyRun($source)) {
-            return $this->hasCompatibleProcessingRun($source) ? 'Индексируется' : 'Ожидает индексации';
+            return $this->hasCompatibleProcessingRun($source) ? __('Индексируется') : __('Ожидает индексации');
         }
 
-        return 'Готов к поиску';
+        return __('Готов к поиску');
     }
 
     public function materialStatus(KnowledgeSource $source): string
     {
-        return $source->status === KnowledgeSourceStatus::Active ? 'Используется' : 'Скрыт';
+        return $source->status === KnowledgeSourceStatus::Active ? __('Используется') : __('Скрыт');
     }
 
     public function semanticSearchStatus(): string
@@ -56,16 +56,16 @@ final class KnowledgeSourcePresentation
             $configuration = EmbeddingConfiguration::active();
             $pricing = EmbeddingPricingPolicy::active();
             if (! $pricing->zeroCostLocal && ! $this->providerCredentialIsConfigured($configuration->provider)) {
-                return 'Не настроен';
+                return __('Не настроен');
             }
             $pricing->assertCompatible($configuration);
         } catch (InvalidArgumentException) {
-            return 'Не настроен';
+            return __('Не настроен');
         } catch (\Throwable) {
-            return 'Не настроен';
+            return __('Не настроен');
         }
 
-        return 'Готов';
+        return __('Готов');
     }
 
     public function semanticSearchSummary(): string
@@ -73,10 +73,13 @@ final class KnowledgeSourcePresentation
         try {
             $configuration = EmbeddingConfiguration::active();
         } catch (\Throwable) {
-            return 'Поиск по смыслу пока не настроен. Добавьте подключение AI и сохраните настройки поиска.';
+            return __('Поиск по смыслу пока не настроен. Добавьте подключение AI и сохраните настройки поиска.');
         }
 
-        $summary = 'Поиск по смыслу: '.$this->semanticSearchStatus().'. Модель AI: '.$configuration->model.'.';
+        $summary = __('Поиск по смыслу: :status. Модель AI: :model.', [
+            'status' => $this->semanticSearchStatus(),
+            'model' => $configuration->model,
+        ]);
         $gap = $this->semanticSearchGap($configuration);
 
         return $gap === null ? $summary : $summary.' '.$gap;
@@ -87,15 +90,15 @@ final class KnowledgeSourcePresentation
         $configuration ??= EmbeddingConfiguration::active();
 
         if (! $this->providerCredentialIsConfigured($configuration->provider)) {
-            return 'Не настроено подключение AI.';
+            return __('Не настроено подключение AI.');
         }
 
         try {
             EmbeddingPricingPolicy::active()->assertCompatible($configuration);
         } catch (InvalidArgumentException) {
-            return 'Не настроена стоимость обработки материалов.';
+            return __('Не настроена стоимость обработки материалов.');
         } catch (\Throwable) {
-            return 'Не настроены параметры поиска по смыслу.';
+            return __('Не настроены параметры поиска по смыслу.');
         }
 
         return null;
@@ -104,22 +107,22 @@ final class KnowledgeSourcePresentation
     public function latestProcessing(KnowledgeSource $source): string
     {
         if ($source->status === KnowledgeSourceStatus::Retired) {
-            return 'Источник выключен';
+            return __('Источник выключен');
         }
 
         $latestRevision = $source->latestRevision;
         if (! $latestRevision instanceof KnowledgeRevision) {
-            return 'Материал не добавлен';
+            return __('Материал не добавлен');
         }
 
         if ($latestRevision->extraction_status === KnowledgeExtractionStatus::TextNotFound->value) {
-            return 'Текст не найден. Можно запустить AI-разбор.';
+            return __('Текст не найден. Можно запустить AI-разбор.');
         }
         if ($latestRevision->extraction_status === KnowledgeExtractionStatus::Suspicious->value) {
-            return 'Извлечение заблокировано: требуется проверка владельца';
+            return __('Извлечение заблокировано: требуется проверка владельца');
         }
         if ($latestRevision->extraction_status === KnowledgeExtractionStatus::AiParseRequested->value) {
-            return 'AI-разбор запрошен владельцем';
+            return __('AI-разбор запрошен владельцем');
         }
 
         $hasActiveDifferentRevision = $source->active_revision_id !== null
@@ -129,21 +132,21 @@ final class KnowledgeSourcePresentation
             && $latestRevision->status === KnowledgeRevisionStatus::Ready
             && ! $this->hasCompatibleReadyRun($source)) {
             if ($this->hasCompatibleProcessingRun($source)) {
-                return 'Индексируется';
+                return __('Индексируется');
             }
 
-            return $this->semanticSearchStatus() === 'Готов'
-                ? 'Ожидает индексации'
-                : 'Индексация недоступна';
+            return $this->semanticSearchStatus() === __('Готов')
+                ? __('Ожидает индексации')
+                : __('Индексация недоступна');
         }
 
         return match ($latestRevision->status) {
-            KnowledgeRevisionStatus::Pending => $hasActiveDifferentRevision ? 'Новая версия ожидает обработки' : 'Ожидает обработки',
-            KnowledgeRevisionStatus::Processing => $hasActiveDifferentRevision ? 'Новая версия обрабатывается' : 'Обрабатывается',
-            KnowledgeRevisionStatus::Failed => $hasActiveDifferentRevision ? 'Новая версия не обработана' : 'Требуется повторная обработка',
-            KnowledgeRevisionStatus::Ready => $hasActiveDifferentRevision ? 'Готова новая версия' : 'Материал обработан',
-            KnowledgeRevisionStatus::Stale => 'Предыдущая версия',
-            KnowledgeRevisionStatus::Retired => 'Версия выключена',
+            KnowledgeRevisionStatus::Pending => $hasActiveDifferentRevision ? __('Новая версия ожидает обработки') : __('Ожидает обработки'),
+            KnowledgeRevisionStatus::Processing => $hasActiveDifferentRevision ? __('Новая версия обрабатывается') : __('Обрабатывается'),
+            KnowledgeRevisionStatus::Failed => $hasActiveDifferentRevision ? __('Новая версия не обработана') : __('Требуется повторная обработка'),
+            KnowledgeRevisionStatus::Ready => $hasActiveDifferentRevision ? __('Готова новая версия') : __('Материал обработан'),
+            KnowledgeRevisionStatus::Stale => __('Предыдущая версия'),
+            KnowledgeRevisionStatus::Retired => __('Версия выключена'),
         };
     }
 
@@ -152,46 +155,46 @@ final class KnowledgeSourcePresentation
         $value = $status instanceof KnowledgeRevisionStatus ? $status->value : $status;
 
         return match ($value) {
-            KnowledgeRevisionStatus::Pending->value => 'Ожидает обработки',
-            KnowledgeRevisionStatus::Processing->value => 'Обрабатывается',
-            KnowledgeRevisionStatus::Ready->value => 'Готова',
-            KnowledgeRevisionStatus::Failed->value => 'Не обработана',
-            KnowledgeRevisionStatus::Stale->value => 'Предыдущая версия',
-            KnowledgeRevisionStatus::Retired->value => 'Скрыта',
-            default => 'Состояние недоступно',
+            KnowledgeRevisionStatus::Pending->value => __('Ожидает обработки'),
+            KnowledgeRevisionStatus::Processing->value => __('Обрабатывается'),
+            KnowledgeRevisionStatus::Ready->value => __('Готова'),
+            KnowledgeRevisionStatus::Failed->value => __('Не обработана'),
+            KnowledgeRevisionStatus::Stale->value => __('Предыдущая версия'),
+            KnowledgeRevisionStatus::Retired->value => __('Скрыта'),
+            default => __('Состояние недоступно'),
         };
     }
 
     public function errorMessage(?string $errorCode): string
     {
         if ($errorCode === null) {
-            return 'Нет зарегистрированной ошибки';
+            return __('Нет зарегистрированной ошибки');
         }
 
         return match ($errorCode) {
-            'invalid_source_content' => 'Файл повреждён или изменён',
-            'source_text_too_large' => 'Слишком большой объём текста',
-            'empty_source_content' => 'В документе нет текста',
-            'extraction_not_ready' => 'Извлечение не подтверждено владельцем',
-            'parser_failed' => 'Не удалось безопасно извлечь данные',
-            'text_not_found' => 'Текст не найден. Можно запустить AI-разбор.',
-            'table_text_not_found' => 'Таблица не содержит данных',
-            'embedding_or_persistence_failed' => 'Обработка не завершена',
-            default => 'Обработка не завершена. Попробуйте повторить обработку.',
+            'invalid_source_content' => __('Файл повреждён или изменён'),
+            'source_text_too_large' => __('Слишком большой объём текста'),
+            'empty_source_content' => __('В документе нет текста'),
+            'extraction_not_ready' => __('Извлечение не подтверждено владельцем'),
+            'parser_failed' => __('Не удалось безопасно извлечь данные'),
+            'text_not_found' => __('Текст не найден. Можно запустить AI-разбор.'),
+            'table_text_not_found' => __('Таблица не содержит данных'),
+            'embedding_or_persistence_failed' => __('Обработка не завершена'),
+            default => __('Обработка не завершена. Попробуйте повторить обработку.'),
         };
     }
 
     public function materialName(KnowledgeRevision $revision): string
     {
         if ($revision->original_filename === null || trim($revision->original_filename) === '') {
-            return 'Текст вручную';
+            return __('Текст вручную');
         }
 
         $filename = basename(str_replace('\\', '/', $revision->original_filename));
         $filename = preg_replace('/[\x00-\x1F\x7F"<>:|?*]+/u', ' ', $filename) ?? '';
         $filename = trim(mb_substr($filename, 0, 120), " .\t\n\r\0\x0B");
 
-        return $filename !== '' ? $filename : 'Файл';
+        return $filename !== '' ? $filename : __('Файл');
     }
 
     public function canRetry(KnowledgeSource $source, KnowledgeRevision $revision): bool

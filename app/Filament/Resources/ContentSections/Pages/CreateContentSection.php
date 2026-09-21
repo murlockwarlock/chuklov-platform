@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\ContentSections\Pages;
 
 use App\Filament\Resources\ContentSections\ContentSectionResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Content\Application\CreateContentSection as CreateContentSectionAction;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class CreateContentSection extends CreateRecord
+class CreateContentSection extends LocalizedCreateRecord
 {
     protected static string $resource = ContentSectionResource::class;
 

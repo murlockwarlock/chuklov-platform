@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\ContentSections\Pages;
 
 use App\Filament\Resources\ContentSections\ContentSectionResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-class ListContentSections extends ListRecords
+class ListContentSections extends LocalizedListRecords
 {
     protected static string $resource = ContentSectionResource::class;
 

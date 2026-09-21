@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\SurveyDefinitions\Pages;
 
 use App\Filament\Resources\SurveyDefinitions\SurveyDefinitionResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-final class ListSurveyDefinitions extends ListRecords
+final class ListSurveyDefinitions extends LocalizedListRecords
 {
     protected static string $resource = SurveyDefinitionResource::class;
 

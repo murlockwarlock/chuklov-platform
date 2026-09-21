@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Specialists\Pages;
 
 use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Filament\Support\SpecialistTelegramLinkAction;
 use App\Models\User;
@@ -10,11 +11,10 @@ use App\Modules\Scheduling\Application\UpdateSpecialistViewerTimezone;
 use App\Modules\Specialists\Application\UpdateSpecialist;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
-class EditSpecialist extends EditRecord
+class EditSpecialist extends LocalizedEditRecord
 {
     protected static string $resource = SpecialistResource::class;
 

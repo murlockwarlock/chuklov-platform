@@ -4,13 +4,13 @@ namespace App\Filament\Resources\PaymentGatewayReconciliation;
 
 use App\Filament\Resources\PaymentGatewayReconciliation\Pages\ListPaymentGatewayReconciliation;
 use App\Filament\Resources\PaymentGatewayReconciliation\Tables\PaymentGatewayReconciliationTable;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayEventStatus;
 use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -18,7 +18,7 @@ use Illuminate\Database\Eloquent\Model;
 use Throwable;
 
 /** @extends resource<PaymentGatewayEvent> */
-final class PaymentGatewayReconciliationResource extends Resource
+final class PaymentGatewayReconciliationResource extends LocalizedResource
 {
     protected static ?string $model = PaymentGatewayEvent::class;
 

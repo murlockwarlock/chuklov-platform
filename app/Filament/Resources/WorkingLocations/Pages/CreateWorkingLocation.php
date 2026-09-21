@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\WorkingLocations\Pages;
 
 use App\Filament\Resources\WorkingLocations\WorkingLocationResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Scheduling\Application\CreateWorkingLocation as CreateWorkingLocationAction;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class CreateWorkingLocation extends CreateRecord
+class CreateWorkingLocation extends LocalizedCreateRecord
 {
     protected static string $resource = WorkingLocationResource::class;
 

@@ -3,17 +3,17 @@
 namespace App\Filament\Resources\SpecialistServiceAssignments\Pages;
 
 use App\Filament\Resources\SpecialistServiceAssignments\SpecialistServiceAssignmentResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Notifications\Notification;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
-class CreateSpecialistServiceAssignment extends CreateRecord
+class CreateSpecialistServiceAssignment extends LocalizedCreateRecord
 {
     protected static string $resource = SpecialistServiceAssignmentResource::class;
 
@@ -21,7 +21,7 @@ class CreateSpecialistServiceAssignment extends CreateRecord
 
     protected function getCreatedNotificationTitle(): ?string
     {
-        return 'Специалист назначен на услугу';
+        return __('Специалист назначен на услугу');
     }
 
     protected function getRedirectUrl(): string
@@ -52,7 +52,7 @@ class CreateSpecialistServiceAssignment extends CreateRecord
 
             Notification::make()
                 ->danger()
-                ->title('Этот специалист уже оказывает выбранную услугу')
+                ->title(__('Этот специалист уже оказывает выбранную услугу'))
                 ->send();
 
             $this->halt(shouldRollbackDatabaseTransaction: true);

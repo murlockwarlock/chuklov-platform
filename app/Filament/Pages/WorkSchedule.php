@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\LocalizedPage;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
@@ -19,7 +20,6 @@ use App\Modules\Scheduling\Domain\ValueObjects\WallClockInterval;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
@@ -27,7 +27,7 @@ use Livewire\Attributes\Url;
 use LogicException;
 use UnitEnum;
 
-final class WorkSchedule extends Page
+final class WorkSchedule extends LocalizedPage
 {
     protected static ?string $title = 'График работы';
 
@@ -198,7 +198,7 @@ final class WorkSchedule extends Page
     public function clearSelectedDates(): void
     {
         if ($this->selectedDates === []) {
-            $this->errorMessage = 'Выберите даты, которые нужно очистить.';
+            $this->errorMessage = __('Выберите даты, которые нужно очистить.');
 
             return;
         }
@@ -215,7 +215,7 @@ final class WorkSchedule extends Page
     public function returnToRegularSchedule(): void
     {
         if ($this->selectedDates === []) {
-            $this->errorMessage = 'Выберите дату, которую нужно вернуть по графику.';
+            $this->errorMessage = __('Выберите дату, которую нужно вернуть по графику.');
 
             return;
         }
@@ -246,13 +246,13 @@ final class WorkSchedule extends Page
         $specialist = $this->selectedSpecialist();
 
         if (! $specialist instanceof Specialist || $this->selectedDates === []) {
-            $this->errorMessage = 'Выберите специалиста и даты.';
+            $this->errorMessage = __('Выберите специалиста и даты.');
 
             return;
         }
 
         if ($this->overrideType === ScheduleExceptionType::CustomWindow->value && $this->overrideIntervals === []) {
-            $this->errorMessage = 'Добавьте хотя бы один рабочий интервал.';
+            $this->errorMessage = __('Добавьте хотя бы один рабочий интервал.');
 
             return;
         }
@@ -277,7 +277,7 @@ final class WorkSchedule extends Page
                         ],
                         $this->overrideIntervals,
                     ),
-                    default => throw new \InvalidArgumentException('Выберите корректный режим изменения.'),
+                    default => throw new \InvalidArgumentException(__('Выберите корректный режим изменения.')),
                 };
             }
 
@@ -301,7 +301,7 @@ final class WorkSchedule extends Page
 
         $this->loadEditorForSelection();
         $this->clearImpact();
-        Notification::make()->success()->title('Изменения сохранены')->send();
+        Notification::make()->success()->title(__('Изменения сохранены'))->send();
     }
 
     /** @return array<string, array{date: string, weekday: int, is_working: bool, exception_type: string|null, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>}> */
@@ -358,8 +358,8 @@ final class WorkSchedule extends Page
     public function monthLabel(): string
     {
         $months = [
-            1 => 'Январь', 2 => 'Февраль', 3 => 'Март', 4 => 'Апрель', 5 => 'Май', 6 => 'Июнь',
-            7 => 'Июль', 8 => 'Август', 9 => 'Сентябрь', 10 => 'Октябрь', 11 => 'Ноябрь', 12 => 'Декабрь',
+            1 => __('Январь'), 2 => __('Февраль'), 3 => __('Март'), 4 => __('Апрель'), 5 => __('Май'), 6 => __('Июнь'),
+            7 => __('Июль'), 8 => __('Август'), 9 => __('Сентябрь'), 10 => __('Октябрь'), 11 => __('Ноябрь'), 12 => __('Декабрь'),
         ];
         $date = $this->monthDate();
 
@@ -397,7 +397,7 @@ final class WorkSchedule extends Page
             ? 'UTC'
             : 'UTC'.($offsetHours > 0 ? '+' : '').rtrim(rtrim(number_format($offsetHours, 2, '.', ''), '0'), '.');
 
-        return 'График задан по времени: '.TimezoneOptions::label($timezone).' ('.$offset.') · '.$timezone;
+        return __('График задан по времени: ').TimezoneOptions::label($timezone).' ('.$offset.') · '.$timezone;
     }
 
     public function selectedDatesLabel(): string
@@ -411,10 +411,10 @@ final class WorkSchedule extends Page
     public function pendingPresetLabel(): ?string
     {
         return match ($this->pendingPreset) {
-            'weekdays' => 'Будни',
-            'all' => 'Все дни',
-            'even' => 'Чётные даты',
-            'odd' => 'Нечётные даты',
+            'weekdays' => __('Будни'),
+            'all' => __('Все дни'),
+            'even' => __('Чётные даты'),
+            'odd' => __('Нечётные даты'),
             default => null,
         };
     }
@@ -653,7 +653,7 @@ final class WorkSchedule extends Page
     private function humanScheduleError(string $message): string
     {
         return str_contains(mb_strtolower($message), 'overlap')
-            ? 'Рабочие интервалы не должны пересекаться.'
+            ? __('Рабочие интервалы не должны пересекаться.')
             : $message;
     }
 }

@@ -3,14 +3,14 @@
 namespace App\Filament\Resources\FeedbackSubmissions\Pages;
 
 use App\Filament\Resources\FeedbackSubmissions\FeedbackSubmissionResource;
-use Filament\Resources\Pages\ViewRecord;
+use App\Filament\Support\LocalizedViewRecord;
 
-final class ViewFeedbackSubmission extends ViewRecord
+final class ViewFeedbackSubmission extends LocalizedViewRecord
 {
     protected static string $resource = FeedbackSubmissionResource::class;
 
     public function getTitle(): string
     {
-        return 'Обратная связь';
+        return __('Обратная связь');
     }
 }

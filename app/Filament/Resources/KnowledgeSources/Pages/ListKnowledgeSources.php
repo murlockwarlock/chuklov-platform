@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\KnowledgeSources\Pages;
 
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-final class ListKnowledgeSources extends ListRecords
+final class ListKnowledgeSources extends LocalizedListRecords
 {
     protected static string $resource = KnowledgeSourceResource::class;
 

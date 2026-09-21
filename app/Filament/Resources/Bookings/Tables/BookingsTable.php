@@ -8,6 +8,7 @@ use App\Filament\Resources\Bookings\Support\BookingLocalDateRange;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -36,29 +37,29 @@ class BookingsTable
         $canManageScheduling = BookingResource::canCreate();
         $columns = [
             TextColumn::make('specialist.display_name')
-                ->label('Специалист')
+                ->label(__('Специалист'))
                 ->sortable()
                 ->wrap()
                 ->url(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
                 ->color(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                 ->disabledClick(fn (Booking $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null)
                 ->toggleable(isToggledHiddenByDefault: true),
-            TextColumn::make('service.name')->label('Услуга')->sortable()->wrap(),
+            TextColumn::make('service.name')->label(__('Услуга'))->sortable()->wrap(),
             TextColumn::make('starts_at')
-                ->label(fn (): string => 'Дата и время ('.self::viewerTimezone().')')
+                ->label(fn (): string => __('Дата и время (').self::viewerTimezone().')')
                 ->dateTime('d.m.Y H:i')
                 ->timezone(fn (): string => self::viewerTimezone())
                 ->sortable(),
             TextColumn::make('visit_format')
-                ->label('Формат')
+                ->label(__('Формат'))
                 ->formatStateUsing(fn (VisitFormat|string $state): string => self::formatLabel($state)),
             TextColumn::make('location')
-                ->label('Место')
+                ->label(__('Место'))
                 ->state(fn (Booking $record): string => self::locationLabel($record))
                 ->wrap()
                 ->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('status')
-                ->label('Статус')
+                ->label(__('Статус'))
                 ->badge()
                 ->formatStateUsing(fn (BookingStatus|string $state): string => self::statusLabel($state))
                 ->sortable()
@@ -67,7 +68,7 @@ class BookingsTable
 
         if ($includeClient) {
             array_unshift($columns, TextColumn::make('client.full_name')
-                ->label('Клиент')
+                ->label(__('Клиент'))
                 ->searchable()
                 ->sortable()
                 ->wrap()
@@ -78,19 +79,19 @@ class BookingsTable
 
         if ($includeAttention) {
             $columns[] = TextColumn::make('needs_attention')
-                ->label('Проверка времени')
+                ->label(__('Проверка времени'))
                 ->badge()
-                ->state(fn (Booking $record): string => app(BookingNeedsAttention::class)->handle($record) ? 'Требует внимания' : 'В порядке')
-                ->color(fn (string $state): string => $state === 'Требует внимания' ? 'danger' : 'success')
+                ->state(fn (Booking $record): string => app(BookingNeedsAttention::class)->handle($record) ? __('Требует внимания') : __('В порядке'))
+                ->color(fn (string $state): string => $state === __('Требует внимания') ? 'danger' : 'success')
                 ->toggleable(isToggledHiddenByDefault: true);
         }
 
         $filters = [
             Filter::make('period')
-                ->label('Период')
+                ->label(__('Период'))
                 ->schema([
-                    DatePicker::make('from')->label('С'),
-                    DatePicker::make('until')->label('По'),
+                    DatePicker::make('from')->label(__('С')),
+                    DatePicker::make('until')->label(__('По')),
                 ])
                 ->query(function (Builder $query, array $data): void {
                     BookingLocalDateRange::apply(
@@ -101,10 +102,10 @@ class BookingsTable
                     );
                 }),
             SelectFilter::make('status')
-                ->label('Статус')
+                ->label(__('Статус'))
                 ->options(self::statusOptions()),
             SelectFilter::make('specialist')
-                ->label('Специалист')
+                ->label(__('Специалист'))
                 ->relationship(
                     'specialist',
                     'display_name',
@@ -114,7 +115,7 @@ class BookingsTable
                 ->preload()
                 ->optionsLimit(50),
             SelectFilter::make('service')
-                ->label('Услуга')
+                ->label(__('Услуга'))
                 ->relationship(
                     'service',
                     'name',
@@ -124,13 +125,13 @@ class BookingsTable
                 ->preload()
                 ->optionsLimit(50),
             SelectFilter::make('visit_format')
-                ->label('Формат визита')
+                ->label(__('Формат визита'))
                 ->options(self::visitFormatOptions()),
         ];
 
         if ($includeClient) {
             $filters[] = SelectFilter::make('client')
-                ->label('Клиент')
+                ->label(__('Клиент'))
                 ->relationship(
                     'client',
                     'full_name',
@@ -156,14 +157,14 @@ class BookingsTable
             ->filters($filters)
             ->recordActions([
                 ViewAction::make()
-                    ->label('Открыть')
+                    ->label(__('Открыть'))
                     ->icon(Heroicon::OutlinedEye)
                     ->iconButton()
-                    ->tooltip('Открыть запись')
-                    ->modalHeading('Просмотр записи на приём')
+                    ->tooltip(__('Открыть запись'))
+                    ->modalHeading(__('Просмотр записи на приём'))
                     ->modalWidth('5xl'),
                 ActionGroup::make(BookingLifecycleActions::all())
-                    ->label('Действия')
+                    ->label(__('Действия'))
                     ->icon('heroicon-m-ellipsis-vertical')
                     ->button()
                     ->color('gray')
@@ -175,28 +176,14 @@ class BookingsTable
     {
         $format = $format instanceof VisitFormat ? $format : VisitFormat::tryFrom($format);
 
-        return match ($format) {
-            VisitFormat::Office => 'В клинике',
-            VisitFormat::HomeVisit => 'Выезд на дом',
-            VisitFormat::Online => 'Онлайн',
-            default => 'Не указан',
-        };
+        return CrmLabel::enum($format) ?? __('Не указан');
     }
 
     private static function statusLabel(BookingStatus|string $status): string
     {
         $status = $status instanceof BookingStatus ? $status : BookingStatus::tryFrom($status);
 
-        return match ($status) {
-            BookingStatus::Requested => 'Ожидает подтверждения',
-            BookingStatus::PendingReview => 'На рассмотрении',
-            BookingStatus::Confirmed => 'Подтверждена',
-            BookingStatus::Rejected => 'Отклонена',
-            BookingStatus::Cancelled => 'Отменена',
-            BookingStatus::Completed => 'Завершена',
-            BookingStatus::NoShow => 'Не состоялась',
-            default => 'Не указан',
-        };
+        return CrmLabel::enum($status) ?? __('Не указан');
     }
 
     /**
@@ -249,9 +236,9 @@ class BookingsTable
             VisitFormat::Office => trim(implode(' · ', array_filter([
                 $snapshot['name'] ?? null,
                 $snapshot['address'] ?? $booking->location,
-            ]))) ?: 'Кабинет',
-            VisitFormat::HomeVisit => 'Выезд'.($booking->location_area !== null ? ' · '.$booking->location_area : ''),
-            VisitFormat::Online => 'Онлайн',
+            ]))) ?: __('Кабинет'),
+            VisitFormat::HomeVisit => __('Выезд').($booking->location_area !== null ? ' · '.$booking->location_area : ''),
+            VisitFormat::Online => __('Онлайн'),
         };
     }
 }

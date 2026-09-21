@@ -26,14 +26,14 @@ final class PromptVersionForm
                 ->nullable()
                 ->string(),
             Textarea::make('system_prompt')
-                ->label('Полный исходный prompt')
-                ->helperText('Полный текст новой версии. Активная версия не изменяется до явной активации черновика.')
+                ->label(__('Полный исходный prompt'))
+                ->helperText(__('Полный текст новой версии. Активная версия не изменяется до явной активации черновика.'))
                 ->default($source?->system_prompt)
                 ->required()
                 ->live(debounce: 500)
                 ->rows(18)
                 ->columnSpanFull(),
-            Section::make('Состав инструкции')
+            Section::make(__('Состав инструкции'))
                 ->schema([
                     Placeholder::make('source_text_preview')
                         ->label('SOURCE PRODUCT PROMPT')
@@ -48,23 +48,23 @@ final class PromptVersionForm
                 ->columns(1)
                 ->columnSpanFull(),
             Textarea::make('user_prompt_template')
-                ->label('Шаблон запроса')
-                ->helperText('Используйте переменные текущей версии, например {{query}}.')
+                ->label(__('Шаблон запроса'))
+                ->helperText(__('Используйте переменные текущей версии, например {{query}}.'))
                 ->default($source?->user_prompt_template)
                 ->required()
                 ->rows(4)
                 ->columnSpanFull(),
-            Section::make('Настройки ответа')
-                ->description('Оставьте значения по умолчанию, если не нужно менять поведение модели.')
+            Section::make(__('Настройки ответа'))
+                ->description(__('Оставьте значения по умолчанию, если не нужно менять поведение модели.'))
                 ->collapsed()
                 ->schema([
-                    TextInput::make('temperature')->label('Креативность')->helperText('Необязательный параметр. Используется только при поддержке выбранной моделью.')->numeric()->minValue(0)->maxValue(2)->default($parameters->temperature),
-                    TextInput::make('max_tokens')->label('Максимальная длина ответа')->helperText('Безопасный общий предел длины ответа.')->numeric()->minValue(1)->maxValue(8192)->default($parameters->maxTokens),
-                    TextInput::make('top_p')->label('Top P')->helperText('Необязательный параметр модели.')->numeric()->minValue(0)->maxValue(1),
-                    TextInput::make('frequency_penalty')->label('Штраф за повторение')->helperText('Необязательный параметр модели.')->numeric()->minValue(-2)->maxValue(2),
-                    TextInput::make('presence_penalty')->label('Штраф за однообразие')->helperText('Необязательный параметр модели.')->numeric()->minValue(-2)->maxValue(2),
-                    TextInput::make('timeout_seconds')->label('Время ожидания, секунд')->helperText('Необязательный предел ожидания.')->numeric()->minValue(1)->maxValue(120)->default($parameters->timeoutSeconds),
-                    TextInput::make('change_notes')->label('Что изменилось')->default($source?->status->value === 'draft' ? $source->change_notes : null)->columnSpanFull(),
+                    TextInput::make('temperature')->label(__('Креативность'))->helperText(__('Необязательный параметр. Используется только при поддержке выбранной моделью.'))->numeric()->minValue(0)->maxValue(2)->default($parameters->temperature),
+                    TextInput::make('max_tokens')->label(__('Максимальная длина ответа'))->helperText(__('Безопасный общий предел длины ответа.'))->numeric()->minValue(1)->maxValue(8192)->default($parameters->maxTokens),
+                    TextInput::make('top_p')->label('Top P')->helperText(__('Необязательный параметр модели.'))->numeric()->minValue(0)->maxValue(1),
+                    TextInput::make('frequency_penalty')->label(__('Штраф за повторение'))->helperText(__('Необязательный параметр модели.'))->numeric()->minValue(-2)->maxValue(2),
+                    TextInput::make('presence_penalty')->label(__('Штраф за однообразие'))->helperText(__('Необязательный параметр модели.'))->numeric()->minValue(-2)->maxValue(2),
+                    TextInput::make('timeout_seconds')->label(__('Время ожидания, секунд'))->helperText(__('Необязательный предел ожидания.'))->numeric()->minValue(1)->maxValue(120)->default($parameters->timeoutSeconds),
+                    TextInput::make('change_notes')->label(__('Что изменилось'))->default($source?->status->value === 'draft' ? $source->change_notes : null)->columnSpanFull(),
                 ])
                 ->columns(2)
                 ->columnSpanFull(),

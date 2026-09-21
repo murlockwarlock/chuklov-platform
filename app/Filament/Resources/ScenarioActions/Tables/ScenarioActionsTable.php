@@ -4,7 +4,9 @@ namespace App\Filament\Resources\ScenarioActions\Tables;
 
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use BackedEnum;
 use Carbon\CarbonImmutable;
@@ -27,14 +29,14 @@ final class ScenarioActionsTable
                 ->orderByDesc('id'))
             ->columns([
                 TextColumn::make('activity_at')
-                    ->label('Дата/время')
+                    ->label(__('Дата/время'))
                     ->state(fn (ScenarioAction $record): string => self::activityAt($record)),
                 TextColumn::make('message_summary')
-                    ->label('Сообщение / событие')
+                    ->label(__('Сообщение / событие'))
                     ->state(fn (ScenarioAction $record): string => self::messageLabel($record))
                     ->wrap(),
                 TextColumn::make('recipient_summary')
-                    ->label('Получатель')
+                    ->label(__('Получатель'))
                     ->state(fn (ScenarioAction $record): string => self::recipientLabel($record))
                     ->wrap()
                     ->url(fn (ScenarioAction $record): ?string => $record->recipient_type === 'client'
@@ -46,19 +48,19 @@ final class ScenarioActionsTable
                     ->disabledClick(fn (ScenarioAction $record): bool => $record->recipient_type !== 'client'
                         || CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('status_summary')
-                    ->label('Статус')
+                    ->label(__('Статус'))
                     ->state(fn (ScenarioAction $record): string => self::statusSummary($record))
                     ->badge()
                     ->wrap(),
             ])
-            ->emptyStateHeading('История сообщений пока пуста')
-            ->emptyStateDescription('Здесь появятся отправленные сообщения и сообщения, которые не удалось отправить.')
+            ->emptyStateHeading(__('История сообщений пока пуста'))
+            ->emptyStateDescription(__('Здесь появятся отправленные сообщения и сообщения, которые не удалось отправить.'))
             ->recordActions([
                 ViewAction::make()
-                    ->label('Открыть')
+                    ->label(__('Открыть'))
                     ->icon(Heroicon::OutlinedEye)
                     ->iconButton()
-                    ->tooltip('Открыть подробности'),
+                    ->tooltip(__('Открыть подробности')),
             ]);
     }
 
@@ -74,39 +76,39 @@ final class ScenarioActionsTable
     private static function messageLabel(ScenarioAction $record): string
     {
         if ($record->kind === 'appointment_reminder') {
-            return 'Напоминание о визите';
+            return __('Напоминание о визите');
         }
 
         $event = $record->event?->event_name;
         $value = $event instanceof BackedEnum ? $event->value : (string) $event;
 
         return match ($value) {
-            'booking.created' => 'Новая запись',
-            'booking.confirmed' => 'Подтверждение записи',
-            'booking.rescheduled' => 'Перенос записи',
-            'booking.cancelled' => 'Отмена записи',
-            'booking.completed' => 'После визита',
-            'onboarding.started' => 'Начало оформления',
-            'finance.obligation.created' => 'Задолженность за визит',
-            'survey.completed' => 'Завершение теста',
-            'finance.payment.succeeded' => 'Оплата получена',
-            'finance.payment.failed' => 'Оплата не прошла',
-            'finance.payment.initiation_unavailable' => 'Онлайн-оплата недоступна',
-            'finance.payment.reconciliation_required' => 'Платёж требует сверки',
-            'commerce.fulfillment.failed' => 'Доступ не выдан',
-            'commerce.fulfillment.completed' => 'Доступ выдан',
-            'referral.reward.earned' => 'Начисление по партнёрской программе',
-            default => 'Автоматическое сообщение',
+            'booking.created' => __('Новая запись'),
+            'booking.confirmed' => __('Подтверждение записи'),
+            'booking.rescheduled' => __('Перенос записи'),
+            'booking.cancelled' => __('Отмена записи'),
+            'booking.completed' => __('После визита'),
+            'onboarding.started' => __('Начало оформления'),
+            'finance.obligation.created' => __('Задолженность за визит'),
+            'survey.completed' => __('Завершение теста'),
+            'finance.payment.succeeded' => __('Оплата получена'),
+            'finance.payment.failed' => __('Оплата не прошла'),
+            'finance.payment.initiation_unavailable' => __('Онлайн-оплата недоступна'),
+            'finance.payment.reconciliation_required' => __('Платёж требует сверки'),
+            'commerce.fulfillment.failed' => __('Доступ не выдан'),
+            'commerce.fulfillment.completed' => __('Доступ выдан'),
+            'referral.reward.earned' => __('Начисление по партнёрской программе'),
+            default => __('Автоматическое сообщение'),
         };
     }
 
     private static function recipientLabel(ScenarioAction $record): string
     {
         if ($record->recipient_type === 'client') {
-            return trim((string) ($record->client?->full_name ?: 'Клиент'));
+            return trim((string) ($record->client?->full_name ?: __('Клиент')));
         }
 
-        return trim((string) ($record->recipientUser?->name ?: 'Специалист'));
+        return trim((string) ($record->recipientUser?->name ?: __('Специалист')));
     }
 
     private static function statusSummary(ScenarioAction $record): string
@@ -128,31 +130,23 @@ final class ScenarioActionsTable
 
     private static function statusLabel(string $status): string
     {
-        return match ($status) {
-            'scheduled' => 'Запланировано',
-            'processing' => 'Отправляется',
-            'delivered' => 'Отправлено',
-            'retryable' => 'Повторим позже',
-            'failed', 'suppressed' => 'Не отправлено',
-            'cancelled' => 'Отменено',
-            default => 'Статус недоступен',
-        };
+        return CrmLabel::enum(ScenarioActionStatus::tryFrom($status)) ?? __('Статус недоступен');
     }
 
     private static function reasonLabel(?string $reason): ?string
     {
         return match ($reason) {
             null, '' => null,
-            'verified_identity_unavailable', 'no_available_channel', 'channel_unavailable' => 'Нет доступного Telegram',
-            'provider_suppressed' => 'Получатель отключил сообщения',
-            'booking_changed' => 'Запись уже изменилась',
-            'current_conditions_not_met' => 'Условие больше не выполнено',
-            'booking_meeting_pending' => 'Ссылка на Zoom ещё готовится',
-            'template_unavailable' => 'Сообщение больше недоступно',
-            'delivery_context_missing' => 'Данные записи недоступны',
-            'inline_buttons_unavailable' => 'Кнопка сообщения недоступна',
-            'all_channels_failed', 'delivery_execution_error', 'delivery_outcome_unknown' => 'Не удалось отправить',
-            default => 'Не удалось отправить',
+            'verified_identity_unavailable', 'no_available_channel', 'channel_unavailable' => __('Нет доступного Telegram'),
+            'provider_suppressed' => __('Получатель отключил сообщения'),
+            'booking_changed' => __('Запись уже изменилась'),
+            'current_conditions_not_met' => __('Условие больше не выполнено'),
+            'booking_meeting_pending' => __('Ссылка на Zoom ещё готовится'),
+            'template_unavailable' => __('Сообщение больше недоступно'),
+            'delivery_context_missing' => __('Данные записи недоступны'),
+            'inline_buttons_unavailable' => __('Кнопка сообщения недоступна'),
+            'all_channels_failed', 'delivery_execution_error', 'delivery_outcome_unknown' => __('Не удалось отправить'),
+            default => __('Не удалось отправить'),
         };
     }
 }

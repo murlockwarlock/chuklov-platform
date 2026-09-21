@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Specialists\Pages;
 
 use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Identity\Application\InitiateTelegramOrganizationLink;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
@@ -13,12 +14,11 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
 use LogicException;
 
-class CreateSpecialist extends CreateRecord
+class CreateSpecialist extends LocalizedCreateRecord
 {
     protected static string $resource = SpecialistResource::class;
 
@@ -98,12 +98,12 @@ class CreateSpecialist extends CreateRecord
 
             return Notification::make()
                 ->success()
-                ->title('Специалист создан')
-                ->body('Ссылка для привязки Telegram: '.$link)
+                ->title(__('Специалист создан'))
+                ->body(__('Ссылка для привязки Telegram: :link', ['link' => $link]))
                 ->persistent()
                 ->actions([
                     Action::make('openTelegramLink')
-                        ->label('Открыть ссылку')
+                        ->label(__('Открыть ссылку'))
                         ->url($link)
                         ->openUrlInNewTab()
                         ->button(),
@@ -113,15 +113,15 @@ class CreateSpecialist extends CreateRecord
         if ($this->telegramAlreadyConnected) {
             return Notification::make()
                 ->success()
-                ->title('Специалист создан')
-                ->body('Telegram выбранного сотрудника уже подключён. Для смены аккаунта откройте редактирование специалиста и выберите «Перепривязать Telegram».');
+                ->title(__('Специалист создан'))
+                ->body(__('Telegram выбранного сотрудника уже подключён. Для смены аккаунта откройте редактирование специалиста и выберите «Перепривязать Telegram».'));
         }
 
         if ($this->telegramLinkUnavailable) {
             return Notification::make()
                 ->warning()
-                ->title('Специалист создан')
-                ->body('Ссылку для привязки Telegram можно создать в редактировании специалиста.');
+                ->title(__('Специалист создан'))
+                ->body(__('Ссылку для привязки Telegram можно создать в редактировании специалиста.'));
         }
 
         return parent::getCreatedNotification();

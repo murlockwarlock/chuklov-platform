@@ -43,7 +43,7 @@ final class FinancePaymentActions
     public static function openForBooking(): Action
     {
         return Action::make('openPayment')
-            ->label('Открыть оплату')
+            ->label(__('Открыть оплату'))
             ->color('gray')
             ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->bookingPaymentUrl($record) !== null)
             ->url(fn (Booking $record): ?string => app(FinancePresentation::class)->bookingPaymentUrl($record));
@@ -52,19 +52,19 @@ final class FinancePaymentActions
     public static function correction(): Action
     {
         return Action::make('correctPayment')
-            ->label('Исправить оплату')
+            ->label(__('Исправить оплату'))
             ->color('warning')
-            ->modalHeading('Исправить оплату')
-            ->modalDescription('Исходная оплата останется в истории. Мы добавим исправление и пересчитаем итог.')
-            ->modalSubmitActionLabel('Добавить исправление')
+            ->modalHeading(__('Исправить оплату'))
+            ->modalDescription(__('Исходная оплата останется в истории. Мы добавим исправление и пересчитаем итог.'))
+            ->modalSubmitActionLabel(__('Добавить исправление'))
             ->schema([
                 TextInput::make('payment_summary')
-                    ->label('Исправляемая оплата')
+                    ->label(__('Исправляемая оплата'))
                     ->default(fn (FinancialLedgerEntry $record): string => self::paymentSummary($record))
                     ->disabled()
                     ->dehydrated(false),
                 Textarea::make('reason')
-                    ->label('Причина исправления')
+                    ->label(__('Причина исправления'))
                     ->required()
                     ->maxLength(500),
                 Hidden::make('idempotency_key')
@@ -90,7 +90,7 @@ final class FinancePaymentActions
                 );
                 Notification::make()
                     ->success()
-                    ->title('Оплата исправлена. Исходная запись сохранена в истории.')
+                    ->title(__('Оплата исправлена. Исходная запись сохранена в истории.'))
                     ->send();
             });
     }
@@ -98,10 +98,10 @@ final class FinancePaymentActions
     private static function recordPaymentAction(string $name): Action
     {
         return Action::make($name)
-            ->label('Записать оплату')
+            ->label(__('Записать оплату'))
             ->color('success')
-            ->modalHeading('Записать оплату')
-            ->modalSubmitActionLabel('Записать оплату')
+            ->modalHeading(__('Записать оплату'))
+            ->modalSubmitActionLabel(__('Записать оплату'))
             ->schema(self::paymentSchema())
             ->action(function (Model $record, array $data): void {
                 $actor = auth()->user();
@@ -128,7 +128,7 @@ final class FinancePaymentActions
                     receipt: $receipt,
                     idempotencyKey: (string) $data['idempotency_key'],
                 );
-                Notification::make()->success()->title('Оплата записана. Остаток обновлён.')->send();
+                Notification::make()->success()->title(__('Оплата записана. Остаток обновлён.'))->send();
             });
     }
 
@@ -137,38 +137,38 @@ final class FinancePaymentActions
     {
         return [
             TextInput::make('client_summary')
-                ->label('Клиент')
+                ->label(__('Клиент'))
                 ->default(fn (Model $record): string => self::obligation($record)?->client->full_name ?? '—')
                 ->disabled()
                 ->dehydrated(false),
             TextInput::make('service_summary')
-                ->label('Услуга')
+                ->label(__('Услуга'))
                 ->default(fn (Model $record): string => self::serviceName($record))
                 ->disabled()
                 ->dehydrated(false),
             TextInput::make('visit_summary')
-                ->label('Дата визита')
+                ->label(__('Дата визита'))
                 ->default(fn (Model $record): string => app(FinancePresentation::class)->visitDate(self::obligation($record)?->booking))
                 ->disabled()
                 ->dehydrated(false),
             TextInput::make('remaining_summary')
-                ->label('Осталось к оплате')
+                ->label(__('Осталось к оплате'))
                 ->default(fn (Model $record): string => self::obligation($record) === null
                     ? '—'
                     : app(FinancePresentation::class)->settlementOutstanding(self::obligation($record)))
                 ->disabled()
                 ->dehydrated(false),
             TextInput::make('amount')
-                ->label('Сумма оплаты')
+                ->label(__('Сумма оплаты'))
                 ->default(fn (Model $record): ?string => self::obligation($record) === null
                     ? null
                     : app(FinancePresentation::class)->paymentAmountDefault(self::obligation($record)))
-                ->placeholder('Введите сумму')
+                ->placeholder(__('Введите сумму'))
                 ->inputMode('decimal')
                 ->required()
                 ->maxLength(40),
             Select::make('currency')
-                ->label('Валюта оплаты')
+                ->label(__('Валюта оплаты'))
                 ->options(fn (): array => app(FinancePresentation::class)->currencyOptions())
                 ->default(function (Model $record): ?string {
                     $obligation = self::obligation($record);
@@ -181,26 +181,26 @@ final class FinancePaymentActions
                 ->dehydrated(true)
                 ->required(),
             Select::make('payment_method')
-                ->label('Способ оплаты')
+                ->label(__('Способ оплаты'))
                 ->options([
-                    PaymentMethod::Cash->value => 'Наличные',
-                    PaymentMethod::BankTransfer->value => 'Банковский перевод',
-                    PaymentMethod::ManualCard->value => 'Карта в клинике',
-                    PaymentMethod::Other->value => 'Другое',
+                    PaymentMethod::Cash->value => __('Наличные'),
+                    PaymentMethod::BankTransfer->value => __('Банковский перевод'),
+                    PaymentMethod::ManualCard->value => __('Карта в клинике'),
+                    PaymentMethod::Other->value => __('Другое'),
                 ])
                 ->required(),
             DateTimePicker::make('occurred_at')
-                ->label('Дата и время оплаты')
+                ->label(__('Дата и время оплаты'))
                 ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                 ->default(fn (): CarbonImmutable => CarbonImmutable::now(app(OrganizationContext::class)->defaultTimezone()))
                 ->seconds(false)
                 ->required(),
             Textarea::make('note')
-                ->label('Примечание')
+                ->label(__('Примечание'))
                 ->maxLength(2000),
             FileUpload::make('receipt')
-                ->label('Квитанция')
-                ->helperText('PDF, JPG или PNG до 10 МБ.')
+                ->label(__('Квитанция'))
+                ->helperText(__('PDF, JPG или PNG до 10 МБ.'))
                 ->storeFiles(false)
                 ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png'])
                 ->maxSize(10240),

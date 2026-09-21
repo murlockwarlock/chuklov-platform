@@ -16,7 +16,7 @@ class SpecialistServiceAssignmentForm
         return $schema
             ->components([
                 Select::make('specialist_id')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->searchable()
                     ->native(false)
                     ->preload()
@@ -26,7 +26,7 @@ class SpecialistServiceAssignmentForm
                     ->getOptionLabelUsing(static fn (mixed $value): ?string => self::specialistLabel($value))
                     ->required(),
                 Select::make('service_id')
-                    ->label('Услуга')
+                    ->label(__('Услуга'))
                     ->searchable()
                     ->native(false)
                     ->preload()

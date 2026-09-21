@@ -4,6 +4,7 @@ namespace App\Filament\Resources\KnowledgeSources\Pages;
 
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
 use App\Filament\Support\KnowledgeSourcePresentation;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Knowledge\Application\DeleteKnowledgeSource;
 use App\Modules\Knowledge\Application\ReactivateKnowledgeSource;
@@ -12,10 +13,9 @@ use App\Modules\Knowledge\Application\UpdateKnowledgeSource as UpdateKnowledgeSo
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
-final class EditKnowledgeSource extends EditRecord
+final class EditKnowledgeSource extends LocalizedEditRecord
 {
     protected static string $resource = KnowledgeSourceResource::class;
 
@@ -49,7 +49,7 @@ final class EditKnowledgeSource extends EditRecord
     protected function getHeaderActions(): array
     {
         return [
-            Action::make('retire')->label('Скрыть источник')->color('danger')->requiresConfirmation()->visible(function (): bool {
+            Action::make('retire')->label(__('Скрыть источник'))->color('danger')->requiresConfirmation()->visible(function (): bool {
                 $record = $this->getRecord();
 
                 return $record instanceof KnowledgeSource && $record->status->value === 'active';
@@ -58,10 +58,10 @@ final class EditKnowledgeSource extends EditRecord
                 $record = $this->getRecord();
                 abort_unless($actor instanceof User && $record instanceof KnowledgeSource, 403);
                 app(RetireKnowledgeSource::class)->handle($actor, $record);
-                Notification::make()->title('Источник скрыт из поиска')->success()->send();
+                Notification::make()->title(__('Источник скрыт из поиска'))->success()->send();
                 $this->redirect(KnowledgeSourceResource::getUrl('index'));
             }),
-            Action::make('reactivate')->label('Снова использовать материал')->visible(function (): bool {
+            Action::make('reactivate')->label(__('Снова использовать материал'))->visible(function (): bool {
                 $record = $this->getRecord();
 
                 return $record instanceof KnowledgeSource && $record->status->value === 'retired';
@@ -73,23 +73,23 @@ final class EditKnowledgeSource extends EditRecord
                 $this->record = $reactivated;
                 $this->form->model($reactivated);
                 $this->fillForm();
-                $body = app(KnowledgeSourcePresentation::class)->semanticSearchStatus() === 'Готов'
-                    ? 'Материал снова используется. Состояние поиска обновлено.'
-                    : 'Материал включён, но поиск по нему пока недоступен: настройте поиск по смыслу.';
-                Notification::make()->title('Материал снова используется')->body($body)->success()->send();
+                $body = app(KnowledgeSourcePresentation::class)->semanticSearchStatus() === __('Готов')
+                    ? __('Материал снова используется. Состояние поиска обновлено.')
+                    : __('Материал включён, но поиск по нему пока недоступен: настройте поиск по смыслу.');
+                Notification::make()->title(__('Материал снова используется'))->body($body)->success()->send();
             }),
             Action::make('delete')
-                ->label('Удалить материал')
+                ->label(__('Удалить материал'))
                 ->color('danger')
                 ->requiresConfirmation()
-                ->modalHeading('Удалить материал из базы знаний?')
-                ->modalDescription('Материал, его поисковые фрагменты и загруженный файл будут удалены. Это действие нельзя отменить.')
+                ->modalHeading(__('Удалить материал из базы знаний?'))
+                ->modalDescription(__('Материал, его поисковые фрагменты и загруженный файл будут удалены. Это действие нельзя отменить.'))
                 ->action(function (): void {
                     $actor = auth()->user();
                     $record = $this->getRecord();
                     abort_unless($actor instanceof User && $record instanceof KnowledgeSource, 403);
                     app(DeleteKnowledgeSource::class)->handle($actor, $record);
-                    Notification::make()->title('Материал удалён из базы знаний')->success()->send();
+                    Notification::make()->title(__('Материал удалён из базы знаний'))->success()->send();
                     $this->redirect(KnowledgeSourceResource::getUrl('index'));
                 }),
         ];

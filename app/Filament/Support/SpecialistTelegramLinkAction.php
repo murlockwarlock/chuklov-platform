@@ -22,25 +22,25 @@ final class SpecialistTelegramLinkAction
     {
         return Action::make('createTelegramLink')
             ->label(fn (Specialist $record): string => self::hasVerifiedTelegram($record)
-                ? 'Перепривязать Telegram'
-                : 'Подключить Telegram')
+                ? __('Перепривязать Telegram')
+                : __('Подключить Telegram'))
             ->icon('heroicon-o-link')
             ->color('primary')
             ->authorize(fn (Specialist $record): bool => self::canCreateTelegramLink($record))
             ->visible(fn (Specialist $record): bool => self::canCreateTelegramLink($record))
             ->modalHeading(fn (Specialist $record): string => self::hasVerifiedTelegram($record)
-                ? 'Перепривязать Telegram сотрудника'
-                : 'Подключить Telegram сотрудника')
+                ? __('Перепривязать Telegram сотрудника')
+                : __('Подключить Telegram сотрудника'))
             ->modalDescription(fn (Specialist $record): string => self::hasVerifiedTelegram($record)
-                ? 'Отправьте сотруднику новую одноразовую ссылку. После подтверждения новый Telegram заменит текущий аккаунт.'
-                : 'Отправьте сотруднику одноразовую ссылку ниже. Она действует ограниченное время.')
+                ? __('Отправьте сотруднику новую одноразовую ссылку. После подтверждения новый Telegram заменит текущий аккаунт.')
+                : __('Отправьте сотруднику одноразовую ссылку ниже. Она действует ограниченное время.'))
             ->modalSubmitAction(false)
-            ->modalCancelActionLabel('Закрыть')
+            ->modalCancelActionLabel(__('Закрыть'))
             ->schema([
                 TextInput::make('link')
-                    ->label('Ссылка для сотрудника')
+                    ->label(__('Ссылка для сотрудника'))
                     ->readOnly()
-                    ->copyable(copyMessage: 'Ссылка скопирована')
+                    ->copyable(copyMessage: __('Ссылка скопирована'))
                     ->required()
                     ->columnSpanFull(),
             ])
@@ -53,7 +53,7 @@ final class SpecialistTelegramLinkAction
 
         if (! $actor instanceof User || $specialist->staff_user_id === null) {
             throw ValidationException::withMessages([
-                'link' => 'Сначала привяжите к специалисту сотрудника CRM.',
+                'link' => __('Сначала привяжите к специалисту сотрудника CRM.'),
             ]);
         }
 
@@ -64,7 +64,7 @@ final class SpecialistTelegramLinkAction
             );
         } catch (AuthorizationException|LogicException) {
             throw ValidationException::withMessages([
-                'link' => 'Ссылку пока не удалось создать. Проверьте настройки Telegram-бота.',
+                'link' => __('Ссылку пока не удалось создать. Проверьте настройки Telegram-бота.'),
             ]);
         }
     }

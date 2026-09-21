@@ -8,26 +8,26 @@ final class AiPromptTextSections
     {
         [$source] = self::split($prompt);
 
-        return $source === '' ? 'Источник не выделен.' : $source;
+        return $source === '' ? __('Источник не выделен.') : $source;
     }
 
     public static function guardrails(string $prompt): string
     {
         [, $guardrails] = self::split($prompt);
 
-        return $guardrails === '' ? 'Защитные правила отдельно не выделены.' : $guardrails;
+        return $guardrails === '' ? __('Защитные правила отдельно не выделены.') : $guardrails;
     }
 
     public static function runtimeContract(string $prompt): string
     {
         $marker = "\n\n[CURRENT RUNTIME CONTRACT]\n";
         if (! str_contains($prompt, $marker)) {
-            return 'Runtime-контракт отдельно не выделен.';
+            return __('Runtime-контракт отдельно не выделен.');
         }
 
         [, $runtime] = explode($marker, $prompt, 2);
 
-        return trim($runtime) === '' ? 'Runtime-контракт отдельно не выделен.' : trim($runtime);
+        return trim($runtime) === '' ? __('Runtime-контракт отдельно не выделен.') : trim($runtime);
     }
 
     /** @return array{0: string, 1: string} */

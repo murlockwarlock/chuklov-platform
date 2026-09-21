@@ -5,17 +5,18 @@ namespace App\Filament\Resources\BroadcastCampaigns\RelationManagers;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Support\BroadcastFailurePresentation;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastRecipientState;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use App\Modules\Broadcasts\Domain\Models\BroadcastRecipient;
 use App\Modules\Organizations\Application\OrganizationContext;
-use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-final class RecipientsRelationManager extends RelationManager
+final class RecipientsRelationManager extends LocalizedRelationManager
 {
     protected static string $relationship = 'recipients';
 
@@ -34,21 +35,21 @@ final class RecipientsRelationManager extends RelationManager
             ->poll(fn (): ?string => $this->shouldPoll() ? '5s' : null)
             ->columns([
                 TextColumn::make('client.full_name')
-                    ->label('Клиент')
-                    ->placeholder('Имя не указано')
+                    ->label(__('Клиент'))
+                    ->placeholder(__('Имя не указано'))
                     ->limit(80)
                     ->url(fn (BroadcastRecipient $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
                     ->color(fn (BroadcastRecipient $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (BroadcastRecipient $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
-                TextColumn::make('state')->label('Состояние')->badge()->formatStateUsing(fn (BroadcastRecipientState|string $state): string => self::stateLabel($state)),
-                TextColumn::make('channel')->label('Канал')->formatStateUsing(fn (?string $state): string => $state === 'telegram' ? 'Telegram' : '—'),
-                TextColumn::make('reason')->label('Причина')->state(function (BroadcastRecipient $record): string {
+                TextColumn::make('state')->label(__('Состояние'))->badge()->formatStateUsing(fn (BroadcastRecipientState|string $state): string => self::stateLabel($state)),
+                TextColumn::make('channel')->label(__('Канал'))->formatStateUsing(fn (?string $state): string => $state === 'telegram' ? 'Telegram' : '—'),
+                TextColumn::make('reason')->label(__('Причина'))->state(function (BroadcastRecipient $record): string {
                     $code = $record->last_error_code ?: $record->exclusion_code;
 
                     return $code === null ? '—' : BroadcastFailurePresentation::label($code);
                 })->placeholder('—')->wrap(),
-                TextColumn::make('delivered_at')->label('Доставлено')->dateTime('d.m.Y H:i')->placeholder('—'),
-                TextColumn::make('updated_at')->label('Изменено')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('delivered_at')->label(__('Доставлено'))->dateTime('d.m.Y H:i')->placeholder('—'),
+                TextColumn::make('updated_at')->label(__('Изменено'))->dateTime('d.m.Y H:i')->sortable(),
             ])
             ->modifyQueryUsing(function (Builder $query): Builder {
                 $recipientTable = (new BroadcastRecipient)->getTable();
@@ -72,8 +73,8 @@ final class RecipientsRelationManager extends RelationManager
             })
             ->defaultSort('updated_at', 'desc')
             ->paginated([10, 25, 50])
-            ->emptyStateHeading('Получателей пока нет')
-            ->emptyStateDescription('После фиксации списка здесь появятся результаты отправки.');
+            ->emptyStateHeading(__('Получателей пока нет'))
+            ->emptyStateDescription(__('После фиксации списка здесь появятся результаты отправки.'));
     }
 
     private function shouldPoll(): bool
@@ -95,13 +96,6 @@ final class RecipientsRelationManager extends RelationManager
     {
         $state = $state instanceof BroadcastRecipientState ? $state : BroadcastRecipientState::tryFrom($state);
 
-        return match ($state) {
-            BroadcastRecipientState::Pending => 'Ожидает отправки',
-            BroadcastRecipientState::Suppressed => 'Исключён',
-            BroadcastRecipientState::Claimed => 'Отправляется',
-            BroadcastRecipientState::Delivered => 'Доставлено',
-            BroadcastRecipientState::Failed => 'Не отправлено',
-            default => 'Неизвестно',
-        };
+        return CrmLabel::enum($state) ?? __('Неизвестно');
     }
 }

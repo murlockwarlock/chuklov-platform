@@ -5,6 +5,7 @@ namespace App\Providers\Filament;
 use App\Filament\Auth\EditProfile;
 use App\Filament\Auth\Login;
 use App\Filament\Livewire\DatabaseNotifications;
+use App\Filament\Support\ConfigureCrmLocalization;
 use App\Http\Controllers\RevokePrivilegedSessionsController;
 use App\Http\Middleware\EnsurePrivilegedSessionIsCurrent;
 use App\Http\Middleware\ResolveOrganization;
@@ -15,6 +16,7 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationGroup;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Assets\Js;
@@ -34,6 +36,8 @@ class AdminPanelProvider extends PanelProvider
 {
     public function panel(Panel $panel): Panel
     {
+        ConfigureCrmLocalization::register();
+
         $panel = $panel
             ->default()
             ->id('admin')
@@ -43,7 +47,7 @@ class AdminPanelProvider extends PanelProvider
             ->multiFactorAuthentication([AuditedAppAuthentication::make()->recoverable()], isRequired: false)
             ->userMenuItems([
                 'revoke-privileged-sessions' => Action::make('revokePrivilegedSessions')
-                    ->label('Завершить все сеансы')
+                    ->label(__('Завершить все сеансы'))
                     ->icon(Heroicon::ArrowLeftEndOnRectangle)
                     ->url(fn (): string => route('filament.admin.security.revoke-sessions'))
                     ->postToUrl(),
@@ -85,25 +89,25 @@ class AdminPanelProvider extends PanelProvider
             })
             ->pages([])
             ->navigationGroups([
-                'Записи',
-                'Клиенты',
-                'Коммуникации',
-                'Настройки',
-                'Команда и услуги',
-                'Партнёры',
-                'Контент и знания',
-                'Искусственный интеллект',
-                'Финансы',
+                'Записи' => NavigationGroup::make(fn (): string => __('Записи')),
+                'Клиенты' => NavigationGroup::make(fn (): string => __('Клиенты')),
+                'Коммуникации' => NavigationGroup::make(fn (): string => __('Коммуникации')),
+                'Настройки' => NavigationGroup::make(fn (): string => __('Настройки')),
+                'Команда и услуги' => NavigationGroup::make(fn (): string => __('Команда и услуги')),
+                'Партнёры' => NavigationGroup::make(fn (): string => __('Партнёры')),
+                'Контент и знания' => NavigationGroup::make(fn (): string => __('Контент и знания')),
+                'Искусственный интеллект' => NavigationGroup::make(fn (): string => __('Искусственный интеллект')),
+                'Финансы' => NavigationGroup::make(fn (): string => __('Финансы')),
             ])
             ->discoverWidgets(in: app_path('Filament/Widgets'), for: 'App\Filament\Widgets')
             ->widgets([
                 AccountWidget::class,
             ])
             ->middleware([
-                SetAdminLocale::class,
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
+                SetAdminLocale::class,
                 AuthenticateSession::class,
                 ShareErrorsFromSession::class,
                 PreventRequestForgery::class,
@@ -119,6 +123,7 @@ class AdminPanelProvider extends PanelProvider
             ->persistentMiddleware([
                 EnsurePrivilegedSessionIsCurrent::class,
                 ResolveOrganization::class,
+                SetAdminLocale::class,
             ]);
     }
 }

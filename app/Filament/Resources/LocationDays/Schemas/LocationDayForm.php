@@ -17,29 +17,29 @@ class LocationDayForm
     public static function configure(Schema $schema): Schema
     {
         return $schema->components([
-            TextInput::make('area_name')->label('Район')->required()->maxLength(160),
-            Select::make('weekday')->label('День недели')->options([
-                1 => 'Понедельник',
-                2 => 'Вторник',
-                3 => 'Среда',
-                4 => 'Четверг',
-                5 => 'Пятница',
-                6 => 'Суббота',
-                7 => 'Воскресенье',
+            TextInput::make('area_name')->label(__('Район'))->required()->maxLength(160),
+            Select::make('weekday')->label(__('День недели'))->options([
+                1 => __('Понедельник'),
+                2 => __('Вторник'),
+                3 => __('Среда'),
+                4 => __('Четверг'),
+                5 => __('Пятница'),
+                6 => __('Суббота'),
+                7 => __('Воскресенье'),
             ])->nullable(),
-            DatePicker::make('specific_date')->label('Или конкретная дата')->native(false)->nullable(),
-            TimePicker::make('start_time')->label('Начало')->seconds(false)->required(),
-            TimePicker::make('end_time')->label('Окончание')->seconds(false)->required(),
+            DatePicker::make('specific_date')->label(__('Или конкретная дата'))->native(false)->nullable(),
+            TimePicker::make('start_time')->label(__('Начало'))->seconds(false)->required(),
+            TimePicker::make('end_time')->label(__('Окончание'))->seconds(false)->required(),
             Select::make('timezone')
-                ->label('Часовой пояс')
+                ->label(__('Часовой пояс'))
                 ->options(fn (Get $get): array => TimezoneOptions::options(
                     current: $get('timezone'),
                     organization: app(OrganizationContext::class)->defaultTimezone(),
                 ))
                 ->searchable()
                 ->required(),
-            Toggle::make('is_active')->label('Активен')->default(true)->required(),
-            TextInput::make('notes')->label('Примечание')->maxLength(500)->nullable(),
+            Toggle::make('is_active')->label(__('Активен'))->default(true)->required(),
+            TextInput::make('notes')->label(__('Примечание'))->maxLength(500)->nullable(),
         ]);
     }
 }

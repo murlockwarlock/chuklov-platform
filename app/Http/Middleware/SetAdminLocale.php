@@ -21,9 +21,15 @@ final class SetAdminLocale
                 ->value('string_value')
             : null;
 
+        $sessionLocale = $request->hasSession()
+            ? $request->session()->get(SupportedLocale::AdminSessionKey)
+            : null;
+
+        $organizationLocale = SupportedLocale::normalize(is_string($setting) ? $setting : null, 'ru');
+
         app()->setLocale(SupportedLocale::normalize(
-            is_string($setting) ? $setting : null,
-            (string) config('app.locale', 'ru'),
+            is_string($sessionLocale) ? $sessionLocale : null,
+            $organizationLocale,
         ));
 
         return $next($request);

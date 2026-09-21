@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Services\Pages;
 
 use App\Filament\Resources\Services\ServiceResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Commerce\Domain\Models\PaymentProviderOfferMapping;
@@ -13,12 +14,11 @@ use App\Modules\Services\Application\ServiceSnapshotHasher;
 use App\Modules\Services\Application\UpdateService;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Services\Domain\ValueObjects\ServicePriceMatrix;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
-class EditService extends EditRecord
+class EditService extends LocalizedEditRecord
 {
     protected static string $resource = ServiceResource::class;
 

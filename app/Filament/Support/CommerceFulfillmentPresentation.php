@@ -35,47 +35,31 @@ final class CommerceFulfillmentPresentation
             ->values()
             ->all() ?? [];
 
-        return $names === [] ? ($record->purchase === null ? '—' : 'Покупка') : implode(', ', $names);
+        return $names === [] ? ($record->purchase === null ? '—' : __('Покупка')) : implode(', ', $names);
     }
 
     public static function status(FinancialObligation $record): string
     {
-        $purchase = $record->purchase;
-        $items = $purchase?->items;
+        return match (self::statusKey($record)) {
+            'fulfilled' => self::isPhysical($record) ? __('Товар передан') : __('Доступ выдан'),
+            'pending_payment' => __('Ожидает оплаты'),
+            'failed' => __('Ошибка выдачи'),
+            'processing' => __('Выдаётся'),
+            'manual_pending' => self::isPhysical($record) ? __('Ожидает передачи') : __('Требуется выдача'),
+            'automatic_pending' => __('Выдаётся автоматически'),
+            default => '—',
+        };
+    }
 
-        if ($purchase === null || $items === null || $items->isEmpty()) {
-            return '—';
-        }
-
-        $fulfillments = $items->map(fn (PurchaseItem $item): ?PurchaseFulfillment => $item->fulfillment)
-            ->filter()
-            ->values();
-
-        if ($fulfillments->isEmpty()) {
-            return '—';
-        }
-
-        if ($fulfillments->every(fn (PurchaseFulfillment $fulfillment): bool => $fulfillment->status === CommerceFulfillmentStatus::Fulfilled)) {
-            return self::isPhysical($record) ? 'Товар передан' : 'Доступ выдан';
-        }
-
-        if ($purchase->status !== PurchaseStatus::Paid) {
-            return 'Ожидает оплаты';
-        }
-
-        if ($fulfillments->contains(fn (PurchaseFulfillment $fulfillment): bool => $fulfillment->status === CommerceFulfillmentStatus::Failed)) {
-            return 'Ошибка выдачи';
-        }
-
-        if ($fulfillments->contains(fn (PurchaseFulfillment $fulfillment): bool => $fulfillment->status === CommerceFulfillmentStatus::Processing)) {
-            return 'Выдаётся';
-        }
-
-        if ($fulfillments->contains(fn (PurchaseFulfillment $fulfillment): bool => $fulfillment->provider_type === 'manual')) {
-            return self::isPhysical($record) ? 'Ожидает передачи' : 'Требуется выдача';
-        }
-
-        return 'Выдаётся автоматически';
+    public static function statusColor(FinancialObligation $record): string
+    {
+        return match (self::statusKey($record)) {
+            'fulfilled' => 'success',
+            'failed' => 'danger',
+            'processing', 'automatic_pending' => 'info',
+            'manual_pending' => 'warning',
+            default => 'gray',
+        };
     }
 
     public static function manualFulfillment(FinancialObligation $record): ?PurchaseFulfillment
@@ -95,5 +79,43 @@ final class CommerceFulfillmentPresentation
         $snapshot = $record->purchase?->items->first()?->product_snapshot;
 
         return is_array($snapshot) && ($snapshot['catalog_type'] ?? null) === 'physical_product';
+    }
+
+    private static function statusKey(FinancialObligation $record): ?string
+    {
+        $purchase = $record->purchase;
+        $items = $purchase?->items;
+
+        if ($purchase === null || $items === null || $items->isEmpty()) {
+            return null;
+        }
+
+        $fulfillments = $items->map(fn (PurchaseItem $item): ?PurchaseFulfillment => $item->fulfillment)
+            ->filter()
+            ->values();
+
+        if ($fulfillments->isEmpty()) {
+            return null;
+        }
+
+        if ($fulfillments->every(fn (PurchaseFulfillment $fulfillment): bool => $fulfillment->status === CommerceFulfillmentStatus::Fulfilled)) {
+            return 'fulfilled';
+        }
+
+        if ($purchase->status !== PurchaseStatus::Paid) {
+            return 'pending_payment';
+        }
+
+        if ($fulfillments->contains(fn (PurchaseFulfillment $fulfillment): bool => $fulfillment->status === CommerceFulfillmentStatus::Failed)) {
+            return 'failed';
+        }
+
+        if ($fulfillments->contains(fn (PurchaseFulfillment $fulfillment): bool => $fulfillment->status === CommerceFulfillmentStatus::Processing)) {
+            return 'processing';
+        }
+
+        return $fulfillments->contains(fn (PurchaseFulfillment $fulfillment): bool => $fulfillment->provider_type === 'manual')
+            ? 'manual_pending'
+            : 'automatic_pending';
     }
 }

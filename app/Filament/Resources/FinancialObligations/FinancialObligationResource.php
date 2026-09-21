@@ -5,13 +5,13 @@ namespace App\Filament\Resources\FinancialObligations;
 use App\Filament\Resources\FinancialObligations\Pages\ListFinancialObligations;
 use App\Filament\Resources\FinancialObligations\Pages\ViewFinancialObligation;
 use App\Filament\Resources\FinancialObligations\Tables\FinancialObligationsTable;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\ListFinancialObligationsForCrm;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
@@ -19,7 +19,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 /** @extends resource<FinancialObligation> */
-final class FinancialObligationResource extends Resource
+final class FinancialObligationResource extends LocalizedResource
 {
     protected static ?string $model = FinancialObligation::class;
 

@@ -9,17 +9,17 @@ use App\Filament\Resources\Clients\Resources\Sessions\Pages\ViewMedicalSession;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\SessionForm;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\SessionInfolist;
 use App\Filament\Resources\Clients\Resources\Sessions\Tables\SessionsTable;
+use App\Filament\Support\LocalizedResource;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use BackedEnum;
 use Filament\Resources\ParentResourceRegistration;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-class MedicalSessionResource extends Resource
+class MedicalSessionResource extends LocalizedResource
 {
     protected static ?string $model = MedicalSession::class;
 

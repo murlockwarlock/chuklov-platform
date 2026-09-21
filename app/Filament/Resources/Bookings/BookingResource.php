@@ -8,19 +8,19 @@ use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Filament\Resources\Bookings\Schemas\BookingForm;
 use App\Filament\Resources\Bookings\Schemas\BookingInfolist;
 use App\Filament\Resources\Bookings\Tables\BookingsTable;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-class BookingResource extends Resource
+class BookingResource extends LocalizedResource
 {
     protected static ?string $model = Booking::class;
 

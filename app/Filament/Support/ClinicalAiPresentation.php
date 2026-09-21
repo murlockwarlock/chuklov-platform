@@ -19,14 +19,14 @@ final class ClinicalAiPresentation
 
         if ($capability === AiCapability::ClinicalSynthesizer
             && $workflowKey === ClinicalSynthesizerWorkflow::CourseReport->value) {
-            return 'Итоговый отчёт курса';
+            return __('Итоговый отчёт курса');
         }
 
         return match ($capability) {
-            AiCapability::ClinicalDocumentExtraction => 'Анализ документов',
-            AiCapability::PostureAnalysis => 'Анализ осанки',
-            AiCapability::ClinicalSynthesizer => 'Клиническое резюме',
-            default => 'Клинический AI',
+            AiCapability::ClinicalDocumentExtraction => __('Анализ документов'),
+            AiCapability::PostureAnalysis => __('Анализ осанки'),
+            AiCapability::ClinicalSynthesizer => __('Клиническое резюме'),
+            default => __('Клинический AI'),
         };
     }
 
@@ -34,17 +34,17 @@ final class ClinicalAiPresentation
     {
         $status = $status instanceof AiRunStatus ? $status : AiRunStatus::tryFrom($status);
 
-        return $status?->label() ?? 'Неизвестный статус';
+        return CrmLabel::enum($status) ?? __('Неизвестный статус');
     }
 
     public static function documentStatus(?AiRunStatus $status): string
     {
         return match ($status) {
-            null => 'Не запускался',
-            AiRunStatus::Preparing, AiRunStatus::Queued => 'В очереди',
-            AiRunStatus::Running => 'Анализируется',
-            AiRunStatus::Succeeded => 'Готово',
-            default => 'Ошибка',
+            null => __('Не запускался'),
+            AiRunStatus::Preparing, AiRunStatus::Queued => __('В очереди'),
+            AiRunStatus::Running => __('Анализируется'),
+            AiRunStatus::Succeeded => __('Готово'),
+            default => __('Ошибка'),
         };
     }
 
@@ -62,22 +62,22 @@ final class ClinicalAiPresentation
     public static function sourceStatus(?AiRun $run): string
     {
         if ($run === null) {
-            return 'Не запускался';
+            return __('Не запускался');
         }
 
         if (! $run->status->isTerminal()) {
-            return 'В работе';
+            return __('В работе');
         }
 
         if ($run->status !== AiRunStatus::Succeeded) {
-            return 'Ошибка';
+            return __('Ошибка');
         }
 
         return match ($run->human_review_status) {
-            HumanReviewStatus::PendingReview => 'Требует проверки',
-            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => 'Проверено',
-            HumanReviewStatus::Rejected => 'Отклонено',
-            default => 'Готово',
+            HumanReviewStatus::PendingReview => __('Требует проверки'),
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => __('Проверено'),
+            HumanReviewStatus::Rejected => __('Отклонено'),
+            default => __('Готово'),
         };
     }
 
@@ -105,21 +105,21 @@ final class ClinicalAiPresentation
     public static function synthesisStatus(?AiRun $run): string
     {
         if ($run === null) {
-            return 'Нет';
+            return __('Нет');
         }
 
         if (! $run->status->isTerminal()) {
-            return 'Создаётся';
+            return __('Создаётся');
         }
 
         if ($run->status !== AiRunStatus::Succeeded) {
-            return 'Ошибка';
+            return __('Ошибка');
         }
 
         return match ($run->human_review_status) {
-            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => 'Проверено',
-            HumanReviewStatus::Rejected => 'Отклонено',
-            default => 'Требует проверки',
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => __('Проверено'),
+            HumanReviewStatus::Rejected => __('Отклонено'),
+            default => __('Требует проверки'),
         };
     }
 
@@ -147,21 +147,21 @@ final class ClinicalAiPresentation
     public static function courseStatus(?AiRun $run): string
     {
         if ($run === null) {
-            return 'Нет отчёта';
+            return __('Нет отчёта');
         }
 
         if (! $run->status->isTerminal()) {
-            return 'Формируется';
+            return __('Формируется');
         }
 
         if ($run->status !== AiRunStatus::Succeeded) {
-            return 'Ошибка';
+            return __('Ошибка');
         }
 
         return match ($run->human_review_status) {
-            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => 'Проверено',
-            HumanReviewStatus::Rejected => 'Отклонено',
-            default => 'Требует проверки',
+            HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => __('Проверено'),
+            HumanReviewStatus::Rejected => __('Отклонено'),
+            default => __('Требует проверки'),
         };
     }
 
@@ -190,7 +190,7 @@ final class ClinicalAiPresentation
     {
         $status = $status instanceof HumanReviewStatus ? $status : HumanReviewStatus::tryFrom($status);
 
-        return $status?->label() ?? 'Проверка не определена';
+        return CrmLabel::enum($status) ?? __('Проверка не определена');
     }
 
     public static function reviewColor(HumanReviewStatus|string $status): string
@@ -200,7 +200,7 @@ final class ClinicalAiPresentation
 
         if ($reviewStatus === null) {
             foreach (HumanReviewStatus::cases() as $candidate) {
-                if ($candidate->label() === $value) {
+                if (CrmLabel::enum($candidate) === $value) {
                     $reviewStatus = $candidate;
 
                     break;
@@ -220,31 +220,31 @@ final class ClinicalAiPresentation
     {
         $status = $status instanceof HumanReviewStatus ? $status : HumanReviewStatus::tryFrom($status);
         $resultName = $workflowKey === ClinicalSynthesizerWorkflow::CourseReport->value
-            ? 'итогового отчёта курса'
-            : 'клинического резюме';
+            ? __('итогового отчёта курса')
+            : __('клинического резюме');
 
         return match ($status) {
             HumanReviewStatus::PendingReview => implode("\n", [
-                'Результат сохранён в истории Клинического AI.',
-                'Он ещё не подтверждён специалистом.',
-                'Клиенту ничего не отправлено.',
-                'В медицинский профиль данные автоматически не внесены.',
-                'Проверьте результат, чтобы использовать его в дальнейшем клиническом анализе.',
+                __('Результат сохранён в истории Клинического AI.'),
+                __('Он ещё не подтверждён специалистом.'),
+                __('Клиенту ничего не отправлено.'),
+                __('В медицинский профиль данные автоматически не внесены.'),
+                __('Проверьте результат, чтобы использовать его в дальнейшем клиническом анализе.'),
             ]),
             HumanReviewStatus::Accepted, HumanReviewStatus::EditedAndAccepted => implode("\n", [
-                'Результат проверен специалистом и сохранён в истории.',
-                'Он может использоваться при формировании '.$resultName.'.',
-                'В медицинский профиль данные автоматически не внесены.',
+                __('Результат проверен специалистом и сохранён в истории.'),
+                __('Он может использоваться при формировании :result.', ['result' => $resultName]),
+                __('В медицинский профиль данные автоматически не внесены.'),
             ]),
             HumanReviewStatus::Rejected => implode("\n", [
-                'Результат отклонён специалистом и сохранён в истории.',
-                'Он не используется как подтверждённый источник для '.$resultName.'.',
+                __('Результат отклонён специалистом и сохранён в истории.'),
+                __('Он не используется как подтверждённый источник для :result.', ['result' => $resultName]),
             ]),
             default => implode("\n", [
-                'Результат сохранён в истории Клинического AI.',
-                'Дополнительная проверка специалиста не требуется.',
-                'Клиенту ничего не отправлено.',
-                'В медицинский профиль данные автоматически не внесены.',
+                __('Результат сохранён в истории Клинического AI.'),
+                __('Дополнительная проверка специалиста не требуется.'),
+                __('Клиенту ничего не отправлено.'),
+                __('В медицинский профиль данные автоматически не внесены.'),
             ]),
         };
     }
@@ -258,7 +258,7 @@ final class ClinicalAiPresentation
 
         $capability = $capability instanceof AiCapability ? $capability : AiCapability::tryFrom($capability);
         if ($capability === null || $payload === null) {
-            return 'Результат получен, но не может быть отображён в текущем формате.';
+            return __('Результат получен, но не может быть отображён в текущем формате.');
         }
 
         return match ($capability) {
@@ -268,14 +268,14 @@ final class ClinicalAiPresentation
                 ? self::courseReportResult($payload)
                 : self::synthesizerResult($payload),
             default => null,
-        } ?? 'Результат получен, но не может быть отображён в текущем формате.';
+        } ?? __('Результат получен, но не может быть отображён в текущем формате.');
     }
 
     public static function preview(AiCapability|string $capability, ?array $payload, ?string $text, ?string $workflowKey = null): string
     {
         $result = trim(self::result($capability, $payload, $text, $workflowKey));
         if ($result === '') {
-            return 'Результат получен, но не может быть отображён в текущем формате.';
+            return __('Результат получен, но не может быть отображён в текущем формате.');
         }
 
         $lines = preg_split('/\R+/u', $result, -1, PREG_SPLIT_NO_EMPTY) ?: [];
@@ -288,35 +288,35 @@ final class ClinicalAiPresentation
     {
         if ($category !== null) {
             return match ($category) {
-                AiErrorCategory::InvalidPrompt => 'Нет активной версии промпта для этого анализа.',
-                AiErrorCategory::ProviderUnavailable => 'Сервис AI отключён или временно недоступен.',
-                AiErrorCategory::AuthenticationFailed => 'Проверьте подключение AI.',
-                AiErrorCategory::OutputSchemaValidationFailed => 'Ответ AI не прошёл проверку структуры.',
-                AiErrorCategory::ExecutionTimedOut => 'AI не успел завершить анализ. Повторите запуск.',
-                AiErrorCategory::SafetyKillSwitchActive => 'AI отключён политикой безопасности организации.',
-                default => $category->label(),
+                AiErrorCategory::InvalidPrompt => __('Нет активной версии промпта для этого анализа.'),
+                AiErrorCategory::ProviderUnavailable => __('Сервис AI отключён или временно недоступен.'),
+                AiErrorCategory::AuthenticationFailed => __('Проверьте подключение AI.'),
+                AiErrorCategory::OutputSchemaValidationFailed => __('Ответ AI не прошёл проверку структуры.'),
+                AiErrorCategory::ExecutionTimedOut => __('AI не успел завершить анализ. Повторите запуск.'),
+                AiErrorCategory::SafetyKillSwitchActive => __('AI отключён политикой безопасности организации.'),
+                default => CrmLabel::enum($category),
             };
         }
 
         $message = strtolower((string) $exception?->getMessage());
         if (str_contains($message, 'active prompt')) {
-            return 'Нет активной версии промпта для этого анализа.';
+            return __('Нет активной версии промпта для этого анализа.');
         }
         if (str_contains($message, 'model') || str_contains($message, 'provider')) {
-            return 'Проверьте активную модель и подключение AI.';
+            return __('Проверьте активную модель и подключение AI.');
         }
         if (str_contains($message, 'attachment') || str_contains($message, 'вложен') || str_contains($message, 'фото')) {
-            return 'Файл недоступен, повреждён или не прошёл проверку приватного хранилища.';
+            return __('Файл недоступен, повреждён или не прошёл проверку приватного хранилища.');
         }
 
-        return 'Не удалось запустить анализ. Проверьте настройки AI или повторите попытку.';
+        return __('Не удалось запустить анализ. Проверьте настройки AI или повторите попытку.');
     }
 
     public static function resultActionLabel(?string $workflowKey): string
     {
         return $workflowKey === ClinicalSynthesizerWorkflow::CourseReport->value
-            ? 'Открыть итоговый отчёт'
-            : 'Открыть результат';
+            ? __('Открыть итоговый отчёт')
+            : __('Открыть результат');
     }
 
     private static function safeText(?string $text): ?string
@@ -389,7 +389,7 @@ final class ClinicalAiPresentation
     {
         $text = self::scalarText($value);
 
-        return $text === null ? null : $label.":\n".$text;
+        return $text === null ? null : __($label).":\n".$text;
     }
 
     private static function listSection(string $label, mixed $value): ?string
@@ -399,7 +399,7 @@ final class ClinicalAiPresentation
             return null;
         }
 
-        return $label.":\n- ".implode("\n- ", $items);
+        return __($label).":\n- ".implode("\n- ", $items);
     }
 
     private static function findingsSection(string $label, mixed $value): ?string
@@ -416,9 +416,9 @@ final class ClinicalAiPresentation
 
             $parts = [];
             foreach ([
-                'location' => 'Область',
-                'pathology' => 'Изменение',
-                'impact' => 'Влияние',
+                'location' => __('Область'),
+                'pathology' => __('Изменение'),
+                'impact' => __('Влияние'),
             ] as $key => $fieldLabel) {
                 $field = self::scalarText($finding[$key] ?? null);
                 if ($field !== null) {
@@ -428,7 +428,7 @@ final class ClinicalAiPresentation
 
             $size = self::scalarText($finding['size_mm'] ?? null);
             if ($size !== null) {
-                $parts[] = 'Размер: '.$size.' мм';
+                $parts[] = __('Размер: :size мм', ['size' => $size]);
             }
 
             if ($parts !== []) {
@@ -436,7 +436,7 @@ final class ClinicalAiPresentation
             }
         }
 
-        return $items === [] ? null : $label.":\n- ".implode("\n- ", $items);
+        return $items === [] ? null : __($label).":\n- ".implode("\n- ", $items);
     }
 
     private static function visualFindingsSection(mixed $value): ?string
@@ -446,9 +446,9 @@ final class ClinicalAiPresentation
         }
 
         $planes = [
-            'front' => 'Спереди',
-            'side' => 'Сбоку',
-            'back' => 'Сзади',
+            'front' => __('Спереди'),
+            'side' => __('Сбоку'),
+            'back' => __('Сзади'),
         ];
         $items = [];
         foreach ($value as $finding) {
@@ -461,11 +461,11 @@ final class ClinicalAiPresentation
                 continue;
             }
 
-            $plane = $planes[(string) ($finding['plane'] ?? '')] ?? 'Наблюдения';
+            $plane = $planes[(string) ($finding['plane'] ?? '')] ?? __('Наблюдения');
             $items[] = $plane.': '.implode('; ', $observations);
         }
 
-        return $items === [] ? null : 'Визуальные наблюдения:\n- '.implode("\n- ", $items);
+        return $items === [] ? null : __('Визуальные наблюдения:')."\n- ".implode("\n- ", $items);
     }
 
     private static function hypothesesSection(mixed $value): ?string
@@ -483,15 +483,15 @@ final class ClinicalAiPresentation
             $parts = [];
             $statement = self::scalarText($hypothesis['statement'] ?? null);
             if ($statement !== null) {
-                $parts[] = 'Формулировка: '.$statement;
+                $parts[] = __('Формулировка:').' '.$statement;
             }
             $facts = self::scalarList($hypothesis['supporting_facts'] ?? null);
             if ($facts !== []) {
-                $parts[] = 'Основание: '.implode('; ', $facts);
+                $parts[] = __('Основание:').' '.implode('; ', $facts);
             }
             $uncertainty = self::scalarText($hypothesis['uncertainty'] ?? null);
             if ($uncertainty !== null) {
-                $parts[] = 'Неопределённость: '.$uncertainty;
+                $parts[] = __('Неопределённость:').' '.$uncertainty;
             }
 
             if ($parts !== []) {
@@ -499,7 +499,7 @@ final class ClinicalAiPresentation
             }
         }
 
-        return $items === [] ? null : 'Гипотезы:\n- '.implode("\n- ", $items);
+        return $items === [] ? null : __('Гипотезы:')."\n- ".implode("\n- ", $items);
     }
 
     private static function scalarList(mixed $value): array
@@ -532,7 +532,7 @@ final class ClinicalAiPresentation
         }
 
         if (is_bool($value)) {
-            return $value ? 'Да' : 'Нет';
+            return $value ? __('Да') : __('Нет');
         }
 
         return null;

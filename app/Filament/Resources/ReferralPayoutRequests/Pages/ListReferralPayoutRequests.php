@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\ReferralPayoutRequests\Pages;
 
 use App\Filament\Resources\ReferralPayoutRequests\ReferralPayoutRequestResource;
-use Filament\Resources\Pages\ListRecords;
+use App\Filament\Support\LocalizedListRecords;
 
-final class ListReferralPayoutRequests extends ListRecords
+final class ListReferralPayoutRequests extends LocalizedListRecords
 {
     protected static string $resource = ReferralPayoutRequestResource::class;
 

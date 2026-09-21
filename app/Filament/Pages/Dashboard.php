@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\LocalizedDashboard;
 use App\Filament\Support\TimezoneOptions;
 use App\Filament\Widgets\AnalyticsAcquisitionWidget;
 use App\Filament\Widgets\AnalyticsAiFailuresWidget;
@@ -17,11 +18,10 @@ use Closure;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Pages\Dashboard\Actions\FilterAction;
-use Filament\Pages\Dashboard as BaseDashboard;
 use Filament\Pages\Dashboard\Concerns\HasFiltersAction;
 use Filament\Schemas\Components\Utilities\Get;
 
-final class Dashboard extends BaseDashboard
+final class Dashboard extends LocalizedDashboard
 {
     use HasFiltersAction;
 
@@ -41,9 +41,13 @@ final class Dashboard extends BaseDashboard
             $endDate = CarbonImmutable::createFromFormat('!Y-m-d', $period->endDate, 'UTC')->format('d.m.Y');
             $range = $startDate === $endDate ? $startDate : $startDate.' — '.$endDate;
 
-            return 'Период: '.$range.' · Часовой пояс: '.TimezoneOptions::label($period->timezone).' ('.$period->timezone.')';
+            return __('Период: :range · Часовой пояс: :timezone (:zone)', [
+                'range' => $range,
+                'timezone' => TimezoneOptions::label($period->timezone),
+                'zone' => $period->timezone,
+            ]);
         } catch (\Throwable) {
-            return 'Период: последние 30 дней';
+            return __('Период: последние 30 дней');
         }
     }
 
@@ -64,17 +68,17 @@ final class Dashboard extends BaseDashboard
     {
         return [
             FilterAction::make()
-                ->label('Период')
-                ->modalHeading('Период отчёта')
+                ->label(__('Период'))
+                ->modalHeading(__('Период отчёта'))
                 ->schema([
                     Select::make('period')
-                        ->label('Период')
+                        ->label(__('Период'))
                         ->options(DashboardPeriod::options())
                         ->default(DashboardPeriod::DefaultPreset)
                         ->required()
                         ->live(),
                     DatePicker::make('start_date')
-                        ->label('Начало')
+                        ->label(__('Начало'))
                         ->format('Y-m-d')
                         ->displayFormat('d.m.Y')
                         ->requiredIf('period', DashboardPeriod::Custom)
@@ -82,7 +86,7 @@ final class Dashboard extends BaseDashboard
                         ->beforeOrEqual('end_date')
                         ->visible(fn (Get $get): bool => $get('period') === DashboardPeriod::Custom),
                     DatePicker::make('end_date')
-                        ->label('Конец')
+                        ->label(__('Конец'))
                         ->format('Y-m-d')
                         ->displayFormat('d.m.Y')
                         ->requiredIf('period', DashboardPeriod::Custom)
@@ -106,7 +110,7 @@ final class Dashboard extends BaseDashboard
                                 if ($start instanceof CarbonImmutable && $end instanceof CarbonImmutable
                                     && $start->lessThanOrEqualTo($end)
                                     && $start->diffInDays($end) + 1 > 366) {
-                                    $fail('Выберите период не более одного года.');
+                                    $fail(__('Выберите период не более одного года.'));
                                 }
                             },
                             fn (Get $get): bool => $get('period') === DashboardPeriod::Custom,

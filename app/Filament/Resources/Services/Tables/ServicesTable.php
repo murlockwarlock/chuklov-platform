@@ -18,19 +18,19 @@ class ServicesTable
     {
         return $table
             ->columns([
-                TextColumn::make('name')->label('Название')->searchable()->sortable(),
-                TextColumn::make('summary')->label('Описание')->limit(80),
+                TextColumn::make('name')->label(__('Название'))->searchable()->sortable(),
+                TextColumn::make('summary')->label(__('Описание'))->limit(80),
                 TextColumn::make('catalog_type')
-                    ->label('Тип')
+                    ->label(__('Тип'))
                     ->formatStateUsing(fn (CatalogItemType|string|null $state): string => match ($state instanceof CatalogItemType ? $state : CatalogItemType::tryFrom((string) $state)) {
-                        CatalogItemType::PhysicalProduct => 'Физический товар',
-                        CatalogItemType::OnlineProduct => 'Онлайн-товар',
-                        default => 'Услуга',
+                        CatalogItemType::PhysicalProduct => __('Физический товар'),
+                        CatalogItemType::OnlineProduct => __('Онлайн-товар'),
+                        default => __('Услуга'),
                     }),
-                TextColumn::make('category')->label('Категория')->placeholder('—')->sortable(),
-                TextColumn::make('duration_minutes')->label('Длительность')->suffix(' мин.')->sortable(),
+                TextColumn::make('category')->label(__('Категория'))->placeholder('—')->sortable(),
+                TextColumn::make('duration_minutes')->label(__('Длительность'))->suffix(' мин.')->sortable(),
                 TextColumn::make('price_minor')
-                    ->label('Цена')
+                    ->label(__('Цена'))
                     ->state(function (Service $record): string {
                         if ($record->price_minor === null || $record->price_currency === null) {
                             return '—';
@@ -43,13 +43,13 @@ class ServicesTable
                             return '—';
                         }
                     }),
-                IconColumn::make('is_active')->label('Доступна')->boolean()->sortable(),
+                IconColumn::make('is_active')->label(__('Доступна'))->boolean()->sortable(),
             ])
             ->filters([
-                TernaryFilter::make('is_active')->label('Доступна для записи'),
+                TernaryFilter::make('is_active')->label(__('Доступна для записи')),
             ])
-            ->emptyStateHeading('Услуг пока нет')
-            ->emptyStateDescription('Добавьте консультации или процедуры, доступные для записи клиентов.')
+            ->emptyStateHeading(__('Услуг пока нет'))
+            ->emptyStateDescription(__('Добавьте консультации или процедуры, доступные для записи клиентов.'))
             ->recordActions([
                 EditAction::make(),
             ]);

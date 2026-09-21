@@ -17,13 +17,19 @@ class AnalyticsIngestionFailuresWidget extends StatsOverviewWidget
 {
     use InteractsWithPageFilters;
 
-    protected ?string $heading = 'Обработка базы знаний';
-
-    protected ?string $description = 'Ошибки обработки материалов за выбранный период';
-
     protected int|string|array $columnSpan = ['default' => 'full', 'lg' => 1];
 
     protected static ?int $sort = 7;
+
+    protected function getHeading(): ?string
+    {
+        return __('Обработка базы знаний');
+    }
+
+    protected function getDescription(): ?string
+    {
+        return __('Ошибки обработки материалов за выбранный период');
+    }
 
     public static function canView(): bool
     {
@@ -64,8 +70,8 @@ class AnalyticsIngestionFailuresWidget extends StatsOverviewWidget
     protected function getStats(): array
     {
         return [
-            Stat::make('Ошибки обработки знаний', (string) ($this->getData() ?? 0))
-                ->description('Ошибки обработки материалов'),
+            Stat::make(__('Ошибки обработки знаний'), (string) ($this->getData() ?? 0))
+                ->description(__('Ошибки обработки материалов')),
         ];
     }
 }

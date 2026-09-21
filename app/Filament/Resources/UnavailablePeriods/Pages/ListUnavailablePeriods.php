@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\UnavailablePeriods\Pages;
 
 use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-class ListUnavailablePeriods extends ListRecords
+class ListUnavailablePeriods extends LocalizedListRecords
 {
     protected static string $resource = UnavailablePeriodResource::class;
 

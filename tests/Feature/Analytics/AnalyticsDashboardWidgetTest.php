@@ -32,6 +32,20 @@ final class AnalyticsDashboardWidgetTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        app()->setLocale('ru');
+    }
+
+    protected function tearDown(): void
+    {
+        app()->setLocale('ru');
+
+        parent::tearDown();
+    }
+
     public function test_dashboard_keeps_upcoming_bookings_and_registers_one_shared_filter(): void
     {
         $dashboard = new Dashboard;
@@ -104,6 +118,31 @@ final class AnalyticsDashboardWidgetTest extends TestCase
             ->test(UpcomingBookingsWidget::class)
             ->assertSuccessful()
             ->assertSee('Ближайшие записи');
+    }
+
+    public function test_dashboard_and_kpi_widget_follow_the_english_crm_locale(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        app()->setLocale('en');
+
+        Livewire::actingAs($admin)
+            ->test(Dashboard::class)
+            ->assertSuccessful()
+            ->assertSee('Analytics')
+            ->assertSee('Period');
+
+        Livewire::actingAs($admin)
+            ->test(AnalyticsKpiWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Key metrics')
+            ->assertSee('New clients');
+
+        Livewire::actingAs($admin)
+            ->test(UpcomingBookingsWidget::class)
+            ->assertSuccessful()
+            ->assertSee('Upcoming appointments');
     }
 
     public function test_finance_widget_is_hidden_and_financial_values_do_not_enter_other_widgets_without_permission(): void

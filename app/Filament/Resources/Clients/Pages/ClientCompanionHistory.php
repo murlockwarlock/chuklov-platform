@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Clients\Pages;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\LocalizedViewRecord;
 use App\Filament\Support\MessageComposer;
 use App\Models\User;
 use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
@@ -24,7 +25,6 @@ use App\Support\RichText\RichTextDocument;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
-use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
@@ -36,7 +36,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
-final class ClientCompanionHistory extends ViewRecord
+final class ClientCompanionHistory extends LocalizedViewRecord
 {
     protected static string $resource = ClientResource::class;
 
@@ -54,7 +54,7 @@ final class ClientCompanionHistory extends ViewRecord
 
     public function getTitle(): string
     {
-        return 'Общение с клиентом';
+        return __('Общение с клиентом');
     }
 
     public function defaultForm(Schema $schema): Schema
@@ -97,14 +97,14 @@ final class ClientCompanionHistory extends ViewRecord
             mediaHelperText: 'Только PDF, TXT, JPG, PNG или WebP. Один файл до 20 МБ.',
             additionalMediaComponents: [
                 Select::make('existing_attachment_id')
-                    ->label('Или выбрать уже разрешённый файл')
+                    ->label(__('Или выбрать уже разрешённый файл'))
                     ->options(fn (): array => $actor instanceof User && $client instanceof Client
                         ? app(ListCompanionCommunicationAttachments::class)->options($actor, $client)
                         : [])
-                    ->placeholder('Без файла')
+                    ->placeholder(__('Без файла'))
                     ->native(false)
                     ->searchable()
-                    ->helperText('Защищённые медицинские файлы здесь не показываются.'),
+                    ->helperText(__('Защищённые медицинские файлы здесь не показываются.')),
             ],
         ))->statePath('data');
     }
@@ -117,7 +117,7 @@ final class ClientCompanionHistory extends ViewRecord
                 ->livewireSubmitHandler('sendReply')
                 ->footer([
                     Actions::make([
-                        Action::make('sendReply')->label('Отправить сообщение')->submit('sendReply'),
+                        Action::make('sendReply')->label(__('Отправить сообщение'))->submit('sendReply'),
                     ]),
                 ]),
         ]);
@@ -142,25 +142,25 @@ final class ClientCompanionHistory extends ViewRecord
 
         app(ReplyToCompanion::class)->handle($actor, $client, $body, $attachmentIds);
         $this->form->fill();
-        Notification::make()->success()->title('Сообщение отправлено')->send();
+        Notification::make()->success()->title(__('Сообщение отправлено'))->send();
     }
 
     protected function getHeaderActions(): array
     {
         return [
             Action::make('export')
-                ->label('Скачать историю')
+                ->label(__('Скачать историю'))
                 ->color('gray')
                 ->visible(fn (): bool => $this->canExport())
                 ->schema([
                     Select::make('format')
-                        ->label('Формат')
+                        ->label(__('Формат'))
                         ->options(['txt' => 'TXT', 'json' => 'JSON'])
                         ->default('txt')
                         ->required(),
                     Select::make('identity')
-                        ->label('Данные клиента')
-                        ->options(['identified' => 'Идентифицированные', 'pseudonymized' => 'Без прямых идентификаторов'])
+                        ->label(__('Данные клиента'))
+                        ->options(['identified' => __('Идентифицированные'), 'pseudonymized' => __('Без прямых идентификаторов')])
                         ->default('identified')
                         ->required(),
                 ])
@@ -185,12 +185,12 @@ final class ClientCompanionHistory extends ViewRecord
                     );
                 }),
             Action::make('technicalMetadata')
-                ->label('Дополнительные сведения')
+                ->label(__('Дополнительные сведения'))
                 ->color('gray')
                 ->visible(fn (): bool => $this->canExportMetadata())
-                ->modalHeading('Дополнительные сведения')
+                ->modalHeading(__('Дополнительные сведения'))
                 ->modalSubmitAction(false)
-                ->modalCancelActionLabel('Закрыть')
+                ->modalCancelActionLabel(__('Закрыть'))
                 ->slideOver()
                 ->modalContent(function (): View {
                     $actor = Auth::user();
