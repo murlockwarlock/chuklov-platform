@@ -365,6 +365,54 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertSame('Asia/Bangkok', $dateTimeField->getTimezone());
     }
 
+    public function test_journal_drag_drop_uses_authoritative_reschedule_and_rejects_stale_or_unavailable_drops(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $service->forceFill(['buffer_minutes' => 0])->save();
+        $client = Client::factory()->forOrganization($organization)->create(['timezone' => 'Asia/Almaty']);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 10, 5, 10, 0, 0, 'UTC'),
+            format: VisitFormat::Online,
+            clientTimezone: 'Asia/Almaty',
+            idempotencyKey: 'journal-drag-drop',
+        );
+        $originalStartsAt = $booking->startsAtUtc();
+        $originalEventVersion = $booking->event_version;
+        $originalEventCount = $booking->events()->count();
+        $this->resolveFilamentContext($admin, $organization);
+        $journal = Livewire::withQueryParams([
+            'specialist_id' => $specialist->getKey(),
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class);
+
+        $journal->call('rescheduleFromJournal', $booking->getKey(), '2026-10-05', '12:00', $originalEventVersion)
+            ->assertHasNoErrors();
+        $moved = $booking->fresh();
+        self::assertTrue($moved->startsAtUtc()->equalTo(CarbonImmutable::create(2026, 10, 5, 12, 0, 0, 'UTC')));
+        self::assertSame('Asia/Almaty', $moved->client_timezone);
+        self::assertSame($originalEventVersion + 1, $moved->event_version);
+        self::assertSame($originalEventCount + 1, $moved->events()->count());
+
+        $journal->call('rescheduleFromJournal', $booking->getKey(), '2026-10-05', '13:00', $originalEventVersion)
+            ->assertHasErrors('calendar');
+        self::assertTrue($booking->fresh()->startsAtUtc()->equalTo($moved->startsAtUtc()));
+
+        $currentVersion = $booking->fresh()->event_version;
+        $journal->call('rescheduleFromJournal', $booking->getKey(), '2026-10-05', '17:30', $currentVersion)
+            ->assertHasErrors('calendar');
+        self::assertTrue($booking->fresh()->startsAtUtc()->equalTo($moved->startsAtUtc()));
+    }
+
     public function test_work_schedule_keeps_selected_specialist_and_month_in_query_state(): void
     {
         [$organization, $admin, $specialist] = $this->fixture();

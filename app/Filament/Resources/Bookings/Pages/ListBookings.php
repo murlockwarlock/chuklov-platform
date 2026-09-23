@@ -11,15 +11,19 @@ use App\Filament\Support\LocalizedListRecords;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scheduling\Application\GetScheduleCalendar;
+use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\PaymentStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Url;
 
 class ListBookings extends LocalizedListRecords
@@ -154,6 +158,18 @@ class ListBookings extends LocalizedListRecords
             ->orderBy('starts_at')
             ->get();
         $canViewClients = ClientResource::canViewAny();
+        $retentionWindowMinutes = $this->retentionWindowMinutes();
+        $completedBookings = $bookings->filter(fn (Booking $booking): bool => $booking->status === BookingStatus::Completed);
+        $futureBookings = collect();
+        if ($completedBookings->isNotEmpty()) {
+            $futureBookings = Booking::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->whereIn('client_id', $completedBookings->pluck('client_id')->unique()->values())
+                ->whereIn('status', BookingStatus::qualifyingFutureValues())
+                ->where('starts_at', '>', $completedBookings->min(fn (Booking $booking): CarbonImmutable => $booking->startsAtUtc()))
+                ->where('starts_at', '<=', $completedBookings->max(fn (Booking $booking): CarbonImmutable => $booking->startsAtUtc())->addMinutes($retentionWindowMinutes))
+                ->get(['client_id', 'starts_at']);
+        }
 
         foreach ($bookings as $booking) {
             $localStart = $booking->startsAtUtc()->setTimezone($timezone);
@@ -163,7 +179,18 @@ class ListBookings extends LocalizedListRecords
                 continue;
             }
 
-            $calendar[$date]['bookings'][] = $this->bookingProjection($booking, $localStart, $localEnd, $canViewClients);
+            $hasQualifyingNextBooking = $futureBookings->contains(
+                fn (Booking $future): bool => (int) $future->client_id === (int) $booking->client_id
+                    && $future->startsAtUtc()->greaterThan($booking->startsAtUtc())
+                    && $future->startsAtUtc()->lessThanOrEqualTo($booking->startsAtUtc()->addMinutes($retentionWindowMinutes)),
+            );
+            $calendar[$date]['bookings'][] = $this->bookingProjection(
+                $booking,
+                $localStart,
+                $localEnd,
+                $canViewClients,
+                $booking->status === BookingStatus::Completed && ! $hasQualifyingNextBooking,
+            );
         }
 
         return $calendar;
@@ -234,6 +261,70 @@ class ListBookings extends LocalizedListRecords
         $specialist = $this->selectedSpecialist();
 
         return $specialist instanceof Specialist && $specialist->is_active;
+    }
+
+    private function retentionWindowMinutes(): int
+    {
+        $rule = ScenarioRule::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('rule_key', 'retention-follow-up-client-telegram')
+            ->first();
+
+        if ($rule instanceof ScenarioRule) {
+            $multiplier = match ($rule->delay_unit->value) {
+                'minutes' => 1,
+                'hours' => 60,
+                'days' => 1440,
+                'weeks' => 10080,
+                default => 1440,
+            };
+
+            return max(1, (int) $rule->delay_value * $multiplier);
+        }
+
+        return max(1, (int) config('scenarios.retention_default_delay_days', 30) * 1440);
+    }
+
+    public function rescheduleFromJournal(int $bookingId, string $date, string $time, int $expectedEventVersion): void
+    {
+        $this->resetErrorBag('calendar');
+        $timezone = $this->journalTimezone();
+        $value = $date.' '.$time;
+        $localStart = CarbonImmutable::createFromFormat('!Y-m-d H:i', $value, $timezone);
+
+        if ($localStart === false
+            || $localStart->format('Y-m-d H:i') !== $value
+            || ! in_array($localStart->minute, [0, 30], true)) {
+            $this->addError('calendar', __('Выберите корректное время журнала.'));
+
+            return;
+        }
+
+        $booking = Booking::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->whereKey($bookingId)
+            ->first();
+        $actor = auth()->user();
+
+        if (! $booking instanceof Booking || ! $actor instanceof User) {
+            $this->addError('calendar', __('Не удалось найти запись. Обновите журнал и попробуйте снова.'));
+
+            return;
+        }
+
+        try {
+            app(RescheduleBooking::class)->handle(
+                actor: $actor,
+                booking: $booking,
+                newStartsAt: $localStart,
+                clientTimezone: null,
+                reason: 'calendar_drag_drop',
+                expectedEventVersion: $expectedEventVersion,
+            );
+        } catch (ValidationException $exception) {
+            $message = collect($exception->errors())->flatten()->first();
+            $this->addError('calendar', is_string($message) && $message !== '' ? $message : __('Запись не удалось перенести.'));
+        }
     }
 
     /** @param array{start_minutes: int, end_minutes: int} $booking */
@@ -340,8 +431,8 @@ class ListBookings extends LocalizedListRecords
         ];
     }
 
-    /** @return array{id: int, client: string, client_url: string|null, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, format: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
-    private function bookingProjection(Booking $booking, CarbonImmutable $localStart, CarbonImmutable $localEnd, bool $canViewClients): array
+    /** @return array{id: int, event_version: int, client: string, client_url: string|null, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, format: string, location_label: string, party_size: int, has_debt: bool, retention_warning: bool, retention_label: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
+    private function bookingProjection(Booking $booking, CarbonImmutable $localStart, CarbonImmutable $localEnd, bool $canViewClients, bool $retentionWarning = false): array
     {
         $startMinutes = ((int) $localStart->format('H')) * 60 + (int) $localStart->format('i');
         $endMinutes = ((int) $localEnd->format('H')) * 60 + (int) $localEnd->format('i');
@@ -349,9 +440,14 @@ class ListBookings extends LocalizedListRecords
         $format = $booking->visit_format;
         $clientName = trim((string) ($booking->client->full_name ?? ''));
         $serviceName = trim((string) ($booking->service->name ?? ''));
+        $locationSnapshot = $booking->locationSnapshot();
+        $locationLabel = $format === VisitFormat::Online
+            ? __('Онлайн')
+            : trim((string) ($locationSnapshot['name'] ?? $locationSnapshot['address'] ?? $booking->location ?? __('Место не указано')));
 
         return [
             'id' => $booking->getKey(),
+            'event_version' => (int) $booking->event_version,
             'client' => $clientName !== '' ? $clientName : __('Клиент'),
             'client_url' => CrmEntityLinks::clientUrl($booking->client, $canViewClients),
             'service' => $serviceName !== '' ? $serviceName : __('Услуга'),
@@ -361,6 +457,11 @@ class ListBookings extends LocalizedListRecords
             'status' => self::statusLabel($status),
             'status_class' => self::statusClass($status),
             'format' => self::formatLabel($format),
+            'location_label' => $locationLabel,
+            'party_size' => (int) $booking->party_size,
+            'has_debt' => in_array($booking->payment_status, [PaymentStatus::Unpaid, PaymentStatus::PartiallyPaid], true),
+            'retention_warning' => $retentionWarning,
+            'retention_label' => __('Нет следующей записи'),
             'is_online' => $format === VisitFormat::Online,
             'start_minutes' => $startMinutes,
             'end_minutes' => max($startMinutes + 30, $endMinutes),

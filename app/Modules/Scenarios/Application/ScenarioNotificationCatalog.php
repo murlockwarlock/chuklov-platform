@@ -30,6 +30,7 @@ final class ScenarioNotificationCatalog
             ['event' => 'referral.link.visited', 'label' => 'Переход по реферальной ссылке', 'recipients' => 'Никому по умолчанию', 'channels' => [], 'enabled' => false, 'template' => 'Не отправлять по умолчанию'],
             ['event' => 'payment.provider.event.prepared', 'label' => 'Устаревшее событие платёжного провайдера', 'recipients' => 'Не используется', 'channels' => [], 'enabled' => false, 'template' => 'Не используется'],
             ['event' => 'finance.payment.succeeded', 'label' => 'Оплата получена', 'recipients' => 'Клиент', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Оплата получена'],
+            ['event' => 'finance.obligation.reminder_requested', 'label' => 'Напоминание о задолженности', 'recipients' => 'Клиент', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Напоминание об оплате'],
             ['event' => 'finance.payment.failed', 'label' => 'Оплата не прошла', 'recipients' => 'Клиент', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Оплата не прошла'],
             ['event' => 'finance.payment.initiation_unavailable', 'label' => 'Онлайн-оплата недоступна', 'recipients' => 'Финансовые сотрудники', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Проверка настроек онлайн-оплаты'],
             ['event' => 'finance.payment.reconciliation_required', 'label' => 'Платёж требует проверки', 'recipients' => 'Финансовые сотрудники', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Платёж требует проверки'],

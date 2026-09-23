@@ -154,7 +154,7 @@ final class MaterializeScenarioEvent
             return;
         }
 
-        if ($event->event_name->value === 'finance.obligation.created'
+        if (in_array($event->event_name->value, ['finance.obligation.created', 'finance.obligation.reminder_requested'], true)
             && ! $this->contextFactory->financeDebtIsCurrent($evaluationContext)) {
             return;
         }
@@ -262,6 +262,10 @@ final class MaterializeScenarioEvent
                 ScenarioEventType::PayoutStatusChanged,
                 ScenarioEventType::TrackerDailyTaskAssigned,
                 ScenarioEventType::TrackerWeeklyTaskAssigned,
+                ScenarioEventType::SurveyCompleted,
+                ScenarioEventType::TestStagnationDetected,
+                ScenarioEventType::ClientFeedbackSubmitted,
+                ScenarioEventType::FinancialDebtReminderRequested,
             ], true)
             || $template->template === null) {
             return $template;

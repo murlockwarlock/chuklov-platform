@@ -9,11 +9,13 @@ use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionAttachment;
+use App\Modules\Surveys\Application\SurveyComparisonPresentation;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyComparison;
 use App\Support\SupportedLocale;
@@ -25,6 +27,9 @@ final readonly class ListClientHealthOverview
         private ClientPortalContext $clientContext,
         private MedicalEncryptorInterface $encryptor,
         private FindLatestReviewedAiRun $reviewedRuns,
+        private GetClientMedicalProfile $medicalProfile,
+        private GetClientTemporaryAttachmentUrl $attachmentUrls,
+        private SurveyComparisonPresentation $comparisonPresentation,
     ) {}
 
     /** @return array<string, mixed> */
@@ -36,7 +41,8 @@ final readonly class ListClientHealthOverview
         $sessions = $this->sessions($organizationId, (int) $client->getKey(), $locale);
 
         return [
-            'profile' => $this->profile($organizationId, (int) $client->getKey()),
+            'profile' => $this->medicalProfile->handle(),
+            'materials' => $this->materials($organizationId, (int) $client->getKey()),
             'history' => $sessions,
             'comparisons' => $this->comparisons($organizationId, (int) $client->getKey(), $locale),
             'postureProgress' => $this->postureProgress($organizationId, (int) $client->getKey(), $locale),
@@ -48,18 +54,33 @@ final readonly class ListClientHealthOverview
         ];
     }
 
-    /** @return array{available: bool, updatedAt: string|null} */
-    private function profile(int $organizationId, int $clientId): array
+    /** @return list<array<string, mixed>> */
+    private function materials(int $organizationId, int $clientId): array
     {
-        $profile = MedicalProfile::query()
+        return MedicalAttachment::query()
             ->where('organization_id', $organizationId)
             ->where('client_id', $clientId)
-            ->first(['updated_at']);
+            ->whereIn('attachment_type', [AttachmentType::MedicalReport->value, AttachmentType::PosturePhoto->value])
+            ->orderByDesc('created_at')
+            ->limit(100)
+            ->get(['id', 'uuid', 'organization_id', 'client_id', 'attachment_type', 'original_filename', 'mime_type', 'size_bytes', 'created_at'])
+            ->map(fn (MedicalAttachment $attachment): array => [
+                'id' => (int) $attachment->getKey(),
+                'type' => $attachment->attachment_type->value,
+                'filename' => $attachment->original_filename,
+                'mimeType' => $attachment->mime_type,
+                'sizeBytes' => (int) $attachment->size_bytes,
+                'createdAt' => $attachment->created_at?->toIso8601String(),
+                'downloadUrl' => $this->attachmentUrls->handle($attachment),
+                'previewUrl' => $this->previewUrl($attachment),
+            ])
+            ->values()
+            ->all();
+    }
 
-        return [
-            'available' => $profile !== null,
-            'updatedAt' => $profile?->updated_at?->toIso8601String(),
-        ];
+    private function previewUrl(MedicalAttachment $attachment): ?string
+    {
+        return $this->attachmentUrls->handle($attachment, mode: 'preview');
     }
 
     /** @return list<array<string, mixed>> */
@@ -152,27 +173,13 @@ final readonly class ListClientHealthOverview
 
         return $comparisons->map(function (SurveyComparison $comparison) use ($attempts, $locale): array {
             $current = $attempts->get($comparison->current_attempt_id);
-            $metrics = [];
-            $labels = $this->metricLabels($current?->scoring_snapshot['metrics'] ?? [], $locale);
-            foreach ((array) ($comparison->comparison_snapshot['metrics'] ?? []) as $key => $metric) {
-                if (! is_array($metric) || ! is_numeric($metric['before'] ?? null) || ! is_numeric($metric['after'] ?? null)) {
-                    continue;
-                }
-                $metrics[] = [
-                    'label' => $labels[$key] ?? (string) $key,
-                    'before' => (float) $metric['before'],
-                    'after' => (float) $metric['after'],
-                    'change' => (float) ($metric['delta'] ?? ((float) $metric['after'] - (float) $metric['before'])),
-                ];
-            }
+            $previous = $attempts->get($comparison->previous_attempt_id);
+            $presentation = $this->comparisonPresentation->handle($comparison, $current, $previous, $locale);
 
             return [
                 'id' => (int) $comparison->getKey(),
                 'title' => $this->localizedText($current?->surveyVersion?->title, $current?->surveyVersion?->title_en, $locale),
-                'status' => (string) $comparison->status,
-                'beforeDate' => $attempts->get($comparison->previous_attempt_id)?->completed_at?->toIso8601String(),
-                'afterDate' => $current?->completed_at?->toIso8601String(),
-                'metrics' => $metrics,
+                ...$presentation,
             ];
         })->values()->all();
     }
@@ -287,23 +294,6 @@ final readonly class ListClientHealthOverview
         }
 
         return is_array($decoded) ? $decoded : null;
-    }
-
-    /** @param array<int, mixed> $metrics @return array<string, string> */
-    private function metricLabels(array $metrics, string $locale): array
-    {
-        $labels = [];
-        foreach ($metrics as $metric) {
-            if (! is_array($metric) || ! is_string($metric['key'] ?? null)) {
-                continue;
-            }
-            $label = $this->localizedValue($metric['label'] ?? null, $locale);
-            if (is_string($label) && trim($label) !== '') {
-                $labels[$metric['key']] = trim($label);
-            }
-        }
-
-        return $labels;
     }
 
     /** @return list<string> */

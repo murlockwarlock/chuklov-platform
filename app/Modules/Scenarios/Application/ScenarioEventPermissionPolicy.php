@@ -38,6 +38,7 @@ final class ScenarioEventPermissionPolicy
             ScenarioEventType::BookingCompleted,
             ScenarioEventType::HomeVisitChanged => OrganizationPermission::ViewScheduling,
             ScenarioEventType::FinancialObligationCreated,
+            ScenarioEventType::FinancialDebtReminderRequested,
             ScenarioEventType::PayoutRequested,
             ScenarioEventType::PayoutStatusChanged,
             ScenarioEventType::PaymentInitiationUnavailable,

@@ -74,11 +74,14 @@ use App\Modules\Scenarios\Application\BookingStatusConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientLanguageConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientMarketingConsentConditionEvaluator;
 use App\Modules\Scenarios\Application\ConditionEvaluatorRegistry;
+use App\Modules\Scenarios\Application\FeedbackScoreConditionEvaluator;
 use App\Modules\Scenarios\Application\FinancialOutstandingDebtConditionEvaluator;
 use App\Modules\Scenarios\Application\OnboardingCompletedConditionEvaluator;
 use App\Modules\Scenarios\Application\OnboardingStageConditionEvaluator;
 use App\Modules\Scenarios\Application\OrganizationScenarioRecipientResolver;
 use App\Modules\Scenarios\Application\ScenarioTemplateRenderer;
+use App\Modules\Scenarios\Application\SurveyAvailableConditionEvaluator;
+use App\Modules\Scenarios\Application\SurveyProgressAvailableConditionEvaluator;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateMediaStorageInterface;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Contracts\ScenarioRecipientResolver;
@@ -180,6 +183,9 @@ class AppServiceProvider extends ServiceProvider
                 new OnboardingCompletedConditionEvaluator,
                 new OnboardingStageConditionEvaluator,
                 new FinancialOutstandingDebtConditionEvaluator,
+                new FeedbackScoreConditionEvaluator,
+                new SurveyAvailableConditionEvaluator,
+                app(SurveyProgressAvailableConditionEvaluator::class),
                 app(TrackerAccessConditionEvaluator::class),
                 app(TrackerTaskConditionEvaluator::class),
             ]),

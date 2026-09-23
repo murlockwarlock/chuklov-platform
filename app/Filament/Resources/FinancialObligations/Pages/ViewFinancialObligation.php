@@ -5,6 +5,7 @@ namespace App\Filament\Resources\FinancialObligations\Pages;
 use App\Filament\Resources\FinancialObligations\FinancialObligationResource;
 use App\Filament\Support\CommerceFulfillmentActions;
 use App\Filament\Support\FinancePaymentActions;
+use App\Filament\Support\FinanceReminderActions;
 use App\Filament\Support\LocalizedViewRecord;
 
 final class ViewFinancialObligation extends LocalizedViewRecord
@@ -17,6 +18,7 @@ final class ViewFinancialObligation extends LocalizedViewRecord
     {
         return [
             FinancePaymentActions::forObligation(),
+            FinanceReminderActions::forObligation(),
             CommerceFulfillmentActions::forObligation(),
         ];
     }

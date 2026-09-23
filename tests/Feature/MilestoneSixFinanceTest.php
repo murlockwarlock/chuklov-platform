@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Finance\Application\CorrectFinancialPayment;
 use App\Modules\Finance\Application\CreateFinancialObligation;
 use App\Modules\Finance\Application\InitiateFakePayment;
 use App\Modules\Finance\Application\ReconcileFakeGatewayTransaction;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Application\RecordManualPayment;
+use App\Modules\Finance\Application\RequestFinancialObligationReminder;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Finance\Application\SaveExchangeRate;
 use App\Modules\Finance\Application\SettleFakePayment;
@@ -19,9 +21,12 @@ use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
 use App\Modules\Finance\Domain\ValueObjects\GatewaySettlementEvidence;
 use App\Modules\Finance\Infrastructure\Fake\FakePaymentGateway;
+use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
 use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\ScenarioContextFactory;
@@ -44,6 +49,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
+use Tests\Support\RecordingNotificationChannel;
 use Tests\TestCase;
 
 final class MilestoneSixFinanceTest extends TestCase
@@ -592,6 +598,42 @@ final class MilestoneSixFinanceTest extends TestCase
         self::assertSame(ScenarioActionStatus::Suppressed, $action->fresh()->status);
         self::assertSame('finance.obligation.created', $event->event_name->value);
         self::assertArrayNotHasKey('note', $event->payload);
+    }
+
+    public function test_debt_reminder_uses_authoritative_balance_and_is_idempotent_without_payment_mutation(): void
+    {
+        [$organization, $admin, $client, $booking] = $this->pricedCompletedBooking('USD', 10000);
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+        ClientChannelIdentity::factory()->forClient($client)->create([
+            'verification_status' => ChannelIdentityStatus::Verified->value,
+            'external_id' => 'debt-reminder-client',
+        ]);
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $telegram = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$telegram]));
+        $ledgerCount = FinancialLedgerEntry::query()->where('obligation_id', $obligation->getKey())->count();
+
+        $event = app(RequestFinancialObligationReminder::class)->handle($admin, $obligation);
+        $duplicate = app(RequestFinancialObligationReminder::class)->handle($admin, $obligation->fresh());
+
+        self::assertSame($event->getKey(), $duplicate->getKey());
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $actions = ScenarioAction::query()->where('scenario_event_id', $event->getKey())->get();
+        foreach ($actions as $action) {
+            $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+            $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+        }
+
+        self::assertCount(1, $telegram->messages);
+        self::assertStringContainsString('100.00 USD', $telegram->messages[0]->body);
+        self::assertSame($ledgerCount, FinancialLedgerEntry::query()->where('obligation_id', $obligation->getKey())->count());
+        self::assertSame(1, ScenarioEvent::query()->where('event_name', 'finance.obligation.reminder_requested')->count());
+        self::assertSame(1, AuditEvent::query()->where('action', 'finance.obligation.reminder_requested')->count());
+
+        app(RecordManualPayment::class)->handle($admin, $obligation->fresh(), '100.00', 'USD', 'cash', now(), null, null, 'debt-reminder-settlement');
+        $this->expectException(ValidationException::class);
+        app(RequestFinancialObligationReminder::class)->handle($admin, $obligation->fresh());
     }
 
     /** @return array{Organization, User, Client, Booking} */

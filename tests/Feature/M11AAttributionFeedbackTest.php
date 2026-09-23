@@ -5,14 +5,18 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Modules\Attribution\Application\CapturePreAuthAttribution;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
+use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Channels\Infrastructure\Database\DatabaseNotificationChannel;
 use App\Modules\Feedback\Application\FeedbackRequestFingerprint;
 use App\Modules\Feedback\Application\ListFeedbackSubmissionsForCrm;
+use App\Modules\Feedback\Application\RecordNpsSubmission;
 use App\Modules\Feedback\Application\SaveFeedbackConfiguration;
 use App\Modules\Feedback\Domain\Models\FeedbackReviewDestination;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Identity\Application\RegisterClientAcquisition;
 use App\Modules\Identity\Application\UpdateClientProfileFromPortal;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -24,12 +28,18 @@ use App\Modules\Referrals\Application\ListReferralRelationshipsForCrm;
 use App\Modules\Referrals\Domain\Enums\ReferralEstablishmentMethod;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
+use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
+use App\Modules\Scenarios\Application\ExecuteScenarioAction;
+use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
+use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
+use Tests\Support\RecordingNotificationChannel;
 use Tests\TestCase;
 
 final class M11AAttributionFeedbackTest extends TestCase
@@ -367,6 +377,67 @@ final class M11AAttributionFeedbackTest extends TestCase
         self::assertStringNotContainsString('Слишком долго ждал', (string) DB::table('feedback_submissions')->where('id', $submission->getKey())->value('internal_feedback'));
         self::assertStringNotContainsString('Слишком долго ждал', DB::table('audit_events')->pluck('metadata')->implode('|'));
         self::assertSame(2, FeedbackSubmission::query()->where('client_id', $client->id)->count());
+    }
+
+    public function test_low_feedback_creates_internal_scenario_escalation_without_public_review_delivery(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Клиент с низкой оценкой',
+            'language' => 'ru',
+        ]);
+        $admin = User::factory()->forOrganization($organization)->create();
+        OrganizationChannelIdentity::factory()->forUser($admin)->verified()->create([
+            'external_id' => 'low-score-manager',
+        ]);
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: true,
+            reviewUrlRu: 'https://reviews.example.test/ru',
+            reviewUrlEn: 'https://reviews.example.test/en',
+        );
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $telegram = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([
+            app(DatabaseNotificationChannel::class),
+            $telegram,
+        ]));
+
+        $submission = app(RecordNpsSubmission::class)->handle(
+            client: $client,
+            score: 4,
+            internalFeedback: 'Нужно улучшить сопровождение.',
+            idempotencyKey: 'low-score-scenario',
+        );
+        $duplicate = app(RecordNpsSubmission::class)->handle(
+            client: $client,
+            score: 4,
+            internalFeedback: 'Нужно улучшить сопровождение.',
+            idempotencyKey: 'low-score-scenario',
+        );
+        self::assertSame($submission->getKey(), $duplicate->getKey());
+
+        $event = ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', 'feedback.submitted')
+            ->where('aggregate_id', (string) $submission->getKey())
+            ->sole();
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        foreach (ScenarioAction::query()->where('scenario_event_id', $event->getKey())->get() as $action) {
+            $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+            $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+        }
+
+        self::assertCount(1, $telegram->messages);
+        self::assertStringContainsString('4/10', $telegram->messages[0]->body);
+        self::assertStringContainsString('Клиент с низкой оценкой', $telegram->messages[0]->body);
+        self::assertStringNotContainsString('reviews.example.test', $telegram->messages[0]->body);
+        self::assertNotNull($telegram->messages[0]->actionButton);
+        self::assertSame(url('/admin/feedback-submissions/'.$submission->getKey()), $telegram->messages[0]->actionButton->url);
+        self::assertSame(1, $admin->fresh()->notifications()->count());
     }
 
     public function test_feedback_configuration_rejects_non_https_review_urls_without_fetching_them(): void

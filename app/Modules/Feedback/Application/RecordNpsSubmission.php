@@ -6,6 +6,7 @@ use App\Modules\Feedback\Domain\Enums\NpsBand;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -18,6 +19,7 @@ final class RecordNpsSubmission
         private readonly GetFeedbackConfiguration $configuration,
         private readonly RecordAuditEvent $audit,
         private readonly FeedbackRequestFingerprint $fingerprint,
+        private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
 
     public function handle(
@@ -114,6 +116,7 @@ final class RecordNpsSubmission
                             'has_internal_feedback' => $internalFeedback !== null && $internalFeedback !== '',
                         ],
                     );
+                    $this->scenarioEvents->feedbackSubmitted($submission, $band, now()->toImmutable());
 
                     return $submission->refresh();
                 });

@@ -311,6 +311,7 @@ final class ScenarioRuleForm
             ScenarioEventType::BookingCompleted->value => __('После визита'),
             ScenarioEventType::OnboardingStarted->value => __('После начала оформления'),
             ScenarioEventType::FinancialObligationCreated->value => __('После появления задолженности'),
+            ScenarioEventType::FinancialDebtReminderRequested->value => __('При отправке напоминания о задолженности'),
             ScenarioEventType::SurveyCompleted->value => __('После завершения теста'),
             ScenarioEventType::TestStagnationDetected->value => __('Если показатели не снижаются'),
             ScenarioEventType::B2bLeadSubmitted->value => __('После B2B-запроса'),
@@ -357,6 +358,7 @@ final class ScenarioRuleForm
             'onboarding.completed' => __('Оформление завершено'),
             'onboarding.stage' => __('Этап оформления'),
             'finance.has_outstanding_debt' => __('Есть задолженность'),
+            'survey.progress_available' => __('Есть сравнимая динамика теста'),
         ];
     }
 
@@ -380,7 +382,8 @@ final class ScenarioRuleForm
             'booking.has_qualifying_next_booking',
             'onboarding.completed',
             'client.marketing_consent',
-            'finance.has_outstanding_debt' => [
+            'finance.has_outstanding_debt',
+            'survey.progress_available' => [
                 'true' => __('Да'),
                 'false' => __('Нет'),
             ],
@@ -409,7 +412,8 @@ final class ScenarioRuleForm
             'booking.has_qualifying_next_booking',
             'onboarding.completed',
             'client.marketing_consent',
-            'finance.has_outstanding_debt' => __('Ответ'),
+            'finance.has_outstanding_debt',
+            'survey.progress_available' => __('Ответ'),
             'onboarding.stage' => __('Этап оформления'),
             default => $multiple ? __('Значения условия') : __('Значение условия'),
         };

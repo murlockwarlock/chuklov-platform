@@ -25,7 +25,16 @@ class ResolveOrganization
 
         $organization = Organization::query()->findOrFail((int) $organizationId);
 
-        abort_if($user instanceof User && $user->membershipFor($organization) === null, 403);
+        if ($user instanceof User && $user->membershipFor($organization) === null) {
+            auth('web')->logout();
+
+            if ($request->hasSession()) {
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+            }
+
+            return redirect()->guest(route('filament.admin.auth.login'));
+        }
 
         $this->context->set($organization);
 

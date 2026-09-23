@@ -10,11 +10,14 @@ use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Commerce\Domain\Models\FulfillmentEvent;
 use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
+use App\Modules\Feedback\Domain\Enums\NpsBand;
+use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Finance\Application\PaymentGatewayReconciliationReason;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
 use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
+use App\Modules\Finance\Domain\ValueObjects\FinancialReconciliation;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
@@ -433,6 +436,57 @@ final class RecordScenarioEvent
                 'currency' => $ledgerEntry->payment_currency->value,
             ],
             idempotencyKey: 'finance.payment.succeeded:'.$obligation->organization_id.':'.$obligation->getKey().':'.$ledgerEntry->getKey(),
+            correlationId: 'finance:obligation:'.$obligation->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $obligation->organization_id, $data);
+    }
+
+    public function feedbackSubmitted(
+        FeedbackSubmission $submission,
+        NpsBand $band,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::ClientFeedbackSubmitted,
+            aggregateType: FeedbackSubmission::class,
+            aggregateId: (string) $submission->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'feedback_submission_id' => (int) $submission->getKey(),
+                'client_id' => (int) $submission->client_id,
+                'score' => (int) $submission->score,
+                'band' => $band->value,
+                'source' => (string) $submission->source,
+                'has_internal_feedback' => $submission->internal_feedback !== null && trim((string) $submission->internal_feedback) !== '',
+            ],
+            idempotencyKey: 'feedback.submitted:'.$submission->organization_id.':'.$submission->getKey(),
+            correlationId: 'feedback:submission:'.$submission->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $submission->organization_id, $data);
+    }
+
+    public function financialDebtReminderRequested(
+        FinancialObligation $obligation,
+        FinancialReconciliation $reconciliation,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        $outstandingMinor = $reconciliation->displayOutstanding->minorUnits();
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::FinancialDebtReminderRequested,
+            aggregateType: FinancialObligation::class,
+            aggregateId: (string) $obligation->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'obligation_id' => (int) $obligation->getKey(),
+                'client_id' => (int) $obligation->client_id,
+                'outstanding_amount_minor' => $outstandingMinor,
+                'currency' => $reconciliation->displayOutstanding->currency()->value,
+            ],
+            idempotencyKey: 'finance.obligation.reminder_requested:'.$obligation->organization_id.':'.$obligation->getKey().':'.$outstandingMinor,
             correlationId: 'finance:obligation:'.$obligation->getKey(),
             causationId: null,
         );

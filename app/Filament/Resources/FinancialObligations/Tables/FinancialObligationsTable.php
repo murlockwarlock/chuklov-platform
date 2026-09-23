@@ -11,6 +11,7 @@ use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\CrmLabel;
 use App\Filament\Support\FinancePaymentActions;
 use App\Filament\Support\FinancePresentation;
+use App\Filament\Support\FinanceReminderActions;
 use App\Modules\Finance\Application\ListFinancialObligationsForCrm;
 use App\Modules\Finance\Domain\Enums\FinancialStatus;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
@@ -154,6 +155,7 @@ final class FinancialObligationsTable
                     ->tooltip(__('Открыть расчёт')),
                 ActionGroup::make([
                     FinancePaymentActions::forObligation(),
+                    FinanceReminderActions::forObligation(),
                     CommerceFulfillmentActions::forObligation(),
                     Action::make('openBooking')
                         ->label(__('Открыть запись'))

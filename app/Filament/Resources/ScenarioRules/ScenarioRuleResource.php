@@ -195,6 +195,7 @@ final class ScenarioRuleResource extends LocalizedResource
             ScenarioEventType::BookingCompleted->value => __('После завершения визита'),
             ScenarioEventType::OnboardingStarted->value => __('После начала оформления'),
             ScenarioEventType::FinancialObligationCreated->value => __('После появления задолженности'),
+            ScenarioEventType::FinancialDebtReminderRequested->value => __('При отправке напоминания о задолженности'),
             ScenarioEventType::SurveyCompleted->value => __('После завершения теста'),
             ScenarioEventType::TestStagnationDetected->value => __('При отсутствии снижения показателей'),
             ScenarioEventType::CompanionRequestedSpecialist->value => __('Когда клиент просит специалиста'),
@@ -254,6 +255,7 @@ final class ScenarioRuleResource extends LocalizedResource
                 'onboarding.completed' => __('завершение оформления'),
                 'onboarding.stage' => __('этап оформления'),
                 'finance.has_outstanding_debt' => __('непогашенная задолженность'),
+                'survey.progress_available' => __('сравнимая динамика теста'),
                 default => __('условие'),
             };
             $operator = match ($condition['operator'] ?? null) {

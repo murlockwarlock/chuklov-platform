@@ -103,7 +103,7 @@ final class ExecuteScenarioAction
             return false;
         }
 
-        if ($event->event_name->value === 'finance.obligation.created'
+        if (in_array($event->event_name->value, ['finance.obligation.created', 'finance.obligation.reminder_requested'], true)
             && ! $this->contextFactory->financeDebtIsCurrent($context)) {
             return false;
         }
@@ -254,6 +254,8 @@ final class ExecuteScenarioAction
 
     private function actionButton(ScenarioAction $action, string $locale): ?NotificationActionButton
     {
+        $templateKey = $action->templateVersion?->template?->template_key;
+
         if ($action->kind === 'appointment_reminder') {
             $url = $action->render_context['booking']['meeting_url'] ?? null;
             if (is_string($url) && trim($url) !== '') {
@@ -267,6 +269,14 @@ final class ExecuteScenarioAction
         }
 
         if ($action->recipient_type === 'internal') {
+            $feedbackUrl = $action->render_context['feedback']['crm_url'] ?? null;
+            if (is_string($feedbackUrl) && trim($feedbackUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $this->isRussian($locale) ? 'Открыть обратную связь' : 'Open feedback',
+                    url: $feedbackUrl,
+                );
+            }
+
             $paymentUrl = $action->render_context['payment']['crm_url'] ?? null;
             if (is_string($paymentUrl) && trim($paymentUrl) !== '') {
                 return new NotificationActionButton(
@@ -338,6 +348,37 @@ final class ExecuteScenarioAction
 
         if ($action->recipient_type !== 'client') {
             return null;
+        }
+
+        if ($templateKey === 'finance-payment-succeeded-survey') {
+            $surveyUrl = $action->render_context['payment']['survey_url'] ?? null;
+            if (is_string($surveyUrl) && trim($surveyUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $this->isRussian($locale) ? 'Открыть тест' : 'Open diagnostic check',
+                    url: $surveyUrl,
+                );
+            }
+        }
+
+        if (in_array($templateKey, [
+            'post-session-follow-up-24h',
+            'post-session-follow-up-48h',
+            'post-session-follow-up-72h',
+        ], true)) {
+            return new NotificationActionButton(
+                text: $this->isRussian($locale) ? 'Открыть здоровье' : 'Open health',
+                url: route('portal.health'),
+            );
+        }
+
+        if (in_array($templateKey, ['survey-stagnation-client', 'survey-progress-client'], true)) {
+            $surveyUrl = $action->render_context['survey']['portal_url'] ?? null;
+            if (is_string($surveyUrl) && trim($surveyUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $this->isRussian($locale) ? 'Открыть тесты' : 'Open tests',
+                    url: $surveyUrl,
+                );
+            }
         }
 
         $url = match ($action->trigger_event->value) {

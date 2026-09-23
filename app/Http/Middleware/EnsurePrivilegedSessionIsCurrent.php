@@ -3,6 +3,9 @@
 namespace App\Http\Middleware;
 
 use App\Models\User;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -10,6 +13,8 @@ use Symfony\Component\HttpFoundation\Response;
 class EnsurePrivilegedSessionIsCurrent
 {
     private const SESSION_KEY = 'privileged_session_version';
+
+    private const MEMBERSHIP_UPDATED_AT_KEY = 'privileged_membership_updated_at';
 
     public function handle(Request $request, Closure $next): Response
     {
@@ -27,13 +32,41 @@ class EnsurePrivilegedSessionIsCurrent
             return $this->invalidate($request);
         }
 
+        $organizationId = config('tenancy.default_organization_id');
+        $isInteger = is_int($organizationId)
+            || (is_string($organizationId) && ctype_digit($organizationId));
+        $organization = $isInteger ? Organization::query()->find((int) $organizationId) : null;
+        $membership = $organization instanceof Organization
+            ? OrganizationMembership::query()
+                ->where('user_id', $user->getAuthIdentifier())
+                ->where('organization_id', $organization->getKey())
+                ->first()
+            : null;
+
+        if (! $membership instanceof OrganizationMembership
+            || ! $membership->is_active
+            || ! $membership->role->allows(OrganizationPermission::ViewAdmin)) {
+            return $this->invalidate($request);
+        }
+
         $sessionVersion = $request->session()->get(self::SESSION_KEY);
 
         if ($sessionVersion !== null && (int) $sessionVersion !== (int) $currentVersion) {
             return $this->invalidate($request);
         }
 
+        $membershipUpdatedAt = $membership->updated_at === null
+            ? null
+            : (int) $membership->updated_at->getPreciseTimestamp(6);
+        $sessionMembershipUpdatedAt = $request->session()->get(self::MEMBERSHIP_UPDATED_AT_KEY);
+
+        if ($membershipUpdatedAt === null
+            || ($sessionMembershipUpdatedAt !== null && (int) $sessionMembershipUpdatedAt !== $membershipUpdatedAt)) {
+            return $this->invalidate($request);
+        }
+
         $request->session()->put(self::SESSION_KEY, (int) $currentVersion);
+        $request->session()->put(self::MEMBERSHIP_UPDATED_AT_KEY, $membershipUpdatedAt);
 
         return $next($request);
     }

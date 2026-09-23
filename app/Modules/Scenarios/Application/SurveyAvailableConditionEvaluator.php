@@ -6,12 +6,14 @@ use App\Modules\Scenarios\Domain\Contracts\ScenarioConditionEvaluator;
 use App\Modules\Scenarios\Domain\Enums\ScenarioConditionOperator;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioCondition;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
+use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
+use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 
-final class FinancialOutstandingDebtConditionEvaluator implements ScenarioConditionEvaluator
+final class SurveyAvailableConditionEvaluator implements ScenarioConditionEvaluator
 {
     public function type(): string
     {
-        return 'finance.has_outstanding_debt';
+        return 'survey.available';
     }
 
     public function validate(ScenarioCondition $condition): void
@@ -21,15 +23,19 @@ final class FinancialOutstandingDebtConditionEvaluator implements ScenarioCondit
 
     public function evaluate(ScenarioCondition $condition, ScenarioEvaluationContext $context): bool
     {
-        $actual = $context->obligation !== null
-            && app(ScenarioContextFactory::class)->financeDebtIsCurrent($context);
+        $actual = SurveyDefinition::query()
+            ->where('organization_id', $context->event->organization_id)
+            ->where('is_available', true)
+            ->whereHas('activeVersion', fn ($query) => $query
+                ->where('organization_id', $context->event->organization_id)
+                ->where('status', SurveyVersionStatus::Published->value))
+            ->exists();
 
         return match ($condition->operator) {
-            ScenarioConditionOperator::Exists => $actual,
             ScenarioConditionOperator::Equals => $actual === BooleanScenarioCondition::value($condition->value),
             ScenarioConditionOperator::NotEquals => $actual !== BooleanScenarioCondition::value($condition->value),
-            ScenarioConditionOperator::In => is_array($condition->value)
-                && in_array($actual, BooleanScenarioCondition::values($condition), true),
+            ScenarioConditionOperator::In => in_array($actual, BooleanScenarioCondition::values($condition), true),
+            ScenarioConditionOperator::Exists => $actual,
         };
     }
 }

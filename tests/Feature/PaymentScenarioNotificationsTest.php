@@ -37,6 +37,9 @@ use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
+use App\Modules\Surveys\Domain\Models\SurveyDefinition;
+use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -82,6 +85,60 @@ final class PaymentScenarioNotificationsTest extends TestCase
         self::assertStringNotContainsString('provider_event_key', $telegram->messages[0]->body);
         self::assertStringNotContainsString('lava-secret', $telegram->messages[0]->body);
         self::assertSame($locale, ScenarioAction::query()->sole()->templateVersion()->firstOrFail()->template->locale);
+    }
+
+    #[DataProvider('clientLocales')]
+    public function test_payment_success_offers_an_available_generic_survey_once_without_an_official_claim(string $locale): void
+    {
+        [$organization, $client, $obligation, $ledgerEntry] = $this->paymentFixture($locale);
+        ClientChannelIdentity::factory()->forClient($client)->create([
+            'verification_status' => ChannelIdentityStatus::Verified->value,
+            'external_id' => 'client-payment-survey-'.$locale,
+        ]);
+        $definition = SurveyDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'definition_key' => 'generic-payment-check-'.$locale,
+            'title' => 'Диагностический тест',
+            'title_en' => 'Diagnostic check',
+            'is_available' => true,
+        ]);
+        $version = SurveyVersion::query()->create([
+            'organization_id' => $organization->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'version' => 1,
+            'status' => SurveyVersionStatus::Published,
+            'title' => 'Диагностический тест',
+            'title_en' => 'Diagnostic check',
+            'definition' => ['sections' => []],
+            'scoring' => ['metrics' => []],
+            'source' => 'platform_default',
+            'approval_status' => 'draft',
+        ]);
+        $definition->forceFill(['active_version_id' => $version->getKey()])->save();
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $telegram = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$telegram]));
+
+        $event = app(RecordScenarioEvent::class)->paymentSucceeded(
+            $obligation,
+            $ledgerEntry,
+            CarbonImmutable::now(),
+        );
+        $this->materializeAndDeliver($event);
+        $this->materializeAndDeliver($event);
+
+        $surveyMessage = collect($telegram->messages)->first(
+            fn ($message): bool => str_contains(
+                mb_strtolower($message->body),
+                mb_strtolower($locale === 'en' ? 'Diagnostic check' : 'диагностический тест'),
+            ),
+        );
+        self::assertNotNull($surveyMessage);
+        self::assertNotNull($surveyMessage->actionButton);
+        self::assertSame(route('portal.surveys.index'), $surveyMessage->actionButton->url);
+        self::assertStringNotContainsString('MSQ', $surveyMessage->body);
+        self::assertStringNotContainsString('9 systems', strtolower($surveyMessage->body));
+        self::assertCount(2, $telegram->messages);
     }
 
     public function test_reconciliation_alert_is_visible_to_finance_users_without_provider_payload(): void

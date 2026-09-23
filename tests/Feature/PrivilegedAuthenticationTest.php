@@ -23,18 +23,18 @@ class PrivilegedAuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_admin_panel_offers_optional_mfa_and_profile_management(): void
+    public function test_admin_panel_requires_mfa_and_supports_profile_management(): void
     {
         $panel = Filament::getPanel('admin');
 
         self::assertTrue($panel->hasMultiFactorAuthentication());
-        self::assertFalse($panel->isMultiFactorAuthenticationRequired());
+        self::assertTrue($panel->isMultiFactorAuthenticationRequired());
         self::assertTrue($panel->hasProfile());
         self::assertSame(AdminLogin::class, $panel->getLoginRouteAction());
         self::assertSame(EditProfile::class, $panel->getProfilePage());
     }
 
-    public function test_user_without_mfa_enters_crm_without_a_login_challenge(): void
+    public function test_user_without_mfa_is_redirected_to_required_mfa_setup(): void
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
@@ -48,9 +48,10 @@ class PrivilegedAuthenticationTest extends TestCase
             ->assertSet('userUndertakingMultiFactorAuthentication', null);
 
         self::assertAuthenticatedAs($admin);
+        $this->get('/admin')->assertRedirect(Filament::getSetUpRequiredMultiFactorAuthenticationUrl());
     }
 
-    public function test_user_with_configured_mfa_enters_crm_without_a_login_challenge(): void
+    public function test_user_with_configured_mfa_must_complete_a_login_challenge(): void
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
@@ -58,13 +59,22 @@ class PrivilegedAuthenticationTest extends TestCase
         app(OrganizationContext::class)->set($organization);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $this->actingAs($admin);
-        app(AuditedAppAuthentication::class)->saveSecret($admin, 'configured-secret');
+        $secret = app(AuditedAppAuthentication::class)->generateSecret();
+        app(AuditedAppAuthentication::class)->saveSecret($admin, $secret);
         Auth::logout();
 
-        Livewire::test(AdminLogin::class)
+        $code = app(AuditedAppAuthentication::class)->getCurrentCode($admin);
+        $login = Livewire::test(AdminLogin::class)
             ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
-            ->call('authenticate')
-            ->assertSet('userUndertakingMultiFactorAuthentication', null);
+            ->call('authenticate');
+
+        self::assertNotNull($login->get('userUndertakingMultiFactorAuthentication'));
+
+        self::assertGuest('web');
+
+        $login
+            ->fillForm(['multiFactor.app.code' => $code])
+            ->call('authenticate');
 
         self::assertAuthenticatedAs($admin);
     }
@@ -113,10 +123,13 @@ class PrivilegedAuthenticationTest extends TestCase
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
         config()->set('tenancy.default_organization_id', $organization->getKey());
 
+        app(OrganizationContext::class)->set($organization);
+        $this->actingAs($admin);
+        app(AuditedAppAuthentication::class)->saveSecret($admin, 'configured-secret');
         $this->actingAs($admin)->get('/admin')->assertOk();
         OrganizationMembership::query()->where('user_id', $admin->getKey())->update(['is_active' => false]);
 
-        $this->get('/admin')->assertForbidden();
+        $this->get('/admin')->assertRedirect(route('filament.admin.auth.login'));
     }
 
     public function test_revoked_session_version_invalidates_an_existing_admin_session(): void
@@ -125,6 +138,9 @@ class PrivilegedAuthenticationTest extends TestCase
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
         config()->set('tenancy.default_organization_id', $organization->getKey());
 
+        app(OrganizationContext::class)->set($organization);
+        $this->actingAs($admin);
+        app(AuditedAppAuthentication::class)->saveSecret($admin, 'configured-secret');
         $this->actingAs($admin)->get('/admin')->assertOk();
         $admin->increment('privileged_session_version');
 

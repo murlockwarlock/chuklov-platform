@@ -123,6 +123,7 @@ class RecordAuditEvent
         'organization.finance.currency.updated' => ['base_currency', 'display_currency', 'force_single_currency', 'rounding_mode', 'allowed_count'],
         'organization.finance.rate.updated' => ['source_currency', 'target_currency', 'rate_version'],
         'finance.obligation.created' => ['source', 'currency'],
+        'finance.obligation.reminder_requested' => ['client_id', 'amount_minor', 'currency'],
         'finance.manual_payment.recorded' => ['source', 'payment_method', 'payment_currency', 'settlement_currency', 'receipt_attached'],
         'finance.payment.corrected' => ['source', 'correction_of', 'reason_present'],
         'finance.gateway.initiated' => ['gateway', 'currency', 'source'],

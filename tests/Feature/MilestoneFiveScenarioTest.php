@@ -1065,7 +1065,8 @@ final class MilestoneFiveScenarioTest extends TestCase
         $this->setFilamentContext($admin, $organization);
 
         $this->get(route('filament.admin.resources.scenario-rules.index'))->assertOk();
-        $this->get(route('filament.admin.resources.scenario-rules.edit', ['record' => $otherRule]))->assertNotFound();
+        $response = $this->get(route('filament.admin.resources.scenario-rules.edit', ['record' => $otherRule]));
+        $response->assertNotFound();
 
         $this->expectException(AuthorizationException::class);
         app(UpdateScenarioRule::class)->handle($admin, $otherRule, [
