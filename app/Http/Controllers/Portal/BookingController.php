@@ -20,6 +20,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
+use App\Support\SupportedLocale;
 use App\Modules\Scheduling\Application\BookingLocationResolver;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\CancelBooking;
@@ -180,7 +181,7 @@ class BookingController extends Controller
 
                 return [
                     'id' => $document->getKey(),
-                    'title' => $subject?->label(str_starts_with(strtolower((string) $document->locale), 'ru') ? 'ru' : 'en') ?? $document->purpose,
+                    'title' => $subject?->label(SupportedLocale::normalize($document->locale)) ?? $document->purpose,
                     'content' => $document->content,
                     'contentHtml' => RichTextDocument::canonicalHtml($document->content),
                     'version' => $document->version,

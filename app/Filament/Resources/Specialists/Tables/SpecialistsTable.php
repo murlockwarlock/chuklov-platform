@@ -33,24 +33,24 @@ class SpecialistsTable
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('display_name')
-                    ->label('Имя специалиста')
+                    ->label(__('Имя специалиста'))
                     ->searchable()
                     ->sortable()
                     ->wrap()
                     ->url(fn (Specialist $record): ?string => CrmEntityLinks::specialistUrl($record, $canViewSpecialists))
                     ->color(fn (Specialist $record): ?string => CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (Specialist $record): bool => CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null),
-                IconColumn::make('is_active')->label('Доступен')->boolean()->sortable(),
+                IconColumn::make('is_active')->label(__('Доступен'))->boolean()->sortable(),
                 TextColumn::make('timezone')
-                    ->label('Часовой пояс')
+                    ->label(__('Часовой пояс'))
                     ->formatStateUsing(fn (?string $state): string => $state === null
-                        ? 'Часовой пояс организации'
+            ? __('Часовой пояс организации')
                         : TimezoneOptions::label($state))
-                    ->placeholder('Часовой пояс организации')
+                    ->placeholder(__('Часовой пояс организации'))
                     ->visibleFrom('sm'),
                 TextColumn::make('staffUser.name')
-                    ->label('Сотрудник CRM')
-                    ->placeholder('Не привязан')
+                    ->label(__('Сотрудник CRM'))
+                    ->placeholder(__('Не привязан'))
                     ->visibleFrom('md')
                     ->url(fn (Specialist $record): ?string => $record->staff_user_id === null
                         ? null
@@ -62,16 +62,16 @@ class SpecialistsTable
                         || CrmEntityLinks::specialistUrl($record, $canViewSpecialists) === null),
             ])
             ->filters([
-                TernaryFilter::make('is_active')->label('Доступен'),
+                TernaryFilter::make('is_active')->label(__('Доступен')),
             ])
-            ->emptyStateHeading('Специалистов пока нет')
-            ->emptyStateDescription('Добавьте врачей или консультантов клиники, чтобы настроить их рабочие часы и услуги.')
+            ->emptyStateHeading(__('Специалистов пока нет'))
+            ->emptyStateDescription(__('Добавьте врачей или консультантов клиники, чтобы настроить их рабочие часы и услуги.'))
             ->recordActions([
-                ViewAction::make()->label('Открыть'),
-                EditAction::make()->label('Редактировать'),
+                ViewAction::make()->label(__('Открыть')),
+                EditAction::make()->label(__('Редактировать')),
                 ActionGroup::make([
                     Action::make('activate')
-                        ->label('Сделать доступным')
+                        ->label(__('Сделать доступным'))
                         ->color('success')
                         ->icon('heroicon-o-check-circle')
                         ->requiresConfirmation()
@@ -83,7 +83,7 @@ class SpecialistsTable
                             app(SetSpecialistActive::class)->handle($actor, $record, true);
                         }),
                     Action::make('deactivate')
-                        ->label('Скрыть из записи')
+                        ->label(__('Скрыть из записи'))
                         ->color('danger')
                         ->icon('heroicon-o-eye-slash')
                         ->requiresConfirmation()
@@ -117,7 +117,7 @@ class SpecialistsTable
                             }
                         }),
                     Action::make('linkStaffUser')
-                        ->label('Привязать сотрудника CRM')
+                        ->label(__('Привязать сотрудника CRM'))
                         ->icon('heroicon-o-link')
                         ->schema([
                             Select::make('staff_user_id')
@@ -140,7 +140,7 @@ class SpecialistsTable
                             );
                         }),
                     Action::make('unlinkStaffUser')
-                        ->label('Отвязать сотрудника CRM')
+                        ->label(__('Отвязать сотрудника CRM'))
                         ->icon('heroicon-o-x-mark')
                         ->color('warning')
                         ->requiresConfirmation()
@@ -159,7 +159,7 @@ class SpecialistsTable
                             );
                         }),
                 ])
-                    ->label('Действия')
+                    ->label(__('Действия'))
                     ->icon('heroicon-m-ellipsis-vertical')
                     ->button()
                     ->color('gray')

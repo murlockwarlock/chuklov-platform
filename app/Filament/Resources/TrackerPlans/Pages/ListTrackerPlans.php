@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\TrackerPlans\Pages;
 
 use App\Filament\Resources\TrackerPlans\TrackerPlanResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-final class ListTrackerPlans extends ListRecords
+final class ListTrackerPlans extends LocalizedListRecords
 {
     protected static string $resource = TrackerPlanResource::class;
 
@@ -14,6 +14,6 @@ final class ListTrackerPlans extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [CreateAction::make()->label('Добавить тариф')];
+        return [CreateAction::make()->label(__('Добавить тариф'))];
     }
 }

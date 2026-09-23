@@ -5,6 +5,7 @@ namespace App\Filament\Resources\ReferralPartnerProfiles\Tables;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\ReferralPartnerProfiles\Pages\ListReferralPartnerProfiles;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Referrals\Domain\Enums\ReferralPartnerStatus;
@@ -29,7 +30,7 @@ final class ReferralPartnerProfilesTable
             ->recordActionsPosition(RecordActionsPosition::AfterColumns)
             ->columns([
                 TextColumn::make('client.full_name')
-                    ->label('Партнёр')
+                    ->label(__('Партнёр'))
                     ->searchable()
                     ->sortable()
                     ->wrap()
@@ -37,44 +38,44 @@ final class ReferralPartnerProfilesTable
                     ->color(fn (ReferralPartnerProfile $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (ReferralPartnerProfile $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('status')
-                    ->label('Статус')
+                    ->label(__('Статус'))
                     ->formatStateUsing(fn (ReferralPartnerStatus|string $state): string => self::statusLabel($state))
                     ->badge(),
                 TextColumn::make('visits_count')
-                    ->label('Переходы')
+                    ->label(__('Переходы'))
                     ->numeric()
                     ->sortable()
                     ->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('registrations_count')->label('Регистрации')->numeric()->sortable(),
+                TextColumn::make('registrations_count')->label(__('Регистрации'))->numeric()->sortable(),
                 TextColumn::make('paid_clients_count')
-                    ->label('Оплатили')
+                    ->label(__('Оплатили'))
                     ->numeric()
                     ->sortable(),
                 TextColumn::make('available_summary')
-                    ->label('Доступно к выплате')
+                    ->label(__('Доступно к выплате'))
                     ->state(fn (ReferralPartnerProfile $record): string => self::balance($record, 'available'))
                     ->wrap(),
                 TextColumn::make('pending_summary')
-                    ->label('Ожидает выплаты')
+                    ->label(__('Ожидает выплаты'))
                     ->state(fn (ReferralPartnerProfile $record): string => self::balance($record, 'pending'))
                     ->wrap()
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('paid_summary')
-                    ->label('Выплачено')
+                    ->label(__('Выплачено'))
                     ->state(fn (ReferralPartnerProfile $record): string => self::balance($record, 'paid'))
                     ->wrap()
                     ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 SelectFilter::make('status')
-                    ->label('Статус')
+                    ->label(__('Статус'))
                     ->options([
-                        ReferralPartnerStatus::Active->value => ReferralPartnerStatus::Active->label(),
-                        ReferralPartnerStatus::Inactive->value => ReferralPartnerStatus::Inactive->label(),
+                        ReferralPartnerStatus::Active->value => CrmLabel::enum(ReferralPartnerStatus::Active),
+                        ReferralPartnerStatus::Inactive->value => CrmLabel::enum(ReferralPartnerStatus::Inactive),
                     ]),
             ])
             ->recordActions([
-                ViewAction::make()->label('Открыть'),
+                ViewAction::make()->label(__('Открыть')),
             ])
             ->defaultSort('activated_at', 'desc')
             ->paginated([10, 25, 50]);
@@ -84,7 +85,7 @@ final class ReferralPartnerProfilesTable
     {
         $status = $state instanceof ReferralPartnerStatus ? $state : ReferralPartnerStatus::tryFrom($state);
 
-        return $status?->label() ?? 'Неизвестно';
+        return CrmLabel::enum($status) ?? __('Неизвестно');
     }
 
     private static function balance(ReferralPartnerProfile $record, string $key): string

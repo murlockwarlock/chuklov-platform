@@ -35,14 +35,14 @@ final class RichTextEditor
 
         $tools = [
             RichEditorTool::make('emoji')
-                ->label('😊 Смайлик')
+                ->label(__('😊 Смайлик'))
                 ->hiddenLabel(false)
                 ->jsHandler('window.ChuklovRichTextEditor?.toggleEmojiPicker($event, $getEditor())'),
         ];
 
         if ($mergeTags !== null) {
             $tools[] = RichEditorTool::make('mergeTags')
-                ->label('Добавить данные')
+                ->label(__('Добавить данные'))
                 ->hiddenLabel(false)
                 ->icon(Heroicon::OutlinedTag)
                 ->jsHandler('togglePanel(\'mergeTags\')')
@@ -50,7 +50,7 @@ final class RichTextEditor
 
             $editor
                 ->mergeTags($mergeTags)
-                ->noMergeTagSearchResultsMessage('Доступные данные не найдены.')
+                ->noMergeTagSearchResultsMessage(__('Доступные данные не найдены.'))
                 ->dehydrateStateUsing(fn (mixed $state): mixed => is_string($state)
                     ? RichTextDocument::canonicalHtml(RichTextDocument::normalizeMergeTags($state))
                     : $state);

@@ -5,11 +5,13 @@ namespace App\Http\Controllers\Portal;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateReferralCampaignLinkRequest;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\CreateReferralCampaignLink;
 use App\Modules\Referrals\Application\DeactivateReferralCampaignLink;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Validation\ValidationException;
 use LogicException;
 
 final class ReferralPartnerController extends Controller
@@ -17,6 +19,7 @@ final class ReferralPartnerController extends Controller
     public function activate(
         ClientPortalContext $context,
         ActivateReferralPartner $activate,
+        PortalClientMessages $messages,
     ): RedirectResponse {
         try {
             $activate->handle($context->client(), 'portal');
@@ -24,13 +27,14 @@ final class ReferralPartnerController extends Controller
             abort(401);
         }
 
-        return back()->with('success', 'Партнёрская программа подключена.');
+        return back()->with('success', $messages->message('referral_partner_activated'));
     }
 
     public function store(
         CreateReferralCampaignLinkRequest $request,
         ClientPortalContext $context,
         CreateReferralCampaignLink $create,
+        PortalClientMessages $messages,
     ): RedirectResponse {
         try {
             $create->handle(
@@ -38,24 +42,29 @@ final class ReferralPartnerController extends Controller
                 name: (string) $request->validated('name'),
                 channel: ReferralCampaignChannel::from((string) $request->validated('channel')),
             );
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages($messages->validationException('referral_link', $exception));
         } catch (LogicException) {
             abort(401);
         }
 
-        return back()->with('success', 'Ссылка создана.');
+        return back()->with('success', $messages->message('referral_link_created'));
     }
 
     public function disable(
         int $campaignLinkId,
         ClientPortalContext $context,
         DeactivateReferralCampaignLink $disable,
+        PortalClientMessages $messages,
     ): RedirectResponse {
         try {
             $disable->handle($campaignLinkId, $context->client());
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages($messages->validationException('referral_link', $exception));
         } catch (LogicException) {
             abort(401);
         }
 
-        return back()->with('success', 'Ссылка отключена.');
+        return back()->with('success', $messages->message('referral_link_disabled'));
     }
 }

@@ -52,10 +52,12 @@ final class TimezoneOptions
     public static function label(?string $timezone): string
     {
         if ($timezone === null || $timezone === '') {
-            return 'Не указан';
+            return __('Не указан');
         }
 
-        return self::LABELS[$timezone] ?? self::cityLabel($timezone);
+        return array_key_exists($timezone, self::LABELS)
+            ? __(self::LABELS[$timezone])
+            : self::cityLabel($timezone);
     }
 
     private static function cityLabel(string $timezone): string
@@ -63,6 +65,6 @@ final class TimezoneOptions
         $parts = explode('/', $timezone);
         $city = str_replace('_', ' ', (string) end($parts));
 
-        return trim($city) === '' ? 'Часовой пояс' : $city;
+        return trim($city) === '' ? __('Часовой пояс') : $city;
     }
 }

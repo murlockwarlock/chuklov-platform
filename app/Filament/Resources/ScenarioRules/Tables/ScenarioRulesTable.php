@@ -21,39 +21,39 @@ final class ScenarioRulesTable
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('name')
-                    ->label('Авто-сообщение')
+                    ->label(__('Авто-сообщение'))
                     ->searchable()
                     ->sortable()
                     ->wrap(),
                 TextColumn::make('trigger_event')
-                    ->label('Когда')
+                    ->label(__('Когда'))
                     ->badge()
                     ->formatStateUsing(fn (mixed $state): string => self::eventLabel($state)),
                 TextColumn::make('recipient_summary')
-                    ->label('Кому')
+                    ->label(__('Кому'))
                     ->state(fn (ScenarioRule $record): string => self::recipientLabel($record)),
                 TextColumn::make('message_summary')
-                    ->label('Что отправить')
+                    ->label(__('Что отправить'))
                     ->state(fn (ScenarioRule $record): string => self::messageLabel($record))
                     ->wrap(),
                 IconColumn::make('is_enabled')
-                    ->label('Включено')
+                    ->label(__('Включено'))
                     ->boolean()
                     ->sortable(),
             ])
-            ->emptyStateHeading('Авто-сообщений пока нет')
-            ->emptyStateDescription('Создайте авто-сообщение, чтобы отправлять клиенту нужный текст после события.')
+            ->emptyStateHeading(__('Авто-сообщений пока нет'))
+            ->emptyStateDescription(__('Создайте авто-сообщение, чтобы отправлять клиенту нужный текст после события.'))
             ->recordActions([
                 ViewAction::make()
-                    ->label('Открыть')
+                    ->label(__('Открыть'))
                     ->icon('heroicon-o-eye')
                     ->iconButton()
-                    ->tooltip('Открыть авто-сообщение'),
+                    ->tooltip(__('Открыть авто-сообщение')),
                 EditAction::make()
-                    ->label('Редактировать')
+                    ->label(__('Редактировать'))
                     ->icon('heroicon-o-pencil')
                     ->iconButton()
-                    ->tooltip('Редактировать авто-сообщение'),
+                    ->tooltip(__('Редактировать авто-сообщение')),
             ]);
     }
 
@@ -62,47 +62,47 @@ final class ScenarioRulesTable
         $value = $event instanceof BackedEnum ? $event->value : (string) $event;
 
         return match ($value) {
-            ScenarioEventType::BookingCreated->value => 'После новой записи',
-            ScenarioEventType::BookingConfirmed->value => 'После подтверждения',
-            ScenarioEventType::BookingRescheduled->value => 'После переноса',
-            ScenarioEventType::BookingCancelled->value => 'После отмены',
-            ScenarioEventType::BookingCompleted->value => 'После визита',
-            ScenarioEventType::OnboardingStarted->value => 'После начала оформления',
-            ScenarioEventType::FinancialObligationCreated->value => 'После появления задолженности',
-            ScenarioEventType::SurveyCompleted->value => 'После теста',
-            ScenarioEventType::TestStagnationDetected->value => 'Если показатели не снижаются',
-            ScenarioEventType::B2bLeadSubmitted->value => 'После B2B-запроса',
-            ScenarioEventType::B2bSalesCallReady->value => 'Когда B2B-разговор готов',
-            ScenarioEventType::CompanionRequestedSpecialist->value => 'Когда клиент просит специалиста',
-            ScenarioEventType::CompanionFallbackFailed->value => 'Когда AI не смог ответить',
-            ScenarioEventType::BroadcastDeliveryFailed->value => 'При сбое операционной рассылки',
-            ScenarioEventType::ClientFeedbackSubmitted->value => 'После обратной связи клиента',
-            ScenarioEventType::PayoutRequested->value => 'При запросе выплаты партнёра',
-            ScenarioEventType::PayoutStatusChanged->value => 'При изменении статуса выплаты',
-            ScenarioEventType::HomeVisitChanged->value => 'При изменении выездного визита',
-            ScenarioEventType::AiEvaluationFailed->value => 'При сбое проверки AI',
-            ScenarioEventType::KnowledgeIngestionFailed->value => 'При ошибке обработки материала',
-            ScenarioEventType::ReferralLinkVisited->value => 'При переходе по реферальной ссылке',
-            ScenarioEventType::PaymentProviderEventPrepared->value => 'Устаревшее событие платёжного провайдера',
-            ScenarioEventType::PaymentSucceeded->value => 'После подтверждённой оплаты',
-            ScenarioEventType::PaymentFailed->value => 'При неуспешной оплате',
-            ScenarioEventType::PaymentInitiationUnavailable->value => 'Когда онлайн-оплата недоступна',
-            ScenarioEventType::PaymentReconciliationRequired->value => 'Когда платёж требует сверки',
-            ScenarioEventType::FulfillmentFailed->value => 'Если доступ не выдан',
-            ScenarioEventType::FulfillmentCompleted->value => 'Когда доступ выдан',
-            ScenarioEventType::ReferralRewardEarned->value => 'При начислении по партнёрской программе',
-            default => 'Событие',
+            ScenarioEventType::BookingCreated->value => __('После новой записи'),
+            ScenarioEventType::BookingConfirmed->value => __('После подтверждения'),
+            ScenarioEventType::BookingRescheduled->value => __('После переноса'),
+            ScenarioEventType::BookingCancelled->value => __('После отмены'),
+            ScenarioEventType::BookingCompleted->value => __('После визита'),
+            ScenarioEventType::OnboardingStarted->value => __('После начала оформления'),
+            ScenarioEventType::FinancialObligationCreated->value => __('После появления задолженности'),
+            ScenarioEventType::SurveyCompleted->value => __('После теста'),
+            ScenarioEventType::TestStagnationDetected->value => __('Если показатели не снижаются'),
+            ScenarioEventType::B2bLeadSubmitted->value => __('После B2B-запроса'),
+            ScenarioEventType::B2bSalesCallReady->value => __('Когда B2B-разговор готов'),
+            ScenarioEventType::CompanionRequestedSpecialist->value => __('Когда клиент просит специалиста'),
+            ScenarioEventType::CompanionFallbackFailed->value => __('Когда AI не смог ответить'),
+            ScenarioEventType::BroadcastDeliveryFailed->value => __('При сбое операционной рассылки'),
+            ScenarioEventType::ClientFeedbackSubmitted->value => __('После обратной связи клиента'),
+            ScenarioEventType::PayoutRequested->value => __('При запросе выплаты партнёра'),
+            ScenarioEventType::PayoutStatusChanged->value => __('При изменении статуса выплаты'),
+            ScenarioEventType::HomeVisitChanged->value => __('При изменении выездного визита'),
+            ScenarioEventType::AiEvaluationFailed->value => __('При сбое проверки AI'),
+            ScenarioEventType::KnowledgeIngestionFailed->value => __('При ошибке обработки материала'),
+            ScenarioEventType::ReferralLinkVisited->value => __('При переходе по реферальной ссылке'),
+            ScenarioEventType::PaymentProviderEventPrepared->value => __('Устаревшее событие платёжного провайдера'),
+            ScenarioEventType::PaymentSucceeded->value => __('После подтверждённой оплаты'),
+            ScenarioEventType::PaymentFailed->value => __('При неуспешной оплате'),
+            ScenarioEventType::PaymentInitiationUnavailable->value => __('Когда онлайн-оплата недоступна'),
+            ScenarioEventType::PaymentReconciliationRequired->value => __('Когда платёж требует сверки'),
+            ScenarioEventType::FulfillmentFailed->value => __('Если доступ не выдан'),
+            ScenarioEventType::FulfillmentCompleted->value => __('Когда доступ выдан'),
+            ScenarioEventType::ReferralRewardEarned->value => __('При начислении по партнёрской программе'),
+            default => __('Событие'),
         };
     }
 
     private static function recipientLabel(ScenarioRule $record): string
     {
         return match ($record->recipient_strategy['type'] ?? null) {
-            'client' => 'Клиент',
-            'assigned_specialist' => 'Специалист',
-            'members' => 'Выбранные сотрудники',
-            'roles' => 'Сотрудники по роли',
-            default => 'Не указано',
+            'client' => __('Клиент'),
+            'assigned_specialist' => __('Специалист'),
+            'members' => __('Выбранные сотрудники'),
+            'roles' => __('Сотрудники по роли'),
+            default => __('Не указано'),
         };
     }
 
@@ -111,7 +111,7 @@ final class ScenarioRulesTable
         $template = $record->templateVersion?->template;
         $body = RichTextPresentation::text($record->templateVersion?->body);
 
-        return ($template?->name ?: 'Сообщение')
+        return ($template?->name ?: __('Сообщение'))
             .($body === '' ? '' : ' · '.Str::limit($body, 70));
     }
 }

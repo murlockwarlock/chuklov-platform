@@ -16,10 +16,10 @@ final class FinancialObligationInfolist
     public static function configure(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Расчёт с клиентом')
+            Section::make(__('Расчёт с клиентом'))
                 ->schema([
                     TextEntry::make('client_name')
-                        ->label('Клиент')
+                        ->label(__('Клиент'))
                         ->state(function (FinancialObligation $record): string {
                             $client = $record->client;
 
@@ -28,34 +28,34 @@ final class FinancialObligationInfolist
                         ->url(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client))
                         ->color(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary'),
                     TextEntry::make('booking_summary')
-                        ->label('Запись')
+                        ->label(__('Запись'))
                         ->state(fn (FinancialObligation $record): string => $record->booking !== null
-                            ? 'Запись на приём'
-                            : ($record->purchase !== null ? 'Покупка' : '—'))
+                            ? __('Запись на приём')
+                            : ($record->purchase !== null ? __('Покупка') : '—'))
                         ->url(fn (FinancialObligation $record): ?string => $record->booking === null
                             ? null
                             : BookingResource::getUrl('view', ['record' => $record->booking->getKey()])),
                     TextEntry::make('service_name')
-                        ->label('Товар / услуга')
+                        ->label(__('Товар / услуга'))
                         ->state(fn (FinancialObligation $record): string => CommerceFulfillmentPresentation::productName($record)),
                     TextEntry::make('visit_date')
-                        ->label('Дата визита')
+                        ->label(__('Дата визита'))
                         ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->visitDate($record->booking)),
                     TextEntry::make('display_amount')
-                        ->label('Сумма к оплате')
+                        ->label(__('Сумма к оплате'))
                         ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->displayAmount($record)),
                     TextEntry::make('display_paid')
-                        ->label('Оплачено')
+                        ->label(__('Оплачено'))
                         ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->money(
                             app(FinancePresentation::class)->reconciliation($record)?->displayApplied,
                         )),
                     TextEntry::make('display_outstanding')
-                        ->label('Осталось')
+                        ->label(__('Осталось'))
                         ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->money(
                             app(FinancePresentation::class)->reconciliation($record)?->displayOutstanding,
                         )),
                     TextEntry::make('finance_status')
-                        ->label('Статус')
+                        ->label(__('Статус'))
                         ->badge()
                         ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->status(
                             app(FinancePresentation::class)->reconciliation($record),
@@ -64,55 +64,55 @@ final class FinancialObligationInfolist
                             app(FinancePresentation::class)->reconciliation($record),
                         )),
                     TextEntry::make('fulfillment_status')
-                        ->label('Выдача доступа')
+                        ->label(__('Выдача доступа'))
                         ->state(fn (FinancialObligation $record): string => CommerceFulfillmentPresentation::status($record))
                         ->visible(fn (FinancialObligation $record): bool => $record->purchase !== null)
                         ->badge(),
                     TextEntry::make('finance_error')
-                        ->label('Состояние расчёта')
-                        ->state('Расчёт недоступен. Проверьте историю оплат.')
+                        ->label(__('Состояние расчёта'))
+                        ->state(__('Расчёт недоступен. Проверьте историю оплат.'))
                         ->color('danger')
                         ->visible(fn (FinancialObligation $record): bool => app(FinancePresentation::class)->reconciliation($record) === null)
                         ->columnSpanFull(),
                     TextEntry::make('created_at_summary')
-                        ->label('Расчёт создан')
+                        ->label(__('Расчёт создан'))
                         ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->timestamp($record->created_at)),
                 ])
                 ->columns(2),
 
-            Section::make('Подробнее о расчёте')
+            Section::make(__('Подробнее о расчёте'))
                 ->collapsed()
                 ->schema([
                     TextEntry::make('original_amount')
-                        ->label('Первоначальная сумма')
+                        ->label(__('Первоначальная сумма'))
                         ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->obligationAmount(
                             $record,
                             'amount_minor',
                             'currency',
                         )),
                     TextEntry::make('practice_currency_summary')
-                        ->label('Валюта практики')
+                        ->label(__('Валюта практики'))
                         ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->currencyName(
                             $record->getRawOriginal('base_currency'),
                         )),
                     TextEntry::make('settlement_currency_summary')
-                        ->label('Валюта расчёта')
+                        ->label(__('Валюта расчёта'))
                         ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->currencyName(
                             $record->getRawOriginal('settlement_currency'),
                         )),
                     TextEntry::make('display_currency_summary')
-                        ->label('Валюта отображения')
+                        ->label(__('Валюта отображения'))
                         ->state(fn (FinancialObligation $record): string => app(FinancePresentation::class)->currencyName(
                             $record->getRawOriginal('display_currency'),
                         )),
                     TextEntry::make('historical_rate')
-                        ->label('Курс при создании расчёта')
+                        ->label(__('Курс при создании расчёта'))
                         ->state(fn (FinancialObligation $record): ?string => app(FinancePresentation::class)->historicalRate($record))
-                        ->placeholder('Не применялся'),
+                        ->placeholder(__('Не применялся')),
                     TextEntry::make('rounding_mode')
-                        ->label('Правило округления')
+                        ->label(__('Правило округления'))
                         ->state(fn (FinancialObligation $record): ?string => app(FinancePresentation::class)->roundingMode($record))
-                        ->placeholder('Не указано'),
+                        ->placeholder(__('Не указано')),
                 ])
                 ->columns(2),
         ]);

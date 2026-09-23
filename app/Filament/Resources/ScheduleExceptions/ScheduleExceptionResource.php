@@ -6,16 +6,16 @@ use App\Filament\Resources\ScheduleExceptions\Pages\CreateScheduleException;
 use App\Filament\Resources\ScheduleExceptions\Pages\ListScheduleExceptions;
 use App\Filament\Resources\ScheduleExceptions\Schemas\ScheduleExceptionForm;
 use App\Filament\Resources\ScheduleExceptions\Tables\ScheduleExceptionsTable;
+use App\Filament\Support\LocalizedResource;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-class ScheduleExceptionResource extends Resource
+class ScheduleExceptionResource extends LocalizedResource
 {
     protected static ?string $model = ScheduleException::class;
 

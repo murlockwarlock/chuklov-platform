@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\NotificationTemplates\Pages;
 
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-final class ListNotificationTemplates extends ListRecords
+final class ListNotificationTemplates extends LocalizedListRecords
 {
     protected static string $resource = NotificationTemplateResource::class;
 

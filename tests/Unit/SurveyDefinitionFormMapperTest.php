@@ -6,10 +6,17 @@ use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Filament\Support\SurveyDefinitionFormOptions;
 use App\Modules\Surveys\Application\PlatformSurveyCatalog;
 use App\Modules\Surveys\Domain\Models\SurveyVersion;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 final class SurveyDefinitionFormMapperTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        app()->setLocale('ru');
+    }
+
     public function test_round_trip_preserves_nested_identities_and_references_when_labels_and_order_change(): void
     {
         $version = new SurveyVersion;

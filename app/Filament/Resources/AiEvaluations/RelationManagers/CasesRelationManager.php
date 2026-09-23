@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AiEvaluations\RelationManagers;
 
+use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\CreateEvalCase;
 use App\Modules\AI\Application\Actions\UpdateEvalCase;
@@ -17,7 +18,6 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -27,7 +27,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 use InvalidArgumentException;
 
-class CasesRelationManager extends RelationManager
+class CasesRelationManager extends LocalizedRelationManager
 {
     protected static string $relationship = 'cases';
 
@@ -56,51 +56,51 @@ class CasesRelationManager extends RelationManager
         return $schema
             ->components([
                 TextInput::make('name')
-                    ->label('Название примера')
+                    ->label(__('Название примера'))
                     ->required()
                     ->maxLength(200),
                 Hidden::make('is_synthetic')->default(true),
                 Hidden::make('is_deidentified')->default(false),
                 Textarea::make('test_inputs')
-                    ->label('Пример запроса к AI')
-                    ->helperText('Можно написать обычным текстом. Для сложного сценария допустим JSON.')
+                    ->label(__('Пример запроса к AI'))
+                    ->helperText(__('Можно написать обычным текстом. Для сложного сценария допустим JSON.'))
                     ->rows(4)
                     ->required(),
-                Section::make('Проверки качества')
-                    ->description('Опишите результат понятными словами. Каждое требование укажите с новой строки.')
+                Section::make(__('Проверки качества'))
+                    ->description(__('Опишите результат понятными словами. Каждое требование укажите с новой строки.'))
                     ->schema([
                         Textarea::make('required_texts')
-                            ->label('Что обязательно должно быть в ответе')
-                            ->helperText('Например: «рекомендована консультация специалиста».')
+                            ->label(__('Что обязательно должно быть в ответе'))
+                            ->helperText(__('Например: «рекомендована консультация специалиста».'))
                             ->rows(3)
                             ->dehydrated(false),
                         Textarea::make('forbidden_texts')
-                            ->label('Чего не должно быть в ответе')
-                            ->helperText('Например: конкретный диагноз без подтверждения специалиста.')
+                            ->label(__('Чего не должно быть в ответе'))
+                            ->helperText(__('Например: конкретный диагноз без подтверждения специалиста.'))
                             ->rows(3)
                             ->dehydrated(false),
                         Textarea::make('required_fields')
-                            ->label('Обязательные поля структурированного ответа')
-                            ->helperText('Укажите пути полей через точку, например: summary или risks.level.')
+                            ->label(__('Обязательные поля структурированного ответа'))
+                            ->helperText(__('Укажите пути полей через точку, например: summary или risks.level.'))
                             ->rows(3)
                             ->dehydrated(false),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
-                Section::make('Расширенные настройки')
-                    ->description('Нужны только для схемы JSON, значений полей и проверок источников базы знаний.')
+                Section::make(__('Расширенные настройки'))
+                    ->description(__('Нужны только для схемы JSON, значений полей и проверок источников базы знаний.'))
                     ->collapsed()
                     ->schema([
                         Textarea::make('expected_assertions')
-                            ->label('Дополнительные проверки (JSON)')
-                            ->helperText('Добавьте дополнительные проверки в формате JSON. Исполняемый код не поддерживается.')
+                            ->label(__('Дополнительные проверки (JSON)'))
+                            ->helperText(__('Добавьте дополнительные проверки в формате JSON. Исполняемый код не поддерживается.'))
                             ->formatStateUsing(static fn (mixed $state): string => is_array($state)
                                 ? (json_encode($state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '')
                                 : (string) $state)
                             ->rows(6),
                         Textarea::make('expected_output_schema')
-                            ->label('Ожидаемая структура ответа (JSON Schema)')
-                            ->helperText('Ограниченная схема объекта или списка; применяется к структурированному ответу AI.')
+                            ->label(__('Ожидаемая структура ответа (JSON Schema)'))
+                            ->helperText(__('Ограниченная схема объекта или списка; применяется к структурированному ответу AI.'))
                             ->formatStateUsing(static fn (mixed $state): string => is_array($state)
                                 ? (json_encode($state, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT) ?: '')
                                 : (string) $state)
@@ -109,7 +109,7 @@ class CasesRelationManager extends RelationManager
                     ->columns(2)
                     ->columnSpanFull(),
                 Toggle::make('is_active')
-                    ->label('Использовать в проверке')
+                    ->label(__('Использовать в проверке'))
                     ->default(true),
             ]);
     }
@@ -118,20 +118,20 @@ class CasesRelationManager extends RelationManager
     {
         return $table
             ->columns([
-                TextColumn::make('name')->label('Название')->searchable()->sortable(),
+                TextColumn::make('name')->label(__('Название'))->searchable()->sortable(),
                 TextColumn::make('is_synthetic')
-                    ->label('Тип данных')
+                    ->label(__('Тип данных'))
                     ->badge()
-                    ->formatStateUsing(fn (bool $state): string => $state ? 'Синтетические данные' : 'Обезличенные данные')
+                    ->formatStateUsing(fn (bool $state): string => $state ? __('Синтетические данные') : __('Обезличенные данные'))
                     ->color(fn (bool $state): string => $state ? 'info' : 'warning'),
-                TextColumn::make('is_active')->label('Статус')->formatStateUsing(fn ($state) => $state ? 'Активен' : 'Отключен'),
-                TextColumn::make('created_at')->label('Создан')->dateTime('d.m.Y H:i'),
+                TextColumn::make('is_active')->label(__('Статус'))->formatStateUsing(fn ($state) => $state ? __('Активен') : __('Отключен')),
+                TextColumn::make('created_at')->label(__('Создан'))->dateTime('d.m.Y H:i'),
             ])
-            ->emptyStateHeading('Примеров пока нет')
-            ->emptyStateDescription('Добавьте примеры, чтобы проверить, что новая настройка AI работает ожидаемо.')
+            ->emptyStateHeading(__('Примеров пока нет'))
+            ->emptyStateDescription(__('Добавьте примеры, чтобы проверить, что новая настройка AI работает ожидаемо.'))
             ->headerActions([
                 CreateAction::make()
-                    ->label('Добавить пример')
+                    ->label(__('Добавить пример'))
                     ->using(function (array $data): AiEvalCase {
                         $actor = Auth::user();
                         if (! $actor instanceof User) {
@@ -237,7 +237,7 @@ class CasesRelationManager extends RelationManager
         }
 
         if (str_starts_with($value, '{') || str_starts_with($value, '[')) {
-            throw new InvalidArgumentException('Расширенные проверки должны быть корректным JSON.');
+            throw new InvalidArgumentException(__('Расширенные проверки должны быть корректным JSON.'));
         }
 
         return [['type' => 'required_text', 'value' => $value]];
@@ -290,7 +290,7 @@ class CasesRelationManager extends RelationManager
 
         $decoded = json_decode($value, true);
         if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
-            throw new InvalidArgumentException('Ожидаемая структура ответа должна быть корректным JSON.');
+            throw new InvalidArgumentException(__('Ожидаемая структура ответа должна быть корректным JSON.'));
         }
 
         return $decoded;

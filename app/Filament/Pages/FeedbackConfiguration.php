@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\Feedback\Application\GetFeedbackConfiguration;
 use App\Modules\Feedback\Application\SaveFeedbackConfiguration;
@@ -14,7 +15,6 @@ use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
@@ -27,7 +27,7 @@ use LogicException;
 use UnitEnum;
 
 /** @property-read Schema $form */
-final class FeedbackConfiguration extends Page
+final class FeedbackConfiguration extends LocalizedPage
 {
     protected static ?string $title = 'Настройки обратной связи';
 
@@ -80,39 +80,39 @@ final class FeedbackConfiguration extends Page
     {
         return $schema
             ->components([
-                Section::make('Правила оценки')
+                Section::make(__('Правила оценки'))
                     ->schema([
-                        Toggle::make('enabled')->label('Включить NPS/обратную связь')->required()->columnSpanFull(),
+                        Toggle::make('enabled')->label(__('Включить NPS/обратную связь'))->required()->columnSpanFull(),
                         TextInput::make('positive_threshold')
-                            ->label('Порог положительной оценки')
+                            ->label(__('Порог положительной оценки'))
                             ->integer()
                             ->minValue(1)
                             ->maxValue(10)
                             ->required()
                             ->columnSpanFull(),
                         Toggle::make('low_score_feedback_required')
-                            ->label('Требовать текст для низкой оценки')
+                            ->label(__('Требовать текст для низкой оценки'))
                             ->required()
                             ->columnSpanFull(),
                     ])
                     ->columns(1),
-                Section::make('Внешние площадки')
-                    ->description('Ссылки показываются клиенту после положительной оценки. Текст и отправка сообщения после визита настраиваются в разделах «Шаблоны сообщений» и «Авто-сообщения».')
+                Section::make(__('Внешние площадки'))
+                    ->description(__('Ссылки показываются клиенту после положительной оценки. Текст и отправка сообщения после визита настраиваются в разделах «Шаблоны сообщений» и «Авто-сообщения».'))
                     ->schema([
                         Placeholder::make('feedback_template_path')
-                            ->label('Где изменить сообщение после визита')
-                            ->content('Откройте «Шаблоны сообщений» и найдите сценарий оценки визита. Затем проверьте «Авто-сообщения» для события «После визита».')
+                            ->label(__('Где изменить сообщение после визита'))
+                            ->content(__('Откройте «Шаблоны сообщений» и найдите сценарий оценки визита. Затем проверьте «Авто-сообщения» для события «После визита».'))
                             ->columnSpanFull(),
-                        TextInput::make('review_url_ru')->label('Ссылка на отзыв (RU)')->url()->maxLength(2048),
-                        TextInput::make('review_url_en')->label('Ссылка на отзыв (EN)')->url()->maxLength(2048),
+                        TextInput::make('review_url_ru')->label(__('Ссылка на отзыв (RU)'))->url()->maxLength(2048),
+                        TextInput::make('review_url_en')->label(__('Ссылка на отзыв (EN)'))->url()->maxLength(2048),
                         Repeater::make('review_destinations')
-                            ->label('Площадки для оценки 8–10')
-                            ->helperText('Добавьте площадки, которые увидит клиент после оценки.')
+                            ->label(__('Площадки для оценки 8–10'))
+                            ->helperText(__('Добавьте площадки, которые увидит клиент после оценки.'))
                             ->schema([
-                                TextInput::make('label')->label('Название площадки')->required()->maxLength(160),
-                                TextInput::make('url')->label('Ссылка')->url()->required()->maxLength(2048),
-                                Toggle::make('isActive')->label('Показывать клиенту')->default(true),
-                                TextInput::make('sortOrder')->label('Порядок')->integer()->minValue(0)->default(0),
+                                TextInput::make('label')->label(__('Название площадки'))->required()->maxLength(160),
+                                TextInput::make('url')->label(__('Ссылка'))->url()->required()->maxLength(2048),
+                                Toggle::make('isActive')->label(__('Показывать клиенту'))->default(true),
+                                TextInput::make('sortOrder')->label(__('Порядок'))->integer()->minValue(0)->default(0),
                             ])
                             ->columns(['default' => 1, 'sm' => 2, 'lg' => 4])
                             ->defaultItems(0)
@@ -136,7 +136,7 @@ final class FeedbackConfiguration extends Page
             ->livewireSubmitHandler('save')
             ->footer([
                 Actions::make([
-                    Action::make('save')->label('Сохранить настройки')->submit('save'),
+                    Action::make('save')->label(__('Сохранить настройки'))->submit('save'),
                 ]),
             ]);
     }
@@ -156,6 +156,6 @@ final class FeedbackConfiguration extends Page
             reviewDestinations: is_array($data['review_destinations'] ?? null) ? $data['review_destinations'] : [],
         );
 
-        Notification::make()->success()->title('Настройки обратной связи сохранены')->send();
+        Notification::make()->success()->title(__('Настройки обратной связи сохранены'))->send();
     }
 }

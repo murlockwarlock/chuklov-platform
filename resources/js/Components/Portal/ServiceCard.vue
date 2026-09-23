@@ -7,7 +7,7 @@ import { formatMajorPrice } from '../../utils/formatMajorPrice';
 
 type Service = {
     id: number;
-    catalogType: 'service' | 'online_product';
+    catalogType: 'service' | 'physical_product' | 'online_product';
     name: string;
     summary: string | null;
     imageUrl: string | null;

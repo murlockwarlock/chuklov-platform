@@ -13,13 +13,13 @@ class WorkingLocationsTable
     {
         return $table
             ->columns([
-                TextColumn::make('name')->label('Название')->searchable()->sortable(),
-                TextColumn::make('address')->label('Адрес')->wrap(),
-                TextColumn::make('timezone')->label('Часовой пояс')->sortable(),
-                IconColumn::make('is_default_office')->label('Основная')->boolean(),
-                IconColumn::make('is_active')->label('Активна')->boolean(),
+                TextColumn::make('name')->label(__('Название'))->searchable()->sortable(),
+                TextColumn::make('address')->label(__('Адрес'))->wrap(),
+                TextColumn::make('timezone')->label(__('Часовой пояс'))->sortable(),
+                IconColumn::make('is_default_office')->label(__('Основная'))->boolean(),
+                IconColumn::make('is_active')->label(__('Активна'))->boolean(),
             ])
             ->defaultSort('name')
-            ->recordActions([EditAction::make()->label('Изменить')]);
+            ->recordActions([EditAction::make()->label(__('Изменить'))]);
     }
 }

@@ -134,6 +134,7 @@ final class ClientCompanionContextTest extends TestCase
 
     public function test_health_context_is_bounded_to_the_current_client_and_organization(): void
     {
+        app()->setLocale('en');
         app(InstallPlatformSurveyCatalog::class)->handle($this->organization);
         $definition = SurveyDefinition::query()
             ->where('organization_id', $this->organization->getKey())

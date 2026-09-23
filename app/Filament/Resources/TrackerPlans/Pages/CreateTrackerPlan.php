@@ -3,15 +3,15 @@
 namespace App\Filament\Resources\TrackerPlans\Pages;
 
 use App\Filament\Resources\TrackerPlans\TrackerPlanResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\SavePaymentProviderOfferMappings;
 use App\Modules\Tracker\Application\SaveTrackerPlan;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-final class CreateTrackerPlan extends CreateRecord
+final class CreateTrackerPlan extends LocalizedCreateRecord
 {
     protected static string $resource = TrackerPlanResource::class;
 

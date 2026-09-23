@@ -22,19 +22,19 @@ class AiProviderForm
         return $schema
             ->components([
                 Select::make('provider_name')
-                    ->label('Провайдер')
+                    ->label(__('Провайдер'))
                     ->options(fn (?AiProviderConfiguration $record): array => AiProviderCatalog::options($record?->provider_name))
                     ->native(false)
                     ->live()
                     ->disabled(fn (?AiProviderConfiguration $record): bool => $record !== null)
                     ->required()
-                    ->helperText('Выберите поддерживаемый провайдер из каталога.'),
+                    ->helperText(__('Выберите поддерживаемый провайдер из каталога.')),
                 TextInput::make('display_name')
-                    ->label('Название в CRM')
+                    ->label(__('Название в CRM'))
                     ->required()
                     ->maxLength(120),
                 TextInput::make('api_key')
-                    ->label(fn (string $operation): string => $operation === 'create' ? 'API-ключ' : 'Новый API-ключ')
+                    ->label(fn (string $operation): string => $operation === 'create' ? __('API-ключ') : __('Новый API-ключ'))
                     ->password()
                     ->revealable()
                     ->autocomplete('new-password')
@@ -45,45 +45,45 @@ class AiProviderForm
                         && blank($get('credential_id'))
                         && ! in_array(self::supportedProvider($get('provider_name')), ['ollama', 'openai_compatible'], true)),
                 Toggle::make('is_enabled')
-                    ->label('Провайдер включен')
+                    ->label(__('Провайдер включен'))
                     ->default(true),
-                Section::make('Расширенное подключение')
-                    ->description('Нужно только для локального сервера, OpenAI-compatible endpoint, Azure deployment или региона Bedrock.')
+                Section::make(__('Расширенное подключение'))
+                    ->description(__('Нужно только для локального сервера, OpenAI-compatible endpoint, Azure deployment или региона Bedrock.'))
                     ->collapsed()
                     ->visible(fn (Get $get): bool => self::hasAdvancedConnection($get('provider_name')))
                     ->schema([
                         TextInput::make('options.base_url')
-                            ->label('Адрес API')
+                            ->label(__('Адрес API'))
                             ->placeholder('https://example.com/v1')
                             ->url()
                             ->required(fn (Get $get): bool => in_array(self::supportedProvider($get('provider_name')), ['openai_compatible', 'azure'], true))
                             ->visible(fn (Get $get): bool => in_array(self::supportedProvider($get('provider_name')), ['openai_compatible', 'ollama', 'azure'], true))
                             ->maxLength(500),
                         TextInput::make('options.api_version')
-                            ->label('Версия Azure API')
+                            ->label(__('Версия Azure API'))
                             ->placeholder('2025-04-01-preview')
                             ->visible(fn (Get $get): bool => self::supportedProvider($get('provider_name')) === 'azure')
                             ->maxLength(80),
                         TextInput::make('options.deployment')
                             ->label('Azure deployment')
-                            ->helperText('Имя deployment в вашем ресурсе Azure, а не глобальное имя модели.')
+                            ->helperText(__('Имя deployment в вашем ресурсе Azure, а не глобальное имя модели.'))
                             ->visible(fn (Get $get): bool => self::supportedProvider($get('provider_name')) === 'azure')
                             ->maxLength(120),
                         TextInput::make('options.region')
-                            ->label('Регион Bedrock')
+                            ->label(__('Регион Bedrock'))
                             ->placeholder('us-east-1')
                             ->visible(fn (Get $get): bool => self::supportedProvider($get('provider_name')) === 'bedrock')
                             ->maxLength(80),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
-                Section::make('Дополнительно: использовать сохранённый ключ')
-                    ->description('Выберите уже сохранённый ключ, если он был добавлен ранее. Новый API-ключ надёжно сохраняется автоматически.')
+                Section::make(__('Дополнительно: использовать сохранённый ключ'))
+                    ->description(__('Выберите уже сохранённый ключ, если он был добавлен ранее. Новый API-ключ надёжно сохраняется автоматически.'))
                     ->collapsed()
                     ->schema([
                         Select::make('credential_id')
-                            ->label('Сохранённый API-ключ')
-                            ->placeholder('Не выбирать')
+                            ->label(__('Сохранённый API-ключ'))
+                            ->placeholder(__('Не выбирать'))
                             ->options(fn (Get $get): array => self::credentialOptions($get('provider_name')))
                             ->getSearchResultsUsing(fn (string $search, Get $get): array => self::credentialOptions($get('provider_name'), $search))
                             ->getOptionLabelUsing(fn (mixed $value): ?string => self::credentialLabel($value))
@@ -100,10 +100,10 @@ class AiProviderForm
         try {
             $provider = AiProviderCatalog::label($providerName);
         } catch (\InvalidArgumentException) {
-            $provider = 'выбранного провайдера';
+            $provider = __('выбранного провайдера');
         }
 
-        return "Введите ключ доступа из личного кабинета {$provider}. После сохранения ключ не отображается; затем нажмите «Проверить связь».";
+        return __('Введите ключ доступа из личного кабинета :provider. После сохранения ключ не отображается; затем нажмите «Проверить связь».', ['provider' => $provider]);
     }
 
     /** @return array<int|string, string> */
@@ -153,12 +153,12 @@ class AiProviderForm
 
         return $credential instanceof OrganizationCredential
             ? self::credentialDisplayLabel($credential)
-            : 'Сохранённый API-ключ недоступен';
+            : __('Сохранённый API-ключ недоступен');
     }
 
     private static function credentialDisplayLabel(OrganizationCredential $credential): string
     {
-        $status = $credential->status === CredentialStatus::Active ? 'активны' : 'отключены';
+        $status = $credential->status === CredentialStatus::Active ? __('активны') : __('отключены');
 
         return $credential->credential_name.' · '.AiProviderCatalog::label($credential->provider).' · '.$status;
     }

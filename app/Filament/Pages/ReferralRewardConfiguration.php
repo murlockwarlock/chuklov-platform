@@ -2,6 +2,8 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinanceAuthorization;
@@ -18,7 +20,6 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
@@ -35,7 +36,7 @@ use LogicException;
 use UnitEnum;
 
 /** @property-read Schema $form */
-final class ReferralRewardConfiguration extends Page
+final class ReferralRewardConfiguration extends LocalizedPage
 {
     protected static ?string $title = 'Реферальная программа';
 
@@ -109,28 +110,28 @@ final class ReferralRewardConfiguration extends Page
     {
         return $schema
             ->components([
-                Section::make('Как сейчас работает')
+                Section::make(__('Как сейчас работает'))
                     ->schema([
                         Placeholder::make('program_summary')
-                            ->label('Текущие условия')
+                            ->label(__('Текущие условия'))
                             ->content(fn (): string => $this->programSummary),
                         Placeholder::make('program_example')
-                            ->label('Пример расчёта')
+                            ->label(__('Пример расчёта'))
                             ->content(fn (): string => $this->programExample),
                         Placeholder::make('program_scope')
-                            ->label('Общие и индивидуальные условия')
-                            ->content('Общие условия действуют по умолчанию. Индивидуальные условия партнёра, если они заданы, заменяют общие для этого партнёра.'),
+                            ->label(__('Общие и индивидуальные условия'))
+                            ->content(__('Общие условия действуют по умолчанию. Индивидуальные условия партнёра, если они заданы, заменяют общие для этого партнёра.')),
                         Placeholder::make('program_effective_at')
-                            ->label('Дата начала действия')
+                            ->label(__('Дата начала действия'))
                             ->content(fn (): string => $this->programEffectiveAt),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
-                Section::make('Реферальная программа')
-                    ->description('Начисление выключено по умолчанию. Каждое сохранение создаёт новую версию, а история начислений не изменяется.')
+                Section::make(__('Реферальная программа'))
+                    ->description(__('Начисление выключено по умолчанию. Каждое сохранение создаёт новую версию, а история начислений не изменяется.'))
                     ->schema([
                         Toggle::make('enabled')
-                            ->label('Включена')
+                            ->label(__('Включена'))
                             ->live()
                             ->inline()
                             ->columnSpanFull()
@@ -138,50 +139,50 @@ final class ReferralRewardConfiguration extends Page
                         Grid::make(2)
                             ->schema([
                                 Select::make('qualification_rule')
-                                    ->label('Начислять')
+                                    ->label(__('Начислять'))
                                     ->options([
-                                        ReferralRewardQualificationRule::FirstSettledPayment->value => ReferralRewardQualificationRule::FirstSettledPayment->label(),
-                                        ReferralRewardQualificationRule::EverySettledPayment->value => ReferralRewardQualificationRule::EverySettledPayment->label(),
+                                        ReferralRewardQualificationRule::FirstSettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::FirstSettledPayment),
+                                        ReferralRewardQualificationRule::EverySettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::EverySettledPayment),
                                     ])
                                     ->visible(fn (Get $get): bool => (bool) $get('enabled'))
                                     ->required(fn (Get $get): bool => (bool) $get('enabled'))
                                     ->disabled(fn (): bool => ! self::canManage()),
                                 Select::make('formula')
-                                    ->label('Размер бонуса')
+                                    ->label(__('Размер бонуса'))
                                     ->options([
-                                        ReferralRewardFormula::FixedAmount->value => ReferralRewardFormula::FixedAmount->label(),
-                                        ReferralRewardFormula::PercentageOfSettlement->value => ReferralRewardFormula::PercentageOfSettlement->label(),
+                                        ReferralRewardFormula::FixedAmount->value => CrmLabel::enum(ReferralRewardFormula::FixedAmount),
+                                        ReferralRewardFormula::PercentageOfSettlement->value => CrmLabel::enum(ReferralRewardFormula::PercentageOfSettlement),
                                     ])
                                     ->live()
                                     ->visible(fn (Get $get): bool => (bool) $get('enabled'))
                                     ->required(fn (Get $get): bool => (bool) $get('enabled'))
                                     ->disabled(fn (): bool => ! self::canManage()),
                                 TextInput::make('fixed_amount')
-                                    ->label('Фиксированная сумма')
+                                    ->label(__('Фиксированная сумма'))
                                     ->inputMode('decimal')
-                                    ->placeholder('Укажите сумму')
+                                    ->placeholder(__('Укажите сумму'))
                                     ->regex('/^(?:0|[1-9][0-9]{0,18})(?:\.[0-9]{1,2})?$/')
                                     ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
                                     ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
                                     ->disabled(fn (): bool => ! self::canManage()),
                                 Select::make('fixed_currency')
-                                    ->label('Валюта фиксированной суммы')
+                                    ->label(__('Валюта фиксированной суммы'))
                                     ->options(fn (): array => app(CurrencyCatalog::class)->options())
                                     ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
                                     ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
                                     ->disabled(fn (): bool => ! self::canManage()),
                                 TextInput::make('percentage')
-                                    ->label('Процент от оплаты')
+                                    ->label(__('Процент от оплаты'))
                                     ->inputMode('decimal')
-                                    ->placeholder('Укажите процент')
+                                    ->placeholder(__('Укажите процент'))
                                     ->suffix('%')
                                     ->regex('/^(?:0|[1-9][0-9]{0,2})(?:\.[0-9]{1,2})?$/')
                                     ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::PercentageOfSettlement->value)
                                     ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::PercentageOfSettlement->value)
                                     ->disabled(fn (): bool => ! self::canManage()),
                                 DateTimePicker::make('effective_at')
-                                    ->label('Дата начала действия')
-                                    ->helperText('Оплата, подтверждённая раньше этой даты, не использует эту версию правила.')
+                                    ->label(__('Дата начала действия'))
+                                    ->helperText(__('Оплата, подтверждённая раньше этой даты, не использует эту версию правила.'))
                                     ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                                     ->seconds(false)
                                     ->required()
@@ -210,7 +211,7 @@ final class ReferralRewardConfiguration extends Page
             ->footer([
                 Actions::make([
                     Action::make('save')
-                        ->label('Сохранить настройки')
+                        ->label(__('Сохранить настройки'))
                         ->visible(fn (): bool => self::canManage())
                         ->submit('save'),
                 ]),
@@ -233,7 +234,7 @@ final class ReferralRewardConfiguration extends Page
             effectiveAt: $data['effective_at'] ?? null,
         );
         $this->setProgramPresentation(app(GetReferralRewardProgram::class)->handle());
-        Notification::make()->success()->title('Реферальная программа сохранена')->send();
+        Notification::make()->success()->title(__('Реферальная программа сохранена'))->send();
     }
 
     /** @param array<string, mixed> $program */
@@ -248,28 +249,31 @@ final class ReferralRewardConfiguration extends Page
     private function summary(array $program): string
     {
         if (! (bool) ($program['enabled'] ?? false)) {
-            return 'Программа выключена: начисления не создаются.';
+            return __('Программа выключена: начисления не создаются.');
         }
 
-        $qualification = ReferralRewardQualificationRule::tryFrom((string) ($program['qualificationRule'] ?? ''))?->label() ?? 'Правило начисления не указано';
+        $qualification = CrmLabel::enum(ReferralRewardQualificationRule::tryFrom((string) ($program['qualificationRule'] ?? ''))) ?? __('Правило начисления не указано');
         $formula = ReferralRewardFormula::tryFrom((string) ($program['formula'] ?? ''));
         $reward = $formula === ReferralRewardFormula::FixedAmount
-            ? 'фиксированная сумма '.self::amountLabel($program['fixedAmount'] ?? null, $program['fixedCurrency'] ?? null)
-            : 'процент '.((string) ($program['percentage'] ?? '—')).'% от оплаты';
+            ? __('фиксированная сумма :amount', ['amount' => self::amountLabel($program['fixedAmount'] ?? null, $program['fixedCurrency'] ?? null)])
+            : __('процент :percentage% от оплаты', ['percentage' => (string) ($program['percentage'] ?? '—')]);
 
-        return 'Программа включена. '.$qualification.'. Размер бонуса: '.$reward.'.';
+        return __('Программа включена. :qualification. Размер бонуса: :reward.', [
+            'qualification' => $qualification,
+            'reward' => $reward,
+        ]);
     }
 
     /** @param array<string, mixed> $program */
     private function example(array $program): string
     {
         if (! (bool) ($program['enabled'] ?? false)) {
-            return 'Включите программу и сохраните настройки, чтобы начисления стали возможны.';
+            return __('Включите программу и сохраните настройки, чтобы начисления стали возможны.');
         }
 
         $formula = ReferralRewardFormula::tryFrom((string) ($program['formula'] ?? ''));
         if ($formula === ReferralRewardFormula::FixedAmount) {
-            return 'После подтверждённой оплаты партнёру будет начислено '.self::amountLabel($program['fixedAmount'] ?? null, $program['fixedCurrency'] ?? null).'.';
+            return __('После подтверждённой оплаты партнёру будет начислено ').self::amountLabel($program['fixedAmount'] ?? null, $program['fixedCurrency'] ?? null).'.';
         }
 
         $currency = $this->organizationDisplayCurrency();
@@ -277,17 +281,21 @@ final class ReferralRewardConfiguration extends Page
         $reward = self::numberLabel(100000 * $percentage / 100);
 
         return $currency === null
-            ? 'Пример недоступен: сначала настройте валюту организации.'
-            : 'Если клиент оплатил '.self::numberLabel(100000).' '.$currency.', партнёру будет начислено '.$reward.' '.$currency.'.';
+            ? __('Пример недоступен: сначала настройте валюту организации.')
+            : __('Если клиент оплатил :amount :currency, партнёру будет начислено :reward :currency.', [
+                'amount' => self::numberLabel(100000),
+                'currency' => $currency,
+                'reward' => $reward,
+            ]);
     }
 
     private function effectiveAtLabel(mixed $value): string
     {
         if (! is_string($value) || $value === '') {
-            return 'Дата начала пока не задана.';
+            return __('Дата начала пока не задана.');
         }
 
-        return 'Версия действует с '.Carbon::parse($value)
+        return __('Версия действует с ').Carbon::parse($value)
             ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
             ->format('d.m.Y H:i').' ('.app(OrganizationContext::class)->defaultTimezone().').';
     }
@@ -307,7 +315,7 @@ final class ReferralRewardConfiguration extends Page
     private static function amountLabel(mixed $amount, mixed $currency): string
     {
         if (! is_string($amount) || $amount === '' || ! is_string($currency) || $currency === '') {
-            return 'сумма не указана';
+            return __('сумма не указана');
         }
 
         return self::numberLabel((float) $amount).' '.$currency;

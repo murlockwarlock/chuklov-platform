@@ -62,6 +62,45 @@ final class PurchaseFulfillmentTest extends TestCase
         self::assertSame(1, FulfillmentEvent::query()->where('fulfillment_id', $fulfillment->getKey())->count());
     }
 
+    public function test_physical_product_payment_enters_manual_handover_and_can_be_completed(): void
+    {
+        [$organization, $admin, $client] = $this->baseFixture();
+        $product = Service::factory()->forOrganization($organization)->create([
+            'name' => 'Materials set',
+            'catalog_type' => CatalogItemType::PhysicalProduct->value,
+            'price_minor' => 800000,
+            'price_currency' => 'USD',
+        ]);
+        $this->mapping($organization, Service::class, $product->getKey(), '836b9fc5-7ae9-4a27-9642-592bc44072b7');
+
+        Http::fake([
+            '*' => Http::response([
+                'id' => '7ea82675-4ded-4133-95a7-a6efbaf165cc',
+                'status' => 'in-progress',
+                'paymentUrl' => 'https://pay.lava.top/materials',
+            ], 201),
+        ]);
+        $checkout = app(StartPurchaseCheckout::class)->physicalProduct(
+            organization: $organization,
+            client: $client,
+            product: $product,
+            gateway: 'lava',
+            idempotencyKey: 'physical-product-1',
+            buyerEmail: (string) $client->email,
+        );
+
+        $this->settle($organization, $checkout->transaction->provider_reference, 8000, 'physical');
+
+        $fulfillment = $checkout->purchase->items()->sole()->fulfillment->refresh();
+        self::assertSame('paid', $checkout->purchase->refresh()->status->value);
+        self::assertSame(CommerceFulfillmentStatus::Pending, $fulfillment->status);
+
+        app(FulfillManualPurchaseItem::class)->handle($admin, $fulfillment);
+
+        self::assertSame(CommerceFulfillmentStatus::Fulfilled, $fulfillment->refresh()->status);
+        self::assertSame(1, FulfillmentEvent::query()->where('fulfillment_id', $fulfillment->getKey())->count());
+    }
+
     public function test_tracker_fulfillment_uses_existing_entitlement_policy_and_duplicate_webhook_does_not_extend_twice(): void
     {
         [$organization, , $client] = $this->baseFixture();

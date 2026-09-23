@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Pages;
 
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
@@ -14,13 +15,12 @@ use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Textarea;
-use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
-class EditMedicalSession extends EditRecord
+class EditMedicalSession extends LocalizedEditRecord
 {
     protected static string $resource = MedicalSessionResource::class;
 
@@ -36,14 +36,14 @@ class EditMedicalSession extends EditRecord
             ->operation('edit')
             ->components([
                 Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
-                Section::make('Клинические заметки')
+                Section::make(__('Клинические заметки'))
                     ->schema([
-                        Textarea::make('pain')->label('Боль')->rows(3)->placeholder('Что беспокоит клиента и где'),
-                        Textarea::make('tests')->label('Тесты')->rows(3)->placeholder('Проведённые проверки и их результаты'),
-                        Textarea::make('observations')->label('Наблюдения')->rows(3)->placeholder('Субъективные и объективные наблюдения'),
-                        Textarea::make('root_cause_hypothesis')->label('Гипотеза первопричины')->rows(3)->placeholder('Предполагаемая причина состояния'),
-                        Textarea::make('protocol')->label('Протокол')->rows(3)->placeholder('Назначенные процедуры и план'),
-                        Textarea::make('result')->label('Результат')->rows(3)->placeholder('Эффект после процедур/до следующего сеанса'),
+                        Textarea::make('pain')->label(__('Боль'))->rows(3)->placeholder(__('Что беспокоит клиента и где')),
+                        Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
+                        Textarea::make('observations')->label(__('Наблюдения'))->rows(3)->placeholder(__('Субъективные и объективные наблюдения')),
+                        Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),
+                        Textarea::make('protocol')->label(__('Протокол'))->rows(3)->placeholder(__('Назначенные процедуры и план')),
+                        Textarea::make('result')->label(__('Результат'))->rows(3)->placeholder(__('Эффект после процедур/до следующего сеанса')),
                     ])
                     ->columnSpanFull(),
             ]);
@@ -112,7 +112,7 @@ class EditMedicalSession extends EditRecord
 
     protected function getSavedNotificationTitle(): ?string
     {
-        return 'Сеанс обновлён';
+        return __('Сеанс обновлён');
     }
 
     private function actor(): User

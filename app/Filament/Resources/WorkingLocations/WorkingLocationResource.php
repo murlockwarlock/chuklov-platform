@@ -7,20 +7,20 @@ use App\Filament\Resources\WorkingLocations\Pages\EditWorkingLocation;
 use App\Filament\Resources\WorkingLocations\Pages\ListWorkingLocations;
 use App\Filament\Resources\WorkingLocations\Schemas\WorkingLocationForm;
 use App\Filament\Resources\WorkingLocations\Tables\WorkingLocationsTable;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-class WorkingLocationResource extends Resource
+class WorkingLocationResource extends LocalizedResource
 {
     protected static ?string $model = WorkingLocation::class;
 

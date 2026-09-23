@@ -6,6 +6,8 @@ use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\ReferralPayoutRequests\Pages\ListReferralPayoutRequests;
 use App\Filament\Resources\ReferralPayoutRequests\Pages\ViewReferralPayoutRequest;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
@@ -22,7 +24,6 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Resources\Resource;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -34,7 +35,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /** @extends resource<ReferralPayoutRequest> */
-final class ReferralPayoutRequestResource extends Resource
+final class ReferralPayoutRequestResource extends LocalizedResource
 {
     protected static ?string $model = ReferralPayoutRequest::class;
 
@@ -87,35 +88,35 @@ final class ReferralPayoutRequestResource extends Resource
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('beneficiary.full_name')
-                    ->label('Партнёр / клиент')
+                    ->label(__('Партнёр / клиент'))
                     ->searchable()
                     ->wrap()
                     ->url(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary, $canViewClients))
                     ->color(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (ReferralPayoutRequest $record): bool => CrmEntityLinks::clientUrl($record->beneficiary, $canViewClients) === null),
                 TextColumn::make('amount_minor')
-                    ->label('Сумма')
+                    ->label(__('Сумма'))
                     ->formatStateUsing(fn (mixed $state, ReferralPayoutRequest $record): string => self::amount($record))
                     ->sortable(),
-                TextColumn::make('currency')->label('Валюта')->badge(),
+                TextColumn::make('currency')->label(__('Валюта'))->badge(),
                 TextColumn::make('requested_at')
-                    ->label('Запрошено')
+                    ->label(__('Запрошено'))
                     ->dateTime('d.m.Y H:i')
                     ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                     ->sortable(),
                 TextColumn::make('status')
-                    ->label('Статус')
+                    ->label(__('Статус'))
                     ->formatStateUsing(fn (mixed $state): string => self::statusLabel($state))
                     ->badge()
                     ->color(fn (mixed $state): string => self::statusColor($state)),
             ])
             ->recordActions([
                 Action::make('open')
-                    ->label('Открыть')
+                    ->label(__('Открыть'))
                     ->icon('heroicon-o-arrow-top-right-on-square')
                     ->url(fn (ReferralPayoutRequest $record): string => self::getUrl('view', ['record' => $record])),
                 Action::make('approve')
-                    ->label('Одобрить')
+                    ->label(__('Одобрить'))
                     ->color('success')
                     ->requiresConfirmation()
                     ->visible(fn (ReferralPayoutRequest $record): bool => self::canManage() && self::status($record) === ReferralPayoutRequestStatus::Requested)
@@ -130,10 +131,10 @@ final class ReferralPayoutRequestResource extends Resource
                         );
                     }),
                 Action::make('reject')
-                    ->label('Отклонить')
+                    ->label(__('Отклонить'))
                     ->color('danger')
                     ->schema([
-                        Textarea::make('reason')->label('Причина отклонения')->required()->maxLength(2000),
+                        Textarea::make('reason')->label(__('Причина отклонения'))->required()->maxLength(2000),
                     ])
                     ->visible(fn (ReferralPayoutRequest $record): bool => self::canManage() && in_array(self::status($record), [ReferralPayoutRequestStatus::Requested, ReferralPayoutRequestStatus::Approved], true))
                     ->action(function (ReferralPayoutRequest $record, array $data): void {
@@ -148,11 +149,11 @@ final class ReferralPayoutRequestResource extends Resource
                         );
                     }),
                 Action::make('paid')
-                    ->label('Отметить как выплаченную')
+                    ->label(__('Отметить как выплаченную'))
                     ->color('primary')
                     ->schema([
-                        TextInput::make('payment_reference')->label('Платёжная пометка или ссылка')->maxLength(180),
-                        Textarea::make('payment_note')->label('Комментарий о ручной выплате')->maxLength(2000),
+                        TextInput::make('payment_reference')->label(__('Платёжная пометка или ссылка'))->maxLength(180),
+                        Textarea::make('payment_note')->label(__('Комментарий о ручной выплате'))->maxLength(2000),
                     ])
                     ->visible(fn (ReferralPayoutRequest $record): bool => self::canManage() && self::status($record) === ReferralPayoutRequestStatus::Approved)
                     ->action(function (ReferralPayoutRequest $record, array $data): void {
@@ -175,65 +176,65 @@ final class ReferralPayoutRequestResource extends Resource
     public static function infolist(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Запрос на выплату')
+            Section::make(__('Запрос на выплату'))
                 ->schema([
                     TextEntry::make('beneficiary.full_name')
-                        ->label('Партнёр')
+                        ->label(__('Партнёр'))
                         ->wrap()
                         ->url(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary))
                         ->color(fn (ReferralPayoutRequest $record): ?string => CrmEntityLinks::clientUrl($record->beneficiary) === null ? null : 'primary'),
                     TextEntry::make('beneficiary.referralPartnerProfile.status')
-                        ->label('Статус партнёра')
+                        ->label(__('Статус партнёра'))
                         ->formatStateUsing(fn (mixed $state): string => self::partnerStatusLabel($state))
                         ->badge(),
                     TextEntry::make('amount_minor')
-                        ->label('Сумма')
+                        ->label(__('Сумма'))
                         ->formatStateUsing(fn (mixed $state, ReferralPayoutRequest $record): string => self::amount($record)),
-                    TextEntry::make('currency')->label('Валюта')->badge(),
+                    TextEntry::make('currency')->label(__('Валюта'))->badge(),
                     TextEntry::make('status')
-                        ->label('Статус')
+                        ->label(__('Статус'))
                         ->formatStateUsing(fn (mixed $state): string => self::statusLabel($state))
                         ->badge()
                         ->color(fn (mixed $state): string => self::statusColor($state)),
                     TextEntry::make('requested_at')
-                        ->label('Запрошено')
+                        ->label(__('Запрошено'))
                         ->dateTime('d.m.Y H:i')
                         ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
                     TextEntry::make('processed_at')
-                        ->label('Обработано')
+                        ->label(__('Обработано'))
                         ->state(fn (ReferralPayoutRequest $record): ?string => self::processedAt($record)?->format('d.m.Y H:i'))
-                        ->placeholder('Ещё не обработан'),
+                        ->placeholder(__('Ещё не обработан')),
                     TextEntry::make('reason')
-                        ->label('Причина или платёжная пометка')
+                        ->label(__('Причина или платёжная пометка'))
                         ->state(fn (ReferralPayoutRequest $record): string => self::reason($record))
                         ->placeholder('—')
                         ->wrap()
                         ->columnSpanFull(),
                 ])
                 ->columns(2),
-            Section::make('Доступные действия')
+            Section::make(__('Доступные действия'))
                 ->schema([
                     TextEntry::make('next_step')
-                        ->label('Что можно сделать')
+                        ->label(__('Что можно сделать'))
                         ->state(fn (ReferralPayoutRequest $record): string => self::nextStep($record))
                         ->wrap()
                         ->columnSpanFull(),
                 ])
                 ->compact()
                 ->columnSpanFull(),
-            Section::make('История переходов')
+            Section::make(__('История переходов'))
                 ->schema([
                     RepeatableEntry::make('status_history')
                         ->hiddenLabel()
                         ->schema([
-                            TextEntry::make('transition')->label('Изменение')->weight('semibold')->wrap(),
-                            TextEntry::make('actor')->label('Кто изменил')->wrap(),
-                            TextEntry::make('occurred_at')->label('Когда')->wrap(),
-                            TextEntry::make('details')->label('Причина / платёж')->wrap(),
+                            TextEntry::make('transition')->label(__('Изменение'))->weight('semibold')->wrap(),
+                            TextEntry::make('actor')->label(__('Кто изменил'))->wrap(),
+                            TextEntry::make('occurred_at')->label(__('Когда'))->wrap(),
+                            TextEntry::make('details')->label(__('Причина / платёж'))->wrap(),
                         ])
                         ->columns(2)
                         ->state(fn (ReferralPayoutRequest $record): array => self::statusHistory($record))
-                        ->placeholder('История пока не записана')
+                        ->placeholder(__('История пока не записана'))
                         ->columnSpanFull(),
                 ])
                 ->compact()
@@ -283,7 +284,7 @@ final class ReferralPayoutRequestResource extends Resource
     {
         $status = $state instanceof ReferralPayoutRequestStatus ? $state : ReferralPayoutRequestStatus::tryFrom((string) $state);
 
-        return $status?->label() ?? 'Неизвестно';
+        return CrmLabel::enum($status) ?? __('Неизвестно');
     }
 
     private static function statusColor(mixed $state): string
@@ -301,10 +302,10 @@ final class ReferralPayoutRequestResource extends Resource
     private static function partnerStatusLabel(mixed $state): string
     {
         if ($state instanceof ReferralPartnerStatus) {
-            return $state->label();
+            return CrmLabel::enum($state);
         }
 
-        return ReferralPartnerStatus::tryFrom((string) $state)?->label() ?? 'Не является партнёром';
+        return CrmLabel::enum(ReferralPartnerStatus::tryFrom((string) $state)) ?? __('Не является партнёром');
     }
 
     private static function processedAt(ReferralPayoutRequest $record): ?Carbon
@@ -323,7 +324,7 @@ final class ReferralPayoutRequestResource extends Resource
         $parts = array_filter([
             $record->rejection_reason,
             $record->payment_note,
-            $record->payment_reference === null ? null : 'Платёж: '.$record->payment_reference,
+            $record->payment_reference === null ? null : __('Платёж: :reference', ['reference' => $record->payment_reference]),
         ], static fn (mixed $value): bool => is_string($value) && trim($value) !== '');
 
         return $parts === [] ? '—' : implode("\n", $parts);
@@ -332,12 +333,12 @@ final class ReferralPayoutRequestResource extends Resource
     private static function nextStep(ReferralPayoutRequest $record): string
     {
         return match (self::status($record)) {
-            ReferralPayoutRequestStatus::Requested => 'Одобрить — заявка перейдёт в «Одобрена». Или отклонить с обязательной причиной.',
-            ReferralPayoutRequestStatus::Approved => 'Отметить как выплаченную — зафиксирует ручную выплату и завершит заявку.',
+            ReferralPayoutRequestStatus::Requested => __('Одобрить — заявка перейдёт в «Одобрена». Или отклонить с обязательной причиной.'),
+            ReferralPayoutRequestStatus::Approved => __('Отметить как выплаченную — зафиксирует ручную выплату и завершит заявку.'),
             ReferralPayoutRequestStatus::Paid,
             ReferralPayoutRequestStatus::Rejected,
-            ReferralPayoutRequestStatus::Cancelled => 'Действия недоступны: заявка завершена.',
-            default => 'Проверьте текущий статус заявки.',
+            ReferralPayoutRequestStatus::Cancelled => __('Действия недоступны: заявка завершена.'),
+            default => __('Проверьте текущий статус заявки.'),
         };
     }
 
@@ -349,15 +350,17 @@ final class ReferralPayoutRequestResource extends Resource
             ->map(function (ReferralPayoutRequestEvent $event): array {
                 $from = self::statusLabel($event->from_status);
                 $to = self::statusLabel($event->to_status);
-                $actor = $event->actor?->name ?? ($event->actor_type === 'client' ? 'Партнёр' : 'Сотрудник удалён');
+                $actor = $event->actor?->name ?? ($event->actor_type === 'client' ? __('Партнёр') : __('Сотрудник удалён'));
                 $details = implode("\n", array_filter([
                     $event->reason,
                     $event->payment_note,
-                    $event->payment_reference === null ? null : 'Платёж: '.$event->payment_reference,
+                    $event->payment_reference === null ? null : __('Платёж: :reference', ['reference' => $event->payment_reference]),
                 ], static fn (mixed $value): bool => is_string($value) && trim($value) !== ''));
 
                 return [
-                    'transition' => $event->from_status === null ? 'Создана: '.$to : $from.' → '.$to,
+                    'transition' => $event->from_status === null
+                        ? __('Создана: :status', ['status' => $to])
+                        : __(':from → :to', ['from' => $from, 'to' => $to]),
                     'actor' => $actor,
                     'occurred_at' => $event->occurred_at?->format('d.m.Y H:i') ?? '—',
                     'details' => $details === '' ? '—' : $details,

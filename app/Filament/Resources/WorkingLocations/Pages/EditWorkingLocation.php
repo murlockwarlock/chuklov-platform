@@ -3,13 +3,13 @@
 namespace App\Filament\Resources\WorkingLocations\Pages;
 
 use App\Filament\Resources\WorkingLocations\WorkingLocationResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Scheduling\Application\UpdateWorkingLocation as UpdateWorkingLocationAction;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class EditWorkingLocation extends EditRecord
+class EditWorkingLocation extends LocalizedEditRecord
 {
     protected static string $resource = WorkingLocationResource::class;
 

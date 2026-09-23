@@ -3,13 +3,13 @@
 namespace App\Filament\Resources\SurveyDefinitions\Pages;
 
 use App\Filament\Resources\SurveyDefinitions\SurveyDefinitionResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Models\User;
 use App\Modules\Surveys\Application\CreateSurveyDefinition as CreateSurveyDefinitionAction;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-final class CreateSurveyDefinition extends CreateRecord
+final class CreateSurveyDefinition extends LocalizedCreateRecord
 {
     protected static string $resource = SurveyDefinitionResource::class;
 

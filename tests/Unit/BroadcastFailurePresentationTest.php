@@ -3,10 +3,17 @@
 namespace Tests\Unit;
 
 use App\Filament\Support\BroadcastFailurePresentation;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 final class BroadcastFailurePresentationTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        app()->setLocale('ru');
+    }
+
     public function test_delivery_failures_have_actionable_operator_labels(): void
     {
         self::assertSame(

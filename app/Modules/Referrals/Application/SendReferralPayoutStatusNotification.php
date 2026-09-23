@@ -12,6 +12,7 @@ use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
+use App\Support\SupportedLocale;
 use Illuminate\Support\Facades\Log;
 
 final class SendReferralPayoutStatusNotification
@@ -47,7 +48,7 @@ final class SendReferralPayoutStatusNotification
         }
 
         $amount = Money::ofMinor((int) $request->amount_minor, $currency)->toDecimalString().' '.$currency->value;
-        $locale = str_starts_with(strtolower((string) $identity->client->language), 'en') ? 'en' : 'ru';
+        $locale = SupportedLocale::normalize($identity->client->language);
         $body = $this->body($status, $amount, $request->rejection_reason, $locale);
 
         $result = $channel->send(new NotificationMessage(

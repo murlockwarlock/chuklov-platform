@@ -20,7 +20,7 @@ type Booking = {
     canReschedule: boolean;
 };
 
-type HealthAction = { title: string; summary: string; url: string };
+type HealthAction = { title: string; titleKey?: string; summary?: string; summaryKey?: string; url: string };
 
 const props = defineProps<{
     portal: PortalShell;
@@ -69,8 +69,8 @@ const { locale, t } = usePortalLocale();
       >
         <span>
           <span class="portal-kicker">{{ t('home.healthAction') }}</span>
-          <strong class="portal-list__title">{{ props.healthAction.title }}</strong>
-          <span class="portal-list__summary">{{ props.healthAction.summary }}</span>
+          <strong class="portal-list__title">{{ props.healthAction.titleKey ? t(props.healthAction.titleKey) : props.healthAction.title }}</strong>
+          <span class="portal-list__summary">{{ props.healthAction.summaryKey ? t(props.healthAction.summaryKey) : props.healthAction.summary }}</span>
         </span>
         <span aria-hidden="true">→</span>
       </Link>

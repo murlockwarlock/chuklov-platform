@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\ScenarioActions\Pages;
 
 use App\Filament\Resources\ScenarioActions\ScenarioActionResource;
+use App\Filament\Support\LocalizedViewRecord;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use Filament\Actions\Action;
-use Filament\Resources\Pages\ViewRecord;
 use Filament\Support\Icons\Heroicon;
 
-final class ViewScenarioAction extends ViewRecord
+final class ViewScenarioAction extends LocalizedViewRecord
 {
     protected static string $resource = ScenarioActionResource::class;
 
@@ -16,7 +16,7 @@ final class ViewScenarioAction extends ViewRecord
     {
         return [
             Action::make('openDialog')
-                ->label('Открыть диалог')
+                ->label(__('Открыть диалог'))
                 ->icon(Heroicon::OutlinedChatBubbleLeftRight)
                 ->visible(fn (): bool => $this->dialogUrl() !== null)
                 ->url(fn (): ?string => $this->dialogUrl()),

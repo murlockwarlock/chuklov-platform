@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ResolveAiExecutionCandidates;
 use App\Modules\AI\Application\Actions\UpdateAiSafetyControl;
@@ -24,7 +25,6 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
@@ -36,7 +36,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 
 /** @property-read Schema $form */
-final class AiMonitoringOverview extends Page
+final class AiMonitoringOverview extends LocalizedPage
 {
     public const int PROVIDER_OVERVIEW_LIMIT = 50;
 
@@ -70,12 +70,12 @@ final class AiMonitoringOverview extends Page
 
     public function getHeading(): string
     {
-        return 'AI и лимиты';
+        return __('AI и лимиты');
     }
 
     public function getSubheading(): string
     {
-        return 'Управляйте доступом AI, дневным бюджетом и подключёнными сервисами организации.';
+        return __('Управляйте доступом AI, дневным бюджетом и подключёнными сервисами организации.');
     }
 
     public static function canManage(): bool
@@ -103,25 +103,25 @@ final class AiMonitoringOverview extends Page
     {
         return $schema
             ->components([
-                Section::make('AI и лимиты')
-                    ->description('Дневной бюджет ограничивает расходы AI за сутки. При достижении лимита новые платные AI-запросы будут остановлены.')
+                Section::make(__('AI и лимиты'))
+                    ->description(__('Дневной бюджет ограничивает расходы AI за сутки. При достижении лимита новые платные AI-запросы будут остановлены.'))
                     ->schema([
                         Toggle::make('is_ai_globally_enabled')
-                            ->label('AI включён')
-                            ->helperText('Выключите, чтобы временно остановить новые платные AI-запросы.')
+                            ->label(__('AI включён'))
+                            ->helperText(__('Выключите, чтобы временно остановить новые платные AI-запросы.'))
                             ->disabled(fn (): bool => ! self::canManage()),
                         TextInput::make('max_daily_spend')
-                            ->label('Дневной бюджет')
+                            ->label(__('Дневной бюджет'))
                             ->prefix('$')
-                            ->suffix('/ день')
-                            ->helperText('Максимальная сумма расходов AI за один день.')
+                            ->suffix('/ '.__('день'))
+                            ->helperText(__('Максимальная сумма расходов AI за один день.'))
                             ->inputMode('decimal')
                             ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,2})?$/')
                             ->required()
                             ->disabled(fn (): bool => ! self::canManage()),
                         TextInput::make('max_tokens_per_run')
-                            ->label('Максимальная длина одного AI-запуска')
-                            ->helperText('Верхний предел длины ответа AI в одном запуске.')
+                            ->label(__('Максимальная длина одного AI-запуска'))
+                            ->helperText(__('Верхний предел длины ответа AI в одном запуске.'))
                             ->integer()
                             ->minValue(1)
                             ->maxValue(8192)
@@ -130,52 +130,52 @@ final class AiMonitoringOverview extends Page
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
-                Section::make('Дополнительные ограничения')
-                    ->description('Дополнительные ограничения для особых сценариев. Обычно менять их не требуется.')
+                Section::make(__('Дополнительные ограничения'))
+                    ->description(__('Дополнительные ограничения для особых сценариев. Обычно менять их не требуется.'))
                     ->collapsed()
                     ->schema([
                         TextInput::make('max_runs_per_minute')
-                            ->label('Максимум запусков за минуту')
+                            ->label(__('Максимум запусков за минуту'))
                             ->integer()
                             ->minValue(1)
                             ->maxValue(60)
                             ->required()
                             ->disabled(fn (): bool => ! self::canManage()),
                         TextInput::make('max_tool_calls_per_run')
-                            ->label('Максимум действий AI за запуск')
+                            ->label(__('Максимум действий AI за запуск'))
                             ->integer()
                             ->minValue(0)
                             ->maxValue(5)
                             ->required()
                             ->disabled(fn (): bool => ! self::canManage()),
                         TextInput::make('default_timeout_seconds')
-                            ->label('Время ожидания ответа по умолчанию, секунд')
+                            ->label(__('Время ожидания ответа по умолчанию, секунд'))
                             ->integer()
                             ->minValue(1)
                             ->maxValue(120)
                             ->required()
                             ->disabled(fn (): bool => ! self::canManage()),
                         TextInput::make('max_failover_attempts')
-                            ->label('Максимум резервных попыток')
+                            ->label(__('Максимум резервных попыток'))
                             ->integer()
                             ->minValue(1)
                             ->maxValue(3)
                             ->required()
                             ->disabled(fn (): bool => ! self::canManage()),
                         Select::make('disabled_capabilities')
-                            ->label('Отключённые сценарии AI')
+                            ->label(__('Отключённые сценарии AI'))
                             ->options(self::capabilityOptions())
                             ->multiple()
                             ->searchable()
                             ->disabled(fn (): bool => ! self::canManage()),
                         Select::make('disabled_providers')
-                            ->label('Отключённые сервисы AI')
+                            ->label(__('Отключённые сервисы AI'))
                             ->options(AiProviderCatalog::options())
                             ->multiple()
                             ->searchable()
                             ->disabled(fn (): bool => ! self::canManage()),
                         Select::make('disabled_tools')
-                            ->label('Отключённые действия AI')
+                            ->label(__('Отключённые действия AI'))
                             ->options(self::toolOptions())
                             ->multiple()
                             ->searchable()
@@ -202,7 +202,7 @@ final class AiMonitoringOverview extends Page
             ->footer([
                 Actions::make([
                     Action::make('save')
-                        ->label('Сохранить ограничения')
+                        ->label(__('Сохранить ограничения'))
                         ->submit('save')
                         ->visible(fn (): bool => self::canManage()),
                 ]),
@@ -213,14 +213,14 @@ final class AiMonitoringOverview extends Page
     {
         $actor = Auth::user();
         if (! $actor instanceof User || ! self::canManage()) {
-            Notification::make()->title('Недостаточно прав для изменения настроек AI')->danger()->send();
+            Notification::make()->title(__('Недостаточно прав для изменения настроек AI'))->danger()->send();
 
             return;
         }
 
         app(UpdateAiSafetyControl::class)->handle($actor, $this->form->getState());
         $this->fillSafetyForm();
-        Notification::make()->title('Ограничения AI сохранены')->success()->send();
+        Notification::make()->title(__('Ограничения AI сохранены'))->success()->send();
     }
 
     /**
@@ -292,9 +292,9 @@ final class AiMonitoringOverview extends Page
         $modelReadiness = ['status' => 'not_configured', 'issues' => []];
 
         if (! $isAiEnabled) {
-            $issues[] = 'AI выключен для организации.';
+            $issues[] = __('AI выключен для организации.');
         } elseif (! $isCapabilityEnabled) {
-            $issues[] = 'Сценарий клиентского компаньона отключён в ограничениях AI.';
+            $issues[] = __('Сценарий клиентского компаньона отключён в ограничениях AI.');
         } else {
             $hasActivePrompt = AiPrompt::query()
                 ->where('organization_id', $organizationId)
@@ -307,7 +307,7 @@ final class AiMonitoringOverview extends Page
                 ->exists();
 
             if (! $hasActivePrompt) {
-                $issues[] = 'Промпт клиентского компаньона не настроен.';
+                $issues[] = __('Промпт клиентского компаньона не настроен.');
             }
 
             $modelReadiness = app(ResolveAiExecutionCandidates::class)->diagnose(
@@ -345,7 +345,7 @@ final class AiMonitoringOverview extends Page
         $authorizer = app(OrganizationAuthorizer::class);
 
         if (! $user || ! $authorizer->allows($user, $context->organization(), OrganizationPermission::ManageAiProviders)) {
-            Notification::make()->title('Недостаточно прав')->danger()->send();
+            Notification::make()->title(__('Недостаточно прав'))->danger()->send();
 
             return;
         }
@@ -359,7 +359,7 @@ final class AiMonitoringOverview extends Page
         ]);
 
         Notification::make()
-            ->title($safety->is_ai_globally_enabled ? 'AI включён' : 'AI временно отключён')
+            ->title($safety->is_ai_globally_enabled ? __('AI включён') : __('AI временно отключён'))
             ->success()
             ->send();
     }

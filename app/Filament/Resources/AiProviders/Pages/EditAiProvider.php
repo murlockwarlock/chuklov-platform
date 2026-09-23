@@ -3,13 +3,13 @@
 namespace App\Filament\Resources\AiProviders\Pages;
 
 use App\Filament\Resources\AiProviders\AiProviderResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ConnectAiProvider;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class EditAiProvider extends EditRecord
+class EditAiProvider extends LocalizedEditRecord
 {
     protected static string $resource = AiProviderResource::class;
 

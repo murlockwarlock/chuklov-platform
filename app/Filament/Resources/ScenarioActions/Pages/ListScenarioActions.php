@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\ScenarioActions\Pages;
 
 use App\Filament\Resources\ScenarioActions\ScenarioActionResource;
-use Filament\Resources\Pages\ListRecords;
+use App\Filament\Support\LocalizedListRecords;
 
-final class ListScenarioActions extends ListRecords
+final class ListScenarioActions extends LocalizedListRecords
 {
     protected static string $resource = ScenarioActionResource::class;
 

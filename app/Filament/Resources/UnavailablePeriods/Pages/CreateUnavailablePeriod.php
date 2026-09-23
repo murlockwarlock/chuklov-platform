@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\UnavailablePeriods\Pages;
 
 use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -10,11 +11,10 @@ use App\Modules\Scheduling\Application\CreateUnavailablePeriod as CreateUnavaila
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
-class CreateUnavailablePeriod extends CreateRecord
+class CreateUnavailablePeriod extends LocalizedCreateRecord
 {
     protected static string $resource = UnavailablePeriodResource::class;
 

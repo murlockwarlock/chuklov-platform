@@ -16,13 +16,13 @@ use App\Filament\Resources\Clients\Resources\Sessions\Pages\ManageClientSessions
 use App\Filament\Resources\Clients\Schemas\ClientForm;
 use App\Filament\Resources\Clients\Schemas\ClientWorkspaceInfolist;
 use App\Filament\Resources\Clients\Tables\ClientsTable;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
 use Filament\GlobalSearch\GlobalSearchResult;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
@@ -30,7 +30,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
-class ClientResource extends Resource
+class ClientResource extends LocalizedResource
 {
     protected static ?string $model = Client::class;
 
@@ -86,7 +86,7 @@ class ClientResource extends Resource
 
         $fullName = trim((string) $record->getAttribute('full_name'));
 
-        return $fullName !== '' ? $fullName : 'Клиент без имени';
+        return $fullName !== '' ? $fullName : __('Клиент без имени');
     }
 
     /** @return Collection<int, GlobalSearchResult> */
@@ -109,7 +109,7 @@ class ClientResource extends Resource
                 details: array_filter([
                     'ID' => '#'.$client->getKey(),
                     'Email' => $client->email,
-                    'Телефон' => $client->phone,
+                    __('Телефон') => $client->phone,
                 ]),
             ));
     }

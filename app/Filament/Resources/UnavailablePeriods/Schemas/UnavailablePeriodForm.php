@@ -17,7 +17,7 @@ class UnavailablePeriodForm
         return $schema
             ->components([
                 Select::make('specialist_id')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->options(fn (): array => Specialist::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->orderBy('display_name')
@@ -26,17 +26,17 @@ class UnavailablePeriodForm
                     ->searchable()
                     ->required(),
                 DateTimePicker::make('starts_at')
-                    ->label('Начало')
+                    ->label(__('Начало'))
                     ->seconds(false)
                     ->timezone(fn (): string => app(OrganizationContext::class)->organization()->defaultTimezone())
                     ->required(),
                 DateTimePicker::make('ends_at')
-                    ->label('Окончание')
+                    ->label(__('Окончание'))
                     ->seconds(false)
                     ->timezone(fn (): string => app(OrganizationContext::class)->organization()->defaultTimezone())
                     ->required(),
                 TextInput::make('reason')
-                    ->label('Причина')
+                    ->label(__('Причина'))
                     ->maxLength(500),
                 ...ScheduleImpactPreview::components(),
             ]);

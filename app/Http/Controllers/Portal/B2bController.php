@@ -9,11 +9,13 @@ use App\Modules\B2B\Application\ListB2bSalesCallAvailability;
 use App\Modules\B2B\Application\SubmitB2bLead;
 use App\Modules\B2B\Domain\Enums\B2bLeadSource;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Content\Application\ContentImageUrlResolver;
 use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Support\SupportedLocale;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -91,6 +93,7 @@ final class B2bController extends Controller
         SubmitB2bLeadRequest $request,
         ClientPortalContext $clientContext,
         SubmitB2bLead $submitLead,
+        PortalClientMessages $messages,
     ): RedirectResponse {
         $client = $clientContext->client();
         $validated = $request->validated();
@@ -110,7 +113,7 @@ final class B2bController extends Controller
             }
             $startsAt = $startsAt->utc();
         } catch (Throwable) {
-            throw ValidationException::withMessages(['starts_at' => 'Choose a valid date and time.']);
+            throw ValidationException::withMessages(['starts_at' => $messages->message('b2b_date_time_invalid')]);
         }
 
         $submitLead->handle(
@@ -132,7 +135,7 @@ final class B2bController extends Controller
     {
         $language ??= $request->session()->get('portal.locale');
 
-        return str_starts_with(strtolower((string) $language), 'ru') ? 'ru' : 'en';
+        return SupportedLocale::normalize($language);
     }
 
     /** @return array{0: string, 1: string} */

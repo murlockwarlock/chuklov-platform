@@ -3,15 +3,15 @@
 namespace App\Filament\Resources\Services\Pages;
 
 use App\Filament\Resources\Services\ServiceResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\SavePaymentProviderOfferMappings;
 use App\Modules\Services\Application\CreateService as CreateServiceAction;
 use App\Modules\Services\Domain\Models\Service;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class CreateService extends CreateRecord
+class CreateService extends LocalizedCreateRecord
 {
     protected static string $resource = ServiceResource::class;
 
@@ -46,13 +46,24 @@ class CreateService extends CreateRecord
     private function mappingData(array $data): array
     {
         $enabled = (bool) ($data['lava_enabled'] ?? false);
+        $mappings = [];
+
+        if ($enabled) {
+            $mappings[] = [
+                'currency' => $data['price_currency'] ?? null,
+                'offer_id' => $data['lava_offer_id'] ?? null,
+            ];
+
+            foreach ((array) ($data['lava_offers'] ?? []) as $mapping) {
+                if (is_array($mapping)) {
+                    $mappings[] = $mapping;
+                }
+            }
+        }
 
         return [
             'enabled' => $enabled,
-            'mappings' => $enabled ? [[
-                'currency' => $data['price_currency'] ?? null,
-                'offer_id' => $data['lava_offer_id'] ?? null,
-            ]] : [],
+            'mappings' => $mappings,
         ];
     }
 }

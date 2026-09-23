@@ -49,47 +49,47 @@ final class ScenarioRuleForm
     {
         return $schema
             ->components([
-                Section::make('Автоматическое сообщение')
+                Section::make(__('Автоматическое сообщение'))
                     ->schema([
                         Hidden::make('rule_key'),
                         Hidden::make('purpose')->default(ScenarioRulePurpose::Service->value),
                         Hidden::make('channel_priority')->default(['telegram']),
                         TextInput::make('name')
-                            ->label('Название')
-                            ->placeholder('Например, сообщение после визита')
+                            ->label(__('Название'))
+                            ->placeholder(__('Например, сообщение после визита'))
                             ->required()
                             ->maxLength(160),
                     ])
                     ->columns(1)
                     ->columnSpanFull(),
 
-                Section::make('1. Когда?')
-                    ->description('Выберите, когда нужно отправить сообщение.')
+                Section::make(__('1. Когда?'))
+                    ->description(__('Выберите, когда нужно отправить сообщение.'))
                     ->schema([
                         Select::make('trigger_event')
-                            ->label('Когда')
+                            ->label(__('Когда'))
                             ->options(self::eventOptions())
                             ->required()
                             ->columnSpanFull(),
                         TextInput::make('delay_value')
-                            ->label('Через сколько')
+                            ->label(__('Через сколько'))
                             ->integer()
                             ->required()
                             ->minValue(0)
                             ->maxValue(PHP_INT_MAX)
                             ->default(0),
                         Select::make('delay_unit')
-                            ->label('Единица времени')
+                            ->label(__('Единица времени'))
                             ->options(self::delayUnitOptions())
                             ->required()
                             ->default(ScenarioDelayUnit::Minutes->value),
                         Placeholder::make('appointment_reminders')
-                            ->label('Перед визитом')
-                            ->content('1 день, 2 часа и 30 минут до визита настраиваются отдельно: «Настройки расписания» → «Напоминания о записи».')
+                            ->label(__('Перед визитом'))
+                            ->content(__('1 день, 2 часа и 30 минут до визита настраиваются отдельно: «Настройки расписания» → «Напоминания о записи».'))
                             ->columnSpanFull(),
                         Actions::make([
                             Action::make('openReminderSettings')
-                                ->label('Настроить напоминания о записи')
+                                ->label(__('Настроить напоминания о записи'))
                                 ->icon('heroicon-o-clock')
                                 ->url(fn (): string => SchedulingConfiguration::getUrl()),
                         ])
@@ -98,22 +98,22 @@ final class ScenarioRuleForm
                     ->columns(2)
                     ->columnSpanFull(),
 
-                Section::make('2. Кому?')
-                    ->description('Выберите человека, которому будет отправлено сообщение.')
+                Section::make(__('2. Кому?'))
+                    ->description(__('Выберите человека, которому будет отправлено сообщение.'))
                     ->schema([
                         Select::make('recipient_strategy.type')
-                            ->label('Получатель')
+                            ->label(__('Получатель'))
                             ->options([
-                                'client' => 'Клиент записи',
-                                'assigned_specialist' => 'Назначенный специалист',
-                                'members' => 'Выбранные сотрудники',
-                                'roles' => 'Сотрудники по роли',
+                                'client' => __('Клиент записи'),
+                                'assigned_specialist' => __('Назначенный специалист'),
+                                'members' => __('Выбранные сотрудники'),
+                                'roles' => __('Сотрудники по роли'),
                             ])
                             ->required()
                             ->default('client')
                             ->live(),
                         Select::make('recipient_strategy.user_ids')
-                            ->label('Сотрудники')
+                            ->label(__('Сотрудники'))
                             ->options(fn (): array => OrganizationMembership::query()
                                 ->where('organization_id', app(OrganizationContext::class)->id())
                                 ->active()
@@ -130,11 +130,11 @@ final class ScenarioRuleForm
                             ->visible(fn (Get $get): bool => $get('recipient_strategy.type') === 'members')
                             ->columnSpanFull(),
                         Select::make('recipient_strategy.roles')
-                            ->label('Роли сотрудников')
+                            ->label(__('Роли сотрудников'))
                             ->options([
-                                OrganizationRole::Owner->value => 'Владелец',
-                                OrganizationRole::Administrator->value => 'Администратор',
-                                OrganizationRole::Staff->value => 'Сотрудник',
+                                OrganizationRole::Owner->value => __('Владелец'),
+                                OrganizationRole::Administrator->value => __('Администратор'),
+                                OrganizationRole::Staff->value => __('Сотрудник'),
                             ])
                             ->multiple()
                             ->required(fn (Get $get): bool => $get('recipient_strategy.type') === 'roles')
@@ -144,31 +144,31 @@ final class ScenarioRuleForm
                     ->columns(2)
                     ->columnSpanFull(),
 
-                Section::make('3. Что отправить?')
-                    ->description('Авто-сообщение определяет, когда, кому и куда отправлять. Текст хранится отдельно и версионируется.')
+                Section::make(__('3. Что отправить?'))
+                    ->description(__('Авто-сообщение определяет, когда, кому и куда отправлять. Текст хранится отдельно и версионируется.'))
                     ->schema([
                         Select::make('template_version_id')
-                            ->label('Сообщение')
+                            ->label(__('Сообщение'))
                             ->options(fn (Get $get): array => self::templateOptions((string) ($get('purpose') ?: ScenarioRulePurpose::Service->value)))
                             ->searchable()
-                            ->placeholder('Нет опубликованных сообщений')
+                            ->placeholder(__('Нет опубликованных сообщений'))
                             ->required()
-                            ->helperText('Уже отправленные сообщения сохраняют свой текст.'),
+                            ->helperText(__('Уже отправленные сообщения сохраняют свой текст.')),
                         Placeholder::make('template_preview')
-                            ->label('Текст сообщения')
+                            ->label(__('Текст сообщения'))
                             ->content(fn (Get $get): string => self::selectedTemplatePreview($get))
                             ->columnSpanFull(),
                         Placeholder::make('template_empty')
-                            ->label('Готовые сообщения')
-                            ->content('Нет готовых шаблонов для этого типа сообщения.')
+                            ->label(__('Готовые сообщения'))
+                            ->content(__('Нет готовых шаблонов для этого типа сообщения.'))
                             ->visible(fn (Get $get): bool => self::templateOptions((string) ($get('purpose') ?: ScenarioRulePurpose::Service->value)) === []),
                         Actions::make([
                             Action::make('createMessage')
-                                ->label('Создать текст сообщения')
+                                ->label(__('Создать текст сообщения'))
                                 ->icon('heroicon-o-plus')
                                 ->slideOver()
-                                ->modalHeading('Создать текст сообщения')
-                                ->modalSubmitActionLabel('Сохранить текст')
+                                ->modalHeading(__('Создать текст сообщения'))
+                                ->modalSubmitActionLabel(__('Сохранить текст'))
                                 ->schema(self::templateComposerSchema())
                                 ->fillForm(fn (?ScenarioRule $record): array => self::newTemplateFormData($record))
                                 ->action(function (array $data, Set $set): void {
@@ -177,15 +177,15 @@ final class ScenarioRuleForm
                                     $data['variables'] = self::templateVariables($data);
                                     $template = app(CreateNotificationTemplate::class)->handle($actor, $data);
                                     $set('template_version_id', $template->latestVersion()->firstOrFail()->getKey(), shouldCallUpdatedHooks: true);
-                                    Notification::make()->title('Текст сообщения создан')->success()->send();
+                                    Notification::make()->title(__('Текст сообщения создан'))->success()->send();
                                 }),
                             Action::make('editMessage')
-                                ->label('Изменить текст сообщения')
+                                ->label(__('Изменить текст сообщения'))
                                 ->icon('heroicon-o-pencil-square')
                                 ->visible(fn (Get $get): bool => filled($get('template_version_id')))
                                 ->slideOver()
-                                ->modalHeading('Изменить текст сообщения')
-                                ->modalSubmitActionLabel('Сохранить новую версию')
+                                ->modalHeading(__('Изменить текст сообщения'))
+                                ->modalSubmitActionLabel(__('Сохранить новую версию'))
                                 ->schema(self::templateComposerSchema())
                                 ->fillForm(fn (?ScenarioRule $record, Get $get): array => self::existingTemplateFormData($record, (int) $get('template_version_id')))
                                 ->action(function (array $data, Set $set): void {
@@ -199,29 +199,29 @@ final class ScenarioRuleForm
                                     $data['variables'] = self::templateVariables($data);
                                     $updated = app(UpdateNotificationTemplate::class)->handle($actor, $template, $data);
                                     $set('template_version_id', $updated->latestVersion()->firstOrFail()->getKey(), shouldCallUpdatedHooks: true);
-                                    Notification::make()->title('Новая версия текста сохранена')->success()->send();
+                                    Notification::make()->title(__('Новая версия текста сохранена'))->success()->send();
                                 }),
                         ])->key('template_actions')->columnSpanFull(),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
 
-                Section::make('4. Включить?')
+                Section::make(__('4. Включить?'))
                     ->schema([
                         Toggle::make('is_enabled')
-                            ->label('Включить авто-сообщение')
-                            ->helperText('Сообщения начнут отправляться только после включения этой настройки.')
+                            ->label(__('Включить авто-сообщение'))
+                            ->helperText(__('Сообщения начнут отправляться только после включения этой настройки.'))
                             ->required()
                             ->default(false),
                     ])
                     ->columns(1)
                     ->columnSpanFull(),
 
-                Section::make('Дополнительные настройки')
-                    ->description('Эти параметры обычно не меняются.')
+                Section::make(__('Дополнительные настройки'))
+                    ->description(__('Эти параметры обычно не меняются.'))
                     ->schema([
                         TextInput::make('max_occurrences')
-                            ->label('Сколько раз отправить')
+                            ->label(__('Сколько раз отправить'))
                             ->integer()
                             ->required()
                             ->default(1)
@@ -229,32 +229,32 @@ final class ScenarioRuleForm
                             ->maxValue(100)
                             ->live(),
                         TextInput::make('repeat_interval_value')
-                            ->label('Пауза между повторами')
+                            ->label(__('Пауза между повторами'))
                             ->integer()
                             ->minValue(1)
                             ->maxValue(PHP_INT_MAX)
                             ->visible(fn (Get $get): bool => (int) $get('max_occurrences') > 1)
                             ->required(fn (Get $get): bool => (int) $get('max_occurrences') > 1),
                         Select::make('repeat_interval_unit')
-                            ->label('Единица паузы')
+                            ->label(__('Единица паузы'))
                             ->options(self::delayUnitOptions())
                             ->visible(fn (Get $get): bool => (int) $get('max_occurrences') > 1)
                             ->required(fn (Get $get): bool => (int) $get('max_occurrences') > 1),
                         Repeater::make('conditions')
-                            ->label('Дополнительные условия')
+                            ->label(__('Дополнительные условия'))
                             ->schema([
                                 Select::make('type')
-                                    ->label('Что проверить')
+                                    ->label(__('Что проверить'))
                                     ->options(self::conditionOptions())
                                     ->required()
                                     ->live(),
                                 Select::make('operator')
-                                    ->label('Проверка')
+                                    ->label(__('Проверка'))
                                     ->options([
-                                        ScenarioConditionOperator::Equals->value => 'Равно',
-                                        ScenarioConditionOperator::NotEquals->value => 'Не равно',
-                                        ScenarioConditionOperator::In->value => 'Одно из',
-                                        ScenarioConditionOperator::Exists->value => 'Заполнено',
+                                        ScenarioConditionOperator::Equals->value => __('Равно'),
+                                        ScenarioConditionOperator::NotEquals->value => __('Не равно'),
+                                        ScenarioConditionOperator::In->value => __('Одно из'),
+                                        ScenarioConditionOperator::Exists->value => __('Заполнено'),
                                     ])
                                     ->required()
                                     ->live(),
@@ -291,7 +291,7 @@ final class ScenarioRuleForm
                             ->columns(3)
                             ->defaultItems(0)
                             ->reorderable(false)
-                            ->addActionLabel('Добавить условие')
+                            ->addActionLabel(__('Добавить условие'))
                             ->columnSpanFull(),
                     ])
                     ->collapsible()
@@ -304,35 +304,35 @@ final class ScenarioRuleForm
     private static function eventOptions(): array
     {
         return [
-            ScenarioEventType::BookingCreated->value => 'После новой записи',
-            ScenarioEventType::BookingConfirmed->value => 'После подтверждения',
-            ScenarioEventType::BookingRescheduled->value => 'После переноса',
-            ScenarioEventType::BookingCancelled->value => 'После отмены',
-            ScenarioEventType::BookingCompleted->value => 'После визита',
-            ScenarioEventType::OnboardingStarted->value => 'После начала оформления',
-            ScenarioEventType::FinancialObligationCreated->value => 'После появления задолженности',
-            ScenarioEventType::SurveyCompleted->value => 'После завершения теста',
-            ScenarioEventType::TestStagnationDetected->value => 'Если показатели не снижаются',
-            ScenarioEventType::B2bLeadSubmitted->value => 'После B2B-запроса',
-            ScenarioEventType::B2bSalesCallReady->value => 'Когда B2B-разговор готов',
-            ScenarioEventType::CompanionRequestedSpecialist->value => 'Когда клиент просит специалиста',
-            ScenarioEventType::CompanionFallbackFailed->value => 'Когда AI не смог ответить',
-            ScenarioEventType::BroadcastDeliveryFailed->value => 'При сбое операционной рассылки',
-            ScenarioEventType::ClientFeedbackSubmitted->value => 'После обратной связи клиента',
-            ScenarioEventType::PayoutRequested->value => 'При запросе выплаты партнёра',
-            ScenarioEventType::PayoutStatusChanged->value => 'При изменении статуса выплаты',
-            ScenarioEventType::HomeVisitChanged->value => 'При изменении выездного визита',
-            ScenarioEventType::AiEvaluationFailed->value => 'При сбое проверки AI',
-            ScenarioEventType::KnowledgeIngestionFailed->value => 'При ошибке обработки материала',
-            ScenarioEventType::ReferralLinkVisited->value => 'При переходе по реферальной ссылке',
-            ScenarioEventType::PaymentProviderEventPrepared->value => 'Устаревшее событие платёжного провайдера',
-            ScenarioEventType::PaymentSucceeded->value => 'После подтверждённой оплаты',
-            ScenarioEventType::PaymentFailed->value => 'При неуспешной оплате',
-            ScenarioEventType::PaymentInitiationUnavailable->value => 'Когда онлайн-оплата недоступна',
-            ScenarioEventType::PaymentReconciliationRequired->value => 'Когда платёж требует сверки',
-            ScenarioEventType::FulfillmentFailed->value => 'Если доступ не выдан',
-            ScenarioEventType::FulfillmentCompleted->value => 'Когда доступ выдан',
-            ScenarioEventType::ReferralRewardEarned->value => 'При начислении по партнёрской программе',
+            ScenarioEventType::BookingCreated->value => __('После новой записи'),
+            ScenarioEventType::BookingConfirmed->value => __('После подтверждения'),
+            ScenarioEventType::BookingRescheduled->value => __('После переноса'),
+            ScenarioEventType::BookingCancelled->value => __('После отмены'),
+            ScenarioEventType::BookingCompleted->value => __('После визита'),
+            ScenarioEventType::OnboardingStarted->value => __('После начала оформления'),
+            ScenarioEventType::FinancialObligationCreated->value => __('После появления задолженности'),
+            ScenarioEventType::SurveyCompleted->value => __('После завершения теста'),
+            ScenarioEventType::TestStagnationDetected->value => __('Если показатели не снижаются'),
+            ScenarioEventType::B2bLeadSubmitted->value => __('После B2B-запроса'),
+            ScenarioEventType::B2bSalesCallReady->value => __('Когда B2B-разговор готов'),
+            ScenarioEventType::CompanionRequestedSpecialist->value => __('Когда клиент просит специалиста'),
+            ScenarioEventType::CompanionFallbackFailed->value => __('Когда AI не смог ответить'),
+            ScenarioEventType::BroadcastDeliveryFailed->value => __('При сбое операционной рассылки'),
+            ScenarioEventType::ClientFeedbackSubmitted->value => __('После обратной связи клиента'),
+            ScenarioEventType::PayoutRequested->value => __('При запросе выплаты партнёра'),
+            ScenarioEventType::PayoutStatusChanged->value => __('При изменении статуса выплаты'),
+            ScenarioEventType::HomeVisitChanged->value => __('При изменении выездного визита'),
+            ScenarioEventType::AiEvaluationFailed->value => __('При сбое проверки AI'),
+            ScenarioEventType::KnowledgeIngestionFailed->value => __('При ошибке обработки материала'),
+            ScenarioEventType::ReferralLinkVisited->value => __('При переходе по реферальной ссылке'),
+            ScenarioEventType::PaymentProviderEventPrepared->value => __('Устаревшее событие платёжного провайдера'),
+            ScenarioEventType::PaymentSucceeded->value => __('После подтверждённой оплаты'),
+            ScenarioEventType::PaymentFailed->value => __('При неуспешной оплате'),
+            ScenarioEventType::PaymentInitiationUnavailable->value => __('Когда онлайн-оплата недоступна'),
+            ScenarioEventType::PaymentReconciliationRequired->value => __('Когда платёж требует сверки'),
+            ScenarioEventType::FulfillmentFailed->value => __('Если доступ не выдан'),
+            ScenarioEventType::FulfillmentCompleted->value => __('Когда доступ выдан'),
+            ScenarioEventType::ReferralRewardEarned->value => __('При начислении по партнёрской программе'),
         ];
     }
 
@@ -340,9 +340,9 @@ final class ScenarioRuleForm
     private static function delayUnitOptions(): array
     {
         return [
-            ScenarioDelayUnit::Minutes->value => 'минут',
-            ScenarioDelayUnit::Hours->value => 'часов',
-            ScenarioDelayUnit::Days->value => 'дней',
+            ScenarioDelayUnit::Minutes->value => __('минут'),
+            ScenarioDelayUnit::Hours->value => __('часов'),
+            ScenarioDelayUnit::Days->value => __('дней'),
         ];
     }
 
@@ -350,13 +350,13 @@ final class ScenarioRuleForm
     private static function conditionOptions(): array
     {
         return [
-            'booking.status' => 'Статус записи',
-            'booking.has_qualifying_next_booking' => 'Есть следующая запись',
-            'client.language' => 'Язык клиента',
-            'client.marketing_consent' => 'Согласие на сообщения',
-            'onboarding.completed' => 'Оформление завершено',
-            'onboarding.stage' => 'Этап оформления',
-            'finance.has_outstanding_debt' => 'Есть задолженность',
+            'booking.status' => __('Статус записи'),
+            'booking.has_qualifying_next_booking' => __('Есть следующая запись'),
+            'client.language' => __('Язык клиента'),
+            'client.marketing_consent' => __('Согласие на сообщения'),
+            'onboarding.completed' => __('Оформление завершено'),
+            'onboarding.stage' => __('Этап оформления'),
+            'finance.has_outstanding_debt' => __('Есть задолженность'),
         ];
     }
 
@@ -365,30 +365,30 @@ final class ScenarioRuleForm
     {
         return match ($type) {
             'booking.status' => [
-                'requested' => 'Ожидает подтверждения',
-                'pending_review' => 'На рассмотрении',
-                'confirmed' => 'Подтверждена',
-                'rejected' => 'Отклонена',
-                'cancelled' => 'Отменена',
-                'completed' => 'Завершена',
-                'no_show' => 'Не состоялась',
+                'requested' => __('Ожидает подтверждения'),
+                'pending_review' => __('На рассмотрении'),
+                'confirmed' => __('Подтверждена'),
+                'rejected' => __('Отклонена'),
+                'cancelled' => __('Отменена'),
+                'completed' => __('Завершена'),
+                'no_show' => __('Не состоялась'),
             ],
             'client.language' => [
-                'ru' => 'Русский',
-                'en' => 'Английский',
+                'ru' => __('Русский'),
+                'en' => __('Английский'),
             ],
             'booking.has_qualifying_next_booking',
             'onboarding.completed',
             'client.marketing_consent',
             'finance.has_outstanding_debt' => [
-                'true' => 'Да',
-                'false' => 'Нет',
+                'true' => __('Да'),
+                'false' => __('Нет'),
             ],
             'onboarding.stage' => [
-                'contacts' => 'Контакты',
-                'profile' => 'Профиль',
-                'service' => 'Услуга',
-                'goals' => 'Цели',
+                'contacts' => __('Контакты'),
+                'profile' => __('Профиль'),
+                'service' => __('Услуга'),
+                'goals' => __('Цели'),
             ],
             default => [],
         };
@@ -404,14 +404,14 @@ final class ScenarioRuleForm
     private static function conditionValueLabel(Get $get, bool $multiple): string
     {
         return match ($get('type')) {
-            'booking.status' => 'Статус записи',
-            'client.language' => 'Язык',
+            'booking.status' => __('Статус записи'),
+            'client.language' => __('Язык'),
             'booking.has_qualifying_next_booking',
             'onboarding.completed',
             'client.marketing_consent',
-            'finance.has_outstanding_debt' => 'Ответ',
-            'onboarding.stage' => 'Этап оформления',
-            default => $multiple ? 'Значения условия' : 'Значение условия',
+            'finance.has_outstanding_debt' => __('Ответ'),
+            'onboarding.stage' => __('Этап оформления'),
+            default => $multiple ? __('Значения условия') : __('Значение условия'),
         };
     }
 
@@ -434,7 +434,7 @@ final class ScenarioRuleForm
                 $template = $version->template;
 
                 return [
-                    $version->getKey() => ($template?->name ?: 'Сообщение')
+                    $version->getKey() => ($template?->name ?: __('Сообщение'))
                         .' · '.Str::limit(RichTextPresentation::text($version->body), 80)
                         .' · '.self::localeLabel($template?->locale),
                 ];
@@ -445,9 +445,9 @@ final class ScenarioRuleForm
     private static function localeLabel(?string $locale): string
     {
         return match ($locale) {
-            'ru' => 'Русский',
-            'en' => 'Английский',
-            default => 'Другой язык',
+            'ru' => __('Русский'),
+            'en' => __('Английский'),
+            default => __('Другой язык'),
         };
     }
 
@@ -456,7 +456,7 @@ final class ScenarioRuleForm
         $version = self::templateVersion((int) $get('template_version_id'));
 
         return $version === null
-            ? 'Выберите опубликованный текст или создайте новый.'
+            ? __('Выберите опубликованный текст или создайте новый.')
             : Str::limit(RichTextPresentation::text($version->body), 500);
     }
 
@@ -506,17 +506,17 @@ final class ScenarioRuleForm
             Hidden::make('locale')->default('ru'),
             Hidden::make('purpose')->default(ScenarioRulePurpose::Service->value),
             TextInput::make('name')
-                ->label('Название текста')
+                ->label(__('Название текста'))
                 ->required()
                 ->maxLength(160),
             Toggle::make('is_active')
-                ->label('Текст включён')
+                ->label(__('Текст включён'))
                 ->default(true)
                 ->required(),
             TextInput::make('subject')
-                ->label('Тема')
+                ->label(__('Тема'))
                 ->maxLength(255)
-                ->helperText('Необязательно для Telegram.'),
+                ->helperText(__('Необязательно для Telegram.')),
             ...MessageComposer::make(
                 bodyField: 'body',
                 deliveryModeField: 'delivery_mode',
@@ -544,7 +544,7 @@ final class ScenarioRuleForm
             );
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages([
-                'body' => 'Текст содержит неподдерживаемые данные. Используйте список доступных данных.',
+                'body' => __('Текст содержит неподдерживаемые данные. Используйте список доступных данных.'),
             ]);
         }
     }

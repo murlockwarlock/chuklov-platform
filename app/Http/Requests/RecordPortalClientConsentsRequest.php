@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -27,11 +28,6 @@ class RecordPortalClientConsentsRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return [
-            'consents.array' => 'Проверьте согласия с документами.',
-            'consents.present' => 'Проверьте согласия с документами.',
-            'consents.*.legal_document_id.required' => 'Выберите документ.',
-            'consents.*.granted.required' => 'Подтвердите согласие.',
-        ];
+        return app(PortalClientMessages::class)->validationMessages('consents');
     }
 }

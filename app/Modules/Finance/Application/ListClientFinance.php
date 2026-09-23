@@ -273,15 +273,21 @@ final class ListClientFinance
         }
 
         $isTracker = $fulfillment->provider_type === 'tracker_entitlement';
+        $isPhysical = is_array($productSnapshot = $purchase->items->first()?->product_snapshot)
+            && ($productSnapshot['catalog_type'] ?? null) === 'physical_product';
 
         return match ($fulfillment->status) {
             CommerceFulfillmentStatus::Fulfilled => [
                 'statusLabel' => $isTracker
                     ? ($locale === 'en' ? 'Access active' : 'Доступ активен')
-                    : ($locale === 'en' ? 'Access granted' : 'Доступ выдан'),
+                    : ($isPhysical
+                        ? ($locale === 'en' ? 'Product handed over' : 'Товар передан')
+                        : ($locale === 'en' ? 'Access granted' : 'Доступ выдан')),
                 'message' => $isTracker
                     ? ($locale === 'en' ? 'Your Tracker access is active.' : 'Доступ к Трекеру активен.')
-                    : ($locale === 'en' ? 'The product access has been granted.' : 'Доступ к продукту выдан.'),
+                    : ($isPhysical
+                        ? ($locale === 'en' ? 'The product has been handed over to you.' : 'Товар передан вам.')
+                        : ($locale === 'en' ? 'The product access has been granted.' : 'Доступ к продукту выдан.')),
                 'accessUrl' => null,
             ],
             CommerceFulfillmentStatus::Failed => [
@@ -293,7 +299,9 @@ final class ListClientFinance
                 'statusLabel' => $locale === 'en' ? 'Access pending' : 'Требуется выдача',
                 'message' => $isTracker
                     ? ($locale === 'en' ? 'Tracker access is being prepared.' : 'Доступ к Трекеру подготавливается.')
-                    : ($locale === 'en' ? 'Access will be granted by a specialist or administrator.' : 'Доступ будет выдан специалистом или администратором.'),
+                    : ($isPhysical
+                        ? ($locale === 'en' ? 'Your paid product is waiting for handover.' : 'Оплаченный товар ожидает передачи.')
+                        : ($locale === 'en' ? 'Access will be granted by a specialist or administrator.' : 'Доступ будет выдан специалистом или администратором.')),
                 'accessUrl' => null,
             ],
         };

@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\SurveyAttempts\Pages;
 
 use App\Filament\Resources\SurveyAttempts\SurveyAttemptResource;
-use Filament\Resources\Pages\ViewRecord;
+use App\Filament\Support\LocalizedViewRecord;
 
-final class ViewSurveyAttempt extends ViewRecord
+final class ViewSurveyAttempt extends LocalizedViewRecord
 {
     protected static string $resource = SurveyAttemptResource::class;
 

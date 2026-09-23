@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
 use App\Filament\Resources\ScenarioRules\ScenarioRuleResource;
+use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -13,13 +14,12 @@ use App\Modules\Scenarios\Application\UpdateScenarioRule;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use BackedEnum;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use UnitEnum;
 
-final class NotificationCatalog extends Page
+final class NotificationCatalog extends LocalizedPage
 {
     protected static ?string $title = 'Каталог уведомлений';
 
@@ -106,7 +106,7 @@ final class NotificationCatalog extends Page
                     : $definition['enabled'],
                 'channels' => $channels !== [] ? $this->channelLabels($channels) : $definition['channels'],
                 'template' => $templates !== [] ? implode(', ', $templates) : $definition['template'],
-                'delivery' => $state === [] ? 'Отправок пока нет' : implode(', ', $state),
+                'delivery' => $state === [] ? __('Отправок пока нет') : implode(', ', $state),
                 'rules' => $ruleItems,
                 'rulesUrl' => ScenarioRuleResource::getUrl('index'),
                 'templatesUrl' => NotificationTemplateResource::getUrl('index'),
@@ -144,18 +144,18 @@ final class NotificationCatalog extends Page
 
         Notification::make()
             ->success()
-            ->title($enabled ? 'Уведомление включено' : 'Уведомление выключено')
+            ->title($enabled ? __('Уведомление включено') : __('Уведомление выключено'))
             ->send();
     }
 
     private function deliveryLabel(string $status, int $total): string
     {
         return match ($status) {
-            'delivered' => 'доставлено '.$total,
-            'pending', 'processing', 'retryable' => 'в работе '.$total,
-            'unavailable' => 'нет канала '.$total,
-            'permanent_failure' => 'ошибка '.$total,
-            'suppressed' => 'подавлено '.$total,
+            'delivered' => __('доставлено ').$total,
+            'pending', 'processing', 'retryable' => __('в работе ').$total,
+            'unavailable' => __('нет канала ').$total,
+            'permanent_failure' => __('ошибка ').$total,
+            'suppressed' => __('подавлено ').$total,
             default => $status.' '.$total,
         };
     }
@@ -178,9 +178,9 @@ final class NotificationCatalog extends Page
         $strategy = $rule->recipient_strategy;
 
         return match ($strategy['type'] ?? null) {
-            'client' => 'Клиент',
-            'assigned_specialist' => 'Назначенный специалист',
-            'members' => 'Выбранные сотрудники',
+            'client' => __('Клиент'),
+            'assigned_specialist' => __('Назначенный специалист'),
+            'members' => __('Выбранные сотрудники'),
             'roles' => $this->rolesLabel($strategy['roles'] ?? [], $fallback),
             default => $fallback,
         };
@@ -194,9 +194,9 @@ final class NotificationCatalog extends Page
 
         $labels = array_filter(array_map(
             fn (mixed $role): string => match ((string) $role) {
-                'owner' => 'Владелец',
-                'administrator' => 'Администратор',
-                'staff' => 'Сотрудник',
+                'owner' => __('Владелец'),
+                'administrator' => __('Администратор'),
+                'staff' => __('Сотрудник'),
                 default => (string) $role,
             },
             $roles,
@@ -214,6 +214,6 @@ final class NotificationCatalog extends Page
             ->values()
             ->all();
 
-        return $states === [] ? 'Отправок пока нет' : implode(', ', $states);
+        return $states === [] ? __('Отправок пока нет') : implode(', ', $states);
     }
 }

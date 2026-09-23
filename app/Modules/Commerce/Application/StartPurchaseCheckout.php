@@ -5,17 +5,18 @@ namespace App\Modules\Commerce\Application;
 use App\Models\User;
 use App\Modules\Commerce\Domain\Enums\CommerceFulfillmentStatus;
 use App\Modules\Commerce\Domain\Enums\PurchaseStatus;
+use App\Modules\Commerce\Domain\Models\PaymentProviderOfferMapping;
 use App\Modules\Commerce\Domain\Models\Purchase;
 use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
 use App\Modules\Commerce\Domain\Models\PurchaseItem;
 use App\Modules\Finance\Application\CreateGatewayPaymentAttempt;
 use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\ResolvePaymentProviderOfferMapping;
-use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Services\Application\ServicePriceResolver;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
@@ -30,6 +31,7 @@ final class StartPurchaseCheckout
         private readonly CurrencyConfigurationService $configuration,
         private readonly ResolvePaymentProviderOfferMapping $mappings,
         private readonly CreateGatewayPaymentAttempt $payments,
+        private readonly ServicePriceResolver $prices,
     ) {}
 
     public function onlineProduct(
@@ -44,6 +46,64 @@ final class StartPurchaseCheckout
         ?string $failureReturnUrl = null,
         ?string $cancelReturnUrl = null,
     ): CommercePurchaseCheckoutResult {
+        return $this->catalogProduct(
+            organization: $organization,
+            client: $client,
+            product: $product,
+            expectedType: CatalogItemType::OnlineProduct,
+            purchaseKind: 'online_product',
+            gateway: $gateway,
+            idempotencyKey: $idempotencyKey,
+            buyerEmail: $buyerEmail,
+            actor: $actor,
+            successfulReturnUrl: $successfulReturnUrl,
+            failureReturnUrl: $failureReturnUrl,
+            cancelReturnUrl: $cancelReturnUrl,
+        );
+    }
+
+    public function physicalProduct(
+        Organization $organization,
+        Client $client,
+        Service $product,
+        string $gateway,
+        string $idempotencyKey,
+        string $buyerEmail,
+        ?User $actor = null,
+        ?string $successfulReturnUrl = null,
+        ?string $failureReturnUrl = null,
+        ?string $cancelReturnUrl = null,
+    ): CommercePurchaseCheckoutResult {
+        return $this->catalogProduct(
+            organization: $organization,
+            client: $client,
+            product: $product,
+            expectedType: CatalogItemType::PhysicalProduct,
+            purchaseKind: 'physical_product',
+            gateway: $gateway,
+            idempotencyKey: $idempotencyKey,
+            buyerEmail: $buyerEmail,
+            actor: $actor,
+            successfulReturnUrl: $successfulReturnUrl,
+            failureReturnUrl: $failureReturnUrl,
+            cancelReturnUrl: $cancelReturnUrl,
+        );
+    }
+
+    private function catalogProduct(
+        Organization $organization,
+        Client $client,
+        Service $product,
+        CatalogItemType $expectedType,
+        string $purchaseKind,
+        string $gateway,
+        string $idempotencyKey,
+        string $buyerEmail,
+        ?User $actor,
+        ?string $successfulReturnUrl,
+        ?string $failureReturnUrl,
+        ?string $cancelReturnUrl,
+    ): CommercePurchaseCheckoutResult {
         if ((int) $product->organization_id !== (int) $organization->getKey()) {
             throw ValidationException::withMessages(['product' => 'Выбранный товар не относится к текущей организации.']);
         }
@@ -54,17 +114,15 @@ final class StartPurchaseCheckout
 
         if ((int) $product->organization_id !== (int) $organization->getKey()
             || ! $product->is_active
-            || $product->catalogItemType() !== CatalogItemType::OnlineProduct) {
-            throw ValidationException::withMessages(['product' => 'Выбранный товар не является онлайн-продуктом.']);
+            || $product->catalogItemType() !== $expectedType) {
+            throw ValidationException::withMessages(['product' => 'Выбранный товар недоступен для покупки.']);
         }
 
-        if ($product->price_minor === null || $product->price_minor <= 0 || $product->price_currency === null) {
-            throw ValidationException::withMessages(['product' => 'У онлайн-продукта не настроена цена.']);
-        }
-
-        $currency = CurrencyCode::from((string) $product->price_currency);
-        $productSnapshot = $this->onlineProductSnapshot($product, $currency);
         $sellableType = Service::class;
+        $priceAndMapping = $this->priceAndMapping($organization, $product, $gateway, $sellableType);
+        $amount = $priceAndMapping['amount'];
+        $mapping = $priceAndMapping['mapping'];
+        $productSnapshot = $this->catalogProductSnapshot($product, $amount, $purchaseKind);
 
         return $this->start(
             organization: $organization,
@@ -74,13 +132,14 @@ final class StartPurchaseCheckout
             buyerEmail: $buyerEmail,
             sellableType: $sellableType,
             sellableId: (int) $product->getKey(),
-            amount: Money::ofMinor($product->price_minor, $currency),
+            amount: $amount,
             itemSnapshot: $productSnapshot,
             purchaseSnapshot: [
-                'kind' => 'online_product',
+                'kind' => $purchaseKind,
                 'product' => $productSnapshot,
             ],
             fulfillmentProvider: 'manual',
+            mapping: $mapping,
             actor: $actor,
             successfulReturnUrl: $successfulReturnUrl,
             failureReturnUrl: $failureReturnUrl,
@@ -144,6 +203,7 @@ final class StartPurchaseCheckout
             itemSnapshot: $planSnapshot,
             purchaseSnapshot: $planSnapshot,
             fulfillmentProvider: 'tracker_entitlement',
+            mapping: null,
             actor: $actor,
             successfulReturnUrl: $successfulReturnUrl,
             failureReturnUrl: $failureReturnUrl,
@@ -163,6 +223,7 @@ final class StartPurchaseCheckout
         array $itemSnapshot,
         array $purchaseSnapshot,
         string $fulfillmentProvider,
+        ?PaymentProviderOfferMapping $mapping,
         ?User $actor,
         ?string $successfulReturnUrl,
         ?string $failureReturnUrl,
@@ -172,13 +233,14 @@ final class StartPurchaseCheckout
             throw ValidationException::withMessages(['client' => 'Клиент не относится к текущей организации.']);
         }
 
-        $mapping = $this->mappings->handle(
+        $mapping ??= $this->mappings->handle(
             (int) $organization->getKey(),
             $gateway,
             $sellableType,
             $sellableId,
             $amount->currency(),
         );
+
         $requestHash = hash('sha256', json_encode([
             'gateway' => $gateway,
             'sellable_type' => $sellableType,
@@ -374,18 +436,48 @@ final class StartPurchaseCheckout
         return $snapshot;
     }
 
-    private function onlineProductSnapshot(Service $product, CurrencyCode $currency): array
+    /** @return array{amount: Money, mapping: PaymentProviderOfferMapping} */
+    private function priceAndMapping(
+        Organization $organization,
+        Service $product,
+        string $gateway,
+        string $sellableType,
+    ): array {
+        foreach ($this->prices->candidateCurrencies($product, $organization) as $currency) {
+            $amount = $this->prices->resolve($product, $currency, $organization);
+            if (! $amount instanceof Money) {
+                continue;
+            }
+
+            try {
+                $mapping = $this->mappings->handle(
+                    (int) $organization->getKey(),
+                    $gateway,
+                    $sellableType,
+                    (int) $product->getKey(),
+                    $amount->currency(),
+                );
+
+                return ['amount' => $amount, 'mapping' => $mapping];
+            } catch (ValidationException) {
+            }
+        }
+
+        throw ValidationException::withMessages(['product' => 'У товара не настроена цена и предложение Lava для доступной валюты.']);
+    }
+
+    private function catalogProductSnapshot(Service $product, Money $amount, string $kind): array
     {
         return [
-            'kind' => 'online_product',
+            'kind' => $kind,
             'service_id' => (int) $product->getKey(),
             'name' => (string) $product->name,
             'summary' => $product->summary,
             'description_ru' => $product->description_ru,
             'description_en' => $product->description_en,
-            'catalog_type' => CatalogItemType::OnlineProduct->value,
-            'price_minor' => (int) $product->price_minor,
-            'currency' => $currency->value,
+            'catalog_type' => $product->catalogItemType()->value,
+            'price_minor' => $amount->minorUnits(),
+            'currency' => $amount->currency()->value,
             'captured_at' => CarbonImmutable::now('UTC')->toIso8601String(),
         ];
     }

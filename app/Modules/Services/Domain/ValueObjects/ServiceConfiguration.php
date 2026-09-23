@@ -28,6 +28,8 @@ final readonly class ServiceConfiguration
         public array $formats,
         public ?int $priceMinor,
         public ?string $priceCurrency,
+        /** @var array<string, int> */
+        public array $priceMatrix,
         public ?string $paymentPolicy,
         public ServicePaymentRequirement $paymentRequirement,
     ) {}
@@ -93,6 +95,7 @@ final readonly class ServiceConfiguration
             : self::optionalNonNegativeInteger($attributes['price_minor'] ?? null, 'The service price is invalid.');
 
         $formats = self::formats($attributes['formats'] ?? []);
+        $priceMatrix = ServicePriceMatrix::fromMajor($attributes['price_matrix'] ?? [])->minorUnits();
 
         if (($priceMinor === null) !== ($priceCurrency === null)) {
             throw new InvalidArgumentException('A service price requires an explicit currency.');
@@ -122,6 +125,7 @@ final readonly class ServiceConfiguration
             formats: $formats,
             priceMinor: $priceMinor,
             priceCurrency: $priceCurrency,
+            priceMatrix: $priceMatrix,
             paymentPolicy: $paymentPolicy,
             paymentRequirement: $paymentRequirement,
         );
@@ -147,6 +151,7 @@ final readonly class ServiceConfiguration
             'formats' => $this->formats,
             'price_minor' => $this->priceMinor,
             'price_currency' => $this->priceCurrency,
+            'price_matrix' => $this->priceMatrix,
             'payment_policy' => $this->paymentPolicy,
             'payment_requirement' => $this->paymentRequirement->value,
         ];

@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\ReferralRelationships\Pages;
 
 use App\Filament\Resources\ReferralRelationships\ReferralRelationshipResource;
-use Filament\Resources\Pages\ListRecords;
+use App\Filament\Support\LocalizedListRecords;
 
-final class ListReferralRelationships extends ListRecords
+final class ListReferralRelationships extends LocalizedListRecords
 {
     protected static string $resource = ReferralRelationshipResource::class;
 

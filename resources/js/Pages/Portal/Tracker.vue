@@ -391,7 +391,7 @@ function purchaseIdempotencyKey(versionId: number): string {
               >{{ plan.description }}</span>
             </span>
             <span class="flex min-w-0 flex-col items-end gap-2 text-right">
-              <span class="portal-copy portal-copy--small">{{ plan.price }} · {{ plan.durationDays }} {{ t('tracker.days') }}</span>
+              <span class="portal-copy portal-copy--small">{{ plan.price }} · {{ plan.durationDays === 30 ? t('tracker.monthlyAccess') : `${plan.durationDays} ${t('tracker.days')}` }}</span>
               <Link
                 v-if="plan.purchaseUrl"
                 :href="plan.purchaseUrl"

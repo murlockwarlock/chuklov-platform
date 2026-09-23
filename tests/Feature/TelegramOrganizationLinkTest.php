@@ -21,6 +21,7 @@ use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Specialists\Application\CreateSpecialist;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
+use App\Support\SupportedLocale;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -32,6 +33,47 @@ use Tests\TestCase;
 final class TelegramOrganizationLinkTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        app()->setLocale('ru');
+    }
+
+    protected function tearDown(): void
+    {
+        app()->setLocale('ru');
+
+        parent::tearDown();
+    }
+
+    public function test_employee_profile_saves_the_selected_crm_locale_for_the_current_session(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $this->setOrganization($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        app()->setLocale('ru');
+
+        $profile = Livewire::actingAs($admin)->test(EditProfile::class);
+        self::assertSame('Язык CRM', $profile->instance()->getSchemaComponent('form.crm_locale')->getLabel());
+
+        $profile
+            ->fillForm([
+                'name' => $admin->name,
+                'email' => $admin->email,
+                'crm_locale' => 'en',
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame('en', session()->get(SupportedLocale::AdminSessionKey));
+        self::assertSame('en', app()->getLocale());
+
+        $englishProfile = Livewire::actingAs($admin)->test(EditProfile::class);
+        self::assertSame('CRM language', $englishProfile->instance()->getSchemaComponent('form.crm_locale')->getLabel());
+    }
 
     public function test_employee_profile_without_specialist_can_connect_reconnect_telegram_and_save_notifications(): void
     {

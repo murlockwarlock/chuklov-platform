@@ -3,11 +3,11 @@
 namespace App\Filament\Resources\Specialists\Pages;
 
 use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Support\LocalizedViewRecord;
 use App\Filament\Support\SpecialistTelegramLinkAction;
 use Filament\Actions\EditAction;
-use Filament\Resources\Pages\ViewRecord;
 
-class ViewSpecialist extends ViewRecord
+class ViewSpecialist extends LocalizedViewRecord
 {
     protected static string $resource = SpecialistResource::class;
 
@@ -18,7 +18,7 @@ class ViewSpecialist extends ViewRecord
         return [
             SpecialistTelegramLinkAction::make(),
             EditAction::make()
-                ->label('Редактировать специалиста')
+                ->label(__('Редактировать специалиста'))
                 ->icon('heroicon-o-pencil-square')
                 ->color('primary'),
         ];

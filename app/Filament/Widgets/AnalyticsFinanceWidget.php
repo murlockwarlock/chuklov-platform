@@ -22,11 +22,17 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
 {
     use InteractsWithPageFilters;
 
-    protected ?string $heading = 'Финансы';
-
-    protected ?string $description = 'Оплата и задолженность за выбранный период';
-
     protected static ?int $sort = 5;
+
+    protected function getHeading(): ?string
+    {
+        return __('Финансы');
+    }
+
+    protected function getDescription(): ?string
+    {
+        return __('Оплата и задолженность за выбранный период');
+    }
 
     public static function canView(): bool
     {
@@ -71,14 +77,14 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
         $unavailable = $data === null || ! $data->available;
 
         return [
-            Stat::make('Выручка', $unavailable ? 'Расчёт недоступен' : $this->formatMinor($data->revenueMinor, $currency))
-                ->description($unavailable ? 'Расчёт недоступен' : 'По подтверждённым платежам'),
-            Stat::make('Средний чек', $unavailable ? 'Расчёт недоступен' : $this->formatMinor($data->averageReceiptMinor, $currency))
+            Stat::make(__('Выручка'), $unavailable ? __('Расчёт недоступен') : $this->formatMinor($data->revenueMinor, $currency))
+                ->description($unavailable ? __('Расчёт недоступен') : __('По подтверждённым платежам')),
+            Stat::make(__('Средний чек'), $unavailable ? __('Расчёт недоступен') : $this->formatMinor($data->averageReceiptMinor, $currency))
                 ->description($this->receiptDescription($data, $unavailable)),
-            Stat::make('LTV новых клиентов', $unavailable ? 'Расчёт недоступен' : $this->formatMinor($data->realizedLtvMinor, $currency))
+            Stat::make(__('LTV новых клиентов'), $unavailable ? __('Расчёт недоступен') : $this->formatMinor($data->realizedLtvMinor, $currency))
                 ->description($this->ltvDescription($data, $unavailable)),
-            Stat::make('Дебиторская задолженность', $unavailable ? 'Расчёт недоступен' : $this->formatMinor($data->debtMinor, $currency))
-                ->description($unavailable ? 'Расчёт недоступен' : 'Показать должников')
+            Stat::make(__('Дебиторская задолженность'), $unavailable ? __('Расчёт недоступен') : $this->formatMinor($data->debtMinor, $currency))
+                ->description($unavailable ? __('Расчёт недоступен') : __('Показать должников'))
                 ->url($unavailable ? null : FinancialObligationResource::getUrl('index', [
                     'filters' => ['status' => ['value' => FinancialStatus::Outstanding->value]],
                 ])),
@@ -88,7 +94,7 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
     private function formatMinor(?string $minor, string $currency): string
     {
         if ($minor === null || $currency === '') {
-            return 'Нет данных';
+            return __('Нет данных');
         }
 
         try {
@@ -98,29 +104,29 @@ class AnalyticsFinanceWidget extends StatsOverviewWidget
                 ->toScale($scale)
                 ->toString().' '.$currency;
         } catch (\Throwable) {
-            return 'Нет данных';
+            return __('Нет данных');
         }
     }
 
     private function receiptDescription(?FinanceAnalyticsData $data, bool $unavailable): string
     {
         if ($unavailable || $data === null) {
-            return 'Расчёт недоступен';
+            return __('Расчёт недоступен');
         }
 
         return $data->receiptCount === 0
-            ? 'Нет подтверждённых платежей за период'
-            : 'Подтверждённых платежей: '.$data->receiptCount;
+            ? __('Нет подтверждённых платежей за период')
+            : __('Подтверждённых платежей: :count', ['count' => $data->receiptCount]);
     }
 
     private function ltvDescription(?FinanceAnalyticsData $data, bool $unavailable): string
     {
         if ($unavailable || $data === null) {
-            return 'Расчёт недоступен';
+            return __('Расчёт недоступен');
         }
 
         return $data->cohortClientCount === 0
-            ? 'Нет новых клиентов за период'
-            : 'Фактически полученный доход · клиентов в когорте: '.$data->cohortClientCount;
+            ? __('Нет новых клиентов за период')
+            : __('Фактически полученный доход · клиентов в когорте: :count', ['count' => $data->cohortClientCount]);
     }
 }

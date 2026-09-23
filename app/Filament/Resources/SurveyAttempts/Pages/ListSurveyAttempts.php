@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\SurveyAttempts\Pages;
 
 use App\Filament\Resources\SurveyAttempts\SurveyAttemptResource;
-use Filament\Resources\Pages\ListRecords;
+use App\Filament\Support\LocalizedListRecords;
 
-final class ListSurveyAttempts extends ListRecords
+final class ListSurveyAttempts extends LocalizedListRecords
 {
     protected static string $resource = SurveyAttemptResource::class;
 

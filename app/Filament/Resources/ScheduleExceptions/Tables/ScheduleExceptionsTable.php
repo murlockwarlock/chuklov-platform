@@ -25,26 +25,26 @@ class ScheduleExceptionsTable
         return $table
             ->columns([
                 TextColumn::make('specialist.display_name')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->sortable()
                     ->url(fn (ScheduleException $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
                     ->color(fn (ScheduleException $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (ScheduleException $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
-                TextColumn::make('exception_date')->label('Дата')->date()->sortable(),
+                TextColumn::make('exception_date')->label(__('Дата'))->date()->sortable(),
                 TextColumn::make('exception_type')
-                    ->label('Тип')
+                    ->label(__('Тип'))
                     ->formatStateUsing(fn (ScheduleExceptionType|string $state): string => match ($state instanceof ScheduleExceptionType ? $state : ScheduleExceptionType::tryFrom($state)) {
-                        ScheduleExceptionType::DayOff => 'Выходной день',
-                        ScheduleExceptionType::CustomWindow => 'Дополнительные часы',
-                        default => 'Не указан',
+                        ScheduleExceptionType::DayOff => __('Выходной день'),
+                        ScheduleExceptionType::CustomWindow => __('Дополнительные часы'),
+                        default => __('Не указан'),
                     }),
-                TextColumn::make('start_time')->label('Начало')->placeholder('Весь день'),
-                TextColumn::make('end_time')->label('Окончание')->placeholder('Весь день'),
-                TextColumn::make('reason')->label('Причина')->limit(80)->placeholder('—'),
+                TextColumn::make('start_time')->label(__('Начало'))->placeholder(__('Весь день')),
+                TextColumn::make('end_time')->label(__('Окончание'))->placeholder(__('Весь день')),
+                TextColumn::make('reason')->label(__('Причина'))->limit(80)->placeholder('—'),
             ])
             ->recordActions([
                 Action::make('delete')
-                    ->label('Удалить')
+                    ->label(__('Удалить'))
                     ->color('danger')
                     ->requiresConfirmation()
                     ->schema([

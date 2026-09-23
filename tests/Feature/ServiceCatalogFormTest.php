@@ -23,6 +23,20 @@ final class ServiceCatalogFormTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        app()->setLocale('ru');
+    }
+
+    protected function tearDown(): void
+    {
+        app()->setLocale('ru');
+
+        parent::tearDown();
+    }
+
     public function test_service_form_exposes_booking_fields_and_hides_legacy_payment_policy(): void
     {
         [, $admin] = $this->fixture();
@@ -35,7 +49,7 @@ final class ServiceCatalogFormTest extends TestCase
 
         self::assertInstanceOf(Select::class, $catalogType);
         self::assertTrue($catalogType->isLive());
-        self::assertArrayNotHasKey(CatalogItemType::PhysicalProduct->value, $catalogType->getOptions());
+        self::assertSame('Физический товар', $catalogType->getOptions()[CatalogItemType::PhysicalProduct->value] ?? null);
 
         $component
             ->assertFormFieldVisible('duration_minutes')
@@ -50,6 +64,19 @@ final class ServiceCatalogFormTest extends TestCase
         self::assertInstanceOf(Select::class, $paymentRequirementField);
         self::assertSame('Доступна для записи', $activeField->getLabel());
         self::assertSame('Когда клиент оплачивает', $paymentRequirementField->getLabel());
+    }
+
+    public function test_service_form_labels_follow_the_english_crm_locale(): void
+    {
+        [, $admin] = $this->fixture();
+        app()->setLocale('en');
+
+        Testable::actingAs($admin);
+        $page = Testable::create(CreateService::class)->instance();
+
+        self::assertSame('Offer type', $page->getSchemaComponent('form.catalog_type')->getLabel());
+        self::assertSame('Available for booking', $page->getSchemaComponent('form.is_active')->getLabel());
+        self::assertSame('When the customer pays', $page->getSchemaComponent('form.payment_requirement')->getLabel());
     }
 
     public function test_online_product_form_hides_booking_configuration_and_uses_product_copy(): void
@@ -88,7 +115,7 @@ final class ServiceCatalogFormTest extends TestCase
         );
     }
 
-    public function test_existing_physical_product_remains_editable_but_is_not_a_create_option(): void
+    public function test_physical_product_form_hides_booking_configuration_and_existing_rows_remain_editable(): void
     {
         [$organization, $admin] = $this->fixture();
         $physicalProduct = Service::factory()->forOrganization($organization)->create([
@@ -102,10 +129,16 @@ final class ServiceCatalogFormTest extends TestCase
         self::assertInstanceOf(CreateService::class, $createPage);
         $createCatalogType = $createPage->getSchemaComponent('form.catalog_type');
         self::assertInstanceOf(Select::class, $createCatalogType);
-        self::assertArrayNotHasKey(
-            CatalogItemType::PhysicalProduct->value,
-            $createCatalogType->getOptions(),
-        );
+        self::assertSame('Физический товар', $createCatalogType->getOptions()[CatalogItemType::PhysicalProduct->value] ?? null);
+
+        $create
+            ->set('data.catalog_type', CatalogItemType::PhysicalProduct->value)
+            ->assertFormFieldHidden('duration_minutes')
+            ->assertFormFieldHidden('buffer_minutes')
+            ->assertFormFieldHidden('formats')
+            ->assertFormFieldHidden('payment_requirement')
+            ->assertFormFieldVisible('price')
+            ->assertFormFieldVisible('price_currency');
 
         $edit = Testable::create(EditService::class, ['record' => $physicalProduct->getRouteKey()]);
         $edit->assertSuccessful();
@@ -119,6 +152,8 @@ final class ServiceCatalogFormTest extends TestCase
         $edit
             ->assertFormFieldHidden('duration_minutes')
             ->assertFormFieldHidden('payment_requirement');
+
+        self::assertSame('Показывать клиентам', $editPage->getSchemaComponent('form.is_active')->getLabel());
     }
 
     public function test_online_product_can_be_created_without_booking_configuration_or_lava(): void
@@ -157,6 +192,34 @@ final class ServiceCatalogFormTest extends TestCase
         self::assertSame('https://cdn.example.test/course.jpg', $product->external_image_url);
         self::assertNull($product->payment_policy);
         self::assertSame(ServicePaymentRequirement::Postpay, $product->payment_requirement);
+    }
+
+    public function test_physical_product_can_be_created_without_booking_configuration(): void
+    {
+        [$organization, $admin] = $this->fixture();
+
+        Testable::actingAs($admin);
+        Testable::create(CreateService::class)
+            ->fillForm([
+                'name' => 'Набор материалов',
+                'summary' => 'Физический набор для курса.',
+                'catalog_type' => CatalogItemType::PhysicalProduct->value,
+                'is_active' => true,
+                'price' => '100.00',
+                'price_currency' => 'RUB',
+                'name_ru' => 'Набор материалов',
+                'name_en' => 'Materials set',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $product = Service::query()->where('organization_id', $organization->getKey())->sole();
+
+        self::assertSame(CatalogItemType::PhysicalProduct, $product->catalog_type);
+        self::assertSame(10000, $product->price_minor);
+        self::assertSame('RUB', $product->price_currency);
+        self::assertNull($product->duration_minutes);
+        self::assertSame([], $product->formats);
     }
 
     public function test_switching_a_service_to_an_online_product_preserves_legacy_and_booking_values(): void

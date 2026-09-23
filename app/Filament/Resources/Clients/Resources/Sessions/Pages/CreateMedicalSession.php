@@ -4,16 +4,16 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Pages;
 
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
-class CreateMedicalSession extends CreateRecord
+class CreateMedicalSession extends LocalizedCreateRecord
 {
     protected static string $resource = MedicalSessionResource::class;
 
@@ -49,7 +49,7 @@ class CreateMedicalSession extends CreateRecord
 
     protected function getCreatedNotificationTitle(): ?string
     {
-        return 'Сеанс создан';
+        return __('Сеанс создан');
     }
 
     private function actor(): User

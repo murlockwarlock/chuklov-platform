@@ -18,31 +18,31 @@ final class AiPlaygroundResultPresentation
             $lines = [];
             $reply = trim((string) ($payload['reply'] ?? $payload['answer'] ?? ''));
             if ($reply !== '') {
-                $lines[] = 'Ответ AI:';
+                $lines[] = __('Ответ AI:');
                 $lines[] = '«'.$reply.'»';
             }
 
             $decision = match ((string) ($payload['decision'] ?? '')) {
-                'reply', 'answer' => 'Ответить',
-                'handoff_required', 'human_handoff' => 'Передать специалисту',
+                'reply', 'answer' => __('Ответить'),
+                'handoff_required', 'human_handoff' => __('Передать специалисту'),
                 default => trim((string) ($payload['decision'] ?? '')),
             };
             if ($decision !== '') {
-                $lines[] = 'Решение: '.$decision;
+                $lines[] = __('Решение:').' '.$decision;
             }
 
             $reason = trim((string) ($payload['handoff_reason'] ?? $payload['reason'] ?? ''));
             if ($reason !== '') {
-                $lines[] = 'Причина: '.$reason;
+                $lines[] = __('Причина:').' '.$reason;
             }
 
             if ($lines !== []) {
                 return implode("\n", $lines);
             }
 
-            return 'Ответ получен в структурированном формате.';
+            return __('Ответ получен в структурированном формате.');
         }
 
-        return trim((string) ($result->outputText ?: 'Ответ получен'));
+        return trim((string) ($result->outputText ?: __('Ответ получен')));
     }
 }

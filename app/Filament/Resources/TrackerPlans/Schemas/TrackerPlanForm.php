@@ -21,41 +21,48 @@ final class TrackerPlanForm
     public static function configure(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Основное')
+            Section::make(__('Основное'))
                 ->schema([
-                    TextInput::make('name')->label('Название')->required()->maxLength(160),
-                    TextInput::make('price')->label('Цена')->required()->inputMode('decimal')->maxLength(32)->regex('/^(?:0|[1-9][0-9]{0,18})(?:\.[0-9]{1,2})?$/'),
-                    Select::make('currency')->label('Валюта')->options(fn (): array => self::currencyOptions())->required()->searchable(),
-                    TextInput::make('duration_days')->label('Срок доступа (дни)')->integer()->minValue(1)->maxValue(3650)->required(),
-                    Textarea::make('description')->label('Короткое описание для клиента')->maxLength(500)->rows(3)->columnSpanFull(),
-                    Textarea::make('monthly_practice')->label('Месячная практика или содержание')->maxLength(5000)->rows(4)->columnSpanFull(),
+                    TextInput::make('name')->label(__('Название'))->required()->maxLength(160),
+                    TextInput::make('price')->label(__('Цена'))->required()->inputMode('decimal')->maxLength(32)->regex('/^(?:0|[1-9][0-9]{0,18})(?:\.[0-9]{1,2})?$/'),
+                    Select::make('currency')->label(__('Валюта'))->options(fn (): array => self::currencyOptions())->required()->searchable(),
+                    TextInput::make('duration_days')
+                        ->label(__('Срок доступа (дни)'))
+                        ->helperText(__('Для месячного тарифа укажите 30 дней. Продление оформляется отдельной покупкой.'))
+                        ->integer()
+                        ->minValue(1)
+                        ->maxValue(3650)
+                        ->default(30)
+                        ->required(),
+                    Textarea::make('description')->label(__('Короткое описание для клиента'))->maxLength(500)->rows(3)->columnSpanFull(),
+                    Textarea::make('monthly_practice')->label(__('Месячная практика или содержание'))->maxLength(5000)->rows(4)->columnSpanFull(),
                 ])
                 ->columns(2)
                 ->columnSpanFull(),
-            Section::make('Публикация и доступ')
+            Section::make(__('Публикация и доступ'))
                 ->schema([
-                    Toggle::make('is_active')->label('Тариф активен')->default(true)->inline(false),
-                    Toggle::make('is_visible')->label('Показывать клиентам')->default(true)->inline(false),
-                    Toggle::make('included_access')->label('Включает доступ к трекеру')->default(true)->inline(false),
-                    TextInput::make('display_order')->label('Порядок отображения')->integer()->minValue(0)->default(0)->required(),
+                    Toggle::make('is_active')->label(__('Тариф активен'))->default(true)->inline(false),
+                    Toggle::make('is_visible')->label(__('Показывать клиентам'))->default(true)->inline(false),
+                    Toggle::make('included_access')->label(__('Включает доступ к трекеру'))->default(true)->inline(false),
+                    TextInput::make('display_order')->label(__('Порядок отображения'))->integer()->minValue(0)->default(0)->required(),
                 ])
                 ->columns(2)
                 ->columnSpanFull(),
-            Section::make('Онлайн-оплата')
+            Section::make(__('Онлайн-оплата'))
                 ->visible(fn (): bool => self::canViewFinance())
                 ->schema([
                     Toggle::make('lava_enabled')
-                        ->label('Принимать оплату через Lava')
-                        ->helperText('Включайте после сохранения API-ключа Lava в разделе «Финансы».')
+                        ->label(__('Принимать оплату через Lava'))
+                        ->helperText(__('Включайте после сохранения API-ключа Lava в разделе «Финансы».'))
                         ->live()
                         ->default(false)
                         ->disabled(fn (): bool => ! self::canManageFinance()),
                     Placeholder::make('lava_currency')
-                        ->label('Валюта')
+                        ->label(__('Валюта'))
                         ->content(fn (Get $get): string => self::currencyLabel($get('currency'))),
                     TextInput::make('lava_offer_id')
-                        ->label('Offer ID в Lava')
-                        ->helperText('Скопируйте UUID предложения из кабинета Lava.')
+                        ->label(__('Offer ID в Lava'))
+                        ->helperText(__('Скопируйте UUID предложения из кабинета Lava.'))
                         ->maxLength(180)
                         ->uuid()
                         ->required(fn (Get $get): bool => (bool) $get('lava_enabled'))
@@ -99,7 +106,7 @@ final class TrackerPlanForm
     private static function currencyLabel(mixed $currency): string
     {
         if (! is_string($currency) || trim($currency) === '') {
-            return 'Сначала укажите валюту тарифа.';
+            return __('Сначала укажите валюту тарифа.');
         }
 
         try {
@@ -107,7 +114,7 @@ final class TrackerPlanForm
 
             return app(CurrencyCatalog::class)->definition($code)->name.' ('.$code->value.')';
         } catch (\InvalidArgumentException) {
-            return 'Валюта тарифа указана неверно.';
+            return __('Валюта тарифа указана неверно.');
         }
     }
 }

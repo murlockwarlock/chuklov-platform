@@ -9,6 +9,7 @@ use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Support\RichText\RichTextDocument;
+use App\Support\SupportedLocale;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -81,7 +82,7 @@ class SectionController extends Controller
                 ?? $request->getPreferredLanguage(['ru', 'en']);
         }
 
-        return str_starts_with(strtolower((string) $language), 'ru') ? 'ru' : 'en';
+        return SupportedLocale::normalize($language);
     }
 
     /**

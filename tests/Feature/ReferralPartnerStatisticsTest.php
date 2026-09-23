@@ -146,6 +146,14 @@ final class ReferralPartnerStatisticsTest extends TestCase
         self::assertSame('Ссылка', $registrations['Legacy']['channel']);
         self::assertSame('Telegram campaign', $registrations['Campaign']['linkName']);
         self::assertSame('Telegram', $registrations['Campaign']['channel']);
+
+        $englishOverview = app(GetReferralPartnerOverview::class)->handle($partner, 'en');
+        $englishRegistrations = collect($englishOverview['registrations'])->keyBy('name');
+
+        self::assertSame('Assigned in CRM', $englishRegistrations['Manual']['linkName']);
+        self::assertSame('Personal link', $englishRegistrations['Legacy']['linkName']);
+        self::assertSame('Link', $englishRegistrations['Legacy']['channel']);
+        self::assertSame('Telegram', $englishRegistrations['Campaign']['channel']);
     }
 
     private function relationship(Organization $organization, Client $partner, Client $client, int $linkId): ReferralRelationship

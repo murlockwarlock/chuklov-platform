@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\Specialists\Pages;
 
 use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-class ListSpecialists extends ListRecords
+class ListSpecialists extends LocalizedListRecords
 {
     protected static string $resource = SpecialistResource::class;
 

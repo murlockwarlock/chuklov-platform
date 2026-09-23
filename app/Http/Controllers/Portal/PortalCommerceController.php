@@ -8,6 +8,7 @@ use App\Modules\ClientPortal\Application\PortalPaymentErrorMessages;
 use App\Modules\Commerce\Application\StartPurchaseCheckout;
 use App\Modules\Finance\Domain\Exceptions\PaymentGatewayInitiationFailure;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\RedirectResponse;
@@ -39,17 +40,29 @@ final class PortalCommerceController extends Controller
         }
 
         try {
-            $result = $checkout->onlineProduct(
-                organization: $organization,
-                client: $client,
-                product: $product,
-                gateway: 'lava',
-                idempotencyKey: (string) $data['idempotency_key'],
-                buyerEmail: (string) $client->email,
-                successfulReturnUrl: route('portal.finance.index'),
-                failureReturnUrl: route('portal.finance.index'),
-                cancelReturnUrl: route('portal.finance.index'),
-            );
+            $result = $product->catalogItemType() === CatalogItemType::PhysicalProduct
+                ? $checkout->physicalProduct(
+                    organization: $organization,
+                    client: $client,
+                    product: $product,
+                    gateway: 'lava',
+                    idempotencyKey: (string) $data['idempotency_key'],
+                    buyerEmail: (string) $client->email,
+                    successfulReturnUrl: route('portal.finance.index'),
+                    failureReturnUrl: route('portal.finance.index'),
+                    cancelReturnUrl: route('portal.finance.index'),
+                )
+                : $checkout->onlineProduct(
+                    organization: $organization,
+                    client: $client,
+                    product: $product,
+                    gateway: 'lava',
+                    idempotencyKey: (string) $data['idempotency_key'],
+                    buyerEmail: (string) $client->email,
+                    successfulReturnUrl: route('portal.finance.index'),
+                    failureReturnUrl: route('portal.finance.index'),
+                    cancelReturnUrl: route('portal.finance.index'),
+                );
         } catch (PaymentGatewayInitiationFailure $exception) {
             return back()->withErrors(['payment' => $paymentErrors->gateway($exception)]);
         } catch (ValidationException $exception) {

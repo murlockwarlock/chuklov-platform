@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\FeedbackSubmissions\Pages;
 
 use App\Filament\Resources\FeedbackSubmissions\FeedbackSubmissionResource;
-use Filament\Resources\Pages\ListRecords;
+use App\Filament\Support\LocalizedListRecords;
 
-final class ListFeedbackSubmissions extends ListRecords
+final class ListFeedbackSubmissions extends LocalizedListRecords
 {
     protected static string $resource = FeedbackSubmissionResource::class;
 

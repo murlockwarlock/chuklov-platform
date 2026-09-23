@@ -6,16 +6,16 @@ use App\Filament\Resources\SpecialistServiceAssignments\Pages\CreateSpecialistSe
 use App\Filament\Resources\SpecialistServiceAssignments\Pages\ListSpecialistServiceAssignments;
 use App\Filament\Resources\SpecialistServiceAssignments\Schemas\SpecialistServiceAssignmentForm;
 use App\Filament\Resources\SpecialistServiceAssignments\Tables\SpecialistServiceAssignmentsTable;
+use App\Filament\Support\LocalizedResource;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-class SpecialistServiceAssignmentResource extends Resource
+class SpecialistServiceAssignmentResource extends LocalizedResource
 {
     protected static ?string $model = SpecialistServiceAssignment::class;
 

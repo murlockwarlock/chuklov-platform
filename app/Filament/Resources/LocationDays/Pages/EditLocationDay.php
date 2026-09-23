@@ -3,13 +3,13 @@
 namespace App\Filament\Resources\LocationDays\Pages;
 
 use App\Filament\Resources\LocationDays\LocationDayResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Scheduling\Application\SaveLocationDay;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class EditLocationDay extends EditRecord
+class EditLocationDay extends LocalizedEditRecord
 {
     protected static string $resource = LocationDayResource::class;
 

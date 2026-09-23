@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Bookings\Schemas;
 
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
 use App\Filament\Support\FinancePresentation;
 use App\Models\User;
 use App\Modules\Finance\Application\BookingFinanceSummary;
@@ -26,52 +27,52 @@ class BookingInfolist
     {
         return $schema
             ->components([
-                Section::make('Информация о приёме')
+                Section::make(__('Информация о приёме'))
                     ->schema([
                         TextEntry::make('client.full_name')
-                            ->label('Клиент')
+                            ->label(__('Клиент'))
                             ->url(fn (Booking $record): ?string => CrmEntityLinks::clientUrl($record->client))
                             ->color(fn (Booking $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary')
                             ->wrap(),
                         TextEntry::make('specialist.display_name')
-                            ->label('Специалист')
+                            ->label(__('Специалист'))
                             ->url(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist))
                             ->color(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist) === null ? null : 'primary')
                             ->wrap(),
-                        TextEntry::make('service.name')->label('Услуга')->wrap(),
+                        TextEntry::make('service.name')->label(__('Услуга'))->wrap(),
                         TextEntry::make('visit_format')
-                            ->label('Формат')
+                            ->label(__('Формат'))
                             ->formatStateUsing(fn (VisitFormat|string $state): string => self::formatLabel($state)),
                         TextEntry::make('starts_at')
-                            ->label('Дата и время начала')
+                            ->label(__('Дата и время начала'))
                             ->dateTime('d.m.Y H:i')
                             ->timezone(fn (): string => self::viewerTimezone()),
                         TextEntry::make('ends_at')
-                            ->label('Окончание')
+                            ->label(__('Окончание'))
                             ->dateTime('d.m.Y H:i')
                             ->timezone(fn (): string => self::viewerTimezone()),
-                        TextEntry::make('schedule_timezone')->label('Часовой пояс записи'),
+                        TextEntry::make('schedule_timezone')->label(__('Часовой пояс записи')),
                         TextEntry::make('party_size')
-                            ->label('Участники выезда')
+                            ->label(__('Участники выезда'))
                             ->visible(fn (Booking $record): bool => $record->visit_format === VisitFormat::HomeVisit),
                         TextEntry::make('requested_at')
-                            ->label('Заявка создана')
+                            ->label(__('Заявка создана'))
                             ->dateTime('d.m.Y H:i')
                             ->timezone(fn (): string => self::viewerTimezone()),
-                        TextEntry::make('location')->label('Место проведения')->state(fn (Booking $record): string => self::locationLabel($record))->placeholder('Не указано')->columnSpanFull()->wrap(),
+                        TextEntry::make('location')->label(__('Место проведения'))->state(fn (Booking $record): string => self::locationLabel($record))->placeholder(__('Не указано'))->columnSpanFull()->wrap(),
                         TextEntry::make('meeting_url')
-                            ->label('Ссылка на онлайн-встречу')
-                            ->placeholder('Не указана')
+                            ->label(__('Ссылка на онлайн-встречу'))
+                            ->placeholder(__('Не указана'))
                             ->url(fn (Booking $record): ?string => $record->meeting_url)
                             ->openUrlInNewTab()
                             ->columnSpanFull(),
                     ])
                     ->columns(2),
 
-                Section::make('Статус и оплата')
+                Section::make(__('Статус и оплата'))
                     ->schema([
                         TextEntry::make('status')
-                            ->label('Статус записи')
+                            ->label(__('Статус записи'))
                             ->badge()
                             ->color(fn (BookingStatus|string $state): string => match ($state instanceof BookingStatus ? $state : BookingStatus::tryFrom($state)) {
                                 BookingStatus::Confirmed => 'success',
@@ -83,13 +84,13 @@ class BookingInfolist
                             ->wrap()
                             ->extraAttributes(['class' => 'min-w-0 max-w-full leading-normal whitespace-normal break-words']),
                         TextEntry::make('payment_requirement')
-                            ->label('Условие оплаты')
+                            ->label(__('Условие оплаты'))
                             ->formatStateUsing(fn (PaymentRequirementType|string|null $state): string => self::paymentRequirementLabel($state))
                             ->wrap(),
-                        Section::make('История событий')
+                        Section::make(__('История событий'))
                             ->schema([
                                 TextEntry::make('history')
-                                    ->label('Журнал изменений')
+                                    ->label(__('Журнал изменений'))
                                     ->state(function (Booking $record): string {
                                         return $record->events()
                                             ->with(['actorUser', 'actorClient'])
@@ -98,7 +99,7 @@ class BookingInfolist
                                             ->map(fn (BookingEvent $event): string => self::formatHistoryEvent($event))
                                             ->implode("\n");
                                     })
-                                    ->placeholder('Событий пока нет')
+                                    ->placeholder(__('Событий пока нет'))
                                     ->columnSpanFull()
                                     ->wrap(),
                             ])
@@ -106,36 +107,36 @@ class BookingInfolist
                     ])
                     ->columns(['default' => 1, 'sm' => 2]),
 
-                Section::make('Оплата пока недоступна')
+                Section::make(__('Оплата пока недоступна'))
                     ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->bookingPaymentReadiness($record) !== null)
                     ->schema([
                         TextEntry::make('finance_readiness')
-                            ->label('Что нужно сделать')
+                            ->label(__('Что нужно сделать'))
                             ->state(fn (Booking $record): ?string => app(FinancePresentation::class)->bookingPaymentReadiness($record))
                             ->wrap()
                             ->columnSpanFull(),
                     ]),
 
-                Section::make('Расчёт')
+                Section::make(__('Расчёт'))
                     ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->bookingSummary($record) !== null)
                     ->schema([
                         TextEntry::make('finance_amount')
-                            ->label('Сумма')
+                            ->label(__('Сумма'))
                             ->state(fn (Booking $record): string => self::bookingSummary($record) === null
                                 ? '—'
                                 : app(FinancePresentation::class)->bookingAmount(self::bookingSummary($record))),
                         TextEntry::make('finance_paid')
-                            ->label('Оплачено')
+                            ->label(__('Оплачено'))
                             ->state(fn (Booking $record): string => self::bookingSummary($record) === null
                                 ? '—'
                                 : app(FinancePresentation::class)->bookingPaid(self::bookingSummary($record))),
                         TextEntry::make('finance_outstanding')
-                            ->label('Осталось')
+                            ->label(__('Осталось'))
                             ->state(fn (Booking $record): string => self::bookingSummary($record) === null
                                 ? '—'
                                 : app(FinancePresentation::class)->bookingOutstanding(self::bookingSummary($record))),
                         TextEntry::make('finance_status')
-                            ->label('Статус')
+                            ->label(__('Статус'))
                             ->badge()
                             ->state(fn (Booking $record): string => self::bookingSummary($record) === null
                                 ? '—'
@@ -144,8 +145,8 @@ class BookingInfolist
                                 ? 'gray'
                                 : app(FinancePresentation::class)->bookingStatusColor(self::bookingSummary($record))),
                         TextEntry::make('finance_error')
-                            ->label('Состояние расчёта')
-                            ->state('Расчёт недоступен. Проверьте историю оплат.')
+                            ->label(__('Состояние расчёта'))
+                            ->state(__('Расчёт недоступен. Проверьте историю оплат.'))
                             ->color('danger')
                             ->visible(fn (Booking $record): bool => self::bookingSummary($record)?->reconciliation === null)
                             ->columnSpanFull(),
@@ -160,24 +161,27 @@ class BookingInfolist
         $oldStart = self::safeValue($event->old_values, 'starts_at');
         $newStart = self::safeValue($event->new_values, 'starts_at');
         $actor = match ($event->actor_type) {
-            'user' => $event->actorUser instanceof User ? $event->actorUser->name : 'Сотрудник',
-            'client' => $event->actorClient instanceof Client ? $event->actorClient->full_name : 'Клиент',
-            default => 'Система',
+            'user' => $event->actorUser instanceof User ? $event->actorUser->name : __('Сотрудник'),
+            'client' => $event->actorClient instanceof Client ? $event->actorClient->full_name : __('Клиент'),
+            default => __('Система'),
         };
         $values = [
             self::eventLabel($event),
             $event->occurred_at->copy()
                 ->setTimezone(self::viewerTimezone())
                 ->format('d.m.Y H:i'),
-            'Изменил: '.$actor,
+            __('Изменил: :actor', ['actor' => $actor]),
         ];
 
         if ($event->event_type === BookingEventType::Rescheduled && $oldStart !== null && $newStart !== null) {
-            $values[] = 'С '.self::humanDateTime($oldStart).' на '.self::humanDateTime($newStart);
+            $values[] = __('С :old на :new', [
+                'old' => self::humanDateTime($oldStart),
+                'new' => self::humanDateTime($newStart),
+            ]);
         }
 
         if ($event->reason !== null) {
-            $values[] = 'Причина: '.$event->reason;
+            $values[] = __('Причина: :reason', ['reason' => $event->reason]);
         }
 
         return implode(' · ', $values);
@@ -193,13 +197,13 @@ class BookingInfolist
     private static function eventLabel(BookingEvent $event): string
     {
         return match ($event->event_type) {
-            BookingEventType::Created => 'Запись создана',
-            BookingEventType::StatusChanged => 'Статус записи обновлён',
-            BookingEventType::Rescheduled => 'Запись перенесена',
-            BookingEventType::Cancelled => 'Запись отменена',
-            BookingEventType::Completed => 'Визит завершён',
-            BookingEventType::NoShow => 'Отмечена неявка',
-            BookingEventType::MeetingLinkUpdated => 'Ссылка на встречу обновлена',
+            BookingEventType::Created => __('Запись создана'),
+            BookingEventType::StatusChanged => __('Статус записи обновлён'),
+            BookingEventType::Rescheduled => __('Запись перенесена'),
+            BookingEventType::Cancelled => __('Запись отменена'),
+            BookingEventType::Completed => __('Визит завершён'),
+            BookingEventType::NoShow => __('Отмечена неявка'),
+            BookingEventType::MeetingLinkUpdated => __('Ссылка на встречу обновлена'),
         };
     }
 
@@ -207,28 +211,14 @@ class BookingInfolist
     {
         $format = $format instanceof VisitFormat ? $format : VisitFormat::tryFrom($format);
 
-        return match ($format) {
-            VisitFormat::Office => 'В клинике',
-            VisitFormat::HomeVisit => 'Выезд на дом',
-            VisitFormat::Online => 'Онлайн',
-            default => 'Не указан',
-        };
+        return CrmLabel::enum($format) ?? __('Не указан');
     }
 
     private static function statusLabel(BookingStatus|string $status): string
     {
         $status = $status instanceof BookingStatus ? $status : BookingStatus::tryFrom($status);
 
-        return match ($status) {
-            BookingStatus::Requested => 'Ожидает подтверждения',
-            BookingStatus::PendingReview => 'На рассмотрении',
-            BookingStatus::Confirmed => 'Подтверждена',
-            BookingStatus::Rejected => 'Отклонена',
-            BookingStatus::Cancelled => 'Отменена',
-            BookingStatus::Completed => 'Завершена',
-            BookingStatus::NoShow => 'Не состоялась',
-            default => 'Не указан',
-        };
+        return CrmLabel::enum($status) ?? __('Не указан');
     }
 
     private static function paymentRequirementLabel(PaymentRequirementType|string|null $requirement): string
@@ -238,9 +228,9 @@ class BookingInfolist
             : PaymentRequirementType::tryFrom($requirement);
 
         return match ($requirement) {
-            PaymentRequirementType::FullPayment => 'Полная оплата',
-            PaymentRequirementType::TransportDeposit => 'Депозит за выезд',
-            default => 'Не указано',
+            PaymentRequirementType::FullPayment => __('Полная оплата'),
+            PaymentRequirementType::TransportDeposit => __('Депозит за выезд'),
+            default => __('Не указано'),
         };
     }
 
@@ -264,14 +254,14 @@ class BookingInfolist
 
         return match ($booking->visit_format) {
             VisitFormat::Office => trim(implode("\n", array_filter([
-                $snapshot['name'] ?? 'Кабинет',
+                $snapshot['name'] ?? __('Кабинет'),
                 $snapshot['address'] ?? $booking->location,
-            ]))) ?: 'Не указано',
+            ]))) ?: __('Не указано'),
             VisitFormat::HomeVisit => trim(implode("\n", [
-                'Выезд'.($booking->location_area !== null ? ' · '.$booking->location_area : ''),
-                'Адрес клиента: '.($snapshot['address'] ?? $booking->location ?? 'не указан'),
+                __('Выезд').($booking->location_area !== null ? ' · '.$booking->location_area : ''),
+                __('Адрес клиента: :address', ['address' => $snapshot['address'] ?? $booking->location ?? __('не указан')]),
             ])),
-            VisitFormat::Online => 'Онлайн',
+            VisitFormat::Online => __('Онлайн'),
         };
     }
 

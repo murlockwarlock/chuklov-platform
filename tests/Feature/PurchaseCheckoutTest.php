@@ -72,6 +72,40 @@ final class PurchaseCheckoutTest extends TestCase
         self::assertSame(800000, $item->fresh()->amount_minor);
     }
 
+    public function test_fixed_currency_price_is_used_for_catalog_checkout(): void
+    {
+        [$organization, $client, $product] = $this->onlineProductFixture();
+        $product->forceFill([
+            'price_minor' => 1000000,
+            'price_currency' => 'RUB',
+            'price_matrix' => ['USD' => 12500],
+        ])->save();
+        $this->mapping($organization, Service::class, $product->getKey(), '836b9fc5-7ae9-4a27-9642-592bc44072b7');
+        Http::fake([
+            '*' => Http::response([
+                'id' => '7ea82675-4ded-4133-95a7-a6efbaf165cc',
+                'status' => 'in-progress',
+                'paymentUrl' => 'https://pay.lava.top/course',
+            ], 201),
+        ]);
+
+        $result = app(StartPurchaseCheckout::class)->onlineProduct(
+            organization: $organization,
+            client: $client,
+            product: $product->refresh(),
+            gateway: 'lava',
+            idempotencyKey: 'course-checkout-fixed-usd',
+            buyerEmail: (string) $client->email,
+        );
+
+        $item = $result->purchase->items()->sole();
+
+        self::assertSame(12500, $item->amount_minor);
+        self::assertSame('USD', $item->currency->value);
+        self::assertSame(12500, $result->transaction->amount_minor);
+        self::assertSame('USD', $result->transaction->currency->value);
+    }
+
     public function test_duplicate_checkout_is_idempotent_and_does_not_create_a_second_invoice(): void
     {
         [$organization, $client, $product] = $this->onlineProductFixture();

@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\AiProviders\Pages;
 
 use App\Filament\Resources\AiProviders\AiProviderResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-class ListAiProviders extends ListRecords
+class ListAiProviders extends LocalizedListRecords
 {
     protected static string $resource = AiProviderResource::class;
 

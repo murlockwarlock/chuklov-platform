@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -26,12 +27,6 @@ class RequestReferralPayoutRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return [
-            'amount.required' => 'Укажите сумму выплаты.',
-            'amount.regex' => 'Укажите положительную сумму в допустимом формате.',
-            'currency.required' => 'Выберите валюту.',
-            'currency.in' => 'Выберите допустимую валюту.',
-            'idempotency_key.required' => 'Повторите отправку формы.',
-        ];
+        return app(PortalClientMessages::class)->validationMessages('payout');
     }
 }

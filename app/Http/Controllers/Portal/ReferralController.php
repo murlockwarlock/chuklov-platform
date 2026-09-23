@@ -20,7 +20,7 @@ class ReferralController extends Controller
         }
 
         return Inertia::render('Portal/Referrals', [
-            'referrals' => $overview->handle($client),
+            'referrals' => $overview->handle($client, app()->getLocale()),
         ]);
     }
 }

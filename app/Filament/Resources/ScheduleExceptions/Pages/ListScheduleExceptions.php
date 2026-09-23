@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\ScheduleExceptions\Pages;
 
 use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-class ListScheduleExceptions extends ListRecords
+class ListScheduleExceptions extends LocalizedListRecords
 {
     protected static string $resource = ScheduleExceptionResource::class;
 

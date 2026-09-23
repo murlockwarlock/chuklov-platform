@@ -34,7 +34,7 @@ type Report = {
 const props = defineProps<{
     portal: PortalShell;
     report: Report;
-    urls: { index: string; companion: string; repeat: string };
+    urls: { index: string; companion: string; repeat: string; consultation: string | null };
 }>();
 
 const { t } = usePortalLocale();
@@ -101,6 +101,13 @@ const changeLabel = (change: number): string => change > 0 ? `+${change}` : Stri
           >
             {{ t('survey.discussCompanion') }}
           </Link>
+          <a
+            v-if="props.urls.consultation"
+            :href="props.urls.consultation"
+            class="portal-button portal-button--secondary"
+          >
+            {{ t('survey.bookConsultation') }}
+          </a>
           <Link
             :href="props.urls.repeat"
             method="post"

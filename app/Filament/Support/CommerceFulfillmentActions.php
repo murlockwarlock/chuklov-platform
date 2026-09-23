@@ -15,11 +15,17 @@ final class CommerceFulfillmentActions
     public static function forObligation(): Action
     {
         return Action::make('fulfillPurchase')
-            ->label('Доступ выдан')
+            ->label(fn (FinancialObligation $record): string => CommerceFulfillmentPresentation::isPhysical($record)
+                ? __('Товар передан')
+                : __('Доступ выдан'))
             ->color('success')
             ->requiresConfirmation()
-            ->modalHeading('Подтвердить выдачу доступа')
-            ->modalDescription('Отметьте доступ как выданный только после ручной проверки внешней системы.')
+            ->modalHeading(fn (FinancialObligation $record): string => CommerceFulfillmentPresentation::isPhysical($record)
+                ? __('Подтвердить передачу товара')
+                : __('Подтвердить выдачу доступа'))
+            ->modalDescription(fn (FinancialObligation $record): string => CommerceFulfillmentPresentation::isPhysical($record)
+                ? __('Отметьте товар переданным только после фактической выдачи клиенту.')
+                : __('Отметьте доступ как выданный только после ручной проверки внешней системы.'))
             ->visible(fn (FinancialObligation $record): bool => self::canFulfill($record))
             ->action(function (FinancialObligation $record): void {
                 $actor = auth()->user();
@@ -29,7 +35,9 @@ final class CommerceFulfillmentActions
                 app(FulfillManualPurchaseItem::class)->handle($actor, $fulfillment);
                 Notification::make()
                     ->success()
-                    ->title('Доступ отмечен как выданный.')
+                    ->title(CommerceFulfillmentPresentation::isPhysical($record)
+                        ? __('Товар отмечен как переданный.')
+                        : __('Доступ отмечен как выданный.'))
                     ->send();
             });
     }

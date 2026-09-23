@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\ClientPortal\Application\PortalPaymentErrorMessages;
 use App\Modules\Commerce\Application\StartPurchaseCheckout;
 use App\Modules\Finance\Domain\Exceptions\PaymentGatewayInitiationFailure;
@@ -120,10 +121,21 @@ final class TrackerController extends Controller
         return redirect()->away($result->transaction->checkout_url);
     }
 
-    public function checkIn(Request $request, ClientPortalContext $context, SubmitTrackerCheckIn $submit): RedirectResponse
-    {
-        $data = $request->validate(['note' => ['required', 'string', 'max:5000']]);
-        $submit->handle($context->client(), (string) $data['note']);
+    public function checkIn(
+        Request $request,
+        ClientPortalContext $context,
+        SubmitTrackerCheckIn $submit,
+        PortalClientMessages $messages,
+    ): RedirectResponse {
+        $data = $request->validate(
+            ['note' => ['required', 'string', 'max:5000']],
+            $messages->validationMessages('tracker_check_in'),
+        );
+        try {
+            $submit->handle($context->client(), (string) $data['note']);
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages($messages->validationException('tracker', $exception));
+        }
 
         return back()->with('tracker_check_in_saved', true);
     }
@@ -133,17 +145,25 @@ final class TrackerController extends Controller
         ClientPortalContext $context,
         RecordTrackerTaskEntry $record,
         int $taskId,
+        PortalClientMessages $messages,
     ): RedirectResponse {
-        $data = $request->validate([
-            'status' => ['required', 'string', 'in:completed,not_completed'],
-            'comment' => ['nullable', 'string', 'max:500'],
-        ]);
-        $record->handle(
-            client: $context->client(),
-            taskId: $taskId,
-            status: TrackerTaskEntryStatus::from((string) $data['status']),
-            comment: isset($data['comment']) ? (string) $data['comment'] : null,
+        $data = $request->validate(
+            [
+                'status' => ['required', 'string', 'in:completed,not_completed'],
+                'comment' => ['nullable', 'string', 'max:500'],
+            ],
+            $messages->validationMessages('tracker_task'),
         );
+        try {
+            $record->handle(
+                client: $context->client(),
+                taskId: $taskId,
+                status: TrackerTaskEntryStatus::from((string) $data['status']),
+                comment: isset($data['comment']) ? (string) $data['comment'] : null,
+            );
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages($messages->validationException('tracker', $exception));
+        }
 
         return back()->with('tracker_task_saved', true);
     }

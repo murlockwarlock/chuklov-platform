@@ -4,8 +4,10 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SaveClientOnboardingStepRequest;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\ClientPortal\Application\SaveClientOnboardingStep;
 use App\Modules\ClientPortal\Domain\Enums\ClientOnboardingStage;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 
 class OnboardingController extends Controller
@@ -19,6 +21,7 @@ class OnboardingController extends Controller
         SaveClientOnboardingStepRequest $request,
         string $stage,
         SaveClientOnboardingStep $saveStep,
+        PortalClientMessages $messages,
     ): RedirectResponse {
         $onboardingStage = ClientOnboardingStage::tryFrom($stage);
         abort_unless($onboardingStage instanceof ClientOnboardingStage, 404);
@@ -29,7 +32,11 @@ class OnboardingController extends Controller
         unset($validated['confirmed_fields']);
         unset($validated['consents']);
 
-        $saveStep->handle($onboardingStage, $validated, $confirmedFields, $consents);
+        try {
+            $saveStep->handle($onboardingStage, $validated, $confirmedFields, $consents);
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages($messages->validationException('onboarding', $exception));
+        }
 
         return to_route('portal.onboarding');
     }

@@ -31,6 +31,7 @@ class SetOrganizationSetting
                 OrganizationSettingKey::B2bZoomHostLicensed,
                 OrganizationSettingKey::DefaultTimezone,
                 OrganizationSettingKey::HomeVisitOccupiedBufferMinutes,
+                OrganizationSettingKey::OnlineConsultationServiceId,
             ], true)
                 ? OrganizationPermission::ManageScheduling
                 : OrganizationPermission::ManageSettings,
@@ -73,6 +74,11 @@ class SetOrganizationSetting
         if ($key->type() === OrganizationSettingType::Integer
             && (! is_int($value) || $value < 0)) {
             throw new InvalidArgumentException('The integer setting value is invalid.');
+        }
+
+        if ($key === OrganizationSettingKey::OnlineConsultationServiceId
+            && (! is_int($value) || $value < 1)) {
+            throw new InvalidArgumentException('The consultation service identifier is invalid.');
         }
 
         if ($key === OrganizationSettingKey::B2bSalesCallDurationMinutes

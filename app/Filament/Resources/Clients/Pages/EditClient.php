@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Clients\Pages;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\SetBroadcastClientClassification;
 use App\Modules\Broadcasts\Application\SetClientB2bSpecialistAnswer;
@@ -12,10 +13,9 @@ use App\Modules\Broadcasts\Domain\Models\BroadcastClientTag;
 use App\Modules\Identity\Application\ClientProfileSnapshotHasher;
 use App\Modules\Identity\Application\UpdateClientProfileFromCrm;
 use App\Modules\Identity\Domain\Models\Client;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class EditClient extends EditRecord
+class EditClient extends LocalizedEditRecord
 {
     protected static string $resource = ClientResource::class;
 

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Tables;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
@@ -26,43 +27,43 @@ class SessionsTable
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('occurred_at')
-                    ->label('Дата сеанса')
+                    ->label(__('Дата сеанса'))
                     ->dateTime('d.m.Y H:i')
                     ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
                 TextColumn::make('specialist.display_name')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->placeholder('—')
                     ->wrap()
                     ->url(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
                     ->color(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (MedicalSession $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
                 TextColumn::make('booking_starts_at')
-                    ->label('Дата записи на приём')
+                    ->label(__('Дата записи на приём'))
                     ->state(fn ($record): ?string => $record->booking === null
                         ? null
                         : Carbon::parse((string) $record->booking->getAttribute('starts_at'), 'UTC')
                             ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
                             ->format('d.m.Y H:i'))
-                    ->placeholder('Не связан'),
+                    ->placeholder(__('Не связан')),
                 TextColumn::make('booking_status')
-                    ->label('Статус записи')
+                    ->label(__('Статус записи'))
                     ->state(fn ($record): ?string => $record->booking === null ? null : self::statusLabel($record->booking->status))
                     ->placeholder('—')
                     ->wrap(),
             ])
             ->recordActions([
                 Action::make('view')
-                    ->label('Открыть')
+                    ->label(__('Открыть'))
                     ->visible($canViewSessions)
                     ->url(fn ($record): string => MedicalSessionResource::getUrl('view', ['record' => $record], shouldGuessMissingParameters: true)),
                 Action::make('edit')
-                    ->label('Редактировать')
+                    ->label(__('Редактировать'))
                     ->visible($canManageSessions)
                     ->url(fn ($record): string => MedicalSessionResource::getUrl('edit', ['record' => $record], shouldGuessMissingParameters: true)),
             ])
             ->toolbarActions([
                 Action::make('create')
-                    ->label('Новый сеанс')
+                    ->label(__('Новый сеанс'))
                     ->icon('heroicon-o-plus')
                     ->url(fn (): string => MedicalSessionResource::getUrl('create', shouldGuessMissingParameters: true))
                     ->visible($canManageSessions),
@@ -71,14 +72,6 @@ class SessionsTable
 
     private static function statusLabel(BookingStatus $status): string
     {
-        return match ($status) {
-            BookingStatus::Requested => 'Ожидает подтверждения',
-            BookingStatus::PendingReview => 'На рассмотрении',
-            BookingStatus::Confirmed => 'Подтверждена',
-            BookingStatus::Rejected => 'Отклонена',
-            BookingStatus::Cancelled => 'Отменена',
-            BookingStatus::Completed => 'Завершена',
-            BookingStatus::NoShow => 'Не состоялась',
-        };
+        return CrmLabel::enum($status) ?? __('Без статуса');
     }
 }

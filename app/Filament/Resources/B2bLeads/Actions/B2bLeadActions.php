@@ -44,38 +44,38 @@ final class B2bLeadActions
 
         $actions = [
             Action::make('contacted')
-                ->label('Отметить: связались')
+                ->label(__('Отметить: связались'))
                 ->visible($canManage && $lead->status !== B2bLeadStatus::Closed)
-                ->successNotificationTitle('Лид отмечен как обработанный')
+                ->successNotificationTitle(__('Лид отмечен как обработанный'))
                 ->action(function () use ($actor, $lead, $refresh): void {
                     abort_unless($actor instanceof User, 403);
                     app(UpdateB2bLeadStatus::class)->handle($actor, $lead, B2bLeadStatus::Contacted, $lead->event_version);
                     $refresh();
                 }),
             Action::make('closed')
-                ->label('Закрыть лид')
+                ->label(__('Закрыть лид'))
                 ->color('gray')
                 ->visible($canManage && $lead->status !== B2bLeadStatus::Closed)
                 ->requiresConfirmation()
-                ->modalHeading('Закрыть лид')
-                ->modalDescription('Лид будет закрыт. Запланированный разговор не отменяется этим действием.')
-                ->successNotificationTitle('Лид закрыт')
+                ->modalHeading(__('Закрыть лид'))
+                ->modalDescription(__('Лид будет закрыт. Запланированный разговор не отменяется этим действием.'))
+                ->successNotificationTitle(__('Лид закрыт'))
                 ->action(function () use ($actor, $lead, $refresh): void {
                     abort_unless($actor instanceof User, 403);
                     app(UpdateB2bLeadStatus::class)->handle($actor, $lead, B2bLeadStatus::Closed, $lead->event_version);
                     $refresh();
                 }),
             Action::make('reschedule')
-                ->label('Перенести разговор')
+                ->label(__('Перенести разговор'))
                 ->visible($canManage && $lead->salesCall->status === B2bSalesCallStatus::Scheduled)
                 ->schema([
                     DateTimePicker::make('starts_at')
-                        ->label('Новое время')
+                        ->label(__('Новое время'))
                         ->timezone(fn (): string => app(OrganizationContext::class)->organization()->defaultTimezone())
                         ->seconds(false)
                         ->required(),
                 ])
-                ->successNotificationTitle('Разговор перенесён')
+                ->successNotificationTitle(__('Разговор перенесён'))
                 ->action(function (array $data) use ($actor, $lead, $refresh): void {
                     abort_unless($actor instanceof User, 403);
                     $call = self::call($lead);
@@ -86,13 +86,13 @@ final class B2bLeadActions
                     $refresh();
                 }),
             Action::make('cancel')
-                ->label('Отменить разговор')
+                ->label(__('Отменить разговор'))
                 ->color('danger')
                 ->visible($canManage && $lead->salesCall->status === B2bSalesCallStatus::Scheduled)
                 ->requiresConfirmation()
-                ->modalHeading('Отменить разговор')
-                ->modalDescription('Будет отменён только запланированный разговор. Статус лида останется отдельным.')
-                ->successNotificationTitle('Разговор отменён')
+                ->modalHeading(__('Отменить разговор'))
+                ->modalDescription(__('Будет отменён только запланированный разговор. Статус лида останется отдельным.'))
+                ->successNotificationTitle(__('Разговор отменён'))
                 ->action(function () use ($actor, $lead, $refresh): void {
                     abort_unless($actor instanceof User, 403);
                     $call = self::call($lead);
@@ -100,36 +100,38 @@ final class B2bLeadActions
                     $refresh();
                 }),
             Action::make('meetingMode')
-                ->label('Режим и ссылка')
+                ->label(__('Режим и ссылка'))
                 ->visible($canManage && $lead->salesCall->status === B2bSalesCallStatus::Scheduled)
                 ->schema([
-                    Select::make('meeting_mode')->label('Режим')->options([
-                        VideoMeetingMode::Automatic->value => 'Zoom автоматически',
-                        VideoMeetingMode::Manual->value => 'Ручная ссылка',
+                    Select::make('meeting_mode')->label(__('Режим'))->options([
+                        VideoMeetingMode::Automatic->value => __('Zoom автоматически'),
+                        VideoMeetingMode::Manual->value => __('Ручная ссылка'),
                     ])->required()->live(),
                     Placeholder::make('automatic_readiness')
-                        ->label('Готовность автоматического Zoom')
+                        ->label(__('Готовность автоматического Zoom'))
                         ->content(function (): string {
                             $readiness = app(GetB2bSalesCallReadiness::class)->handle();
 
-                            return 'Zoom: '.($readiness['automaticZoomConfigured'] ? 'подключён' : 'не подключён')
-                                .' · длительность: '.($readiness['durationConfigured'] ? 'настроена' : 'не настроена')
-                                .' · календарь: '.($readiness['calendarConfigured'] ? 'настроен' : 'не настроен');
+                            return __('Zoom: :zoom · длительность: :duration · календарь: :calendar', [
+                                'zoom' => $readiness['automaticZoomConfigured'] ? __('подключён') : __('не подключён'),
+                                'duration' => $readiness['durationConfigured'] ? __('настроена') : __('не настроена'),
+                                'calendar' => $readiness['calendarConfigured'] ? __('настроен') : __('не настроен'),
+                            ]);
                         })
                         ->visible(fn (Get $get): bool => $get('meeting_mode') === VideoMeetingMode::Automatic),
                     TextInput::make('manual_meeting_url')
-                        ->label('Ссылка на встречу')
+                        ->label(__('Ссылка на встречу'))
                         ->url()
                         ->maxLength(2000)
                         ->visible(fn (Get $get): bool => $get('meeting_mode') === VideoMeetingMode::Manual)
                         ->required(fn (Get $get): bool => $get('meeting_mode') === VideoMeetingMode::Manual)
-                        ->helperText('Вставьте ссылку, по которой клиент присоединится к разговору.'),
+                        ->helperText(__('Вставьте ссылку, по которой клиент присоединится к разговору.')),
                 ])
                 ->fillForm(fn (B2bLead $record): array => [
                     'meeting_mode' => $record->salesCall->meeting_mode->value,
                     'manual_meeting_url' => $record->salesCall->manual_meeting_url,
                 ])
-                ->successNotificationTitle('Режим и ссылка сохранены')
+                ->successNotificationTitle(__('Режим и ссылка сохранены'))
                 ->action(function (array $data) use ($actor, $lead, $refresh): void {
                     abort_unless($actor instanceof User, 403);
                     $call = self::call($lead);
@@ -137,7 +139,7 @@ final class B2bLeadActions
                     $refresh();
                 }),
             Action::make('hostLaunch')
-                ->label('Открыть как ведущий')
+                ->label(__('Открыть как ведущий'))
                 ->visible($canManage
                     && $lead->salesCall->status === B2bSalesCallStatus::Scheduled
                     && $lead->salesCall->meeting_mode === VideoMeetingMode::Automatic
@@ -146,9 +148,9 @@ final class B2bLeadActions
                 ->url(fn (): string => route('admin.b2b.sales-call.host-launch', ['salesCallId' => self::call($lead)->getKey()]))
                 ->openUrlInNewTab(),
             Action::make('retryProvider')
-                ->label('Повторить обновление встречи')
+                ->label(__('Повторить обновление встречи'))
                 ->visible($canManage && in_array($lead->salesCall->provider_sync_status, [VideoMeetingSyncStatus::Failed, VideoMeetingSyncStatus::ReconciliationRequired, VideoMeetingSyncStatus::CancellationPending], true))
-                ->successNotificationTitle('Обновление встречи запущено')
+                ->successNotificationTitle(__('Обновление встречи запущено'))
                 ->action(function () use ($actor, $lead, $refresh): void {
                     abort_unless($actor instanceof User, 403);
                     $call = self::call($lead);
@@ -156,10 +158,10 @@ final class B2bLeadActions
                     $refresh();
                 }),
             Action::make('recreateMeeting')
-                ->label('Создать Zoom заново')
+                ->label(__('Создать Zoom заново'))
                 ->visible($canManage && $lead->salesCall->status === B2bSalesCallStatus::Scheduled && $lead->salesCall->meeting_mode === VideoMeetingMode::Automatic)
                 ->requiresConfirmation()
-                ->successNotificationTitle('Создание встречи запущено')
+                ->successNotificationTitle(__('Создание встречи запущено'))
                 ->action(function () use ($actor, $lead, $refresh): void {
                     abort_unless($actor instanceof User, 403);
                     $call = self::call($lead);
@@ -170,7 +172,7 @@ final class B2bLeadActions
 
         return [
             ActionGroup::make($actions)
-                ->label('Действия')
+                ->label(__('Действия'))
                 ->icon('heroicon-o-ellipsis-horizontal')
                 ->button()
                 ->dropdownAutoPlacement(),

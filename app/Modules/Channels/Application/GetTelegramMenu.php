@@ -6,6 +6,7 @@ use App\Modules\Channels\Domain\Enums\TelegramMenuLaunchMode;
 use App\Modules\Content\Application\ListPublishedContentSections;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Support\SupportedLocale;
 use Illuminate\Database\Eloquent\Collection;
 use LogicException;
 
@@ -19,7 +20,7 @@ final class GetTelegramMenu
     /** @return list<array{key: string, label: string, url: string, web_app: bool, launch: string, callback_data?: string}> */
     public function handle(?string $language, ?Client $client = null): array
     {
-        $locale = str_starts_with(strtolower((string) $language), 'ru') ? 'ru' : 'en';
+        $locale = SupportedLocale::normalize($language);
         $entries = config('portal.telegram.menu.'.$locale, []);
         $menu = [];
 

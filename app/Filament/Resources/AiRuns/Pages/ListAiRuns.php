@@ -3,9 +3,9 @@
 namespace App\Filament\Resources\AiRuns\Pages;
 
 use App\Filament\Resources\AiRuns\AiRunResource;
-use Filament\Resources\Pages\ListRecords;
+use App\Filament\Support\LocalizedListRecords;
 
-class ListAiRuns extends ListRecords
+class ListAiRuns extends LocalizedListRecords
 {
     protected static string $resource = AiRunResource::class;
 

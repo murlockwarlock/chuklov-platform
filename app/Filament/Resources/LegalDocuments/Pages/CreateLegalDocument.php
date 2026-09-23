@@ -3,15 +3,15 @@
 namespace App\Filament\Resources\LegalDocuments\Pages;
 
 use App\Filament\Resources\LegalDocuments\LegalDocumentResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Organizations\Application\OrganizationContext;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
-final class CreateLegalDocument extends CreateRecord
+final class CreateLegalDocument extends LocalizedCreateRecord
 {
     protected static string $resource = LegalDocumentResource::class;
 
@@ -24,7 +24,7 @@ final class CreateLegalDocument extends CreateRecord
         $subject = ConsentSubject::tryFrom((string) ($data['document_type'] ?? ''));
 
         if (! $subject instanceof ConsentSubject) {
-            throw ValidationException::withMessages(['document_type' => 'Выберите тип документа.']);
+            throw ValidationException::withMessages(['document_type' => __('Выберите тип документа.')]);
         }
 
         return app(CreatePlatformLegalDocumentDraft::class)->handle(

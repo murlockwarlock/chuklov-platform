@@ -13,7 +13,14 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
+use App\Modules\Scheduling\Application\ResolveOnlineConsultationService;
+use App\Modules\Scheduling\Application\SetOnlineConsultationService;
+use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Security\Domain\Models\AuditEvent;
+use App\Modules\Services\Domain\Enums\CatalogItemType;
+use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
+use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Surveys\Application\CompleteSurveyAttempt;
 use App\Modules\Surveys\Application\CreateSurveyDefinition;
 use App\Modules\Surveys\Application\CreateSurveyVersion;
@@ -310,6 +317,21 @@ final class MilestoneEightSurveyTest extends TestCase
     {
         [$organization, $actor, $client] = $this->fixture();
         $definition = $this->publishedDefinition($actor);
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $consultation = Service::factory()->forOrganization($organization)->create([
+            'catalog_type' => CatalogItemType::Service->value,
+            'duration_minutes' => 15,
+            'formats' => ['online'],
+            'price_minor' => 150000,
+            'price_currency' => 'RUB',
+            'payment_requirement' => ServicePaymentRequirement::PrepayFull->value,
+        ]);
+        SpecialistServiceAssignment::factory()
+            ->forOrganization($organization)
+            ->forSpecialist($specialist)
+            ->forService($consultation)
+            ->create();
+        app(SetOnlineConsultationService::class)->handle($actor, (int) $consultation->getKey());
 
         $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->get(route('portal.surveys.index'))
@@ -338,12 +360,37 @@ final class MilestoneEightSurveyTest extends TestCase
         $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->get(route('portal.surveys.report', $report->getKey()))
             ->assertOk()
-            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page->component('Portal/SurveyReport')->where('report.title', 'Screening EN'));
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/SurveyReport')
+                ->where('report.title', 'Screening EN')
+                ->where('urls.consultation', route('portal.bookings.create', [
+                    'service_id' => $consultation->getKey(),
+                    'format' => 'online',
+                ])));
 
         $otherClient = Client::factory()->forOrganization($organization)->create();
         $this->withSession(['client_portal.client_id' => $otherClient->getKey()])
             ->get(route('portal.surveys.report', $report->getKey()))
             ->assertNotFound();
+    }
+
+    public function test_invalid_consultation_configuration_is_not_resolved(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $service = Service::factory()->forOrganization($organization)->create([
+            'catalog_type' => CatalogItemType::Service->value,
+            'formats' => ['online'],
+            'price_minor' => 150000,
+            'price_currency' => 'RUB',
+            'payment_requirement' => ServicePaymentRequirement::Postpay->value,
+        ]);
+
+        $this->expectException(ValidationException::class);
+        try {
+            app(SetOnlineConsultationService::class)->handle($actor, (int) $service->getKey());
+        } finally {
+            self::assertNull(app(ResolveOnlineConsultationService::class)->handle($organization));
+        }
     }
 
     public function test_crm_definition_list_is_organization_scoped(): void

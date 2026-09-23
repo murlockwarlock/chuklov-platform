@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\LocationDays\Pages;
 
 use App\Filament\Resources\LocationDays\LocationDayResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Scheduling\Application\SaveLocationDay;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class CreateLocationDay extends CreateRecord
+class CreateLocationDay extends LocalizedCreateRecord
 {
     protected static string $resource = LocationDayResource::class;
 

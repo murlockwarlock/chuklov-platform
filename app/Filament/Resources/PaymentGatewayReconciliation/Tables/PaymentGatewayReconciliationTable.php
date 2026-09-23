@@ -20,13 +20,13 @@ final class PaymentGatewayReconciliationTable
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('event_type')
-                    ->label('Событие')
+                    ->label(__('Событие'))
                     ->badge()
                     ->state(fn (PaymentGatewayEvent $record): string => PaymentGatewayReconciliationPresentation::eventType($record))
                     ->color('warning'),
                 TextColumn::make('client')
-                    ->label('Клиент')
-                    ->state(fn (PaymentGatewayEvent $record): string => PaymentGatewayReconciliationPresentation::client($record)?->full_name ?? 'Не сопоставлен')
+                    ->label(__('Клиент'))
+                    ->state(fn (PaymentGatewayEvent $record): string => PaymentGatewayReconciliationPresentation::client($record)?->full_name ?? __('Не сопоставлен'))
                     ->wrap()
                     ->url(fn (PaymentGatewayEvent $record): ?string => CrmEntityLinks::clientUrl(
                         PaymentGatewayReconciliationPresentation::client($record),
@@ -41,37 +41,37 @@ final class PaymentGatewayReconciliationTable
                         $canViewClients,
                     ) === null),
                 TextColumn::make('product')
-                    ->label('Товар / услуга')
+                    ->label(__('Товар / услуга'))
                     ->state(fn (PaymentGatewayEvent $record): string => PaymentGatewayReconciliationPresentation::product($record))
                     ->wrap(),
                 TextColumn::make('amount')
-                    ->label('Сумма')
+                    ->label(__('Сумма'))
                     ->state(fn (PaymentGatewayEvent $record): string => app(FinancePresentation::class)->amount(
                         $record->amount_minor,
                         $record->currency?->value,
                     )),
                 TextColumn::make('currency')
-                    ->label('Валюта')
+                    ->label(__('Валюта'))
                     ->state(fn (PaymentGatewayEvent $record): string => app(FinancePresentation::class)->currencyName(
                         $record->currency?->value,
                     )),
                 TextColumn::make('reconciliation_reason')
-                    ->label('Причина')
+                    ->label(__('Причина'))
                     ->state(fn (PaymentGatewayEvent $record): string => PaymentGatewayReconciliationPresentation::reason($record))
                     ->wrap(),
                 TextColumn::make('created_at')
-                    ->label('Получено')
+                    ->label(__('Получено'))
                     ->state(fn (PaymentGatewayEvent $record): string => app(FinancePresentation::class)->timestamp($record->created_at))
                     ->sortable(),
                 TextColumn::make('status')
-                    ->label('Статус')
+                    ->label(__('Статус'))
                     ->badge()
-                    ->state('Требует сверки')
+                    ->state(__('Требует сверки'))
                     ->color('danger'),
             ])
             ->defaultSort('created_at', 'desc')
             ->paginated([10, 25, 50])
-            ->emptyStateHeading('Событий для сверки нет')
-            ->emptyStateDescription('Новые неоднозначные платежные события появятся здесь автоматически.');
+            ->emptyStateHeading(__('Событий для сверки нет'))
+            ->emptyStateDescription(__('Новые неоднозначные платежные события появятся здесь автоматически.'));
     }
 }

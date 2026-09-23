@@ -2,6 +2,7 @@
 
 namespace App\Filament\Widgets;
 
+use App\Filament\Support\CrmLabel;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -58,13 +59,14 @@ class UpcomingBookingsWidget extends Widget
     {
         $status = $status instanceof BookingStatus ? $status : BookingStatus::tryFrom($status);
 
-        return match ($status) {
-            BookingStatus::Requested => 'Ожидает подтверждения',
-            BookingStatus::PendingReview => 'На рассмотрении',
-            BookingStatus::Confirmed => 'Подтверждена',
-            BookingStatus::Completed => 'Завершена',
-            default => '—',
-        };
+        return in_array($status, [
+            BookingStatus::Requested,
+            BookingStatus::PendingReview,
+            BookingStatus::Confirmed,
+            BookingStatus::Completed,
+        ], true)
+            ? (CrmLabel::enum($status) ?? '—')
+            : '—';
     }
 
     public static function statusColor(BookingStatus|string $status): string
@@ -83,12 +85,7 @@ class UpcomingBookingsWidget extends Widget
     {
         $format = $format instanceof VisitFormat ? $format : VisitFormat::tryFrom($format);
 
-        return match ($format) {
-            VisitFormat::Office => 'В клинике',
-            VisitFormat::HomeVisit => 'Выезд',
-            VisitFormat::Online => 'Онлайн',
-            default => 'Визит',
-        };
+        return CrmLabel::enum($format) ?? __('Визит');
     }
 
     public static function locationLabel(Booking $booking): string
@@ -99,9 +96,9 @@ class UpcomingBookingsWidget extends Widget
             VisitFormat::Office => trim(implode(' · ', array_filter([
                 $snapshot['name'] ?? null,
                 $snapshot['address'] ?? $booking->location,
-            ]))) ?: 'Кабинет',
-            VisitFormat::HomeVisit => 'Выезд'.($booking->location_area !== null ? ' · '.$booking->location_area : ''),
-            VisitFormat::Online => 'Онлайн',
+            ]))) ?: __('Кабинет'),
+            VisitFormat::HomeVisit => __('Выезд').($booking->location_area !== null ? ' · '.$booking->location_area : ''),
+            VisitFormat::Online => __('Онлайн'),
         };
     }
 }

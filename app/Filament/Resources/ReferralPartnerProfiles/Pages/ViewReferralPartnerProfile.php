@@ -5,6 +5,8 @@ namespace App\Filament\Resources\ReferralPartnerProfiles\Pages;
 use App\Filament\Pages\ReferralRewardConfiguration;
 use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResource;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
@@ -37,11 +39,10 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
-use Filament\Resources\Pages\ViewRecord;
 use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Support\Str;
 
-final class ViewReferralPartnerProfile extends ViewRecord
+final class ViewReferralPartnerProfile extends LocalizedViewRecord
 {
     protected static string $resource = ReferralPartnerProfileResource::class;
 
@@ -76,28 +77,28 @@ final class ViewReferralPartnerProfile extends ViewRecord
     {
         return [
             Action::make('openClient')
-                ->label('Открыть клиента')
+                ->label(__('Открыть клиента'))
                 ->icon('heroicon-o-user')
                 ->extraAttributes(['data-testid' => 'partner-primary-open-client'])
                 ->url(fn (): ?string => CrmEntityLinks::clientUrl($this->partnerProfile()->client))
                 ->visible(fn (): bool => $this->canViewClient()),
             Action::make('createCampaignLink')
-                ->label('Создать ссылку')
+                ->label(__('Создать ссылку'))
                 ->icon('heroicon-o-plus')
                 ->extraAttributes(['data-testid' => 'partner-primary-create-link'])
                 ->schema([
                     TextInput::make('name')
-                        ->label('Название')
-                        ->placeholder('Instagram — шапка профиля')
+                        ->label(__('Название'))
+                        ->placeholder(__('Instagram — шапка профиля'))
                         ->required()
                         ->maxLength(180),
                     Select::make('channel')
-                        ->label('Канал')
+                        ->label(__('Канал'))
                         ->options(ReferralCampaignChannel::options())
                         ->native(false)
                         ->required(),
                 ])
-                ->modalSubmitActionLabel('Создать')
+                ->modalSubmitActionLabel(__('Создать'))
                 ->visible(fn (): bool => $this->partnerProfile()->isActive() && $this->canManageClients())
                 ->action(function (array $data): void {
                     app(CreateReferralCampaignLink::class)->handle(
@@ -107,36 +108,36 @@ final class ViewReferralPartnerProfile extends ViewRecord
                         actor: $this->actor(),
                     );
                     $this->workspace = null;
-                    Notification::make()->title('Реферальная ссылка создана')->success()->send();
+                    Notification::make()->title(__('Реферальная ссылка создана'))->success()->send();
                 }),
             Action::make('manualBonus')
-                ->label('Начислить бонус')
+                ->label(__('Начислить бонус'))
                 ->icon('heroicon-o-plus-circle')
                 ->extraAttributes(['data-testid' => 'partner-primary-credit-bonus'])
                 ->schema([
                     TextInput::make('amount')
-                        ->label('Сумма')
+                        ->label(__('Сумма'))
                         ->inputMode('decimal')
                         ->required()
                         ->maxLength(24),
                     Select::make('currency')
-                        ->label('Валюта')
+                        ->label(__('Валюта'))
                         ->options(fn (): array => app(CurrencyCatalog::class)->options())
                         ->native(false)
                         ->required(),
                     Textarea::make('reason')
-                        ->label('Причина')
+                        ->label(__('Причина'))
                         ->required()
                         ->maxLength(500)
                         ->rows(3),
                     Textarea::make('comment')
-                        ->label('Комментарий')
+                        ->label(__('Комментарий'))
                         ->maxLength(1000)
                         ->rows(3),
                     Hidden::make('idempotency_key')
                         ->default(fn (): string => 'manual-bonus-'.Str::uuid()),
                 ])
-                ->modalSubmitActionLabel('Начислить бонус')
+                ->modalSubmitActionLabel(__('Начислить бонус'))
                 ->visible(fn (): bool => $this->canManageRewards())
                 ->action(function (array $data): void {
                     app(CreditManualReferralBonus::class)->handle(
@@ -149,16 +150,16 @@ final class ViewReferralPartnerProfile extends ViewRecord
                         idempotencyKey: (string) ($data['idempotency_key'] ?? ''),
                     );
                     $this->workspace = null;
-                    Notification::make()->title('Бонус начислен')->success()->send();
+                    Notification::make()->title(__('Бонус начислен'))->success()->send();
                 }),
             ActionGroup::make([
                 Action::make('rewardTerms')
-                    ->label('Настроить индивидуально')
+                    ->label(__('Настроить индивидуально'))
                     ->icon('heroicon-o-adjustments-horizontal')
                     ->schema(self::rewardTermsSchema())
                     ->fillForm(fn (): array => $this->rewardTermsForm())
-                    ->modalHeading('Индивидуальные условия')
-                    ->modalSubmitActionLabel('Сохранить условия')
+                    ->modalHeading(__('Индивидуальные условия'))
+                    ->modalSubmitActionLabel(__('Сохранить условия'))
                     ->visible(fn (): bool => $this->canManageRewards())
                     ->action(function (array $data): void {
                         app(SaveReferralRewardProgram::class)->handle(
@@ -173,10 +174,10 @@ final class ViewReferralPartnerProfile extends ViewRecord
                             partnerProfile: $this->partnerProfile(),
                         );
                         $this->workspace = null;
-                        Notification::make()->title('Индивидуальные условия сохранены')->success()->send();
+                        Notification::make()->title(__('Индивидуальные условия сохранены'))->success()->send();
                     }),
                 Action::make('resetRewardTerms')
-                    ->label('Вернуть общие условия')
+                    ->label(__('Вернуть общие условия'))
                     ->icon('heroicon-o-arrow-uturn-left')
                     ->color('gray')
                     ->requiresConfirmation()
@@ -194,25 +195,25 @@ final class ViewReferralPartnerProfile extends ViewRecord
                             partnerProfile: $this->partnerProfile(),
                         );
                         $this->workspace = null;
-                        Notification::make()->title('Общие условия восстановлены')->success()->send();
+                        Notification::make()->title(__('Общие условия восстановлены'))->success()->send();
                     }),
                 Action::make('editDefaultRewardTerms')
-                    ->label('Изменить общие условия')
+                    ->label(__('Изменить общие условия'))
                     ->icon('heroicon-o-cog-6-tooth')
                     ->url(fn (): string => ReferralRewardConfiguration::getUrl())
                     ->visible(fn (): bool => $this->canManageRewards()),
                 Action::make('disableCampaignLink')
-                    ->label('Отключить ссылку')
+                    ->label(__('Отключить ссылку'))
                     ->icon('heroicon-o-link-slash')
                     ->color('gray')
                     ->schema([
                         Select::make('campaign_link_id')
-                            ->label('Ссылка')
+                            ->label(__('Ссылка'))
                             ->options(fn (): array => $this->partnerProfile()
                                 ->activeCampaignLinks()
                                 ->orderBy('name')
                                 ->get()
-                                ->mapWithKeys(fn ($link): array => [$link->getKey() => $link->name.' · '.(ReferralCampaignChannel::tryFrom((string) $link->getRawOriginal('channel'))?->label() ?? 'Другое')])
+                                ->mapWithKeys(fn ($link): array => [$link->getKey() => $link->name.' · '.(CrmLabel::enum(ReferralCampaignChannel::tryFrom((string) $link->getRawOriginal('channel'))) ?? __('Другое'))])
                                 ->all())
                             ->native(false)
                             ->required(),
@@ -226,20 +227,20 @@ final class ViewReferralPartnerProfile extends ViewRecord
                             actor: $this->actor(),
                         );
                         $this->workspace = null;
-                        Notification::make()->title('Реферальная ссылка отключена')->success()->send();
+                        Notification::make()->title(__('Реферальная ссылка отключена'))->success()->send();
                     }),
                 Action::make('activatePartner')
-                    ->label('Активировать партнёра')
+                    ->label(__('Активировать партнёра'))
                     ->icon('heroicon-o-user-plus')
                     ->color('success')
                     ->visible(fn (): bool => ! $this->partnerProfile()->isActive() && $this->canManageClients())
                     ->action(function (): void {
                         app(ActivateReferralPartner::class)->handle($this->partnerClient(), 'crm', $this->actor());
                         $this->workspace = null;
-                        Notification::make()->title('Партнёрская программа активирована')->success()->send();
+                        Notification::make()->title(__('Партнёрская программа активирована'))->success()->send();
                     }),
                 Action::make('deactivatePartner')
-                    ->label('Отключить партнёрскую программу')
+                    ->label(__('Отключить партнёрскую программу'))
                     ->icon('heroicon-o-user-minus')
                     ->color('danger')
                     ->requiresConfirmation()
@@ -247,10 +248,10 @@ final class ViewReferralPartnerProfile extends ViewRecord
                     ->action(function (): void {
                         app(DeactivateReferralPartner::class)->handle($this->partnerClient(), $this->actor());
                         $this->workspace = null;
-                        Notification::make()->title('Партнёрская программа отключена')->success()->send();
+                        Notification::make()->title(__('Партнёрская программа отключена'))->success()->send();
                     }),
             ])
-                ->label('Ещё')
+                ->label(__('Ещё'))
                 ->icon('heroicon-o-ellipsis-horizontal')
                 ->button()
                 ->color('gray')
@@ -275,8 +276,8 @@ final class ViewReferralPartnerProfile extends ViewRecord
 
             $rewardItems = $link['rewards'] ?? [];
             $items[] = [
-                'name' => (string) ($link['name'] ?? 'Ссылка'),
-                'channel' => (string) ($link['channel'] ?? 'Другое'),
+                'name' => (string) ($link['name'] ?? __('Ссылка')),
+                'channel' => self::referralChannelLabel($link['channel'] ?? null),
                 'shareUrl' => (string) ($link['shareUrl'] ?? ''),
                 'visits' => (int) ($link['visits'] ?? 0),
                 'registrations' => (int) ($link['registrations'] ?? 0),
@@ -320,25 +321,27 @@ final class ViewReferralPartnerProfile extends ViewRecord
         }
 
         return implode("\n", [
-            'Переходы: '.(int) ($stats['visits'] ?? 0),
-            'Регистрации: '.(int) ($stats['registrations'] ?? 0),
-            'Оплатили: '.(int) ($stats['paidClients'] ?? 0),
-            'Доступно: '.($available === [] ? '—' : implode(' · ', $available)),
-            'Ожидает выплаты: '.($pending === [] ? '—' : implode(' · ', $pending)),
-            'Выплачено: '.($paid === [] ? '—' : implode(' · ', $paid)),
+            __('Переходы: :count', ['count' => (int) ($stats['visits'] ?? 0)]),
+            __('Регистрации: :count', ['count' => (int) ($stats['registrations'] ?? 0)]),
+            __('Оплатили: :count', ['count' => (int) ($stats['paidClients'] ?? 0)]),
+            __('Доступно: :amounts', ['amounts' => $available === [] ? '—' : implode(' · ', $available)]),
+            __('Ожидает выплаты: :amounts', ['amounts' => $pending === [] ? '—' : implode(' · ', $pending)]),
+            __('Выплачено: :amounts', ['amounts' => $paid === [] ? '—' : implode(' · ', $paid)]),
         ]);
     }
 
     public function rewardTermsSummary(): string
     {
         $terms = app(GetReferralRewardProgram::class)->handle($this->partnerProfile());
+        $source = $terms['isOverride'] ? __('Индивидуальные условия') : __('Общие условия');
+        $defaultTerms = is_array($terms['defaultTerms'] ?? null) ? $terms['defaultTerms'] : [];
         $lines = [
-            'Используются: '.($terms['isOverride'] ? 'Индивидуальные условия' : 'Общие условия'),
-            'Общие условия: '.(string) ($terms['defaultTerms']['summary'] ?? 'Общие условия: начисление отключено'),
+            __('Используются: :source', ['source' => $source]),
+            self::rewardTermsLine($defaultTerms, __('Общие условия')),
         ];
 
         if (is_array($terms['overrideTerms'] ?? null)) {
-            $lines[] = 'Индивидуальные условия: '.(string) ($terms['overrideTerms']['summary'] ?? '—');
+            $lines[] = self::rewardTermsLine($terms['overrideTerms'], __('Индивидуальные условия'));
         }
 
         return implode("\n", $lines);
@@ -361,10 +364,10 @@ final class ViewReferralPartnerProfile extends ViewRecord
             $items[] = [
                 'name' => (string) ($client['name'] ?? '—'),
                 'registeredAt' => $client['registeredAt'] === null
-                    ? 'Дата не указана'
+                    ? __('Дата не указана')
                     : CarbonImmutable::parse((string) $client['registeredAt'])->format('d.m.Y H:i'),
-                'origin' => ($client['linkName'] ?? 'Назначено в CRM').' / '.($client['channel'] ?? 'CRM'),
-                'paymentStatus' => ($client['paidClient'] ?? false) ? 'Оплатил' : 'Не оплатил',
+                'origin' => self::referralSourceName($client['linkName'] ?? null).' / '.self::referralChannelLabel($client['channel'] ?? null),
+                'paymentStatus' => ($client['paidClient'] ?? false) ? __('Оплатил') : __('Не оплатил'),
             ];
         }
 
@@ -386,9 +389,9 @@ final class ViewReferralPartnerProfile extends ViewRecord
             }
 
             $items[] = [
-                'type' => (string) ($reward['typeLabel'] ?? 'Операция'),
+                'type' => self::referralRewardTypeLabel($reward['typeLabel'] ?? null),
                 'amount' => $this->formatMoney((string) ($reward['amountMinor'] ?? 0), (string) ($reward['currency'] ?? '')),
-                'client' => (string) ($reward['clientName'] ?? 'Клиент не указан'),
+                'client' => (string) ($reward['clientName'] ?? __('Клиент не указан')),
                 'reason' => (string) ($reward['reason'] ?? ''),
                 'occurredAt' => CarbonImmutable::parse((string) ($reward['occurredAt'] ?? now()))->format('d.m.Y H:i'),
             ];
@@ -413,7 +416,7 @@ final class ViewReferralPartnerProfile extends ViewRecord
 
             $items[] = [
                 'amount' => $this->formatMoney((string) ($payout['amountMinor'] ?? 0), (string) ($payout['currency'] ?? '')),
-                'status' => (string) ($payout['statusLabel'] ?? '—'),
+                'status' => self::referralPayoutStatusLabel($payout['statusLabel'] ?? null),
                 'requestedAt' => CarbonImmutable::parse((string) ($payout['requestedAt'] ?? now()))->format('d.m.Y H:i'),
             ];
         }
@@ -476,6 +479,80 @@ final class ViewReferralPartnerProfile extends ViewRecord
         return app(FinanceAuthorization::class)->allowsManage($this->actor());
     }
 
+    private static function rewardTermsLine(array $terms, string $scope): string
+    {
+        if (! ($terms['enabled'] ?? false)) {
+            return __(':scope: начисление отключено', ['scope' => $scope]);
+        }
+
+        $qualification = match ($terms['qualificationRule'] ?? null) {
+            ReferralRewardQualificationRule::FirstSettledPayment->value => __('После первой подтверждённой оплаты'),
+            ReferralRewardQualificationRule::EverySettledPayment->value => __('После каждой подтверждённой оплаты'),
+            default => __('Не указано'),
+        };
+        $formula = match ($terms['formula'] ?? null) {
+            ReferralRewardFormula::FixedAmount->value => __('Фиксированная сумма :amount', [
+                'amount' => trim((string) ($terms['fixedAmount'] ?? '—').' '.(string) ($terms['fixedCurrency'] ?? '')),
+            ]),
+            ReferralRewardFormula::PercentageOfSettlement->value => __(':percentage% от оплаты', [
+                'percentage' => $terms['percentage'] ?? '—',
+            ]),
+            default => __('Не указано'),
+        };
+
+        return __(':scope: :qualification · :formula', [
+            'scope' => $scope,
+            'qualification' => $qualification,
+            'formula' => $formula,
+        ]);
+    }
+
+    private static function referralChannelLabel(mixed $channel): string
+    {
+        return match ($channel) {
+            'Telegram' => __('Telegram'),
+            'Instagram' => __('Instagram'),
+            'YouTube' => __('YouTube'),
+            'WhatsApp' => __('WhatsApp'),
+            'Website', 'Сайт' => __('Сайт'),
+            'Other', 'Другое' => __('Другое'),
+            'CRM' => __('CRM'),
+            'Link', 'Ссылка' => __('Ссылка'),
+            default => is_string($channel) && $channel !== '' ? $channel : __('Другое'),
+        };
+    }
+
+    private static function referralSourceName(mixed $source): string
+    {
+        return match ($source) {
+            'Назначено в CRM', 'Assigned in CRM' => __('Назначено в CRM'),
+            'Персональная ссылка', 'Personal link' => __('Персональная ссылка'),
+            default => is_string($source) && $source !== '' ? $source : __('Назначено в CRM'),
+        };
+    }
+
+    private static function referralRewardTypeLabel(mixed $type): string
+    {
+        return match ($type) {
+            'Начисление', 'Reward earned' => __('Начисление'),
+            'Сторно', 'Reward reversed' => __('Сторно'),
+            'Ручной бонус', 'Manual reward' => __('Ручной бонус'),
+            default => is_string($type) && $type !== '' ? $type : __('Операция'),
+        };
+    }
+
+    private static function referralPayoutStatusLabel(mixed $status): string
+    {
+        return match ($status) {
+            'Requested', 'Запрошена' => __('Запрошена'),
+            'Approved', 'Одобрена' => __('Одобрена'),
+            'Paid', 'Отмечена как выплаченная' => __('Отмечена как выплаченная'),
+            'Rejected', 'Отклонена' => __('Отклонена'),
+            'Cancelled', 'Отменена' => __('Отменена'),
+            default => is_string($status) && $status !== '' ? $status : '—',
+        };
+    }
+
     /** @return array<string, mixed> */
     private function rewardTermsForm(): array
     {
@@ -500,44 +577,44 @@ final class ViewReferralPartnerProfile extends ViewRecord
     {
         return [
             Toggle::make('enabled')
-                ->label('Использовать индивидуальные условия')
+                ->label(__('Использовать индивидуальные условия'))
                 ->live(),
             Select::make('qualification_rule')
-                ->label('Начислять')
+                ->label(__('Начислять'))
                 ->options([
-                    ReferralRewardQualificationRule::FirstSettledPayment->value => ReferralRewardQualificationRule::FirstSettledPayment->label(),
-                    ReferralRewardQualificationRule::EverySettledPayment->value => ReferralRewardQualificationRule::EverySettledPayment->label(),
+                    ReferralRewardQualificationRule::FirstSettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::FirstSettledPayment),
+                    ReferralRewardQualificationRule::EverySettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::EverySettledPayment),
                 ])
                 ->visible(fn (Get $get): bool => (bool) $get('enabled'))
                 ->required(fn (Get $get): bool => (bool) $get('enabled')),
             Select::make('formula')
-                ->label('Размер бонуса')
+                ->label(__('Размер бонуса'))
                 ->options([
-                    ReferralRewardFormula::FixedAmount->value => ReferralRewardFormula::FixedAmount->label(),
-                    ReferralRewardFormula::PercentageOfSettlement->value => ReferralRewardFormula::PercentageOfSettlement->label(),
+                    ReferralRewardFormula::FixedAmount->value => CrmLabel::enum(ReferralRewardFormula::FixedAmount),
+                    ReferralRewardFormula::PercentageOfSettlement->value => CrmLabel::enum(ReferralRewardFormula::PercentageOfSettlement),
                 ])
                 ->live()
                 ->visible(fn (Get $get): bool => (bool) $get('enabled'))
                 ->required(fn (Get $get): bool => (bool) $get('enabled')),
             TextInput::make('fixed_amount')
-                ->label('Фиксированная сумма')
+                ->label(__('Фиксированная сумма'))
                 ->inputMode('decimal')
                 ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
                 ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value),
             Select::make('fixed_currency')
-                ->label('Валюта фиксированной суммы')
+                ->label(__('Валюта фиксированной суммы'))
                 ->options(fn (): array => app(CurrencyCatalog::class)->options())
                 ->native(false)
                 ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value)
                 ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::FixedAmount->value),
             TextInput::make('percentage')
-                ->label('Процент от оплаты')
+                ->label(__('Процент от оплаты'))
                 ->suffix('%')
                 ->inputMode('decimal')
                 ->visible(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::PercentageOfSettlement->value)
                 ->required(fn (Get $get): bool => (bool) $get('enabled') && $get('formula') === ReferralRewardFormula::PercentageOfSettlement->value),
             DateTimePicker::make('effective_at')
-                ->label('Дата начала действия')
+                ->label(__('Дата начала действия'))
                 ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                 ->seconds(false)
                 ->required()

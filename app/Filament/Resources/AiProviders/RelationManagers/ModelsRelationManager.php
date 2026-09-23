@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\AiProviders\RelationManagers;
 
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
 use App\Modules\AI\Application\Actions\CreateModelConfiguration;
@@ -26,7 +28,6 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
-use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
@@ -37,7 +38,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
 
-class ModelsRelationManager extends RelationManager
+class ModelsRelationManager extends LocalizedRelationManager
 {
     protected static string $relationship = 'models';
 
@@ -60,8 +61,8 @@ class ModelsRelationManager extends RelationManager
         return $schema
             ->components([
                 Select::make('model_selection')
-                    ->label('Модель')
-                    ->helperText('Для каждой модели указано, принимает ли она текст, изображения и PDF/документы.')
+                    ->label(__('Модель'))
+                    ->helperText(__('Для каждой модели указано, принимает ли она текст, изображения и PDF/документы.'))
                     ->options(fn (?AiModelConfiguration $record): array => AiModelCatalog::optionsForProvider(
                         $provider->provider_name,
                         $record?->model_name,
@@ -92,137 +93,137 @@ class ModelsRelationManager extends RelationManager
                     ->native(false)
                     ->searchable()
                     ->optionsLimit(250)
-                    ->placeholder('Выберите модель или ручной вариант')
+                    ->placeholder(__('Выберите модель или ручной вариант'))
                     ->validationMessages([
-                        'in' => 'Выберите модель из списка. Если её нет в каталоге, выберите «Другая модель / Указать вручную».',
+                        'in' => __('Выберите модель из списка. Если её нет в каталоге, выберите «Другая модель / Указать вручную».'),
                     ])
                     ->required(fn (Get $get): bool => blank($get('model_name'))),
                 TextInput::make('model_name')
-                    ->label('Название модели в API')
-                    ->helperText('Расширенный режим: используйте только для новой, частной или нестандартной модели.')
+                    ->label(__('Название модели в API'))
+                    ->helperText(__('Расширенный режим: используйте только для новой, частной или нестандартной модели.'))
                     ->visible(fn (Get $get): bool => self::isCustomSelection($get('model_selection')))
                     ->required(fn (Get $get): bool => self::isCustomSelection($get('model_selection')))
                     ->dehydratedWhenHidden()
                     ->maxLength(120),
                 TextInput::make('display_name')
-                    ->label('Название в CRM')
-                    ->helperText('Так модель будет называться в рабочих настройках Chuklov.')
+                    ->label(__('Название в CRM'))
+                    ->helperText(__('Так модель будет называться в рабочих настройках Chuklov.'))
                     ->required()
                     ->maxLength(120),
                 Select::make('failover_priority')
-                    ->label('Порядок использования')
+                    ->label(__('Порядок использования'))
                     ->options(fn (?AiModelConfiguration $record): array => self::failoverOptions($record?->failover_priority))
-                    ->helperText('Первая модель используется обычно, следующие подключаются при сбое.')
+                    ->helperText(__('Первая модель используется обычно, следующие подключаются при сбое.'))
                     ->default(1)
                     ->native(false)
                     ->validationMessages([
-                        'in' => 'Выберите порядок использования от 1 до 10.',
+                        'in' => __('Выберите порядок использования от 1 до 10.'),
                     ])
                     ->required(),
                 Placeholder::make('supported_inputs')
-                    ->label('Что модель принимает')
+                    ->label(__('Что модель принимает'))
                     ->content(fn (Get $get, ?AiModelConfiguration $record): string => self::supportedInputs($provider, $get('model_selection'), $record))
-                    ->helperText('Это реальные форматы входа выбранной модели. Раздел «Задачи Chuklov» ниже не добавляет модели поддержку PDF или изображений.')
+                    ->helperText(__('Это реальные форматы входа выбранной модели. Раздел «Задачи Chuklov» ниже не добавляет модели поддержку PDF или изображений.'))
                     ->columnSpanFull(),
                 CheckboxList::make('capabilities')
-                    ->label('Задачи Chuklov')
+                    ->label(__('Задачи Chuklov'))
                     ->options(self::capabilityOptions())
                     ->formatStateUsing(fn (mixed $state): array => array_values(array_intersect(
                         (array) $state,
                         array_keys(self::capabilityOptions()),
                     )))
-                    ->helperText('Выберите рабочие сценарии для маршрутизации запросов. Это не список форматов файлов и не подтверждение поддержки PDF.')
+                    ->helperText(__('Выберите рабочие сценарии для маршрутизации запросов. Это не список форматов файлов и не подтверждение поддержки PDF.'))
                     ->validationMessages([
-                        'in' => 'Выберите задачи из списка.',
+                        'in' => __('Выберите задачи из списка.'),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
                 Placeholder::make('capability_compatibility')
-                    ->label('Проверка выбора')
+                    ->label(__('Проверка выбора'))
                     ->content(fn (Get $get, ?AiModelConfiguration $record): string => self::capabilityCompatibility($provider, $get, $record))
                     ->columnSpanFull(),
                 Placeholder::make('pricing_source')
-                    ->label('Стоимость')
+                    ->label(__('Стоимость'))
                     ->content(fn (Get $get, ?AiModelConfiguration $record): string => self::pricingSource($provider, $get('model_selection'), $record))
                     ->columnSpanFull(),
                 TextInput::make('input_cost_per_million')
-                    ->label('Входные данные')
+                    ->label(__('Входные данные'))
                     ->prefix('$')
-                    ->suffix('/ 1 млн токенов')
-                    ->helperText('Заполняется автоматически, если стоимость есть в каталоге.')
+                    ->suffix(__('за 1 млн токенов'))
+                    ->helperText(__('Заполняется автоматически, если стоимость есть в каталоге.'))
                     ->inputMode('decimal')
                     ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'input'))
                     ->nullable()
                     ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                 TextInput::make('output_cost_per_million')
-                    ->label('Ответ модели')
+                    ->label(__('Ответ модели'))
                     ->prefix('$')
-                    ->suffix('/ 1 млн токенов')
-                    ->helperText('Если стоимость неизвестна, она не считается нулевой — настройте её ниже.')
+                    ->suffix(__('за 1 млн токенов'))
+                    ->helperText(__('Если стоимость неизвестна, она не считается нулевой — настройте её ниже.'))
                     ->inputMode('decimal')
                     ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'output'))
                     ->nullable()
                     ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                 Toggle::make('is_enabled')
-                    ->label('Модель включена')
+                    ->label(__('Модель включена'))
                     ->default(false),
-                Section::make('Расширенные настройки стоимости и входных данных')
-                    ->description('Для каталожных моделей типы входа указаны выше. Для ручной модели отметьте только форматы, которые реально принимает выбранная модель.')
+                Section::make(__('Расширенные настройки стоимости и входных данных'))
+                    ->description(__('Для каталожных моделей типы входа указаны выше. Для ручной модели отметьте только форматы, которые реально принимает выбранная модель.'))
                     ->collapsed()
                     ->schema([
                         Placeholder::make('provider_input_limit')
-                            ->label('Ограничения адаптера провайдера')
+                            ->label(__('Ограничения адаптера провайдера'))
                             ->content(fn (): string => self::providerInputLimit($provider))
-                            ->helperText('Это верхняя граница для ручной модели. Конкретная модель может поддерживать меньше — проверьте её документацию.')
+                            ->helperText(__('Это верхняя граница для ручной модели. Конкретная модель может поддерживать меньше — проверьте её документацию.'))
                             ->visible(fn (Get $get): bool => self::isCustomSelection($get('model_selection')))
                             ->columnSpanFull(),
                         TextInput::make('cache_read_input_cost_per_million')
-                            ->label('Чтение из кеша')
+                            ->label(__('Чтение из кеша'))
                             ->prefix('$')
-                            ->suffix('/ 1 млн токенов')
+                            ->suffix('/ '.__('за 1 млн токенов'))
                             ->inputMode('decimal')
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'cache_read'))
                             ->nullable()
                             ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                         TextInput::make('cache_write_input_cost_per_million')
-                            ->label('Запись в кеш')
+                            ->label(__('Запись в кеш'))
                             ->prefix('$')
-                            ->suffix('/ 1 млн токенов')
+                            ->suffix('/ '.__('за 1 млн токенов'))
                             ->inputMode('decimal')
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'cache_write'))
                             ->nullable()
                             ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                         TextInput::make('reasoning_cost_per_million')
-                            ->label('Дополнительное рассуждение')
+                            ->label(__('Дополнительное рассуждение'))
                             ->prefix('$')
-                            ->suffix('/ 1 млн токенов')
+                            ->suffix('/ '.__('за 1 млн токенов'))
                             ->inputMode('decimal')
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'reasoning'))
                             ->nullable()
                             ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                         Toggle::make('fixed_request_cost_applicable')
-                            ->label('Есть фиксированная стоимость запроса')
+                            ->label(__('Есть фиксированная стоимость запроса'))
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): bool => $record === null
                                 ? (bool) $state
                                 : $record->getPricingSnapshot()->fixedRequestCostApplicable)
                             ->default(false),
                         TextInput::make('fixed_request_cost_minor_units')
-                            ->label('Фиксированная стоимость запроса')
+                            ->label(__('Фиксированная стоимость запроса'))
                             ->prefix('$')
                             ->inputMode('decimal')
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => self::moneyState($state, $record, 'fixed'))
                             ->nullable()
                             ->regex('/^(0|[1-9][0-9]*)(?:\.[0-9]{1,6})?$/'),
                         TextInput::make('unsupported_meters')
-                            ->label('Другие списания')
-                            ->helperText('Перечислите через запятую то, что нельзя посчитать в этой настройке. Такую модель нельзя активировать до уточнения стоимости.')
-                            ->placeholder('например: дополнительная обработка изображений')
+                            ->label(__('Другие списания'))
+                            ->helperText(__('Перечислите через запятую то, что нельзя посчитать в этой настройке. Такую модель нельзя активировать до уточнения стоимости.'))
+                            ->placeholder(__('например: дополнительная обработка изображений'))
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): string => $record === null
                                 ? (string) ($state ?? '')
                                 : implode(', ', $record->getPricingSnapshot()->unsupportedMeters)),
                         CheckboxList::make('model_modalities')
-                            ->label('Типы входных данных ручной модели')
-                            ->options(collect(AiModelModality::cases())->mapWithKeys(fn (AiModelModality $modality): array => [$modality->value => $modality->label()])->all())
+                            ->label(__('Типы входных данных ручной модели'))
+                            ->options(collect(AiModelModality::cases())->mapWithKeys(fn (AiModelModality $modality): array => [$modality->value => CrmLabel::enum($modality)])->all())
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): array => $record === null
                                 ? (is_array($state) ? $state : [])
                                 : array_values(array_intersect(
@@ -230,9 +231,9 @@ class ModelsRelationManager extends RelationManager
                                     array_map(fn (AiModelModality $modality): string => $modality->value, AiModelModality::cases()),
                                 )))
                             ->visible(fn (Get $get): bool => self::isCustomSelection($get('model_selection')))
-                            ->helperText('Для модели из каталога эти возможности определяются автоматически. Для ручной модели сначала проверьте документацию провайдера.')
+                            ->helperText(__('Для модели из каталога эти возможности определяются автоматически. Для ручной модели сначала проверьте документацию провайдера.'))
                             ->validationMessages([
-                                'in' => 'Выберите тип входных данных из списка.',
+                                'in' => __('Выберите тип входных данных из списка.'),
                             ])
                             ->columnSpanFull(),
                     ])
@@ -245,9 +246,9 @@ class ModelsRelationManager extends RelationManager
     {
         return $table
             ->columns([
-                TextColumn::make('display_name')->label('Название')->sortable(),
+                TextColumn::make('display_name')->label(__('Название'))->sortable(),
                 TextColumn::make('model_name')
-                    ->label('Имя модели')
+                    ->label(__('Имя модели'))
                     ->formatStateUsing(function (string $state): string {
                         $provider = $this->getOwnerRecord();
                         if (! $provider instanceof AiProviderConfiguration) {
@@ -260,15 +261,15 @@ class ModelsRelationManager extends RelationManager
                     })
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('failover_priority')
-                    ->label('Порядок')
+                    ->label(__('Порядок'))
                     ->formatStateUsing(fn (mixed $state): string => self::failoverLabel((int) $state))
                     ->sortable(),
                 TextColumn::make('lifecycle_status')
-                    ->label('Состояние')
-                    ->formatStateUsing(fn ($state) => $state instanceof ModelLifecycleStatus ? $state->label() : (string) $state),
-                TextColumn::make('is_enabled')->label('Статус')->formatStateUsing(fn ($state) => $state ? 'Включена' : 'Отключена'),
+                    ->label(__('Состояние'))
+                    ->formatStateUsing(fn ($state) => $state instanceof ModelLifecycleStatus ? CrmLabel::enum($state) : (string) $state),
+                TextColumn::make('is_enabled')->label(__('Статус'))->formatStateUsing(fn ($state) => $state ? 'Включена' : 'Отключена'),
                 TextColumn::make('pricing_snapshot')
-                    ->label('Стоимость')
+                    ->label(__('Стоимость'))
                     ->state(function (AiModelConfiguration $record): string {
                         $pricing = $record->getPricingSnapshot();
                         $provider = $this->getOwnerRecord();
@@ -279,22 +280,22 @@ class ModelsRelationManager extends RelationManager
                                 $record->model_name,
                                 $pricing,
                             )) {
-                            return 'Стоимость модели обновилась';
+                            return __('Стоимость модели обновилась');
                         }
 
                         if ($pricing->pricingSource === AiPricingSnapshot::SOURCE_UNKNOWN) {
-                            return 'Стоимость не задана';
+                            return __('Стоимость не задана');
                         }
 
                         return '$'.AiMoney::displayDecimalFromRateUnits($pricing->inputRatePerMillionUnits())
                             .' / $'.AiMoney::displayDecimalFromRateUnits($pricing->outputRatePerMillionUnits());
                     }),
             ])
-            ->emptyStateHeading('Моделей пока нет')
-            ->emptyStateDescription('Выберите одну или несколько моделей. Первая используется как основная, остальные — как резервные.')
+            ->emptyStateHeading(__('Моделей пока нет'))
+            ->emptyStateDescription(__('Выберите одну или несколько моделей. Первая используется как основная, остальные — как резервные.'))
             ->headerActions([
                 CreateAction::make()
-                    ->label('Добавить модель')
+                    ->label(__('Добавить модель'))
                     ->using(function (array $data): AiModelConfiguration {
                         $actor = Auth::user();
                         if (! $actor instanceof User) {
@@ -308,7 +309,7 @@ class ModelsRelationManager extends RelationManager
             ])
             ->recordActions([
                 Action::make('refresh_pricing')
-                    ->label('Применить актуальную стоимость')
+                    ->label(__('Применить актуальную стоимость'))
                     ->color('warning')
                     ->visible(function (AiModelConfiguration $record): bool {
                         $provider = $this->getOwnerRecord();
@@ -342,7 +343,7 @@ class ModelsRelationManager extends RelationManager
                         ]);
 
                         Notification::make()
-                            ->title('Актуальная стоимость применена')
+                            ->title(__('Актуальная стоимость применена'))
                             ->success()
                             ->send();
                     }),
@@ -376,14 +377,16 @@ class ModelsRelationManager extends RelationManager
 
     private static function failoverLabel(int $priority): string
     {
-        return $priority === 1 ? '1 — Основная' : $priority.' — Резервная '.($priority - 1);
+        return $priority === 1
+            ? __('1 — Основная')
+            : __('Резервная :number', ['number' => $priority - 1]);
     }
 
     /** @return array<string, string> */
     private static function capabilityOptions(): array
     {
         return collect(AiCapability::cases())
-            ->mapWithKeys(fn (AiCapability $capability): array => [$capability->value => $capability->label()])
+            ->mapWithKeys(fn (AiCapability $capability): array => [$capability->value => CrmLabel::enum($capability)])
             ->all();
     }
 
@@ -449,9 +452,20 @@ class ModelsRelationManager extends RelationManager
             $definition = AiModelCatalog::find($provider->provider_name, $record->model_name);
         }
 
-        return $definition === null
-            ? 'Ручная модель: поддержка входных данных не подтверждена. Проверьте документацию провайдера и укажите форматы в дополнительных настройках.'
-            : AiModelCatalog::humanInputSupportSummary($definition);
+        if ($definition === null) {
+            return __('Ручная модель: поддержка входных данных не подтверждена. Проверьте документацию провайдера и укажите форматы в дополнительных настройках.');
+        }
+
+        $modalities = array_map(
+            static fn (AiModelModality $modality): string => $modality->value,
+            $definition->modalities,
+        );
+
+        return __('Текст: :text · Изображения: :images · PDF/документы: :documents', [
+            'text' => in_array('text_generation', $definition->supportedCapabilities, true) ? __('есть') : __('нет'),
+            'images' => in_array(AiModelModality::ImageInput->value, $modalities, true) ? __('есть') : __('нет'),
+            'documents' => in_array(AiModelModality::DocumentInput->value, $modalities, true) ? __('есть') : __('нет'),
+        ]);
     }
 
     private static function capabilityCompatibility(
@@ -461,7 +475,7 @@ class ModelsRelationManager extends RelationManager
     ): string {
         $definition = self::definition($provider, $get('model_selection'), $record);
         if ($definition === null) {
-            return 'Для ручной модели задачи не подтверждают поддержку файлов. Сначала укажите реальные типы входных данных в дополнительных настройках.';
+            return __('Для ручной модели задачи не подтверждают поддержку файлов. Сначала укажите реальные типы входных данных в дополнительных настройках.');
         }
 
         $selectedCapabilities = (array) $get('capabilities');
@@ -473,17 +487,17 @@ class ModelsRelationManager extends RelationManager
 
         if (in_array(AiCapability::ClinicalDocumentExtraction->value, $selectedCapabilities, true)
             && ! in_array(AiModelModality::DocumentInput->value, $modalities, true)) {
-            $warnings[] = 'Извлечение клинических документов выбрано, но эта модель не принимает PDF/документы напрямую.';
+            $warnings[] = __('Извлечение клинических документов выбрано, но эта модель не принимает PDF/документы напрямую.');
         }
 
         if (in_array(AiCapability::PostureAnalysis->value, $selectedCapabilities, true)
             && ! in_array(AiModelModality::ImageInput->value, $modalities, true)) {
-            $warnings[] = 'Анализ фото выбран, но эта модель не принимает изображения напрямую.';
+            $warnings[] = __('Анализ фото выбран, но эта модель не принимает изображения напрямую.');
         }
 
         return $warnings === []
-            ? 'Выбор задач не расширяет список входных форматов модели. Для этой модели несовместимость с выбранными задачами не обнаружена.'
-            : implode(' ', $warnings).' Выберите модель с нужной поддержкой входных данных.';
+            ? __('Выбор задач не расширяет список входных форматов модели. Для этой модели несовместимость с выбранными задачами не обнаружена.')
+            : implode(' ', $warnings).' '.__('Выберите модель с нужной поддержкой входных данных.');
     }
 
     private static function providerInputLimit(AiProviderConfiguration $provider): string
@@ -492,16 +506,16 @@ class ModelsRelationManager extends RelationManager
         $labels = [];
 
         if (in_array(AiModelModality::ImageInput->value, $modalities, true)) {
-            $labels[] = 'изображения';
+            $labels[] = __('изображения');
         }
 
         if (in_array(AiModelModality::DocumentInput->value, $modalities, true)) {
-            $labels[] = 'PDF/документы';
+            $labels[] = __('PDF/документы');
         }
 
         return $labels === []
-            ? 'Только текстовые входы.'
-            : 'Текст и '.implode(', ', $labels).'.';
+            ? __('Только текстовые входы.')
+            : __('Текст и :modalities.', ['modalities' => implode(', ', $labels)]);
     }
 
     private static function pricingSource(
@@ -516,7 +530,7 @@ class ModelsRelationManager extends RelationManager
                 $record->model_name,
                 $record->getPricingSnapshot(),
             )) {
-            return 'Стоимость модели обновилась. Примените актуальный тариф.';
+            return __('Стоимость модели обновилась. Примените актуальный тариф.');
         }
 
         if ($definition !== null) {
@@ -527,13 +541,13 @@ class ModelsRelationManager extends RelationManager
             $pricing = $record->getPricingSnapshot();
 
             return match ($pricing->pricingSource) {
-                AiPricingSnapshot::SOURCE_CATALOG => 'Стоимость загружена из каталога',
-                AiPricingSnapshot::SOURCE_MANUAL => 'Стоимость задана вручную',
-                default => 'Стоимость не задана',
+                AiPricingSnapshot::SOURCE_CATALOG => __('Стоимость загружена из каталога'),
+                AiPricingSnapshot::SOURCE_MANUAL => __('Стоимость задана вручную'),
+                default => __('Стоимость не задана'),
             };
         }
 
-        return 'Стоимость не задана';
+        return __('Стоимость не задана');
     }
 
     private static function persistedDefinition(
@@ -567,9 +581,9 @@ class ModelsRelationManager extends RelationManager
             'provider' => $provider->provider_name,
             'model' => $record->model_name,
             'display_name' => $record->display_name,
-            'family' => 'Сохранённая модель',
-            'summary' => 'Модель сохранена из подключённого каталога; её текущая запись провайдера временно недоступна.',
-            'positioning' => 'Ранее обнаруженная',
+            'family' => __('Сохранённая модель'),
+            'summary' => __('Модель сохранена из подключённого каталога; её текущая запись провайдера временно недоступна.'),
+            'positioning' => __('Ранее обнаруженная'),
             'supported_capabilities' => ['text_generation'],
             'modalities' => $modalities,
             'pricing' => $pricing->toArray(),

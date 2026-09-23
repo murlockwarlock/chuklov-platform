@@ -164,6 +164,14 @@ final class PortalBookingErrorMessages
             'ru' => 'Заявка отправлена. Мы подтвердим время отдельно.',
             'en' => 'Request sent. We will confirm the time separately.',
         ],
+        'attribution_detail_invalid' => [
+            'ru' => 'Укажите имя, Telegram, телефон или другое уточнение текстом.',
+            'en' => 'Enter a name, Telegram handle, phone number, or another detail.',
+        ],
+        'attribution_detail_too_long' => [
+            'ru' => 'Укажите не более 500 символов.',
+            'en' => 'Enter no more than 500 characters.',
+        ],
     ];
 
     public function message(string $key): string
@@ -195,8 +203,8 @@ final class PortalBookingErrorMessages
             'location.max' => $this->message('address_too_long'),
             'client_timezone.string' => $this->message('timezone_save_failed'),
             'client_timezone.max' => $this->message('timezone_save_failed'),
-            'attribution_source_detail.string' => 'Укажите имя, Telegram, телефон или другое уточнение текстом.',
-            'attribution_source_detail.max' => 'Укажите не более 500 символов.',
+            'attribution_source_detail.string' => $this->message('attribution_detail_invalid'),
+            'attribution_source_detail.max' => $this->message('attribution_detail_too_long'),
         ];
     }
 

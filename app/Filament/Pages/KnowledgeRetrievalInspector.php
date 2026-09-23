@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Application\KnowledgeAuthorization;
@@ -12,7 +13,6 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
@@ -25,7 +25,7 @@ use Illuminate\Support\Str;
 use UnitEnum;
 
 /** @property-read Schema $form */
-final class KnowledgeRetrievalInspector extends Page
+final class KnowledgeRetrievalInspector extends LocalizedPage
 {
     protected static ?string $navigationLabel = 'Поиск по знаниям';
 
@@ -71,11 +71,11 @@ final class KnowledgeRetrievalInspector extends Page
     public function form(Schema $schema): Schema
     {
         return $schema->components([
-            Section::make('Поиск')->schema([
-                TextInput::make('query')->label('Запрос')->required()->maxLength(4000)->columnSpanFull(),
+            Section::make(__('Поиск'))->schema([
+                TextInput::make('query')->label(__('Запрос'))->required()->maxLength(4000)->columnSpanFull(),
             ])->columnSpanFull(),
-            Section::make('Фильтры')->schema([
-                Select::make('source_ids')->label('Источники')->multiple()->maxItems(20)->searchable()->options(fn (): array => KnowledgeSource::query()
+            Section::make(__('Фильтры'))->schema([
+                Select::make('source_ids')->label(__('Источники'))->multiple()->maxItems(20)->searchable()->options(fn (): array => KnowledgeSource::query()
                     ->where('organization_id', app(OrganizationContext::class)->id())
                     ->where('status', 'active')
                     ->whereHas('activeRevision', fn (Builder $query): Builder => $query->where('status', 'ready'))
@@ -83,7 +83,7 @@ final class KnowledgeRetrievalInspector extends Page
                     ->limit(100)
                     ->pluck('title', 'id')
                     ->all()),
-                Select::make('top_k')->label('Количество фрагментов')->options([3 => '3', 5 => '5', 10 => '10', 20 => '20'])->required(),
+                Select::make('top_k')->label(__('Количество фрагментов'))->options([3 => '3', 5 => '5', 10 => '10', 20 => '20'])->required(),
             ])->columns(2)->columnSpanFull(),
         ])->statePath('data');
     }
@@ -98,7 +98,7 @@ final class KnowledgeRetrievalInspector extends Page
         return Form::make([EmbeddedSchema::make('form')])
             ->id('knowledge-search-form')
             ->livewireSubmitHandler('search')
-            ->footer([Actions::make([Action::make('search')->label('Найти')->submit('search')])]);
+            ->footer([Actions::make([Action::make('search')->label(__('Найти'))->submit('search')])]);
     }
 
     public function search(): void
@@ -124,7 +124,7 @@ final class KnowledgeRetrievalInspector extends Page
                 ];
             }
         } catch (\Throwable) {
-            Notification::make()->title('Поиск недоступен')->body('Не удалось выполнить поиск по доступным материалам.')->danger()->send();
+            Notification::make()->title(__('Поиск недоступен'))->body(__('Не удалось выполнить поиск по доступным материалам.'))->danger()->send();
         }
     }
 }

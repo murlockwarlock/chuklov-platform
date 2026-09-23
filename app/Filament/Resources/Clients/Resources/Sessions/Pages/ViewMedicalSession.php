@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Pages;
 
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
+use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Sessions\Application\LinkSessionAttachment;
@@ -14,9 +15,8 @@ use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
-use Filament\Resources\Pages\ViewRecord;
 
-class ViewMedicalSession extends ViewRecord
+class ViewMedicalSession extends LocalizedViewRecord
 {
     protected static string $resource = MedicalSessionResource::class;
 
@@ -28,16 +28,16 @@ class ViewMedicalSession extends ViewRecord
     {
         return [
             Action::make('backToSessions')
-                ->label('К истории сеансов')
+                ->label(__('К истории сеансов'))
                 ->icon('heroicon-o-arrow-left')
                 ->color('gray')
                 ->url(fn (): string => ClientResource::getUrl('sessions', ['record' => $this->getParentRecord()])),
             Action::make('linkAttachment')
-                ->label('Связать файл')
+                ->label(__('Связать файл'))
                 ->icon('heroicon-o-paper-clip')
                 ->schema([
                     Select::make('attachment_id')
-                        ->label('Файл клиента')
+                        ->label(__('Файл клиента'))
                         ->required()
                         ->searchable()
                         ->native(false)
@@ -51,7 +51,7 @@ class ViewMedicalSession extends ViewRecord
                             ? app(SearchClientAttachments::class)->label($this->actor(), $this->client(), (int) $value)
                             : null),
                 ])
-                ->modalSubmitActionLabel('Связать')
+                ->modalSubmitActionLabel(__('Связать'))
                 ->action(function (array $data): void {
                     app(LinkSessionAttachment::class)->handle(
                         $this->actor(),
@@ -60,16 +60,16 @@ class ViewMedicalSession extends ViewRecord
                         (int) $data['attachment_id'],
                     );
 
-                    Notification::make()->success()->title('Файл связан с сеансом')->send();
+                    Notification::make()->success()->title(__('Файл связан с сеансом'))->send();
                 })
                 ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord())),
             Action::make('unlinkAttachment')
-                ->label('Отвязать файл')
+                ->label(__('Отвязать файл'))
                 ->icon('heroicon-o-link-slash')
                 ->color('gray')
                 ->schema([
                     Select::make('attachment_id')
-                        ->label('Связанный файл')
+                        ->label(__('Связанный файл'))
                         ->required()
                         ->native(false)
                         ->options(fn (): array => collect(app(ListSessionAttachments::class)
@@ -77,7 +77,7 @@ class ViewMedicalSession extends ViewRecord
                             ->mapWithKeys(fn ($attachment): array => [$attachment->attachmentId => $attachment->filename])
                             ->all()),
                 ])
-                ->modalSubmitActionLabel('Отвязать')
+                ->modalSubmitActionLabel(__('Отвязать'))
                 ->action(function (array $data): void {
                     app(UnlinkSessionAttachment::class)->handle(
                         $this->actor(),
@@ -86,7 +86,7 @@ class ViewMedicalSession extends ViewRecord
                         (int) $data['attachment_id'],
                     );
 
-                    Notification::make()->success()->title('Связь с файлом удалена')->send();
+                    Notification::make()->success()->title(__('Связь с файлом удалена'))->send();
                 })
                 ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord())
                     && app(ListSessionAttachments::class)->handle(
@@ -95,7 +95,7 @@ class ViewMedicalSession extends ViewRecord
                         $this->client(),
                     ) !== []),
             Action::make('edit')
-                ->label('Редактировать')
+                ->label(__('Редактировать'))
                 ->url(fn (): string => MedicalSessionResource::getUrl('edit', [
                     'client' => $this->getParentRecord(),
                     'record' => $this->getRecord(),

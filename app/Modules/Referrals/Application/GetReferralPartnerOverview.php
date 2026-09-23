@@ -17,6 +17,7 @@ use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
 use App\Modules\Referrals\Domain\ValueObjects\ReferralRewardBalance;
+use App\Support\SupportedLocale;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 
@@ -30,8 +31,9 @@ final class GetReferralPartnerOverview
     ) {}
 
     /** @return array<string, mixed> */
-    public function handle(Client $client): array
+    public function handle(Client $client, ?string $locale = null): array
     {
+        $locale = SupportedLocale::normalize($locale);
         $organizationId = $this->context->id();
         abort_unless((int) $client->organization_id === $organizationId, 404);
         $identity = $this->ensureIdentity->handle($client);
@@ -111,7 +113,10 @@ final class GetReferralPartnerOverview
             ],
             'links' => $links->map(fn (ReferralCampaignLink $link): array => [
                 'name' => $link->name,
-                'channel' => ReferralCampaignChannel::tryFrom((string) $link->getRawOriginal('channel'))?->label() ?? 'Другое',
+                'channel' => $this->channelLabel(
+                    ReferralCampaignChannel::tryFrom((string) $link->getRawOriginal('channel')),
+                    $locale,
+                ),
                 'isActive' => $link->is_active,
                 'createdAt' => $link->getRawOriginal('created_at') === null
                     ? null
@@ -123,8 +128,8 @@ final class GetReferralPartnerOverview
                 'paidClients' => (int) ($paidClientsByLink[(int) $link->getKey()] ?? 0),
                 'rewards' => $this->linkRewards($rewardsByLink[(int) $link->getKey()] ?? []),
             ])->values()->all(),
-            'registrations' => $relationships->map(fn (ReferralRelationship $relationship): array => $this->registration($relationship))->values()->all(),
-            'referredClients' => $relationships->map(fn (ReferralRelationship $relationship): array => $this->registration($relationship))->values()->all(),
+            'registrations' => $relationships->map(fn (ReferralRelationship $relationship): array => $this->registration($relationship, $locale))->values()->all(),
+            'referredClients' => $relationships->map(fn (ReferralRelationship $relationship): array => $this->registration($relationship, $locale))->values()->all(),
             'rewards' => [
                 'balances' => array_map(fn (ReferralRewardBalance $balance): array => [
                     'currency' => $balance->currency->value,
@@ -134,8 +139,8 @@ final class GetReferralPartnerOverview
                     'pendingPayoutMinor' => $balance->pending->minorUnits(),
                     'paidOutMinor' => $balance->paid->minorUnits(),
                 ], $rewardBalances),
-                'history' => $history->map(fn (ReferralRewardLedgerEntry $entry): array => $this->rewardHistory($entry))->values()->all(),
-                'payouts' => $payouts->map(fn (ReferralPayoutRequest $payout): array => $this->payout($payout))->values()->all(),
+                'history' => $history->map(fn (ReferralRewardLedgerEntry $entry): array => $this->rewardHistory($entry, $locale))->values()->all(),
+                'payouts' => $payouts->map(fn (ReferralPayoutRequest $payout): array => $this->payout($payout, $locale))->values()->all(),
                 'requestUrl' => route('portal.referrals.payouts.store'),
             ],
         ];
@@ -262,7 +267,7 @@ final class GetReferralPartnerOverview
     }
 
     /** @return array<string, mixed> */
-    private function registration(ReferralRelationship $relationship): array
+    private function registration(ReferralRelationship $relationship, string $locale): array
     {
         $link = $relationship->referralCampaignLink;
         $paidClient = (int) ($relationship->commercial_evidence_count ?? 0) > 0;
@@ -278,22 +283,31 @@ final class GetReferralPartnerOverview
             'linkName' => $link instanceof ReferralCampaignLink
                 ? $link->name
                 : ($relationship->establishment_method === ReferralEstablishmentMethod::ManualCrm
-                    ? 'Назначено в CRM'
-                    : 'Персональная ссылка'),
+                    ? ($locale === 'en' ? 'Assigned in CRM' : 'Назначено в CRM')
+                    : ($locale === 'en' ? 'Personal link' : 'Персональная ссылка')),
             'channel' => $link instanceof ReferralCampaignLink
-                ? (ReferralCampaignChannel::tryFrom((string) $link->getRawOriginal('channel'))?->label() ?? 'Другое')
-                : ($relationship->establishment_method === ReferralEstablishmentMethod::ManualCrm ? 'CRM' : 'Ссылка'),
+            ? $this->channelLabel(
+                ReferralCampaignChannel::tryFrom((string) $link->getRawOriginal('channel')),
+                $locale,
+            )
+            : ($relationship->establishment_method === ReferralEstablishmentMethod::ManualCrm
+                ? 'CRM'
+                : ($locale === 'en' ? 'Link' : 'Ссылка')),
         ];
     }
 
     /** @return array<string, mixed> */
-    private function rewardHistory(ReferralRewardLedgerEntry $entry): array
+    private function rewardHistory(ReferralRewardLedgerEntry $entry, string $locale): array
     {
         $type = ReferralRewardLedgerEntryType::from((string) $entry->getRawOriginal('entry_type'));
         $currency = CurrencyCode::from((string) $entry->getRawOriginal('currency'));
 
         return [
-            'typeLabel' => $type->label(),
+            'typeLabel' => match ($type) {
+                ReferralRewardLedgerEntryType::Earned => $locale === 'en' ? 'Reward earned' : 'Начисление',
+                ReferralRewardLedgerEntryType::Reversed => $locale === 'en' ? 'Reward reversed' : 'Сторно',
+                ReferralRewardLedgerEntryType::ManualCredit => $locale === 'en' ? 'Manual reward' : 'Ручной бонус',
+            },
             'isReversal' => $type === ReferralRewardLedgerEntryType::Reversed,
             'amountMinor' => $entry->amount_minor,
             'currency' => $currency->value,
@@ -305,7 +319,7 @@ final class GetReferralPartnerOverview
     }
 
     /** @return array<string, mixed> */
-    private function payout(ReferralPayoutRequest $payout): array
+    private function payout(ReferralPayoutRequest $payout, string $locale): array
     {
         $currency = CurrencyCode::from((string) $payout->getRawOriginal('currency'));
         $status = ReferralPayoutRequestStatus::from((string) $payout->getRawOriginal('status'));
@@ -314,7 +328,13 @@ final class GetReferralPartnerOverview
             'amountMinor' => $payout->amount_minor,
             'currency' => $currency->value,
             'requestedAt' => CarbonImmutable::parse((string) $payout->requested_at)->toIso8601String(),
-            'statusLabel' => $status->label(),
+            'statusLabel' => match ($status) {
+                ReferralPayoutRequestStatus::Requested => $locale === 'en' ? 'Requested' : 'Запрошена',
+                ReferralPayoutRequestStatus::Approved => $locale === 'en' ? 'Approved' : 'Одобрена',
+                ReferralPayoutRequestStatus::Paid => $locale === 'en' ? 'Paid' : 'Отмечена как выплаченная',
+                ReferralPayoutRequestStatus::Rejected => $locale === 'en' ? 'Rejected' : 'Отклонена',
+                ReferralPayoutRequestStatus::Cancelled => $locale === 'en' ? 'Cancelled' : 'Отменена',
+            },
             'rejectionReason' => $payout->rejection_reason,
             'canCancel' => $status === ReferralPayoutRequestStatus::Requested,
             'cancelUrl' => route('portal.referrals.payouts.cancel', ['payoutRequestId' => $payout->getKey()]),
@@ -324,5 +344,21 @@ final class GetReferralPartnerOverview
     private function conversion(int $numerator, int $denominator): ?float
     {
         return $denominator === 0 ? null : round(($numerator / $denominator) * 100, 1);
+    }
+
+    private function channelLabel(?ReferralCampaignChannel $channel, string $locale): string
+    {
+        if ($channel === null) {
+            return $locale === 'en' ? 'Other' : 'Другое';
+        }
+
+        return match ($channel) {
+            ReferralCampaignChannel::Telegram => 'Telegram',
+            ReferralCampaignChannel::Instagram => 'Instagram',
+            ReferralCampaignChannel::YouTube => 'YouTube',
+            ReferralCampaignChannel::WhatsApp => 'WhatsApp',
+            ReferralCampaignChannel::Website => $locale === 'en' ? 'Website' : 'Сайт',
+            ReferralCampaignChannel::Other => $locale === 'en' ? 'Other' : 'Другое',
+        };
     }
 }

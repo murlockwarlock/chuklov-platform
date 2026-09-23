@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
@@ -26,12 +27,6 @@ final class CreateReferralCampaignLinkRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return [
-            'name.required' => 'Укажите название ссылки.',
-            'name.min' => 'Название ссылки должно содержать не менее 2 символов.',
-            'name.max' => 'Название ссылки слишком длинное.',
-            'channel.required' => 'Выберите канал.',
-            'channel.enum' => 'Выберите канал из списка.',
-        ];
+        return app(PortalClientMessages::class)->validationMessages('referral_link');
     }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\Finance\Application\CurrentCurrencyConfigurationIntegrity;
 use App\Modules\Finance\Application\FinanceAuthorization;
@@ -21,7 +22,6 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
-use Filament\Pages\Page;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
@@ -40,7 +40,7 @@ use UnexpectedValueException;
 use UnitEnum;
 
 /** @property-read Schema $form */
-final class FinanceConfiguration extends Page
+final class FinanceConfiguration extends LocalizedPage
 {
     protected static ?string $title = 'Настройки валют';
 
@@ -57,7 +57,7 @@ final class FinanceConfiguration extends Page
 
     public bool $configurationUnavailable = false;
 
-    public string $lavaStatus = 'Не подключена';
+    public string $lavaStatus = '';
 
     protected string $view = 'filament.pages.finance-configuration';
 
@@ -93,6 +93,8 @@ final class FinanceConfiguration extends Page
 
     public function mount(): void
     {
+        $this->lavaStatus = __('Не подключена');
+
         $organizationId = app(OrganizationContext::class)->id();
         $catalog = app(CurrencyCatalog::class);
         $integrity = app(CurrentCurrencyConfigurationIntegrity::class);
@@ -186,10 +188,10 @@ final class FinanceConfiguration extends Page
     {
         return $schema
             ->components([
-                Section::make('Основные настройки')
+                Section::make(__('Основные настройки'))
                     ->schema([
                         Select::make('base_currency')
-                            ->label('Валюта практики')
+                            ->label(__('Валюта практики'))
                             ->options(fn (): array => app(CurrencyCatalog::class)->options())
                             ->live()
                             ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
@@ -208,8 +210,8 @@ final class FinanceConfiguration extends Page
                             ->disabled(fn (): bool => ! self::canManage())
                             ->required(),
                         Select::make('display_currency')
-                            ->label('Валюта отображения')
-                            ->helperText('В режиме одной валюты совпадает с валютой практики.')
+                            ->label(__('Валюта отображения'))
+                            ->helperText(__('В режиме одной валюты совпадает с валютой практики.'))
                             ->options(fn (): array => app(CurrencyCatalog::class)->options())
                             ->live()
                             ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
@@ -228,8 +230,8 @@ final class FinanceConfiguration extends Page
                             ->disabled(fn (Get $get): bool => ! self::canManage() || (bool) $get('force_single_currency'))
                             ->required(),
                         Toggle::make('force_single_currency')
-                            ->label('Принимать оплаты только в одной валюте')
-                            ->helperText('Для обычной практики оставьте включённым режим одной валюты.')
+                            ->label(__('Принимать оплаты только в одной валюте'))
+                            ->helperText(__('Для обычной практики оставьте включённым режим одной валюты.'))
                             ->live()
                             ->disabled(fn (): bool => ! self::canManage())
                             ->afterStateUpdated(function (Get $get, Set $set, ?bool $state): void {
@@ -246,7 +248,7 @@ final class FinanceConfiguration extends Page
                                 }
                             }),
                         Select::make('allowed_currencies')
-                            ->label('Валюты, доступные для оплаты')
+                            ->label(__('Валюты, доступные для оплаты'))
                             ->options(fn (): array => app(CurrencyCatalog::class)->options())
                             ->multiple()
                             ->searchable()
@@ -272,35 +274,35 @@ final class FinanceConfiguration extends Page
                     ->columns(2)
                     ->columnSpanFull(),
 
-                Section::make('Мультивалютные расчёты')
-                    ->description('Настройте дополнительные валюты и конвертацию только если практика принимает оплаты в нескольких валютах.')
+                Section::make(__('Мультивалютные расчёты'))
+                    ->description(__('Настройте дополнительные валюты и конвертацию только если практика принимает оплаты в нескольких валютах.'))
                     ->schema([
                         Select::make('rounding_mode')
-                            ->label('Правило округления при конвертации')
+                            ->label(__('Правило округления при конвертации'))
                             ->options([
-                                FinancialRoundingMode::HalfUp->value => 'Обычное математическое',
-                                FinancialRoundingMode::HalfEven->value => 'До ближайшего чётного',
-                                FinancialRoundingMode::Down->value => 'Вниз, без увеличения суммы',
+                                FinancialRoundingMode::HalfUp->value => __('Обычное математическое'),
+                                FinancialRoundingMode::HalfEven->value => __('До ближайшего чётного'),
+                                FinancialRoundingMode::Down->value => __('Вниз, без увеличения суммы'),
                             ])
                             ->required()
                             ->dehydrated(true)
                             ->disabled(fn (): bool => ! self::canManage()),
                         Repeater::make('rates')
-                            ->label('Курсы конвертации')
-                            ->helperText('Например: 1 USD = 500 KZT')
+                            ->label(__('Курсы конвертации'))
+                            ->helperText(__('Например: 1 USD = 500 KZT'))
                             ->schema([
                                 Select::make('source_currency')
-                                    ->label('Из валюты')
+                                    ->label(__('Из валюты'))
                                     ->options(fn (Get $get): array => self::selectedCurrencyOptions($get))
                                     ->required()
                                     ->disabled(fn (): bool => ! self::canManage()),
                                 Select::make('target_currency')
-                                    ->label('В валюту')
+                                    ->label(__('В валюту'))
                                     ->options(fn (Get $get): array => self::selectedCurrencyOptions($get))
                                     ->required()
                                     ->disabled(fn (): bool => ! self::canManage()),
                                 TextInput::make('rate')
-                                    ->label('Курс')
+                                    ->label(__('Курс'))
                                     ->placeholder('500')
                                     ->inputMode('decimal')
                                     ->required()
@@ -310,7 +312,7 @@ final class FinanceConfiguration extends Page
                             ->columns(3)
                             ->defaultItems(0)
                             ->reorderable(false)
-                            ->addActionLabel('Добавить курс')
+                            ->addActionLabel(__('Добавить курс'))
                             ->columnSpanFull()
                             ->dehydrated(true)
                             ->disabled(fn (): bool => ! self::canManage()),
@@ -319,20 +321,20 @@ final class FinanceConfiguration extends Page
                     ->columns(2)
                     ->columnSpanFull(),
 
-                Section::make('Платёжные системы')
+                Section::make(__('Платёжные системы'))
                     ->schema([
                         Section::make('Lava')
-                            ->description('Подключите Lava для разовой онлайн-оплаты. Сохранённые ключи не отображаются обратно в форме.')
+                            ->description(__('Подключите Lava для разовой онлайн-оплаты. Сохранённые ключи не отображаются обратно в форме.'))
                             ->schema([
                                 Placeholder::make('lava_status')
-                                    ->label('Статус')
+                                    ->label(__('Статус'))
                                     ->content(fn (): string => $this->lavaStatus),
                                 Toggle::make('lava_enabled')
-                                    ->label('Lava активна')
-                                    ->helperText('Отключение сохраняет историю платежей и только прекращает новые обращения к Lava.')
+                                    ->label(__('Lava активна'))
+                                    ->helperText(__('Отключение сохраняет историю платежей и только прекращает новые обращения к Lava.'))
                                     ->disabled(fn (): bool => ! self::canManage()),
                                 TextInput::make('lava_api_key')
-                                    ->label('API-ключ')
+                                    ->label(__('API-ключ'))
                                     ->password()
                                     ->revealable()
                                     ->autocomplete('new-password')
@@ -340,9 +342,9 @@ final class FinanceConfiguration extends Page
                                     ->nullable()
                                     ->dehydrated(fn (mixed $state): bool => filled($state))
                                     ->disabled(fn (): bool => ! self::canManage())
-                                    ->helperText('Оставьте пустым, чтобы сохранить текущий ключ.'),
+                                    ->helperText(__('Оставьте пустым, чтобы сохранить текущий ключ.')),
                                 TextInput::make('lava_webhook_key')
-                                    ->label('Ключ для webhook')
+                                    ->label(__('Ключ для webhook'))
                                     ->password()
                                     ->revealable()
                                     ->autocomplete('new-password')
@@ -350,13 +352,13 @@ final class FinanceConfiguration extends Page
                                     ->nullable()
                                     ->dehydrated(fn (mixed $state): bool => filled($state))
                                     ->disabled(fn (): bool => ! self::canManage())
-                                    ->helperText('Оставьте пустым, чтобы сохранить текущий ключ. Если отдельный ключ не задан, используется API-ключ.'),
+                                    ->helperText(__('Оставьте пустым, чтобы сохранить текущий ключ. Если отдельный ключ не задан, используется API-ключ.')),
                                 TextInput::make('lava_webhook_url')
                                     ->label('Webhook URL')
                                     ->default(fn (): string => route('webhooks.lava'))
                                     ->disabled()
                                     ->dehydrated(false)
-                                    ->helperText('Укажите этот адрес в настройках webhook Lava.')
+                                    ->helperText(__('Укажите этот адрес в настройках webhook Lava.'))
                                     ->columnSpanFull(),
                             ])
                             ->columns(2)
@@ -371,8 +373,8 @@ final class FinanceConfiguration extends Page
     {
         if ($this->configurationUnavailable) {
             return $schema->components([
-                Section::make('Настройки валют недоступны')
-                    ->description('Сохранённые финансовые данные требуют проверки. Изменение настроек временно недоступно.')
+                Section::make(__('Настройки валют недоступны'))
+                    ->description(__('Сохранённые финансовые данные требуют проверки. Изменение настроек временно недоступно.'))
                     ->schema([])
                     ->columnSpanFull(),
             ]);
@@ -389,7 +391,7 @@ final class FinanceConfiguration extends Page
             ->footer([
                 Actions::make([
                     Action::make('save')
-                        ->label('Сохранить финансовые настройки')
+                        ->label(__('Сохранить финансовые настройки'))
                         ->visible(fn (): bool => self::canManage())
                         ->submit('save'),
                 ]),
@@ -400,7 +402,7 @@ final class FinanceConfiguration extends Page
     {
         if ($this->configurationUnavailable) {
             throw ValidationException::withMessages([
-                'currency' => 'Сохранённые финансовые данные требуют проверки. Настройки не изменены.',
+                'currency' => __('Сохранённые финансовые данные требуют проверки. Настройки не изменены.'),
             ]);
         }
 
@@ -444,14 +446,14 @@ final class FinanceConfiguration extends Page
 
             Notification::make()
                 ->danger()
-                ->title('Не удалось сохранить финансовые настройки')
-                ->body($firstMessage ?? 'Проверьте заполнение полей.')
+                ->title(__('Не удалось сохранить финансовые настройки'))
+                ->body($firstMessage ?? __('Проверьте заполнение полей.'))
                 ->send();
 
             return;
         }
 
-        Notification::make()->success()->title('Финансовые настройки сохранены')->send();
+        Notification::make()->success()->title(__('Финансовые настройки сохранены'))->send();
     }
 
     /** @return array<string, string> */
@@ -541,13 +543,13 @@ final class FinanceConfiguration extends Page
     private function lavaStatusLabel(?OrganizationCredential $credential): string
     {
         if ($credential === null || $credential->status !== CredentialStatus::Active) {
-            return 'Не подключена';
+            return __('Не подключена');
         }
 
         $apiKey = $credential->credentials['api_key'] ?? null;
 
         return is_string($apiKey) && trim($apiKey) !== ''
-            ? 'Подключена'
-            : 'Ошибка настройки';
+            ? __('Подключена')
+            : __('Ошибка настройки');
     }
 }

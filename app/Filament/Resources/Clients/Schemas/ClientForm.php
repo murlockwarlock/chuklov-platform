@@ -20,7 +20,7 @@ class ClientForm
             ->components([
                 Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
                 TextInput::make('full_name')
-                    ->label('Имя и фамилия')
+                    ->label(__('Имя и фамилия'))
                     ->required()
                     ->maxLength(160),
                 TextInput::make('email')
@@ -28,36 +28,36 @@ class ClientForm
                     ->email()
                     ->maxLength(320),
                 TextInput::make('phone')
-                    ->label('Телефон')
+                    ->label(__('Телефон'))
                     ->maxLength(32),
                 Select::make('language')
                     ->options([
-                        'en' => 'Английский',
-                        'ru' => 'Русский',
+                        'en' => __('Английский'),
+                        'ru' => __('Русский'),
                     ])
-                    ->label('Язык')
+                    ->label(__('Язык'))
                     ->required(),
                 Select::make('timezone')
-                    ->label('Часовой пояс')
+                    ->label(__('Часовой пояс'))
                     ->options(fn (Get $get): array => TimezoneOptions::options(
                         current: $get('timezone'),
                         organization: app(OrganizationContext::class)->organization()->defaultTimezone(),
                     ))
                     ->searchable()
                     ->required()
-                    ->helperText('Выберите город, по которому показывать время клиенту.'),
+                    ->helperText(__('Выберите город, по которому показывать время клиенту.')),
                 TextInput::make('b2b_role')
-                    ->label('B2B-роль')
+                    ->label(__('B2B-роль'))
                     ->maxLength(80),
                 Select::make('b2b_specialist_answer')
-                    ->label('B2B-сегмент')
+                    ->label(__('B2B-сегмент'))
                     ->options([
-                        B2bSpecialistAnswer::Yes->value => '#Массажист_B2B',
-                        B2bSpecialistAnswer::No->value => 'Не специалист',
+                        B2bSpecialistAnswer::Yes->value => __('#Массажист_B2B'),
+                        B2bSpecialistAnswer::No->value => __('Не специалист'),
                     ])
                     ->nullable(),
                 TagsInput::make('broadcast_tags')
-                    ->label('Метки для рассылок')
+                    ->label(__('Метки для рассылок'))
                     ->nestedRecursiveRules(['string', 'max:80'])
                     ->columnSpanFull(),
             ]);

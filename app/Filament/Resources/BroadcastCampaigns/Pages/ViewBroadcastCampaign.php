@@ -4,6 +4,7 @@ namespace App\Filament\Resources\BroadcastCampaigns\Pages;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
 use App\Filament\Support\BroadcastFailurePresentation;
+use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\CancelBroadcastCampaign;
 use App\Modules\Broadcasts\Application\CopyBroadcastCampaign;
@@ -16,11 +17,10 @@ use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
-use Filament\Resources\Pages\ViewRecord;
 use Illuminate\Contracts\View\View;
 use Illuminate\Validation\ValidationException;
 
-final class ViewBroadcastCampaign extends ViewRecord
+final class ViewBroadcastCampaign extends LocalizedViewRecord
 {
     protected static string $resource = BroadcastCampaignResource::class;
 
@@ -29,13 +29,13 @@ final class ViewBroadcastCampaign extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            EditAction::make()->label('Редактировать')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft),
+            EditAction::make()->label(__('Редактировать'))->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft),
             Action::make('preview')
-                ->label('Предпросмотр')
+                ->label(__('Предпросмотр'))
                 ->icon('heroicon-o-eye')
-                ->modalHeading('Предпросмотр рассылки')
+                ->modalHeading(__('Предпросмотр рассылки'))
                 ->modalSubmitAction(false)
-                ->modalCancelActionLabel('Закрыть')
+                ->modalCancelActionLabel(__('Закрыть'))
                 ->modalContent(function (): View {
                     $campaign = $this->campaign();
                     $preview = app(PreviewBroadcastCampaign::class)->message($this->actor(), $campaign);
@@ -47,28 +47,28 @@ final class ViewBroadcastCampaign extends ViewRecord
                         'preview' => $preview,
                         'summary' => $summary,
                         'reasonLabels' => [
-                            'marketing_consent_missing' => 'нет согласия на маркетинговые сообщения',
-                            'marketing_suppressed' => 'согласие отозвано',
-                            'verified_channel_unavailable' => 'нет подтверждённого канала',
+                            'marketing_consent_missing' => __('нет согласия на маркетинговые сообщения'),
+                            'marketing_suppressed' => __('согласие отозвано'),
+                            'verified_channel_unavailable' => __('нет подтверждённого канала'),
                         ],
                     ]);
                 }),
             Action::make('runAgain')
-                ->label('Запустить снова')
+                ->label(__('Запустить снова'))
                 ->icon('heroicon-o-arrow-path')
                 ->color('primary')
                 ->requiresConfirmation()
-                ->modalDescription('Будет создана копия этой рассылки и сразу запущена. После запуска изменить её нельзя.')
+                ->modalDescription(__('Будет создана копия этой рассылки и сразу запущена. После запуска изменить её нельзя.'))
                 ->visible(fn (): bool => $this->campaign()->state !== BroadcastCampaignState::Draft)
                 ->action(function (): void {
                     try {
                         $copy = app(CopyBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
                         $campaign = app(StartBroadcastCampaign::class)->handle($this->actor(), $copy);
                     } catch (ValidationException $exception) {
-                        $message = collect($exception->errors())->flatten()->first() ?: 'Повторный запуск не выполнен.';
+                        $message = __((string) (collect($exception->errors())->flatten()->first() ?: 'Повторный запуск не выполнен.'));
 
                         Notification::make()
-                            ->title('Повторный запуск не выполнен')
+                            ->title(__('Повторный запуск не выполнен'))
                             ->body($message)
                             ->danger()
                             ->send();
@@ -80,7 +80,7 @@ final class ViewBroadcastCampaign extends ViewRecord
                     $this->redirect(BroadcastCampaignResource::getUrl('view', ['record' => $campaign]));
                 }),
             Action::make('editAndRerun')
-                ->label('Редактировать и повторить')
+                ->label(__('Редактировать и повторить'))
                 ->icon('heroicon-o-pencil-square')
                 ->visible(fn (): bool => $this->campaign()->state !== BroadcastCampaignState::Draft)
                 ->action(function (): void {
@@ -88,28 +88,28 @@ final class ViewBroadcastCampaign extends ViewRecord
                     $this->redirect(BroadcastCampaignResource::getUrl('edit', ['record' => $copy]));
                 }),
             Action::make('test')
-                ->label('Тестовая отправка')
+                ->label(__('Тестовая отправка'))
                 ->icon('heroicon-o-paper-airplane')
                 ->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)
                 ->schema([
                     Select::make('test_client_id')
-                        ->label('Тестовый получатель')
+                        ->label(__('Тестовый получатель'))
                         ->options(fn (): array => app(TestBroadcastCampaign::class)
                             ->eligibleTestClients($this->actor(), $this->campaign())
                             ->pluck('full_name', 'id')
                             ->all())
                         ->searchable()
                         ->required()
-                        ->helperText('Доступны только клиенты с согласием на маркетинговые сообщения и подтверждённым Telegram.'),
+                        ->helperText(__('Доступны только клиенты с согласием на маркетинговые сообщения и подтверждённым Telegram.')),
                 ])
                 ->action(function (array $data): void {
                     try {
                         $recipient = app(TestBroadcastCampaign::class)->handle($this->actor(), $this->campaign(), (int) $data['test_client_id']);
                     } catch (ValidationException $exception) {
-                        $message = collect($exception->errors())->flatten()->first() ?: 'Проверьте получателя и настройки рассылки.';
+                        $message = __((string) (collect($exception->errors())->flatten()->first() ?: 'Проверьте получателя и настройки рассылки.'));
 
                         Notification::make()
-                            ->title('Тестовая отправка не выполнена')
+                            ->title(__('Тестовая отправка не выполнена'))
                             ->body($message)
                             ->danger()
                             ->send();
@@ -120,24 +120,24 @@ final class ViewBroadcastCampaign extends ViewRecord
                     $delivered = $recipient->state->value === 'delivered';
                     $reason = $recipient->last_error_code ?: $recipient->exclusion_code;
                     $body = $delivered
-                        ? 'Тестовая отправка отмечена отдельно и не затрагивает список рассылки.'
+                        ? __('Тестовая отправка отмечена отдельно и не затрагивает список рассылки.')
                         : BroadcastFailurePresentation::label($reason);
 
                     Notification::make()
-                        ->title($delivered ? 'Тестовое сообщение доставлено' : 'Тестовая отправка завершилась с ошибкой')
+                        ->title($delivered ? __('Тестовое сообщение доставлено') : __('Тестовая отправка завершилась с ошибкой'))
                         ->body($body)
                         ->status($delivered ? 'success' : 'danger')
                         ->send();
                 }),
-            Action::make('start')->label(fn (): string => $this->campaign()->send_mode === 'scheduled' ? 'Запланировать' : 'Запустить рассылку')->color('primary')->requiresConfirmation()->modalDescription('Список получателей и версии сообщений будут зафиксированы. После запуска изменить рассылку нельзя.')->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->action(function (): void {
+            Action::make('start')->label(fn (): string => $this->campaign()->send_mode === 'scheduled' ? __('Запланировать') : __('Запустить рассылку'))->color('primary')->requiresConfirmation()->modalDescription(__('Список получателей и версии сообщений будут зафиксированы. После запуска изменить рассылку нельзя.'))->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->action(function (): void {
                 $campaign = app(StartBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
                 $this->notifyAboutStartedCampaign($campaign);
 
                 $this->refreshFormData(['state', 'scheduled_at', 'audience_count', 'delivered_count', 'failed_count', 'suppressed_count']);
             }),
-            Action::make('cancel')->label('Отменить')->color('danger')->requiresConfirmation()->visible(fn (): bool => in_array($this->campaign()->state, [BroadcastCampaignState::Draft, BroadcastCampaignState::Scheduled], true))->action(function (): void {
+            Action::make('cancel')->label(__('Отменить'))->color('danger')->requiresConfirmation()->visible(fn (): bool => in_array($this->campaign()->state, [BroadcastCampaignState::Draft, BroadcastCampaignState::Scheduled], true))->action(function (): void {
                 app(CancelBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
-                Notification::make()->title('Рассылка отменена')->success()->send();
+                Notification::make()->title(__('Рассылка отменена'))->success()->send();
                 $this->refreshFormData(['state', 'cancelled_at']);
             }),
         ];
@@ -160,12 +160,16 @@ final class ViewBroadcastCampaign extends ViewRecord
 
     private function notifyAboutStartedCampaign(BroadcastCampaign $campaign): void
     {
-        $counts = 'Доставлено: '.$campaign->delivered_count.' · ошибок: '.$campaign->failed_count.' · исключено: '.$campaign->suppressed_count.'.';
+        $counts = __('Доставлено: :delivered · ошибок: :failed · исключено: :suppressed.', [
+            'delivered' => $campaign->delivered_count,
+            'failed' => $campaign->failed_count,
+            'suppressed' => $campaign->suppressed_count,
+        ]);
 
         if ($campaign->state === BroadcastCampaignState::Completed) {
             Notification::make()
-                ->title($campaign->failed_count > 0 ? 'Рассылка завершена с ошибками' : 'Рассылка отправлена')
-                ->body($counts.' Причины ошибок указаны в списке получателей.')
+                ->title($campaign->failed_count > 0 ? __('Рассылка завершена с ошибками') : __('Рассылка отправлена'))
+                ->body($counts.' '.__('Причины ошибок указаны в списке получателей.'))
                 ->status($campaign->failed_count > 0 ? 'warning' : 'success')
                 ->send();
 
@@ -173,8 +177,8 @@ final class ViewBroadcastCampaign extends ViewRecord
         }
 
         Notification::make()
-            ->title($campaign->send_mode === 'scheduled' ? 'Рассылка запланирована' : 'Рассылка поставлена в очередь')
-            ->body($counts.' Итог появится после обработки очереди; причины ошибок указаны в списке получателей.')
+            ->title($campaign->send_mode === 'scheduled' ? __('Рассылка запланирована') : __('Рассылка поставлена в очередь'))
+            ->body($counts.' '.__('Итог появится после обработки очереди; причины ошибок указаны в списке получателей.'))
             ->success()
             ->send();
     }

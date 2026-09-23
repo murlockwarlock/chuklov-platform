@@ -6,6 +6,7 @@ use App\Filament\Pages\WorkSchedule;
 use App\Filament\Resources\Bookings\Pages\CreateBooking;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\Clients\Pages\CreateClient;
 use App\Filament\Resources\Clients\Pages\ListClients;
 use App\Filament\Resources\Specialists\Pages\EditSpecialist;
 use App\Models\User;
@@ -30,6 +31,7 @@ use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\ValueObjects\SpecialistScheduleDefinition;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Support\SupportedLocale;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
@@ -46,11 +48,13 @@ final class CrmSpecialistWorkspaceTest extends TestCase
     {
         parent::setUp();
 
+        app()->setLocale('ru');
         Carbon::setTestNow(CarbonImmutable::create(2026, 9, 10, 8, 0, 0, 'UTC'));
     }
 
     protected function tearDown(): void
     {
+        app()->setLocale('ru');
         Carbon::setTestNow();
 
         parent::tearDown();
@@ -554,6 +558,27 @@ final class CrmSpecialistWorkspaceTest extends TestCase
 
         self::assertSame($specialist->id, (int) $component->instance()->data['specialist_id']);
         self::assertSame('2026-09-09 14:30', CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->format('Y-m-d H:i'));
+    }
+
+    public function test_booking_and_client_forms_use_english_crm_labels(): void
+    {
+        [$organization, $admin] = $this->fixture('Asia/Almaty');
+        $this->enableFeature($organization, OrganizationFeature::ClientRecords);
+        $this->resolveFilamentContext($admin, $organization);
+        session()->put(SupportedLocale::AdminSessionKey, 'en');
+        app()->setLocale('en');
+
+        $booking = Livewire::actingAs($admin)->test(CreateBooking::class);
+
+        self::assertSame('Client', $booking->instance()->getSchemaComponent('form.client_id')->getLabel());
+        self::assertSame('Specialist', $booking->instance()->getSchemaComponent('form.specialist_id')->getLabel());
+        self::assertSame('Service', $booking->instance()->getSchemaComponent('form.service_id')->getLabel());
+        self::assertSame('Visit format', $booking->instance()->getSchemaComponent('form.visit_format')->getLabel());
+
+        $client = Livewire::actingAs($admin)->test(CreateClient::class);
+
+        self::assertSame('First and last name', $client->instance()->getSchemaComponent('form.full_name')->getLabel());
+        self::assertSame('Language', $client->instance()->getSchemaComponent('form.language')->getLabel());
     }
 
     public function test_specialist_edit_form_uses_russian_active_label(): void

@@ -6,6 +6,8 @@ use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Support\BookingLocalDateRange;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedListRecords;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -16,12 +18,11 @@ use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
-use Filament\Resources\Pages\ListRecords;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
 use Livewire\Attributes\Url;
 
-class ListBookings extends ListRecords
+class ListBookings extends LocalizedListRecords
 {
     protected static string $resource = BookingResource::class;
 
@@ -112,7 +113,7 @@ class ListBookings extends ListRecords
         $timezone = $this->journalTimezone();
         $start = $this->weekDate();
         $end = $start->addDays(6);
-        $weekdayLabels = [1 => 'Пн', 2 => 'Вт', 3 => 'Ср', 4 => 'Чт', 5 => 'Пт', 6 => 'Сб', 7 => 'Вс'];
+        $weekdayLabels = [1 => __('Пн'), 2 => __('Вт'), 3 => __('Ср'), 4 => __('Чт'), 5 => __('Пт'), 6 => __('Сб'), 7 => __('Вс')];
         $calendar = [];
 
         for ($date = $start; $date->lessThanOrEqualTo($end); $date = $date->addDay()) {
@@ -247,7 +248,7 @@ class ListBookings extends ListRecords
 
     public function weekLabel(): string
     {
-        $months = [1 => 'янв.', 2 => 'февр.', 3 => 'мар.', 4 => 'апр.', 5 => 'май', 6 => 'июн.', 7 => 'июл.', 8 => 'авг.', 9 => 'сент.', 10 => 'окт.', 11 => 'нояб.', 12 => 'дек.'];
+        $months = [1 => __('янв.'), 2 => __('февр.'), 3 => __('мар.'), 4 => __('апр.'), 5 => __('май'), 6 => __('июн.'), 7 => __('июл.'), 8 => __('авг.'), 9 => __('сент.'), 10 => __('окт.'), 11 => __('нояб.'), 12 => __('дек.')];
         $start = $this->weekDate();
         $end = $start->addDays(6);
 
@@ -262,7 +263,7 @@ class ListBookings extends ListRecords
             ->orderBy('display_name')
             ->get(['id', 'display_name', 'is_active'])
             ->mapWithKeys(fn (Specialist $specialist): array => [
-                $specialist->getKey() => $specialist->display_name.($specialist->is_active ? '' : ' (неактивен)'),
+                $specialist->getKey() => $specialist->display_name.($specialist->is_active ? '' : ' ('.__('неактивен').')'),
             ])
             ->all();
     }
@@ -300,28 +301,14 @@ class ListBookings extends ListRecords
     {
         $status = $status instanceof BookingStatus ? $status : BookingStatus::tryFrom($status);
 
-        return match ($status) {
-            BookingStatus::Requested => 'Ожидает подтверждения',
-            BookingStatus::PendingReview => 'На рассмотрении',
-            BookingStatus::Confirmed => 'Подтверждена',
-            BookingStatus::Rejected => 'Отклонена',
-            BookingStatus::Cancelled => 'Отменена',
-            BookingStatus::Completed => 'Завершена',
-            BookingStatus::NoShow => 'Не состоялась',
-            default => 'Без статуса',
-        };
+        return CrmLabel::enum($status) ?? __('Без статуса');
     }
 
     public static function formatLabel(VisitFormat|string $format): string
     {
         $format = $format instanceof VisitFormat ? $format : VisitFormat::tryFrom($format);
 
-        return match ($format) {
-            VisitFormat::Office => 'В клинике',
-            VisitFormat::HomeVisit => 'Выезд',
-            VisitFormat::Online => 'Онлайн',
-            default => 'Визит',
-        };
+        return CrmLabel::enum($format) ?? __('Визит');
     }
 
     public function getBreadcrumbs(): array
@@ -337,18 +324,18 @@ class ListBookings extends ListRecords
             : app(OrganizationContext::class)->defaultTimezone();
 
         return [
-            'all' => Tab::make('Все'),
-            'today' => Tab::make('Сегодня')
+            'all' => Tab::make(__('Все')),
+            'today' => Tab::make(__('Сегодня'))
                 ->modifyQueryUsing(function (Builder $query) use ($timezone): Builder {
                     $today = CarbonImmutable::now($timezone)->toDateString();
 
                     return BookingLocalDateRange::apply($query, $today, $today, $timezone);
                 }),
-            'upcoming' => Tab::make('Предстоящие')
+            'upcoming' => Tab::make(__('Предстоящие'))
                 ->modifyQueryUsing(fn (Builder $query): Builder => $query
                     ->where('starts_at', '>=', CarbonImmutable::now('UTC'))
                     ->whereNotIn('status', BookingStatus::terminalValues())),
-            'pending_confirmation' => Tab::make('Ожидают подтверждения')
+            'pending_confirmation' => Tab::make(__('Ожидают подтверждения'))
                 ->modifyQueryUsing(fn (Builder $query): Builder => $query->where('status', BookingStatus::Requested->value)),
         ];
     }
@@ -365,9 +352,9 @@ class ListBookings extends ListRecords
 
         return [
             'id' => $booking->getKey(),
-            'client' => $clientName !== '' ? $clientName : 'Клиент',
+            'client' => $clientName !== '' ? $clientName : __('Клиент'),
             'client_url' => CrmEntityLinks::clientUrl($booking->client, $canViewClients),
-            'service' => $serviceName !== '' ? $serviceName : 'Услуга',
+            'service' => $serviceName !== '' ? $serviceName : __('Услуга'),
             'start_time' => $localStart->format('H:i'),
             'end_time' => $localEnd->format('H:i'),
             'time_range' => $localStart->format('H:i').'–'.$localEnd->format('H:i'),

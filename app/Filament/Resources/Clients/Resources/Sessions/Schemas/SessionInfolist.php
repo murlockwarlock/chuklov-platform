@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
 use App\Models\User;
 use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
 use App\Modules\Identity\Domain\Models\Client;
@@ -29,24 +30,24 @@ final class SessionInfolist
     {
         return $schema
             ->components([
-                Section::make('Сеанс')
+                Section::make(__('Сеанс'))
                     ->schema([
                         TextEntry::make('occurred_at')
-                            ->label('Дата и время сеанса')
+                            ->label(__('Дата и время сеанса'))
                             ->dateTime('d.m.Y H:i')
                             ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone()),
                         TextEntry::make('specialist.display_name')
-                            ->label('Специалист')
+                            ->label(__('Специалист'))
                             ->placeholder('—')
                             ->url(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist))
                             ->color(fn (MedicalSession $record): ?string => CrmEntityLinks::specialistUrl($record->specialist) === null ? null : 'primary'),
                         TextEntry::make('bookingLabel')
-                            ->label('Запись на приём')
+                            ->label(__('Запись на приём'))
                             ->state(function (MedicalSession $record, TextEntry $entry): string {
                                 $booking = $record->booking;
 
                                 if (! $booking) {
-                                    return 'Без записи на приём';
+                                    return __('Без записи на приём');
                                 }
 
                                 $date = Carbon::parse((string) $booking->getAttribute('starts_at'), 'UTC')
@@ -55,10 +56,10 @@ final class SessionInfolist
                                 $status = self::statusLabel($booking->status);
                                 $parts = array_filter([$date, $status], static fn ($v): bool => filled($v));
 
-                                return $parts ? implode(' · ', $parts) : 'Дата не указана';
+                                return $parts ? implode(' · ', $parts) : __('Дата не указана');
                             }),
                     ])->columns(3),
-                Section::make('Клиническое резюме')
+                Section::make(__('Клиническое резюме'))
                     ->schema([
                         ViewEntry::make('clinicalSummary')
                             ->hiddenLabel()
@@ -69,21 +70,21 @@ final class SessionInfolist
                             ->columnSpanFull(),
                     ])
                     ->visible(fn (MedicalSession $record, Section $section): bool => self::clinicalSummary($record, $section) !== null),
-                Section::make('Динамика подтверждённых фактов')
+                Section::make(__('Динамика подтверждённых фактов'))
                     ->schema([
                         RepeatableEntry::make('comparison')
                             ->hiddenLabel()
                             ->schema([
-                                TextEntry::make('period')->label('Период')->columnSpanFull(),
-                                TextEntry::make('occurred_at')->label('Дата'),
-                                TextEntry::make('specialist')->label('Специалист'),
-                                TextEntry::make('booking')->label('Запись на приём')->columnSpanFull(),
-                                TextEntry::make('pain')->label('Боль')->placeholder('Не заполнено'),
-                                TextEntry::make('tests')->label('Тесты')->placeholder('Не заполнено'),
-                                TextEntry::make('observations')->label('Наблюдения')->placeholder('Не заполнено'),
-                                TextEntry::make('root_cause_hypothesis')->label('Первопричина')->placeholder('Не заполнено'),
-                                TextEntry::make('protocol')->label('Протокол')->placeholder('Не заполнено'),
-                                TextEntry::make('result')->label('Результат')->placeholder('Не заполнено'),
+                                TextEntry::make('period')->label(__('Период'))->columnSpanFull(),
+                                TextEntry::make('occurred_at')->label(__('Дата')),
+                                TextEntry::make('specialist')->label(__('Специалист')),
+                                TextEntry::make('booking')->label(__('Запись на приём'))->columnSpanFull(),
+                                TextEntry::make('pain')->label(__('Боль'))->placeholder(__('Не заполнено')),
+                                TextEntry::make('tests')->label(__('Тесты'))->placeholder(__('Не заполнено')),
+                                TextEntry::make('observations')->label(__('Наблюдения'))->placeholder(__('Не заполнено')),
+                                TextEntry::make('root_cause_hypothesis')->label(__('Первопричина'))->placeholder(__('Не заполнено')),
+                                TextEntry::make('protocol')->label(__('Протокол'))->placeholder(__('Не заполнено')),
+                                TextEntry::make('result')->label(__('Результат'))->placeholder(__('Не заполнено')),
                             ])
                             ->columns(2)
                             ->state(function (MedicalSession $record, RepeatableEntry $entry): array {
@@ -99,19 +100,19 @@ final class SessionInfolist
                             })
                             ->columnSpanFull(),
                     ]),
-                Section::make('Файлы сеанса')
+                Section::make(__('Файлы сеанса'))
                     ->schema([
                         RepeatableEntry::make('attachments')
                             ->hiddenLabel()
                             ->schema([
                                 TextEntry::make('filename')
-                                    ->label('Файл')
+                                    ->label(__('Файл'))
                                     ->url(fn (Get $get): ?string => $get('download_url'))
                                     ->openUrlInNewTab()
                                     ->columnSpanFull(),
-                                TextEntry::make('type')->label('Тип'),
-                                TextEntry::make('size')->label('Размер'),
-                                TextEntry::make('status')->label('Состояние'),
+                                TextEntry::make('type')->label(__('Тип')),
+                                TextEntry::make('size')->label(__('Размер')),
+                                TextEntry::make('status')->label(__('Состояние')),
                             ])
                             ->columns(2)
                             ->state(function (MedicalSession $record, RepeatableEntry $entry): array {
@@ -135,15 +136,7 @@ final class SessionInfolist
 
     private static function statusLabel(BookingStatus $status): string
     {
-        return match ($status) {
-            BookingStatus::Requested => 'Ожидает подтверждения',
-            BookingStatus::PendingReview => 'На рассмотрении',
-            BookingStatus::Confirmed => 'Подтверждена',
-            BookingStatus::Rejected => 'Отклонена',
-            BookingStatus::Cancelled => 'Отменена',
-            BookingStatus::Completed => 'Завершена',
-            BookingStatus::NoShow => 'Не состоялась',
-        };
+        return CrmLabel::enum($status) ?? __('Без статуса');
     }
 
     /** @return array{summary: array<string, mixed>|null, clinicalAiUrl: string|null} */

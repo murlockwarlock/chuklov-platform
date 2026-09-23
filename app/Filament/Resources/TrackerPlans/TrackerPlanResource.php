@@ -7,19 +7,19 @@ use App\Filament\Resources\TrackerPlans\Pages\EditTrackerPlan;
 use App\Filament\Resources\TrackerPlans\Pages\ListTrackerPlans;
 use App\Filament\Resources\TrackerPlans\Schemas\TrackerPlanForm;
 use App\Filament\Resources\TrackerPlans\Tables\TrackerPlansTable;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Tracker\Domain\Models\TrackerPlan;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-final class TrackerPlanResource extends Resource
+final class TrackerPlanResource extends LocalizedResource
 {
     protected static ?string $model = TrackerPlan::class;
 

@@ -259,6 +259,9 @@ final class MaterializeScenarioEvent
                 ScenarioEventType::FulfillmentFailed,
                 ScenarioEventType::FulfillmentCompleted,
                 ScenarioEventType::ReferralRewardEarned,
+                ScenarioEventType::PayoutStatusChanged,
+                ScenarioEventType::TrackerDailyTaskAssigned,
+                ScenarioEventType::TrackerWeeklyTaskAssigned,
             ], true)
             || $template->template === null) {
             return $template;

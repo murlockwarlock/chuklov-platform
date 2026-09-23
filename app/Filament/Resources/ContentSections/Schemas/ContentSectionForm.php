@@ -34,48 +34,48 @@ class ContentSectionForm
     {
         return $schema
             ->components([
-                Section::make('Основная информация')
+                Section::make(__('Основная информация'))
                     ->schema([
                         Select::make('section_key')
-                            ->label('Раздел')
+                            ->label(__('Раздел'))
                             ->options([
-                                'author' => 'Об академии',
-                                'method' => 'Методика',
-                                'b2b' => 'Для бизнеса',
-                                'partner' => 'Партнёрам',
-                                'communities' => 'Сообщества',
-                                'hidden' => 'Скрытый раздел',
+                                'author' => __('Об академии'),
+                                'method' => __('Методика'),
+                                'b2b' => __('Для бизнеса'),
+                                'partner' => __('Партнёрам'),
+                                'communities' => __('Сообщества'),
+                                'hidden' => __('Скрытый раздел'),
                             ])
                             ->searchable()
                             ->required(),
                         Select::make('locale')
                             ->options([
-                                'en' => 'Английский',
-                                'ru' => 'Русский',
+                                'en' => __('Английский'),
+                                'ru' => __('Русский'),
                             ])
-                            ->label('Язык')
+                            ->label(__('Язык'))
                             ->required(),
                         TextInput::make('title')
-                            ->label('Название')
+                            ->label(__('Название'))
                             ->required()
                             ->maxLength(160)
                             ->columnSpanFull(),
                         Select::make('delivery_mode')
-                            ->label('Где показывать')
+                            ->label(__('Где показывать'))
                             ->options([
                                 ContentDeliveryMode::Telegram->value => 'Telegram',
                                 ContentDeliveryMode::MiniApp->value => 'Mini App',
-                                ContentDeliveryMode::Both->value => 'Telegram и Mini App',
+                                ContentDeliveryMode::Both->value => __('Telegram и Mini App'),
                             ])
                             ->required()
                             ->default(ContentDeliveryMode::Both->value),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
-                Section::make('Текст раздела')
+                Section::make(__('Текст раздела'))
                     ->schema([
                         RichTextEditor::make('body')
-                            ->label('Текст')
+                            ->label(__('Текст'))
                             ->required()
                             ->maxLength(100000)
                             ->columnSpanFull(),
@@ -84,27 +84,27 @@ class ContentSectionForm
                         ])->columnSpanFull(),
                     ])
                     ->columnSpanFull(),
-                Section::make('Изображение')
-                    ->description('Можно загрузить изображение или указать готовую ссылку. Новая загрузка или ссылка заменит текущее изображение после сохранения.')
+                Section::make(__('Изображение'))
+                    ->description(__('Можно загрузить изображение или указать готовую ссылку. Новая загрузка или ссылка заменит текущее изображение после сохранения.'))
                     ->schema([
                         FileUpload::make('content_image')
-                            ->label('Загрузить изображение')
+                            ->label(__('Загрузить изображение'))
                             ->image()
                             ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
                             ->maxSize(self::imageUploadKilobytes())
                             ->storeFiles(false)
                             ->validationMessages([
-                                'mimetypes' => 'Поддерживаются только изображения JPG, PNG и WebP.',
-                                'max' => 'Изображение должно быть размером до 5 МБ.',
+                                'mimetypes' => __('Поддерживаются только изображения JPG, PNG и WebP.'),
+                                'max' => __('Изображение должно быть размером до 5 МБ.'),
                             ])
-                            ->helperText('JPG, PNG или WebP размером до 5 МБ. Видео и несколько файлов не поддерживаются.')
+                            ->helperText(__('JPG, PNG или WebP размером до 5 МБ. Видео и несколько файлов не поддерживаются.'))
                             ->live()
                             ->afterStateUpdated(function (Set $set): void {
                                 $set('remove_image', false);
                             })
                             ->columnSpanFull(),
                         TextInput::make('media.image')
-                            ->label('Ссылка на изображение')
+                            ->label(__('Ссылка на изображение'))
                             ->url()
                             ->maxLength(2000)
                             ->live()
@@ -112,7 +112,7 @@ class ContentSectionForm
                                 $set('remove_image', false);
                             })
                             ->dehydrated(fn (mixed $state): bool => filled($state))
-                            ->helperText('Заполните только если не загружаете файл.')
+                            ->helperText(__('Заполните только если не загружаете файл.'))
                             ->columnSpanFull(),
                         SchemaImage::make(
                             fn (?ContentSection $record): string => self::imagePreviewUrl($record) ?? '',
@@ -124,14 +124,14 @@ class ContentSectionForm
                             ->visible(fn (?ContentSection $record, Get $get): bool => self::imagePreviewUrl($record) !== null && ! $get('remove_image'))
                             ->columnSpanFull(),
                         Placeholder::make('current_image_status')
-                            ->label('Текущее изображение')
+                            ->label(__('Текущее изображение'))
                             ->content(fn (?ContentSection $record): string => self::imageStatus($record))
                             ->visible(fn (?ContentSection $record, Get $get): bool => self::hasImage($record) && ! $get('remove_image'))
                             ->columnSpanFull(),
                         Hidden::make('remove_image')->default(false),
                         Actions::make([
                             Action::make('removeImage')
-                                ->label('Удалить текущее изображение')
+                                ->label(__('Удалить текущее изображение'))
                                 ->icon('heroicon-o-trash')
                                 ->color('danger')
                                 ->action(function (Set $set): void {
@@ -139,7 +139,7 @@ class ContentSectionForm
                                 })
                                 ->visible(fn (?ContentSection $record, Get $get): bool => self::hasImage($record) && ! $get('remove_image')),
                             Action::make('restoreImage')
-                                ->label('Оставить текущее изображение')
+                                ->label(__('Оставить текущее изображение'))
                                 ->icon('heroicon-o-arrow-uturn-left')
                                 ->color('gray')
                                 ->action(function (Set $set): void {
@@ -149,23 +149,23 @@ class ContentSectionForm
                         ])
                             ->columnSpanFull(),
                         Placeholder::make('image_removal_notice')
-                            ->label('Изменение изображения')
-                            ->content('Текущее изображение будет удалено после сохранения.')
+                            ->label(__('Изменение изображения'))
+                            ->content(__('Текущее изображение будет удалено после сохранения.'))
                             ->visible(fn (?ContentSection $record, Get $get): bool => self::hasImage($record) && $get('remove_image'))
                             ->columnSpanFull(),
                     ])
                     ->columnSpanFull(),
-                Section::make('Показ и порядок')
+                Section::make(__('Показ и порядок'))
                     ->schema([
                         TextInput::make('sort_order')
-                            ->label('Порядок показа')
+                            ->label(__('Порядок показа'))
                             ->integer()
                             ->dehydrateStateUsing(fn (mixed $state): ?int => $state === null ? null : (int) $state)
                             ->default(0)
                             ->minValue(0)
                             ->maxValue(PHP_INT_MAX),
                         Toggle::make('is_visible')
-                            ->label('Показывать')
+                            ->label(__('Показывать'))
                             ->required()
                             ->default(true),
                     ])
@@ -209,20 +209,20 @@ class ContentSectionForm
 
         $title = $record instanceof ContentSection ? trim($record->title) : '';
 
-        return $title !== '' ? $title : 'Изображение раздела';
+        return $title !== '' ? $title : __('Изображение раздела');
     }
 
     private static function imageStatus(?ContentSection $record): string
     {
         if (! $record instanceof ContentSection) {
-            return 'Изображение не добавлено.';
+            return __('Изображение не добавлено.');
         }
 
         $kind = app(ContentImageUrlResolver::class)->isManaged($record)
-            ? 'Загруженный файл'
-            : 'Внешняя ссылка';
+            ? __('Загруженный файл')
+            : __('Внешняя ссылка');
 
-        return $kind.'. Новая загрузка или ссылка заменит текущее изображение после сохранения.';
+        return __(':kind. Новая загрузка или ссылка заменит текущее изображение после сохранения.', ['kind' => $kind]);
     }
 
     private static function previewMessage(Get $get, ?Model $record): NotificationMessage
@@ -241,9 +241,7 @@ class ContentSectionForm
         $webAppUrl = $deliveryMode === 'both'
             ? app(ResolveTelegramMiniAppEntry::class)->launchUrl((string) $get('section_key'))
             : null;
-        $webAppButtonText = $webAppUrl === null
-            ? null
-            : ($get('locale') === 'en' ? 'Open full version' : 'Открыть полностью');
+        $webAppButtonText = $webAppUrl === null ? null : __('Открыть полностью');
 
         return new NotificationMessage(
             recipientExternalId: 'preview',

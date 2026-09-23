@@ -4,15 +4,15 @@ namespace App\Filament\Resources\Clients\RelationManagers;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Tables\BookingsTable;
+use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scheduling\Application\ListClientBookingsForCrm;
-use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Schemas\Schema;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-final class ClientBookingsRelationManager extends RelationManager
+final class ClientBookingsRelationManager extends LocalizedRelationManager
 {
     protected static string $relationship = 'bookings';
 
@@ -32,13 +32,13 @@ final class ClientBookingsRelationManager extends RelationManager
         abort_unless($client instanceof Client, 404);
 
         return BookingsTable::configure($table, includeAttention: false, includeClient: false)
-            ->heading('Записи на приём')
+            ->heading(__('Записи на приём'))
             ->stackedOnMobile()
             ->modifyQueryUsing(
                 fn (Builder $query): Builder => app(ListClientBookingsForCrm::class)->apply($actor, $client, $query),
             )
             ->paginated([10, 25])
-            ->emptyStateHeading('Записей на приём пока нет')
-            ->emptyStateDescription('Записи этого клиента появятся здесь.');
+            ->emptyStateHeading(__('Записей на приём пока нет'))
+            ->emptyStateDescription(__('Записи этого клиента появятся здесь.'));
     }
 }

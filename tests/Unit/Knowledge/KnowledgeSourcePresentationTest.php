@@ -7,10 +7,19 @@ use App\Modules\Knowledge\Domain\Enums\KnowledgeRevisionStatus;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeRevision;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 
 final class KnowledgeSourcePresentationTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        app()->setLocale('ru');
+        config()->set('ai.providers.openai.key', null);
+        config()->set('rag.embedding.pricing.zero_cost_local', false);
+    }
+
     public function test_source_availability_and_newest_processing_are_presented_separately(): void
     {
         $presentation = new KnowledgeSourcePresentation;

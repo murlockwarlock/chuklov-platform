@@ -3,15 +3,15 @@
 namespace App\Filament\Resources\NotificationTemplates\Pages;
 
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Scenarios\Application\CreateNotificationTemplate as CreateNotificationTemplateAction;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
-final class CreateNotificationTemplate extends CreateRecord
+final class CreateNotificationTemplate extends LocalizedCreateRecord
 {
     protected static string $resource = NotificationTemplateResource::class;
 
@@ -26,7 +26,7 @@ final class CreateNotificationTemplate extends CreateRecord
             );
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages([
-                'body' => 'Текст сообщения содержит неподдерживаемые переменные. Используйте список доступных данных.',
+                'body' => __('Текст сообщения содержит неподдерживаемые переменные. Используйте список доступных данных.'),
             ]);
         }
 

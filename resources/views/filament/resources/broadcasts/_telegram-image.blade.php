@@ -16,10 +16,10 @@
                     </video>
                 @elseif ($item['type'] === 'document')
                     <div class="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-4 dark:border-white/10">
-                        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold uppercase text-slate-600 dark:bg-slate-700 dark:text-slate-200">Файл</div>
+                        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-xs font-bold uppercase text-slate-600 dark:bg-slate-700 dark:text-slate-200">{{ __('Файл') }}</div>
                         <div class="min-w-0 text-sm text-slate-900 dark:text-slate-100">
-                            <div class="truncate font-medium">{{ $item['name'] ?: 'Документ' }}</div>
-                            <div class="text-xs text-slate-500 dark:text-slate-400">Будет отправлен как файл</div>
+                            <div class="truncate font-medium">{{ $item['name'] ?: __('Документ') }}</div>
+                            <div class="text-xs text-slate-500 dark:text-slate-400">{{ __('Будет отправлен как файл') }}</div>
                         </div>
                     </div>
                 @else

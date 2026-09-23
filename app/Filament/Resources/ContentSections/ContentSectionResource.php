@@ -8,19 +8,19 @@ use App\Filament\Resources\ContentSections\Pages\ListContentSections;
 use App\Filament\Resources\ContentSections\Pages\ViewContentSection;
 use App\Filament\Resources\ContentSections\Schemas\ContentSectionForm;
 use App\Filament\Resources\ContentSections\Tables\ContentSectionsTable;
+use App\Filament\Support\LocalizedResource;
 use App\Filament\Support\RichTextPresentation;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use BackedEnum;
 use Filament\Infolists\Components\TextEntry;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-class ContentSectionResource extends Resource
+class ContentSectionResource extends LocalizedResource
 {
     protected static ?string $model = ContentSection::class;
 
@@ -50,32 +50,32 @@ class ContentSectionResource extends Resource
         return $schema
             ->components([
                 TextEntry::make('section_key')
-                    ->label('Раздел')
+                    ->label(__('Раздел'))
                     ->formatStateUsing(fn (string $state): string => self::sectionLabel($state)),
                 TextEntry::make('locale')
-                    ->label('Язык')
-                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский'),
-                TextEntry::make('title')->label('Название'),
+                    ->label(__('Язык'))
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? __('Русский') : __('Английский')),
+                TextEntry::make('title')->label(__('Название')),
                 TextEntry::make('delivery_mode')
-                    ->label('Где показывать')
+                    ->label(__('Где показывать'))
                     ->formatStateUsing(fn ($state): string => match ($state instanceof ContentDeliveryMode ? $state->value : (string) $state) {
                         'telegram' => 'Telegram',
                         'mini_app' => 'Mini App',
-                        default => 'Telegram и Mini App',
+                        default => __('Telegram и Mini App'),
                     }),
                 TextEntry::make('body')
-                    ->label('Текст')
+                    ->label(__('Текст'))
                     ->formatStateUsing(fn (?string $state): string => RichTextPresentation::html($state))
                     ->html()
                     ->prose()
                     ->wrap()
                     ->columnSpanFull(),
                 TextEntry::make('media')
-                    ->label('Изображение')
-                    ->state(fn (ContentSection $record): string => self::hasImage($record->media) ? 'Добавлено' : 'Не добавлено')
+                    ->label(__('Изображение'))
+                    ->state(fn (ContentSection $record): string => self::hasImage($record->media) ? __('Добавлено') : __('Не добавлено'))
                     ->columnSpanFull(),
-                TextEntry::make('sort_order')->label('Порядок показа'),
-                TextEntry::make('is_visible')->label('Показывать'),
+                TextEntry::make('sort_order')->label(__('Порядок показа')),
+                TextEntry::make('is_visible')->label(__('Показывать')),
             ]);
     }
 
@@ -98,13 +98,13 @@ class ContentSectionResource extends Resource
     private static function sectionLabel(string $section): string
     {
         return match ($section) {
-            'author' => 'Об академии',
-            'method' => 'Методика',
-            'b2b' => 'Для бизнеса',
-            'partner' => 'Партнёрам',
-            'communities' => 'Сообщества',
-            'hidden' => 'Скрытый раздел',
-            default => 'Раздел',
+            'author' => __('Об академии'),
+            'method' => __('Методика'),
+            'b2b' => __('Для бизнеса'),
+            'partner' => __('Партнёрам'),
+            'communities' => __('Сообщества'),
+            'hidden' => __('Скрытый раздел'),
+            default => __('Раздел'),
         };
     }
 

@@ -5,9 +5,9 @@ namespace App\Filament\Resources\FinancialObligations\Pages;
 use App\Filament\Resources\FinancialObligations\FinancialObligationResource;
 use App\Filament\Support\CommerceFulfillmentActions;
 use App\Filament\Support\FinancePaymentActions;
-use Filament\Resources\Pages\ViewRecord;
+use App\Filament\Support\LocalizedViewRecord;
 
-final class ViewFinancialObligation extends ViewRecord
+final class ViewFinancialObligation extends LocalizedViewRecord
 {
     protected static string $resource = FinancialObligationResource::class;
 

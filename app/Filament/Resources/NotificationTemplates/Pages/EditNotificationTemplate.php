@@ -3,18 +3,18 @@
 namespace App\Filament\Resources\NotificationTemplates\Pages;
 
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Scenarios\Application\NotificationTemplateSnapshotHasher;
 use App\Modules\Scenarios\Application\UpdateNotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
-final class EditNotificationTemplate extends EditRecord
+final class EditNotificationTemplate extends LocalizedEditRecord
 {
     protected static string $resource = NotificationTemplateResource::class;
 
@@ -44,7 +44,7 @@ final class EditNotificationTemplate extends EditRecord
             );
         } catch (InvalidArgumentException) {
             throw ValidationException::withMessages([
-                'body' => 'Текст сообщения содержит неподдерживаемые переменные. Используйте список доступных данных.',
+                'body' => __('Текст сообщения содержит неподдерживаемые переменные. Используйте список доступных данных.'),
             ]);
         }
 
@@ -71,6 +71,6 @@ final class EditNotificationTemplate extends EditRecord
 
     protected function getSavedNotificationTitle(): string
     {
-        return 'Шаблон сохранён';
+        return __('Шаблон сохранён');
     }
 }

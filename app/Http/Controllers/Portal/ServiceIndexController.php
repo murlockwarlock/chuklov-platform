@@ -22,7 +22,10 @@ class ServiceIndexController extends Controller
 
                     return [
                         ...$projection,
-                        'purchaseUrl' => $service->catalogItemType() === CatalogItemType::OnlineProduct
+                        'purchaseUrl' => in_array($service->catalogItemType(), [
+                            CatalogItemType::OnlineProduct,
+                            CatalogItemType::PhysicalProduct,
+                        ], true)
                             ? route('portal.services.purchase', $service->getKey())
                             : null,
                     ];

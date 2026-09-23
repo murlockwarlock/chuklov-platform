@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\Clients\Pages;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Identity\Application\CreateClient as CreateClientAction;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class CreateClient extends CreateRecord
+class CreateClient extends LocalizedCreateRecord
 {
     protected static string $resource = ClientResource::class;
 

@@ -34,6 +34,7 @@ use App\Modules\Scheduling\Application\CompleteBooking;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Support\SupportedLocale;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -49,6 +50,20 @@ use Tests\TestCase;
 final class FinanceCrmUxTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        app()->setLocale('ru');
+    }
+
+    protected function tearDown(): void
+    {
+        app()->setLocale('ru');
+
+        parent::tearDown();
+    }
 
     public function test_finance_list_uses_human_columns_actions_and_statuses(): void
     {
@@ -1074,6 +1089,22 @@ final class FinanceCrmUxTest extends TestCase
     }
 
     /** @return array{Organization, User, Client, Booking, FinancialObligation} */
+    public function test_finance_configuration_labels_follow_english_crm_locale(): void
+    {
+        [$organization, $admin] = $this->financeFixture(singleCurrency: true);
+        $this->resolveFilamentContext($admin, $organization);
+        session()->put(SupportedLocale::AdminSessionKey, 'en');
+        app()->setLocale('en');
+
+        $component = Livewire::actingAs($admin)->test(FinanceConfiguration::class)->assertSuccessful();
+
+        self::assertSame('Practice currency', $component->instance()->getSchemaComponent('form.base_currency')->getLabel());
+        self::assertSame('Display currency', $component->instance()->getSchemaComponent('form.display_currency')->getLabel());
+        self::assertSame('Currency settings', FinanceConfiguration::getNavigationLabel());
+
+        $component->call('save')->assertNotified('Financial settings saved');
+    }
+
     private function financeFixture(
         string $serviceCurrency = 'USD',
         string $displayCurrency = 'USD',

@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 
@@ -15,10 +16,7 @@ class RecordManualAttributionRequest extends FormRequest
     /** @return array<string, string> */
     public function messages(): array
     {
-        return [
-            'source_detail.string' => 'Укажите имя, Telegram, телефон или другое уточнение текстом.',
-            'source_detail.max' => 'Укажите не более 500 символов.',
-        ];
+        return app(PortalClientMessages::class)->validationMessages('attribution');
     }
 
     /** @return array<string, ValidationRule|array<mixed>|string> */

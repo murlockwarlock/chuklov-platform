@@ -8,6 +8,7 @@ use App\Filament\Resources\B2bLeads\Pages\ViewB2bLead;
 use App\Filament\Resources\B2bLeads\Schemas\B2bLeadForm;
 use App\Filament\Resources\B2bLeads\Schemas\B2bLeadInfolist;
 use App\Filament\Resources\B2bLeads\Tables\B2bLeadsTable;
+use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\B2B\Application\ListB2bLeadsForCrm;
 use App\Modules\B2B\Domain\Models\B2bLead;
@@ -15,14 +16,13 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use BackedEnum;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
 /** @extends resource<B2bLead> */
-final class B2bLeadResource extends Resource
+final class B2bLeadResource extends LocalizedResource
 {
     protected static ?string $model = B2bLead::class;
 

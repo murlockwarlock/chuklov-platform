@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\WorkingLocations\Pages;
 
 use App\Filament\Resources\WorkingLocations\WorkingLocationResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-class ListWorkingLocations extends ListRecords
+class ListWorkingLocations extends LocalizedListRecords
 {
     protected static string $resource = WorkingLocationResource::class;
 
@@ -14,6 +14,6 @@ class ListWorkingLocations extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [CreateAction::make()->label('Добавить локацию')];
+        return [CreateAction::make()->label(__('Добавить локацию'))];
     }
 }

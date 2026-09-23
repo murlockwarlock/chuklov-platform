@@ -21,26 +21,26 @@ class UnavailablePeriodsTable
         return $table
             ->columns([
                 TextColumn::make('specialist.display_name')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->sortable()
                     ->url(fn (UnavailablePeriod $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
                     ->color(fn (UnavailablePeriod $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (UnavailablePeriod $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null),
                 TextColumn::make('starts_at')
-                    ->label('Начало')
+                    ->label(__('Начало'))
                     ->dateTime('d.m.Y H:i')
                     ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                     ->sortable(),
                 TextColumn::make('ends_at')
-                    ->label('Окончание')
+                    ->label(__('Окончание'))
                     ->dateTime('d.m.Y H:i')
                     ->timezone(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                     ->sortable(),
-                TextColumn::make('reason')->label('Причина')->limit(80)->placeholder('—'),
+                TextColumn::make('reason')->label(__('Причина'))->limit(80)->placeholder('—'),
             ])
             ->recordActions([
                 Action::make('delete')
-                    ->label('Удалить')
+                    ->label(__('Удалить'))
                     ->color('danger')
                     ->requiresConfirmation()
                     ->action(function (UnavailablePeriod $record): void {

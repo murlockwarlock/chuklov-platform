@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\B2bLeads\Pages;
 
 use App\Filament\Resources\B2bLeads\B2bLeadResource;
+use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\B2B\Application\SubmitB2bLead;
 use App\Modules\B2B\Domain\Enums\B2bLeadSource;
@@ -12,11 +13,10 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
-use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
-final class CreateB2bLead extends CreateRecord
+final class CreateB2bLead extends LocalizedCreateRecord
 {
     protected static string $resource = B2bLeadResource::class;
 

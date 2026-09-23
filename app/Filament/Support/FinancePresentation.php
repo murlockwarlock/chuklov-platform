@@ -131,14 +131,10 @@ final class FinancePresentation
     public function status(?FinancialReconciliation $reconciliation): string
     {
         if ($reconciliation === null) {
-            return 'Расчёт недоступен';
+            return __('Расчёт недоступен');
         }
 
-        return match ($reconciliation->status) {
-            FinancialStatus::Settled => 'Оплачено',
-            FinancialStatus::PartiallyPaid => 'Оплачено частично',
-            FinancialStatus::Outstanding => 'К оплате',
-        };
+        return CrmLabel::enum($reconciliation->status) ?? __('Расчёт недоступен');
     }
 
     public function statusColor(?FinancialReconciliation $reconciliation): string
@@ -329,9 +325,9 @@ final class FinancePresentation
 
         try {
             return match ($this->contract->validateValuationSnapshot($snapshot)['rounding_mode']) {
-                FinancialRoundingMode::HalfUp => 'Обычное математическое',
-                FinancialRoundingMode::HalfEven => 'До ближайшего чётного',
-                FinancialRoundingMode::Down => 'Вниз, без увеличения суммы',
+                FinancialRoundingMode::HalfUp => __('Обычное математическое'),
+                FinancialRoundingMode::HalfEven => __('До ближайшего чётного'),
+                FinancialRoundingMode::Down => __('Вниз, без увеличения суммы'),
             };
         } catch (UnexpectedValueException) {
             return null;
@@ -342,20 +338,20 @@ final class FinancePresentation
     {
         return match ($entry->getRawOriginal('entry_type')) {
             'correction' => $entry->getRawOriginal('payment_method') === null
-                ? 'Исправление оплаты'
-                : 'Способ оплаты недоступен',
+                ? __('Исправление оплаты')
+                : __('Способ оплаты недоступен'),
             'fake_gateway_settlement' => $entry->getRawOriginal('payment_method') === null
-                ? 'Тестовая оплата'
-                : 'Способ оплаты недоступен',
+                ? __('Тестовая оплата')
+                : __('Способ оплаты недоступен'),
             'manual_payment' => match ($entry->getRawOriginal('payment_method')) {
-                'cash' => 'Наличные',
-                'bank_transfer' => 'Банковский перевод',
-                'manual_card' => 'Карта в клинике',
-                'other' => 'Другое',
-                null => 'Оплата',
-                default => 'Способ оплаты недоступен',
+                'cash' => __('Наличные'),
+                'bank_transfer' => __('Банковский перевод'),
+                'manual_card' => __('Карта в клинике'),
+                'other' => __('Другое'),
+                null => __('Оплата'),
+                default => __('Способ оплаты недоступен'),
             },
-            default => 'Платёж недоступен',
+            default => __('Платёж недоступен'),
         };
     }
 
@@ -411,36 +407,36 @@ final class FinancePresentation
         $status = BookingStatus::tryFrom((string) $booking->getRawOriginal('status'));
 
         if ($status !== BookingStatus::Completed) {
-            $reasons[] = 'Сначала завершите визит.';
+            $reasons[] = __('Сначала завершите визит.');
         }
 
         $service = $booking->getRelationValue('service');
 
         if (! $service instanceof Service || $service->price_minor === null || $service->price_minor <= 0) {
-            $reasons[] = 'Для услуги не настроена положительная цена.';
+            $reasons[] = __('Для услуги не настроена положительная цена.');
         } else {
             try {
                 $currency = $this->catalog->code((string) $service->price_currency);
 
                 if (! in_array($currency, $this->configuration->allowedCurrencies($this->context->id()), true)) {
-                    $reasons[] = 'В настройках финансов не разрешена валюта услуги.';
+                    $reasons[] = __('В настройках финансов не разрешена валюта услуги.');
                 }
             } catch (InvalidArgumentException) {
-                $reasons[] = 'В настройках финансов не настроена валюта услуги.';
+                $reasons[] = __('В настройках финансов не настроена валюта услуги.');
             }
 
             try {
                 $this->configuration->configuration($this->context->id());
             } catch (ModelNotFoundException) {
-                $reasons[] = 'Финансовые настройки организации не завершены.';
+                $reasons[] = __('Финансовые настройки организации не завершены.');
             }
         }
 
         if ($reasons === []) {
-            $reasons[] = 'Финансовый расчёт ещё не создан.';
+            $reasons[] = __('Финансовый расчёт ещё не создан.');
         }
 
-        return implode(' ', $reasons).' После выполнения условий действие «Записать оплату» появится в действиях записи.';
+        return implode(' ', $reasons).' '.__('После выполнения условий действие «Записать оплату» появится в действиях записи.');
     }
 
     public function clientFinanceUrl(Client $client): string

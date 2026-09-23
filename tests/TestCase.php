@@ -11,6 +11,7 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         $this->withoutVite();
+        app()->setLocale('ru');
         config()->set('rag.embedding.pricing', [
             'provider' => config('rag.embedding.provider'),
             'model' => config('rag.embedding.model'),

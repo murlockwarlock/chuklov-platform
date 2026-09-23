@@ -9,6 +9,8 @@ use App\Filament\Resources\AiPrompts\RelationManagers\PromptVersionsRelationMana
 use App\Filament\Resources\AiPrompts\Schemas\AiPromptForm;
 use App\Filament\Resources\AiRuns\AiRunResource;
 use App\Filament\Support\AiPlaygroundResultPresentation;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedResource;
 use App\Modules\AI\Application\Actions\ExecutePlaygroundRun;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Models\AiModelRelease;
@@ -21,7 +23,6 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -30,7 +31,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Throwable;
 
-final class AiPromptResource extends Resource
+final class AiPromptResource extends LocalizedResource
 {
     protected static ?string $model = AiPrompt::class;
 
@@ -58,36 +59,36 @@ final class AiPromptResource extends Resource
         return $table
             ->stackedOnMobile()
             ->columns([
-                TextColumn::make('name')->label('Название')->searchable()->sortable(),
+                TextColumn::make('name')->label(__('Название'))->searchable()->sortable(),
                 TextColumn::make('capability')
-                    ->label('Используется для')
-                    ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? $state->label() : (string) $state),
-                TextColumn::make('activeVersion.version')->label('Активный текст')->placeholder('Нет активного')->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('versions_count')->counts('versions')->label('Всего текстов')->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
+                    ->label(__('Используется для'))
+                    ->formatStateUsing(fn ($state) => $state instanceof AiCapability ? CrmLabel::enum($state) : (string) $state),
+                TextColumn::make('activeVersion.version')->label(__('Активный текст'))->placeholder(__('Нет активного'))->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('versions_count')->counts('versions')->label(__('Всего текстов'))->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('updated_at')->label(__('Изменён'))->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->emptyStateHeading('Промптов пока нет')
-            ->emptyStateDescription('Промпты определяют, как AI должен вести себя в разных сценариях.')
+            ->emptyStateHeading(__('Промптов пока нет'))
+            ->emptyStateDescription(__('Промпты определяют, как AI должен вести себя в разных сценариях.'))
             ->recordActions([
                 EditAction::make()
-                    ->label('Редактировать')
+                    ->label(__('Редактировать'))
                     ->icon(Heroicon::OutlinedPencil)
                     ->iconButton()
-                    ->tooltip('Редактировать промпт'),
+                    ->tooltip(__('Редактировать промпт')),
                 Action::make('playground')
-                    ->label('Проверить')
+                    ->label(__('Проверить'))
                     ->color('info')
                     ->icon(Heroicon::OutlinedPlay)
                     ->iconButton()
-                    ->tooltip('Проверить ответ AI')
+                    ->tooltip(__('Проверить ответ AI'))
                     ->form([
                         Textarea::make('test_input')
-                            ->label('Пример запроса')
-                            ->helperText('Можно написать обычным текстом или использовать JSON для сложного сценария.')
+                            ->label(__('Пример запроса'))
+                            ->helperText(__('Можно написать обычным текстом или использовать JSON для сложного сценария.'))
                             ->rows(4)
                             ->default('{"query": "Тестовый запрос"}'),
                         Select::make('model_release_id')
-                            ->label('Модель для проверки')
+                            ->label(__('Модель для проверки'))
                             ->options(fn (AiPrompt $record): array => self::modelReleaseOptions($record))
                             ->getSearchResultsUsing(fn (string $search, AiPrompt $record): array => self::modelReleaseOptions($record, $search))
                             ->getOptionLabelUsing(fn (mixed $value, AiPrompt $record): ?string => self::modelReleaseLabel($record, $value))
@@ -124,13 +125,13 @@ final class AiPromptResource extends Resource
 
                             if ($result->isSuccess()) {
                                 $notification = Notification::make()
-                                    ->title('Проверка успешна')
+                                    ->title(__('Проверка успешна'))
                                     ->body(AiPlaygroundResultPresentation::body($result))
                                     ->success();
                                 if ($result->runId > 0) {
                                     $notification->actions([
                                         Action::make('technicalData')
-                                            ->label('Подробности проверки')
+                                            ->label(__('Подробности проверки'))
                                             ->url(AiRunResource::getUrl('view', ['record' => $result->runId]))
                                             ->button()
                                             ->openUrlInNewTab(),
@@ -139,15 +140,15 @@ final class AiPromptResource extends Resource
                                 $notification->send();
                             } else {
                                 Notification::make()
-                                    ->title('Не удалось проверить промпт')
-                                    ->body($result->errorMessageSanitized ?? 'Не удалось получить ответ для проверки. Проверьте настройки AI и повторите попытку.')
+                                    ->title(__('Не удалось проверить промпт'))
+                                    ->body($result->errorMessageSanitized ?? __('Не удалось получить ответ для проверки. Проверьте настройки AI и повторите попытку.'))
                                     ->danger()
                                     ->send();
                             }
                         } catch (Throwable $exception) {
                             Notification::make()
-                                ->title('Не удалось проверить промпт')
-                                ->body($exception instanceof \InvalidArgumentException ? $exception->getMessage() : 'Проверьте настройки и повторите попытку.')
+                                ->title(__('Не удалось проверить промпт'))
+                                ->body($exception instanceof \InvalidArgumentException ? $exception->getMessage() : __('Проверьте настройки и повторите попытку.'))
                                 ->danger()
                                 ->send();
                         }
@@ -220,7 +221,7 @@ final class AiPromptResource extends Resource
 
         return $release instanceof AiModelRelease
             ? self::modelReleaseDisplayLabel($release)
-            : 'Сохранённая модель недоступна';
+            : __('Сохранённая модель недоступна');
     }
 
     private static function modelReleaseDisplayLabel(AiModelRelease $release): string
@@ -228,9 +229,13 @@ final class AiPromptResource extends Resource
         try {
             $provider = AiProviderCatalog::label($release->provider_name);
         } catch (\InvalidArgumentException) {
-            $provider = 'Провайдер требует проверки';
+            $provider = __('Провайдер требует проверки');
         }
 
-        return $provider.' · '.$release->modelConfiguration->display_name.' · версия '.$release->release_number;
+        return __(':provider · :model · версия :version', [
+            'provider' => $provider,
+            'model' => $release->modelConfiguration->display_name,
+            'version' => $release->release_number,
+        ]);
     }
 }

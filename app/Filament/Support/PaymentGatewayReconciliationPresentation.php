@@ -13,17 +13,17 @@ final class PaymentGatewayReconciliationPresentation
     public static function eventType(PaymentGatewayEvent $record): string
     {
         return match ($record->event_type) {
-            PaymentGatewayEventType::Settlement => 'Успешная оплата',
-            PaymentGatewayEventType::Failure => 'Неуспешная оплата',
-            PaymentGatewayEventType::Refund => 'Возврат',
-            PaymentGatewayEventType::Chargeback => 'Оспаривание платежа',
-            PaymentGatewayEventType::Unknown => 'Неизвестное событие',
+            PaymentGatewayEventType::Settlement => __('Успешная оплата'),
+            PaymentGatewayEventType::Failure => __('Неуспешная оплата'),
+            PaymentGatewayEventType::Refund => __('Возврат'),
+            PaymentGatewayEventType::Chargeback => __('Оспаривание платежа'),
+            PaymentGatewayEventType::Unknown => __('Неизвестное событие'),
         };
     }
 
     public static function reason(PaymentGatewayEvent $record): string
     {
-        return PaymentGatewayReconciliationReason::label($record->reconciliation_reason, $record->event_type);
+        return __(PaymentGatewayReconciliationReason::label($record->reconciliation_reason, $record->event_type));
     }
 
     public static function client(PaymentGatewayEvent $record): ?Client
@@ -53,6 +53,6 @@ final class PaymentGatewayReconciliationPresentation
             }
         }
 
-        return 'Не сопоставлен';
+        return __('Не сопоставлен');
     }
 }

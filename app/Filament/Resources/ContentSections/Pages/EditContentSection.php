@@ -3,16 +3,16 @@
 namespace App\Filament\Resources\ContentSections\Pages;
 
 use App\Filament\Resources\ContentSections\ContentSectionResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Content\Application\UpdateContentSection;
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Content\Domain\ValueObjects\ContentExternalImageUrl;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use InvalidArgumentException;
 
-class EditContentSection extends EditRecord
+class EditContentSection extends LocalizedEditRecord
 {
     protected static string $resource = ContentSectionResource::class;
 

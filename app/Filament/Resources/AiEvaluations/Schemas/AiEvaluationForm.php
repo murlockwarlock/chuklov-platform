@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\AiEvaluations\Schemas;
 
+use App\Filament\Support\CrmLabel;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
 use App\Modules\AI\Domain\Models\AiPrompt;
@@ -20,20 +21,20 @@ class AiEvaluationForm
     {
         return $schema
             ->components([
-                Section::make('Основная информация')
+                Section::make(__('Основная информация'))
                     ->schema([
                         TextInput::make('name')
-                            ->label('Название проверки')
+                            ->label(__('Название проверки'))
                             ->required()
                             ->maxLength(200),
                         Select::make('capability')
-                            ->label('Что проверяем')
-                            ->options(collect(AiCapability::cases())->mapWithKeys(fn (AiCapability $capability): array => [$capability->value => $capability->label()]))
+                            ->label(__('Что проверяем'))
+                            ->options(collect(AiCapability::cases())->mapWithKeys(fn (AiCapability $capability): array => [$capability->value => CrmLabel::enum($capability)]))
                             ->live()
                             ->required(),
                         Select::make('prompt_id')
-                            ->label('Связанный промпт')
-                            ->placeholder('Без привязанного промпта')
+                            ->label(__('Связанный промпт'))
+                            ->placeholder(__('Без привязанного промпта'))
                             ->options(fn (Get $get): array => self::promptOptions($get('capability')))
                             ->getSearchResultsUsing(fn (string $search, Get $get): array => self::promptOptions($get('capability'), $search))
                             ->getOptionLabelUsing(fn (mixed $value): ?string => self::promptLabel($value))
@@ -41,20 +42,20 @@ class AiEvaluationForm
                             ->searchable()
                             ->native(false),
                         Textarea::make('description')
-                            ->label('Описание')
-                            ->helperText('Опишите, какой результат должна подтвердить эта проверка.')
+                            ->label(__('Описание'))
+                            ->helperText(__('Опишите, какой результат должна подтвердить эта проверка.'))
                             ->rows(3)
                             ->columnSpanFull(),
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
-                Section::make('Дополнительные параметры')
-                    ->description('Если внутреннее имя не указать, оно создастся автоматически и не изменится после сохранения.')
+                Section::make(__('Дополнительные параметры'))
+                    ->description(__('Если внутреннее имя не указать, оно создастся автоматически и не изменится после сохранения.'))
                     ->collapsed()
                     ->schema([
                         TextInput::make('key')
-                            ->label('Внутреннее имя')
-                            ->helperText('Оставьте пустым, если не нужно сохранить уже существующее имя.')
+                            ->label(__('Внутреннее имя'))
+                            ->helperText(__('Оставьте пустым, если не нужно сохранить уже существующее имя.'))
                             ->maxLength(80)
                             ->regex('/^[a-z0-9_\-]+$/')
                             ->disabled(fn (?AiEvalSuite $record): bool => $record !== null)
@@ -101,6 +102,6 @@ class AiEvaluationForm
             ->whereKey((int) $value)
             ->first(['id', 'organization_id', 'name', 'key']);
 
-        return $prompt instanceof AiPrompt ? $prompt->name.' · '.$prompt->key : 'Сохранённый промпт недоступен';
+        return $prompt instanceof AiPrompt ? $prompt->name.' · '.$prompt->key : __('Сохранённый промпт недоступен');
     }
 }

@@ -3,13 +3,13 @@
 namespace App\Filament\Resources\AiEvaluations\Pages;
 
 use App\Filament\Resources\AiEvaluations\AiEvaluationResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\UpdateAiEvaluationSuite;
 use App\Modules\AI\Domain\Models\AiEvalSuite;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
-class EditAiEvaluation extends EditRecord
+class EditAiEvaluation extends LocalizedEditRecord
 {
     protected static string $resource = AiEvaluationResource::class;
 

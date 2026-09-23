@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\AiEvaluations\RelationManagers;
 
+use App\Filament\Support\AiEvaluationComparisonPresentation;
+use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\CompareAiEvaluationRuns;
 use App\Modules\AI\Application\Services\AiEvaluationRunMetricsReader;
@@ -12,7 +14,6 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
-use Filament\Resources\RelationManagers\RelationManager;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
@@ -20,7 +21,7 @@ use Illuminate\Contracts\View\View;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 
-class RunsRelationManager extends RelationManager
+class RunsRelationManager extends LocalizedRelationManager
 {
     protected static string $relationship = 'runs';
 
@@ -36,50 +37,49 @@ class RunsRelationManager extends RelationManager
         return $table
             ->columns([
                 TextColumn::make('created_at')
-                    ->label('Когда')
+                    ->label(__('Когда'))
                     ->dateTime('d.m.Y H:i')
                     ->sortable(),
                 TextColumn::make('prompt')
-                    ->label('Промпт')
+                    ->label(__('Промпт'))
                     ->state(fn (AiEvalRun $record): string => self::promptLabel($record)),
                 TextColumn::make('model')
-                    ->label('Модель')
+                    ->label(__('Модель'))
                     ->state(fn (AiEvalRun $record): string => self::modelLabel($record)),
                 TextColumn::make('pass_percentage')
-                    ->label('Результат')
+                    ->label(__('Результат'))
                     ->formatStateUsing(fn ($state): string => number_format((float) $state, 2, ',', '').'%'),
-                TextColumn::make('failed_cases')->label('Не прошли')->formatStateUsing(fn ($state): string => (string) $state),
+                TextColumn::make('failed_cases')->label(__('Не прошли'))->formatStateUsing(fn ($state): string => (string) $state),
                 TextColumn::make('estimated_cost_minor_units')
-                    ->label('Расчётная стоимость Chuklov')
+                    ->label(__('Расчётная стоимость Chuklov'))
                     ->formatStateUsing(fn ($state, AiEvalRun $record): string => self::money($state, $record, 'estimated_by_currency')),
                 TextColumn::make('provider_cost_minor_units')
-                    ->label('Стоимость AI-сервиса')
+                    ->label(__('Стоимость AI-сервиса'))
                     ->formatStateUsing(fn ($state, AiEvalRun $record): string => self::money($state, $record, 'provider_reported_by_currency')),
                 TextColumn::make('average_latency_ms')
-                    ->label('Среднее время')
+                    ->label(__('Среднее время'))
                     ->formatStateUsing(fn ($state, AiEvalRun $record): string => is_array($record->metrics_payload)
                         ? self::duration((int) $state)
-                        : 'нет данных'),
+                        : __('нет данных')),
                 TextColumn::make('reliability')
-                    ->label('Ошибки и повторы')
+                    ->label(__('Ошибки и повторы'))
                     ->state(fn (AiEvalRun $record): string => is_array($record->metrics_payload)
-                        ? sprintf(
-                            'ошибки %d · повторы %d · резерв %d',
-                            $record->execution_error_count,
-                            $record->retry_count,
-                            $record->failover_count,
-                        )
-                        : 'нет данных'),
+                        ? __('Ошибки :errors · повторы :retries · резерв :failovers', [
+                            'errors' => $record->execution_error_count,
+                            'retries' => $record->retry_count,
+                            'failovers' => $record->failover_count,
+                        ])
+                        : __('нет данных')),
             ])
             ->headerActions([
                 Action::make('compare_runs')
-                    ->label('Сравнить запуски')
+                    ->label(__('Сравнить запуски'))
                     ->icon(Heroicon::OutlinedArrowsRightLeft)
                     ->color('info')
                     ->form([
                         Select::make('run_ids')
-                            ->label('Запуски одной проверки')
-                            ->helperText('Выберите от двух до четырёх завершённых запусков. Набор примеров должен совпадать.')
+                            ->label(__('Запуски одной проверки'))
+                            ->helperText(__('Выберите от двух до четырёх завершённых запусков. Набор примеров должен совпадать.'))
                             ->multiple()
                             ->options(fn (): array => self::comparisonOptions($suite))
                             ->searchable()
@@ -96,19 +96,19 @@ class RunsRelationManager extends RelationManager
 
                         $comparison = $compareAction->handle($actor, (array) ($data['run_ids'] ?? []));
                         Notification::make()
-                            ->title($comparison->compatible ? 'Сравнение готово' : 'Сравнение недоступно')
-                            ->body($comparison->toRussianSummary())
+                            ->title($comparison->compatible ? __('Сравнение готово') : __('Сравнение недоступно'))
+                            ->body(AiEvaluationComparisonPresentation::summary($comparison))
                             ->color($comparison->compatible ? 'success' : 'warning')
                             ->send();
                     }),
             ])
             ->recordActions([
                 Action::make('details')
-                    ->label('Открыть результат')
+                    ->label(__('Открыть результат'))
                     ->icon(Heroicon::OutlinedMagnifyingGlass)
-                    ->modalHeading(fn (AiEvalRun $record): string => 'Результат проверки от '.$record->created_at?->format('d.m.Y H:i'))
+                    ->modalHeading(fn (AiEvalRun $record): string => __('Результат проверки от ').$record->created_at?->format('d.m.Y H:i'))
                     ->modalSubmitAction(false)
-                    ->modalCancelActionLabel('Закрыть')
+                    ->modalCancelActionLabel(__('Закрыть'))
                     ->modalContent(fn (AiEvalRun $record): View => view('filament.resources.ai-evaluations.run-details', [
                         'run' => $record,
                         'metrics' => app(AiEvaluationRunMetricsReader::class)->forRun($record),
@@ -131,7 +131,7 @@ class RunsRelationManager extends RelationManager
             ->mapWithKeys(static function (AiEvalRun $run): array {
                 $prompt = self::promptLabel($run);
                 $model = self::modelLabel($run);
-                $date = $run->created_at instanceof Carbon ? $run->created_at->format('d.m.Y H:i') : 'дата недоступна';
+                $date = $run->created_at instanceof Carbon ? $run->created_at->format('d.m.Y H:i') : __('дата недоступна');
 
                 return [$run->getKey() => $date.' · '.$prompt.' · '.$model.' · '.number_format((float) $run->pass_percentage, 2, ',', '').'%'];
             })
@@ -145,7 +145,7 @@ class RunsRelationManager extends RelationManager
 
         return is_scalar($promptVersion['version'] ?? null)
             ? 'v'.(int) $promptVersion['version']
-            : 'промпт недоступен';
+            : __('промпт недоступен');
     }
 
     private static function modelLabel(AiEvalRun $run): string
@@ -155,17 +155,19 @@ class RunsRelationManager extends RelationManager
         if (! is_scalar($modelRelease['provider'] ?? null)
             || ! is_scalar($modelRelease['model'] ?? null)
             || ! is_scalar($modelRelease['release_number'] ?? null)) {
-            return 'модель недоступна';
+            return __('модель недоступна');
         }
 
-        return $modelRelease['provider'].' · '.$modelRelease['model'].' · выпуск '.$modelRelease['release_number'];
+        return $modelRelease['provider'].' · '.$modelRelease['model'].' · '.__('Выпуск :version', ['version' => $modelRelease['release_number']]);
     }
 
     private static function duration(int $milliseconds): string
     {
+        $decimalSeparator = app()->getLocale() === 'en' ? '.' : ',';
+
         return $milliseconds > 1000
-            ? number_format($milliseconds / 1000, 2, ',', '').' с'
-            : $milliseconds.' мс';
+            ? __(':value с', ['value' => number_format($milliseconds / 1000, 2, $decimalSeparator, '')])
+            : __(':value мс', ['value' => $milliseconds]);
     }
 
     private static function money(mixed $state, AiEvalRun $run, string $metricKey): string
@@ -177,16 +179,16 @@ class RunsRelationManager extends RelationManager
             ?? $metrics['cost']['provider_reported_currency_unknown_count']
             ?? 0);
         if ($unknownCount > 0) {
-            return 'нет данных: стоимость не сообщена или валюта неизвестна';
+            return __('нет данных: стоимость не сообщена или валюта неизвестна');
         }
 
         if ($state === null) {
-            return 'нет данных';
+            return __('нет данных');
         }
 
         $costs = $metrics['cost'][$metricKey] ?? [];
         if (! is_array($costs) || $costs === []) {
-            return 'нет данных';
+            return __('нет данных');
         }
 
         $currency = (string) array_key_first($costs);

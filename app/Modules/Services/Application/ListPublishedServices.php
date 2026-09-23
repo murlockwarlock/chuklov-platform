@@ -16,6 +16,7 @@ class ListPublishedServices
         private readonly OrganizationContext $context,
         private readonly OrganizationFeatureGate $features,
         private readonly CurrencyConfigurationService $currencies,
+        private readonly ServicePriceResolver $prices,
     ) {}
 
     /** @return Collection<int, Service> */
@@ -32,11 +33,14 @@ class ListPublishedServices
             ->where('is_active', true)
             ->whereIn('catalog_type', [
                 CatalogItemType::Service->value,
+                CatalogItemType::PhysicalProduct->value,
                 CatalogItemType::OnlineProduct->value,
             ])
             ->orderBy('name')
             ->get()
-            ->filter(fn (Service $service): bool => $this->currencies->isServicePriceAvailable($organization, $service))
+            ->filter(fn (Service $service): bool => $this->currencies->isServicePriceAvailable($organization, $service)
+                && ($service->catalogItemType() === CatalogItemType::Service
+                    || $this->prices->preferred($service, $organization) !== null))
             ->values();
     }
 }

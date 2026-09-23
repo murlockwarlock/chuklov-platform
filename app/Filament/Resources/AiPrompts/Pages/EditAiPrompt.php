@@ -7,6 +7,8 @@ use App\Filament\Resources\AiPrompts\AiPromptResource;
 use App\Filament\Resources\AiPrompts\Schemas\PromptVersionForm;
 use App\Filament\Resources\AiRuns\AiRunResource;
 use App\Filament\Support\AiPlaygroundResultPresentation;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ActivatePromptVersion;
 use App\Modules\AI\Application\Actions\CreatePromptDraft;
@@ -22,7 +24,6 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
-use Filament\Resources\Pages\EditRecord;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\View;
 use Filament\Schemas\Schema;
@@ -33,7 +34,7 @@ use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
-class EditAiPrompt extends EditRecord
+class EditAiPrompt extends LocalizedEditRecord
 {
     protected static string $resource = AiPromptResource::class;
 
@@ -48,12 +49,12 @@ class EditAiPrompt extends EditRecord
     {
         return $schema->components([
             View::make('filament.resources.ai-prompts.active-workspace'),
-            Section::make('Настройки промпта')
-                ->description('Название и описание промпта.')
+            Section::make(__('Настройки промпта'))
+                ->description(__('Название и описание промпта.'))
                 ->collapsed()
                 ->schema([$this->getFormContentComponent()]),
-            Section::make('История версий')
-                ->description('Черновики, активная версия и ранее использованные версии.')
+            Section::make(__('История версий'))
+                ->description(__('Черновики, активная версия и ранее использованные версии.'))
                 ->collapsed()
                 ->schema([$this->getRelationManagersContentComponent()]),
         ]);
@@ -80,13 +81,15 @@ class EditAiPrompt extends EditRecord
         $source = $draft ?? $this->activeVersion();
 
         return Action::make('editPrompt')
-            ->label($draft instanceof AiPromptVersion ? 'Продолжить черновик' : 'Изменить промпт')
+            ->label($draft instanceof AiPromptVersion ? __('Продолжить черновик') : __('Изменить промпт'))
             ->icon(Heroicon::OutlinedPencilSquare)
-            ->modalHeading($draft instanceof AiPromptVersion ? "Черновик v{$draft->version}" : 'Новая версия промпта')
-            ->modalDescription('Изменения сохраняются в черновике. Текущая активная версия останется неизменной до явной активации.')
+            ->modalHeading($draft instanceof AiPromptVersion
+                ? __('Черновик v:version', ['version' => $draft->version])
+                : __('Новая версия промпта'))
+            ->modalDescription(__('Изменения сохраняются в черновике. Текущая активная версия останется неизменной до явной активации.'))
             ->fillForm(fn (): array => $source instanceof AiPromptVersion ? PromptVersionForm::data($source) : [])
             ->schema(PromptVersionForm::components($source))
-            ->modalSubmitActionLabel('Сохранить черновик')
+            ->modalSubmitActionLabel(__('Сохранить черновик'))
             ->action(function (array $data, CreatePromptDraft $create, SavePromptDraft $save): void {
                 $actor = Auth::user();
                 abort_unless($actor instanceof User, 403);
@@ -95,7 +98,7 @@ class EditAiPrompt extends EditRecord
                     ? $save->handle($actor, $draft->getKey(), $data)
                     : $create->handle($actor, $this->prompt()->getKey(), $data);
 
-                Notification::make()->title("Черновик v{$version->version} сохранён")->success()->send();
+                Notification::make()->title(__('Черновик v:version сохранён', ['version' => $version->version]))->success()->send();
                 $this->refreshPrompt();
             })
             ->slideOver()
@@ -106,13 +109,13 @@ class EditAiPrompt extends EditRecord
     public function playgroundAction(): Action
     {
         return Action::make('playground')
-            ->label('Проверить')
+            ->label(__('Проверить'))
             ->icon(Heroicon::OutlinedPlay)
             ->color('info')
             ->schema([
-                Textarea::make('test_input')->label('Пример запроса')->rows(5)->default('{"query": "Тестовый запрос"}')->required(),
+                Textarea::make('test_input')->label(__('Пример запроса'))->rows(5)->default('{"query": "Тестовый запрос"}')->required(),
                 Select::make('model_release_id')
-                    ->label('Модель для проверки')
+                    ->label(__('Модель для проверки'))
                     ->options(fn (): array => AiPromptResource::modelReleaseOptions($this->prompt()))
                     ->searchable()
                     ->native(false)
@@ -135,8 +138,8 @@ class EditAiPrompt extends EditRecord
                     $this->notifyPlaygroundResult($result);
                 } catch (Throwable $exception) {
                     Notification::make()
-                        ->title('Не удалось проверить промпт')
-                        ->body($exception instanceof \InvalidArgumentException ? $exception->getMessage() : 'Проверьте настройки и повторите попытку.')
+                        ->title(__('Не удалось проверить промпт'))
+                        ->body($exception instanceof \InvalidArgumentException ? $exception->getMessage() : __('Проверьте настройки и повторите попытку.'))
                         ->danger()
                         ->send();
                 }
@@ -146,7 +149,7 @@ class EditAiPrompt extends EditRecord
     public function evaluationsAction(): Action
     {
         return Action::make('evaluations')
-            ->label('Запустить тесты')
+            ->label(__('Запустить тесты'))
             ->icon(Heroicon::OutlinedBeaker)
             ->url(fn (): string => AiEvaluationResource::getUrl('index', [
                 'tableFilters' => ['capability' => ['value' => $this->prompt()->capability->value]],
@@ -156,7 +159,7 @@ class EditAiPrompt extends EditRecord
     public function exportAction(): Action
     {
         return Action::make('export')
-            ->label('Экспорт')
+            ->label(__('Экспорт'))
             ->icon(Heroicon::OutlinedArrowDownTray)
             ->color('gray')
             ->visible(fn (): bool => $this->prompt()->active_version_id !== null)
@@ -179,20 +182,20 @@ class EditAiPrompt extends EditRecord
     public function activateDraftAction(): Action
     {
         return Action::make('activateDraft')
-            ->label('Сделать черновик активным')
+            ->label(__('Сделать черновик активным'))
             ->icon(Heroicon::OutlinedCheckCircle)
             ->color('success')
             ->visible(fn (): bool => $this->draftVersion() instanceof AiPromptVersion)
             ->requiresConfirmation()
-            ->modalHeading('Сделать черновик активной версией?')
-            ->modalDescription('Текущая активная версия перейдёт в историю. Её текст останется доступен и неизменным.')
+            ->modalHeading(__('Сделать черновик активной версией?'))
+            ->modalDescription(__('Текущая активная версия перейдёт в историю. Её текст останется доступен и неизменным.'))
             ->action(function (ActivatePromptVersion $activate): void {
                 $actor = Auth::user();
                 $draft = $this->draftVersion();
                 abort_unless($actor instanceof User && $draft instanceof AiPromptVersion, 403);
                 $activate->handle($actor, $draft->getKey());
                 $this->refreshPrompt();
-                Notification::make()->title("Версия v{$draft->version} активирована")->success()->send();
+                Notification::make()->title(__('Версия v:version активирована', ['version' => $draft->version]))->success()->send();
             });
     }
 
@@ -209,8 +212,8 @@ class EditAiPrompt extends EditRecord
         $prompt ??= $this->prompt();
 
         return $prompt->capability->value === 'client_companion'
-            ? 'AI-компаньон'
-            : $prompt->capability->label();
+            ? __('AI-компаньон')
+            : CrmLabel::enum($prompt->capability);
     }
 
     public function activeVersion(): ?AiPromptVersion
@@ -240,13 +243,13 @@ class EditAiPrompt extends EditRecord
     {
         if ($result->isSuccess()) {
             $notification = Notification::make()
-                ->title('Проверка успешна')
+                ->title(__('Проверка успешна'))
                 ->body(AiPlaygroundResultPresentation::body($result))
                 ->success();
             if ($result->runId > 0) {
                 $notification->actions([
                     Action::make('technicalData')
-                        ->label('Подробности проверки')
+                        ->label(__('Подробности проверки'))
                         ->url(AiRunResource::getUrl('view', ['record' => $result->runId]))
                         ->button()
                         ->openUrlInNewTab(),
@@ -257,6 +260,6 @@ class EditAiPrompt extends EditRecord
             return;
         }
 
-        Notification::make()->title('Не удалось проверить промпт')->body($result->errorMessageSanitized ?? 'Не удалось получить ответ для проверки. Проверьте настройки AI и повторите попытку.')->danger()->send();
+        Notification::make()->title(__('Не удалось проверить промпт'))->body($result->errorMessageSanitized ?? __('Не удалось получить ответ для проверки. Проверьте настройки AI и повторите попытку.'))->danger()->send();
     }
 }

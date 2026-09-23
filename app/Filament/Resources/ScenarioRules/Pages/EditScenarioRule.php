@@ -3,13 +3,13 @@
 namespace App\Filament\Resources\ScenarioRules\Pages;
 
 use App\Filament\Resources\ScenarioRules\ScenarioRuleResource;
+use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Scenarios\Application\UpdateScenarioRule;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
-use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 
-final class EditScenarioRule extends EditRecord
+final class EditScenarioRule extends LocalizedEditRecord
 {
     protected static string $resource = ScenarioRuleResource::class;
 

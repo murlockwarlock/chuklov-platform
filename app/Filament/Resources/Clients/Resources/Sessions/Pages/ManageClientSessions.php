@@ -4,14 +4,14 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Pages;
 
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
+use App\Filament\Support\LocalizedManageRelatedRecords;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Sessions\Application\ListClientSessions;
-use Filament\Resources\Pages\ManageRelatedRecords;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-class ManageClientSessions extends ManageRelatedRecords
+class ManageClientSessions extends LocalizedManageRelatedRecords
 {
     protected static string $resource = ClientResource::class;
 

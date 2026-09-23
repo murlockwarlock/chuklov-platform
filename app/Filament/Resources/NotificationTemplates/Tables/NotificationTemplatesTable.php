@@ -25,41 +25,41 @@ final class NotificationTemplatesTable
                 ->orderByDesc('id'))
             ->columns([
                 TextColumn::make('name')
-                    ->label('Сообщение')
+                    ->label(__('Сообщение'))
                     ->searchable()
                     ->sortable()
                     ->wrap(),
                 TextColumn::make('latestVersion.body')
-                    ->label('Предпросмотр')
+                    ->label(__('Предпросмотр'))
                     ->formatStateUsing(fn (?string $state): string => Str::limit(RichTextPresentation::text($state), 90))
-                    ->placeholder('Текст не добавлен')
+                    ->placeholder(__('Текст не добавлен'))
                     ->wrap(),
                 TextColumn::make('locale')
-                    ->label('Язык')
-                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? 'Русский' : 'Английский')
+                    ->label(__('Язык'))
+                    ->formatStateUsing(fn (string $state): string => $state === 'ru' ? __('Русский') : __('Английский'))
                     ->sortable(),
                 TextColumn::make('purpose')
-                    ->label('Для чего')
+                    ->label(__('Для чего'))
                     ->badge()
                     ->formatStateUsing(fn (ScenarioRulePurpose|string $state): string => self::purposeLabel($state)),
                 IconColumn::make('is_active')
-                    ->label('Включён')
+                    ->label(__('Включён'))
                     ->boolean()
                     ->sortable(),
             ])
-            ->emptyStateHeading('Шаблонов сообщений пока нет')
-            ->emptyStateDescription('Создайте текст сообщения, а затем настройте автоматическую отправку в «Авто-сообщениях».')
+            ->emptyStateHeading(__('Шаблонов сообщений пока нет'))
+            ->emptyStateDescription(__('Создайте текст сообщения, а затем настройте автоматическую отправку в «Авто-сообщениях».'))
             ->recordActions([
                 ViewAction::make()
-                    ->label('Открыть')
+                    ->label(__('Открыть'))
                     ->icon(Heroicon::OutlinedEye)
                     ->iconButton()
-                    ->tooltip('Открыть сообщение'),
+                    ->tooltip(__('Открыть сообщение')),
                 EditAction::make()
-                    ->label('Редактировать')
+                    ->label(__('Редактировать'))
                     ->icon(Heroicon::OutlinedPencil)
                     ->iconButton()
-                    ->tooltip('Редактировать сообщение'),
+                    ->tooltip(__('Редактировать сообщение')),
             ]);
     }
 
@@ -68,10 +68,10 @@ final class NotificationTemplatesTable
         $purpose = $purpose instanceof ScenarioRulePurpose ? $purpose : ScenarioRulePurpose::tryFrom($purpose);
 
         return match ($purpose) {
-            ScenarioRulePurpose::Service => 'Сервисное',
-            ScenarioRulePurpose::Transactional => 'Системное',
-            ScenarioRulePurpose::Marketing => 'Рассылка',
-            default => 'Не указано',
+            ScenarioRulePurpose::Service => __('Сервисное'),
+            ScenarioRulePurpose::Transactional => __('Системное'),
+            ScenarioRulePurpose::Marketing => __('Рассылка'),
+            default => __('Не указано'),
         };
     }
 }

@@ -7,9 +7,9 @@
 
     @if ($summary !== null)
         <div class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-200">
-            <div class="font-medium">Получатели: {{ $summary['eligible'] }} из {{ $summary['matched'] }}</div>
+            <div class="font-medium">{{ __('Получатели: :eligible из :matched', ['eligible' => $summary['eligible'], 'matched' => $summary['matched']]) }}</div>
             @if ($summary['reasons'] !== [])
-                <div class="mt-1">Исключено: {{ collect($summary['reasons'])->map(fn (int $count, string $reason): string => \App\Filament\Support\BroadcastFailurePresentation::label($reason).': '.$count)->implode('; ') }}</div>
+                <div class="mt-1">{{ __('Исключено:') }} {{ collect($summary['reasons'])->map(fn (int $count, string $reason): string => \App\Filament\Support\BroadcastFailurePresentation::label($reason).': '.$count)->implode('; ') }}</div>
             @endif
         </div>
     @endif
@@ -34,7 +34,7 @@
         @endif
 
         @if (! $preview['hasText'] && ! $preview['hasImage'])
-            <div class="rounded-2xl bg-white px-4 py-3 text-sm text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-300">Сообщение пока не заполнено.</div>
+            <div class="rounded-2xl bg-white px-4 py-3 text-sm text-slate-500 shadow-sm dark:bg-slate-800 dark:text-slate-300">{{ __('Сообщение пока не заполнено.') }}</div>
         @endif
         </div>
     @endif

@@ -7,6 +7,8 @@ use App\Filament\Resources\AiProviders\Pages\EditAiProvider;
 use App\Filament\Resources\AiProviders\Pages\ListAiProviders;
 use App\Filament\Resources\AiProviders\RelationManagers\ModelsRelationManager;
 use App\Filament\Resources\AiProviders\Schemas\AiProviderForm;
+use App\Filament\Support\CrmLabel;
+use App\Filament\Support\LocalizedResource;
 use App\Modules\AI\Application\Actions\TestProviderConnection;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
@@ -17,7 +19,6 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Notifications\Notification;
-use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -26,7 +27,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Support\Facades\Auth;
 
-final class AiProviderResource extends Resource
+final class AiProviderResource extends LocalizedResource
 {
     protected static ?string $model = AiProviderConfiguration::class;
 
@@ -54,25 +55,25 @@ final class AiProviderResource extends Resource
         return $table
             ->stackedOnMobile()
             ->columns([
-                TextColumn::make('display_name')->label('Название')->searchable()->sortable(),
+                TextColumn::make('display_name')->label(__('Название'))->searchable()->sortable(),
                 TextColumn::make('provider_name')
-                    ->label('Провайдер')
+                    ->label(__('Провайдер'))
                     ->formatStateUsing(fn ($state): string => self::providerLabel($state)),
                 TextColumn::make('credential.credential_name')
-                    ->label('API-ключ')
-                    ->placeholder('Не подключён')
+                    ->label(__('API-ключ'))
+                    ->placeholder(__('Не подключён'))
                     ->formatStateUsing(function ($state, AiProviderConfiguration $record): string {
                         if (! filled($state)) {
-                            return 'Не подключён';
+                            return __('Не подключён');
                         }
 
                         return $record->credential?->status === CredentialStatus::Active
-                            ? 'Подключён: '.$state
-                            : 'Отключён: '.$state;
+                            ? __('Подключён: :name', ['name' => $state])
+                            : __('Отключён: :name', ['name' => $state]);
                     })
                     ->toggleable(isToggledHiddenByDefault: true),
                 TextColumn::make('health_status')
-                    ->label('Состояние')
+                    ->label(__('Состояние'))
                     ->badge()
                     ->color(fn ($state): string => match ($state instanceof ProviderHealthStatus ? $state->value : (string) $state) {
                         'healthy' => 'success',
@@ -80,19 +81,19 @@ final class AiProviderResource extends Resource
                         'unavailable' => 'danger',
                         default => 'gray',
                     })
-                    ->formatStateUsing(fn ($state) => $state instanceof ProviderHealthStatus ? $state->label() : (string) $state),
-                TextColumn::make('is_enabled')->label('Статус')->formatStateUsing(fn ($state) => $state ? 'Включен' : 'Отключен'),
-                TextColumn::make('models_count')->counts('models')->label('Моделей')->toggleable(isToggledHiddenByDefault: true),
-                TextColumn::make('updated_at')->label('Изменён')->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
+                    ->formatStateUsing(fn ($state) => $state instanceof ProviderHealthStatus ? CrmLabel::enum($state) : (string) $state),
+                TextColumn::make('is_enabled')->label(__('Статус'))->formatStateUsing(fn ($state) => $state ? __('Включен') : __('Отключен')),
+                TextColumn::make('models_count')->counts('models')->label(__('Моделей'))->toggleable(isToggledHiddenByDefault: true),
+                TextColumn::make('updated_at')->label(__('Изменён'))->dateTime('d.m.Y H:i')->sortable()->toggleable(isToggledHiddenByDefault: true),
             ])
-            ->emptyStateHeading('Сервисов AI пока нет')
-            ->emptyStateDescription('Добавьте подключение AI: выберите сервис и укажите API-ключ.')
+            ->emptyStateHeading(__('Сервисов AI пока нет'))
+            ->emptyStateDescription(__('Добавьте подключение AI: выберите сервис и укажите API-ключ.'))
             ->recordActions([
                 Action::make('test_connection')
-                    ->label('Проверить связь')
+                    ->label(__('Проверить связь'))
                     ->icon(Heroicon::OutlinedSignal)
                     ->iconButton()
-                    ->tooltip('Проверить подключение')
+                    ->tooltip(__('Проверить подключение'))
                     ->color('gray')
                     ->action(function (AiProviderConfiguration $record): void {
                         $actor = Auth::user();
@@ -100,12 +101,12 @@ final class AiProviderResource extends Resource
                             $result = app(TestProviderConnection::class)->handle($actor, $record->id);
                             if ($result['success']) {
                                 Notification::make()
-                                    ->title('Связь проверена успешно')
+                                    ->title(__('Связь проверена успешно'))
                                     ->success()
                                     ->send();
                             } else {
                                 Notification::make()
-                                    ->title('Связь не проверена')
+                                    ->title(__('Связь не проверена'))
                                     ->body($result['message'])
                                     ->danger()
                                     ->send();
@@ -113,10 +114,10 @@ final class AiProviderResource extends Resource
                         }
                     }),
                 EditAction::make()
-                    ->label('Редактировать')
+                    ->label(__('Редактировать'))
                     ->icon(Heroicon::OutlinedPencil)
                     ->iconButton()
-                    ->tooltip('Редактировать провайдера'),
+                    ->tooltip(__('Редактировать провайдера')),
             ])
             ->defaultSort('updated_at', 'desc');
     }
@@ -153,7 +154,7 @@ final class AiProviderResource extends Resource
         try {
             return AiProviderCatalog::label($provider);
         } catch (\InvalidArgumentException) {
-            return 'Провайдер требует проверки';
+            return __('Провайдер требует проверки');
         }
     }
 }

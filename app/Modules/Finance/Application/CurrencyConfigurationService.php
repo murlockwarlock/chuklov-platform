@@ -58,15 +58,32 @@ final class CurrencyConfigurationService
 
     public function isServicePriceAvailable(Organization|int $organization, Service $service): bool
     {
-        if ($service->price_minor === null) {
-            return true;
+        $allowed = $this->allowedCurrencies($organization);
+        $priceCurrency = $service->getAttribute('price_currency');
+
+        if ($service->price_minor !== null && is_string($priceCurrency)) {
+            try {
+                if (in_array($this->catalog->code($priceCurrency), $allowed, true)) {
+                    return true;
+                }
+            } catch (InvalidArgumentException) {
+            }
         }
 
-        try {
-            return in_array($this->catalog->code((string) $service->price_currency), $this->allowedCurrencies($organization), true);
-        } catch (InvalidArgumentException) {
-            return false;
+        foreach ((array) $service->getAttribute('price_matrix') as $currency => $amount) {
+            try {
+                if (is_string($currency) && is_numeric($amount)
+                    && (int) $amount > 0
+                    && in_array($this->catalog->code($currency), $allowed, true)) {
+                    return true;
+                }
+            } catch (InvalidArgumentException) {
+            }
         }
+
+        $priceMatrix = $service->getAttribute('price_matrix');
+
+        return $service->price_minor === null && ($priceMatrix === null || $priceMatrix === []);
     }
 
     /**
@@ -155,6 +172,23 @@ final class CurrencyConfigurationService
             ->distinct()
             ->pluck('price_currency') as $currency) {
             $currencies[] = $this->catalog->code($currency);
+        }
+
+        foreach (DB::table('services')
+            ->where('organization_id', $organizationId)
+            ->whereNotNull('price_matrix')
+            ->pluck('price_matrix') as $matrix) {
+            $values = is_string($matrix) ? json_decode($matrix, true) : $matrix;
+            if (! is_array($values)) {
+                continue;
+            }
+
+            foreach (array_keys($values) as $currency) {
+                try {
+                    $currencies[] = $this->catalog->code($currency);
+                } catch (InvalidArgumentException) {
+                }
+            }
         }
 
         if (Schema::hasTable('financial_obligations')) {

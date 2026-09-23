@@ -27,12 +27,12 @@ final class ScheduleImpactPreview
             Hidden::make('schedule_impact_bookings')
                 ->dehydrated(false),
             TextEntry::make('schedule_impact_preview')
-                ->label('Затронутые будущие записи')
+                ->label(__('Затронутые будущие записи'))
                 ->state(fn (Get $get): string => self::formatBookings($get('schedule_impact_bookings')))
                 ->visible(fn (Get $get): bool => self::hasBookings($get('schedule_impact_bookings')))
                 ->columnSpanFull(),
             Checkbox::make('acknowledge_impact')
-                ->label('Подтверждаю влияние на будущие записи')
+                ->label(__('Подтверждаю влияние на будущие записи'))
                 ->default(false)
                 ->visible(fn (Get $get): bool => self::hasBookings($get('schedule_impact_bookings')))
                 ->columnSpanFull(),
@@ -112,9 +112,9 @@ final class ScheduleImpactPreview
         return implode("\n", array_map(
             static fn (array $booking): string => sprintf(
                 '%s · %s · %s · %s · %s',
-                (string) ($booking['client'] ?? 'Клиент'),
-                (string) ($booking['service'] ?? 'Услуга'),
-                (string) ($booking['specialist'] ?? 'Специалист'),
+                (string) ($booking['client'] ?? __('Клиент')),
+                (string) ($booking['service'] ?? __('Услуга')),
+                (string) ($booking['specialist'] ?? __('Специалист')),
                 self::dateTimeLabel($booking['local_start'] ?? null),
                 self::statusLabel($booking['status'] ?? null),
             ),
@@ -130,7 +130,7 @@ final class ScheduleImpactPreview
     public static function dateTimeLabel(mixed $value): string
     {
         if (! is_string($value) || $value === '') {
-            return 'Дата не указана';
+            return __('Дата не указана');
         }
 
         return CarbonImmutable::parse($value)->format('d.m.Y H:i');
@@ -141,14 +141,14 @@ final class ScheduleImpactPreview
         $status = is_string($status) ? BookingStatus::tryFrom($status) : null;
 
         return match ($status) {
-            BookingStatus::Requested => 'Ожидает подтверждения',
-            BookingStatus::PendingReview => 'На рассмотрении',
-            BookingStatus::Confirmed => 'Подтверждена',
-            BookingStatus::Rejected => 'Отклонена',
-            BookingStatus::Cancelled => 'Отменена',
-            BookingStatus::Completed => 'Завершена',
-            BookingStatus::NoShow => 'Не состоялась',
-            default => 'Статус не указан',
+            BookingStatus::Requested => __('Ожидает подтверждения'),
+            BookingStatus::PendingReview => __('На рассмотрении'),
+            BookingStatus::Confirmed => __('Подтверждена'),
+            BookingStatus::Rejected => __('Отклонена'),
+            BookingStatus::Cancelled => __('Отменена'),
+            BookingStatus::Completed => __('Завершена'),
+            BookingStatus::NoShow => __('Не состоялась'),
+            default => __('Статус не указан'),
         };
     }
 }

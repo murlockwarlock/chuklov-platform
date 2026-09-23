@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\ScenarioRules\Pages;
 
 use App\Filament\Resources\ScenarioRules\ScenarioRuleResource;
+use App\Filament\Support\LocalizedViewRecord;
 use Filament\Actions\EditAction;
-use Filament\Resources\Pages\ViewRecord;
 
-final class ViewScenarioRule extends ViewRecord
+final class ViewScenarioRule extends LocalizedViewRecord
 {
     protected static string $resource = ScenarioRuleResource::class;
 
@@ -16,7 +16,7 @@ final class ViewScenarioRule extends ViewRecord
     {
         return [
             EditAction::make()
-                ->label('Редактировать авто-сообщение')
+                ->label(__('Редактировать авто-сообщение'))
                 ->icon('heroicon-o-pencil-square')
                 ->color('primary'),
         ];

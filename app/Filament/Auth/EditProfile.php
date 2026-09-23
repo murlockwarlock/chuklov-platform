@@ -10,9 +10,11 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
+use App\Support\SupportedLocale;
 use Filament\Actions\Action;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
@@ -26,16 +28,22 @@ final class EditProfile extends BaseEditProfile
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $data['notifications_enabled'] = $this->membership()->notifications_enabled;
+        $data['crm_locale'] = app()->getLocale();
 
         return $data;
     }
 
     protected function mutateFormDataBeforeSave(array $data): array
     {
+        $locale = SupportedLocale::normalize(is_string($data['crm_locale'] ?? null) ? $data['crm_locale'] : null);
+        session()->put(SupportedLocale::AdminSessionKey, $locale);
+        app()->setLocale($locale);
+
         $this->membership()->forceFill([
             'notifications_enabled' => (bool) ($data['notifications_enabled'] ?? true),
         ])->save();
         unset($data['notifications_enabled']);
+        unset($data['crm_locale']);
 
         return $data;
     }
@@ -49,15 +57,23 @@ final class EditProfile extends BaseEditProfile
                 $this->getPasswordFormComponent(),
                 $this->getPasswordConfirmationFormComponent(),
                 $this->getCurrentPasswordFormComponent(),
-                Section::make('Уведомления сотрудника')
+                Section::make(__('Настройки CRM'))
                     ->schema([
+                        Select::make('crm_locale')
+                            ->label(__('Язык CRM'))
+                            ->options([
+                                'ru' => __('Русский'),
+                                'en' => __('English'),
+                            ])
+                            ->required()
+                            ->native(false),
                         Placeholder::make('telegram_status')
-                            ->label('Telegram')
+                            ->label(__('Telegram'))
                             ->content(fn (): string => $this->telegramConnectionStatus()),
                         Toggle::make('notifications_enabled')
-                            ->label('Уведомления CRM')
+                            ->label(__('Уведомления CRM'))
                             ->required()
-                            ->helperText('Разрешить автоматические уведомления для этого сотрудника.'),
+                            ->helperText(__('Разрешить автоматические уведомления для этого сотрудника.')),
                     ])
                     ->columns(1),
             ])
@@ -75,21 +91,21 @@ final class EditProfile extends BaseEditProfile
     protected function telegramConnectionAction(): Action
     {
         return Action::make('telegramConnection')
-            ->label(fn (): string => $this->hasVerifiedTelegram() ? 'Перепривязать Telegram' : 'Подключить Telegram')
+            ->label(fn (): string => $this->hasVerifiedTelegram() ? __('Перепривязать Telegram') : __('Подключить Telegram'))
             ->icon('heroicon-o-link')
             ->authorize(fn (): bool => $this->canConnectTelegram())
             ->visible(fn (): bool => $this->canConnectTelegram())
             ->modalHeading(fn (): string => $this->hasVerifiedTelegram()
-                ? 'Перепривязать Telegram'
-                : 'Подключить Telegram')
-            ->modalDescription('Скопируйте одноразовую ссылку и откройте её в Telegram. После подтверждения аккаунт будет использоваться для уведомлений CRM.')
+                ? __('Перепривязать Telegram')
+                : __('Подключить Telegram'))
+            ->modalDescription(__('Скопируйте одноразовую ссылку и откройте её в Telegram. После подтверждения аккаунт будет использоваться для уведомлений CRM.'))
             ->modalSubmitAction(false)
-            ->modalCancelActionLabel('Закрыть')
+            ->modalCancelActionLabel(__('Закрыть'))
             ->schema([
                 TextInput::make('link')
-                    ->label('Ссылка для Telegram')
+                    ->label(__('Ссылка для Telegram'))
                     ->readOnly()
-                    ->copyable(copyMessage: 'Ссылка скопирована')
+                    ->copyable(copyMessage: __('Ссылка скопирована'))
                     ->required()
                     ->columnSpanFull(),
             ])
@@ -102,7 +118,7 @@ final class EditProfile extends BaseEditProfile
 
         if (! $user instanceof User) {
             throw ValidationException::withMessages([
-                'link' => 'Не удалось определить сотрудника CRM.',
+                'link' => __('Не удалось определить сотрудника CRM.'),
             ]);
         }
 
@@ -113,7 +129,7 @@ final class EditProfile extends BaseEditProfile
             );
         } catch (AuthorizationException|LogicException) {
             throw ValidationException::withMessages([
-                'link' => 'Ссылку пока не удалось создать. Проверьте подключение Telegram-бота.',
+                'link' => __('Ссылку пока не удалось создать. Проверьте подключение Telegram-бота.'),
             ]);
         }
     }
@@ -123,7 +139,7 @@ final class EditProfile extends BaseEditProfile
         $user = $this->getUser();
 
         if (! $user instanceof User) {
-            return 'Не подключён';
+            return __('Не подключён');
         }
 
         return OrganizationChannelIdentity::query()
@@ -132,13 +148,13 @@ final class EditProfile extends BaseEditProfile
             ->where('channel', 'telegram')
             ->where('verification_status', ChannelIdentityStatus::Verified->value)
             ->exists()
-            ? 'Подключён'
-            : 'Не подключён';
+            ? __('Подключён')
+            : __('Не подключён');
     }
 
     private function hasVerifiedTelegram(): bool
     {
-        return $this->telegramConnectionStatus() === 'Подключён';
+        return $this->telegramConnectionStatus() === __('Подключён');
     }
 
     private function canConnectTelegram(): bool

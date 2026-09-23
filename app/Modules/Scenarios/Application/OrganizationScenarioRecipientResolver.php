@@ -12,6 +12,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipientStrategy;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Support\SupportedLocale;
 use Illuminate\Database\Eloquent\Collection;
 
 final class OrganizationScenarioRecipientResolver implements ScenarioRecipientResolver
@@ -172,8 +173,6 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
 
     private function locale(?string $language): string
     {
-        $language = strtolower(trim((string) $language));
-
-        return preg_match('/^[a-z]{2}(?:-[a-z]{2})?$/', $language) === 1 ? substr($language, 0, 2) : 'en';
+        return SupportedLocale::normalize($language);
     }
 }

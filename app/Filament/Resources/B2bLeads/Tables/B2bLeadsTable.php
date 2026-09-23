@@ -5,6 +5,7 @@ namespace App\Filament\Resources\B2bLeads\Tables;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\CrmLabel;
 use App\Modules\B2B\Domain\Enums\B2bLeadStatus;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bLead;
@@ -26,41 +27,41 @@ final class B2bLeadsTable
             ->stackedOnMobile()
             ->columns([
                 TextColumn::make('client.full_name')
-                    ->label('Клиент')
+                    ->label(__('Клиент'))
                     ->searchable()
                     ->sortable()
                     ->wrap()
                     ->url(fn (B2bLead $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients))
                     ->color(fn (B2bLead $record): ?string => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (B2bLead $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
-                TextColumn::make('b2b_specialist_answer')->label('Сегмент')->formatStateUsing(static fn (): string => '#Массажист_B2B')->badge(),
-                TextColumn::make('status')->label('Статус')->formatStateUsing(static fn ($state): string => self::status($state))->badge()->sortable(),
+                TextColumn::make('b2b_specialist_answer')->label(__('Сегмент'))->formatStateUsing(static fn (): string => __('#Массажист_B2B'))->badge(),
+                TextColumn::make('status')->label(__('Статус'))->formatStateUsing(static fn ($state): string => self::status($state))->badge()->sortable(),
                 TextColumn::make('salesCall.specialist.display_name')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->searchable()
                     ->sortable()
                     ->wrap()
                     ->url(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist, $canViewSpecialists))
                     ->color(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist, $canViewSpecialists) === null ? null : 'primary')
                     ->disabledClick(fn (B2bLead $record): bool => CrmEntityLinks::specialistUrl($record->salesCall?->specialist, $canViewSpecialists) === null),
-                TextColumn::make('salesCall.starts_at')->label('Разговор')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('salesCall.starts_at')->label(__('Разговор'))->dateTime('d.m.Y H:i')->sortable(),
                 TextColumn::make('salesCall.provider_sync_status')->label('Zoom')->formatStateUsing(static fn ($state): string => self::provider($state))->badge(),
-                TextColumn::make('submitted_at')->label('Отправлено')->dateTime('d.m.Y H:i')->sortable(),
+                TextColumn::make('submitted_at')->label(__('Отправлено'))->dateTime('d.m.Y H:i')->sortable(),
             ])
             ->filters([
-                SelectFilter::make('status')->label('Статус')->options([
-                    B2bLeadStatus::New->value => 'Новый',
-                    B2bLeadStatus::Contacted->value => 'Связались',
-                    B2bLeadStatus::ZoomScheduled->value => 'Разговор запланирован',
-                    B2bLeadStatus::Closed->value => 'Закрыт',
+                SelectFilter::make('status')->label(__('Статус'))->options([
+                    B2bLeadStatus::New->value => CrmLabel::enum(B2bLeadStatus::New),
+                    B2bLeadStatus::Contacted->value => CrmLabel::enum(B2bLeadStatus::Contacted),
+                    B2bLeadStatus::ZoomScheduled->value => CrmLabel::enum(B2bLeadStatus::ZoomScheduled),
+                    B2bLeadStatus::Closed->value => CrmLabel::enum(B2bLeadStatus::Closed),
                 ]),
                 SelectFilter::make('provider_sync_status')
-                    ->label('Синхронизация Zoom')
+                    ->label(__('Синхронизация Zoom'))
                     ->options([
-                        VideoMeetingSyncStatus::Pending->value => 'Ожидает',
-                        VideoMeetingSyncStatus::Ready->value => 'Готово',
-                        VideoMeetingSyncStatus::Failed->value => 'Ошибка',
-                        VideoMeetingSyncStatus::ReconciliationRequired->value => 'Требуется сверка',
+                        VideoMeetingSyncStatus::Pending->value => CrmLabel::enum(VideoMeetingSyncStatus::Pending),
+                        VideoMeetingSyncStatus::Ready->value => CrmLabel::enum(VideoMeetingSyncStatus::Ready),
+                        VideoMeetingSyncStatus::Failed->value => CrmLabel::enum(VideoMeetingSyncStatus::Failed),
+                        VideoMeetingSyncStatus::ReconciliationRequired->value => CrmLabel::enum(VideoMeetingSyncStatus::ReconciliationRequired),
                     ])
                     ->query(fn ($query, array $data) => $query->when(
                         $data['value'] ?? null,
@@ -70,7 +71,7 @@ final class B2bLeadsTable
                         ),
                     )),
                 SelectFilter::make('specialist_id')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->options(fn (): array => Specialist::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->orderBy('display_name')
@@ -86,7 +87,7 @@ final class B2bLeadsTable
                     )),
             ])
             ->defaultSort('submitted_at', 'desc')
-            ->recordActions([ViewAction::make()->label('Открыть')])
+            ->recordActions([ViewAction::make()->label(__('Открыть'))])
             ->paginated([10, 25, 50]);
     }
 
@@ -94,27 +95,13 @@ final class B2bLeadsTable
     {
         $status = $state instanceof B2bLeadStatus ? $state : B2bLeadStatus::tryFrom((string) $state);
 
-        return match ($status) {
-            B2bLeadStatus::New => 'Новый',
-            B2bLeadStatus::Contacted => 'Связались',
-            B2bLeadStatus::ZoomScheduled => 'Запланирован',
-            B2bLeadStatus::Closed => 'Закрыт',
-            default => '—',
-        };
+        return CrmLabel::enum($status) ?? '—';
     }
 
     private static function provider(mixed $state): string
     {
         $status = $state instanceof VideoMeetingSyncStatus ? $state : VideoMeetingSyncStatus::tryFrom((string) $state);
 
-        return match ($status) {
-            VideoMeetingSyncStatus::NotRequired => 'Не требуется',
-            VideoMeetingSyncStatus::Pending => 'Ожидает',
-            VideoMeetingSyncStatus::Ready => 'Готово',
-            VideoMeetingSyncStatus::Failed => 'Ошибка',
-            VideoMeetingSyncStatus::CancellationPending => 'Отмена',
-            VideoMeetingSyncStatus::ReconciliationRequired => 'Сверка',
-            default => '—',
-        };
+        return CrmLabel::enum($status) ?? '—';
     }
 }

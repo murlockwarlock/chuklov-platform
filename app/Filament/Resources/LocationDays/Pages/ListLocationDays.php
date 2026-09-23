@@ -3,10 +3,10 @@
 namespace App\Filament\Resources\LocationDays\Pages;
 
 use App\Filament\Resources\LocationDays\LocationDayResource;
+use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-class ListLocationDays extends ListRecords
+class ListLocationDays extends LocalizedListRecords
 {
     protected static string $resource = LocationDayResource::class;
 
@@ -14,6 +14,6 @@ class ListLocationDays extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [CreateAction::make()->label('Добавить день выезда')];
+        return [CreateAction::make()->label(__('Добавить день выезда'))];
     }
 }

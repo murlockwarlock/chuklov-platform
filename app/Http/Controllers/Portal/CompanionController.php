@@ -13,6 +13,7 @@ use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionImageReferenceMode;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Organizations\Application\OrganizationContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -43,11 +44,12 @@ final class CompanionController extends Controller
         ClientPortalContext $context,
         AcceptCompanionMessage $accept,
         UploadCompanionImages $upload,
+        PortalClientMessages $messages,
     ): RedirectResponse {
         $body = trim((string) $request->input('body', ''));
         $files = array_values(array_filter((array) $request->file('images', [])));
         if ($body === '' && $files === []) {
-            throw ValidationException::withMessages(['body' => 'Добавьте сообщение или изображение.']);
+            throw ValidationException::withMessages(['body' => $messages->message('companion_message_required')]);
         }
         $checksums = array_map(static function (mixed $file): string {
             $path = $file instanceof UploadedFile ? $file->getRealPath() : false;
@@ -67,7 +69,7 @@ final class CompanionController extends Controller
             ->where('idempotency_key', (string) $request->string('idempotency_key'))
             ->first();
         if ($existing !== null) {
-            abort_unless($existing->request_hash === $payloadHash, 409, 'Запрос уже принят с другими данными.');
+            abort_unless($existing->request_hash === $payloadHash, 409, $messages->message('companion_request_conflict'));
 
             return back()->with('companion_message_accepted', true);
         }

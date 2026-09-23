@@ -20,7 +20,7 @@ class ScheduleExceptionForm
         return $schema
             ->components([
                 Select::make('specialist_id')
-                    ->label('Специалист')
+                    ->label(__('Специалист'))
                     ->options(fn (): array => Specialist::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
                         ->orderBy('display_name')
@@ -29,26 +29,26 @@ class ScheduleExceptionForm
                     ->searchable()
                     ->required(),
                 DatePicker::make('exception_date')
-                    ->label('Дата')
+                    ->label(__('Дата'))
                     ->required(),
                 Select::make('exception_type')
-                    ->label('Тип изменения')
+                    ->label(__('Тип изменения'))
                     ->options([
-                        ScheduleExceptionType::DayOff->value => 'Выходной день',
-                        ScheduleExceptionType::CustomWindow->value => 'Дополнительные часы',
+                        ScheduleExceptionType::DayOff->value => __('Выходной день'),
+                        ScheduleExceptionType::CustomWindow->value => __('Дополнительные часы'),
                     ])
                     ->required()
                     ->live(),
                 TimePicker::make('start_time')
-                    ->label('Начало')
+                    ->label(__('Начало'))
                     ->seconds(false)
                     ->visible(fn (Get $get): bool => $get('exception_type') === ScheduleExceptionType::CustomWindow->value),
                 TimePicker::make('end_time')
-                    ->label('Окончание')
+                    ->label(__('Окончание'))
                     ->seconds(false)
                     ->visible(fn (Get $get): bool => $get('exception_type') === ScheduleExceptionType::CustomWindow->value),
                 TextInput::make('reason')
-                    ->label('Причина')
+                    ->label(__('Причина'))
                     ->maxLength(500),
                 ...ScheduleImpactPreview::components(),
             ]);

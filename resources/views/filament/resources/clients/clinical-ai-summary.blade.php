@@ -14,16 +14,16 @@
 @endphp
 
 <span class="block max-w-5xl space-y-3 text-sm text-gray-700 dark:text-gray-200">
-    <span class="block max-w-4xl break-words leading-6">{{ $summary['explanation'] }}</span>
+    <span class="block max-w-4xl break-words leading-6">{{ __($summary['explanation']) }}</span>
 
     <span class="grid grid-cols-1 gap-2 sm:grid-cols-3">
         @foreach ($stateRows as $state)
             <span class="flex min-w-0 flex-col gap-2 rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-white/10 dark:bg-white/5">
-                <span class="min-w-0 break-words text-xs font-medium text-gray-600 dark:text-gray-300">{{ $state['label'] }}</span>
+                <span class="min-w-0 break-words text-xs font-medium text-gray-600 dark:text-gray-300">{{ __($state['label']) }}</span>
                 <span class="min-w-0">
-                    <span class="inline-flex max-w-full rounded-full px-2 py-1 text-xs font-medium {{ $badgeClasses[$state['color']] ?? $badgeClasses['gray'] }}">{{ $state['state'] }}</span>
-                    @if ($state['label'] === 'Клиническое резюме' && $state['lastReadyAt'])
-                        <span class="mt-1 block break-words text-xs text-gray-500 dark:text-gray-400">Последний проверенный результат: {{ $state['lastReadyAt'] }}</span>
+                    <span class="inline-flex max-w-full rounded-full px-2 py-1 text-xs font-medium {{ $badgeClasses[$state['color']] ?? $badgeClasses['gray'] }}">{{ __($state['state']) }}</span>
+                    @if ($state['label'] === __('Клиническое резюме') && $state['lastReadyAt'])
+                        <span class="mt-1 block break-words text-xs text-gray-500 dark:text-gray-400">{{ __('Последний проверенный результат: :date', ['date' => $state['lastReadyAt']]) }}</span>
                     @endif
                 </span>
             </span>
@@ -34,22 +34,22 @@
         @php($courseReport = $summary['states']['courseReport'])
         <span class="block rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 dark:border-white/10 dark:bg-white/5">
             <span class="flex min-w-0 flex-wrap items-center gap-2">
-                <span class="min-w-0 break-words text-xs font-medium text-gray-600 dark:text-gray-300">{{ $courseReport['label'] }}</span>
-                <span class="inline-flex max-w-full rounded-full px-2 py-1 text-xs font-medium {{ $badgeClasses[$courseReport['color']] ?? $badgeClasses['gray'] }}">{{ $courseReport['state'] }}</span>
+                <span class="min-w-0 break-words text-xs font-medium text-gray-600 dark:text-gray-300">{{ __($courseReport['label']) }}</span>
+                <span class="inline-flex max-w-full rounded-full px-2 py-1 text-xs font-medium {{ $badgeClasses[$courseReport['color']] ?? $badgeClasses['gray'] }}">{{ __($courseReport['state']) }}</span>
             </span>
             @if ($courseReport['lastReadyAt'])
-                <span class="mt-1 block break-words text-xs text-gray-500 dark:text-gray-400">Последний проверенный отчёт: {{ $courseReport['lastReadyAt'] }}</span>
+                <span class="mt-1 block break-words text-xs text-gray-500 dark:text-gray-400">{{ __('Последний проверенный отчёт: :date', ['date' => $courseReport['lastReadyAt']]) }}</span>
             @endif
-            <span class="mt-1 block break-words text-xs text-gray-500 dark:text-gray-400">Формируется вручную по выбранному периоду и требует проверки специалистом.</span>
+            <span class="mt-1 block break-words text-xs text-gray-500 dark:text-gray-400">{{ __('Формируется вручную по выбранному периоду и требует проверки специалистом.') }}</span>
         </span>
     @endif
 
     <span class="block rounded-xl border border-gray-200 px-3 py-2.5 dark:border-white/10">
-        <span class="block text-xs font-semibold text-gray-700 dark:text-gray-200">Источники клинического резюме</span>
+        <span class="block text-xs font-semibold text-gray-700 dark:text-gray-200">{{ __('Источники клинического резюме') }}</span>
         <span class="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 sm:grid-cols-2">
             @foreach ($summary['readiness'] as $source)
                 <span class="min-w-0 break-words text-xs {{ $source['available'] ? 'text-gray-700 dark:text-gray-200' : 'text-gray-500 dark:text-gray-400' }}">
-                    {{ $source['label'] }}: {{ $source['availability'] }}
+                    {{ __($source['label']) }}: {{ __($source['availability']) }}
                 </span>
             @endforeach
         </span>

@@ -3,12 +3,12 @@
 namespace App\Filament\Resources\Clients\Pages;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Support\LocalizedListRecords;
 use App\Modules\Analytics\Application\ClientSegmentQuery;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
 use Filament\Actions\CreateAction;
-use Filament\Resources\Pages\ListRecords;
 
-class ListClients extends ListRecords
+class ListClients extends LocalizedListRecords
 {
     protected static string $resource = ClientResource::class;
 
@@ -23,7 +23,7 @@ class ListClients extends ListRecords
 
     protected function getHeaderActions(): array
     {
-        return [CreateAction::make()->label('Добавить клиента')];
+        return [CreateAction::make()->label(__('Добавить клиента'))];
     }
 
     public function selectSegment(string $segment): void
