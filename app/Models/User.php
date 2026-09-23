@@ -49,7 +49,9 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             return false;
         }
 
-        return $this->hasPermission(OrganizationPermission::ViewAdmin);
+        return $this->memberships()->get()->contains(
+            fn (OrganizationMembership $membership): bool => $membership->role->allows(OrganizationPermission::ViewAdmin),
+        );
     }
 
     public function membershipFor(Organization|int $organization): ?OrganizationMembership
