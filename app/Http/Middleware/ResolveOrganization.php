@@ -26,6 +26,10 @@ class ResolveOrganization
         $organization = Organization::query()->findOrFail((int) $organizationId);
 
         if ($user instanceof User && $user->membershipFor($organization) === null) {
+            if (! $request->is('admin', 'admin/*')) {
+                abort(403);
+            }
+
             auth('web')->logout();
 
             if ($request->hasSession()) {

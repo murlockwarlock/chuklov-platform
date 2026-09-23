@@ -54,7 +54,7 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             || (is_string($organizationId) && ctype_digit($organizationId));
 
         if (! $isInteger) {
-            return false;
+            return $this->hasPermission(OrganizationPermission::ViewAdmin);
         }
 
         $organization = Organization::query()->find((int) $organizationId);
