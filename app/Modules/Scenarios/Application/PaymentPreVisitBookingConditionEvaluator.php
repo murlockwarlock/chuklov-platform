@@ -7,13 +7,13 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioConditionOperator;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioCondition;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 
-final class BookingNextBookingConditionEvaluator implements ScenarioConditionEvaluator
+final class PaymentPreVisitBookingConditionEvaluator implements ScenarioConditionEvaluator
 {
-    public function __construct(private readonly HasQualifyingNextBooking $nextBooking) {}
+    public function __construct(private readonly PaymentPreVisitBookingEligibility $eligibility) {}
 
     public function type(): string
     {
-        return 'booking.has_qualifying_next_booking';
+        return 'payment.is_pre_visit_booking_payment';
     }
 
     public function validate(ScenarioCondition $condition): void
@@ -23,7 +23,7 @@ final class BookingNextBookingConditionEvaluator implements ScenarioConditionEva
 
     public function evaluate(ScenarioCondition $condition, ScenarioEvaluationContext $context): bool
     {
-        $actual = $this->nextBooking->forScenario($context);
+        $actual = $this->eligibility->handle($context);
 
         return match ($condition->operator) {
             ScenarioConditionOperator::Equals => $actual === BooleanScenarioCondition::value($condition->value),

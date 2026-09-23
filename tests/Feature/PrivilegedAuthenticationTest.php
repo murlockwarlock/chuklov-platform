@@ -13,7 +13,6 @@ use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Infrastructure\Filament\AuditedAppAuthentication;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
@@ -61,7 +60,7 @@ class PrivilegedAuthenticationTest extends TestCase
         $this->actingAs($admin);
         $secret = app(AuditedAppAuthentication::class)->generateSecret();
         app(AuditedAppAuthentication::class)->saveSecret($admin, $secret);
-        Auth::logout();
+        Filament::auth()->logout();
 
         $code = app(AuditedAppAuthentication::class)->getCurrentCode($admin);
         $login = Livewire::test(AdminLogin::class)
@@ -77,6 +76,60 @@ class PrivilegedAuthenticationTest extends TestCase
             ->call('authenticate');
 
         self::assertAuthenticatedAs($admin);
+    }
+
+    public function test_recovery_code_login_consumes_and_audits_only_a_valid_code(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($admin);
+        $provider = app(AuditedAppAuthentication::class);
+        $provider->saveSecret($admin, $provider->generateSecret());
+        $recoveryCode = 'recovery-code-1';
+        $provider->saveRecoveryCodes($admin, [$recoveryCode]);
+        Filament::auth()->logout();
+
+        $login = Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
+            ->call('authenticate');
+
+        $login
+            ->fillForm([
+                'multiFactor.app.useRecoveryCode' => true,
+                'multiFactor.app.recoveryCode' => $recoveryCode,
+            ])
+            ->call('authenticate');
+
+        self::assertAuthenticatedAs($admin);
+        self::assertSame([], $admin->fresh()->getAppAuthenticationRecoveryCodes());
+        $audit = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'privileged.mfa.recovery_code.used')
+            ->sole();
+        self::assertNull($audit->actor_user_id);
+        self::assertSame(User::class, $audit->target_type);
+        self::assertSame((string) $admin->getKey(), $audit->target_id);
+        self::assertSame([], $audit->metadata);
+        self::assertStringNotContainsString($recoveryCode, (string) DB::table('audit_events')->where('id', $audit->getKey())->value('metadata'));
+
+        Filament::auth()->logout();
+        $reused = Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
+            ->call('authenticate')
+            ->fillForm([
+                'multiFactor.app.useRecoveryCode' => true,
+                'multiFactor.app.recoveryCode' => $recoveryCode,
+            ])
+            ->call('authenticate');
+
+        self::assertGuest('web');
+        self::assertSame(1, AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'privileged.mfa.recovery_code.used')
+            ->count());
     }
 
     public function test_mfa_secrets_are_encrypted_and_lifecycle_changes_are_audited(): void

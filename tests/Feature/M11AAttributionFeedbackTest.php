@@ -31,7 +31,9 @@ use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
 use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
+use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -440,6 +442,112 @@ final class M11AAttributionFeedbackTest extends TestCase
         self::assertSame(1, $admin->fresh()->notifications()->count());
     }
 
+    public function test_low_score_escalation_uses_the_authoritative_band_after_threshold_changes(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Проверка порога',
+            'language' => 'ru',
+        ]);
+        $admin = User::factory()->forOrganization($organization)->create();
+        OrganizationChannelIdentity::factory()->forUser($admin)->verified()->create([
+            'external_id' => 'threshold-manager',
+        ]);
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 9,
+            lowScoreFeedbackRequired: false,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+        );
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $telegram = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([
+            app(DatabaseNotificationChannel::class),
+            $telegram,
+        ]));
+
+        $internal = app(RecordNpsSubmission::class)->handle(
+            client: $client,
+            score: 8,
+            internalFeedback: 'Порог должен применяться из настройки.',
+            idempotencyKey: 'threshold-nine',
+        );
+        $internalEvent = ScenarioEvent::query()->where('aggregate_id', (string) $internal->getKey())->sole();
+        self::assertSame('internal', $internalEvent->payload['band']);
+        $this->deliverScenarioEvent($internalEvent);
+
+        self::assertSame(1, $admin->fresh()->notifications()->count());
+        self::assertCount(1, $telegram->messages);
+        self::assertStringNotContainsString('Порог должен применяться', $telegram->messages[0]->body);
+
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: false,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+        );
+        $positive = app(RecordNpsSubmission::class)->handle(
+            client: $client,
+            score: 8,
+            internalFeedback: 'Этот текст не должен сохраниться для positive band.',
+            idempotencyKey: 'threshold-eight',
+        );
+        $positiveEvent = ScenarioEvent::query()->where('aggregate_id', (string) $positive->getKey())->sole();
+
+        self::assertSame('positive', $positiveEvent->payload['band']);
+        $this->deliverScenarioEvent($positiveEvent);
+
+        self::assertSame(1, $admin->fresh()->notifications()->count());
+        self::assertCount(1, $telegram->messages);
+    }
+
+    public function test_low_score_without_verified_staff_identity_keeps_crm_notification_and_marks_telegram_unavailable(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: false,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+        );
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $telegram = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([
+            app(DatabaseNotificationChannel::class),
+            $telegram,
+        ]));
+
+        $submission = app(RecordNpsSubmission::class)->handle(
+            client: $client,
+            score: 3,
+            internalFeedback: 'Текст только для CRM.',
+            idempotencyKey: 'missing-staff-identity',
+        );
+        $event = ScenarioEvent::query()->where('aggregate_id', (string) $submission->getKey())->sole();
+
+        $this->deliverScenarioEvent($event);
+
+        self::assertSame(1, $admin->fresh()->notifications()->count());
+        self::assertCount(0, $telegram->messages);
+        $telegramAction = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->whereHas('rule', fn ($query) => $query->where('rule_key', 'feedback-low-score-telegram'))
+            ->sole();
+        self::assertSame('no_available_channel', $telegramAction->terminal_reason);
+        self::assertSame(ScenarioDeliveryStatus::Unavailable, ScenarioDelivery::query()
+            ->where('scenario_action_id', $telegramAction->getKey())
+            ->sole()
+            ->status);
+    }
+
     public function test_feedback_configuration_rejects_non_https_review_urls_without_fetching_them(): void
     {
         $organization = $this->organizationWithClientRecords();
@@ -659,5 +767,16 @@ final class M11AAttributionFeedbackTest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         return $organization;
+    }
+
+    private function deliverScenarioEvent(ScenarioEvent $event): void
+    {
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+
+        foreach (ScenarioAction::query()->where('scenario_event_id', $event->getKey())->get() as $action) {
+            $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+            $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+        }
     }
 }

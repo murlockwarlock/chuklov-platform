@@ -4,6 +4,8 @@ namespace App\Modules\Security\Infrastructure\Filament;
 
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Filament\Auth\MultiFactor\App\AppAuthentication;
 use Filament\Auth\MultiFactor\App\Contracts\HasAppAuthentication;
@@ -44,6 +46,41 @@ class AuditedAppAuthentication extends AppAuthentication
         });
     }
 
+    public function verifyRecoveryCode(#[SensitiveParameter] string $recoveryCode, ?HasAppAuthenticationRecovery $user = null): bool
+    {
+        $user ??= Filament::auth()->user();
+
+        if (! $user instanceof User) {
+            return false;
+        }
+
+        $organization = $this->preAuthenticationOrganization($user);
+        if (! $organization instanceof Organization) {
+            return false;
+        }
+
+        return DB::transaction(function () use ($recoveryCode, $user, $organization): bool {
+            try {
+                $verified = parent::verifyRecoveryCode($recoveryCode, $user);
+            } catch (LogicException) {
+                return false;
+            }
+            if (! $verified) {
+                return false;
+            }
+
+            $this->audit->handle(
+                organization: $organization,
+                actor: null,
+                action: 'privileged.mfa.recovery_code.used',
+                targetType: User::class,
+                targetId: (string) $user->getKey(),
+            );
+
+            return true;
+        });
+    }
+
     private function record(object $user, string $action): void
     {
         $actor = Filament::auth()->user();
@@ -59,5 +96,27 @@ class AuditedAppAuthentication extends AppAuthentication
             User::class,
             (string) $user->getKey(),
         );
+    }
+
+    private function preAuthenticationOrganization(User $user): ?Organization
+    {
+        try {
+            $organization = $this->organizationContext->organization();
+        } catch (LogicException) {
+            return null;
+        }
+
+        if ((int) config('tenancy.default_organization_id') !== (int) $organization->getKey()) {
+            return null;
+        }
+
+        $memberships = OrganizationMembership::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('user_id', $user->getKey())
+            ->active()
+            ->limit(2)
+            ->get();
+
+        return $memberships->count() === 1 ? $organization : null;
     }
 }

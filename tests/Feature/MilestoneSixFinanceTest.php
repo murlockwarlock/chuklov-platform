@@ -230,6 +230,10 @@ final class MilestoneSixFinanceTest extends TestCase
             $scenarioContext,
             new ScenarioRecipient('client', $client->getKey(), null, 'en'),
         )['finance']['outstanding_amount']);
+        self::assertSame('4500.00', $scenarioFactory->renderContext(
+            $scenarioContext,
+            new ScenarioRecipient('client', $client->getKey(), null, 'en'),
+        )['finance']['outstanding_amount_display']);
 
         $this->actingAs($admin)
             ->get(route('filament.admin.resources.financial-obligations.index'))
@@ -613,27 +617,94 @@ final class MilestoneSixFinanceTest extends TestCase
         $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$telegram]));
         $ledgerCount = FinancialLedgerEntry::query()->where('obligation_id', $obligation->getKey())->count();
 
-        $event = app(RequestFinancialObligationReminder::class)->handle($admin, $obligation);
-        $duplicate = app(RequestFinancialObligationReminder::class)->handle($admin, $obligation->fresh());
+        $requestKey = 'debt-reminder-request-1';
+        $event = app(RequestFinancialObligationReminder::class)->handle($admin, $obligation, $requestKey);
+        $duplicate = app(RequestFinancialObligationReminder::class)->handle($admin, $obligation->fresh(), $requestKey);
+        $secondReminder = app(RequestFinancialObligationReminder::class)->handle($admin, $obligation->fresh(), 'debt-reminder-request-2');
 
         self::assertSame($event->getKey(), $duplicate->getKey());
+        self::assertNotSame($event->getKey(), $secondReminder->getKey());
         app(MaterializeScenarioEvent::class)->handle($event->getKey());
-        $actions = ScenarioAction::query()->where('scenario_event_id', $event->getKey())->get();
+        app(MaterializeScenarioEvent::class)->handle($secondReminder->getKey());
+        $actions = ScenarioAction::query()->whereIn('scenario_event_id', [$event->getKey(), $secondReminder->getKey()])->get();
         foreach ($actions as $action) {
             $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
             $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
             app(ExecuteScenarioAction::class)->handle($action->getKey());
         }
 
-        self::assertCount(1, $telegram->messages);
+        self::assertCount(2, $telegram->messages);
         self::assertStringContainsString('100.00 USD', $telegram->messages[0]->body);
         self::assertSame($ledgerCount, FinancialLedgerEntry::query()->where('obligation_id', $obligation->getKey())->count());
-        self::assertSame(1, ScenarioEvent::query()->where('event_name', 'finance.obligation.reminder_requested')->count());
-        self::assertSame(1, AuditEvent::query()->where('action', 'finance.obligation.reminder_requested')->count());
+        self::assertSame(2, ScenarioEvent::query()->where('event_name', 'finance.obligation.reminder_requested')->count());
+        self::assertSame(2, AuditEvent::query()->where('action', 'finance.obligation.reminder_requested')->count());
 
         app(RecordManualPayment::class)->handle($admin, $obligation->fresh(), '100.00', 'USD', 'cash', now(), null, null, 'debt-reminder-settlement');
+        $settledRetry = app(RequestFinancialObligationReminder::class)->handle($admin, $obligation->fresh(), $requestKey);
+        self::assertSame($event->getKey(), $settledRetry->getKey());
+        self::assertSame(2, AuditEvent::query()->where('action', 'finance.obligation.reminder_requested')->count());
+
         $this->expectException(ValidationException::class);
         app(RequestFinancialObligationReminder::class)->handle($admin, $obligation->fresh());
+    }
+
+    public function test_debt_reminder_rechecks_the_current_balance_before_delivery(): void
+    {
+        [$organization, $admin, $client, $booking] = $this->pricedCompletedBooking('USD', 10000);
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+        ClientChannelIdentity::factory()->forClient($client)->create([
+            'verification_status' => ChannelIdentityStatus::Verified->value,
+            'external_id' => 'debt-current-balance-client',
+        ]);
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $telegram = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$telegram]));
+
+        $partialEvent = app(RequestFinancialObligationReminder::class)->handle($admin, $obligation, 'current-balance-partial');
+        app(MaterializeScenarioEvent::class)->handle($partialEvent->getKey());
+        app(RecordManualPayment::class)->handle(
+            $admin,
+            $obligation->fresh(),
+            '40.00',
+            'USD',
+            'cash',
+            now(),
+            null,
+            null,
+            'current-balance-partial-payment',
+        );
+        $partialAction = ScenarioAction::query()->where('scenario_event_id', $partialEvent->getKey())->sole();
+        $partialAction->forceFill(['scheduled_for' => now()->subSecond()])->save();
+        $partialAction->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+
+        app(ExecuteScenarioAction::class)->handle($partialAction->getKey());
+
+        self::assertCount(1, $telegram->messages);
+        self::assertStringContainsString('60.00 USD', $telegram->messages[0]->body);
+        self::assertStringNotContainsString('100.00 USD', $telegram->messages[0]->body);
+
+        $settledEvent = app(RequestFinancialObligationReminder::class)->handle($admin, $obligation->fresh(), 'current-balance-settled');
+        app(MaterializeScenarioEvent::class)->handle($settledEvent->getKey());
+        app(RecordManualPayment::class)->handle(
+            $admin,
+            $obligation->fresh(),
+            '60.00',
+            'USD',
+            'cash',
+            now(),
+            null,
+            null,
+            'current-balance-final-payment',
+        );
+        $settledAction = ScenarioAction::query()->where('scenario_event_id', $settledEvent->getKey())->sole();
+        $settledAction->forceFill(['scheduled_for' => now()->subSecond()])->save();
+        $settledAction->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+
+        app(ExecuteScenarioAction::class)->handle($settledAction->getKey());
+
+        self::assertCount(1, $telegram->messages);
+        self::assertSame(ScenarioActionStatus::Suppressed, $settledAction->fresh()->status);
+        self::assertSame('current_conditions_not_met', $settledAction->fresh()->terminal_reason);
     }
 
     /** @return array{Organization, User, Client, Booking} */

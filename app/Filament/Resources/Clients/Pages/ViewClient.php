@@ -187,7 +187,7 @@ class ViewClient extends LocalizedViewRecord
                 Action::make('newSession')
                     ->label(__('Новый сеанс'))
                     ->icon('heroicon-o-plus')
-                    ->url(fn (): string => MedicalSessionResource::getUrl('create', shouldGuessMissingParameters: true))
+                    ->url(fn (): string => MedicalSessionResource::getUrl('create', ['client' => $this->clientRecord()]))
                     ->visible(fn (): bool => MedicalSessionResource::canCreate()),
                 ActionGroup::make([
                     $this->blockSelfBookingAction(),

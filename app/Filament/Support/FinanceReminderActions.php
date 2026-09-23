@@ -8,6 +8,7 @@ use App\Modules\Finance\Application\RequestFinancialObligationReminder;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 final class FinanceReminderActions
@@ -31,7 +32,7 @@ final class FinanceReminderActions
                 abort_unless($actor instanceof User, 403);
 
                 try {
-                    app(RequestFinancialObligationReminder::class)->handle($actor, $record);
+                    app(RequestFinancialObligationReminder::class)->handle($actor, $record, Str::uuid()->toString());
                     Notification::make()->success()->title(__('Напоминание поставлено в очередь.'))->send();
                 } catch (ValidationException $exception) {
                     $message = collect($exception->errors())->flatten()->first();

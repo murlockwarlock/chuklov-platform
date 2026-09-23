@@ -54,6 +54,7 @@ final class ScenarioContextFactory
         private readonly BookingDateTimeFormatter $bookingDateTime,
         private readonly BuildClientReferralLink $referralLinks,
         private readonly SurveyComparisonPresentation $comparisonPresentation,
+        private readonly PaymentPreVisitBookingEligibility $paymentEligibility,
     ) {}
 
     public function evaluationContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt = null): ScenarioEvaluationContext
@@ -261,7 +262,8 @@ final class ScenarioContextFactory
             $renderContext['finance'] = [
                 'amount' => $context->obligation->display_amount_minor,
                 'currency' => $context->obligation->display_currency->value,
-                'outstanding_amount' => $reconciliation->displayOutstanding->toDecimalString(),
+                'outstanding_amount' => $reconciliation->displayOutstanding->minorUnits(),
+                'outstanding_amount_display' => $reconciliation->displayOutstanding->toDecimalString(),
                 'status' => $reconciliation->status->value,
             ];
         }
@@ -527,6 +529,7 @@ final class ScenarioContextFactory
             'message' => $message,
             'survey_url' => $recipient->type === 'client'
                 && $event->event_name === ScenarioEventType::PaymentSucceeded
+                && $this->paymentEligibility->handle($context)
                 && $this->hasAvailableSurvey($event->organization_id)
                 ? route('portal.surveys.index')
                 : null,

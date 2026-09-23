@@ -431,6 +431,8 @@ final class RecordScenarioEvent
             payload: [
                 'obligation_id' => (int) $obligation->getKey(),
                 'client_id' => (int) $obligation->client_id,
+                'booking_id' => $obligation->booking_id === null ? null : (int) $obligation->booking_id,
+                'purchase_id' => $obligation->purchase_id === null ? null : (int) $obligation->purchase_id,
                 'ledger_entry_id' => (int) $ledgerEntry->getKey(),
                 'amount_minor' => (int) $ledgerEntry->payment_amount_minor,
                 'currency' => $ledgerEntry->payment_currency->value,
@@ -473,6 +475,7 @@ final class RecordScenarioEvent
         FinancialObligation $obligation,
         FinancialReconciliation $reconciliation,
         CarbonImmutable $occurredAt,
+        string $requestIdempotencyKey,
     ): ScenarioEvent {
         $outstandingMinor = $reconciliation->displayOutstanding->minorUnits();
         $data = new ScenarioEventData(
@@ -486,7 +489,7 @@ final class RecordScenarioEvent
                 'outstanding_amount_minor' => $outstandingMinor,
                 'currency' => $reconciliation->displayOutstanding->currency()->value,
             ],
-            idempotencyKey: 'finance.obligation.reminder_requested:'.$obligation->organization_id.':'.$obligation->getKey().':'.$outstandingMinor,
+            idempotencyKey: 'finance.obligation.reminder_requested:'.$obligation->organization_id.':'.$obligation->getKey().':'.$requestIdempotencyKey,
             correlationId: 'finance:obligation:'.$obligation->getKey(),
             causationId: null,
         );

@@ -91,6 +91,7 @@ final class ScenarioTemplateVariableCatalog
         'reward.currency',
         'reward.portal_url',
         'finance.outstanding_amount',
+        'finance.outstanding_amount_display',
         'finance.currency',
     ];
 
@@ -200,6 +201,7 @@ final class ScenarioTemplateVariableCatalog
             'reward.currency' => 'Валюта начисления',
             'reward.portal_url' => 'Ссылка на партнёрскую программу',
             'finance.outstanding_amount' => 'Текущая задолженность',
+            'finance.outstanding_amount_display' => 'Текущая задолженность для клиента',
             'finance.currency' => 'Валюта задолженности',
         ];
     }

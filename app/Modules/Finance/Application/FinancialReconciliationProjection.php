@@ -5,6 +5,7 @@ namespace App\Modules\Finance\Application;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\DB;
 
 final class FinancialReconciliationProjection
@@ -34,6 +35,25 @@ final class FinancialReconciliationProjection
             ->whereColumn('ledger.organization_id', $obligationTable.'.organization_id')
             ->whereColumn('ledger.obligation_id', $obligationTable.'.id')
             ->where(new FinanceSqlCondition($this->invalidOrIncompatibleLedgerSql($obligationTable)));
+    }
+
+    /** @param list<int> $obligationIds
+     * @return Builder<FinancialLedgerEntry>
+     */
+    public function aggregatedLedgerQuery(int $organizationId, array $obligationIds): Builder
+    {
+        return FinancialLedgerEntry::query()
+            ->from(self::LEDGER_TABLE.' as ledger')
+            ->join(self::OBLIGATION_TABLE.' as obligation', function (JoinClause $join): void {
+                $join
+                    ->on('obligation.id', '=', 'ledger.obligation_id')
+                    ->on('obligation.organization_id', '=', 'ledger.organization_id');
+            })
+            ->where('ledger.organization_id', $organizationId)
+            ->whereIn('ledger.obligation_id', $obligationIds)
+            ->select('ledger.obligation_id')
+            ->selectRaw('COALESCE(SUM(ledger.settlement_amount_minor), 0) as applied_settlement_minor')
+            ->groupBy('ledger.obligation_id');
     }
 
     /**

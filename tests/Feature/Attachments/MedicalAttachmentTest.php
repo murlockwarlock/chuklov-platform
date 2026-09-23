@@ -23,10 +23,12 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
 use Illuminate\Support\Str;
+use Tests\Support\AuthenticatesMfaConfiguredAdmin;
 use Tests\TestCase;
 
 final class MedicalAttachmentTest extends TestCase
 {
+    use AuthenticatesMfaConfiguredAdmin;
     use RefreshDatabase;
 
     protected function setUp(): void
@@ -244,7 +246,7 @@ final class MedicalAttachmentTest extends TestCase
         $tamperedResponse = $this->actingAs($admin)->get($tamperedUrl);
         $tamperedResponse->assertForbidden();
 
-        // 4. Inactive membership fails closed (403)
+        // 4. Inactive membership revokes the privileged session before attachment authorization.
         $inactiveUser = User::factory()->create();
         OrganizationMembership::factory()->create([
             'organization_id' => $organization->getKey(),
@@ -253,14 +255,15 @@ final class MedicalAttachmentTest extends TestCase
             'is_active' => false,
         ]);
         $inactiveResponse = $this->actingAs($inactiveUser)->get($signedUrl);
-        $inactiveResponse->assertForbidden();
+        $inactiveResponse->assertRedirect();
 
         $nonMember = User::factory()->create();
         $nonMemberResponse = $this->actingAs($nonMember)->get($signedUrl);
         $nonMemberResponse->assertForbidden();
 
         Auth::logout();
-        $this->get($signedUrl)->assertRedirect();
+        $loggedOutResponse = $this->get($signedUrl);
+        $loggedOutResponse->assertRedirect();
         Storage::disk('public')->assertMissing($attachment->storage_path);
         self::assertFalse((bool) config('filesystems.disks.private.serve'));
     }
@@ -425,6 +428,7 @@ final class MedicalAttachmentTest extends TestCase
 
         config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
+        $this->authenticateConfiguredAdmin($admin, $organization);
 
         return [$organization, $admin, $client];
     }

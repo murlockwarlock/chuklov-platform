@@ -9,6 +9,7 @@ use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedResource;
 use App\Models\User;
+use App\Modules\Feedback\Domain\Enums\NpsBand;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -413,8 +414,12 @@ final class ScenarioActionResource extends LocalizedResource
                 'booking.has_qualifying_next_booking' => __('подходящая следующая запись'),
                 'client.language' => __('язык клиента'),
                 'client.marketing_consent' => __('согласие на маркетинговые сообщения'),
+                'feedback.band' => __('категория оценки'),
                 'onboarding.completed' => __('завершение оформления'),
                 'onboarding.stage' => __('этап оформления'),
+                'payment.is_pre_visit_booking_payment' => __('оплата записи до визита'),
+                'survey.available' => __('доступность теста'),
+                'survey.progress_available' => __('доступность сравнения тестов'),
                 default => __('условие'),
             };
             $operator = match ($condition['operator'] ?? null) {
@@ -436,6 +441,8 @@ final class ScenarioActionResource extends LocalizedResource
         return collect($values)->map(static fn (mixed $item): string => match ((string) $item) {
             'true' => __('да'),
             'false' => __('нет'),
+            NpsBand::Positive->value => __('положительная'),
+            NpsBand::Internal->value => __('внутренняя'),
             'contacts' => __('контакты'),
             'profile' => __('профиль'),
             'service' => __('услуга'),

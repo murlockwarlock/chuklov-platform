@@ -10,15 +10,18 @@ use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedListRecords;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
+use App\Modules\Finance\Application\GetOutstandingDebtByBookingIds;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\HasQualifyingNextBooking;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scheduling\Application\GetScheduleCalendar;
 use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
+use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
-use App\Modules\Scheduling\Domain\Enums\PaymentStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Schemas\Components\Tabs\Tab;
@@ -160,16 +163,26 @@ class ListBookings extends LocalizedListRecords
         $canViewClients = ClientResource::canViewAny();
         $retentionWindowMinutes = $this->retentionWindowMinutes();
         $completedBookings = $bookings->filter(fn (Booking $booking): bool => $booking->status === BookingStatus::Completed);
-        $futureBookings = collect();
+        $organizationId = app(OrganizationContext::class)->id();
+        $bookingIds = array_values(array_map(
+            static fn (int|string $bookingId): int => (int) $bookingId,
+            $bookings->modelKeys(),
+        ));
+        $debtByBooking = app(GetOutstandingDebtByBookingIds::class)->handle($organizationId, $bookingIds);
+        $completedAtByBooking = [];
         if ($completedBookings->isNotEmpty()) {
-            $futureBookings = Booking::query()
-                ->where('organization_id', app(OrganizationContext::class)->id())
-                ->whereIn('client_id', $completedBookings->pluck('client_id')->unique()->values())
-                ->whereIn('status', BookingStatus::qualifyingFutureValues())
-                ->where('starts_at', '>', $completedBookings->min(fn (Booking $booking): CarbonImmutable => $booking->startsAtUtc()))
-                ->where('starts_at', '<=', $completedBookings->max(fn (Booking $booking): CarbonImmutable => $booking->startsAtUtc())->addMinutes($retentionWindowMinutes))
-                ->get(['client_id', 'starts_at']);
+            $completedEvents = BookingEvent::query()
+                ->where('organization_id', $organizationId)
+                ->whereIn('booking_id', $completedBookings->modelKeys())
+                ->where('event_type', BookingEventType::Completed->value)
+                ->orderBy('occurred_at')
+                ->get(['booking_id', 'occurred_at']);
+            foreach ($completedEvents as $completedEvent) {
+                $completedAtByBooking[(int) $completedEvent->booking_id] = CarbonImmutable::parse((string) $completedEvent->occurred_at)->utc();
+            }
         }
+        $hasQualifyingNextBooking = app(HasQualifyingNextBooking::class)->forCompletedBookings($completedBookings, $completedAtByBooking);
+        $now = CarbonImmutable::now('UTC');
 
         foreach ($bookings as $booking) {
             $localStart = $booking->startsAtUtc()->setTimezone($timezone);
@@ -179,17 +192,18 @@ class ListBookings extends LocalizedListRecords
                 continue;
             }
 
-            $hasQualifyingNextBooking = $futureBookings->contains(
-                fn (Booking $future): bool => (int) $future->client_id === (int) $booking->client_id
-                    && $future->startsAtUtc()->greaterThan($booking->startsAtUtc())
-                    && $future->startsAtUtc()->lessThanOrEqualTo($booking->startsAtUtc()->addMinutes($retentionWindowMinutes)),
-            );
+            $completedAt = $completedAtByBooking[(int) $booking->getKey()] ?? null;
+            $retentionWarning = $booking->status === BookingStatus::Completed
+                && $completedAt instanceof CarbonImmutable
+                && $now->greaterThanOrEqualTo($completedAt->addMinutes($retentionWindowMinutes))
+                && ! ($hasQualifyingNextBooking[(int) $booking->getKey()] ?? false);
             $calendar[$date]['bookings'][] = $this->bookingProjection(
                 $booking,
                 $localStart,
                 $localEnd,
                 $canViewClients,
-                $booking->status === BookingStatus::Completed && ! $hasQualifyingNextBooking,
+                $retentionWarning,
+                $debtByBooking[(int) $booking->getKey()] ?? false,
             );
         }
 
@@ -432,7 +446,7 @@ class ListBookings extends LocalizedListRecords
     }
 
     /** @return array{id: int, event_version: int, client: string, client_url: string|null, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, format: string, location_label: string, party_size: int, has_debt: bool, retention_warning: bool, retention_label: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
-    private function bookingProjection(Booking $booking, CarbonImmutable $localStart, CarbonImmutable $localEnd, bool $canViewClients, bool $retentionWarning = false): array
+    private function bookingProjection(Booking $booking, CarbonImmutable $localStart, CarbonImmutable $localEnd, bool $canViewClients, bool $retentionWarning = false, bool $hasDebt = false): array
     {
         $startMinutes = ((int) $localStart->format('H')) * 60 + (int) $localStart->format('i');
         $endMinutes = ((int) $localEnd->format('H')) * 60 + (int) $localEnd->format('i');
@@ -459,7 +473,7 @@ class ListBookings extends LocalizedListRecords
             'format' => self::formatLabel($format),
             'location_label' => $locationLabel,
             'party_size' => (int) $booking->party_size,
-            'has_debt' => in_array($booking->payment_status, [PaymentStatus::Unpaid, PaymentStatus::PartiallyPaid], true),
+            'has_debt' => $hasDebt,
             'retention_warning' => $retentionWarning,
             'retention_label' => __('Нет следующей записи'),
             'is_online' => $format === VisitFormat::Online,

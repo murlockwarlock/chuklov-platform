@@ -157,7 +157,51 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         $escapedClientName = htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         foreach ($this->channel->messages as $message) {
             self::assertStringContainsString($escapedClientName, $message->body);
+            self::assertNotNull($message->actionButton);
+            self::assertSame(route('portal.health'), $message->actionButton->url);
         }
+    }
+
+    public function test_post_session_72_hour_follow_up_is_rechecked_when_a_next_booking_appears(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $this->verifiedClient($client);
+        app(ScenarioNotificationSeeder::class)->run();
+        ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'like', 'booking-completed-feedback-%')
+            ->update(['is_enabled' => false]);
+        $rules = ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'like', 'post-session-follow-up-%-en')
+            ->orderBy('delay_value')
+            ->get();
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Completed);
+        $occurredAt = CarbonImmutable::now()->subDays(4);
+        $event = app(RecordScenarioEvent::class)->bookingCompleted($booking, 'm5b-post-session-suppression', $occurredAt);
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $actions = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->whereIn('scenario_rule_id', $rules->pluck('id'))
+            ->with('templateVersion.template')
+            ->orderBy('scheduled_for')
+            ->get();
+        self::assertCount(3, $actions);
+
+        $this->futureBooking($organization, $client, $specialist, $service, BookingStatus::Confirmed, $occurredAt->addDay());
+        foreach ($actions as $action) {
+            $this->makeDue($action);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+        }
+
+        self::assertCount(2, $this->channel->messages);
+        $followUp72 = $actions->first(
+            fn (ScenarioAction $action): bool => $action->templateVersion->template->template_key === 'post-session-follow-up-72h',
+        );
+        self::assertNotNull($followUp72);
+        self::assertSame(ScenarioActionStatus::Suppressed, $followUp72->fresh()->status);
+        self::assertSame('current_conditions_not_met', $followUp72->fresh()->terminal_reason);
     }
 
     public function test_post_session_conditional_72_hour_rule_is_typed_and_not_bespoke(): void

@@ -29,11 +29,13 @@ use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
+use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -139,6 +141,84 @@ final class PaymentScenarioNotificationsTest extends TestCase
         self::assertStringNotContainsString('MSQ', $surveyMessage->body);
         self::assertStringNotContainsString('9 systems', strtolower($surveyMessage->body));
         self::assertCount(2, $telegram->messages);
+    }
+
+    #[DataProvider('commerceProductKinds')]
+    public function test_payment_success_does_not_offer_diagnostic_survey_for_commerce_purchases(string $productKind): void
+    {
+        [$organization, $client, $obligation, $ledgerEntry] = $this->commercePaymentFixture($productKind);
+        ClientChannelIdentity::factory()->forClient($client)->create([
+            'verification_status' => ChannelIdentityStatus::Verified->value,
+            'external_id' => 'commerce-payment-'.$productKind,
+        ]);
+        $this->createAvailableSurvey($organization, 'commerce-'.$productKind);
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $telegram = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$telegram]));
+
+        $event = app(RecordScenarioEvent::class)->paymentSucceeded($obligation, $ledgerEntry, CarbonImmutable::now());
+        $this->materializeAndDeliver($event);
+
+        self::assertCount(1, $telegram->messages);
+        self::assertStringContainsString('Payment received.', $telegram->messages[0]->body);
+        self::assertStringNotContainsString('диагностический тест', mb_strtolower($telegram->messages[0]->body));
+        self::assertNull($telegram->messages[0]->actionButton);
+        self::assertCount(1, ScenarioAction::query()->where('scenario_event_id', $event->getKey())->get());
+    }
+
+    public function test_payment_success_diagnostic_offer_is_suppressed_when_survey_becomes_unavailable_before_delivery(): void
+    {
+        [$organization, , $obligation, $ledgerEntry] = $this->paymentFixture();
+        $client = $obligation->client()->firstOrFail();
+        ClientChannelIdentity::factory()->forClient($client)->create([
+            'verification_status' => ChannelIdentityStatus::Verified->value,
+            'external_id' => 'payment-survey-stale',
+        ]);
+        $definition = $this->createAvailableSurvey($organization, 'stale-payment-survey');
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $telegram = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$telegram]));
+
+        $event = app(RecordScenarioEvent::class)->paymentSucceeded($obligation, $ledgerEntry, CarbonImmutable::now());
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $definition->forceFill(['is_available' => false])->save();
+
+        foreach (ScenarioAction::query()->where('scenario_event_id', $event->getKey())->get() as $action) {
+            $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+            $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+        }
+
+        self::assertCount(1, $telegram->messages);
+        $surveyAction = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->whereHas('templateVersion.template', fn ($query) => $query->where('template_key', 'finance-payment-succeeded-survey'))
+            ->sole();
+        self::assertSame(ScenarioActionStatus::Suppressed, $surveyAction->status);
+        self::assertSame('current_conditions_not_met', $surveyAction->terminal_reason);
+    }
+
+    public function test_payment_success_does_not_offer_diagnostic_survey_after_booking_completion(): void
+    {
+        [$organization, , $obligation, $ledgerEntry] = $this->paymentFixture();
+        $booking = $obligation->booking()->firstOrFail();
+        $booking->forceFill(['status' => BookingStatus::Completed])->save();
+        $client = $obligation->client()->firstOrFail();
+        ClientChannelIdentity::factory()->forClient($client)->create([
+            'verification_status' => ChannelIdentityStatus::Verified->value,
+            'external_id' => 'completed-payment-booking',
+        ]);
+        $this->createAvailableSurvey($organization, 'completed-payment-booking');
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $telegram = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$telegram]));
+
+        $event = app(RecordScenarioEvent::class)->paymentSucceeded($obligation, $ledgerEntry, CarbonImmutable::now());
+        $this->materializeAndDeliver($event);
+
+        self::assertCount(1, $telegram->messages);
+        self::assertStringContainsString('Оплата получена.', $telegram->messages[0]->body);
+        self::assertCount(1, ScenarioAction::query()->where('scenario_event_id', $event->getKey())->get());
     }
 
     public function test_reconciliation_alert_is_visible_to_finance_users_without_provider_payload(): void
@@ -516,6 +596,15 @@ final class PaymentScenarioNotificationsTest extends TestCase
         ];
     }
 
+    public static function commerceProductKinds(): array
+    {
+        return [
+            'online product' => ['online_product'],
+            'physical product' => ['physical_product'],
+            'tracker plan' => ['tracker_plan'],
+        ];
+    }
+
     private function materializeAndDeliver(ScenarioEvent $event): void
     {
         app(MaterializeScenarioEvent::class)->handle($event->getKey());
@@ -588,6 +677,106 @@ final class PaymentScenarioNotificationsTest extends TestCase
         ])->save();
 
         return [$organization, $client, $obligation->refresh(), $ledgerEntry->refresh()];
+    }
+
+    private function commercePaymentFixture(string $productKind): array
+    {
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $purchase = new Purchase;
+        $purchase->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'status' => 'paid',
+            'total_amount_minor' => 3500,
+            'currency' => 'USD',
+            'purchase_snapshot' => ['name' => $productKind],
+            'paid_at' => now(),
+        ])->save();
+        $item = new PurchaseItem;
+        $item->forceFill([
+            'organization_id' => $organization->getKey(),
+            'purchase_id' => $purchase->getKey(),
+            'sellable_type' => 'commerce_product',
+            'sellable_id' => 1,
+            'quantity' => 1,
+            'amount_minor' => 3500,
+            'currency' => 'USD',
+            'product_snapshot' => ['name' => $productKind],
+        ])->save();
+        $obligation = new FinancialObligation;
+        $obligation->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'booking_id' => null,
+            'service_id' => null,
+            'purchase_id' => $purchase->getKey(),
+            'amount_minor' => 3500,
+            'currency' => 'USD',
+            'base_amount_minor' => 3500,
+            'base_currency' => 'USD',
+            'display_amount_minor' => 3500,
+            'display_currency' => 'USD',
+            'payment_amount_minor' => 3500,
+            'payment_currency' => 'USD',
+            'settlement_amount_minor' => 3500,
+            'settlement_currency' => 'USD',
+            'price_snapshot' => ['purchase_id' => $purchase->getKey(), 'item_id' => $item->getKey()],
+            'conversion_snapshots' => [
+                'base' => $this->valuationSnapshot(3500),
+                'display' => $this->valuationSnapshot(3500),
+            ],
+            'creation_key' => 'commerce-scenario-notification-'.$organization->getKey(),
+        ])->save();
+        $ledgerEntry = new FinancialLedgerEntry;
+        $ledgerEntry->forceFill([
+            'organization_id' => $organization->getKey(),
+            'obligation_id' => $obligation->getKey(),
+            'entry_type' => 'manual_payment',
+            'source' => 'crm',
+            'amount_minor' => 3500,
+            'currency' => 'USD',
+            'payment_amount_minor' => 3500,
+            'payment_currency' => 'USD',
+            'base_amount_minor' => 3500,
+            'base_currency' => 'USD',
+            'display_amount_minor' => 3500,
+            'display_currency' => 'USD',
+            'settlement_amount_minor' => 3500,
+            'settlement_currency' => 'USD',
+            'payment_method' => 'cash',
+            'occurred_at' => now(),
+            'idempotency_key' => 'commerce-scenario-notification-ledger-'.$organization->getKey(),
+            'created_at' => now(),
+        ])->save();
+
+        return [$organization, $client, $obligation->refresh(), $ledgerEntry->refresh()];
+    }
+
+    private function createAvailableSurvey(Organization $organization, string $key): SurveyDefinition
+    {
+        $definition = SurveyDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'definition_key' => $key,
+            'title' => 'Диагностический тест',
+            'title_en' => 'Diagnostic check',
+            'is_available' => true,
+        ]);
+        $version = SurveyVersion::query()->create([
+            'organization_id' => $organization->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'version' => 1,
+            'status' => SurveyVersionStatus::Published,
+            'title' => 'Диагностический тест',
+            'title_en' => 'Diagnostic check',
+            'definition' => ['sections' => []],
+            'scoring' => ['metrics' => []],
+            'source' => 'platform_default',
+            'approval_status' => 'draft',
+        ]);
+        $definition->forceFill(['active_version_id' => $version->getKey()])->save();
+
+        return $definition->refresh();
     }
 
     private function valuationSnapshot(int $amountMinor): array

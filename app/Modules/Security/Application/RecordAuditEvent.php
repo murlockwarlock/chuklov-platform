@@ -19,6 +19,7 @@ class RecordAuditEvent
         'privileged.mfa.enabled' => [],
         'privileged.mfa.disabled' => [],
         'privileged.mfa.recovery_codes.updated' => [],
+        'privileged.mfa.recovery_code.used' => [],
         'ai.prompt.created' => ['prompt_key', 'capability'],
         'ai.prompt_version.created' => ['prompt_key', 'version'],
         'ai.prompt_version.activated' => ['prompt_key', 'version'],

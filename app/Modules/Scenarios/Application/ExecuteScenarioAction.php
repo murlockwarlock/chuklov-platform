@@ -170,6 +170,18 @@ final class ExecuteScenarioAction
                 $renderContext = $this->contextFactory->renderContext($context, $recipient);
                 $renderContext['booking']['reminder_offset_label'] = $action->render_context['booking']['reminder_offset_label'] ?? 'некоторое время';
                 $action->setAttribute('render_context', $renderContext);
+            } else {
+                $currentAction = ScenarioAction::query()
+                    ->whereKey($action->getKey())
+                    ->where('organization_id', $delivery->organization_id)
+                    ->with(['rule', 'event', 'templateVersion.template'])
+                    ->first();
+                $currentEvent = $currentAction?->event;
+                if ($currentAction === null || $currentEvent === null || ! $this->isEligible($currentAction)) {
+                    return NotificationDeliveryResult::suppressed($this->changeReason($event->event_name->value));
+                }
+                $action = $currentAction;
+                $event = $currentEvent;
             }
             $identity = $this->identities->resolve($action, $delivery->channel);
 
@@ -193,6 +205,21 @@ final class ExecuteScenarioAction
             }
 
             $locale = $template->template->locale;
+            if ($event->event_name === ScenarioEventType::FinancialDebtReminderRequested) {
+                $context = $this->contextFactory->evaluationContext($event);
+                if (! $this->contextFactory->financeDebtIsCurrent($context)) {
+                    return NotificationDeliveryResult::suppressed('debt_settled');
+                }
+                $recipient = new ScenarioRecipient(
+                    type: $action->recipient_type,
+                    clientId: $action->client_id,
+                    userId: $action->recipient_user_id,
+                    locale: $locale,
+                );
+                $action->forceFill([
+                    'render_context' => $this->contextFactory->renderContext($context, $recipient),
+                ])->save();
+            }
             $webAppUrl = null;
             if ($template->template->template_key === 'booking-completed-feedback') {
                 try {

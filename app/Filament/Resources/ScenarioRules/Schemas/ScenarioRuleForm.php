@@ -9,6 +9,7 @@ use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
+use App\Modules\Feedback\Domain\Enums\NpsBand;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
@@ -358,6 +359,9 @@ final class ScenarioRuleForm
             'onboarding.completed' => __('Оформление завершено'),
             'onboarding.stage' => __('Этап оформления'),
             'finance.has_outstanding_debt' => __('Есть задолженность'),
+            'feedback.band' => __('Категория оценки'),
+            'payment.is_pre_visit_booking_payment' => __('Оплата записи до визита'),
+            'survey.available' => __('Доступен тест'),
             'survey.progress_available' => __('Есть сравнимая динамика теста'),
         ];
     }
@@ -383,10 +387,18 @@ final class ScenarioRuleForm
             'onboarding.completed',
             'client.marketing_consent',
             'finance.has_outstanding_debt',
+            'payment.is_pre_visit_booking_payment',
+            'survey.available',
             'survey.progress_available' => [
                 'true' => __('Да'),
                 'false' => __('Нет'),
             ],
+            'feedback.band' => collect(NpsBand::cases())->mapWithKeys(fn (NpsBand $band): array => [
+                $band->value => match ($band) {
+                    NpsBand::Positive => __('Положительная'),
+                    NpsBand::Internal => __('Внутренняя'),
+                },
+            ])->all(),
             'onboarding.stage' => [
                 'contacts' => __('Контакты'),
                 'profile' => __('Профиль'),
@@ -413,7 +425,10 @@ final class ScenarioRuleForm
             'onboarding.completed',
             'client.marketing_consent',
             'finance.has_outstanding_debt',
+            'payment.is_pre_visit_booking_payment',
+            'survey.available',
             'survey.progress_available' => __('Ответ'),
+            'feedback.band' => __('Категория'),
             'onboarding.stage' => __('Этап оформления'),
             default => $multiple ? __('Значения условия') : __('Значение условия'),
         };

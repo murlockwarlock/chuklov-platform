@@ -74,11 +74,12 @@ use App\Modules\Scenarios\Application\BookingStatusConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientLanguageConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientMarketingConsentConditionEvaluator;
 use App\Modules\Scenarios\Application\ConditionEvaluatorRegistry;
-use App\Modules\Scenarios\Application\FeedbackScoreConditionEvaluator;
+use App\Modules\Scenarios\Application\FeedbackBandConditionEvaluator;
 use App\Modules\Scenarios\Application\FinancialOutstandingDebtConditionEvaluator;
 use App\Modules\Scenarios\Application\OnboardingCompletedConditionEvaluator;
 use App\Modules\Scenarios\Application\OnboardingStageConditionEvaluator;
 use App\Modules\Scenarios\Application\OrganizationScenarioRecipientResolver;
+use App\Modules\Scenarios\Application\PaymentPreVisitBookingConditionEvaluator;
 use App\Modules\Scenarios\Application\ScenarioTemplateRenderer;
 use App\Modules\Scenarios\Application\SurveyAvailableConditionEvaluator;
 use App\Modules\Scenarios\Application\SurveyProgressAvailableConditionEvaluator;
@@ -177,13 +178,14 @@ class AppServiceProvider extends ServiceProvider
             ConditionEvaluatorRegistry::class,
             fn (): ConditionEvaluatorRegistry => new ConditionEvaluatorRegistry([
                 new BookingStatusConditionEvaluator,
-                new BookingNextBookingConditionEvaluator,
+                app(BookingNextBookingConditionEvaluator::class),
                 new ClientLanguageConditionEvaluator,
                 new ClientMarketingConsentConditionEvaluator,
                 new OnboardingCompletedConditionEvaluator,
                 new OnboardingStageConditionEvaluator,
                 new FinancialOutstandingDebtConditionEvaluator,
-                new FeedbackScoreConditionEvaluator,
+                new FeedbackBandConditionEvaluator,
+                app(PaymentPreVisitBookingConditionEvaluator::class),
                 new SurveyAvailableConditionEvaluator,
                 app(SurveyProgressAvailableConditionEvaluator::class),
                 app(TrackerAccessConditionEvaluator::class),

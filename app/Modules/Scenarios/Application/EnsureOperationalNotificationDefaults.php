@@ -2,6 +2,7 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\Feedback\Domain\Enums\NpsBand;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
@@ -198,8 +199,8 @@ final class EnsureOperationalNotificationDefaults
                     organization: $organization,
                     key: 'finance-debt-reminder-client',
                     name: 'Напоминание об оплате',
-                    body: 'Напоминаем о задолженности: {{ finance.outstanding_amount }} {{ finance.currency }}. Если вы уже оплатили, сообщите нам — мы проверим платёж.',
-                    variables: ['finance.outstanding_amount', 'finance.currency'],
+                    body: 'Напоминаем о задолженности: {{ finance.outstanding_amount_display }} {{ finance.currency }}. Если вы уже оплатили, сообщите нам — мы проверим платёж.',
+                    variables: ['finance.outstanding_amount_display', 'finance.currency'],
                     subject: 'Напоминание об оплате',
                 ),
                 'retention-follow-up-client' => $this->ensureTemplate(
@@ -277,6 +278,29 @@ final class EnsureOperationalNotificationDefaults
                     variables: $definition['variables'],
                     subject: $definition['subject'],
                     locale: 'en',
+                );
+            }
+
+            $templates['finance-debt-reminder-client'] = $this->upgradeDefaultDebtTemplate(
+                $templates['finance-debt-reminder-client'],
+                'Напоминаем о задолженности: {{ finance.outstanding_amount }} {{ finance.currency }}. Если вы уже оплатили, сообщите нам — мы проверим платёж.',
+                'Напоминаем о задолженности: {{ finance.outstanding_amount_display }} {{ finance.currency }}. Если вы уже оплатили, сообщите нам — мы проверим платёж.',
+                ['finance.outstanding_amount_display', 'finance.currency'],
+                'Напоминание об оплате',
+            );
+            $englishDebtTemplate = NotificationTemplate::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('template_key', 'finance-debt-reminder-client')
+                ->where('locale', 'en')
+                ->with('latestVersion')
+                ->first()?->latestVersion;
+            if ($englishDebtTemplate instanceof NotificationTemplateVersion) {
+                $this->upgradeDefaultDebtTemplate(
+                    $englishDebtTemplate,
+                    'A reminder about your outstanding balance: {{ finance.outstanding_amount }} {{ finance.currency }}. If you already paid, tell us and we will check the payment.',
+                    'A reminder about your outstanding balance: {{ finance.outstanding_amount_display }} {{ finance.currency }}. If you already paid, tell us and we will check the payment.',
+                    ['finance.outstanding_amount_display', 'finance.currency'],
+                    'Payment reminder',
                 );
             }
 
@@ -454,7 +478,7 @@ final class EnsureOperationalNotificationDefaults
                     'event' => ScenarioEventType::ClientFeedbackSubmitted->value,
                     'enabled' => true,
                     'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_clients'],
-                    'conditions' => [['type' => 'feedback.score', 'operator' => 'in', 'value' => [1, 2, 3, 4, 5, 6, 7]]],
+                    'conditions' => [['type' => 'feedback.band', 'operator' => 'equals', 'value' => NpsBand::Internal->value]],
                 ],
                 [
                     'key' => 'feedback-low-score-telegram',
@@ -464,7 +488,7 @@ final class EnsureOperationalNotificationDefaults
                     'event' => ScenarioEventType::ClientFeedbackSubmitted->value,
                     'enabled' => true,
                     'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_clients'],
-                    'conditions' => [['type' => 'feedback.score', 'operator' => 'in', 'value' => [1, 2, 3, 4, 5, 6, 7]]],
+                    'conditions' => [['type' => 'feedback.band', 'operator' => 'equals', 'value' => NpsBand::Internal->value]],
                 ],
                 [
                     'key' => 'b2b-lead-submitted-database',
@@ -554,7 +578,10 @@ final class EnsureOperationalNotificationDefaults
                     'event' => ScenarioEventType::PaymentSucceeded->value,
                     'enabled' => true,
                     'recipient' => ['type' => 'client'],
-                    'conditions' => [['type' => 'survey.available', 'operator' => 'equals', 'value' => true]],
+                    'conditions' => [
+                        ['type' => 'payment.is_pre_visit_booking_payment', 'operator' => 'equals', 'value' => true],
+                        ['type' => 'survey.available', 'operator' => 'equals', 'value' => true],
+                    ],
                 ],
                 [
                     'key' => 'finance-debt-reminder-client-telegram',
@@ -680,6 +707,8 @@ final class EnsureOperationalNotificationDefaults
                 if ($existingRule instanceof ScenarioRule) {
                     $definitionEvent = ScenarioEventType::tryFrom((string) $definition['event']);
 
+                    $this->upgradeUntouchedDefaultRule($existingRule, $templates);
+
                     if (isset($definition['recipient']['permission'])
                         && $definitionEvent !== null
                         && $existingRule->trigger_event === $definitionEvent) {
@@ -717,6 +746,71 @@ final class EnsureOperationalNotificationDefaults
                 ])->save();
             }
         });
+    }
+
+    /** @param array<string, NotificationTemplateVersion> $templates */
+    private function upgradeUntouchedDefaultRule(ScenarioRule $rule, array $templates): void
+    {
+        if ($rule->created_by_user_id !== null || $rule->updated_by_user_id !== null) {
+            return;
+        }
+
+        $conditions = $rule->conditions;
+        $updatedConditions = null;
+        if (in_array($rule->rule_key, ['feedback-low-score-database', 'feedback-low-score-telegram'], true)
+            && $conditions === [['type' => 'feedback.score', 'operator' => 'in', 'value' => [1, 2, 3, 4, 5, 6, 7]]]) {
+            $updatedConditions = [['type' => 'feedback.band', 'operator' => 'equals', 'value' => NpsBand::Internal->value]];
+        }
+        if ($rule->rule_key === 'finance-payment-succeeded-survey-client-telegram'
+            && $conditions === [['type' => 'survey.available', 'operator' => 'equals', 'value' => true]]) {
+            $updatedConditions = [
+                ['type' => 'payment.is_pre_visit_booking_payment', 'operator' => 'equals', 'value' => true],
+                ['type' => 'survey.available', 'operator' => 'equals', 'value' => true],
+            ];
+        }
+
+        $attributes = [];
+        if ($updatedConditions !== null) {
+            $attributes['conditions'] = $updatedConditions;
+        }
+        if ($rule->rule_key === 'finance-debt-reminder-client-telegram'
+            && $rule->template_version_id !== $templates['finance-debt-reminder-client']->getKey()) {
+            $attributes['template_version_id'] = $templates['finance-debt-reminder-client']->getKey();
+        }
+
+        if ($attributes === []) {
+            return;
+        }
+
+        $attributes['version'] = $rule->version + 1;
+        $rule->forceFill($attributes)->save();
+    }
+
+    /** @param list<string> $variables */
+    private function upgradeDefaultDebtTemplate(
+        NotificationTemplateVersion $version,
+        string $legacyBody,
+        string $body,
+        array $variables,
+        string $subject,
+    ): NotificationTemplateVersion {
+        if ($version->body !== $legacyBody || $version->created_by_user_id !== null) {
+            return $version;
+        }
+
+        $next = new NotificationTemplateVersion;
+        $next->forceFill([
+            'organization_id' => $version->organization_id,
+            'template_id' => $version->template_id,
+            'version' => $version->version + 1,
+            'status' => NotificationTemplateStatus::Published->value,
+            'subject' => $subject,
+            'body' => $body,
+            'variables' => $variables,
+            'published_at' => now(),
+        ])->save();
+
+        return $next;
     }
 
     /** @return list<array{key: string, name: string, body: string, variables: list<string>, subject: string}> */
@@ -761,8 +855,8 @@ final class EnsureOperationalNotificationDefaults
             [
                 'key' => 'finance-debt-reminder-client',
                 'name' => 'Payment reminder',
-                'body' => 'A reminder about your outstanding balance: {{ finance.outstanding_amount }} {{ finance.currency }}. If you already paid, tell us and we will check the payment.',
-                'variables' => ['finance.outstanding_amount', 'finance.currency'],
+                'body' => 'A reminder about your outstanding balance: {{ finance.outstanding_amount_display }} {{ finance.currency }}. If you already paid, tell us and we will check the payment.',
+                'variables' => ['finance.outstanding_amount_display', 'finance.currency'],
                 'subject' => 'Payment reminder',
             ],
             [

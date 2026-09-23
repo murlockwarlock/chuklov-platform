@@ -2,17 +2,18 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\Feedback\Domain\Enums\NpsBand;
 use App\Modules\Scenarios\Domain\Contracts\ScenarioConditionEvaluator;
 use App\Modules\Scenarios\Domain\Enums\ScenarioConditionOperator;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioCondition;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use InvalidArgumentException;
 
-final class FeedbackScoreConditionEvaluator implements ScenarioConditionEvaluator
+final class FeedbackBandConditionEvaluator implements ScenarioConditionEvaluator
 {
     public function type(): string
     {
-        return 'feedback.score';
+        return 'feedback.band';
     }
 
     public function validate(ScenarioCondition $condition): void
@@ -26,30 +27,28 @@ final class FeedbackScoreConditionEvaluator implements ScenarioConditionEvaluato
             : [$condition->value];
 
         if (! is_array($values) || $values === []) {
-            throw new InvalidArgumentException('The feedback score condition value is invalid.');
+            throw new InvalidArgumentException('The feedback band condition value is invalid.');
         }
 
         foreach ($values as $value) {
-            if (! is_numeric($value) || (int) $value < 1 || (int) $value > 10) {
-                throw new InvalidArgumentException('The feedback score condition value is invalid.');
+            if (! is_string($value) || NpsBand::tryFrom($value) === null) {
+                throw new InvalidArgumentException('The feedback band condition value is invalid.');
             }
         }
     }
 
     public function evaluate(ScenarioCondition $condition, ScenarioEvaluationContext $context): bool
     {
-        $score = $context->event->payload['score'] ?? null;
-        if (! is_numeric($score)) {
+        $actual = NpsBand::tryFrom((string) ($context->event->payload['band'] ?? ''));
+
+        if ($actual === null) {
             return false;
         }
 
-        $actual = (int) $score;
-
         return match ($condition->operator) {
-            ScenarioConditionOperator::Equals => $actual === (int) $condition->value,
-            ScenarioConditionOperator::NotEquals => $actual !== (int) $condition->value,
-            ScenarioConditionOperator::In => is_array($condition->value)
-                && in_array($actual, array_map(static fn (mixed $value): int => (int) $value, $condition->value), true),
+            ScenarioConditionOperator::Equals => $actual->value === (string) $condition->value,
+            ScenarioConditionOperator::NotEquals => $actual->value !== (string) $condition->value,
+            ScenarioConditionOperator::In => is_array($condition->value) && in_array($actual->value, array_map('strval', $condition->value), true),
             ScenarioConditionOperator::Exists => true,
         };
     }
