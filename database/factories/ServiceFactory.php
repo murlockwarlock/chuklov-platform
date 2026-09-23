@@ -29,6 +29,7 @@ class ServiceFactory extends Factory
             'price_minor' => null,
             'price_currency' => null,
             'payment_policy' => null,
+            'payment_requirement' => 'postpay',
             'is_active' => true,
         ];
     }

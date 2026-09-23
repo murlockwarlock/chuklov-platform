@@ -154,7 +154,83 @@ final class EnsureOperationalNotificationDefaults
                     variables: ['knowledge.source_title', 'knowledge.revision_version'],
                     subject: 'Ошибка обработки материала',
                 ),
+                'finance-payment-succeeded' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'finance-payment-succeeded',
+                    name: 'Оплата получена',
+                    body: '{{ payment.message }} Сумма: {{ payment.amount }} за «{{ payment.product_name }}».',
+                    variables: ['payment.message', 'payment.amount', 'payment.product_name'],
+                    subject: 'Оплата получена',
+                ),
+                'finance-payment-failed' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'finance-payment-failed',
+                    name: 'Оплата не прошла',
+                    body: 'Оплату завершить не удалось. Попробуйте ещё раз. Если деньги уже списались, не оплачивайте повторно — мы проверим платёж.',
+                    variables: [],
+                    subject: 'Оплата не прошла',
+                ),
+                'finance-payment-initiation-unavailable-crm' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'finance-payment-initiation-unavailable-crm',
+                    name: 'Проверка настроек онлайн-оплаты',
+                    body: 'Онлайн-оплата недоступна. Товар или услуга: «{{ payment.product_name }}». Причина: {{ payment.reason }}',
+                    variables: ['payment.product_name', 'payment.reason'],
+                    subject: 'Онлайн-оплата недоступна',
+                ),
+                'finance-payment-reconciliation-required-crm' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'finance-payment-reconciliation-required-crm',
+                    name: 'Платёж требует проверки',
+                    body: 'Платёж требует сверки. Клиент: {{ payment.client_label }}. Товар или услуга: «{{ payment.product_name }}». Сумма: {{ payment.amount }}. Причина: {{ payment.reason }}',
+                    variables: ['payment.client_label', 'payment.product_name', 'payment.amount', 'payment.reason'],
+                    subject: 'Платёж требует проверки',
+                ),
+                'commerce-fulfillment-failed-crm' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'commerce-fulfillment-failed-crm',
+                    name: 'Оплата получена, доступ не выдан',
+                    body: 'Оплата получена, но доступ клиенту не выдан. Клиент: {{ client.full_name }}. Продукт: «{{ fulfillment.product_name }}». Причина: {{ fulfillment.reason }}',
+                    variables: ['client.full_name', 'fulfillment.product_name', 'fulfillment.reason'],
+                    subject: 'Оплата получена, доступ не выдан',
+                ),
+                'commerce-fulfillment-failed-client' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'commerce-fulfillment-failed-client',
+                    name: 'Доступ готовится',
+                    body: '{{ fulfillment.message }}',
+                    variables: ['fulfillment.message'],
+                    subject: 'Доступ готовится',
+                ),
+                'commerce-fulfillment-completed-client' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'commerce-fulfillment-completed-client',
+                    name: 'Доступ готов',
+                    body: '{{ fulfillment.message }}',
+                    variables: ['fulfillment.message'],
+                    subject: 'Доступ готов',
+                ),
+                'referral-reward-earned-client' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'referral-reward-earned-client',
+                    name: 'Начисление по партнёрской программе',
+                    body: 'Вам начислено {{ reward.amount }} по партнёрской программе.',
+                    variables: ['reward.amount'],
+                    subject: 'Начисление по партнёрской программе',
+                ),
             ];
+
+            foreach ($this->englishPaymentTemplateDefinitions() as $definition) {
+                $this->ensureTemplate(
+                    organization: $organization,
+                    key: $definition['key'],
+                    name: $definition['name'],
+                    body: $definition['body'],
+                    variables: $definition['variables'],
+                    subject: $definition['subject'],
+                    locale: 'en',
+                );
+            }
 
             foreach ([
                 [
@@ -338,6 +414,105 @@ final class EnsureOperationalNotificationDefaults
                     'repeat_interval_value' => 7,
                     'repeat_interval_unit' => 'days',
                 ],
+                [
+                    'key' => 'finance-payment-succeeded-client-telegram',
+                    'name' => 'Подтверждение оплаты — Telegram клиента',
+                    'channel' => 'telegram',
+                    'template' => 'finance-payment-succeeded',
+                    'event' => ScenarioEventType::PaymentSucceeded->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                ],
+                [
+                    'key' => 'finance-payment-failed-client-telegram',
+                    'name' => 'Неуспешная оплата — Telegram клиента',
+                    'channel' => 'telegram',
+                    'template' => 'finance-payment-failed',
+                    'event' => ScenarioEventType::PaymentFailed->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                ],
+                [
+                    'key' => 'finance-payment-initiation-unavailable-database',
+                    'name' => 'Недоступная онлайн-оплата — уведомление в CRM',
+                    'channel' => 'database',
+                    'template' => 'finance-payment-initiation-unavailable-crm',
+                    'event' => ScenarioEventType::PaymentInitiationUnavailable->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_finance'],
+                ],
+                [
+                    'key' => 'finance-payment-initiation-unavailable-telegram',
+                    'name' => 'Недоступная онлайн-оплата — Telegram сотрудников',
+                    'channel' => 'telegram',
+                    'template' => 'finance-payment-initiation-unavailable-crm',
+                    'event' => ScenarioEventType::PaymentInitiationUnavailable->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_finance'],
+                ],
+                [
+                    'key' => 'finance-payment-reconciliation-database',
+                    'name' => 'Платёж требует сверки — уведомление в CRM',
+                    'channel' => 'database',
+                    'template' => 'finance-payment-reconciliation-required-crm',
+                    'event' => ScenarioEventType::PaymentReconciliationRequired->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_finance'],
+                ],
+                [
+                    'key' => 'finance-payment-reconciliation-telegram',
+                    'name' => 'Платёж требует сверки — Telegram сотрудников',
+                    'channel' => 'telegram',
+                    'template' => 'finance-payment-reconciliation-required-crm',
+                    'event' => ScenarioEventType::PaymentReconciliationRequired->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_finance'],
+                ],
+                [
+                    'key' => 'commerce-fulfillment-failed-database',
+                    'name' => 'Доступ не выдан — уведомление в CRM',
+                    'channel' => 'database',
+                    'template' => 'commerce-fulfillment-failed-crm',
+                    'event' => ScenarioEventType::FulfillmentFailed->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_finance'],
+                ],
+                [
+                    'key' => 'commerce-fulfillment-failed-telegram',
+                    'name' => 'Доступ не выдан — Telegram сотрудников',
+                    'channel' => 'telegram',
+                    'template' => 'commerce-fulfillment-failed-crm',
+                    'event' => ScenarioEventType::FulfillmentFailed->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_finance'],
+                ],
+                [
+                    'key' => 'commerce-fulfillment-failed-client-telegram',
+                    'name' => 'Доступ готовится — Telegram клиента',
+                    'channel' => 'telegram',
+                    'template' => 'commerce-fulfillment-failed-client',
+                    'event' => ScenarioEventType::FulfillmentFailed->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                ],
+                [
+                    'key' => 'commerce-fulfillment-completed-client-telegram',
+                    'name' => 'Доступ выдан — Telegram клиента',
+                    'channel' => 'telegram',
+                    'template' => 'commerce-fulfillment-completed-client',
+                    'event' => ScenarioEventType::FulfillmentCompleted->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                ],
+                [
+                    'key' => 'referral-reward-earned-client-telegram',
+                    'name' => 'Начисление по партнёрской программе — Telegram партнёра',
+                    'channel' => 'telegram',
+                    'template' => 'referral-reward-earned-client',
+                    'event' => ScenarioEventType::ReferralRewardEarned->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                ],
             ] as $definition) {
                 $existingRule = ScenarioRule::query()
                     ->where('organization_id', $organization->getKey())
@@ -386,6 +561,48 @@ final class EnsureOperationalNotificationDefaults
         });
     }
 
+    /** @return list<array{key: string, name: string, body: string, variables: list<string>, subject: string}> */
+    private function englishPaymentTemplateDefinitions(): array
+    {
+        return [
+            [
+                'key' => 'finance-payment-succeeded',
+                'name' => 'Payment received',
+                'body' => '{{ payment.message }} Amount: {{ payment.amount }} for "{{ payment.product_name }}".',
+                'variables' => ['payment.message', 'payment.amount', 'payment.product_name'],
+                'subject' => 'Payment received',
+            ],
+            [
+                'key' => 'finance-payment-failed',
+                'name' => 'Payment failed',
+                'body' => "We couldn't complete the payment. Please try again. If the money has already been charged, don't pay again — we'll check the payment.",
+                'variables' => [],
+                'subject' => 'Payment failed',
+            ],
+            [
+                'key' => 'commerce-fulfillment-failed-client',
+                'name' => 'Access being prepared',
+                'body' => '{{ fulfillment.message }}',
+                'variables' => ['fulfillment.message'],
+                'subject' => 'Access being prepared',
+            ],
+            [
+                'key' => 'commerce-fulfillment-completed-client',
+                'name' => 'Access ready',
+                'body' => '{{ fulfillment.message }}',
+                'variables' => ['fulfillment.message'],
+                'subject' => 'Access ready',
+            ],
+            [
+                'key' => 'referral-reward-earned-client',
+                'name' => 'Referral reward earned',
+                'body' => 'You received {{ reward.amount }} through the referral program.',
+                'variables' => ['reward.amount'],
+                'subject' => 'Referral reward earned',
+            ],
+        ];
+    }
+
     /** @param list<string> $variables */
     private function ensureTemplate(
         Organization $organization,
@@ -394,11 +611,12 @@ final class EnsureOperationalNotificationDefaults
         string $body,
         array $variables,
         ?string $subject = null,
+        string $locale = 'ru',
     ): NotificationTemplateVersion {
         $template = NotificationTemplate::query()
             ->where('organization_id', $organization->getKey())
             ->where('template_key', $key)
-            ->where('locale', 'ru')
+            ->where('locale', $locale)
             ->first();
 
         if ($template === null) {
@@ -407,7 +625,7 @@ final class EnsureOperationalNotificationDefaults
                 'organization_id' => $organization->getKey(),
                 'template_key' => $key,
                 'name' => $name,
-                'locale' => 'ru',
+                'locale' => $locale,
                 'purpose' => ScenarioRulePurpose::Transactional->value,
                 'is_active' => true,
             ])->save();

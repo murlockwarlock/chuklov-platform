@@ -3,6 +3,7 @@
 namespace App\Modules\Finance\Domain\Models;
 
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
+use App\Modules\Finance\Domain\Enums\PaymentGatewayEventStatus;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayEventType;
 use App\Modules\Finance\Domain\Enums\ProviderVerificationStatus;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -13,14 +14,16 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $organization_id
- * @property int $gateway_transaction_id
- * @property string $provider_event_id
- * @property string $provider_reference
+ * @property int|null $gateway_transaction_id
+ * @property string|null $provider_event_id
+ * @property string $provider_event_key
+ * @property string|null $provider_reference
  * @property PaymentGatewayEventType $event_type
  * @property ProviderVerificationStatus $verification_status
- * @property int $amount_minor
- * @property CurrencyCode $currency
+ * @property int|null $amount_minor
+ * @property CurrencyCode|null $currency
  * @property Carbon|null $processed_at
+ * @property PaymentGatewayEventStatus $processing_status
  */
 #[Fillable([])]
 class PaymentGatewayEvent extends Model
@@ -44,9 +47,14 @@ class PaymentGatewayEvent extends Model
         return [
             'verification_status' => ProviderVerificationStatus::class,
             'event_type' => PaymentGatewayEventType::class,
+            'processing_status' => PaymentGatewayEventStatus::class,
             'currency' => CurrencyCode::class,
             'amount_minor' => 'integer',
+            'attempt_count' => 'integer',
+            'payload' => 'array',
             'processed_at' => 'datetime',
+            'next_attempt_at' => 'datetime',
+            'lease_expires_at' => 'datetime',
             'created_at' => 'datetime',
         ];
     }

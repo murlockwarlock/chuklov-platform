@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import ServiceCard from '../../Components/Portal/ServiceCard.vue';
@@ -7,12 +9,18 @@ import type { PortalShell } from '../../types/portal';
 
 type Service = {
     id: number;
+    catalogType: 'service' | 'online_product';
     name: string;
     summary: string | null;
     imageUrl: string | null;
     durationMinutes: number | null;
     priceMajor: string | null;
     priceCurrency: string | null;
+    purchaseUrl: string | null;
+};
+
+type PortalPageProps = {
+    errors?: Record<string, string | string[]>;
 };
 
 const props = defineProps<{
@@ -25,6 +33,12 @@ const props = defineProps<{
 }>();
 
 const { locale, t } = usePortalLocale();
+const page = usePage<PortalPageProps>();
+const paymentError = computed(() => {
+    const error = page.props.errors?.payment;
+
+    return Array.isArray(error) ? error[0] ?? null : error ?? null;
+});
 const bookingUrl = props.portal.authenticated ? props.urls.booking : props.urls.home;
 </script>
 
@@ -42,6 +56,14 @@ const bookingUrl = props.portal.authenticated ? props.urls.booking : props.urls.
       </header>
 
       <div
+        v-if="paymentError"
+        class="portal-notice portal-notice--error min-w-0 max-w-full break-words"
+        role="alert"
+      >
+        {{ paymentError }}
+      </div>
+
+      <div
         v-if="props.services.length"
         class="portal-service-grid portal-service-grid--wide"
       >
@@ -51,6 +73,8 @@ const bookingUrl = props.portal.authenticated ? props.urls.booking : props.urls.
           :service="service"
           :locale="locale"
           :booking-url="bookingUrl"
+          :authenticated="props.portal.authenticated"
+          :home-url="props.urls.home"
         />
       </div>
       <EmptyState

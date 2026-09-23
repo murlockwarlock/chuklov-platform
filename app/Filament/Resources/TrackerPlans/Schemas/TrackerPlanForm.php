@@ -2,14 +2,18 @@
 
 namespace App\Filament\Resources\TrackerPlans\Schemas;
 
+use App\Models\User;
 use App\Modules\Finance\Application\CurrencyConfigurationService;
+use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 
 final class TrackerPlanForm
@@ -37,6 +41,29 @@ final class TrackerPlanForm
                 ])
                 ->columns(2)
                 ->columnSpanFull(),
+            Section::make('Онлайн-оплата')
+                ->visible(fn (): bool => self::canViewFinance())
+                ->schema([
+                    Toggle::make('lava_enabled')
+                        ->label('Принимать оплату через Lava')
+                        ->helperText('Включайте после сохранения API-ключа Lava в разделе «Финансы».')
+                        ->live()
+                        ->default(false)
+                        ->disabled(fn (): bool => ! self::canManageFinance()),
+                    Placeholder::make('lava_currency')
+                        ->label('Валюта')
+                        ->content(fn (Get $get): string => self::currencyLabel($get('currency'))),
+                    TextInput::make('lava_offer_id')
+                        ->label('Offer ID в Lava')
+                        ->helperText('Скопируйте UUID предложения из кабинета Lava.')
+                        ->maxLength(180)
+                        ->uuid()
+                        ->required(fn (Get $get): bool => (bool) $get('lava_enabled'))
+                        ->visible(fn (Get $get): bool => (bool) $get('lava_enabled'))
+                        ->disabled(fn (): bool => ! self::canManageFinance()),
+                ])
+                ->columns(2)
+                ->columnSpanFull(),
         ]);
     }
 
@@ -53,5 +80,34 @@ final class TrackerPlanForm
         }
 
         return $catalog->options();
+    }
+
+    private static function canViewFinance(): bool
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User && app(FinanceAuthorization::class)->allowsView($actor);
+    }
+
+    private static function canManageFinance(): bool
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User && app(FinanceAuthorization::class)->allowsManage($actor);
+    }
+
+    private static function currencyLabel(mixed $currency): string
+    {
+        if (! is_string($currency) || trim($currency) === '') {
+            return 'Сначала укажите валюту тарифа.';
+        }
+
+        try {
+            $code = app(CurrencyCatalog::class)->code($currency);
+
+            return app(CurrencyCatalog::class)->definition($code)->name.' ('.$code->value.')';
+        } catch (\InvalidArgumentException) {
+            return 'Валюта тарифа указана неверно.';
+        }
     }
 }

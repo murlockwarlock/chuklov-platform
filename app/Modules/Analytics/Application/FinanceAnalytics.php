@@ -93,6 +93,7 @@ final class FinanceAnalytics
             ->whereIn('entry_type', [
                 FinancialLedgerEntryType::ManualPayment->value,
                 FinancialLedgerEntryType::FakeGatewaySettlement->value,
+                FinancialLedgerEntryType::GatewaySettlement->value,
             ])
             ->where('base_amount_minor', '>', 0)
             ->selectRaw('COALESCE(SUM(base_amount_minor), 0) as total')

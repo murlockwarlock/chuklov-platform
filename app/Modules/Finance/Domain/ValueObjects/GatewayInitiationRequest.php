@@ -12,5 +12,10 @@ final readonly class GatewayInitiationRequest
         public int $amountMinor,
         public CurrencyCode $currency,
         public string $idempotencyKey,
+        public ?string $buyerEmail = null,
+        public ?string $providerOfferId = null,
+        public ?string $successfulReturnUrl = null,
+        public ?string $failureReturnUrl = null,
+        public ?string $cancelReturnUrl = null,
     ) {}
 }

@@ -12,6 +12,7 @@ use App\Modules\Scheduling\Application\EnsureScheduleMutationImpactAcknowledged;
 use App\Modules\Scheduling\Application\ScheduleMutationImpactCalculator;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Services\Domain\Contracts\ServiceMediaStorageInterface;
+use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Services\Domain\ValueObjects\ServiceConfiguration;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -57,6 +58,7 @@ class UpdateService
         string $catalogType = 'service',
         bool $acknowledgeImpact = false,
         ?string $acknowledgedImpactDigest = null,
+        ?string $paymentRequirement = null,
     ): Service {
         $organization = $this->context->organization();
 
@@ -83,6 +85,7 @@ class UpdateService
             'price_minor' => $priceMinor,
             'price_currency' => $priceCurrency,
             'payment_policy' => $paymentPolicy,
+            'payment_requirement' => $paymentRequirement,
         ];
         $expectedSnapshot = $attributes['expected_snapshot'] ?? null;
         unset($attributes['expected_snapshot']);
@@ -99,6 +102,10 @@ class UpdateService
             $requestedImagePath,
             $requestedExternalUrl,
         );
+        if (! array_key_exists('payment_requirement', $attributes) || $attributes['payment_requirement'] === null) {
+            $attributes['payment_requirement'] = $service->getRawOriginal('payment_requirement')
+                ?? ServicePaymentRequirement::Postpay->value;
+        }
         $this->assertMediaInput($attributes, $service, $uploadedFile, $removeImage, $organization->getKey());
         $configuration = ServiceConfiguration::from($attributes);
         $validatedImagePath = $configuration->imagePath;

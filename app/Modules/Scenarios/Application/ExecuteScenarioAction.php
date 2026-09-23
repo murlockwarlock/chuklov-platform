@@ -267,6 +267,24 @@ final class ExecuteScenarioAction
         }
 
         if ($action->recipient_type === 'internal') {
+            $paymentUrl = $action->render_context['payment']['crm_url'] ?? null;
+            if (is_string($paymentUrl) && trim($paymentUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $action->trigger_event === ScenarioEventType::PaymentInitiationUnavailable
+                        ? ($this->isRussian($locale) ? 'Открыть настройки оплаты' : 'Open payment settings')
+                        : ($this->isRussian($locale) ? 'Открыть сверку' : 'Open reconciliation'),
+                    url: $paymentUrl,
+                );
+            }
+
+            $fulfillmentUrl = $action->render_context['fulfillment']['crm_url'] ?? null;
+            if (is_string($fulfillmentUrl) && trim($fulfillmentUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $this->isRussian($locale) ? 'Открыть оплату и выдачу' : 'Open payment and fulfillment',
+                    url: $fulfillmentUrl,
+                );
+            }
+
             $companionUrl = $action->render_context['companion']['crm_url'] ?? null;
             if (is_string($companionUrl) && trim($companionUrl) !== '') {
                 return new NotificationActionButton(
@@ -327,6 +345,7 @@ final class ExecuteScenarioAction
             'booking.confirmed' => $action->render_context['booking']['meeting_url'] ?? null,
             'booking.rescheduled' => $action->render_context['booking']['meeting_url'] ?? null,
             'referral.payout.status_changed' => $action->render_context['payout']['portal_url'] ?? null,
+            'referral.reward.earned' => $action->render_context['reward']['portal_url'] ?? null,
             default => null,
         };
 
@@ -335,7 +354,9 @@ final class ExecuteScenarioAction
         }
 
         return new NotificationActionButton(
-            text: $this->isRussian($locale) ? 'Подключиться к встрече' : 'Join meeting',
+            text: $action->trigger_event->value === 'referral.reward.earned'
+                ? ($this->isRussian($locale) ? 'Открыть партнёрскую программу' : 'Open referral program')
+                : ($this->isRussian($locale) ? 'Подключиться к встрече' : 'Join meeting'),
             url: $url,
         );
     }

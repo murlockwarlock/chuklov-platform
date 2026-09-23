@@ -108,7 +108,7 @@ final class PaymentFoundationPostgresTest extends TestCase
         self::assertSame(2, DB::table('financial_ledger_entries')->where('organization_id', $organization->getKey())->count());
     }
 
-    public function test_postgres_rejects_unknown_payment_gateway_status(): void
+    public function test_postgres_rejects_invalid_payment_gateway_status(): void
     {
         $this->requirePostgres();
         [$organization, $admin, $obligation] = $this->fixture();
@@ -118,7 +118,7 @@ final class PaymentFoundationPostgresTest extends TestCase
         DB::table('payment_gateway_transactions')
             ->where('organization_id', $organization->getKey())
             ->whereKey($transaction->getKey())
-            ->update(['status' => 'unknown']);
+            ->update(['status' => 'invalid']);
     }
 
     /** @return array{Organization, User, FinancialObligation} */
