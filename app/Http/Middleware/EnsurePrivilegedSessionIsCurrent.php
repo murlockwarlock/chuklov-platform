@@ -49,7 +49,10 @@ class EnsurePrivilegedSessionIsCurrent
             return $this->invalidate($request);
         }
 
-        $sessionVersion = $request->session()->get(self::SESSION_KEY);
+        $userId = (string) $user->getAuthIdentifier();
+        $sessionVersionKey = self::SESSION_KEY.'.'.$userId;
+        $membershipUpdatedAtKey = self::MEMBERSHIP_UPDATED_AT_KEY.'.'.$userId;
+        $sessionVersion = $request->session()->get($sessionVersionKey);
 
         if ($sessionVersion !== null && (int) $sessionVersion !== (int) $currentVersion) {
             return $this->invalidate($request);
@@ -58,15 +61,15 @@ class EnsurePrivilegedSessionIsCurrent
         $membershipUpdatedAt = $membership->updated_at === null
             ? null
             : (int) $membership->updated_at->getPreciseTimestamp(6);
-        $sessionMembershipUpdatedAt = $request->session()->get(self::MEMBERSHIP_UPDATED_AT_KEY);
+        $sessionMembershipUpdatedAt = $request->session()->get($membershipUpdatedAtKey);
 
         if ($membershipUpdatedAt === null
             || ($sessionMembershipUpdatedAt !== null && (int) $sessionMembershipUpdatedAt !== $membershipUpdatedAt)) {
             return $this->invalidate($request);
         }
 
-        $request->session()->put(self::SESSION_KEY, (int) $currentVersion);
-        $request->session()->put(self::MEMBERSHIP_UPDATED_AT_KEY, $membershipUpdatedAt);
+        $request->session()->put($sessionVersionKey, (int) $currentVersion);
+        $request->session()->put($membershipUpdatedAtKey, $membershipUpdatedAt);
 
         return $next($request);
     }
