@@ -49,24 +49,7 @@ class User extends Authenticatable implements FilamentUser, HasAppAuthentication
             return false;
         }
 
-        $organizationId = config('tenancy.default_organization_id');
-        $isInteger = is_int($organizationId)
-            || (is_string($organizationId) && ctype_digit($organizationId));
-
-        if (! $isInteger) {
-            return $this->hasPermission(OrganizationPermission::ViewAdmin);
-        }
-
-        $organization = Organization::query()->find((int) $organizationId);
-
-        $membership = $organization instanceof Organization
-            ? $this->memberships()
-                ->where('organization_id', $organization->getKey())
-                ->first()
-            : null;
-
-        return $membership instanceof OrganizationMembership
-            && $membership->role->allows(OrganizationPermission::ViewAdmin);
+        return $this->hasPermission(OrganizationPermission::ViewAdmin);
     }
 
     public function membershipFor(Organization|int $organization): ?OrganizationMembership
