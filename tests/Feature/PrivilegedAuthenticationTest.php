@@ -22,18 +22,18 @@ class PrivilegedAuthenticationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_admin_panel_requires_mfa_and_supports_profile_management(): void
+    public function test_admin_panel_offers_optional_mfa_and_profile_management(): void
     {
         $panel = Filament::getPanel('admin');
 
         self::assertTrue($panel->hasMultiFactorAuthentication());
-        self::assertTrue($panel->isMultiFactorAuthenticationRequired());
+        self::assertFalse($panel->isMultiFactorAuthenticationRequired());
         self::assertTrue($panel->hasProfile());
         self::assertSame(AdminLogin::class, $panel->getLoginRouteAction());
         self::assertSame(EditProfile::class, $panel->getProfilePage());
     }
 
-    public function test_user_without_mfa_is_redirected_to_required_mfa_setup(): void
+    public function test_user_without_mfa_enters_crm_without_a_login_challenge(): void
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
@@ -47,10 +47,10 @@ class PrivilegedAuthenticationTest extends TestCase
             ->assertSet('userUndertakingMultiFactorAuthentication', null);
 
         self::assertAuthenticatedAs($admin);
-        $this->get('/admin')->assertRedirect(Filament::getSetUpRequiredMultiFactorAuthenticationUrl());
+        $this->get('/admin')->assertOk();
     }
 
-    public function test_user_with_configured_mfa_must_complete_a_login_challenge(): void
+    public function test_user_with_configured_mfa_enters_crm_without_a_login_challenge(): void
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
@@ -62,23 +62,29 @@ class PrivilegedAuthenticationTest extends TestCase
         app(AuditedAppAuthentication::class)->saveSecret($admin, $secret);
         Filament::auth()->logout();
 
-        $code = app(AuditedAppAuthentication::class)->getCurrentCode($admin);
         $login = Livewire::test(AdminLogin::class)
             ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
             ->call('authenticate');
 
-        self::assertNotNull($login->get('userUndertakingMultiFactorAuthentication'));
-
-        self::assertGuest('web');
-
-        $login
-            ->fillForm(['multiFactor.app.code' => $code])
-            ->call('authenticate');
-
+        self::assertNull($login->get('userUndertakingMultiFactorAuthentication'));
         self::assertAuthenticatedAs($admin);
+        $this->get('/admin')->assertOk();
     }
 
-    public function test_recovery_code_login_consumes_and_audits_only_a_valid_code(): void
+    public function test_existing_profile_route_remains_available_for_mfa_management(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $this->actingAs($admin)
+            ->get(route('filament.admin.auth.profile'))
+            ->assertOk();
+    }
+
+    public function test_recovery_code_provider_capability_consumes_and_audits_only_a_valid_code(): void
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
@@ -90,20 +96,9 @@ class PrivilegedAuthenticationTest extends TestCase
         $provider->saveSecret($admin, $provider->generateSecret());
         $recoveryCode = 'recovery-code-1';
         $provider->saveRecoveryCodes($admin, [$recoveryCode]);
-        Filament::auth()->logout();
 
-        $login = Livewire::test(AdminLogin::class)
-            ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
-            ->call('authenticate');
+        self::assertTrue($provider->verifyRecoveryCode($recoveryCode));
 
-        $login
-            ->fillForm([
-                'multiFactor.app.useRecoveryCode' => true,
-                'multiFactor.app.recoveryCode' => $recoveryCode,
-            ])
-            ->call('authenticate');
-
-        self::assertAuthenticatedAs($admin);
         self::assertSame([], $admin->fresh()->getAppAuthenticationRecoveryCodes());
         $audit = AuditEvent::query()
             ->where('organization_id', $organization->getKey())
@@ -115,17 +110,7 @@ class PrivilegedAuthenticationTest extends TestCase
         self::assertSame([], $audit->metadata);
         self::assertStringNotContainsString($recoveryCode, (string) DB::table('audit_events')->where('id', $audit->getKey())->value('metadata'));
 
-        Filament::auth()->logout();
-        $reused = Livewire::test(AdminLogin::class)
-            ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
-            ->call('authenticate')
-            ->fillForm([
-                'multiFactor.app.useRecoveryCode' => true,
-                'multiFactor.app.recoveryCode' => $recoveryCode,
-            ])
-            ->call('authenticate');
-
-        self::assertGuest('web');
+        self::assertFalse($provider->verifyRecoveryCode($recoveryCode));
         self::assertSame(1, AuditEvent::query()
             ->where('organization_id', $organization->getKey())
             ->where('action', 'privileged.mfa.recovery_code.used')
