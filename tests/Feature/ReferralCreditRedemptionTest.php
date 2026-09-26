@@ -395,6 +395,7 @@ final class ReferralCreditRedemptionTest extends TestCase
         $admin = User::factory()->forOrganization($organization)->create();
         $client = Client::factory()->forOrganization($organization)->create();
         config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
         app(SaveCurrencyConfiguration::class)->handle($admin, [
             'base_currency' => 'USD',
