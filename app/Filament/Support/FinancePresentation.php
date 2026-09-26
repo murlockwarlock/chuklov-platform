@@ -343,6 +343,7 @@ final class FinancePresentation
             'fake_gateway_settlement' => $entry->getRawOriginal('payment_method') === null
                 ? __('Тестовая оплата')
                 : __('Способ оплаты недоступен'),
+            'referral_credit' => __('Реферальный бонус'),
             'manual_payment' => match ($entry->getRawOriginal('payment_method')) {
                 'cash' => __('Наличные'),
                 'bank_transfer' => __('Банковский перевод'),

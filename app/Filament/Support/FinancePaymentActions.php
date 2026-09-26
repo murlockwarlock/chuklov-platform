@@ -7,10 +7,12 @@ use App\Modules\Finance\Application\CorrectFinancialPayment;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\FinancialReconciliationContract;
 use App\Modules\Finance\Application\RecordManualPayment;
+use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
 use App\Modules\Finance\Domain\Enums\PaymentMethod;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Referrals\Application\RestoreReferralCredit;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
@@ -75,19 +77,31 @@ final class FinancePaymentActions
 
                 return $actor instanceof User
                     && app(FinanceAuthorization::class)->allowsManage($actor)
-                    && $record->getRawOriginal('entry_type') === 'manual_payment'
+                    && in_array($record->getRawOriginal('entry_type'), [
+                        FinancialLedgerEntryType::ManualPayment->value,
+                        FinancialLedgerEntryType::ReferralCredit->value,
+                    ], true)
                     && self::canCorrect($record)
                     && ! (bool) $record->getAttribute('has_correction');
             })
             ->action(function (FinancialLedgerEntry $record, array $data): void {
                 $actor = auth()->user();
                 abort_unless($actor instanceof User, 403);
-                app(CorrectFinancialPayment::class)->handle(
-                    actor: $actor,
-                    original: $record,
-                    reason: (string) $data['reason'],
-                    idempotencyKey: (string) $data['idempotency_key'],
-                );
+                if ($record->getRawOriginal('entry_type') === FinancialLedgerEntryType::ReferralCredit->value) {
+                    app(RestoreReferralCredit::class)->handle(
+                        actor: $actor,
+                        entry: $record,
+                        reason: (string) $data['reason'],
+                        idempotencyKey: (string) $data['idempotency_key'],
+                    );
+                } else {
+                    app(CorrectFinancialPayment::class)->handle(
+                        actor: $actor,
+                        original: $record,
+                        reason: (string) $data['reason'],
+                        idempotencyKey: (string) $data['idempotency_key'],
+                    );
+                }
                 Notification::make()
                     ->success()
                     ->title(__('Оплата исправлена. Исходная запись сохранена в истории.'))
@@ -259,6 +273,10 @@ final class FinancePaymentActions
 
         if (! $obligation instanceof FinancialObligation) {
             return false;
+        }
+
+        if ($entry->getRawOriginal('entry_type') === FinancialLedgerEntryType::ReferralCredit->value) {
+            return app(RestoreReferralCredit::class)->canHandle($entry);
         }
 
         try {

@@ -102,6 +102,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 percentage: null,
                 effectiveAt: \\Carbon\\CarbonImmutable::now()->subMinute(),
             );
+            app(\\App\\Modules\\Referrals\\Application\\ActivateReferralPartner::class)->handle($client, 'crm', $rewardAdmin);
             $referred = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
                 'full_name' => 'Playwright Referred '.$suffix,
                 'email' => 'playwright-referred-'.$suffix.'@example.test',
@@ -719,7 +720,6 @@ test('Telegram Mini App partner launch authenticates and displays the partner ca
                         status: 'active',
                         activatedAt: null,
                         link: 'https://t.me/chuklov_test_bot?start=ref_legacy-referral-code',
-                        activationUrl: '/portal/referrals/activate',
                         createLinkUrl: '/portal/referrals/links',
                         stats: {
                             visits: 0,
@@ -818,7 +818,7 @@ test('feedback keeps the selected score visible and the portal within mobile bou
     }
 });
 
-test('home keeps one primary booking action and makes referrals discoverable at target widths', async ({ page }) => {
+test('home keeps one primary booking action and ordinary referrals remain available', async ({ page }) => {
     const fixture = createBookingFixture();
 
     await page.context().addCookies([{
@@ -831,7 +831,6 @@ test('home keeps one primary booking action and makes referrals discoverable at 
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/');
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
-        await expect(page.getByTestId('home-referrals-cta')).toContainText('🤝 Стать партнёром');
         await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
         await assertNoHorizontalOverflow(page);
 
@@ -852,19 +851,16 @@ test('home keeps one primary booking action and makes referrals discoverable at 
         await page.screenshot({ path: `/tmp/chuklov-portal-home-${width}.png`, fullPage: true });
     }
 
-    await page.getByTestId('home-referrals-cta').click();
+    await page.goto('/portal/referrals');
     await expect(page).toHaveURL(/\/portal\/referrals$/);
-    await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
-    await page.getByTestId('partner-activate').click();
-    await page.goto('/');
-    await expect(page.getByTestId('home-referrals-cta')).toContainText('🤝 Партнёрский кабинет');
-    await page.getByTestId('home-referrals-cta').click();
-    await expect(page).toHaveURL(/\/portal\/referrals$/);
-    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Пригласить друга', exact: true })).toBeVisible();
+    await expect(page.getByTestId('ordinary-referral')).toBeVisible();
+    await expect(page.getByTestId('partner-activate')).toHaveCount(0);
+    await expect(page.getByTestId('partner-links')).toHaveCount(0);
 });
 
-test('client can activate the partner cabinet and manage multiple campaign links', async ({ page }) => {
-    const fixture = createBookingFixture();
+test('CRM-assigned partner can manage multiple campaign links', async ({ page }) => {
+    const fixture = createBookingFixture({ withPartnerRewards: true });
 
     await page.context().addCookies([{
         name: fixture.cookieName,
@@ -872,10 +868,6 @@ test('client can activate the partner cabinet and manage multiple campaign links
         url: 'http://127.0.0.1:8000',
     }]);
     await page.goto('/portal/referrals');
-    await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
-    await expect(page.getByTestId('partner-activate')).toBeVisible();
-    await page.getByTestId('partner-activate').click();
-
     await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
     await expect(page.getByTestId('partner-links')).toBeVisible();
     await expect(page.getByTestId('invite-friend')).toHaveCount(0);
@@ -939,7 +931,6 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     }]);
 
     await page.goto('/portal/referrals');
-    await page.getByTestId('partner-activate').click();
     await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
     await expect(page.getByTestId('invite-friend')).toHaveCount(0);
     await expect(page.getByTestId('partner-balance-USD')).toContainText(/10[,.]00.*(?:\$|USD)/);

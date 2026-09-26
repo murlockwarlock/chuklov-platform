@@ -7,6 +7,7 @@ use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
 use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
 use App\Modules\Security\Application\RecordAuditEvent;
@@ -66,8 +67,9 @@ final class ReverseReferralReward
             }
 
             $currency = CurrencyCode::from((string) $original->getRawOriginal('currency'));
+            $category = ReferralRewardCategory::from((string) $original->getRawOriginal('reward_category'));
             $originalMoney = Money::ofMinor($original->amount_minor, $currency);
-            $available = $this->balances->forCurrency($beneficiary, $currency)->available();
+            $available = $this->balances->forCurrency($beneficiary, $currency, $category)->available();
 
             if ($available->compareTo($originalMoney) < 0) {
                 throw ValidationException::withMessages([
@@ -86,6 +88,7 @@ final class ReverseReferralReward
                 'financial_ledger_entry_id' => $original->financial_ledger_entry_id,
                 'reward_program_version_id' => $original->reward_program_version_id,
                 'entry_type' => ReferralRewardLedgerEntryType::Reversed->value,
+                'reward_category' => $category->value,
                 'amount_minor' => $original->amount_minor,
                 'currency' => $currency->value,
                 'reason_type' => 'manual_reversal',

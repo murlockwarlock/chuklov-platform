@@ -334,7 +334,7 @@ final class ScenarioRuleForm
             ScenarioEventType::PaymentReconciliationRequired->value => __('Когда платёж требует сверки'),
             ScenarioEventType::FulfillmentFailed->value => __('Если доступ не выдан'),
             ScenarioEventType::FulfillmentCompleted->value => __('Когда доступ выдан'),
-            ScenarioEventType::ReferralRewardEarned->value => __('При начислении по партнёрской программе'),
+            ScenarioEventType::ReferralRewardEarned->value => __('При начислении реферального бонуса'),
         ];
     }
 

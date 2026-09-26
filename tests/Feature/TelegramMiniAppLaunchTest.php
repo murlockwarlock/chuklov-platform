@@ -238,9 +238,10 @@ final class TelegramMiniAppLaunchTest extends TestCase
         config()->set('portal.telegram.portal_url', 'https://mini.example.test');
 
         $menu = collect(app(GetTelegramMenu::class)->handle('ru', $client));
-        self::assertSame('Стать партнёром', $menu->firstWhere('key', 'partner_cabinet')['label']);
+        self::assertSame('Пригласить друга', $menu->firstWhere('key', 'partner_cabinet')['label']);
 
-        app(ActivateReferralPartner::class)->handle($client, 'portal');
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
         $client->load('referralPartnerProfile');
         $menu = collect(app(GetTelegramMenu::class)->handle('ru', $client));
 
@@ -257,7 +258,8 @@ final class TelegramMiniAppLaunchTest extends TestCase
         $organization = $this->organizationWithClientRecords();
         $client = Client::factory()->forOrganization($organization)->create();
         ClientChannelIdentity::factory()->forClient($client)->create(['external_id' => '820123']);
-        app(ActivateReferralPartner::class)->handle($client, 'portal');
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
         $this->useTelegramToken();
 
         $this->get(route('portal.telegram.launch', ['entry' => 'partner_cabinet']))

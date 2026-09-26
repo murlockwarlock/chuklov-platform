@@ -9,7 +9,9 @@ use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
 use App\Modules\Referrals\Domain\Enums\ReferralEstablishmentMethod;
 use App\Modules\Referrals\Domain\Enums\ReferralPartnerStatus;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
+use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
+use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
 use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
 use App\Modules\Referrals\Domain\Models\ReferralLinkVisit;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
@@ -42,7 +44,12 @@ final class GetReferralPartnerOverview
             ->where('client_id', $client->getKey())
             ->with(['campaignLinks' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
             ->first();
-        $links = $profile instanceof ReferralPartnerProfile ? $profile->campaignLinks : collect();
+
+        if (! $profile instanceof ReferralPartnerProfile || ! $profile->isActive()) {
+            return $this->ordinaryOverview($client, $identity, $locale);
+        }
+
+        $links = $profile->campaignLinks;
         $linkIds = $links->pluck('id')->map(static fn (mixed $id): int => (int) $id)->values()->all();
         $relationshipQuery = ReferralRelationship::query()
             ->where('organization_id', $organizationId)
@@ -61,10 +68,11 @@ final class GetReferralPartnerOverview
         $registrationsByLink = $this->registrationsByLink($organizationId, $client->getKey(), $linkIds);
         $paidClientsByLink = $this->paidClientsByLink($organizationId, $client->getKey(), $linkIds);
         $rewardsByLink = $this->rewardsByLink($organizationId, $client->getKey());
-        $rewardBalances = $this->balances->forClient($client);
+        $rewardBalances = $this->balances->forClient($client, ReferralRewardCategory::PartnerCash);
         $history = ReferralRewardLedgerEntry::query()
             ->where('organization_id', $organizationId)
             ->where('beneficiary_client_id', $client->getKey())
+            ->where('reward_category', ReferralRewardCategory::PartnerCash->value)
             ->with('referred:id,full_name')
             ->latest('occurred_at')
             ->limit(50)
@@ -100,7 +108,6 @@ final class GetReferralPartnerOverview
                 ? null
                 : CarbonImmutable::parse((string) $profile->getRawOriginal('activated_at'))->toIso8601String(),
             'link' => $this->telegramUrl->handle($identity->public_code),
-            'activationUrl' => route('portal.referrals.activate'),
             'createLinkUrl' => route('portal.referrals.links.store'),
             'referredClientsCount' => $registrationCount,
             'stats' => [
@@ -140,6 +147,71 @@ final class GetReferralPartnerOverview
                 'history' => $history->map(fn (ReferralRewardLedgerEntry $entry): array => $this->rewardHistory($entry, $locale))->values()->all(),
                 'payouts' => $payouts->map(fn (ReferralPayoutRequest $payout): array => $this->payout($payout, $locale))->values()->all(),
                 'requestUrl' => route('portal.referrals.payouts.store'),
+            ],
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    private function ordinaryOverview(
+        Client $client,
+        ClientReferralIdentity $identity,
+        string $locale,
+    ): array {
+        $organizationId = $this->context->id();
+        $relationships = ReferralRelationship::query()
+            ->where('organization_id', $organizationId)
+            ->where('referrer_client_id', $client->getKey())
+            ->with([
+                'referred:id,full_name',
+                'referralCampaignLink:id,name,channel,partner_client_id',
+            ])
+            ->withCount('commercialEvidence')
+            ->withMax('commercialEvidence', 'observed_at')
+            ->latest('registered_at')
+            ->limit(50)
+            ->get();
+        $balances = $this->balances->forClient($client, ReferralRewardCategory::ServiceCredit);
+        $history = ReferralRewardLedgerEntry::query()
+            ->where('organization_id', $organizationId)
+            ->where('beneficiary_client_id', $client->getKey())
+            ->where('reward_category', ReferralRewardCategory::ServiceCredit->value)
+            ->with('referred:id,full_name')
+            ->latest('occurred_at')
+            ->limit(50)
+            ->get();
+        $registrationCount = $relationships->count();
+        $paidClientCount = $relationships->filter(static fn (ReferralRelationship $relationship): bool => (int) ($relationship->commercial_evidence_count ?? 0) > 0)->count();
+
+        return [
+            'isPartner' => false,
+            'status' => null,
+            'activatedAt' => null,
+            'link' => $this->telegramUrl->handle($identity->public_code),
+            'stats' => [
+                'visits' => 0,
+                'registrations' => $registrationCount,
+                'paidClients' => $paidClientCount,
+                'visitToRegistrationRate' => null,
+                'registrationToPaidClientRate' => $this->conversion($paidClientCount, $registrationCount),
+                'rewardEarned' => $this->moneyList($balances),
+            ],
+            'links' => [],
+            'referredClientsCount' => $registrationCount,
+            'registrations' => $relationships->map(fn (ReferralRelationship $relationship): array => $this->registration($relationship, $locale))->values()->all(),
+            'rewards' => [
+                'balances' => array_map(fn (ReferralRewardBalance $balance): array => [
+                    'currency' => $balance->currency->value,
+                    'earnedMinor' => $balance->earned->minorUnits(),
+                    'accruedMinor' => $balance->accrued()->minorUnits(),
+                    'availableMinor' => $balance->available()->minorUnits(),
+                    'pendingPayoutMinor' => 0,
+                    'paidOutMinor' => 0,
+                    'redeemedMinor' => $balance->redeemed->minorUnits(),
+                    'restoredMinor' => $balance->restored->minorUnits(),
+                ], $balances),
+                'history' => $history->map(fn (ReferralRewardLedgerEntry $entry): array => $this->rewardHistory($entry, $locale))->values()->all(),
+                'payouts' => [],
+                'requestUrl' => null,
             ],
         ];
     }
@@ -216,6 +288,7 @@ final class GetReferralPartnerOverview
             ->join($relationshipTable, $relationshipTable.'.id', '=', $ledgerTable.'.referral_relationship_id')
             ->where($ledgerTable.'.organization_id', $organizationId)
             ->where($ledgerTable.'.beneficiary_client_id', $clientId)
+            ->where($ledgerTable.'.reward_category', ReferralRewardCategory::PartnerCash->value)
             ->whereIn($ledgerTable.'.entry_type', [
                 ReferralRewardLedgerEntryType::Earned->value,
                 ReferralRewardLedgerEntryType::Reversed->value,
@@ -305,8 +378,10 @@ final class GetReferralPartnerOverview
                 ReferralRewardLedgerEntryType::Earned => $locale === 'en' ? 'Reward earned' : 'Начисление',
                 ReferralRewardLedgerEntryType::Reversed => $locale === 'en' ? 'Reward reversed' : 'Сторно',
                 ReferralRewardLedgerEntryType::ManualCredit => $locale === 'en' ? 'Manual reward' : 'Ручной бонус',
+                ReferralRewardLedgerEntryType::Redeemed => $locale === 'en' ? 'Referral credit used' : 'Использование бонуса',
+                ReferralRewardLedgerEntryType::Restored => $locale === 'en' ? 'Referral credit restored' : 'Возврат бонуса',
             },
-            'isReversal' => $type === ReferralRewardLedgerEntryType::Reversed,
+            'isReversal' => in_array($type, [ReferralRewardLedgerEntryType::Reversed, ReferralRewardLedgerEntryType::Redeemed], true),
             'amountMinor' => $entry->amount_minor,
             'currency' => $currency->value,
             'clientName' => $entry->referred?->full_name,

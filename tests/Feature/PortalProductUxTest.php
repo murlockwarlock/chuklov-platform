@@ -2,11 +2,13 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\EnsureReferralIdentity;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
 use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
@@ -41,6 +43,7 @@ class PortalProductUxTest extends TestCase
                 ->component('Portal/Home')
                 ->where('portal.authenticated', true)
                 ->where('portal.clientName', 'Portal Client')
+                ->where('portal.isPartner', false)
                 ->where('healthAction', null)
                 ->where('portal.urls.health', route('portal.health'))
                 ->where('portal.urls.more', route('portal.more'))
@@ -216,12 +219,24 @@ class PortalProductUxTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('Portal/Referrals')
                 ->where('referrals.link', 'https://t.me/chuklov_test_bot?start=ref_'.$identity->public_code)
+                ->where('referrals.isPartner', false)
+                ->where('referrals.links', [])
+                ->where('referrals.rewards.requestUrl', null)
                 ->where('referrals.registrations', [])
                 ->missing('referrals.reward')
                 ->missing('referrals.commission'));
+
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.more'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('portal.isPartner', true));
     }
 
-    public function test_client_can_activate_partner_cabinet_and_create_channel_links(): void
+    public function test_client_cannot_self_activate_partner_but_staff_activated_partner_can_create_channel_links(): void
     {
         $organization = $this->organizationWithClientRecords();
         $client = Client::factory()->forOrganization($organization)->create();
@@ -230,10 +245,14 @@ class PortalProductUxTest extends TestCase
         $this->get(route('portal.referrals'))
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
                 ->where('referrals.isPartner', false)
-                ->where('referrals.links', []));
+                ->where('referrals.links', [])
+                ->missing('referrals.activationUrl'));
 
-        $this->post(route('portal.referrals.activate'))
-            ->assertRedirect(route('portal.referrals'));
+        self::assertFalse(Route::has('portal.referrals.activate'));
+        $this->post('/portal/referrals/activate')->assertNotFound();
+
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
 
         $this->post(route('portal.referrals.links.store'), [
             'name' => 'Instagram — шапка профиля',

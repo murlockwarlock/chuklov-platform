@@ -7,6 +7,7 @@ use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Finance\Domain\ValueObjects\Money;
+use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
@@ -119,6 +120,7 @@ final class CreditManualReferralBonus
                 'financial_ledger_entry_id' => null,
                 'reward_program_version_id' => null,
                 'entry_type' => ReferralRewardLedgerEntryType::ManualCredit->value,
+                'reward_category' => ReferralRewardCategory::PartnerCash->value,
                 'amount_minor' => $money->minorUnits(),
                 'currency' => $currencyCode->value,
                 'reason_type' => 'manual_bonus',

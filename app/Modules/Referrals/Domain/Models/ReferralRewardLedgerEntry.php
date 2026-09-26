@@ -8,6 +8,7 @@ use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -17,6 +18,7 @@ use LogicException;
 
 /**
  * @property ReferralRewardLedgerEntryType $entry_type
+ * @property ReferralRewardCategory $reward_category
  * @property CurrencyCode $currency
  * @property int $amount_minor
  * @property int $beneficiary_client_id
@@ -111,6 +113,7 @@ class ReferralRewardLedgerEntry extends Model
     {
         return [
             'entry_type' => ReferralRewardLedgerEntryType::class,
+            'reward_category' => ReferralRewardCategory::class,
             'currency' => CurrencyCode::class,
             'amount_minor' => 'integer',
             'occurred_at' => 'datetime',

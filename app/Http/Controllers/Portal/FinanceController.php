@@ -3,12 +3,15 @@
 namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
+use App\Modules\ClientPortal\Application\ClientPortalContext;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\ClientPortal\Application\PortalPaymentErrorMessages;
 use App\Modules\Finance\Application\InitiateClientFakePayment;
 use App\Modules\Finance\Application\InitiateClientLavaPayment;
 use App\Modules\Finance\Application\ListClientFinance;
 use App\Modules\Finance\Application\SimulateClientFakePayment;
 use App\Modules\Finance\Domain\Exceptions\PaymentGatewayInitiationFailure;
+use App\Modules\Referrals\Application\ApplyReferralCreditToObligation;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
@@ -39,6 +42,34 @@ final class FinanceController extends Controller
         $initiate->handle($obligationId, (string) $data['idempotency_key']);
 
         return back();
+    }
+
+    public function applyReferralCredit(
+        Request $request,
+        ClientPortalContext $context,
+        ApplyReferralCreditToObligation $apply,
+        PortalClientMessages $messages,
+        int $obligationId,
+    ): RedirectResponse {
+        $data = $request->validate([
+            'amount' => ['required', 'string', 'max:30', 'regex:/^(0|[1-9][0-9]*)(?:\.[0-9]+)?$/'],
+            'currency' => ['required', 'string', 'max:3'],
+            'idempotency_key' => ['required', 'string', 'max:180', 'regex:/^[A-Za-z0-9._:-]+$/'],
+        ], $messages->validationMessages('referral_credit'));
+
+        try {
+            $apply->handle(
+                client: $context->client(),
+                obligationId: $obligationId,
+                amount: (string) $data['amount'],
+                currency: (string) $data['currency'],
+                idempotencyKey: (string) $data['idempotency_key'],
+            );
+        } catch (ValidationException $exception) {
+            throw ValidationException::withMessages($messages->validationException('referral_credit', $exception));
+        }
+
+        return back()->with('success', $messages->message('referral_credit_applied'));
     }
 
     public function startLavaPayment(

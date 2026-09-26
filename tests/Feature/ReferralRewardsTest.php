@@ -122,7 +122,7 @@ final class ReferralRewardsTest extends TestCase
         self::assertSame('referral-reward-chat', $telegram->messages[0]->recipientExternalId);
         self::assertStringContainsString('10.00 USD', $telegram->messages[0]->body);
         self::assertStringContainsString(
-            $locale === 'en' ? 'You received 10.00 USD through the referral program.' : 'Вам начислено 10.00 USD по партнёрской программе.',
+            $locale === 'en' ? 'You received a referral bonus of 10.00 USD.' : 'Вам начислен реферальный бонус: 10.00 USD.',
             $telegram->messages[0]->body,
         );
         self::assertStringNotContainsString((string) $referred->getKey(), $telegram->messages[0]->body);
@@ -246,7 +246,7 @@ final class ReferralRewardsTest extends TestCase
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
         $this->relationship($organization, $referrer, $referred);
-        $this->activatePartner($referrer);
+        $this->activatePartner($referrer, $admin);
         $this->configureFixed($organization, $admin, '10.00', 'USD');
         $event = $this->settledEvent($organization, $referred, 'payout');
         app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
@@ -275,7 +275,7 @@ final class ReferralRewardsTest extends TestCase
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
         $this->relationship($organization, $referrer, $referred);
-        $this->activatePartner($referrer);
+        $this->activatePartner($referrer, $admin);
         $this->configureFixed($organization, $admin, '10.00', 'USD');
         $event = $this->settledEvent($organization, $referred, 'limits');
         app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
@@ -289,7 +289,7 @@ final class ReferralRewardsTest extends TestCase
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
         $this->relationship($organization, $referrer, $referred);
-        $this->activatePartner($referrer);
+        $this->activatePartner($referrer, $admin);
         $this->configureFixed($organization, $admin, '10.00', 'USD');
         $event = $this->settledEvent($organization, $referred, 'reverse');
         app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
@@ -340,7 +340,7 @@ final class ReferralRewardsTest extends TestCase
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
         $this->relationship($organization, $referrer, $referred);
-        $this->activatePartner($referrer);
+        $this->activatePartner($referrer, $admin);
         $this->configureFixed($organization, $admin, '10.00', 'USD');
         $event = $this->settledEvent($organization, $referred, 'overview');
         app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
@@ -373,7 +373,7 @@ final class ReferralRewardsTest extends TestCase
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
         $this->relationship($organization, $referrer, $referred);
-        $this->activatePartner($referrer);
+        $this->activatePartner($referrer, $admin);
         $this->configureFixed($organization, $admin, '10.00', 'USD');
         $event = $this->settledEvent($organization, $referred, 'partner-payout-boundary');
         app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
@@ -394,7 +394,7 @@ final class ReferralRewardsTest extends TestCase
     public function test_reversed_campaign_reward_is_net_accrued_in_stats_per_link_and_balance_history(): void
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
-        $this->activatePartner($referrer);
+        $this->activatePartner($referrer, $admin);
         $link = app(CreateReferralCampaignLink::class)->handle(
             client: $referrer,
             name: 'Telegram campaign',
@@ -558,9 +558,9 @@ final class ReferralRewardsTest extends TestCase
         return $relationship;
     }
 
-    private function activatePartner(Client $client): void
+    private function activatePartner(Client $client, User $admin): void
     {
-        app(ActivateReferralPartner::class)->handle($client, 'portal');
+        app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
     }
 
     /**

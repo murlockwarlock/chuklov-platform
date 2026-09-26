@@ -27,10 +27,11 @@ final class ReferralPartnerLifecycleTest extends TestCase
     public function test_partner_activation_is_idempotent_and_creates_one_default_link(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $client = Client::factory()->forOrganization($organization)->create();
 
-        $first = app(ActivateReferralPartner::class)->handle($client, 'portal');
-        $second = app(ActivateReferralPartner::class)->handle($client, 'portal');
+        $first = app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
+        $second = app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
 
         self::assertSame($first->getKey(), $second->getKey());
         self::assertSame(1, ReferralPartnerProfile::query()->where('client_id', $client->getKey())->count());
@@ -41,8 +42,9 @@ final class ReferralPartnerLifecycleTest extends TestCase
     public function test_active_partner_can_create_multiple_named_channel_links(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $client = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($client, 'portal');
+        app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
 
         $instagram = app(CreateReferralCampaignLink::class)->handle(
             client: $client,
@@ -65,7 +67,7 @@ final class ReferralPartnerLifecycleTest extends TestCase
         $organization = $this->organization();
         $admin = User::factory()->forOrganization($organization)->create();
         $client = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($client, 'portal');
+        app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
         $link = app(CreateReferralCampaignLink::class)->handle(
             client: $client,
             name: 'Сайт — лендинг',
@@ -91,9 +93,28 @@ final class ReferralPartnerLifecycleTest extends TestCase
         $organization = $this->organization();
         $foreignOrganization = Organization::factory()->create();
         $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create();
+        $admin = User::factory()->forOrganization($organization)->create();
 
         $this->expectException(HttpException::class);
-        app(ActivateReferralPartner::class)->handle($foreignClient, 'portal');
+        app(ActivateReferralPartner::class)->handle($foreignClient, 'crm', $admin);
+    }
+
+    public function test_client_source_cannot_activate_partner(): void
+    {
+        $organization = $this->organization();
+        $client = Client::factory()->forOrganization($organization)->create();
+
+        $this->expectException(ValidationException::class);
+        app(ActivateReferralPartner::class)->handle($client, 'portal');
+    }
+
+    public function test_client_cannot_impersonate_crm_activation_without_an_authorized_actor(): void
+    {
+        $organization = $this->organization();
+        $client = Client::factory()->forOrganization($organization)->create();
+
+        $this->expectException(ValidationException::class);
+        app(ActivateReferralPartner::class)->handle($client, 'crm');
     }
 
     private function organization(): Organization

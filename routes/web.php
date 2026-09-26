@@ -127,6 +127,9 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/finance/{obligationId}/lava/start', [FinanceController::class, 'startLavaPayment'])
                 ->whereNumber('obligationId')
                 ->name('portal.finance.lava.start');
+            Route::post('/portal/finance/{obligationId}/referral-credit', [FinanceController::class, 'applyReferralCredit'])
+                ->whereNumber('obligationId')
+                ->name('portal.finance.referral-credit.apply');
             Route::post('/portal/services/{serviceId}/purchase', [PortalCommerceController::class, 'purchase'])
                 ->whereNumber('serviceId')
                 ->name('portal.services.purchase');
@@ -138,7 +141,6 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
                 ->whereIn('outcome', ['success', 'fail', 'refund'])
                 ->name('portal.finance.fake.simulate');
             Route::get('/portal/referrals', ReferralController::class)->name('portal.referrals');
-            Route::post('/portal/referrals/activate', [ReferralPartnerController::class, 'activate'])->name('portal.referrals.activate');
             Route::post('/portal/referrals/links', [ReferralPartnerController::class, 'store'])->name('portal.referrals.links.store');
             Route::post('/portal/referrals/payouts', [ReferralPayoutController::class, 'store'])->name('portal.referrals.payouts.store');
             Route::post('/portal/referrals/payouts/{payoutRequestId}/cancel', [ReferralPayoutController::class, 'cancel'])

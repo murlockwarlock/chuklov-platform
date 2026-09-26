@@ -9,6 +9,7 @@ use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardQualificationRule;
 use App\Modules\Referrals\Domain\Models\ReferralCommercialEvidence;
@@ -20,6 +21,7 @@ use App\Modules\Referrals\Domain\Models\ReferralRewardProgramVersion;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\CarbonImmutable;
+use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 
 final class QualifyReferralReward
@@ -86,7 +88,8 @@ final class QualifyReferralReward
                 ->where('organization_id', $organizationId)
                 ->where('client_id', $relationship->referrer_client_id)
                 ->first();
-            $version = $partnerProfile === null
+            $partnerAtObservation = $this->partnerAtObservation($partnerProfile, $evidence->observed_at);
+            $version = ! $partnerAtObservation
                 ? null
                 : ReferralRewardProgramVersion::query()
                     ->where('organization_id', $organizationId)
@@ -149,6 +152,9 @@ final class QualifyReferralReward
             }
 
             $organization = Organization::query()->findOrFail($organizationId);
+            $rewardCategory = $partnerAtObservation
+                ? ReferralRewardCategory::PartnerCash
+                : ReferralRewardCategory::ServiceCredit;
             $idempotencyKey = 'referral.reward.earned:'.$organizationId.':'.$evidence->getKey().':'.$version->getKey();
             $entry = new ReferralRewardLedgerEntry;
             $entry->forceFill([
@@ -161,6 +167,7 @@ final class QualifyReferralReward
                 'financial_ledger_entry_id' => $ledgerEntry->getKey(),
                 'reward_program_version_id' => $version->getKey(),
                 'entry_type' => ReferralRewardLedgerEntryType::Earned->value,
+                'reward_category' => $rewardCategory->value,
                 'amount_minor' => $reward->minorUnits(),
                 'currency' => $reward->currency()->value,
                 'reason_type' => 'finance_settlement',
@@ -173,6 +180,7 @@ final class QualifyReferralReward
                     'program_version_id' => $version->getKey(),
                     'amount_minor' => $reward->minorUnits(),
                     'currency' => $reward->currency()->value,
+                    'reward_category' => $rewardCategory->value,
                 ], JSON_THROW_ON_ERROR)),
                 'occurred_at' => $evidence->observed_at,
             ]);
@@ -200,6 +208,22 @@ final class QualifyReferralReward
 
             return $entry->refresh();
         });
+    }
+
+    private function partnerAtObservation(?ReferralPartnerProfile $profile, DateTimeInterface|string $observedAt): bool
+    {
+        if (! $profile instanceof ReferralPartnerProfile || $profile->getRawOriginal('activated_at') === null) {
+            return false;
+        }
+
+        $observed = $observedAt instanceof DateTimeInterface
+            ? CarbonImmutable::instance($observedAt)
+            : CarbonImmutable::parse((string) $observedAt);
+        $activatedAt = CarbonImmutable::parse((string) $profile->getRawOriginal('activated_at'));
+        $deactivatedAt = $profile->getRawOriginal('deactivated_at');
+
+        return $activatedAt->lessThanOrEqualTo($observed)
+            && ($deactivatedAt === null || CarbonImmutable::parse((string) $deactivatedAt)->greaterThan($observed));
     }
 
     private function settlement(

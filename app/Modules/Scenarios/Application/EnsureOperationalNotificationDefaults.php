@@ -262,10 +262,10 @@ final class EnsureOperationalNotificationDefaults
                 'referral-reward-earned-client' => $this->ensureTemplate(
                     organization: $organization,
                     key: 'referral-reward-earned-client',
-                    name: 'Начисление по партнёрской программе',
-                    body: 'Вам начислено {{ reward.amount }} по партнёрской программе.',
+                    name: 'Начисление реферального бонуса',
+                    body: 'Вам начислен реферальный бонус: {{ reward.amount }}.',
                     variables: ['reward.amount'],
-                    subject: 'Начисление по партнёрской программе',
+                    subject: 'Начисление реферального бонуса',
                 ),
             ];
 
@@ -278,6 +278,20 @@ final class EnsureOperationalNotificationDefaults
                     variables: $definition['variables'],
                     subject: $definition['subject'],
                     locale: 'en',
+                );
+            }
+            $englishReferralTemplate = NotificationTemplate::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('template_key', 'referral-reward-earned-client')
+                ->where('locale', 'en')
+                ->with('latestVersion')
+                ->first()?->latestVersion;
+            if ($englishReferralTemplate instanceof NotificationTemplateVersion) {
+                $this->upgradeDefaultReferralRewardTemplate(
+                    $englishReferralTemplate,
+                    'You received {{ reward.amount }} through the referral program.',
+                    'You received a referral bonus of {{ reward.amount }}.',
+                    'Referral bonus earned',
                 );
             }
 
@@ -303,6 +317,12 @@ final class EnsureOperationalNotificationDefaults
                     'Payment reminder',
                 );
             }
+            $templates['referral-reward-earned-client'] = $this->upgradeDefaultReferralRewardTemplate(
+                $templates['referral-reward-earned-client'],
+                'Вам начислено {{ reward.amount }} по партнёрской программе.',
+                'Вам начислен реферальный бонус: {{ reward.amount }}.',
+                'Начисление реферального бонуса',
+            );
 
             foreach ([
                 [
@@ -691,7 +711,7 @@ final class EnsureOperationalNotificationDefaults
                 ],
                 [
                     'key' => 'referral-reward-earned-client-telegram',
-                    'name' => 'Начисление по партнёрской программе — Telegram партнёра',
+                    'name' => 'Начисление реферального бонуса — Telegram клиента',
                     'channel' => 'telegram',
                     'template' => 'referral-reward-earned-client',
                     'event' => ScenarioEventType::ReferralRewardEarned->value,
@@ -813,6 +833,31 @@ final class EnsureOperationalNotificationDefaults
         return $next;
     }
 
+    private function upgradeDefaultReferralRewardTemplate(
+        NotificationTemplateVersion $version,
+        string $legacyBody,
+        string $body,
+        string $subject,
+    ): NotificationTemplateVersion {
+        if ($version->body !== $legacyBody || $version->created_by_user_id !== null) {
+            return $version;
+        }
+
+        $next = new NotificationTemplateVersion;
+        $next->forceFill([
+            'organization_id' => $version->organization_id,
+            'template_id' => $version->template_id,
+            'version' => $version->version + 1,
+            'status' => NotificationTemplateStatus::Published->value,
+            'subject' => $subject,
+            'body' => $body,
+            'variables' => ['reward.amount'],
+            'published_at' => now(),
+        ])->save();
+
+        return $next;
+    }
+
     /** @return list<array{key: string, name: string, body: string, variables: list<string>, subject: string}> */
     private function englishClientTemplateDefinitions(): array
     {
@@ -904,7 +949,7 @@ final class EnsureOperationalNotificationDefaults
             [
                 'key' => 'referral-reward-earned-client',
                 'name' => 'Referral reward earned',
-                'body' => 'You received {{ reward.amount }} through the referral program.',
+                'body' => 'You received a referral bonus of {{ reward.amount }}.',
                 'variables' => ['reward.amount'],
                 'subject' => 'Referral reward earned',
             ],

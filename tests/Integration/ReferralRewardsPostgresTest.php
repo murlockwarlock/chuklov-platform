@@ -372,7 +372,7 @@ final class ReferralRewardsPostgresTest extends TestCase
         $referred = Client::factory()->forOrganization($organization)->create();
         config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
-        app(ActivateReferralPartner::class)->handle($referrer, 'portal');
+        app(ActivateReferralPartner::class)->handle($referrer, 'crm', $admin);
         $this->configureCurrency($admin);
 
         return [$organization, $admin, $referrer, $referred];

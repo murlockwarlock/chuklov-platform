@@ -41,9 +41,10 @@ final class ReferralPartnerPostgresTest extends TestCase
         $this->requirePostgres();
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
         $partner = Client::factory()->forOrganization($organization)->create(['full_name' => 'Partner A']);
+        $admin = User::factory()->forOrganization($organization)->create();
         config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
-        $profile = app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $profile = app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $link = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Instagram profile',
@@ -59,7 +60,6 @@ final class ReferralPartnerPostgresTest extends TestCase
             'registered_at' => now(),
         ]);
 
-        $admin = User::factory()->forOrganization($organization)->create();
         app(DeactivateReferralCampaignLink::class)->handle($link, $admin);
 
         $resolved = app(ResolveReferralCode::class)->handle($organization->getKey(), $link->public_token);
@@ -76,8 +76,9 @@ final class ReferralPartnerPostgresTest extends TestCase
 
         $foreignOrganization = Organization::factory()->create(['timezone' => 'UTC']);
         $foreignPartner = Client::factory()->forOrganization($foreignOrganization)->create();
+        $foreignAdmin = User::factory()->forOrganization($foreignOrganization)->create();
         app(OrganizationContext::class)->set($foreignOrganization);
-        $foreignLink = app(ActivateReferralPartner::class)->handle($foreignPartner, 'portal')->activeCampaignLinks()->firstOrFail();
+        $foreignLink = app(ActivateReferralPartner::class)->handle($foreignPartner, 'crm', $foreignAdmin)->activeCampaignLinks()->firstOrFail();
         app(OrganizationContext::class)->set($organization);
 
         $this->assertQueryFails(static fn (): mixed => DB::table('referral_relationships')->insert([
@@ -114,7 +115,7 @@ final class ReferralPartnerPostgresTest extends TestCase
         $partner = Client::factory()->forOrganization($organization)->create(['full_name' => 'Legacy Partner']);
         config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         app(OrganizationContext::class)->set($organization);
-        $profile = app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $profile = app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $link = $profile->campaignLinks()->where('is_default', true)->firstOrFail();
         $shareUrlBeforeRepair = collect(app(GetReferralPartnerOverview::class)->handle($partner)['links'])
             ->firstWhere('name', 'Личные рекомендации')['shareUrl'];

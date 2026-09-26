@@ -25,8 +25,9 @@ final class ReferralCampaignAttributionTest extends TestCase
     public function test_campaign_registration_persists_originating_link_once(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $link = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Instagram — шапка профиля',
@@ -56,7 +57,7 @@ final class ReferralCampaignAttributionTest extends TestCase
         $organization = $this->organization();
         $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $link = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Telegram — канал',
@@ -82,8 +83,9 @@ final class ReferralCampaignAttributionTest extends TestCase
     public function test_later_campaign_click_cannot_replace_first_touch_campaign_provenance(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $firstLink = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Instagram — Stories',

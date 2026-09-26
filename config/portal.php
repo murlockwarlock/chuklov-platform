@@ -105,7 +105,7 @@ return [
                 ['key' => 'b2b', 'label' => 'Grow your business'],
                 ['key' => 'partner', 'label' => 'Partners'],
                 ['key' => 'invite_friend', 'label' => 'Invite a friend'],
-                ['key' => 'partner_cabinet', 'label' => 'Partner cabinet'],
+                ['key' => 'partner_cabinet', 'label' => 'Invite a friend'],
                 ['key' => 'communities', 'label' => 'Communities'],
             ],
             'ru' => [
@@ -115,7 +115,7 @@ return [
                 ['key' => 'b2b', 'label' => 'Развить бизнес'],
                 ['key' => 'partner', 'label' => 'Партнёры'],
                 ['key' => 'invite_friend', 'label' => 'Пригласить друга'],
-                ['key' => 'partner_cabinet', 'label' => 'Стать партнёром'],
+                ['key' => 'partner_cabinet', 'label' => 'Пригласить друга'],
                 ['key' => 'communities', 'label' => 'Сообщества'],
             ],
         ],

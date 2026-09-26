@@ -36,7 +36,7 @@ final class ScenarioNotificationCatalog
             ['event' => 'finance.payment.reconciliation_required', 'label' => 'Платёж требует проверки', 'recipients' => 'Финансовые сотрудники', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Платёж требует проверки'],
             ['event' => 'commerce.fulfillment.failed', 'label' => 'Оплата получена, но доступ не выдан', 'recipients' => 'Клиент и финансовые сотрудники', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Оплата получена, доступ не выдан'],
             ['event' => 'commerce.fulfillment.completed', 'label' => 'Доступ выдан', 'recipients' => 'Клиент', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Доступ готов'],
-            ['event' => 'referral.reward.earned', 'label' => 'Начисление по партнёрской программе', 'recipients' => 'Партнёр', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Начисление по партнёрской программе'],
+            ['event' => 'referral.reward.earned', 'label' => 'Начисление реферального бонуса', 'recipients' => 'Клиент', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Начисление реферального бонуса'],
             ['event' => 'tracker.task.daily_assigned', 'label' => 'Ежедневная задача трекера', 'recipients' => 'Клиент с доступом к трекеру', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Ежедневная задача трекера'],
             ['event' => 'tracker.task.weekly_assigned', 'label' => 'Еженедельная задача трекера', 'recipients' => 'Клиент с доступом к трекеру', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Еженедельная задача трекера'],
         ];

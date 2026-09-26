@@ -7,6 +7,7 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
+use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
 use App\Modules\Referrals\Domain\ValueObjects\ReferralRewardBalance;
 use Brick\Math\BigInteger;
@@ -18,7 +19,7 @@ final class ReferralRewardBalanceProjection
     public function __construct(private readonly OrganizationContext $context) {}
 
     /** @return list<ReferralRewardBalance> */
-    public function forClient(Client|int $client): array
+    public function forClient(Client|int $client, ?ReferralRewardCategory $category = null): array
     {
         $clientId = $client instanceof Client ? (int) $client->getKey() : $client;
         $organizationId = $this->context->id();
@@ -27,6 +28,7 @@ final class ReferralRewardBalanceProjection
         $ledgerRows = DB::table('referral_reward_ledger_entries')
             ->where('organization_id', $organizationId)
             ->where('beneficiary_client_id', $clientId)
+            ->when($category !== null, static fn ($query) => $query->where('reward_category', $category->value))
             ->select('currency', 'entry_type', DB::raw('SUM(amount_minor) AS total_minor'))
             ->groupBy('currency', 'entry_type')
             ->get();
@@ -49,20 +51,26 @@ final class ReferralRewardBalanceProjection
                 $totals[$key]['earned'] = $this->add($totals[$key]['earned'], $row->total_minor, $currency);
             } elseif ($entryType === ReferralRewardLedgerEntryType::Reversed->value) {
                 $totals[$key]['reversed'] = $this->add($totals[$key]['reversed'], $row->total_minor, $currency);
+            } elseif ($entryType === ReferralRewardLedgerEntryType::Redeemed->value) {
+                $totals[$key]['redeemed'] = $this->add($totals[$key]['redeemed'], $row->total_minor, $currency);
+            } elseif ($entryType === ReferralRewardLedgerEntryType::Restored->value) {
+                $totals[$key]['restored'] = $this->add($totals[$key]['restored'], $row->total_minor, $currency);
             }
         }
 
-        $payoutRows = DB::table('referral_payout_requests')
-            ->where('organization_id', $organizationId)
-            ->where('beneficiary_client_id', $clientId)
-            ->whereIn('status', [
-                ReferralPayoutRequestStatus::Requested->value,
-                ReferralPayoutRequestStatus::Approved->value,
-                ReferralPayoutRequestStatus::Paid->value,
-            ])
-            ->select('currency', 'status', DB::raw('SUM(amount_minor) AS total_minor'))
-            ->groupBy('currency', 'status')
-            ->get();
+        $payoutRows = $category === ReferralRewardCategory::ServiceCredit
+            ? collect()
+            : DB::table('referral_payout_requests')
+                ->where('organization_id', $organizationId)
+                ->where('beneficiary_client_id', $clientId)
+                ->whereIn('status', [
+                    ReferralPayoutRequestStatus::Requested->value,
+                    ReferralPayoutRequestStatus::Approved->value,
+                    ReferralPayoutRequestStatus::Paid->value,
+                ])
+                ->select('currency', 'status', DB::raw('SUM(amount_minor) AS total_minor'))
+                ->groupBy('currency', 'status')
+                ->get();
 
         foreach ($payoutRows as $row) {
             $currency = CurrencyCode::tryFrom((string) $row->currency);
@@ -94,14 +102,19 @@ final class ReferralRewardBalanceProjection
                 reversed: $total['reversed'],
                 pending: $total['pending'],
                 paid: $total['paid'],
+                redeemed: $total['redeemed'],
+                restored: $total['restored'],
             ),
             $totals,
         ));
     }
 
-    public function forCurrency(Client|int $client, CurrencyCode $currency): ReferralRewardBalance
-    {
-        foreach ($this->forClient($client) as $balance) {
+    public function forCurrency(
+        Client|int $client,
+        CurrencyCode $currency,
+        ?ReferralRewardCategory $category = null,
+    ): ReferralRewardBalance {
+        foreach ($this->forClient($client, $category) as $balance) {
             if ($balance->currency === $currency) {
                 return $balance;
             }
@@ -113,10 +126,12 @@ final class ReferralRewardBalanceProjection
             reversed: Money::zero($currency),
             pending: Money::zero($currency),
             paid: Money::zero($currency),
+            redeemed: Money::zero($currency),
+            restored: Money::zero($currency),
         );
     }
 
-    /** @return array{currency: CurrencyCode, earned: Money, reversed: Money, pending: Money, paid: Money} */
+    /** @return array{currency: CurrencyCode, earned: Money, reversed: Money, pending: Money, paid: Money, redeemed: Money, restored: Money} */
     private function emptyTotals(CurrencyCode $currency): array
     {
         return [
@@ -125,6 +140,8 @@ final class ReferralRewardBalanceProjection
             'reversed' => Money::zero($currency),
             'pending' => Money::zero($currency),
             'paid' => Money::zero($currency),
+            'redeemed' => Money::zero($currency),
+            'restored' => Money::zero($currency),
         ];
     }
 

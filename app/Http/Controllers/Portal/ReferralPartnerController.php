@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\CreateReferralCampaignLinkRequest;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\PortalClientMessages;
-use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\CreateReferralCampaignLink;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
 use Illuminate\Http\RedirectResponse;
@@ -15,20 +14,6 @@ use LogicException;
 
 final class ReferralPartnerController extends Controller
 {
-    public function activate(
-        ClientPortalContext $context,
-        ActivateReferralPartner $activate,
-        PortalClientMessages $messages,
-    ): RedirectResponse {
-        try {
-            $activate->handle($context->client(), 'portal');
-        } catch (LogicException) {
-            abort(401);
-        }
-
-        return back()->with('success', $messages->message('referral_partner_activated'));
-    }
-
     public function store(
         CreateReferralCampaignLinkRequest $request,
         ClientPortalContext $context,

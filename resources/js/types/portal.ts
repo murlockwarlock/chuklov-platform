@@ -21,6 +21,7 @@ export type PortalUrls = {
 export type PortalShell = {
     authenticated: boolean;
     clientName: string | null;
+    isPartner: boolean;
     locale: PortalLocale;
     localeUrl: string;
     urls: PortalUrls;

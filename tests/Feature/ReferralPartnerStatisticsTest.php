@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
@@ -28,8 +29,9 @@ final class ReferralPartnerStatisticsTest extends TestCase
     public function test_overview_distinguishes_link_visits_registrations_and_paid_clients(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create(['full_name' => 'Партнёр']);
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $instagram = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Instagram — профиль',
@@ -70,8 +72,9 @@ final class ReferralPartnerStatisticsTest extends TestCase
     public function test_overview_marks_only_authoritative_commercial_evidence_as_paid(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $link = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Сайт — страница',
@@ -97,8 +100,9 @@ final class ReferralPartnerStatisticsTest extends TestCase
     public function test_visit_conversion_uses_only_campaign_registrations_while_total_registrations_stays_overall(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $link = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Campaign',
@@ -123,8 +127,9 @@ final class ReferralPartnerStatisticsTest extends TestCase
     public function test_registration_labels_preserve_manual_and_legacy_automatic_provenance(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $campaign = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Telegram campaign',

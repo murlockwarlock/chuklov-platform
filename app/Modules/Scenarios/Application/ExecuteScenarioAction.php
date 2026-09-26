@@ -423,7 +423,7 @@ final class ExecuteScenarioAction
 
         return new NotificationActionButton(
             text: $action->trigger_event->value === 'referral.reward.earned'
-                ? ($this->isRussian($locale) ? 'Открыть партнёрскую программу' : 'Open referral program')
+                ? ($this->isRussian($locale) ? 'Открыть реферальный раздел' : 'Open referral page')
                 : ($this->isRussian($locale) ? 'Подключиться к встрече' : 'Join meeting'),
             url: $url,
         );
