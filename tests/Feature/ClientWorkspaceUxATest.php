@@ -45,10 +45,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use Tests\Support\AuthenticatesMfaConfiguredAdmin;
 use Tests\TestCase;
 
 final class ClientWorkspaceUxATest extends TestCase
 {
+    use AuthenticatesMfaConfiguredAdmin;
     use RefreshDatabase;
 
     public function test_client_search_matches_name_email_id_and_phone_variants(): void
@@ -654,6 +656,7 @@ final class ClientWorkspaceUxATest extends TestCase
             'enabled' => true,
         ]);
         app(OrganizationContext::class)->set($organization);
+        $this->authenticateConfiguredAdmin($admin, $organization);
 
         return [$organization, $admin];
     }

@@ -34,7 +34,11 @@ use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Surveys\Application\SurveyComparisonPresentation;
+use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
+use App\Modules\Surveys\Domain\Models\SurveyComparison;
+use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
 use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
@@ -49,6 +53,8 @@ final class ScenarioContextFactory
     public function __construct(
         private readonly BookingDateTimeFormatter $bookingDateTime,
         private readonly BuildClientReferralLink $referralLinks,
+        private readonly SurveyComparisonPresentation $comparisonPresentation,
+        private readonly PaymentPreVisitBookingEligibility $paymentEligibility,
     ) {}
 
     public function evaluationContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt = null): ScenarioEvaluationContext
@@ -62,7 +68,8 @@ final class ScenarioContextFactory
             ScenarioEventType::HomeVisitChanged => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::BookingCompleted => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::OnboardingStarted => $this->onboardingContext($event, $evaluationEndsAt),
-            ScenarioEventType::FinancialObligationCreated => $this->financialContext($event, $evaluationEndsAt),
+            ScenarioEventType::FinancialObligationCreated,
+            ScenarioEventType::FinancialDebtReminderRequested => $this->financialContext($event, $evaluationEndsAt),
             ScenarioEventType::PaymentSucceeded,
             ScenarioEventType::PaymentFailed,
             ScenarioEventType::PaymentInitiationUnavailable,
@@ -174,6 +181,17 @@ final class ScenarioContextFactory
             ];
         }
 
+        if ($context->event->event_name === ScenarioEventType::ClientFeedbackSubmitted) {
+            $feedbackId = $this->optionalPayloadId($context->event, 'feedback_submission_id');
+            $renderContext['feedback'] = [
+                'score' => (int) ($context->event->payload['score'] ?? 0),
+                'has_internal_feedback' => (bool) ($context->event->payload['has_internal_feedback'] ?? false),
+                'crm_url' => $recipient->type === 'internal' && $feedbackId !== null
+                    ? url('/admin/feedback-submissions/'.$feedbackId)
+                    : null,
+            ];
+        }
+
         if (in_array($context->event->event_name, [ScenarioEventType::TrackerDailyTaskAssigned, ScenarioEventType::TrackerWeeklyTaskAssigned], true)) {
             $taskId = $this->payloadId($context->event, 'task_id');
             $task = TrackerTask::query()
@@ -245,6 +263,7 @@ final class ScenarioContextFactory
                 'amount' => $context->obligation->display_amount_minor,
                 'currency' => $context->obligation->display_currency->value,
                 'outstanding_amount' => $reconciliation->displayOutstanding->minorUnits(),
+                'outstanding_amount_display' => $reconciliation->displayOutstanding->toDecimalString(),
                 'status' => $reconciliation->status->value,
             ];
         }
@@ -270,10 +289,31 @@ final class ScenarioContextFactory
         }
 
         if ($context->surveyAttempt !== null) {
+            $comparison = SurveyComparison::query()
+                ->where('organization_id', $context->event->organization_id)
+                ->where('current_attempt_id', $context->surveyAttempt->getKey())
+                ->first();
+            $previous = $comparison === null
+                ? null
+                : SurveyAttempt::query()
+                    ->where('organization_id', $context->event->organization_id)
+                    ->whereKey($comparison->previous_attempt_id)
+                    ->first();
+            $progress = $comparison === null
+                ? null
+                : $this->comparisonPresentation->handle(
+                    $comparison,
+                    $context->surveyAttempt,
+                    $previous,
+                    $recipient->locale,
+                );
             $renderContext['survey'] = [
                 'title' => $context->surveyAttempt->surveyVersion->title,
                 'version' => $context->surveyAttempt->surveyVersion->version,
                 'completed_at' => $context->surveyAttempt->completed_at?->toIso8601String(),
+                'portal_url' => $recipient->type === 'client' ? route('portal.surveys.index') : null,
+                'has_progress' => $progress['hasData'] ?? false,
+                'progress_summary' => $progress['telegramText'] ?? '',
                 'crm_url' => $recipient->type === 'internal'
                     ? url('/admin/survey-attempts/'.$context->surveyAttempt->getKey())
                     : null,
@@ -487,6 +527,12 @@ final class ScenarioContextFactory
                 ? $this->clientDisplayName($context->client)
                 : 'Клиент не сопоставлен',
             'message' => $message,
+            'survey_url' => $recipient->type === 'client'
+                && $event->event_name === ScenarioEventType::PaymentSucceeded
+                && $this->paymentEligibility->handle($context)
+                && $this->hasAvailableSurvey($event->organization_id)
+                ? route('portal.surveys.index')
+                : null,
             'crm_url' => $recipient->type === 'internal'
                 ? ($event->event_name === ScenarioEventType::PaymentInitiationUnavailable
                     ? url('/admin/finance-configuration')
@@ -670,6 +716,17 @@ final class ScenarioContextFactory
             evaluationEndsAt: $evaluationEndsAt,
             surveyAttempt: $attempt,
         );
+    }
+
+    private function hasAvailableSurvey(int $organizationId): bool
+    {
+        return SurveyDefinition::query()
+            ->where('organization_id', $organizationId)
+            ->where('is_available', true)
+            ->whereHas('activeVersion', fn ($query) => $query
+                ->where('organization_id', $organizationId)
+                ->where('status', SurveyVersionStatus::Published->value))
+            ->exists();
     }
 
     private function b2bLeadContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext

@@ -79,6 +79,7 @@ final class ListReferralPartnersForCrm
             FROM referral_reward_ledger_entries
             WHERE referral_reward_ledger_entries.organization_id = referral_partner_profiles.organization_id
                 AND referral_reward_ledger_entries.beneficiary_client_id = referral_partner_profiles.client_id
+                AND referral_reward_ledger_entries.reward_category = 'partner_cash'
             GROUP BY referral_reward_ledger_entries.currency
             UNION ALL
             SELECT referral_payout_requests.currency,
@@ -108,6 +109,7 @@ final class ListReferralPartnersForCrm
             FROM referral_reward_ledger_entries
             WHERE referral_reward_ledger_entries.organization_id = referral_partner_profiles.organization_id
                 AND referral_reward_ledger_entries.beneficiary_client_id = referral_partner_profiles.client_id
+                AND referral_reward_ledger_entries.reward_category = 'partner_cash'
             GROUP BY referral_reward_ledger_entries.currency
             UNION ALL
             SELECT referral_payout_requests.currency,

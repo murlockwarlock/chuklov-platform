@@ -1,5 +1,17 @@
 # Requirements Changelog
 
+## 2026-09-26 — Organization Base Currency for ordinary referral ServiceCredit
+
+- Confirmed that ordinary Client ServiceCredit has one authoritative accounting currency: the organization's configured Base Currency. No client-specific accounting currency or parallel wallet is introduced.
+- ServiceCredit earning normalizes fixed and percentage rewards through the existing organization FX configuration and stores immutable conversion evidence. Portal and CRM redemption accept the obligation settlement currency, calculate the base-currency debit through the configured rate and rounding mode, and retain the applied snapshot.
+- Restoring a referral-credit payment returns the historical base-currency debit. PartnerCash, Partner payout currencies, and the existing Finance reconciliation authority remain unchanged; missing FX fails closed.
+
+## 2026-09-26 — superseding owner decision for ordinary referrals and Partner assignment
+
+- Superseded the earlier self-enrollment behavior: only authorized CRM staff may assign or reactivate a Partner. Portal, Telegram, and Mini App clients no longer receive a Partner activation CTA or endpoint.
+- Confirmed that every ordinary Client has a stable referral identity/link and can earn one-level internal service credit for direct referrals. That credit is redeemable through the existing Finance obligation/payment flow for eligible goods, services, and bookings; ordinary Clients cannot request monetary payout.
+- Preserved the separate Partner monetary reward and manual payout workflow. Historical service credit does not become withdrawable cash when CRM later assigns the Client as a Partner; multi-level referral/MLM remains unimplemented.
+
 ## 2026-09-09 — REQ-SEC-007 privileged access hardening
 
 - Implemented the minimum production boundary for privileged staff/admin access: required Filament app-based MFA with recoverable codes, encrypted and audited MFA lifecycle changes, current-session invalidation, explicit logout-all-sessions, and active organization-membership enforcement.

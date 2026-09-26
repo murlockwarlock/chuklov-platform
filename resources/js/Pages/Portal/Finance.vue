@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
-import { computed, onBeforeUnmount, onMounted } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
@@ -28,9 +28,20 @@ type Obligation = {
     status: 'outstanding' | 'partially_paid' | 'settled' | 'unavailable';
     statusLabel: string;
     history: FinanceHistory[];
+    referralCredit: ReferralCredit | null;
     demoPayment: DemoPayment | null;
     lavaPayment: LavaPayment | null;
     purchaseFulfillment: PurchaseFulfillment | null;
+};
+
+type ReferralCredit = {
+    availableMinor: number;
+    currency: string;
+    baseAvailableMinor: number;
+    baseCurrency: string;
+    outstandingMinor: number;
+    conversionAvailable: boolean;
+    applyUrl: string;
 };
 
 type LavaPayment = {
@@ -81,6 +92,15 @@ const paymentError = computed(() => {
 
     return Array.isArray(error) ? error[0] ?? null : error ?? null;
 });
+const referralCreditError = computed(() => {
+    const errors = page.props.errors ?? {};
+    const error = errors.referral_credit ?? errors.amount ?? errors.currency ?? errors.idempotency_key;
+
+    return Array.isArray(error) ? error[0] ?? null : error ?? null;
+});
+const referralCreditAmounts = ref<Record<string, string>>({});
+const referralCreditKeys = ref<Record<string, string>>({});
+const applyingReferralCredit = ref<string | null>(null);
 
 const pollingStartedAt = Date.now();
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
@@ -113,6 +133,35 @@ function formatNullableMoney(minor: number | null, currency: string | null): str
 
 function lavaKey(): string {
     return `portal-lava-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+}
+
+function referralCreditKey(url: string): string {
+    referralCreditKeys.value[url] ??= `portal-referral-credit-${globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)}`;
+
+    return referralCreditKeys.value[url];
+}
+
+function applyReferralCredit(obligation: Obligation): void {
+    if (obligation.referralCredit === null || applyingReferralCredit.value !== null) {
+        return;
+    }
+
+    const amount = referralCreditAmounts.value[obligation.referralCredit.applyUrl]?.trim() ?? '';
+    applyingReferralCredit.value = obligation.referralCredit.applyUrl;
+    router.post(obligation.referralCredit.applyUrl, {
+        amount,
+        currency: obligation.referralCredit.currency,
+        idempotency_key: referralCreditKey(obligation.referralCredit.applyUrl),
+    }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            delete referralCreditAmounts.value[obligation.referralCredit?.applyUrl ?? ''];
+            delete referralCreditKeys.value[obligation.referralCredit?.applyUrl ?? ''];
+        },
+        onFinish: () => {
+            applyingReferralCredit.value = null;
+        },
+    });
 }
 
 function stopPolling(): void {
@@ -202,6 +251,14 @@ onBeforeUnmount(() => {
         role="alert"
       >
         {{ paymentError }}
+      </div>
+
+      <div
+        v-if="referralCreditError"
+        class="portal-notice portal-notice--error min-w-0 max-w-full break-words"
+        role="alert"
+      >
+        {{ referralCreditError }}
       </div>
 
       <div
@@ -306,6 +363,57 @@ onBeforeUnmount(() => {
             <dd>{{ formatNullableMoney(obligation.outstandingMinor, obligation.displayCurrency) }}</dd>
           </div>
         </dl>
+
+        <section
+          v-if="obligation.referralCredit
+            && obligation.referralCredit.baseAvailableMinor > 0
+            && obligation.referralCredit.outstandingMinor > 0
+            && (!obligation.referralCredit.conversionAvailable || obligation.referralCredit.availableMinor > 0)"
+          class="portal-stack portal-stack--tight min-w-0 max-w-full rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)] bg-[var(--portal-color-surface-muted)] p-4"
+          :aria-label="t('finance.referralCreditTitle')"
+        >
+          <div class="flex min-w-0 max-w-full flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
+            <h3 class="min-w-0 break-words font-semibold text-[var(--portal-color-ink)]">
+              {{ t('finance.referralCreditTitle') }}
+            </h3>
+            <span class="min-w-0 max-w-full break-words text-sm text-[var(--portal-color-ink-soft)]">
+              {{ t('finance.referralCreditAvailable') }}: {{ formatMoney(obligation.referralCredit.baseAvailableMinor, obligation.referralCredit.baseCurrency) }}
+              <template v-if="obligation.referralCredit.conversionAvailable && obligation.referralCredit.baseCurrency !== obligation.referralCredit.currency">
+                · {{ t('finance.referralCreditEquivalent') }}: {{ formatMoney(obligation.referralCredit.availableMinor, obligation.referralCredit.currency) }}
+              </template>
+            </span>
+          </div>
+          <div
+            v-if="!obligation.referralCredit.conversionAvailable"
+            class="portal-notice min-w-0 max-w-full break-words"
+            role="status"
+          >
+            {{ t('finance.referralCreditUnavailable') }}
+          </div>
+          <div
+            v-else
+            class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end"
+          >
+            <label class="portal-field min-w-0 flex-1">
+              <span class="portal-label">{{ t('finance.referralCreditAmount') }} ({{ obligation.referralCredit.currency }})</span>
+              <input
+                v-model="referralCreditAmounts[obligation.referralCredit.applyUrl]"
+                type="text"
+                inputmode="decimal"
+                class="portal-input"
+                :placeholder="formatMoney(Math.min(obligation.referralCredit.availableMinor, obligation.referralCredit.outstandingMinor), obligation.referralCredit.currency)"
+              >
+            </label>
+            <button
+              type="button"
+              class="portal-button portal-button--primary max-w-full whitespace-normal break-words"
+              :disabled="applyingReferralCredit !== null"
+              @click="applyReferralCredit(obligation)"
+            >
+              {{ applyingReferralCredit === obligation.referralCredit.applyUrl ? t('finance.referralCreditApplying') : t('finance.referralCreditApply') }}
+            </button>
+          </div>
+        </section>
 
         <section
           v-if="obligation.lavaPayment"

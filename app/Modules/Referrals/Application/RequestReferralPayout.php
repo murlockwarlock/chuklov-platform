@@ -7,6 +7,7 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
+use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequestEvent;
@@ -85,7 +86,11 @@ final class RequestReferralPayout
                 return $existing;
             }
 
-            $available = $this->balances->forCurrency($beneficiary, $money->currency())->available();
+            $available = $this->balances->forCurrency(
+                $beneficiary,
+                $money->currency(),
+                ReferralRewardCategory::PartnerCash,
+            )->available();
 
             if ($money->compareTo($available) > 0) {
                 throw ValidationException::withMessages([

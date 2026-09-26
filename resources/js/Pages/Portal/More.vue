@@ -61,7 +61,7 @@ const { t } = usePortalLocale();
           class="portal-list__row"
           data-testid="more-partnership-link"
         >
-          <strong class="portal-list__title">{{ t('more.partnership') }}</strong>
+          <strong class="portal-list__title">{{ props.portal.isPartner ? t('referrals.partnerTitle') : t('more.partnership') }}</strong>
           <PortalIcon
             name="arrow"
             class="portal-list__chevron"

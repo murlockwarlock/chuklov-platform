@@ -32,10 +32,8 @@ type Registration = {
 type CampaignLink = {
     name: string;
     channel: string;
-    isActive: boolean;
     createdAt: string | null;
     shareUrl: string;
-    disableUrl: string;
     visits: number;
     registrations: number;
     paidClients: number;
@@ -49,6 +47,8 @@ type RewardBalance = {
     availableMinor: number;
     pendingPayoutMinor: number;
     paidOutMinor: number;
+    redeemedMinor?: number;
+    restoredMinor?: number;
 };
 
 type RewardHistoryEntry = {
@@ -95,8 +95,7 @@ const props = defineProps<{
         status: string | null;
         activatedAt: string | null;
         link: string;
-        activationUrl: string;
-        createLinkUrl: string;
+        createLinkUrl?: string | null;
         stats: PartnerStats;
         links: CampaignLink[];
         referredClientsCount: number;
@@ -105,7 +104,7 @@ const props = defineProps<{
             balances: RewardBalance[];
             history: RewardHistoryEntry[];
             payouts: Payout[];
-            requestUrl: string;
+            requestUrl: string | null;
         };
     };
 }>();
@@ -116,7 +115,6 @@ const copiedUrl = ref<string | null>(null);
 const sharedUrl = ref<string | null>(null);
 const payoutFeedback = ref<PayoutFeedback | null>(null);
 const activeSection = ref<PartnerSection>('links');
-const activationForm = useForm<Record<string, never>>({});
 const linkForm = useForm<{ name: string; channel: string }>({ name: '', channel: 'telegram' });
 const payoutForm = useForm<{ amount: string; currency: string; idempotency_key: string }>({
     amount: '',
@@ -278,7 +276,7 @@ async function copyUrl(url: string): Promise<void> {
     }
 }
 
-async function shareLink(link: CampaignLink): Promise<void> {
+async function shareLink(link: { name: string; shareUrl: string }): Promise<void> {
     if (navigator.share) {
         try {
             await navigator.share({ title: link.name, url: link.shareUrl });
@@ -300,26 +298,22 @@ async function shareLink(link: CampaignLink): Promise<void> {
     await copyUrl(link.shareUrl);
 }
 
-function activatePartner(): void {
-    activationForm.post(props.referrals.activationUrl, { preserveScroll: true });
-}
-
 function createLink(): void {
+    if (!props.referrals.createLinkUrl) {
+        return;
+    }
+
     linkForm.post(props.referrals.createLinkUrl, {
         preserveScroll: true,
         onSuccess: () => linkForm.reset('name'),
     });
 }
 
-function disableLink(link: CampaignLink): void {
-    if (! window.confirm(t('referrals.disableConfirm'))) {
+function submitPayout(): void {
+    if (!props.referrals.rewards.requestUrl) {
         return;
     }
 
-    router.post(link.disableUrl, {}, { preserveScroll: true });
-}
-
-function submitPayout(): void {
     payoutFeedback.value = null;
     payoutForm.post(props.referrals.rewards.requestUrl, {
         preserveScroll: true,
@@ -337,7 +331,7 @@ function cancelPayout(payout: Payout): void {
 
 <template>
   <AppShell
-    :title="props.referrals.isPartner ? t('referrals.partnerTitle') : t('referrals.becomeTitle')"
+    :title="props.referrals.isPartner ? t('referrals.partnerTitle') : t('referrals.title')"
     :portal="props.portal"
     active="more"
   >
@@ -345,32 +339,120 @@ function cancelPayout(payout: Payout): void {
       <header class="portal-page-heading">
         <div class="portal-stack portal-stack--tight">
           <h1 class="portal-heading portal-heading--section">
-            {{ props.referrals.isPartner ? t('referrals.partnerTitle') : t('referrals.becomeTitle') }}
+            {{ props.referrals.isPartner ? t('referrals.partnerTitle') : t('referrals.title') }}
           </h1>
           <p
             v-if="!props.referrals.isPartner"
             class="portal-copy"
           >
-            {{ props.referrals.isPartner ? t('referrals.partnerDescription') : t('referrals.becomeDescription') }}
+            {{ t('referrals.ordinaryDescription') }}
           </p>
         </div>
       </header>
 
-      <section
-        v-if="!props.referrals.isPartner"
-        class="portal-panel portal-panel--accent portal-stack portal-stack--tight"
-        data-testid="partner-enrollment"
-      >
-        <button
-          type="button"
-          class="portal-button portal-button--primary self-start"
-          data-testid="partner-activate"
-          :disabled="activationForm.processing"
-          @click="activatePartner"
+      <template v-if="!props.referrals.isPartner">
+        <section
+          class="portal-panel portal-stack portal-stack--tight"
+          data-testid="ordinary-referral"
         >
-          {{ activationForm.processing ? t('referrals.activating') : t('referrals.activate') }}
-        </button>
-      </section>
+          <div class="portal-section-heading">
+            <h2 class="portal-heading portal-heading--card">
+              {{ t('referrals.inviteTitle') }}
+            </h2>
+          </div>
+          <p class="portal-copy">
+            {{ t('referrals.inviteDescription') }}
+          </p>
+          <div class="portal-stack portal-stack--tight min-w-0">
+            <span class="portal-label">{{ t('referrals.linkLabel') }}</span>
+            <code class="block max-w-full break-all rounded-[var(--portal-radius-md)] bg-[var(--portal-color-surface-muted)] p-3 text-sm">{{ props.referrals.link }}</code>
+            <div class="flex min-w-0 flex-wrap gap-2">
+              <button
+                type="button"
+                class="portal-button portal-button--secondary max-w-full whitespace-normal break-words"
+                data-testid="ordinary-referral-copy"
+                @click="copyUrl(props.referrals.link)"
+              >
+                {{ copiedUrl === props.referrals.link ? t('referrals.copied') : t('referrals.copy') }}
+              </button>
+              <button
+                type="button"
+                class="portal-button portal-button--secondary max-w-full whitespace-normal break-words"
+                data-testid="ordinary-referral-share"
+                @click="shareLink({ name: t('referrals.inviteTitle'), shareUrl: props.referrals.link })"
+              >
+                {{ sharedUrl === props.referrals.link ? t('referrals.shared') : t('referrals.sharePersonal') }}
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <section
+          class="portal-panel portal-stack portal-stack--tight"
+          data-testid="ordinary-referral-bonuses"
+        >
+          <div class="portal-section-heading">
+            <h2 class="portal-heading portal-heading--card">
+              {{ t('referrals.bonusTitle') }}
+            </h2>
+          </div>
+          <p class="portal-copy">
+            {{ t('referrals.bonusDescription') }}
+          </p>
+          <div
+            v-if="props.referrals.rewards.balances.length"
+            class="portal-reward-list"
+          >
+            <article
+              v-for="balance in props.referrals.rewards.balances"
+              :key="balance.currency"
+              class="portal-reward"
+            >
+              <strong>{{ balance.currency }}</strong>
+              <dl class="portal-reward__rows">
+                <div><dt>{{ t('referrals.bonusAvailable') }}</dt><dd>{{ formatMoney(balance.availableMinor, balance.currency) }}</dd></div>
+                <div><dt>{{ t('referrals.bonusSpent') }}</dt><dd>{{ formatMoney(balance.redeemedMinor ?? 0, balance.currency) }}</dd></div>
+                <div><dt>{{ t('referrals.bonusRestored') }}</dt><dd>{{ formatMoney(balance.restoredMinor ?? 0, balance.currency) }}</dd></div>
+              </dl>
+            </article>
+          </div>
+          <p
+            v-else
+            class="portal-copy"
+          >
+            {{ t('referrals.noBonus') }}
+          </p>
+        </section>
+
+        <section
+          v-if="props.referrals.rewards.history.length"
+          class="portal-panel portal-stack portal-stack--tight"
+          data-testid="ordinary-referral-history"
+        >
+          <h2 class="portal-heading portal-heading--card">
+            {{ t('referrals.rewardHistory') }}
+          </h2>
+          <ul class="portal-list divide-y divide-[var(--portal-color-border)]">
+            <li
+              v-for="(entry, index) in props.referrals.rewards.history"
+              :key="(entry.occurredAt ?? '') + entry.amountMinor + index"
+              class="flex min-w-0 items-start justify-between gap-3 py-3"
+            >
+              <div class="min-w-0">
+                <p class="break-words font-medium">
+                  {{ entry.typeLabel }}
+                </p>
+                <p class="portal-copy portal-copy--small">
+                  {{ formatDate(entry.occurredAt) }}
+                </p>
+              </div>
+              <strong :class="entry.isReversal ? 'text-[var(--portal-color-danger)]' : 'text-[var(--portal-color-ink)]'">
+                {{ entry.isReversal ? '−' : '+' }}{{ formatMoney(entry.amountMinor, entry.currency) }}
+              </strong>
+            </li>
+          </ul>
+        </section>
+      </template>
 
       <template v-else>
         <section
@@ -528,7 +610,7 @@ function cancelPayout(payout: Payout): void {
                     {{ link.name }}
                   </h3>
                   <p class="portal-copy portal-copy--small">
-                    {{ channelLabel(link.channel) }} · {{ link.isActive ? t('referrals.activeLink') : t('referrals.disabledLink') }}
+                    {{ channelLabel(link.channel) }}
                   </p>
                 </div>
                 <span class="portal-copy portal-copy--small shrink-0">{{ formatDate(link.createdAt) }}</span>
@@ -568,15 +650,6 @@ function cancelPayout(payout: Payout): void {
                   @click="shareLink(link)"
                 >
                   {{ sharedUrl === link.shareUrl ? t('referrals.shared') : t('referrals.share') }}
-                </button>
-                <button
-                  v-if="link.isActive"
-                  type="button"
-                  class="portal-button portal-button--secondary"
-                  :data-testid="`partner-link-disable-${index}`"
-                  @click="disableLink(link)"
-                >
-                  {{ t('referrals.disableLink') }}
                 </button>
               </div>
             </article>

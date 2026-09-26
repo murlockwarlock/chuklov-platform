@@ -8,4 +8,5 @@ enum FinancialLedgerEntryType: string
     case FakeGatewaySettlement = 'fake_gateway_settlement';
     case GatewaySettlement = 'gateway_settlement';
     case ManualPayment = 'manual_payment';
+    case ReferralCredit = 'referral_credit';
 }

@@ -32,15 +32,11 @@ final class ActivateReferralPartner
         $organization = $this->context->organization();
         abort_unless((int) $client->organization_id === (int) $organization->getKey(), 404);
 
-        if (! in_array($source, ['portal', 'crm'], true)) {
+        if ($source !== 'crm' || ! $actor instanceof User) {
             throw ValidationException::withMessages(['source' => 'Неизвестный источник активации партнёра.']);
         }
 
-        if ($actor instanceof User) {
-            $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
-        } elseif ($source !== 'portal') {
-            throw ValidationException::withMessages(['source' => 'Активация из CRM требует сотрудника.']);
-        }
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
 
         $identity = $this->ensureIdentity->handle($client);
 
@@ -90,7 +86,6 @@ final class ActivateReferralPartner
                         ->where('organization_id', $organization->getKey())
                         ->where('partner_profile_id', $profile->getKey())
                         ->where('is_default', true)
-                        ->where('is_active', true)
                         ->first();
 
                     if (! $defaultLink instanceof ReferralCampaignLink) {
@@ -129,7 +124,7 @@ final class ActivateReferralPartner
         ReferralPartnerProfile $profile,
         Client $client,
         ClientReferralIdentity $identity,
-        ?User $actor,
+        User $actor,
     ): ReferralCampaignLink {
         for ($attempt = 0; $attempt < 3; $attempt++) {
             try {

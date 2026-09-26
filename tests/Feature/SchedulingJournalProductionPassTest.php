@@ -9,6 +9,9 @@ use App\Filament\Resources\Bookings\Pages\CreateBooking;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Models\User;
+use App\Modules\Finance\Application\CreateFinancialObligation;
+use App\Modules\Finance\Application\RecordManualPayment;
+use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -19,9 +22,12 @@ use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
 use App\Modules\Scheduling\Application\GetScheduleCalendar;
 use App\Modules\Scheduling\Application\SetScheduleExceptionSet;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
+use App\Modules\Scheduling\Domain\Enums\BookingEventType;
+use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Services\Domain\Models\Service;
@@ -363,6 +369,54 @@ final class SchedulingJournalProductionPassTest extends TestCase
         $dateTimeField = $component->instance()->getSchemaComponent('form.starts_at');
         self::assertInstanceOf(DateTimePicker::class, $dateTimeField);
         self::assertSame('Asia/Bangkok', $dateTimeField->getTimezone());
+    }
+
+    public function test_journal_drag_drop_uses_authoritative_reschedule_and_rejects_stale_or_unavailable_drops(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
+        $service->forceFill(['buffer_minutes' => 0])->save();
+        $client = Client::factory()->forOrganization($organization)->create(['timezone' => 'Asia/Almaty']);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 10, 5, 10, 0, 0, 'UTC'),
+            format: VisitFormat::Online,
+            clientTimezone: 'Asia/Almaty',
+            idempotencyKey: 'journal-drag-drop',
+        );
+        $originalStartsAt = $booking->startsAtUtc();
+        $originalEventVersion = $booking->event_version;
+        $originalEventCount = $booking->events()->count();
+        $this->resolveFilamentContext($admin, $organization);
+        $journal = Livewire::withQueryParams([
+            'specialist_id' => $specialist->getKey(),
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class);
+
+        $journal->call('rescheduleFromJournal', $booking->getKey(), '2026-10-05', '12:00', $originalEventVersion)
+            ->assertHasNoErrors();
+        $moved = $booking->fresh();
+        self::assertTrue($moved->startsAtUtc()->equalTo(CarbonImmutable::create(2026, 10, 5, 12, 0, 0, 'UTC')));
+        self::assertSame('Asia/Almaty', $moved->client_timezone);
+        self::assertSame($originalEventVersion + 1, $moved->event_version);
+        self::assertSame($originalEventCount + 1, $moved->events()->count());
+
+        $journal->call('rescheduleFromJournal', $booking->getKey(), '2026-10-05', '13:00', $originalEventVersion)
+            ->assertHasErrors('calendar');
+        self::assertTrue($booking->fresh()->startsAtUtc()->equalTo($moved->startsAtUtc()));
+
+        $currentVersion = $booking->fresh()->event_version;
+        $journal->call('rescheduleFromJournal', $booking->getKey(), '2026-10-05', '17:30', $currentVersion)
+            ->assertHasErrors('calendar');
+        self::assertTrue($booking->fresh()->startsAtUtc()->equalTo($moved->startsAtUtc()));
     }
 
     public function test_work_schedule_keeps_selected_specialist_and_month_in_query_state(): void
@@ -980,6 +1034,115 @@ final class SchedulingJournalProductionPassTest extends TestCase
             startsAt: CarbonImmutable::create(2026, 10, 12, 10, 0, 0, 'UTC'),
             format: VisitFormat::Online,
         );
+    }
+
+    public function test_journal_retention_warning_waits_for_completion_window_and_rechecks_next_booking(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        config()->set('scenarios.retention_default_delay_days', 3);
+        $client = Client::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Completed->value,
+                'starts_at' => '2026-08-30 23:00:00',
+                'ends_at' => '2026-08-31 00:00:00',
+                'blocking_ends_at' => '2026-08-31 00:15:00',
+            ]);
+        BookingEvent::factory()->forOrganization($organization)->forBooking($booking)->create([
+            'event_type' => BookingEventType::Completed->value,
+            'occurred_at' => '2026-08-31 00:00:00',
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $journal = Livewire::withQueryParams([
+            'specialist_id' => $specialist->getKey(),
+            'week' => '2026-08-24',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class);
+        $bookingProjection = $journal->instance()->journalDays['2026-08-30']['bookings'][0];
+        self::assertFalse($bookingProjection['retention_warning']);
+
+        CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 9, 4, 1, 0, 0, 'UTC'));
+        $bookingProjection = $journal->instance()->getJournalDaysProperty()['2026-08-30']['bookings'][0];
+        self::assertTrue($bookingProjection['retention_warning']);
+
+        Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Confirmed->value,
+                'starts_at' => '2026-09-05 10:00:00',
+                'ends_at' => '2026-09-05 11:00:00',
+                'blocking_ends_at' => '2026-09-05 11:15:00',
+            ]);
+
+        $bookingProjection = $journal->instance()->getJournalDaysProperty()['2026-08-30']['bookings'][0];
+        self::assertFalse($bookingProjection['retention_warning']);
+    }
+
+    public function test_journal_debt_badge_follows_reconciliation_not_legacy_booking_payment_status(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        $service->forceFill([
+            'price_minor' => 10000,
+            'price_currency' => 'RUB',
+        ])->save();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Completed->value,
+                'starts_at' => '2026-08-30 23:00:00',
+                'ends_at' => '2026-08-31 00:00:00',
+                'blocking_ends_at' => '2026-08-31 00:15:00',
+            ]);
+        BookingEvent::factory()->forOrganization($organization)->forBooking($booking)->create([
+            'event_type' => BookingEventType::Completed->value,
+            'occurred_at' => '2026-08-31 00:00:00',
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+        $journal = Livewire::withQueryParams([
+            'specialist_id' => $specialist->getKey(),
+            'week' => '2026-08-24',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class);
+        self::assertFalse($journal->instance()->journalDays['2026-08-30']['bookings'][0]['has_debt']);
+
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'RUB',
+            'display_currency' => 'RUB',
+            'allowed_currencies' => ['RUB'],
+            'force_single_currency' => true,
+            'rounding_mode' => 'half_up',
+        ]);
+        $obligation = app(CreateFinancialObligation::class)->handle($admin, $booking);
+        self::assertNotNull($obligation);
+        $journalProjection = $journal->instance()->getJournalDaysProperty()['2026-08-30']['bookings'][0];
+        self::assertTrue($journalProjection['has_debt']);
+        self::assertSame('unpaid', $booking->fresh()->payment_status->value);
+
+        app(RecordManualPayment::class)->handle(
+            actor: $admin,
+            obligation: $obligation->fresh(),
+            amount: '100.00',
+            currency: 'RUB',
+            paymentMethod: 'cash',
+            occurredAt: now(),
+            note: null,
+            receipt: null,
+            idempotencyKey: 'journal-debt-settlement',
+        );
+        $journalProjection = $journal->instance()->getJournalDaysProperty()['2026-08-30']['bookings'][0];
+        self::assertFalse($journalProjection['has_debt']);
     }
 
     /** @return array{Organization, User, Specialist, Service} */

@@ -157,7 +157,51 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         $escapedClientName = htmlspecialchars($client->full_name, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         foreach ($this->channel->messages as $message) {
             self::assertStringContainsString($escapedClientName, $message->body);
+            self::assertNotNull($message->actionButton);
+            self::assertSame(route('portal.health'), $message->actionButton->url);
         }
+    }
+
+    public function test_post_session_72_hour_follow_up_is_rechecked_when_a_next_booking_appears(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $this->verifiedClient($client);
+        app(ScenarioNotificationSeeder::class)->run();
+        ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'like', 'booking-completed-feedback-%')
+            ->update(['is_enabled' => false]);
+        $rules = ScenarioRule::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('rule_key', 'like', 'post-session-follow-up-%-en')
+            ->orderBy('delay_value')
+            ->get();
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Completed);
+        $occurredAt = CarbonImmutable::now()->subDays(4);
+        $event = app(RecordScenarioEvent::class)->bookingCompleted($booking, 'm5b-post-session-suppression', $occurredAt);
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $actions = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->whereIn('scenario_rule_id', $rules->pluck('id'))
+            ->with('templateVersion.template')
+            ->orderBy('scheduled_for')
+            ->get();
+        self::assertCount(3, $actions);
+
+        $this->futureBooking($organization, $client, $specialist, $service, BookingStatus::Confirmed, $occurredAt->addDay());
+        foreach ($actions as $action) {
+            $this->makeDue($action);
+            app(ExecuteScenarioAction::class)->handle($action->getKey());
+        }
+
+        self::assertCount(2, $this->channel->messages);
+        $followUp72 = $actions->first(
+            fn (ScenarioAction $action): bool => $action->templateVersion->template->template_key === 'post-session-follow-up-72h',
+        );
+        self::assertNotNull($followUp72);
+        self::assertSame(ScenarioActionStatus::Suppressed, $followUp72->fresh()->status);
+        self::assertSame('current_conditions_not_met', $followUp72->fresh()->terminal_reason);
     }
 
     public function test_post_session_conditional_72_hour_rule_is_typed_and_not_bespoke(): void
@@ -418,12 +462,16 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'companion-fallback-failed-database',
             'companion-handoff-database',
             'companion-handoff-telegram',
+            'feedback-low-score-database',
+            'feedback-low-score-telegram',
+            'finance-debt-reminder-client-telegram',
             'finance-payment-failed-client-telegram',
             'finance-payment-initiation-unavailable-database',
             'finance-payment-initiation-unavailable-telegram',
             'finance-payment-reconciliation-database',
             'finance-payment-reconciliation-telegram',
             'finance-payment-succeeded-client-telegram',
+            'finance-payment-succeeded-survey-client-telegram',
             'knowledge-ingestion-failed-database',
             'post-session-follow-up-24h-en',
             'post-session-follow-up-24h-ru',
@@ -435,7 +483,13 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'referral-payout-status-client-telegram',
             'referral-payout-status-database',
             'referral-reward-earned-client-telegram',
+            'retention-follow-up-client-telegram',
             'survey-completed-database',
+            'survey-completed-telegram',
+            'survey-progress-client-telegram-en',
+            'survey-progress-client-telegram-ru',
+            'survey-stagnation-client-telegram-en',
+            'survey-stagnation-client-telegram-ru',
             'survey-stagnation-database',
             'tracker-task-daily-client-telegram',
             'tracker-task-weekly-client-telegram',
@@ -481,12 +535,17 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'commerce-fulfillment-failed-crm:ru',
             'companion-fallback-failed:ru',
             'companion-handoff:ru',
+            'feedback-low-score-crm:ru',
+            'finance-debt-reminder-client:en',
+            'finance-debt-reminder-client:ru',
             'finance-payment-failed:en',
             'finance-payment-failed:ru',
             'finance-payment-initiation-unavailable-crm:ru',
             'finance-payment-reconciliation-required-crm:ru',
             'finance-payment-succeeded:en',
             'finance-payment-succeeded:ru',
+            'finance-payment-succeeded-survey:en',
+            'finance-payment-succeeded-survey:ru',
             'knowledge-ingestion-failed-crm:ru',
             'post-session-follow-up:en',
             'post-session-follow-up:ru',
@@ -504,7 +563,13 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'referral-payout-status-crm:ru',
             'referral-reward-earned-client:en',
             'referral-reward-earned-client:ru',
+            'retention-follow-up-client:en',
+            'retention-follow-up-client:ru',
             'survey-completed-crm:ru',
+            'survey-progress-client:en',
+            'survey-progress-client:ru',
+            'survey-stagnation-client:en',
+            'survey-stagnation-client:ru',
             'survey-stagnation-crm:ru',
             'tracker-task-daily:en',
             'tracker-task-daily:ru',

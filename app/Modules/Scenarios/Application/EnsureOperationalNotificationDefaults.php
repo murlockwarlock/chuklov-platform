@@ -2,6 +2,7 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\Feedback\Domain\Enums\NpsBand;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
@@ -130,6 +131,30 @@ final class EnsureOperationalNotificationDefaults
                     variables: ['client.full_name'],
                     subject: 'Нужна проверка повторного теста',
                 ),
+                'survey-stagnation-client' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'survey-stagnation-client',
+                    name: 'Повторный тест без заметного улучшения',
+                    body: 'Похоже, по повторному замеру заметного улучшения пока нет. Расскажите, получилось ли выполнять рекомендации и что изменилось в самочувствии.',
+                    variables: [],
+                    subject: 'Повторный замер',
+                ),
+                'survey-progress-client' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'survey-progress-client',
+                    name: 'Динамика повторного теста',
+                    body: '{{ survey.progress_summary }}',
+                    variables: ['survey.progress_summary'],
+                    subject: 'Динамика повторного теста',
+                ),
+                'feedback-low-score-crm' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'feedback-low-score-crm',
+                    name: 'Низкая оценка клиента',
+                    body: 'Клиент {{ client.full_name }} оставил оценку {{ feedback.score }}/10. Внутренний комментарий: {{ feedback.has_internal_feedback }}. Откройте обратную связь и свяжитесь с клиентом.',
+                    variables: ['client.full_name', 'feedback.score', 'feedback.has_internal_feedback'],
+                    subject: 'Низкая оценка клиента',
+                ),
                 'b2b-lead-submitted-crm' => $this->ensureTemplate(
                     organization: $organization,
                     key: 'b2b-lead-'.'submitted-crm',
@@ -161,6 +186,30 @@ final class EnsureOperationalNotificationDefaults
                     body: '{{ payment.message }} Сумма: {{ payment.amount }} за «{{ payment.product_name }}».',
                     variables: ['payment.message', 'payment.amount', 'payment.product_name'],
                     subject: 'Оплата получена',
+                ),
+                'finance-payment-succeeded-survey' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'finance-payment-succeeded-survey',
+                    name: 'Диагностический тест после оплаты',
+                    body: 'Оплата получена. Доступен диагностический тест, чтобы зафиксировать исходное состояние.',
+                    variables: [],
+                    subject: 'Доступен диагностический тест',
+                ),
+                'finance-debt-reminder-client' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'finance-debt-reminder-client',
+                    name: 'Напоминание об оплате',
+                    body: 'Напоминаем о задолженности: {{ finance.outstanding_amount_display }} {{ finance.currency }}. Если вы уже оплатили, сообщите нам — мы проверим платёж.',
+                    variables: ['finance.outstanding_amount_display', 'finance.currency'],
+                    subject: 'Напоминание об оплате',
+                ),
+                'retention-follow-up-client' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'retention-follow-up-client',
+                    name: 'Следующая запись',
+                    body: 'После завершённого визита у вас пока нет следующей записи. Если хотите продолжить, выберите удобное время в портале или напишите нам.',
+                    variables: [],
+                    subject: 'Следующая запись',
                 ),
                 'finance-payment-failed' => $this->ensureTemplate(
                     organization: $organization,
@@ -213,10 +262,10 @@ final class EnsureOperationalNotificationDefaults
                 'referral-reward-earned-client' => $this->ensureTemplate(
                     organization: $organization,
                     key: 'referral-reward-earned-client',
-                    name: 'Начисление по партнёрской программе',
-                    body: 'Вам начислено {{ reward.amount }} по партнёрской программе.',
+                    name: 'Начисление реферального бонуса',
+                    body: 'Вам начислен реферальный бонус: {{ reward.amount }}.',
                     variables: ['reward.amount'],
-                    subject: 'Начисление по партнёрской программе',
+                    subject: 'Начисление реферального бонуса',
                 ),
             ];
 
@@ -231,6 +280,49 @@ final class EnsureOperationalNotificationDefaults
                     locale: 'en',
                 );
             }
+            $englishReferralTemplate = NotificationTemplate::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('template_key', 'referral-reward-earned-client')
+                ->where('locale', 'en')
+                ->with('latestVersion')
+                ->first()?->latestVersion;
+            if ($englishReferralTemplate instanceof NotificationTemplateVersion) {
+                $this->upgradeDefaultReferralRewardTemplate(
+                    $englishReferralTemplate,
+                    'You received {{ reward.amount }} through the referral program.',
+                    'You received a referral bonus of {{ reward.amount }}.',
+                    'Referral bonus earned',
+                );
+            }
+
+            $templates['finance-debt-reminder-client'] = $this->upgradeDefaultDebtTemplate(
+                $templates['finance-debt-reminder-client'],
+                'Напоминаем о задолженности: {{ finance.outstanding_amount }} {{ finance.currency }}. Если вы уже оплатили, сообщите нам — мы проверим платёж.',
+                'Напоминаем о задолженности: {{ finance.outstanding_amount_display }} {{ finance.currency }}. Если вы уже оплатили, сообщите нам — мы проверим платёж.',
+                ['finance.outstanding_amount_display', 'finance.currency'],
+                'Напоминание об оплате',
+            );
+            $englishDebtTemplate = NotificationTemplate::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('template_key', 'finance-debt-reminder-client')
+                ->where('locale', 'en')
+                ->with('latestVersion')
+                ->first()?->latestVersion;
+            if ($englishDebtTemplate instanceof NotificationTemplateVersion) {
+                $this->upgradeDefaultDebtTemplate(
+                    $englishDebtTemplate,
+                    'A reminder about your outstanding balance: {{ finance.outstanding_amount }} {{ finance.currency }}. If you already paid, tell us and we will check the payment.',
+                    'A reminder about your outstanding balance: {{ finance.outstanding_amount_display }} {{ finance.currency }}. If you already paid, tell us and we will check the payment.',
+                    ['finance.outstanding_amount_display', 'finance.currency'],
+                    'Payment reminder',
+                );
+            }
+            $templates['referral-reward-earned-client'] = $this->upgradeDefaultReferralRewardTemplate(
+                $templates['referral-reward-earned-client'],
+                'Вам начислено {{ reward.amount }} по партнёрской программе.',
+                'Вам начислен реферальный бонус: {{ reward.amount }}.',
+                'Начисление реферального бонуса',
+            );
 
             foreach ([
                 [
@@ -344,6 +436,81 @@ final class EnsureOperationalNotificationDefaults
                     'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_surveys'],
                 ],
                 [
+                    'key' => 'survey-completed-telegram',
+                    'name' => 'Завершённый тест — Telegram сотрудников',
+                    'channel' => 'telegram',
+                    'template' => 'survey-completed-crm',
+                    'event' => ScenarioEventType::SurveyCompleted->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_surveys'],
+                ],
+                [
+                    'key' => 'survey-stagnation-client-telegram-ru',
+                    'name' => 'Повторный тест без улучшения — Telegram клиента',
+                    'channel' => 'telegram',
+                    'template' => 'survey-stagnation-client',
+                    'event' => ScenarioEventType::TestStagnationDetected->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                    'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => 'ru']],
+                ],
+                [
+                    'key' => 'survey-stagnation-client-telegram-en',
+                    'name' => 'Repeat check without improvement — client Telegram',
+                    'channel' => 'telegram',
+                    'template' => 'survey-stagnation-client',
+                    'event' => ScenarioEventType::TestStagnationDetected->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                    'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => 'en']],
+                ],
+                [
+                    'key' => 'survey-progress-client-telegram-ru',
+                    'name' => 'Динамика повторного теста — Telegram клиента',
+                    'channel' => 'telegram',
+                    'template' => 'survey-progress-client',
+                    'event' => ScenarioEventType::SurveyCompleted->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                    'conditions' => [
+                        ['type' => 'client.language', 'operator' => 'equals', 'value' => 'ru'],
+                        ['type' => 'survey.progress_available', 'operator' => 'equals', 'value' => true],
+                    ],
+                ],
+                [
+                    'key' => 'survey-progress-client-telegram-en',
+                    'name' => 'Repeat check progress — client Telegram',
+                    'channel' => 'telegram',
+                    'template' => 'survey-progress-client',
+                    'event' => ScenarioEventType::SurveyCompleted->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                    'conditions' => [
+                        ['type' => 'client.language', 'operator' => 'equals', 'value' => 'en'],
+                        ['type' => 'survey.progress_available', 'operator' => 'equals', 'value' => true],
+                    ],
+                ],
+                [
+                    'key' => 'feedback-low-score-database',
+                    'name' => 'Низкая оценка — уведомление в CRM',
+                    'channel' => 'database',
+                    'template' => 'feedback-low-score-crm',
+                    'event' => ScenarioEventType::ClientFeedbackSubmitted->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_clients'],
+                    'conditions' => [['type' => 'feedback.band', 'operator' => 'equals', 'value' => NpsBand::Internal->value]],
+                ],
+                [
+                    'key' => 'feedback-low-score-telegram',
+                    'name' => 'Низкая оценка — Telegram сотрудников',
+                    'channel' => 'telegram',
+                    'template' => 'feedback-low-score-crm',
+                    'event' => ScenarioEventType::ClientFeedbackSubmitted->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'view_clients'],
+                    'conditions' => [['type' => 'feedback.band', 'operator' => 'equals', 'value' => NpsBand::Internal->value]],
+                ],
+                [
                     'key' => 'b2b-lead-submitted-database',
                     'name' => 'Новый B2B-запрос — уведомление в CRM',
                     'channel' => 'database',
@@ -422,6 +589,44 @@ final class EnsureOperationalNotificationDefaults
                     'event' => ScenarioEventType::PaymentSucceeded->value,
                     'enabled' => true,
                     'recipient' => ['type' => 'client'],
+                ],
+                [
+                    'key' => 'finance-payment-succeeded-survey-client-telegram',
+                    'name' => 'После оплаты — диагностический тест в Telegram',
+                    'channel' => 'telegram',
+                    'template' => 'finance-payment-succeeded-survey',
+                    'event' => ScenarioEventType::PaymentSucceeded->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                    'conditions' => [
+                        ['type' => 'payment.is_pre_visit_booking_payment', 'operator' => 'equals', 'value' => true],
+                        ['type' => 'survey.available', 'operator' => 'equals', 'value' => true],
+                    ],
+                ],
+                [
+                    'key' => 'finance-debt-reminder-client-telegram',
+                    'name' => 'Напоминание о задолженности — Telegram клиента',
+                    'channel' => 'telegram',
+                    'template' => 'finance-debt-reminder-client',
+                    'event' => ScenarioEventType::FinancialDebtReminderRequested->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                    'conditions' => [['type' => 'finance.has_outstanding_debt', 'operator' => 'equals', 'value' => true]],
+                ],
+                [
+                    'key' => 'retention-follow-up-client-telegram',
+                    'name' => 'Нет следующей записи — Telegram клиента',
+                    'channel' => 'telegram',
+                    'template' => 'retention-follow-up-client',
+                    'event' => ScenarioEventType::BookingCompleted->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'client'],
+                    'conditions' => [
+                        ['type' => 'booking.status', 'operator' => 'equals', 'value' => 'completed'],
+                        ['type' => 'booking.has_qualifying_next_booking', 'operator' => 'equals', 'value' => false],
+                    ],
+                    'delay_value' => config('scenarios.retention_default_delay_days'),
+                    'delay_unit' => 'days',
                 ],
                 [
                     'key' => 'finance-payment-failed-client-telegram',
@@ -506,7 +711,7 @@ final class EnsureOperationalNotificationDefaults
                 ],
                 [
                     'key' => 'referral-reward-earned-client-telegram',
-                    'name' => 'Начисление по партнёрской программе — Telegram партнёра',
+                    'name' => 'Начисление реферального бонуса — Telegram клиента',
                     'channel' => 'telegram',
                     'template' => 'referral-reward-earned-client',
                     'event' => ScenarioEventType::ReferralRewardEarned->value,
@@ -521,6 +726,8 @@ final class EnsureOperationalNotificationDefaults
 
                 if ($existingRule instanceof ScenarioRule) {
                     $definitionEvent = ScenarioEventType::tryFrom((string) $definition['event']);
+
+                    $this->upgradeUntouchedDefaultRule($existingRule, $templates);
 
                     if (isset($definition['recipient']['permission'])
                         && $definitionEvent !== null
@@ -545,8 +752,8 @@ final class EnsureOperationalNotificationDefaults
                     'trigger_event' => $definition['event'],
                     'is_enabled' => $definition['enabled'],
                     'system_managed' => false,
-                    'delay_value' => 0,
-                    'delay_unit' => 'minutes',
+                    'delay_value' => $definition['delay_value'] ?? 0,
+                    'delay_unit' => $definition['delay_unit'] ?? 'minutes',
                     'purpose' => ScenarioRulePurpose::Transactional->value,
                     'conditions' => $definition['conditions'] ?? [],
                     'recipient_strategy' => $definition['recipient'] ?? ['type' => 'roles', 'roles' => $definition['roles']],
@@ -559,6 +766,96 @@ final class EnsureOperationalNotificationDefaults
                 ])->save();
             }
         });
+    }
+
+    /** @param array<string, NotificationTemplateVersion> $templates */
+    private function upgradeUntouchedDefaultRule(ScenarioRule $rule, array $templates): void
+    {
+        if ($rule->created_by_user_id !== null || $rule->updated_by_user_id !== null) {
+            return;
+        }
+
+        $conditions = $rule->conditions;
+        $updatedConditions = null;
+        if (in_array($rule->rule_key, ['feedback-low-score-database', 'feedback-low-score-telegram'], true)
+            && $conditions === [['type' => 'feedback.score', 'operator' => 'in', 'value' => [1, 2, 3, 4, 5, 6, 7]]]) {
+            $updatedConditions = [['type' => 'feedback.band', 'operator' => 'equals', 'value' => NpsBand::Internal->value]];
+        }
+        if ($rule->rule_key === 'finance-payment-succeeded-survey-client-telegram'
+            && $conditions === [['type' => 'survey.available', 'operator' => 'equals', 'value' => true]]) {
+            $updatedConditions = [
+                ['type' => 'payment.is_pre_visit_booking_payment', 'operator' => 'equals', 'value' => true],
+                ['type' => 'survey.available', 'operator' => 'equals', 'value' => true],
+            ];
+        }
+
+        $attributes = [];
+        if ($updatedConditions !== null) {
+            $attributes['conditions'] = $updatedConditions;
+        }
+        if ($rule->rule_key === 'finance-debt-reminder-client-telegram'
+            && $rule->template_version_id !== $templates['finance-debt-reminder-client']->getKey()) {
+            $attributes['template_version_id'] = $templates['finance-debt-reminder-client']->getKey();
+        }
+
+        if ($attributes === []) {
+            return;
+        }
+
+        $attributes['version'] = $rule->version + 1;
+        $rule->forceFill($attributes)->save();
+    }
+
+    /** @param list<string> $variables */
+    private function upgradeDefaultDebtTemplate(
+        NotificationTemplateVersion $version,
+        string $legacyBody,
+        string $body,
+        array $variables,
+        string $subject,
+    ): NotificationTemplateVersion {
+        if ($version->body !== $legacyBody || $version->created_by_user_id !== null) {
+            return $version;
+        }
+
+        $next = new NotificationTemplateVersion;
+        $next->forceFill([
+            'organization_id' => $version->organization_id,
+            'template_id' => $version->template_id,
+            'version' => $version->version + 1,
+            'status' => NotificationTemplateStatus::Published->value,
+            'subject' => $subject,
+            'body' => $body,
+            'variables' => $variables,
+            'published_at' => now(),
+        ])->save();
+
+        return $next;
+    }
+
+    private function upgradeDefaultReferralRewardTemplate(
+        NotificationTemplateVersion $version,
+        string $legacyBody,
+        string $body,
+        string $subject,
+    ): NotificationTemplateVersion {
+        if ($version->body !== $legacyBody || $version->created_by_user_id !== null) {
+            return $version;
+        }
+
+        $next = new NotificationTemplateVersion;
+        $next->forceFill([
+            'organization_id' => $version->organization_id,
+            'template_id' => $version->template_id,
+            'version' => $version->version + 1,
+            'status' => NotificationTemplateStatus::Published->value,
+            'subject' => $subject,
+            'body' => $body,
+            'variables' => ['reward.amount'],
+            'published_at' => now(),
+        ])->save();
+
+        return $next;
     }
 
     /** @return list<array{key: string, name: string, body: string, variables: list<string>, subject: string}> */
@@ -594,6 +891,41 @@ final class EnsureOperationalNotificationDefaults
                 'subject' => 'Payment received',
             ],
             [
+                'key' => 'finance-payment-succeeded-survey',
+                'name' => 'Diagnostic check after payment',
+                'body' => 'Payment received. A diagnostic check is available to record your baseline state.',
+                'variables' => [],
+                'subject' => 'Diagnostic check available',
+            ],
+            [
+                'key' => 'finance-debt-reminder-client',
+                'name' => 'Payment reminder',
+                'body' => 'A reminder about your outstanding balance: {{ finance.outstanding_amount_display }} {{ finance.currency }}. If you already paid, tell us and we will check the payment.',
+                'variables' => ['finance.outstanding_amount_display', 'finance.currency'],
+                'subject' => 'Payment reminder',
+            ],
+            [
+                'key' => 'retention-follow-up-client',
+                'name' => 'Next appointment',
+                'body' => 'There is no next appointment after your completed visit. If you would like to continue, choose a convenient time in the portal or write to us.',
+                'variables' => [],
+                'subject' => 'Next appointment',
+            ],
+            [
+                'key' => 'survey-stagnation-client',
+                'name' => 'Repeat check without clear improvement',
+                'body' => 'It looks like there is no clear improvement in the repeat check yet. Tell us whether you were able to follow the recommendations and what changed in how you feel.',
+                'variables' => [],
+                'subject' => 'Repeat check',
+            ],
+            [
+                'key' => 'survey-progress-client',
+                'name' => 'Repeat check progress',
+                'body' => '{{ survey.progress_summary }}',
+                'variables' => ['survey.progress_summary'],
+                'subject' => 'Repeat check progress',
+            ],
+            [
                 'key' => 'finance-payment-failed',
                 'name' => 'Payment failed',
                 'body' => "We couldn't complete the payment. Please try again. If the money has already been charged, don't pay again — we'll check the payment.",
@@ -617,7 +949,7 @@ final class EnsureOperationalNotificationDefaults
             [
                 'key' => 'referral-reward-earned-client',
                 'name' => 'Referral reward earned',
-                'body' => 'You received {{ reward.amount }} through the referral program.',
+                'body' => 'You received a referral bonus of {{ reward.amount }}.',
                 'variables' => ['reward.amount'],
                 'subject' => 'Referral reward earned',
             ],

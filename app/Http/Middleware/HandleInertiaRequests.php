@@ -34,6 +34,7 @@ class HandleInertiaRequests extends Middleware
             'portal' => [
                 'authenticated' => $client !== null,
                 'clientName' => $client?->full_name,
+                'isPartner' => $client?->referralPartnerProfile?->isActive() === true,
                 'locale' => $locale,
                 'localeUrl' => route('portal.locale.update'),
                 'urls' => [

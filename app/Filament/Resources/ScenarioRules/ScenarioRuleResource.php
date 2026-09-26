@@ -11,6 +11,7 @@ use App\Filament\Resources\ScenarioRules\Tables\ScenarioRulesTable;
 use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedResource;
 use App\Models\User;
+use App\Modules\Feedback\Domain\Enums\NpsBand;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -195,6 +196,7 @@ final class ScenarioRuleResource extends LocalizedResource
             ScenarioEventType::BookingCompleted->value => __('После завершения визита'),
             ScenarioEventType::OnboardingStarted->value => __('После начала оформления'),
             ScenarioEventType::FinancialObligationCreated->value => __('После появления задолженности'),
+            ScenarioEventType::FinancialDebtReminderRequested->value => __('При отправке напоминания о задолженности'),
             ScenarioEventType::SurveyCompleted->value => __('После завершения теста'),
             ScenarioEventType::TestStagnationDetected->value => __('При отсутствии снижения показателей'),
             ScenarioEventType::CompanionRequestedSpecialist->value => __('Когда клиент просит специалиста'),
@@ -254,6 +256,10 @@ final class ScenarioRuleResource extends LocalizedResource
                 'onboarding.completed' => __('завершение оформления'),
                 'onboarding.stage' => __('этап оформления'),
                 'finance.has_outstanding_debt' => __('непогашенная задолженность'),
+                'feedback.band' => __('категория оценки'),
+                'payment.is_pre_visit_booking_payment' => __('оплата записи до визита'),
+                'survey.available' => __('доступность теста'),
+                'survey.progress_available' => __('сравнимая динамика теста'),
                 default => __('условие'),
             };
             $operator = match ($condition['operator'] ?? null) {
@@ -280,6 +286,8 @@ final class ScenarioRuleResource extends LocalizedResource
             'cancelled' => __('отменена'),
             'ru' => __('русский'),
             'en' => __('английский'),
+            NpsBand::Positive->value => __('положительная'),
+            NpsBand::Internal->value => __('внутренняя'),
             'true' => __('да'),
             'false' => __('нет'),
             'contacts' => __('контакты'),

@@ -56,7 +56,7 @@ final class CreateReferralCampaignLink
                         ->first();
 
                     if (! $profile instanceof ReferralPartnerProfile || ! $profile->isActive()) {
-                        throw ValidationException::withMessages(['partner' => 'Сначала активируйте партнёрскую программу.']);
+                        throw ValidationException::withMessages(['partner' => 'Создание кампаний доступно только партнёрам.']);
                     }
 
                     $link = new ReferralCampaignLink;

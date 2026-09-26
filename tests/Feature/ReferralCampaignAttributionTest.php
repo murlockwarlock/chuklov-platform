@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use App\Modules\Attribution\Application\CapturePreAuthAttribution;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Identity\Application\RegisterClientAcquisition;
@@ -24,8 +25,9 @@ final class ReferralCampaignAttributionTest extends TestCase
     public function test_campaign_registration_persists_originating_link_once(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $link = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Instagram — шапка профиля',
@@ -53,14 +55,15 @@ final class ReferralCampaignAttributionTest extends TestCase
     public function test_disabled_campaign_link_cannot_create_new_referral_attribution(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $link = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Telegram — канал',
             channel: ReferralCampaignChannel::Telegram,
         );
-        app(DeactivateReferralCampaignLink::class)->handle($link, $partner);
+        app(DeactivateReferralCampaignLink::class)->handle($link, $admin);
         $sessionId = 'disabled-campaign-session';
         app(CapturePreAuthAttribution::class)->handle(
             sessionId: $sessionId,
@@ -80,8 +83,9 @@ final class ReferralCampaignAttributionTest extends TestCase
     public function test_later_campaign_click_cannot_replace_first_touch_campaign_provenance(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $firstLink = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Instagram — Stories',

@@ -69,6 +69,7 @@ final class ScenarioRulesTable
             ScenarioEventType::BookingCompleted->value => __('После визита'),
             ScenarioEventType::OnboardingStarted->value => __('После начала оформления'),
             ScenarioEventType::FinancialObligationCreated->value => __('После появления задолженности'),
+            ScenarioEventType::FinancialDebtReminderRequested->value => __('При напоминании о задолженности'),
             ScenarioEventType::SurveyCompleted->value => __('После теста'),
             ScenarioEventType::TestStagnationDetected->value => __('Если показатели не снижаются'),
             ScenarioEventType::B2bLeadSubmitted->value => __('После B2B-запроса'),
