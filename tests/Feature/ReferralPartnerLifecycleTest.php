@@ -72,7 +72,7 @@ final class ReferralPartnerLifecycleTest extends TestCase
             channel: ReferralCampaignChannel::Website,
         );
 
-        app(DeactivateReferralCampaignLink::class)->handle($link, $client);
+        app(DeactivateReferralCampaignLink::class)->handle($link, $admin);
         self::assertNull(app(RecordReferralLinkVisit::class)->handle($link->public_token, 'disabled-session'));
         self::assertSame(0, ReferralLinkVisit::query()->count());
 

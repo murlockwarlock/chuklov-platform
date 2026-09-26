@@ -32,10 +32,8 @@ type Registration = {
 type CampaignLink = {
     name: string;
     channel: string;
-    isActive: boolean;
     createdAt: string | null;
     shareUrl: string;
-    disableUrl: string;
     visits: number;
     registrations: number;
     paidClients: number;
@@ -311,14 +309,6 @@ function createLink(): void {
     });
 }
 
-function disableLink(link: CampaignLink): void {
-    if (! window.confirm(t('referrals.disableConfirm'))) {
-        return;
-    }
-
-    router.post(link.disableUrl, {}, { preserveScroll: true });
-}
-
 function submitPayout(): void {
     payoutFeedback.value = null;
     payoutForm.post(props.referrals.rewards.requestUrl, {
@@ -528,7 +518,7 @@ function cancelPayout(payout: Payout): void {
                     {{ link.name }}
                   </h3>
                   <p class="portal-copy portal-copy--small">
-                    {{ channelLabel(link.channel) }} · {{ link.isActive ? t('referrals.activeLink') : t('referrals.disabledLink') }}
+                    {{ channelLabel(link.channel) }}
                   </p>
                 </div>
                 <span class="portal-copy portal-copy--small shrink-0">{{ formatDate(link.createdAt) }}</span>
@@ -568,15 +558,6 @@ function cancelPayout(payout: Payout): void {
                   @click="shareLink(link)"
                 >
                   {{ sharedUrl === link.shareUrl ? t('referrals.shared') : t('referrals.share') }}
-                </button>
-                <button
-                  v-if="link.isActive"
-                  type="button"
-                  class="portal-button portal-button--secondary"
-                  :data-testid="`partner-link-disable-${index}`"
-                  @click="disableLink(link)"
-                >
-                  {{ t('referrals.disableLink') }}
                 </button>
               </div>
             </article>

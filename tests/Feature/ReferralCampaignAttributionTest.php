@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use App\Modules\Attribution\Application\CapturePreAuthAttribution;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Identity\Application\RegisterClientAcquisition;
@@ -53,6 +54,7 @@ final class ReferralCampaignAttributionTest extends TestCase
     public function test_disabled_campaign_link_cannot_create_new_referral_attribution(): void
     {
         $organization = $this->organization();
+        $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create();
         app(ActivateReferralPartner::class)->handle($partner, 'portal');
         $link = app(CreateReferralCampaignLink::class)->handle(
@@ -60,7 +62,7 @@ final class ReferralCampaignAttributionTest extends TestCase
             name: 'Telegram — канал',
             channel: ReferralCampaignChannel::Telegram,
         );
-        app(DeactivateReferralCampaignLink::class)->handle($link, $partner);
+        app(DeactivateReferralCampaignLink::class)->handle($link, $admin);
         $sessionId = 'disabled-campaign-session';
         app(CapturePreAuthAttribution::class)->handle(
             sessionId: $sessionId,

@@ -95,7 +95,7 @@ final class ReferralTelegramFlowTest extends TestCase
             name: 'Disabled campaign',
             channel: ReferralCampaignChannel::Website,
         );
-        app(DeactivateReferralCampaignLink::class)->handle($campaign, $partner);
+        app(DeactivateReferralCampaignLink::class)->handle($campaign, $admin);
 
         $disabledBot = $this->fakeBot(930003);
         $disabledBot->hearText('/start ref_'.$campaign->public_token)->reply();

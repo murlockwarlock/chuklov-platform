@@ -37,10 +37,6 @@ final class PortalClientMessages
             'ru' => 'Ссылка создана.',
             'en' => 'Link created.',
         ],
-        'referral_link_disabled' => [
-            'ru' => 'Ссылка отключена.',
-            'en' => 'Link disabled.',
-        ],
         'referral_link_not_found' => [
             'ru' => 'Реферальная ссылка не найдена.',
             'en' => 'The referral link was not found.',

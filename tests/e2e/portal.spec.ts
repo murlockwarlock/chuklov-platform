@@ -903,6 +903,10 @@ test('client can activate the partner cabinet and manage multiple campaign links
         await expect(link.getByText('Регистрации', { exact: true })).toBeVisible();
         await expect(link.getByText('Оплатили', { exact: true })).toBeVisible();
         await expect(link.getByText('Начислено', { exact: true })).toBeVisible();
+        await expect(link.getByRole('button', { name: 'Отключить', exact: true })).toHaveCount(0);
+        await expect(link.getByRole('button', { name: 'Включить', exact: true })).toHaveCount(0);
+        await expect(link.getByText('Активна', { exact: true })).toHaveCount(0);
+        await expect(link.getByText('Отключена', { exact: true })).toHaveCount(0);
         await expect(link.getByText('0', { exact: true })).toHaveCount(3);
         await expect(link.getByText('—', { exact: true })).toHaveCount(1);
     }

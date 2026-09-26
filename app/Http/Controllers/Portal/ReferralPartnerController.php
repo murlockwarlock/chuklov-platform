@@ -8,7 +8,6 @@ use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\CreateReferralCampaignLink;
-use App\Modules\Referrals\Application\DeactivateReferralCampaignLink;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Validation\ValidationException;
@@ -49,22 +48,5 @@ final class ReferralPartnerController extends Controller
         }
 
         return back()->with('success', $messages->message('referral_link_created'));
-    }
-
-    public function disable(
-        int $campaignLinkId,
-        ClientPortalContext $context,
-        DeactivateReferralCampaignLink $disable,
-        PortalClientMessages $messages,
-    ): RedirectResponse {
-        try {
-            $disable->handle($campaignLinkId, $context->client());
-        } catch (ValidationException $exception) {
-            throw ValidationException::withMessages($messages->validationException('referral_link', $exception));
-        } catch (LogicException) {
-            abort(401);
-        }
-
-        return back()->with('success', $messages->message('referral_link_disabled'));
     }
 }

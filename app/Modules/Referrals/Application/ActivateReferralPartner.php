@@ -90,7 +90,6 @@ final class ActivateReferralPartner
                         ->where('organization_id', $organization->getKey())
                         ->where('partner_profile_id', $profile->getKey())
                         ->where('is_default', true)
-                        ->where('is_active', true)
                         ->first();
 
                     if (! $defaultLink instanceof ReferralCampaignLink) {

@@ -11,6 +11,7 @@ use App\Modules\Referrals\Application\EnsureReferralIdentity;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
 use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
@@ -119,6 +120,8 @@ class PortalProductUxTest extends TestCase
         self::assertStringNotContainsString('partner-referral-link', $partner);
         self::assertStringNotContainsString('partner-personal-share', $partner);
         self::assertStringNotContainsString('partner-personal-copy', $partner);
+        self::assertStringNotContainsString('disableLink', $partner);
+        self::assertStringNotContainsString('disableUrl', $partner);
         self::assertStringContainsString('partner-create-link-form', $partner);
         self::assertStringContainsString('portal-companion__composer-buttons', $companion);
         self::assertStringContainsString('@keydown="handleComposerKeydown"', $companion);
@@ -251,7 +254,12 @@ class PortalProductUxTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
                 ->where('referrals.isPartner', true)
                 ->where('referrals.links.1.name', 'Instagram — шапка профиля')
-                ->where('referrals.links.1.channel', 'Instagram'));
+                ->where('referrals.links.1.channel', 'Instagram')
+                ->missing('referrals.links.1.isActive')
+                ->missing('referrals.links.1.disableUrl'));
+
+        self::assertFalse(Route::has('portal.referrals.links.disable'));
+        $this->post('/portal/referrals/links/'.$links[1]->getKey().'/disable')->assertNotFound();
 
         $this->get(route('portal.referral', ['referralCode' => $links[1]->public_token]))
             ->assertRedirect('https://t.me/chuklov_test_bot?start=ref_'.$links[1]->public_token);

@@ -117,12 +117,10 @@ final class GetReferralPartnerOverview
                     ReferralCampaignChannel::tryFrom((string) $link->getRawOriginal('channel')),
                     $locale,
                 ),
-                'isActive' => $link->is_active,
                 'createdAt' => $link->getRawOriginal('created_at') === null
                     ? null
                     : CarbonImmutable::parse((string) $link->getRawOriginal('created_at'))->toIso8601String(),
                 'shareUrl' => $this->telegramUrl->handle($link->public_token),
-                'disableUrl' => route('portal.referrals.links.disable', ['campaignLinkId' => $link->getKey()]),
                 'visits' => (int) ($visitsByLink[(int) $link->getKey()] ?? 0),
                 'registrations' => (int) ($registrationsByLink[(int) $link->getKey()] ?? 0),
                 'paidClients' => (int) ($paidClientsByLink[(int) $link->getKey()] ?? 0),
