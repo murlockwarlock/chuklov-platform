@@ -71,7 +71,7 @@ final class ReferralRewardBalanceProjection
             ->groupBy('normalized_currency')
             ->get();
         $totals = [];
-        $baseCurrency = $category === ReferralRewardCategory::ServiceCredit
+        $baseCurrency = $category === ReferralRewardCategory::ServiceCredit && $ledgerRows->isNotEmpty()
             ? $this->baseCurrency()
             : null;
 
@@ -82,7 +82,7 @@ final class ReferralRewardBalanceProjection
                 throw new UnexpectedValueException('The reward ledger currency is invalid.');
             }
 
-            if ($category === ReferralRewardCategory::ServiceCredit && $currency !== $baseCurrency) {
+            if ($category === ReferralRewardCategory::ServiceCredit && ($baseCurrency === null || $currency !== $baseCurrency)) {
                 throw new UnexpectedValueException('A ServiceCredit entry is not normalized to organization base currency.');
             }
 

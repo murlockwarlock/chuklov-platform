@@ -100,9 +100,11 @@ final class GetReferralPartnerOverview
             : (clone $relationshipQuery)->whereIn('referral_campaign_link_id', $linkIds)->count();
 
         return [
-            'isPartner' => true,
-            'status' => ReferralPartnerStatus::tryFrom((string) $profile->getRawOriginal('status'))?->value,
-            'activatedAt' => $profile->getRawOriginal('activated_at') === null
+            'isPartner' => $profile?->isActive() === true,
+            'status' => $profile === null
+                ? null
+                : ReferralPartnerStatus::tryFrom((string) $profile->getRawOriginal('status'))?->value,
+            'activatedAt' => $profile === null || $profile->getRawOriginal('activated_at') === null
                 ? null
                 : CarbonImmutable::parse((string) $profile->getRawOriginal('activated_at'))->toIso8601String(),
             'link' => $this->telegramUrl->handle($identity->public_code),
