@@ -9,14 +9,32 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
+use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
 use App\Modules\Referrals\Domain\ValueObjects\ReferralRewardBalance;
 use Brick\Math\BigInteger;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use UnexpectedValueException;
 
 final class ReferralRewardBalanceProjection
 {
     public function __construct(private readonly OrganizationContext $context) {}
+
+    public function availableServiceCreditQuery(string $obligationTable): Builder
+    {
+        $ledgerTable = (new ReferralRewardLedgerEntry)->getTable();
+
+        return DB::table($ledgerTable)
+            ->selectRaw("COALESCE(SUM(CASE
+                WHEN entry_type IN ('earned', 'manual_credit', 'restored') THEN amount_minor
+                WHEN entry_type IN ('reversed', 'redeemed') THEN -amount_minor
+                ELSE 0
+            END), 0)")
+            ->whereColumn($ledgerTable.'.organization_id', $obligationTable.'.organization_id')
+            ->whereColumn($ledgerTable.'.beneficiary_client_id', $obligationTable.'.client_id')
+            ->where($ledgerTable.'.reward_category', ReferralRewardCategory::ServiceCredit->value)
+            ->whereColumn($ledgerTable.'.currency', $obligationTable.'.settlement_currency');
+    }
 
     /** @return list<ReferralRewardBalance> */
     public function forClient(Client|int $client, ?ReferralRewardCategory $category = null): array
@@ -25,10 +43,15 @@ final class ReferralRewardBalanceProjection
         $organizationId = $this->context->id();
         $totals = [];
 
-        $ledgerRows = DB::table('referral_reward_ledger_entries')
+        $ledgerQuery = DB::table('referral_reward_ledger_entries')
             ->where('organization_id', $organizationId)
-            ->where('beneficiary_client_id', $clientId)
-            ->when($category !== null, static fn ($query) => $query->where('reward_category', $category->value))
+            ->where('beneficiary_client_id', $clientId);
+
+        if ($category !== null) {
+            $ledgerQuery->where('reward_category', $category->value);
+        }
+
+        $ledgerRows = $ledgerQuery
             ->select('currency', 'entry_type', DB::raw('SUM(amount_minor) AS total_minor'))
             ->groupBy('currency', 'entry_type')
             ->get();

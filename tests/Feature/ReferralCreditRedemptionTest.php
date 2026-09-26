@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\Bookings\Pages\ViewBooking;
+use App\Filament\Resources\FinancialObligations\Pages\ListFinancialObligations;
 use App\Models\User;
 use App\Modules\Commerce\Domain\Models\Purchase;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
@@ -17,10 +19,13 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Integration\Domain\Enums\IntegrationEventType;
 use App\Modules\Integration\Domain\Models\IntegrationEvent;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
+use App\Modules\Referrals\Application\ApplyReferralCreditForStaff;
 use App\Modules\Referrals\Application\ApplyReferralCreditToObligation;
 use App\Modules\Referrals\Application\ConsumeFinanceSettlementEvent;
+use App\Modules\Referrals\Application\CreditManualReferralBonus;
 use App\Modules\Referrals\Application\GetReferralPartnerOverview;
 use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
 use App\Modules\Referrals\Application\RequestReferralPayout;
@@ -34,9 +39,13 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
+use Livewire\Livewire;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
@@ -130,6 +139,235 @@ final class ReferralCreditRedemptionTest extends TestCase
             ->get()
             ->map(static fn (FinancialLedgerEntry $entry): string => $entry->entry_type->value)
             ->all());
+    }
+
+    public function test_authorized_crm_staff_can_apply_partial_credit_with_actor_audit_and_restore_it(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->earnServiceCredit($organization, $admin, $client, 'crm-credit', '10.00');
+        $obligation = $this->bookingObligation($organization, $client, 'crm-credit-obligation', 2000);
+
+        $entry = app(ApplyReferralCreditForStaff::class)->handle(
+            actor: $admin,
+            obligation: $obligation,
+            amount: '3.00',
+            idempotencyKey: 'crm-credit-apply',
+        );
+
+        self::assertSame($admin->getKey(), $entry->actor_user_id);
+        self::assertSame(1700, app(ReconcileFinancialObligation::class)
+            ->handle($organization->getKey(), $obligation->getKey())
+            ->outstanding
+            ->minorUnits());
+        self::assertSame(700, app(ReferralRewardBalanceProjection::class)
+            ->forCurrency($client, CurrencyCode::USD, ReferralRewardCategory::ServiceCredit)
+            ->available()
+            ->minorUnits());
+        self::assertDatabaseHas('audit_events', [
+            'action' => 'finance.referral_credit.applied',
+            'actor_user_id' => $admin->getKey(),
+            'target_id' => (string) $entry->getKey(),
+        ]);
+        self::assertSame('crm', DB::table('audit_events')
+            ->where('action', 'finance.referral_credit.applied')
+            ->where('target_id', (string) $entry->getKey())
+            ->value('metadata->source'));
+
+        $retry = app(ApplyReferralCreditForStaff::class)->handle(
+            actor: $admin,
+            obligation: $obligation,
+            amount: '3.00',
+            idempotencyKey: 'crm-credit-apply',
+        );
+
+        self::assertSame($entry->getKey(), $retry->getKey());
+        self::assertSame(1, FinancialLedgerEntry::query()
+            ->where('obligation_id', $obligation->getKey())
+            ->where('entry_type', FinancialLedgerEntryType::ReferralCredit->value)
+            ->count());
+        self::assertSame(1, DB::table('audit_events')
+            ->where('action', 'finance.referral_credit.applied')
+            ->where('target_id', (string) $entry->getKey())
+            ->count());
+
+        try {
+            app(ApplyReferralCreditForStaff::class)->handle(
+                actor: $admin,
+                obligation: $obligation,
+                amount: '4.00',
+                idempotencyKey: 'crm-credit-apply',
+            );
+            self::fail('A reused CRM idempotency key must reject changed parameters.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('idempotency_key', $exception->errors());
+        }
+
+        $correction = app(RestoreReferralCredit::class)->handle(
+            actor: $admin,
+            entry: $entry,
+            reason: 'Возврат бонусной оплаты.',
+            idempotencyKey: 'crm-credit-restore',
+        );
+
+        self::assertSame($admin->getKey(), $correction->actor_user_id);
+        self::assertSame(2000, app(ReconcileFinancialObligation::class)
+            ->handle($organization->getKey(), $obligation->getKey())
+            ->outstanding
+            ->minorUnits());
+        self::assertSame(1000, app(ReferralRewardBalanceProjection::class)
+            ->forCurrency($client, CurrencyCode::USD, ReferralRewardCategory::ServiceCredit)
+            ->available()
+            ->minorUnits());
+    }
+
+    public function test_crm_finance_action_shows_bonus_balance_and_applies_partial_credit(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->earnServiceCredit($organization, $admin, $client, 'crm-action', '10.00');
+        $obligation = $this->bookingObligation($organization, $client, 'crm-action-obligation', 2000);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(ListFinancialObligations::class);
+
+        Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $obligation->booking->getRouteKey()])
+            ->assertSuccessful()
+            ->assertActionExists('applyBookingReferralCredit');
+
+        $component
+            ->assertTableActionExists('applyReferralCredit', null, $obligation)
+            ->mountTableAction('applyReferralCredit', $obligation)
+            ->assertFormFieldExists('client_summary')
+            ->assertFormFieldExists('service_summary')
+            ->assertFormFieldExists('remaining_summary')
+            ->assertFormFieldExists('available_summary')
+            ->assertFormFieldExists('amount')
+            ->assertFormFieldExists('currency_summary')
+            ->assertTableActionDataSet([
+                'client_summary' => $client->full_name,
+                'remaining_summary' => '20.00 USD',
+                'available_summary' => '10.00 USD',
+                'amount' => '10.00',
+                'currency_summary' => 'USD',
+            ])
+            ->setTableActionData([
+                'amount' => '3.00',
+                'idempotency_key' => 'crm-action-partial',
+            ])
+            ->callMountedTableAction();
+
+        self::assertSame(1700, app(ReconcileFinancialObligation::class)
+            ->handle($organization->getKey(), $obligation->getKey())
+            ->outstanding
+            ->minorUnits());
+
+        app(RecordManualPayment::class)->handle(
+            actor: $admin,
+            obligation: $obligation,
+            amount: '17.00',
+            currency: 'USD',
+            paymentMethod: PaymentMethod::Cash,
+            occurredAt: CarbonImmutable::now(),
+            note: 'Остаток после бонусов.',
+            receipt: null,
+            idempotencyKey: 'crm-action-remaining-payment',
+        );
+
+        self::assertTrue(app(ReconcileFinancialObligation::class)
+            ->handle($organization->getKey(), $obligation->getKey())
+            ->isSettled());
+    }
+
+    public function test_crm_referral_credit_action_is_hidden_without_service_credit(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $obligation = $this->bookingObligation($organization, $client, 'crm-action-empty', 2000);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(ListFinancialObligations::class)
+            ->assertTableActionHidden('applyReferralCredit', $obligation);
+    }
+
+    public function test_crm_referral_credit_requires_finance_manage_permission_and_service_credit_category(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->earnServiceCredit($organization, $admin, $client, 'crm-authorization', '10.00');
+        $obligation = $this->bookingObligation($organization, $client, 'crm-authorization-obligation', 2000);
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+
+        $this->expectException(AuthorizationException::class);
+        app(ApplyReferralCreditForStaff::class)->handle(
+            actor: $staff,
+            obligation: $obligation,
+            amount: '1.00',
+            idempotencyKey: 'crm-unauthorized',
+        );
+    }
+
+    public function test_crm_referral_credit_supports_full_purchase_obligation_redemption(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->earnServiceCredit($organization, $admin, $client, 'crm-purchase', '6.00');
+        $obligation = $this->purchaseObligation($organization, $client, 'crm-purchase-obligation', 600);
+
+        $entry = app(ApplyReferralCreditForStaff::class)->handle(
+            actor: $admin,
+            obligation: $obligation,
+            amount: '6.00',
+            idempotencyKey: 'crm-purchase-credit',
+        );
+
+        self::assertSame($admin->getKey(), $entry->actor_user_id);
+        self::assertTrue(app(ReconcileFinancialObligation::class)
+            ->handle($organization->getKey(), $obligation->getKey())
+            ->isSettled());
+        self::assertSame(0, app(ReferralRewardBalanceProjection::class)
+            ->forCurrency($client, CurrencyCode::USD, ReferralRewardCategory::ServiceCredit)
+            ->available()
+            ->minorUnits());
+    }
+
+    public function test_crm_redemption_rejects_partner_cash_and_foreign_obligations(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $profile = app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
+        app(CreditManualReferralBonus::class)->handle(
+            actor: $admin,
+            partner: $profile,
+            amount: '10.00',
+            currency: 'USD',
+            reason: 'Партнёрский денежный бонус.',
+            comment: null,
+            idempotencyKey: 'crm-partner-cash',
+        );
+        $obligation = $this->bookingObligation($organization, $client, 'crm-partner-cash-obligation', 2000);
+
+        try {
+            app(ApplyReferralCreditForStaff::class)->handle(
+                actor: $admin,
+                obligation: $obligation,
+                amount: '1.00',
+                idempotencyKey: 'crm-partner-cash-reject',
+            );
+            self::fail('PartnerCash must not be spendable as service credit.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('amount', $exception->errors());
+        }
+
+        $foreignOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+        $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create();
+        $foreignObligation = $this->bookingObligation($foreignOrganization, $foreignClient, 'crm-foreign-obligation', 1000);
+        app(OrganizationContext::class)->set($organization);
+
+        $this->expectException(AuthorizationException::class);
+        app(ApplyReferralCreditForStaff::class)->handle(
+            actor: $admin,
+            obligation: $foreignObligation,
+            amount: '1.00',
+            idempotencyKey: 'crm-foreign-obligation',
+        );
     }
 
     public function test_portal_finance_exposes_and_applies_referral_credit_to_owned_obligation(): void
@@ -407,6 +645,14 @@ final class ReferralCreditRedemptionTest extends TestCase
         ]);
 
         return [$organization, $admin, $client];
+    }
+
+    private function resolveFilamentContext(User $user, Organization $organization): void
+    {
+        $this->actingAs($user);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
     }
 
     private function earnServiceCredit(

@@ -2,6 +2,7 @@
 
 namespace App\Modules\Referrals\Application;
 
+use App\Models\User;
 use App\Modules\Finance\Application\AppendFinancialLedgerEntry;
 use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinancialReconciliationContract;
@@ -43,12 +44,25 @@ final class ApplyReferralCreditToObligation
         private readonly RecordAuditEvent $audit,
     ) {}
 
-    public function handle(Client $client, int $obligationId, string $amount, string $currency, string $idempotencyKey): FinancialLedgerEntry
-    {
+    public function handle(
+        Client $client,
+        int $obligationId,
+        string $amount,
+        string $currency,
+        string $idempotencyKey,
+        ?User $actor = null,
+        string $source = 'portal',
+    ): FinancialLedgerEntry {
         $organization = $this->context->organization();
 
         if ((int) $client->organization_id !== (int) $organization->getKey()) {
             abort(403);
+        }
+
+        if (! in_array($source, ['portal', 'crm'], true)) {
+            throw ValidationException::withMessages([
+                'source' => 'Источник операции указан неверно.',
+            ]);
         }
 
         $idempotencyKey = trim($idempotencyKey);
@@ -77,6 +91,8 @@ final class ApplyReferralCreditToObligation
             $money,
             $idempotencyKey,
             $requestHash,
+            $actor,
+            $source,
         ): FinancialLedgerEntry {
             $beneficiary = Client::query()
                 ->where('organization_id', $organization->getKey())
@@ -185,7 +201,7 @@ final class ApplyReferralCreditToObligation
                     paymentMethod: PaymentMethod::ReferralCredit,
                     occurredAt: $occurredAt,
                     note: null,
-                    actorUserId: null,
+                    actorUserId: $actor?->getKey(),
                     providerReference: null,
                     idempotencyKey: 'referral_credit:'.$organization->getKey().':'.$idempotencyKey,
                 ),
@@ -236,7 +252,7 @@ final class ApplyReferralCreditToObligation
             ])->save();
             $this->audit->handle(
                 organization: $organization,
-                actor: null,
+                actor: $actor,
                 action: 'finance.referral_credit.applied',
                 targetType: FinancialLedgerEntry::class,
                 targetId: (string) $entry->getKey(),
@@ -245,11 +261,12 @@ final class ApplyReferralCreditToObligation
                     'obligation_id' => $lockedObligation->getKey(),
                     'amount_minor' => $money->minorUnits(),
                     'currency' => $currencyCode->value,
+                    'source' => $source,
                 ],
             );
             $this->audit->handle(
                 organization: $organization,
-                actor: null,
+                actor: $actor,
                 action: 'referral.reward.redeemed',
                 targetType: ReferralRewardLedgerEntry::class,
                 targetId: (string) $reward->getKey(),
@@ -259,6 +276,7 @@ final class ApplyReferralCreditToObligation
                     'financial_ledger_entry_id' => $entry->getKey(),
                     'amount_minor' => $money->minorUnits(),
                     'currency' => $currencyCode->value,
+                    'source' => $source,
                 ],
             );
 

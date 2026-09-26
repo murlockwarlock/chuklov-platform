@@ -12,6 +12,7 @@ use App\Modules\Finance\Domain\Enums\PaymentMethod;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Referrals\Application\ApplyReferralCreditForStaff;
 use App\Modules\Referrals\Application\RestoreReferralCredit;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Carbon\CarbonImmutable;
@@ -40,6 +41,18 @@ final class FinancePaymentActions
     {
         return self::recordPaymentAction('recordBookingPayment')
             ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->canRecordBookingPayment($record));
+    }
+
+    public static function referralCreditForObligation(): Action
+    {
+        return self::referralCreditAction('applyReferralCredit')
+            ->visible(fn (FinancialObligation $record): bool => app(FinancePresentation::class)->canApplyReferralCredit($record));
+    }
+
+    public static function referralCreditForBooking(): Action
+    {
+        return self::referralCreditAction('applyBookingReferralCredit')
+            ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->canApplyReferralCreditForBooking($record));
     }
 
     public static function openForBooking(): Action
@@ -146,6 +159,76 @@ final class FinancePaymentActions
             });
     }
 
+    private static function referralCreditAction(string $name): Action
+    {
+        return Action::make($name)
+            ->label(__('Списать бонусы'))
+            ->color('warning')
+            ->modalHeading(__('Списать бонусы'))
+            ->modalDescription(__('Бонусы уменьшают задолженность клиента. Запись оплаты останется отдельным действием.'))
+            ->modalSubmitActionLabel(__('Списать бонусы'))
+            ->schema([
+                TextInput::make('client_summary')
+                    ->label(__('Клиент'))
+                    ->default(fn (Model $record): string => self::obligation($record)?->client->full_name ?? '—')
+                    ->disabled()
+                    ->dehydrated(false),
+                TextInput::make('service_summary')
+                    ->label(__('Услуга / товар'))
+                    ->default(fn (Model $record): string => self::obligationName($record))
+                    ->disabled()
+                    ->dehydrated(false),
+                TextInput::make('remaining_summary')
+                    ->label(__('Осталось к оплате'))
+                    ->default(fn (Model $record): string => self::obligation($record) === null
+                        ? '—'
+                        : app(FinancePresentation::class)->settlementOutstanding(self::obligation($record)))
+                    ->disabled()
+                    ->dehydrated(false),
+                TextInput::make('available_summary')
+                    ->label(__('Доступно бонусов'))
+                    ->default(fn (Model $record): string => self::obligation($record) === null
+                        ? '—'
+                        : app(FinancePresentation::class)->money(
+                            app(FinancePresentation::class)->referralCreditAvailable(self::obligation($record)),
+                        ))
+                    ->disabled()
+                    ->dehydrated(false),
+                TextInput::make('currency_summary')
+                    ->label(__('Валюта бонусов'))
+                    ->default(fn (Model $record): string => self::obligation($record) === null
+                        ? '—'
+                        : (self::settlementCurrency(self::obligation($record)) ?? '—'))
+                    ->disabled()
+                    ->dehydrated(false),
+                TextInput::make('amount')
+                    ->label(__('Сумма бонусов к списанию'))
+                    ->default(fn (Model $record): ?string => self::obligation($record) === null
+                        ? null
+                        : app(FinancePresentation::class)->referralCreditAmountDefault(self::obligation($record)))
+                    ->placeholder(__('Введите сумму'))
+                    ->inputMode('decimal')
+                    ->required()
+                    ->maxLength(40),
+                Hidden::make('idempotency_key')
+                    ->default(fn (): string => 'crm-referral-credit-'.Str::uuid()->toString()),
+            ])
+            ->action(function (Model $record, array $data): void {
+                $actor = auth()->user();
+                abort_unless($actor instanceof User, 403);
+                $obligation = self::obligation($record);
+                abort_unless($obligation instanceof FinancialObligation, 404);
+
+                app(ApplyReferralCreditForStaff::class)->handle(
+                    actor: $actor,
+                    obligation: $obligation,
+                    amount: (string) ($data['amount'] ?? ''),
+                    idempotencyKey: (string) $data['idempotency_key'],
+                );
+                Notification::make()->success()->title(__('Бонусы списаны. Остаток обновлён.'))->send();
+            });
+    }
+
     /** @return list<Component> */
     private static function paymentSchema(): array
     {
@@ -243,6 +326,15 @@ final class FinancePaymentActions
         return $obligation?->service->name
             ?? $obligation?->booking?->service->name
             ?? '—';
+    }
+
+    private static function obligationName(Model $record): string
+    {
+        $obligation = self::obligation($record);
+
+        return $obligation instanceof FinancialObligation
+            ? CommerceFulfillmentPresentation::productName($obligation)
+            : '—';
     }
 
     private static function paymentSummary(FinancialLedgerEntry $entry): string

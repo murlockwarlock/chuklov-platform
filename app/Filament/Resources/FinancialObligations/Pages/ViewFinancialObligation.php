@@ -17,6 +17,7 @@ final class ViewFinancialObligation extends LocalizedViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            FinancePaymentActions::referralCreditForObligation(),
             FinancePaymentActions::forObligation(),
             FinanceReminderActions::forObligation(),
             CommerceFulfillmentActions::forObligation(),

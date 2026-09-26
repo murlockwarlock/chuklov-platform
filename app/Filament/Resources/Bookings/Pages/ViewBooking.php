@@ -51,6 +51,7 @@ class ViewBooking extends LocalizedViewRecord
             ActionGroup::make([
                 ...BookingLifecycleActions::all(),
                 FinancePaymentActions::openForBooking(),
+                FinancePaymentActions::referralCreditForBooking(),
                 FinancePaymentActions::forBooking(),
             ])
                 ->label(__('Действия'))

@@ -20,6 +20,8 @@ use App\Modules\Finance\Domain\ValueObjects\FinancialReconciliation;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
+use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
@@ -47,6 +49,7 @@ final class FinancePresentation
         private readonly CurrencyCatalog $catalog,
         private readonly OrganizationContext $context,
         private readonly GetBookingFinanceSummary $bookingFinance,
+        private readonly ReferralRewardBalanceProjection $referralBalances,
     ) {}
 
     public function reconciliation(FinancialObligation $record): ?FinancialReconciliation
@@ -119,6 +122,61 @@ final class FinancePresentation
         return $actor instanceof User
             && $this->authorization->allowsManage($actor)
             && $summary?->reconciliation?->outstanding->isPositive() === true;
+    }
+
+    public function canApplyReferralCredit(FinancialObligation $record): bool
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            && $this->authorization->allowsManage($actor)
+            && ($reconciliation = $this->reconciliation($record)) !== null
+            && $reconciliation->outstanding->isPositive()
+            && ($available = $this->referralCreditAvailable($record)) !== null
+            && $available->isPositive();
+    }
+
+    public function canApplyReferralCreditForBooking(Booking $booking): bool
+    {
+        $summary = $this->bookingSummary($booking);
+
+        return $summary?->obligation instanceof FinancialObligation
+            && $this->canApplyReferralCredit($summary->obligation);
+    }
+
+    public function referralCreditAvailable(FinancialObligation $record): ?Money
+    {
+        try {
+            $currency = $this->contract->currency($record->getRawOriginal('settlement_currency'));
+            $attributes = $record->getAttributes();
+            $minor = array_key_exists('crm_referral_service_credit_available_minor', $attributes)
+                ? ($attributes['crm_referral_service_credit_available_minor'] ?? '0')
+                : $this->referralBalances
+                    ->forCurrency(
+                        (int) $record->getRawOriginal('client_id'),
+                        $currency,
+                        ReferralRewardCategory::ServiceCredit,
+                    )
+                    ->available()
+                    ->minorUnitsString();
+            $available = Money::ofMinor((string) $minor, $currency);
+
+            return $available->isNegative() ? null : $available;
+        } catch (InvalidArgumentException|UnexpectedValueException) {
+            return null;
+        }
+    }
+
+    public function referralCreditAmountDefault(FinancialObligation $record): ?string
+    {
+        $outstanding = $this->reconciliation($record)?->outstanding;
+        $available = $this->referralCreditAvailable($record);
+
+        if ($outstanding === null || ! $outstanding->isPositive() || $available === null || ! $available->isPositive()) {
+            return null;
+        }
+
+        return ($available->compareTo($outstanding) <= 0 ? $available : $outstanding)->toDecimalString();
     }
 
     public function canViewFinance(): bool
