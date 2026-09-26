@@ -15,6 +15,7 @@ use App\Modules\Finance\Domain\Enums\PaymentMethod;
 use App\Modules\Finance\Domain\Models\FinanceIdempotencyKey;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Finance\Domain\ValueObjects\FinancialLedgerEntryData;
 use App\Modules\Finance\Domain\ValueObjects\Money;
@@ -143,6 +144,10 @@ final class ApplyReferralCreditToObligation
                 return $this->existingResult($idempotency, $organization->getKey());
             }
 
+            $currencyConfiguration = OrganizationCurrencyConfiguration::query()
+                ->where('organization_id', $organization->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
             $obligationData = $this->contract->validateObligation($lockedObligation);
             if ($obligationData['currencies']['settlement_currency'] !== $currencyCode) {
                 throw ValidationException::withMessages([
@@ -150,18 +155,32 @@ final class ApplyReferralCreditToObligation
                 ]);
             }
 
+            $baseCurrency = $currencyConfiguration->base_currency;
+            try {
+                $settlementSnapshot = $this->configuration->convertTargetAmountToSource(
+                    $organization,
+                    $money,
+                    $baseCurrency,
+                );
+            } catch (ModelNotFoundException|InvalidArgumentException) {
+                throw ValidationException::withMessages([
+                    'currency' => 'Для этой валюты не настроен курс обмена.',
+                ]);
+            }
+            $creditMoney = Money::ofMinor($settlementSnapshot->sourceAmountMinor, $baseCurrency);
+            if (! $creditMoney->isPositive()) {
+                throw ValidationException::withMessages([
+                    'amount' => 'Сумма слишком мала для списания с учётом валютного курса и округления.',
+                ]);
+            }
             $current = $this->reconciliation->handle(
                 (int) $organization->getKey(),
                 (int) $lockedObligation->getKey(),
                 true,
             );
-            $available = $this->balances->forCurrency(
-                $beneficiary,
-                $currencyCode,
-                ReferralRewardCategory::ServiceCredit,
-            )->available();
+            $available = $this->balances->serviceCredit($beneficiary)->available();
 
-            if ($money->compareTo($available) > 0) {
+            if ($creditMoney->compareTo($available) > 0) {
                 throw ValidationException::withMessages([
                     'amount' => 'Сумма превышает доступный остаток бонусов.',
                 ]);
@@ -173,9 +192,8 @@ final class ApplyReferralCreditToObligation
                 ]);
             }
 
-            $baseSnapshot = $this->configuration->convert($organization, $money, $lockedObligation->base_currency);
-            $displaySnapshot = $this->configuration->convert($organization, $money, $lockedObligation->display_currency);
-            $settlementSnapshot = $this->configuration->convert($organization, $money, $lockedObligation->settlement_currency);
+            $baseSnapshot = $this->configuration->convert($organization, $creditMoney, $lockedObligation->base_currency);
+            $displaySnapshot = $this->configuration->convert($organization, $creditMoney, $lockedObligation->display_currency);
             $occurredAt = CarbonImmutable::now();
             $entry = $this->ledger->handle(
                 organization: $organization,
@@ -183,16 +201,16 @@ final class ApplyReferralCreditToObligation
                 data: new FinancialLedgerEntryData(
                     entryType: FinancialLedgerEntryType::ReferralCredit,
                     source: FinancialEntrySource::Referral,
-                    amountMinor: $money->minorUnits(),
-                    currency: $currencyCode,
-                    paymentAmountMinor: $money->minorUnits(),
-                    paymentCurrency: $currencyCode,
+                    amountMinor: $creditMoney->minorUnits(),
+                    currency: $creditMoney->currency(),
+                    paymentAmountMinor: $creditMoney->minorUnits(),
+                    paymentCurrency: $creditMoney->currency(),
                     baseAmountMinor: (int) $baseSnapshot->targetAmountMinor,
                     baseCurrency: $baseSnapshot->targetCurrency,
                     displayAmountMinor: (int) $displaySnapshot->targetAmountMinor,
                     displayCurrency: $displaySnapshot->targetCurrency,
-                    settlementAmountMinor: (int) $settlementSnapshot->targetAmountMinor,
-                    settlementCurrency: $settlementSnapshot->targetCurrency,
+                    settlementAmountMinor: $money->minorUnits(),
+                    settlementCurrency: $currencyCode,
                     conversionSnapshot: [
                         'base' => $baseSnapshot->toArray(),
                         'display' => $displaySnapshot->toArray(),
@@ -219,15 +237,15 @@ final class ApplyReferralCreditToObligation
                 'reward_program_version_id' => null,
                 'entry_type' => ReferralRewardLedgerEntryType::Redeemed->value,
                 'reward_category' => ReferralRewardCategory::ServiceCredit->value,
-                'amount_minor' => $money->minorUnits(),
-                'currency' => $currencyCode->value,
+                'amount_minor' => $creditMoney->minorUnits(),
+                'currency' => $creditMoney->currency()->value,
                 'reason_type' => 'credit_redemption',
                 'reason' => null,
                 'comment' => null,
                 'created_by_user_id' => null,
                 'reverses_entry_id' => null,
                 'idempotency_key' => 'referral.reward.redeemed:'.$organization->getKey().':'.$entry->getKey(),
-                'request_hash' => hash('sha256', $entry->getKey().'|'.$money->minorUnitsString().'|'.$currencyCode->value),
+                'request_hash' => hash('sha256', $entry->getKey().'|'.$creditMoney->minorUnitsString().'|'.$creditMoney->currency()->value.'|'.$money->minorUnitsString().'|'.$currencyCode->value),
                 'occurred_at' => $occurredAt,
             ]);
             $reward->save();
@@ -259,8 +277,11 @@ final class ApplyReferralCreditToObligation
                 metadata: [
                     'client_id' => $beneficiary->getKey(),
                     'obligation_id' => $lockedObligation->getKey(),
-                    'amount_minor' => $money->minorUnits(),
-                    'currency' => $currencyCode->value,
+                    'amount_minor' => $creditMoney->minorUnits(),
+                    'currency' => $creditMoney->currency()->value,
+                    'settlement_amount_minor' => $money->minorUnits(),
+                    'settlement_currency' => $currencyCode->value,
+                    'conversion_snapshot' => $settlementSnapshot->toArray(),
                     'source' => $source,
                 ],
             );
@@ -274,8 +295,10 @@ final class ApplyReferralCreditToObligation
                     'client_id' => $beneficiary->getKey(),
                     'obligation_id' => $lockedObligation->getKey(),
                     'financial_ledger_entry_id' => $entry->getKey(),
-                    'amount_minor' => $money->minorUnits(),
-                    'currency' => $currencyCode->value,
+                    'amount_minor' => $creditMoney->minorUnits(),
+                    'currency' => $creditMoney->currency()->value,
+                    'settlement_amount_minor' => $money->minorUnits(),
+                    'settlement_currency' => $currencyCode->value,
                     'source' => $source,
                 ],
             );

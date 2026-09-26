@@ -13,6 +13,7 @@ use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 use LogicException;
 
@@ -101,6 +102,12 @@ class ReferralRewardLedgerEntry extends Model
     public function reversedEntry(): BelongsTo
     {
         return $this->belongsTo(self::class, 'reverses_entry_id');
+    }
+
+    /** @return HasOne<ReferralRewardConversionSnapshot, $this> */
+    public function conversionSnapshot(): HasOne
+    {
+        return $this->hasOne(ReferralRewardConversionSnapshot::class, 'referral_reward_ledger_entry_id');
     }
 
     /** @return BelongsTo<User, $this> */

@@ -100,11 +100,9 @@ final class GetReferralPartnerOverview
             : (clone $relationshipQuery)->whereIn('referral_campaign_link_id', $linkIds)->count();
 
         return [
-            'isPartner' => $profile?->isActive() === true,
-            'status' => $profile === null
-                ? null
-                : ReferralPartnerStatus::tryFrom((string) $profile->getRawOriginal('status'))?->value,
-            'activatedAt' => $profile === null || $profile->getRawOriginal('activated_at') === null
+            'isPartner' => true,
+            'status' => ReferralPartnerStatus::tryFrom((string) $profile->getRawOriginal('status'))?->value,
+            'activatedAt' => $profile->getRawOriginal('activated_at') === null
                 ? null
                 : CarbonImmutable::parse((string) $profile->getRawOriginal('activated_at'))->toIso8601String(),
             'link' => $this->telegramUrl->handle($identity->public_code),
@@ -175,7 +173,7 @@ final class GetReferralPartnerOverview
             ->where('organization_id', $organizationId)
             ->where('beneficiary_client_id', $client->getKey())
             ->where('reward_category', ReferralRewardCategory::ServiceCredit->value)
-            ->with('referred:id,full_name')
+            ->with(['referred:id,full_name', 'conversionSnapshot'])
             ->latest('occurred_at')
             ->limit(50)
             ->get();
@@ -371,7 +369,7 @@ final class GetReferralPartnerOverview
     private function rewardHistory(ReferralRewardLedgerEntry $entry, string $locale): array
     {
         $type = ReferralRewardLedgerEntryType::from((string) $entry->getRawOriginal('entry_type'));
-        $currency = CurrencyCode::from((string) $entry->getRawOriginal('currency'));
+        $money = $this->balances->accountingMoney($entry);
 
         return [
             'typeLabel' => match ($type) {
@@ -382,8 +380,8 @@ final class GetReferralPartnerOverview
                 ReferralRewardLedgerEntryType::Restored => $locale === 'en' ? 'Referral credit restored' : 'Возврат бонуса',
             },
             'isReversal' => in_array($type, [ReferralRewardLedgerEntryType::Reversed, ReferralRewardLedgerEntryType::Redeemed], true),
-            'amountMinor' => $entry->amount_minor,
-            'currency' => $currency->value,
+            'amountMinor' => $money->minorUnits(),
+            'currency' => $money->currency()->value,
             'clientName' => $entry->referred?->full_name,
             'reason' => $entry->reason,
             'comment' => $entry->comment,

@@ -6,11 +6,13 @@ use App\Models\User;
 use App\Modules\Attribution\Application\AcceptManualAttribution;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Finance\Application\CorrectFinancialPayment;
+use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\RecordFinancialSettlementEvent;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -152,6 +154,68 @@ final class ReferralRewardsTest extends TestCase
         self::assertSame('USD', ReferralRewardLedgerEntry::query()->sole()->currency->value);
     }
 
+    public function test_service_credit_reward_is_normalized_to_organization_base_currency_with_snapshot(): void
+    {
+        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        $this->relationship($organization, $referrer, $referred);
+        $this->configureCurrency($organization, $admin, 'half_up', ['USD', 'RUB'], [
+            ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '85'],
+            ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.01'],
+        ]);
+        app(SaveReferralRewardProgram::class)->handle(
+            actor: $admin,
+            enabled: true,
+            qualificationRule: 'every_settled_payment',
+            formula: 'percentage_of_settlement',
+            fixedAmount: null,
+            fixedCurrency: null,
+            percentage: '10',
+            effectiveAt: CarbonImmutable::now()->subMinute(),
+        );
+        $event = $this->settledEvent($organization, $referred, 'service-credit-base', 900000, 'RUB');
+
+        app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
+
+        $entry = ReferralRewardLedgerEntry::query()->sole();
+
+        self::assertSame(900, $entry->amount_minor);
+        self::assertSame('USD', $entry->currency->value);
+        self::assertDatabaseHas('referral_reward_conversion_snapshots', [
+            'referral_reward_ledger_entry_id' => $entry->getKey(),
+            'source_amount_minor' => 90000,
+            'source_currency' => 'RUB',
+            'target_amount_minor' => 900,
+            'target_currency' => 'USD',
+            'rate' => '0.010000000000000000',
+        ]);
+    }
+
+    public function test_fixed_service_credit_reward_in_non_base_currency_is_normalized_to_base(): void
+    {
+        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        $this->relationship($organization, $referrer, $referred);
+        $this->configureCurrency($organization, $admin, 'half_up', ['USD', 'RUB'], [
+            ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '85'],
+            ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.01'],
+        ]);
+        $this->configureFixed($organization, $admin, '100.00', 'RUB');
+        $event = $this->settledEvent($organization, $referred, 'fixed-service-credit-base');
+
+        app(ConsumeFinanceSettlementEvent::class)->handle($event->getKey());
+
+        $entry = ReferralRewardLedgerEntry::query()->sole();
+
+        self::assertSame(100, $entry->amount_minor);
+        self::assertSame('USD', $entry->currency->value);
+        self::assertDatabaseHas('referral_reward_conversion_snapshots', [
+            'referral_reward_ledger_entry_id' => $entry->getKey(),
+            'source_amount_minor' => 10000,
+            'source_currency' => 'RUB',
+            'target_amount_minor' => 100,
+            'target_currency' => 'USD',
+        ]);
+    }
+
     public function test_first_and_every_qualification_rules_are_distinct_and_retries_are_idempotent(): void
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
@@ -221,7 +285,7 @@ final class ReferralRewardsTest extends TestCase
         self::assertSame(1000, ReferralRewardLedgerEntry::query()->sole()->amount_minor);
     }
 
-    public function test_balances_remain_separate_when_rewards_use_different_currencies(): void
+    public function test_service_credit_balances_use_one_organization_base_currency(): void
     {
         [$organization, $admin, $referrer, $referred] = $this->fixture();
         $this->relationship($organization, $referrer, $referred);
@@ -237,9 +301,9 @@ final class ReferralRewardsTest extends TestCase
 
         $overview = app(GetClientReferralOverview::class)->handle($referrer);
 
-        self::assertCount(2, $overview['rewards']['balances']);
-        self::assertSame(['EUR', 'USD'], array_column($overview['rewards']['balances'], 'currency'));
-        self::assertSame([500, 1000], array_column($overview['rewards']['balances'], 'availableMinor'));
+        self::assertCount(1, $overview['rewards']['balances']);
+        self::assertSame(['USD'], array_column($overview['rewards']['balances'], 'currency'));
+        self::assertSame([1500], array_column($overview['rewards']['balances'], 'availableMinor'));
     }
 
     public function test_payout_reserves_releases_and_finalizes_the_derived_balance(): void
@@ -626,19 +690,17 @@ final class ReferralRewardsTest extends TestCase
             ->forSpecialist($specialist)
             ->forService($service)
             ->create();
-        $snapshot = [
-            'source_amount_minor' => (string) $amountMinor,
-            'source_currency' => $currency,
-            'target_amount_minor' => (string) $amountMinor,
-            'target_currency' => $currency,
-            'rate' => '1',
-            'rate_id' => null,
-            'rate_version' => null,
-            'effective_at' => null,
-            'rounding_mode' => 'half_up',
-            'source_scale' => 2,
-            'target_scale' => 2,
-        ];
+        $configuration = app(CurrencyConfigurationService::class);
+        $baseSnapshot = $configuration->convert(
+            $organization,
+            Money::ofMinor($amountMinor, $currency),
+            $configuration->configuration($organization)->base_currency,
+        );
+        $displaySnapshot = $configuration->convert(
+            $organization,
+            Money::ofMinor($amountMinor, $currency),
+            $configuration->configuration($organization)->display_currency,
+        );
         $obligation = new FinancialObligation;
         $obligation->forceFill([
             'organization_id' => $organization->getKey(),
@@ -647,16 +709,19 @@ final class ReferralRewardsTest extends TestCase
             'service_id' => $service->getKey(),
             'amount_minor' => $amountMinor,
             'currency' => $currency,
-            'base_amount_minor' => $amountMinor,
-            'base_currency' => $currency,
-            'display_amount_minor' => $amountMinor,
-            'display_currency' => $currency,
+            'base_amount_minor' => (int) $baseSnapshot->targetAmountMinor,
+            'base_currency' => $baseSnapshot->targetCurrency->value,
+            'display_amount_minor' => (int) $displaySnapshot->targetAmountMinor,
+            'display_currency' => $displaySnapshot->targetCurrency->value,
             'payment_amount_minor' => $amountMinor,
             'payment_currency' => $currency,
             'settlement_amount_minor' => $amountMinor,
             'settlement_currency' => $currency,
             'price_snapshot' => ['amount_minor' => $amountMinor],
-            'conversion_snapshots' => ['base' => $snapshot, 'display' => $snapshot],
+            'conversion_snapshots' => [
+                'base' => $baseSnapshot->toArray(),
+                'display' => $displaySnapshot->toArray(),
+            ],
             'creation_key' => 'referral-reward-'.$suffix.'-'.$client->getKey(),
         ]);
         $obligation->save();
@@ -670,14 +735,17 @@ final class ReferralRewardsTest extends TestCase
             'currency' => $currency,
             'payment_amount_minor' => $amountMinor,
             'payment_currency' => $currency,
-            'base_amount_minor' => $amountMinor,
-            'base_currency' => $currency,
-            'display_amount_minor' => $amountMinor,
-            'display_currency' => $currency,
+            'base_amount_minor' => (int) $baseSnapshot->targetAmountMinor,
+            'base_currency' => $baseSnapshot->targetCurrency->value,
+            'display_amount_minor' => (int) $displaySnapshot->targetAmountMinor,
+            'display_currency' => $displaySnapshot->targetCurrency->value,
             'settlement_amount_minor' => $amountMinor,
             'settlement_currency' => $currency,
             'payment_method' => 'cash',
-            'conversion_snapshot' => null,
+            'conversion_snapshot' => [
+                'base' => $baseSnapshot->toArray(),
+                'display' => $displaySnapshot->toArray(),
+            ],
             'occurred_at' => now(),
             'idempotency_key' => 'referral-reward-entry-'.$suffix.'-'.$client->getKey(),
             'created_at' => now(),

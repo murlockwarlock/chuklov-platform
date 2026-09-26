@@ -4,8 +4,6 @@ namespace App\Modules\Referrals\Application;
 
 use App\Models\User;
 use App\Modules\Finance\Application\FinanceAuthorization;
-use App\Modules\Finance\Domain\Enums\CurrencyCode;
-use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardLedgerEntryType;
@@ -19,6 +17,7 @@ final class ReverseReferralReward
     public function __construct(
         private readonly FinanceAuthorization $authorization,
         private readonly ReferralRewardBalanceProjection $balances,
+        private readonly RecordReferralRewardConversionSnapshot $conversionSnapshots,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -66,10 +65,11 @@ final class ReverseReferralReward
                 return $existing;
             }
 
-            $currency = CurrencyCode::from((string) $original->getRawOriginal('currency'));
             $category = ReferralRewardCategory::from((string) $original->getRawOriginal('reward_category'));
-            $originalMoney = Money::ofMinor($original->amount_minor, $currency);
-            $available = $this->balances->forCurrency($beneficiary, $currency, $category)->available();
+            $originalMoney = $this->balances->accountingMoney($original);
+            $available = $category === ReferralRewardCategory::ServiceCredit
+                ? $this->balances->serviceCredit($beneficiary)->available()
+                : $this->balances->forCurrency($beneficiary, $originalMoney->currency(), $category)->available();
 
             if ($available->compareTo($originalMoney) < 0) {
                 throw ValidationException::withMessages([
@@ -89,8 +89,8 @@ final class ReverseReferralReward
                 'reward_program_version_id' => $original->reward_program_version_id,
                 'entry_type' => ReferralRewardLedgerEntryType::Reversed->value,
                 'reward_category' => $category->value,
-                'amount_minor' => $original->amount_minor,
-                'currency' => $currency->value,
+                'amount_minor' => $originalMoney->minorUnits(),
+                'currency' => $originalMoney->currency()->value,
                 'reason_type' => 'manual_reversal',
                 'reason' => trim($reason),
                 'reverses_entry_id' => $original->getKey(),
@@ -100,6 +100,16 @@ final class ReverseReferralReward
                 'created_by_user_id' => $actor->getKey(),
             ]);
             $reversal->save();
+            if ($category === ReferralRewardCategory::ServiceCredit) {
+                $snapshot = $this->balances->conversionSnapshot($original);
+                if ($snapshot !== null) {
+                    $this->conversionSnapshots->handle(
+                        $reversal,
+                        $snapshot->toValueObject(),
+                        'service_credit_reversal',
+                    );
+                }
+            }
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
@@ -111,8 +121,8 @@ final class ReverseReferralReward
                     'referred_client_id' => $original->referred_client_id,
                     'relationship_id' => $original->referral_relationship_id,
                     'evidence_id' => $original->referral_commercial_evidence_id,
-                    'amount_minor' => $original->amount_minor,
-                    'currency' => $currency->value,
+                    'amount_minor' => $originalMoney->minorUnits(),
+                    'currency' => $originalMoney->currency()->value,
                     'original_entry_id' => $original->getKey(),
                     'reason_present' => true,
                 ],

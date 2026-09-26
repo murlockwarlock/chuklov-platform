@@ -186,7 +186,17 @@ final class FinancePaymentActions
                     ->disabled()
                     ->dehydrated(false),
                 TextInput::make('available_summary')
-                    ->label(__('Доступно бонусов'))
+                    ->label(__('Доступно бонусов (база)'))
+                    ->default(fn (Model $record): string => self::obligation($record) === null
+                        ? '—'
+                        : app(FinancePresentation::class)->money(
+                            app(FinancePresentation::class)->referralCreditBaseAvailable(self::obligation($record)),
+                        ))
+                    ->disabled()
+                    ->dehydrated(false),
+                TextInput::make('equivalent_summary')
+                    ->label(__('Эквивалент для этой задолженности'))
+                    ->hidden(fn (Model $record): bool => self::referralCreditUsesBaseCurrency($record))
                     ->default(fn (Model $record): string => self::obligation($record) === null
                         ? '—'
                         : app(FinancePresentation::class)->money(
@@ -195,7 +205,7 @@ final class FinancePaymentActions
                     ->disabled()
                     ->dehydrated(false),
                 TextInput::make('currency_summary')
-                    ->label(__('Валюта бонусов'))
+                    ->label(__('Валюта списания'))
                     ->default(fn (Model $record): string => self::obligation($record) === null
                         ? '—'
                         : (self::settlementCurrency(self::obligation($record)) ?? '—'))
@@ -304,6 +314,21 @@ final class FinancePaymentActions
             Hidden::make('idempotency_key')
                 ->default(fn (): string => 'crm-payment-'.Str::uuid()->toString()),
         ];
+    }
+
+    private static function referralCreditUsesBaseCurrency(Model $record): bool
+    {
+        $obligation = self::obligation($record);
+        if (! $obligation instanceof FinancialObligation) {
+            return false;
+        }
+
+        $baseAvailable = app(FinancePresentation::class)->referralCreditBaseAvailable($obligation);
+        $settlementCurrency = self::settlementCurrency($obligation);
+
+        return $baseAvailable !== null
+            && $settlementCurrency !== null
+            && $baseAvailable->currency()->value === $settlementCurrency;
     }
 
     private static function obligation(Model $record): ?FinancialObligation

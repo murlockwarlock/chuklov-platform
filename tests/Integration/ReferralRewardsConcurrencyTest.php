@@ -3,11 +3,13 @@
 namespace Tests\Integration;
 
 use App\Models\User;
+use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\RecordFinancialSettlementEvent;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Integration\Domain\Models\IntegrationEvent;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -178,6 +180,34 @@ final class ReferralRewardsConcurrencyTest extends TestCase
             ->minorUnits());
     }
 
+    public function test_postgresql_concurrent_cross_currency_redemptions_cannot_double_spend(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, $client, $referred] = $this->crossCurrencyOrdinaryFixture();
+        $this->relationship($organization, $client, $referred);
+        $this->configureFixed($admin, '100.00', 'USD');
+        $earnedEvent = $this->settledEvent($organization, $referred, 'cross-service-credit-race');
+        app(ConsumeFinanceSettlementEvent::class)->handle($earnedEvent->getKey());
+        $obligation = $this->unpaidCrossCurrencyObligation($organization, $client, 'cross-service-credit-redemption-race');
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::redeemInProcess($organization->getKey(), $client->getKey(), $obligation->getKey(), '5000.00', 'cross-race-one', 'RUB'),
+            static fn (): string => self::redeemInProcess($organization->getKey(), $client->getKey(), $obligation->getKey(), '5000.00', 'cross-race-two', 'RUB'),
+        ]);
+
+        self::assertSame(1, count(array_filter($results, static fn (string $result): bool => str_starts_with($result, 'applied:'))));
+        self::assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'validation')));
+        self::assertSame(1, ReferralRewardLedgerEntry::query()->where('entry_type', 'redeemed')->count());
+        self::assertSame(4118, app(ReferralRewardBalanceProjection::class)
+            ->forCurrency($client, CurrencyCode::USD, ReferralRewardCategory::ServiceCredit)
+            ->available()
+            ->minorUnits());
+        self::assertSame(500000, FinancialLedgerEntry::query()
+            ->where('entry_type', 'referral_credit')
+            ->sole()
+            ->settlement_amount_minor);
+    }
+
     private static function consumeInProcess(int $eventId): string
     {
         try {
@@ -228,7 +258,7 @@ final class ReferralRewardsConcurrencyTest extends TestCase
         }
     }
 
-    private static function redeemInProcess(int $organizationId, int $clientId, int $obligationId, string $amount, string $key): string
+    private static function redeemInProcess(int $organizationId, int $clientId, int $obligationId, string $amount, string $key, string $currency = 'USD'): string
     {
         try {
             $organization = Organization::query()->findOrFail($organizationId);
@@ -237,7 +267,7 @@ final class ReferralRewardsConcurrencyTest extends TestCase
                 client: Client::query()->where('organization_id', $organizationId)->findOrFail($clientId),
                 obligationId: $obligationId,
                 amount: $amount,
-                currency: 'USD',
+                currency: $currency,
                 idempotencyKey: $key,
             );
 
@@ -310,6 +340,30 @@ final class ReferralRewardsConcurrencyTest extends TestCase
             'allowed_currencies' => ['USD'],
             'force_single_currency' => true,
             'rounding_mode' => 'half_up',
+        ]);
+
+        return [$organization, $admin, $client, $referred];
+    }
+
+    /** @return array{0: Organization, 1: User, 2: Client, 3: Client} */
+    private function crossCurrencyOrdinaryFixture(): array
+    {
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $referred = Client::factory()->forOrganization($organization)->create();
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        app(OrganizationContext::class)->set($organization);
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'USD',
+            'display_currency' => 'USD',
+            'allowed_currencies' => ['USD', 'RUB'],
+            'force_single_currency' => false,
+            'rounding_mode' => 'half_up',
+            'rates' => [
+                ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '85'],
+                ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.01'],
+            ],
         ]);
 
         return [$organization, $admin, $client, $referred];
@@ -473,6 +527,49 @@ final class ReferralRewardsConcurrencyTest extends TestCase
             'price_snapshot' => ['amount_minor' => 1000],
             'conversion_snapshots' => ['base' => $snapshot, 'display' => $snapshot],
             'creation_key' => 'referral-rewards-unpaid-'.$suffix.'-'.$client->getKey(),
+        ]);
+        $obligation->save();
+
+        return $obligation->refresh();
+    }
+
+    private function unpaidCrossCurrencyObligation(Organization $organization, Client $client, string $suffix): FinancialObligation
+    {
+        $service = Service::factory()->forOrganization($organization)->create([
+            'price_minor' => 850000,
+            'price_currency' => 'RUB',
+        ]);
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+        $snapshot = app(CurrencyConfigurationService::class)->convert(
+            $organization,
+            Money::ofMinor(850000, 'RUB'),
+            'USD',
+        )->toArray();
+        $obligation = new FinancialObligation;
+        $obligation->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'booking_id' => $booking->getKey(),
+            'service_id' => $service->getKey(),
+            'amount_minor' => 850000,
+            'currency' => 'RUB',
+            'base_amount_minor' => (int) $snapshot['target_amount_minor'],
+            'base_currency' => 'USD',
+            'display_amount_minor' => (int) $snapshot['target_amount_minor'],
+            'display_currency' => 'USD',
+            'payment_amount_minor' => 850000,
+            'payment_currency' => 'RUB',
+            'settlement_amount_minor' => 850000,
+            'settlement_currency' => 'RUB',
+            'price_snapshot' => ['amount_minor' => 850000],
+            'conversion_snapshots' => ['base' => $snapshot, 'display' => $snapshot],
+            'creation_key' => 'referral-rewards-cross-unpaid-'.$suffix.'-'.$client->getKey(),
         ]);
         $obligation->save();
 

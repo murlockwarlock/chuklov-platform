@@ -2,10 +2,12 @@
 
 namespace App\Modules\Referrals\Application;
 
+use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinancialReconciliationContract;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -30,6 +32,8 @@ final class QualifyReferralReward
         private readonly ReconcileFinancialObligation $reconciliation,
         private readonly FinancialReconciliationContract $contract,
         private readonly ReferralRewardCalculator $calculator,
+        private readonly CurrencyConfigurationService $configuration,
+        private readonly RecordReferralRewardConversionSnapshot $conversionSnapshots,
         private readonly RecordAuditEvent $audit,
         private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
@@ -89,7 +93,7 @@ final class QualifyReferralReward
                 ->where('client_id', $relationship->referrer_client_id)
                 ->first();
             $partnerAtObservation = $this->partnerAtObservation($partnerProfile, $evidence->observed_at);
-            $version = ! $partnerAtObservation
+            $version = ! $partnerAtObservation || ! $partnerProfile instanceof ReferralPartnerProfile
                 ? null
                 : ReferralRewardProgramVersion::query()
                     ->where('organization_id', $organizationId)
@@ -155,6 +159,20 @@ final class QualifyReferralReward
             $rewardCategory = $partnerAtObservation
                 ? ReferralRewardCategory::PartnerCash
                 : ReferralRewardCategory::ServiceCredit;
+            $rewardSnapshot = null;
+
+            if ($rewardCategory === ReferralRewardCategory::ServiceCredit) {
+                $currencyConfiguration = OrganizationCurrencyConfiguration::query()
+                    ->where('organization_id', $organizationId)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $rewardSnapshot = $this->configuration->convert(
+                    $organization,
+                    $reward,
+                    $currencyConfiguration->base_currency,
+                );
+                $reward = Money::ofMinor($rewardSnapshot->targetAmountMinor, $rewardSnapshot->targetCurrency);
+            }
             $idempotencyKey = 'referral.reward.earned:'.$organizationId.':'.$evidence->getKey().':'.$version->getKey();
             $entry = new ReferralRewardLedgerEntry;
             $entry->forceFill([
@@ -181,10 +199,15 @@ final class QualifyReferralReward
                     'amount_minor' => $reward->minorUnits(),
                     'currency' => $reward->currency()->value,
                     'reward_category' => $rewardCategory->value,
+                    'source_amount_minor' => $rewardSnapshot?->sourceAmountMinor,
+                    'source_currency' => $rewardSnapshot?->sourceCurrency->value,
                 ], JSON_THROW_ON_ERROR)),
                 'occurred_at' => $evidence->observed_at,
             ]);
             $entry->save();
+            if ($rewardSnapshot !== null) {
+                $this->conversionSnapshots->handle($entry, $rewardSnapshot, 'service_credit_earning');
+            }
             $this->scenarioEvents->referralRewardEarned(
                 $entry,
                 CarbonImmutable::parse((string) $entry->occurred_at)->utc(),
@@ -203,6 +226,8 @@ final class QualifyReferralReward
                     'program_version_id' => $version->getKey(),
                     'amount_minor' => $reward->minorUnits(),
                     'currency' => $reward->currency()->value,
+                    'source_amount_minor' => $rewardSnapshot?->sourceAmountMinor,
+                    'source_currency' => $rewardSnapshot?->sourceCurrency->value,
                 ],
             );
 

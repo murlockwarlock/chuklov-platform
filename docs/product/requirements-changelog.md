@@ -1,5 +1,11 @@
 # Requirements Changelog
 
+## 2026-09-26 — Organization Base Currency for ordinary referral ServiceCredit
+
+- Confirmed that ordinary Client ServiceCredit has one authoritative accounting currency: the organization's configured Base Currency. No client-specific accounting currency or parallel wallet is introduced.
+- ServiceCredit earning normalizes fixed and percentage rewards through the existing organization FX configuration and stores immutable conversion evidence. Portal and CRM redemption accept the obligation settlement currency, calculate the base-currency debit through the configured rate and rounding mode, and retain the applied snapshot.
+- Restoring a referral-credit payment returns the historical base-currency debit. PartnerCash, Partner payout currencies, and the existing Finance reconciliation authority remain unchanged; missing FX fails closed.
+
 ## 2026-09-26 — superseding owner decision for ordinary referrals and Partner assignment
 
 - Superseded the earlier self-enrollment behavior: only authorized CRM staff may assign or reactivate a Partner. Portal, Telegram, and Mini App clients no longer receive a Partner activation CTA or endpoint.

@@ -16,6 +16,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\ConsumeFinanceSettlementEvent;
+use App\Modules\Referrals\Application\EnsureReferralRewardConversionSnapshots;
 use App\Modules\Referrals\Application\EstablishManualReferralRelationship;
 use App\Modules\Referrals\Application\GetClientReferralOverview;
 use App\Modules\Referrals\Application\GetReferralRewardProgram;
@@ -110,6 +111,56 @@ final class ReferralRewardsPostgresTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]));
+    }
+
+    public function test_postgresql_legacy_non_base_service_credit_is_normalized_with_immutable_evidence(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, $referrer, $referred] = $this->fixture();
+        [$obligation, $financeEntry] = $this->financeFixture($organization, $referred, 'legacy-service-credit', 10000, 'EUR');
+        $legacyId = DB::table('referral_reward_ledger_entries')->insertGetId([
+            'organization_id' => $organization->getKey(),
+            'beneficiary_client_id' => $referrer->getKey(),
+            'referred_client_id' => null,
+            'referral_relationship_id' => null,
+            'referral_commercial_evidence_id' => null,
+            'financial_obligation_id' => $obligation->getKey(),
+            'financial_ledger_entry_id' => $financeEntry->getKey(),
+            'reward_program_version_id' => null,
+            'entry_type' => 'redeemed',
+            'reward_category' => 'service_credit',
+            'amount_minor' => 1000,
+            'currency' => 'EUR',
+            'reason_type' => 'credit_redemption',
+            'reason' => null,
+            'comment' => null,
+            'created_by_user_id' => null,
+            'reverses_entry_id' => null,
+            'idempotency_key' => 'legacy-service-credit-entry',
+            'request_hash' => hash('sha256', 'legacy-service-credit-entry'),
+            'occurred_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        self::assertSame(1, app(EnsureReferralRewardConversionSnapshots::class)->handle());
+        $snapshot = DB::table('referral_reward_conversion_snapshots')
+            ->where('referral_reward_ledger_entry_id', $legacyId)
+            ->first();
+
+        self::assertNotNull($snapshot);
+        self::assertSame('EUR', $snapshot->source_currency);
+        self::assertSame('USD', $snapshot->target_currency);
+        self::assertSame(1000, (int) $snapshot->source_amount_minor);
+        self::assertSame(1000, (int) $snapshot->target_amount_minor);
+        self::assertSame('legacy_service_credit_normalization', $snapshot->purpose);
+        $this->assertQueryFails(static fn (): mixed => DB::table('referral_reward_conversion_snapshots')
+            ->where('id', $snapshot->id)
+            ->update(['target_amount_minor' => 900]));
+        $this->assertQueryFails(static fn (): mixed => DB::table('referral_reward_conversion_snapshots')
+            ->where('id', $snapshot->id)
+            ->delete());
+        self::assertSame(1000, (int) DB::table('referral_reward_ledger_entries')->where('id', $legacyId)->value('amount_minor'));
+        self::assertSame('EUR', DB::table('referral_reward_ledger_entries')->where('id', $legacyId)->value('currency'));
     }
 
     public function test_postgresql_program_versions_support_fixed_percentage_rounding_and_default_disabled_state(): void

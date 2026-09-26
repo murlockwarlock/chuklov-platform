@@ -31,6 +31,7 @@ final class RestoreReferralCredit
         private readonly FinancialReconciliationContract $contract,
         private readonly AppendFinancialLedgerEntry $ledger,
         private readonly ReconcileFinancialObligation $reconciliation,
+        private readonly ReferralRewardBalanceProjection $balances,
         private readonly RecordAuditEvent $audit,
     ) {}
 
@@ -133,6 +134,7 @@ final class RestoreReferralCredit
                 || $redeemed->getRawOriginal('currency') !== $data['currency']->value) {
                 throw $this->invalidEntry();
             }
+            $restoredMoney = $this->balances->accountingMoney($redeemed);
 
             if (FinancialLedgerEntry::query()
                 ->where('organization_id', $organization->getKey())
@@ -212,8 +214,8 @@ final class RestoreReferralCredit
                 'reward_program_version_id' => null,
                 'entry_type' => ReferralRewardLedgerEntryType::Restored->value,
                 'reward_category' => ReferralRewardCategory::ServiceCredit->value,
-                'amount_minor' => $data['amount_minor'],
-                'currency' => $data['currency']->value,
+                'amount_minor' => $restoredMoney->minorUnits(),
+                'currency' => $restoredMoney->currency()->value,
                 'reason_type' => 'credit_redemption_restore',
                 'reason' => $reason,
                 'comment' => null,
@@ -245,8 +247,8 @@ final class RestoreReferralCredit
                 metadata: [
                     'client_id' => $beneficiary->getKey(),
                     'obligation_id' => $obligation->getKey(),
-                    'amount_minor' => $data['amount_minor'],
-                    'currency' => $data['currency']->value,
+                    'amount_minor' => $restoredMoney->minorUnits(),
+                    'currency' => $restoredMoney->currency()->value,
                     'correction_of' => $original->getKey(),
                     'reason_present' => true,
                 ],

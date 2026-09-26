@@ -37,6 +37,10 @@ type Obligation = {
 type ReferralCredit = {
     availableMinor: number;
     currency: string;
+    baseAvailableMinor: number;
+    baseCurrency: string;
+    outstandingMinor: number;
+    conversionAvailable: boolean;
     applyUrl: string;
 };
 
@@ -361,7 +365,10 @@ onBeforeUnmount(() => {
         </dl>
 
         <section
-          v-if="obligation.referralCredit && obligation.referralCredit.availableMinor > 0 && obligation.outstandingMinor && obligation.outstandingMinor > 0"
+          v-if="obligation.referralCredit
+            && obligation.referralCredit.baseAvailableMinor > 0
+            && obligation.referralCredit.outstandingMinor > 0
+            && (!obligation.referralCredit.conversionAvailable || obligation.referralCredit.availableMinor > 0)"
           class="portal-stack portal-stack--tight min-w-0 max-w-full rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)] bg-[var(--portal-color-surface-muted)] p-4"
           :aria-label="t('finance.referralCreditTitle')"
         >
@@ -370,18 +377,31 @@ onBeforeUnmount(() => {
               {{ t('finance.referralCreditTitle') }}
             </h3>
             <span class="min-w-0 max-w-full break-words text-sm text-[var(--portal-color-ink-soft)]">
-              {{ t('finance.referralCreditAvailable') }}: {{ formatMoney(obligation.referralCredit.availableMinor, obligation.referralCredit.currency) }}
+              {{ t('finance.referralCreditAvailable') }}: {{ formatMoney(obligation.referralCredit.baseAvailableMinor, obligation.referralCredit.baseCurrency) }}
+              <template v-if="obligation.referralCredit.conversionAvailable && obligation.referralCredit.baseCurrency !== obligation.referralCredit.currency">
+                · {{ t('finance.referralCreditEquivalent') }}: {{ formatMoney(obligation.referralCredit.availableMinor, obligation.referralCredit.currency) }}
+              </template>
             </span>
           </div>
-          <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
+          <div
+            v-if="!obligation.referralCredit.conversionAvailable"
+            class="portal-notice min-w-0 max-w-full break-words"
+            role="status"
+          >
+            {{ t('finance.referralCreditUnavailable') }}
+          </div>
+          <div
+            v-else
+            class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end"
+          >
             <label class="portal-field min-w-0 flex-1">
-              <span class="portal-label">{{ t('finance.referralCreditAmount') }}</span>
+              <span class="portal-label">{{ t('finance.referralCreditAmount') }} ({{ obligation.referralCredit.currency }})</span>
               <input
                 v-model="referralCreditAmounts[obligation.referralCredit.applyUrl]"
                 type="text"
                 inputmode="decimal"
                 class="portal-input"
-                :placeholder="formatMoney(Math.min(obligation.referralCredit.availableMinor, obligation.outstandingMinor), obligation.referralCredit.currency)"
+                :placeholder="formatMoney(Math.min(obligation.referralCredit.availableMinor, obligation.referralCredit.outstandingMinor), obligation.referralCredit.currency)"
               >
             </label>
             <button

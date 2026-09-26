@@ -6,6 +6,7 @@ use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Filament\Resources\FinancialObligations\Pages\ListFinancialObligations;
 use App\Models\User;
 use App\Modules\Commerce\Domain\Models\Purchase;
+use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Application\RecordFinancialSettlementEvent;
 use App\Modules\Finance\Application\RecordManualPayment;
@@ -15,6 +16,7 @@ use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
 use App\Modules\Finance\Domain\Enums\PaymentMethod;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Integration\Domain\Enums\IntegrationEventType;
 use App\Modules\Integration\Domain\Models\IntegrationEvent;
@@ -243,6 +245,7 @@ final class ReferralCreditRedemptionTest extends TestCase
             ->assertFormFieldExists('available_summary')
             ->assertFormFieldExists('amount')
             ->assertFormFieldExists('currency_summary')
+            ->assertFormFieldHidden('equivalent_summary')
             ->assertTableActionDataSet([
                 'client_summary' => $client->full_name,
                 'remaining_summary' => '20.00 USD',
@@ -276,6 +279,38 @@ final class ReferralCreditRedemptionTest extends TestCase
         self::assertTrue(app(ReconcileFinancialObligation::class)
             ->handle($organization->getKey(), $obligation->getKey())
             ->isSettled());
+    }
+
+    public function test_crm_cross_currency_referral_credit_uses_base_balance_and_settlement_input(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->earnServiceCredit($organization, $admin, $client, 'crm-cross-currency', '100.00');
+        $this->configureMultiCurrency($organization, $admin, '85');
+        $obligation = $this->bookingObligation($organization, $client, 'crm-cross-currency-obligation', 850000, 'RUB');
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(ListFinancialObligations::class)
+            ->mountTableAction('applyReferralCredit', $obligation)
+            ->assertFormFieldExists('equivalent_summary')
+            ->assertTableActionDataSet([
+                'available_summary' => '100.00 USD',
+                'equivalent_summary' => '8500.00 RUB',
+                'currency_summary' => 'RUB',
+                'amount' => '8500.00',
+            ])
+            ->setTableActionData([
+                'amount' => '5000.00',
+                'idempotency_key' => 'crm-cross-currency-action',
+            ])
+            ->callMountedTableAction();
+
+        unset($component);
+        $entry = FinancialLedgerEntry::query()->where('entry_type', FinancialLedgerEntryType::ReferralCredit->value)->sole();
+
+        self::assertSame(5882, $entry->amount_minor);
+        self::assertSame('USD', $entry->currency->value);
+        self::assertSame(500000, $entry->settlement_amount_minor);
+        self::assertSame('RUB', $entry->settlement_currency->value);
     }
 
     public function test_crm_referral_credit_action_is_hidden_without_service_credit(): void
@@ -357,6 +392,16 @@ final class ReferralCreditRedemptionTest extends TestCase
         }
 
         $foreignOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+        $foreignAdmin = User::factory()->forOrganization($foreignOrganization)->create();
+        app(OrganizationContext::class)->set($foreignOrganization);
+        app(SaveCurrencyConfiguration::class)->handle($foreignAdmin, [
+            'base_currency' => 'USD',
+            'display_currency' => 'USD',
+            'allowed_currencies' => ['USD'],
+            'force_single_currency' => true,
+            'rounding_mode' => 'half_up',
+            'rates' => [],
+        ]);
         $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create();
         $foreignObligation = $this->bookingObligation($foreignOrganization, $foreignClient, 'crm-foreign-obligation', 1000);
         app(OrganizationContext::class)->set($organization);
@@ -429,6 +474,40 @@ final class ReferralCreditRedemptionTest extends TestCase
         ]);
     }
 
+    public function test_portal_cross_currency_referral_credit_shows_base_balance_and_settlement_equivalent(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->earnServiceCredit($organization, $admin, $client, 'portal-cross-currency', '100.00');
+        $this->configureMultiCurrency($organization, $admin, '85');
+        $obligation = $this->bookingObligation($organization, $client, 'portal-cross-currency-obligation', 850000, 'RUB');
+        $session = ['client_portal.client_id' => $client->getKey()];
+
+        $this->withSession($session)
+            ->get(route('portal.finance.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('obligations.0.referralCredit.availableMinor', 850000)
+                ->where('obligations.0.referralCredit.currency', 'RUB')
+                ->where('obligations.0.referralCredit.baseAvailableMinor', 10000)
+                ->where('obligations.0.referralCredit.baseCurrency', 'USD')
+                ->where('obligations.0.referralCredit.outstandingMinor', 850000)
+                ->where('obligations.0.referralCredit.conversionAvailable', true));
+
+        $this->withSession($session)
+            ->post(route('portal.finance.referral-credit.apply', $obligation->getKey()), [
+                'amount' => '5000.00',
+                'currency' => 'RUB',
+                'idempotency_key' => 'portal-cross-currency-request',
+            ])
+            ->assertRedirect(route('portal.finance.index'))
+            ->assertSessionHasNoErrors();
+
+        self::assertSame(5882, FinancialLedgerEntry::query()
+            ->where('entry_type', FinancialLedgerEntryType::ReferralCredit->value)
+            ->sole()
+            ->amount_minor);
+    }
+
     public function test_purchase_obligation_uses_the_same_referral_credit_flow(): void
     {
         [$organization, $admin, $client] = $this->fixture();
@@ -479,6 +558,120 @@ final class ReferralCreditRedemptionTest extends TestCase
 
         $this->expectException(HttpException::class);
         app(ApplyReferralCreditToObligation::class)->handle($foreignClient, $obligation->getKey(), '1.00', 'USD', 'credit-foreign-client');
+    }
+
+    public function test_cross_currency_redemption_debits_base_credit_and_records_target_settlement(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->earnServiceCredit($organization, $admin, $client, 'cross-currency-credit', '100.00');
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'USD',
+            'display_currency' => 'USD',
+            'allowed_currencies' => ['USD', 'RUB'],
+            'force_single_currency' => false,
+            'rounding_mode' => 'half_up',
+            'rates' => [
+                ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => '85'],
+                ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.01'],
+            ],
+        ]);
+        $obligation = $this->bookingObligation($organization, $client, 'cross-currency-obligation', 850000, 'RUB');
+
+        $entry = app(ApplyReferralCreditToObligation::class)->handle(
+            client: $client,
+            obligationId: $obligation->getKey(),
+            amount: '5000.00',
+            currency: 'RUB',
+            idempotencyKey: 'cross-currency-redemption',
+        );
+
+        self::assertSame(5882, $entry->amount_minor);
+        self::assertSame('USD', $entry->currency->value);
+        self::assertSame(500000, $entry->settlement_amount_minor);
+        self::assertSame('RUB', $entry->settlement_currency->value);
+        self::assertSame(4118, app(ReferralRewardBalanceProjection::class)
+            ->forCurrency($client, CurrencyCode::USD, ReferralRewardCategory::ServiceCredit)
+            ->available()
+            ->minorUnits());
+        self::assertSame('USD', $entry->conversion_snapshot['settlement']['source_currency']);
+        self::assertSame('RUB', $entry->conversion_snapshot['settlement']['target_currency']);
+        self::assertSame('5882', $entry->conversion_snapshot['settlement']['source_amount_minor']);
+        self::assertSame('500000', $entry->conversion_snapshot['settlement']['target_amount_minor']);
+        self::assertSame(350000, app(ReconcileFinancialObligation::class)
+            ->handle($organization->getKey(), $obligation->getKey())
+            ->outstanding
+            ->minorUnits());
+    }
+
+    public function test_cross_currency_restore_returns_historical_base_debit_after_rate_change(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->earnServiceCredit($organization, $admin, $client, 'cross-currency-restore', '100.00');
+        $this->configureMultiCurrency($organization, $admin, '85');
+        $obligation = $this->bookingObligation($organization, $client, 'cross-currency-restore-obligation', 850000, 'RUB');
+        $original = app(ApplyReferralCreditToObligation::class)->handle(
+            client: $client,
+            obligationId: $obligation->getKey(),
+            amount: '5000.00',
+            currency: 'RUB',
+            idempotencyKey: 'cross-currency-restore-apply',
+        );
+
+        $this->configureMultiCurrency($organization, $admin, '100');
+        $correction = app(RestoreReferralCredit::class)->handle(
+            actor: $admin,
+            entry: $original,
+            reason: 'Исторический возврат бонусов.',
+            idempotencyKey: 'cross-currency-restore-request',
+        );
+
+        self::assertSame(5882, ReferralRewardLedgerEntry::query()
+            ->where('entry_type', ReferralRewardLedgerEntryType::Restored->value)
+            ->sole()
+            ->amount_minor);
+        self::assertSame('USD', ReferralRewardLedgerEntry::query()
+            ->where('entry_type', ReferralRewardLedgerEntryType::Restored->value)
+            ->sole()
+            ->currency->value);
+        self::assertSame($admin->getKey(), $correction->actor_user_id);
+        self::assertSame(10000, app(ReferralRewardBalanceProjection::class)
+            ->forCurrency($client, CurrencyCode::USD, ReferralRewardCategory::ServiceCredit)
+            ->available()
+            ->minorUnits());
+    }
+
+    public function test_cross_currency_redemption_fails_closed_when_the_configured_rate_is_missing(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->earnServiceCredit($organization, $admin, $client, 'missing-rate', '100.00');
+        $this->configureMultiCurrency($organization, $admin, '85');
+        DB::table('organization_exchange_rates')
+            ->where('organization_id', $organization->getKey())
+            ->where('source_currency', 'USD')
+            ->where('target_currency', 'RUB')
+            ->delete();
+        $obligation = $this->bookingObligation($organization, $client, 'missing-rate-obligation', 850000, 'RUB');
+
+        try {
+            app(ApplyReferralCreditToObligation::class)->handle(
+                client: $client,
+                obligationId: $obligation->getKey(),
+                amount: '5000.00',
+                currency: 'RUB',
+                idempotencyKey: 'missing-rate-redemption',
+            );
+            self::fail('A missing configured FX rate must reject redemption.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('currency', $exception->errors());
+        }
+
+        self::assertSame(0, FinancialLedgerEntry::query()
+            ->where('entry_type', FinancialLedgerEntryType::ReferralCredit->value)
+            ->count());
+        self::assertSame(10000, app(ReferralRewardBalanceProjection::class)
+            ->serviceCredit($client)
+            ->available()
+            ->minorUnits());
     }
 
     public function test_same_idempotency_key_rejects_a_different_redemption_request(): void
@@ -647,6 +840,21 @@ final class ReferralCreditRedemptionTest extends TestCase
         return [$organization, $admin, $client];
     }
 
+    private function configureMultiCurrency(Organization $organization, User $admin, string $usdToRub): void
+    {
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'USD',
+            'display_currency' => 'USD',
+            'allowed_currencies' => ['USD', 'RUB'],
+            'force_single_currency' => false,
+            'rounding_mode' => 'half_up',
+            'rates' => [
+                ['source_currency' => 'USD', 'target_currency' => 'RUB', 'rate' => $usdToRub],
+                ['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.01'],
+            ],
+        ]);
+    }
+
     private function resolveFilamentContext(User $user, Organization $organization): void
     {
         $this->actingAs($user);
@@ -711,11 +919,11 @@ final class ReferralCreditRedemptionTest extends TestCase
             ->firstOrFail();
     }
 
-    private function bookingObligation(Organization $organization, Client $client, string $suffix, int $amountMinor): FinancialObligation
+    private function bookingObligation(Organization $organization, Client $client, string $suffix, int $amountMinor, string $currency = 'USD'): FinancialObligation
     {
         $service = Service::factory()->forOrganization($organization)->create([
             'price_minor' => $amountMinor,
-            'price_currency' => 'USD',
+            'price_currency' => $currency,
         ]);
         $specialist = Specialist::factory()->forOrganization($organization)->create();
         $booking = Booking::factory()
@@ -733,6 +941,7 @@ final class ReferralCreditRedemptionTest extends TestCase
             purchaseId: null,
             suffix: $suffix,
             amountMinor: $amountMinor,
+            currency: $currency,
         );
     }
 
@@ -769,19 +978,26 @@ final class ReferralCreditRedemptionTest extends TestCase
         ?int $purchaseId,
         string $suffix,
         int $amountMinor,
+        string $currency = 'USD',
     ): FinancialObligation {
+        $baseSnapshot = app(CurrencyConfigurationService::class)->convert(
+            $organization,
+            Money::ofMinor($amountMinor, $currency),
+            'USD',
+        );
+        $displaySnapshot = $baseSnapshot;
         $snapshot = [
             'source_amount_minor' => (string) $amountMinor,
-            'source_currency' => 'USD',
-            'target_amount_minor' => (string) $amountMinor,
+            'source_currency' => $currency,
+            'target_amount_minor' => $baseSnapshot->targetAmountMinor,
             'target_currency' => 'USD',
-            'rate' => '1',
-            'rate_id' => null,
-            'rate_version' => null,
-            'effective_at' => null,
-            'rounding_mode' => 'half_up',
-            'source_scale' => 2,
-            'target_scale' => 2,
+            'rate' => $baseSnapshot->rate,
+            'rate_id' => $baseSnapshot->rateId,
+            'rate_version' => $baseSnapshot->rateVersion,
+            'effective_at' => $baseSnapshot->effectiveAt?->toIso8601String(),
+            'rounding_mode' => $baseSnapshot->roundingMode->value,
+            'source_scale' => $baseSnapshot->sourceScale,
+            'target_scale' => $baseSnapshot->targetScale,
         ];
         $obligation = new FinancialObligation;
         $obligation->forceFill([
@@ -791,15 +1007,15 @@ final class ReferralCreditRedemptionTest extends TestCase
             'service_id' => $serviceId,
             'purchase_id' => $purchaseId,
             'amount_minor' => $amountMinor,
-            'currency' => 'USD',
-            'base_amount_minor' => $amountMinor,
+            'currency' => $currency,
+            'base_amount_minor' => (int) $baseSnapshot->targetAmountMinor,
             'base_currency' => 'USD',
-            'display_amount_minor' => $amountMinor,
+            'display_amount_minor' => (int) $displaySnapshot->targetAmountMinor,
             'display_currency' => 'USD',
             'payment_amount_minor' => $amountMinor,
-            'payment_currency' => 'USD',
+            'payment_currency' => $currency,
             'settlement_amount_minor' => $amountMinor,
-            'settlement_currency' => 'USD',
+            'settlement_currency' => $currency,
             'price_snapshot' => ['amount_minor' => $amountMinor],
             'conversion_snapshots' => ['base' => $snapshot, 'display' => $snapshot],
             'creation_key' => 'referral-credit-'.$suffix.'-'.$client->getKey(),

@@ -21,7 +21,6 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
-use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
@@ -147,19 +146,34 @@ final class FinancePresentation
     public function referralCreditAvailable(FinancialObligation $record): ?Money
     {
         try {
+            $available = $this->referralCreditBaseAvailable($record);
+            if ($available === null || $available->isNegative()) {
+                return null;
+            }
+
             $currency = $this->contract->currency($record->getRawOriginal('settlement_currency'));
+
+            return Money::ofMinor(
+                $this->configuration->convert($record->organization_id, $available, $currency)->targetAmountMinor,
+                $currency,
+            );
+        } catch (InvalidArgumentException|UnexpectedValueException|ModelNotFoundException) {
+            return null;
+        }
+    }
+
+    public function referralCreditBaseAvailable(FinancialObligation $record): ?Money
+    {
+        try {
+            $baseCurrency = $this->configuration->configuration($this->context->id())->base_currency;
             $attributes = $record->getAttributes();
             $minor = array_key_exists('crm_referral_service_credit_available_minor', $attributes)
                 ? ($attributes['crm_referral_service_credit_available_minor'] ?? '0')
                 : $this->referralBalances
-                    ->forCurrency(
-                        (int) $record->getRawOriginal('client_id'),
-                        $currency,
-                        ReferralRewardCategory::ServiceCredit,
-                    )
+                    ->serviceCredit((int) $record->getRawOriginal('client_id'))
                     ->available()
                     ->minorUnitsString();
-            $available = Money::ofMinor((string) $minor, $currency);
+            $available = Money::ofMinor((string) $minor, $baseCurrency);
 
             return $available->isNegative() ? null : $available;
         } catch (InvalidArgumentException|UnexpectedValueException) {
