@@ -30,7 +30,6 @@ final class ReferralRewardBalanceProjection
     {
         $ledgerTable = (new ReferralRewardLedgerEntry)->getTable();
         $snapshotTable = (new ReferralRewardConversionSnapshot)->getTable();
-        $baseCurrency = $this->baseCurrency()->value;
 
         return DB::table($ledgerTable)
             ->leftJoin($snapshotTable, function (JoinClause $join) use ($ledgerTable, $snapshotTable): void {
@@ -41,7 +40,7 @@ final class ReferralRewardBalanceProjection
             ->whereColumn($ledgerTable.'.organization_id', $obligationTable.'.organization_id')
             ->whereColumn($ledgerTable.'.beneficiary_client_id', $obligationTable.'.client_id')
             ->where($ledgerTable.'.reward_category', ReferralRewardCategory::ServiceCredit->value)
-            ->whereRaw($this->normalizedCurrencyFilterSql(), [$baseCurrency]);
+            ->whereRaw($this->normalizedCurrencyFilterSql());
     }
 
     /** @return list<ReferralRewardBalance> */
@@ -268,7 +267,12 @@ final class ReferralRewardBalanceProjection
     /** @return literal-string */
     private function normalizedCurrencyFilterSql(): string
     {
-        return 'COALESCE(referral_reward_conversion_snapshots.target_currency, referral_reward_ledger_entries.currency) = ?';
+        return 'COALESCE(referral_reward_conversion_snapshots.target_currency, referral_reward_ledger_entries.currency) = (
+            SELECT base_currency
+            FROM organization_currency_configurations
+            WHERE organization_currency_configurations.organization_id = referral_reward_ledger_entries.organization_id
+            LIMIT 1
+        )';
     }
 
     /** @return literal-string */
