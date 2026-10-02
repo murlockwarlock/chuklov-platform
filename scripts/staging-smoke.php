@@ -577,6 +577,8 @@ function runtimeCheck(): void
 
 function companionRemediationEvidenceCheck(): void
 {
+    bootstrapApplication(false);
+
     $organizationId = config('tenancy.default_organization_id');
     if (! is_int($organizationId) && ! (is_string($organizationId) && ctype_digit($organizationId))) {
         fail('COMPANION PAUSE EVIDENCE', 'server organization is not configured');
