@@ -36,6 +36,12 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
+use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
+use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
@@ -120,6 +126,36 @@ final class ClientCompanionPostgresTest extends TestCase
             ->where('conversation_id', $turn->conversation_id)
             ->where('status', CompanionEscalationStatus::Open)
             ->count());
+    }
+
+    public function test_postgres_allows_companion_attention_scenario_rules_and_actions(): void
+    {
+        $this->requirePostgres('Scenario event CHECK constraints require PostgreSQL.');
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $template = NotificationTemplate::factory()->forOrganization($organization)->create();
+        $templateVersion = NotificationTemplateVersion::factory()->forTemplate($template)->create();
+        $eventType = ScenarioEventType::CompanionSpecialistAttention->value;
+        $rule = ScenarioRule::factory()
+            ->forOrganization($organization)
+            ->usingTemplate($templateVersion)
+            ->create(['trigger_event' => $eventType]);
+        $event = ScenarioEvent::factory()->forOrganization($organization)->create([
+            'event_name' => $eventType,
+            'aggregate_type' => 'companion',
+            'aggregate_id' => 'pg-scenario-rule',
+            'payload' => [],
+        ]);
+        $action = ScenarioAction::factory()
+            ->forEvent($event)
+            ->forRule($rule)
+            ->forTemplate($templateVersion)
+            ->forClient($client)
+            ->create(['trigger_event' => $eventType]);
+
+        self::assertSame($eventType, $rule->fresh()->trigger_event->value);
+        self::assertSame($eventType, $action->fresh()->trigger_event->value);
     }
 
     public function test_postgres_retry_racing_takeover_never_leaves_an_active_ai_execution(): void
