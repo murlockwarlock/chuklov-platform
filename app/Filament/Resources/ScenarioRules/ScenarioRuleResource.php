@@ -200,6 +200,7 @@ final class ScenarioRuleResource extends LocalizedResource
             ScenarioEventType::SurveyCompleted->value => __('После завершения теста'),
             ScenarioEventType::TestStagnationDetected->value => __('При отсутствии снижения показателей'),
             ScenarioEventType::CompanionRequestedSpecialist->value => __('Когда клиент просит специалиста'),
+            ScenarioEventType::CompanionSpecialistAttention->value => __('Когда сообщение требует внимания специалиста'),
             ScenarioEventType::CompanionFallbackFailed->value => __('Когда AI не смог ответить'),
             ScenarioEventType::BroadcastDeliveryFailed->value => __('При сбое операционной рассылки'),
             ScenarioEventType::ClientFeedbackSubmitted->value => __('После обратной связи клиента'),

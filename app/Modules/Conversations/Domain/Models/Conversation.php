@@ -22,8 +22,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $context_epoch
  * @property CarbonInterface|null $started_at
  * @property CarbonInterface|null $last_message_at
+ * @property CarbonInterface|null $last_human_takeover_at
  */
-#[Fillable(['channel', 'external_key', 'conversation_type', 'automation_state', 'context_epoch', 'started_at', 'last_message_at'])]
+#[Fillable(['channel', 'external_key', 'conversation_type', 'automation_state', 'context_epoch', 'started_at', 'last_message_at', 'last_human_takeover_at'])]
 class Conversation extends Model
 {
     /** @use HasFactory<ConversationFactory> */
@@ -81,6 +82,7 @@ class Conversation extends Model
             'context_epoch' => 'integer',
             'started_at' => 'datetime',
             'last_message_at' => 'datetime',
+            'last_human_takeover_at' => 'datetime',
         ];
     }
 }

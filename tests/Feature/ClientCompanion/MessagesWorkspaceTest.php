@@ -18,6 +18,7 @@ use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
+use App\Modules\ClientCompanion\Application\Actions\TakeOverCompanionConversation;
 use App\Modules\ClientCompanion\Application\Services\ReadCompanionWorkspace;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
@@ -102,6 +103,7 @@ final class MessagesWorkspaceTest extends TestCase
             contextEpoch: $conversation->context_epoch,
             metadata: ['message_type' => 'ai_reply', 'locale' => 'ru', 'transport' => 'portal'],
         );
+        app(TakeOverCompanionConversation::class)->handle($this->admin, $this->client);
         app(ReplyToCompanion::class)->handle($this->admin, $this->client, 'Ответ специалиста');
 
         $emptyClient = Client::factory()->forOrganization($this->organization)->create([
@@ -356,6 +358,7 @@ final class MessagesWorkspaceTest extends TestCase
         Livewire::actingAs($this->admin)
             ->test(Messages::class)
             ->call('selectClient', $this->client->getKey())
+            ->call('takeOver')
             ->set('data.body', 'Сообщение из CRM')
             ->call('sendMessage')
             ->assertNotified('Сообщение принято к отправке в Telegram');
@@ -364,7 +367,7 @@ final class MessagesWorkspaceTest extends TestCase
 
         $conversation = Conversation::query()->where('client_id', $this->client->getKey())->sole();
         self::assertSame($conversation->getKey(), $inbound->conversation_id);
-        self::assertSame(2, ConversationMessage::query()->where('conversation_id', $conversation->getKey())->count());
+        self::assertSame(3, ConversationMessage::query()->where('conversation_id', $conversation->getKey())->count());
         $message = ConversationMessage::query()
             ->where('conversation_id', $conversation->getKey())
             ->where('author_type', ConversationAuthorType::Staff)
@@ -383,13 +386,15 @@ final class MessagesWorkspaceTest extends TestCase
         Livewire::actingAs($this->admin)
             ->test(Messages::class)
             ->call('selectClient', $this->client->getKey())
+            ->call('takeOver')
             ->set('data.body', 'Сообщение без Telegram')
             ->call('sendMessage')
             ->assertNotified('Сообщение сохранено в истории')
             ->assertSee('Telegram не подключён');
 
         self::assertSame(0, CompanionDelivery::query()->count());
-        self::assertSame('portal', ConversationMessage::query()->sole()->channel);
+        self::assertSame('portal', ConversationMessage::query()->where('author_type', ConversationAuthorType::Staff)->sole()->channel);
+        self::assertSame(1, ConversationMessage::query()->where('metadata->message_type', 'human_takeover')->count());
     }
 
     public function test_booking_client_name_links_to_the_scoped_client_resource(): void
@@ -431,12 +436,14 @@ final class MessagesWorkspaceTest extends TestCase
         Livewire::actingAs($this->admin)
             ->test(Messages::class)
             ->call('selectClient', $this->client->getKey())
+            ->call('takeOver')
             ->set('data.body', 'Сообщение первому')
             ->call('selectClient', $otherClient->getKey())
+            ->call('takeOver')
             ->set('data.body', 'Сообщение второму')
             ->call('sendMessage');
 
-        self::assertSame(0, ConversationMessage::query()->where('client_id', $this->client->getKey())->count());
+        self::assertSame(1, ConversationMessage::query()->where('client_id', $this->client->getKey())->where('metadata->message_type', 'human_takeover')->count());
         self::assertSame(1, ConversationMessage::query()->where('client_id', $otherClient->getKey())->where('author_type', ConversationAuthorType::Staff)->count());
     }
 

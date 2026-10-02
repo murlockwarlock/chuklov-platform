@@ -6,12 +6,19 @@ use App\Filament\Resources\AiRuns\AiRunResource;
 use App\Models\User;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionFailureCode;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionSafeAction;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionFeedback;
 use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
+use App\Modules\ClientCompanion\Domain\Models\CompanionTurnAttempt;
 use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
+use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
@@ -29,6 +36,7 @@ final class ReadCompanionConversation
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly CompanionMessageBodyReader $bodyReader,
+        private readonly LegacyCompanionHandoffEligibility $legacyHandoffEligibility,
     ) {}
 
     /** @return array<string, mixed> */
@@ -70,6 +78,8 @@ final class ReadCompanionConversation
                 'pending' => false,
                 'canReinspectRecentImages' => false,
                 'openEscalation' => null,
+                'canRemediateLegacyHandoff' => false,
+                'humanTakeoverConfirmed' => false,
             ];
             if ($staff) {
                 $empty['conversation'] = null;
@@ -129,17 +139,32 @@ final class ReadCompanionConversation
         $turns = CompanionTurn::query()
             ->where('organization_id', $organizationId)
             ->where('conversation_id', $conversation->getKey())
+            ->with('attempts')
             ->where(function (Builder $builder) use ($messageIds): void {
-                $builder->whereIn('inbound_message_id', $messageIds)->orWhereIn('outbound_message_id', $messageIds);
+                $builder->whereIn('inbound_message_id', $messageIds)
+                    ->orWhereIn('outbound_message_id', $messageIds)
+                    ->orWhereHas('attempts', fn (Builder $attempts): Builder => $attempts->whereIn('output_message_id', $messageIds));
             })
             ->get();
         $turnByMessage = [];
+        $attemptByMessage = [];
         foreach ($turns as $turn) {
             $turnByMessage[(int) $turn->inbound_message_id] = $turn;
             if ($turn->outbound_message_id !== null) {
                 $turnByMessage[(int) $turn->outbound_message_id] = $turn;
             }
+            foreach ($turn->attempts as $attempt) {
+                if ($attempt->output_message_id !== null) {
+                    $turnByMessage[(int) $attempt->output_message_id] = $turn;
+                    $attemptByMessage[(int) $attempt->output_message_id] = $attempt;
+                }
+            }
         }
+        $latestSequence = (int) CompanionTurn::query()
+            ->where('organization_id', $organizationId)
+            ->where('conversation_id', $conversation->getKey())
+            ->where('context_epoch', $conversation->context_epoch)
+            ->max('sequence');
 
         $feedback = CompanionFeedback::query()
             ->where('organization_id', $organizationId)
@@ -153,16 +178,28 @@ final class ReadCompanionConversation
                 ->where('organization_id', $organizationId)
                 ->whereIn('turn_id', $turns->modelKeys())
                 ->get()
-                ->keyBy('turn_id');
+                ->groupBy('turn_id');
         $traceAllowed = $staff && $actor instanceof User && $this->authorizer->allows(
             $actor,
             $this->context->organization(),
             OrganizationPermission::ViewAiTrace,
         );
+        $hasOpenHumanRequest = CompanionEscalation::query()
+            ->where('organization_id', $organizationId)
+            ->where('conversation_id', $conversation->getKey())
+            ->where('reason', CompanionEscalationReason::HumanRequested)
+            ->where('status', CompanionEscalationStatus::Open)
+            ->exists();
 
         $timeline = [];
         foreach ($messages as $message) {
             $turn = $turnByMessage[(int) $message->getKey()] ?? null;
+            $attempt = $attemptByMessage[(int) $message->getKey()] ?? null;
+            $traceRunId = $attempt instanceof CompanionTurnAttempt ? $attempt->ai_run_id : null;
+            if ($traceRunId === null && $turn instanceof CompanionTurn) {
+                $traceRunId = $turn->ai_run_id;
+            }
+            $safeActions = $this->safeActions($message, $turn, $attempt, $conversation, $latestSequence, $hasOpenHumanRequest);
             $feedbackForMessage = $feedback->get($message->getKey());
             $timeline[] = [
                 'type' => 'message',
@@ -177,32 +214,35 @@ final class ReadCompanionConversation
                 'transport' => $message->channel === 'telegram' ? 'telegram' : 'portal',
                 'transportLabel' => $message->channel === 'telegram' ? 'Telegram' : 'Портал',
                 'feedback' => $feedbackForMessage?->value?->value,
+                'safeActions' => $safeActions,
                 'attachments' => $this->attachmentsFor($attachmentsByMessage->get($message->getKey(), collect())),
                 'attachmentCount' => $attachmentsByMessage->get($message->getKey(), collect())->count(),
                 'deliveryNotice' => $this->deliveryNotice($deliveryByMessage->get($message->getKey(), collect())),
-                'traceUrl' => $traceAllowed && $message->author_type === ConversationAuthorType::Ai && $turn?->ai_run_id !== null
-                    ? AiRunResource::getUrl('view', ['record' => $turn->ai_run_id])
+                'traceUrl' => $traceAllowed && $message->author_type === ConversationAuthorType::Ai && $traceRunId !== null
+                    ? AiRunResource::getUrl('view', ['record' => $traceRunId])
                     : null,
             ];
 
             if ($turn !== null && $escalations->has($turn->getKey()) && $message->getKey() === $turn->inbound_message_id) {
-                $escalation = $escalations->get($turn->getKey());
-                $timeline[] = [
-                    'type' => 'handoff',
-                    'id' => 'handoff-'.$escalation->getKey(),
-                    'role' => 'system',
-                    'roleLabel' => 'Состояние общения',
-                    'authorName' => null,
-                    'content' => $escalation->reasonLabel(),
-                    'occurredAt' => $escalation->opened_at->toIso8601String(),
-                    'transport' => null,
-                    'transportLabel' => null,
-                    'feedback' => null,
-                    'attachments' => [],
-                    'attachmentCount' => 0,
-                    'deliveryNotice' => null,
-                    'traceUrl' => null,
-                ];
+                foreach ($escalations->get($turn->getKey()) as $escalation) {
+                    $timeline[] = [
+                        'type' => 'handoff',
+                        'id' => 'handoff-'.$escalation->getKey(),
+                        'role' => 'system',
+                        'roleLabel' => 'Состояние общения',
+                        'authorName' => null,
+                        'content' => $escalation->reasonLabel(),
+                        'occurredAt' => $escalation->opened_at->toIso8601String(),
+                        'transport' => null,
+                        'transportLabel' => null,
+                        'feedback' => null,
+                        'safeActions' => [],
+                        'attachments' => [],
+                        'attachmentCount' => 0,
+                        'deliveryNotice' => null,
+                        'traceUrl' => null,
+                    ];
+                }
             }
         }
 
@@ -216,18 +256,17 @@ final class ReadCompanionConversation
             ->where('status', 'open')
             ->latest('opened_at')
             ->first();
-        $latestMessage = ConversationMessage::query()
-            ->where('organization_id', $organizationId)
-            ->where('conversation_id', $conversation->getKey())
-            ->latest('occurred_at')
-            ->latest('id')
-            ->first(['author_type']);
-        $mode = $conversation->automation_state->value !== 'human_handoff'
-            ? 'ai_active'
-            : ($latestMessage?->author_type === ConversationAuthorType::Staff ? 'staff_active' : 'waiting_for_staff');
+        $canRemediateLegacyHandoff = $staff && $this->legacyHandoffEligibility->canRestore($conversation);
+        $mode = $conversation->automation_state === ConversationAutomationState::HumanHandoff
+            ? ($canRemediateLegacyHandoff
+                ? 'legacy_failure_handoff'
+                : ($conversation->last_human_takeover_at === null ? 'handoff_paused' : 'staff_active'))
+            : ($openEscalation === null ? 'ai_active' : 'specialist_notified');
         $modeLabel = match ($mode) {
-            'staff_active' => 'Специалист отвечает',
-            'waiting_for_staff' => 'Ожидает специалиста',
+            'staff_active' => 'Специалист подключён · AI на паузе',
+            'legacy_failure_handoff' => 'AI приостановлен после технического сбоя',
+            'handoff_paused' => 'AI на паузе · требуется проверить диалог',
+            'specialist_notified' => 'Специалист уведомлён · AI продолжает отвечать',
             default => 'AI отвечает',
         };
         $pending = CompanionTurn::query()
@@ -254,6 +293,8 @@ final class ReadCompanionConversation
             'mode' => $mode,
             'pending' => $pending,
             'canReinspectRecentImages' => $canReinspectRecentImages,
+            'canRemediateLegacyHandoff' => $canRemediateLegacyHandoff,
+            'humanTakeoverConfirmed' => $conversation->last_human_takeover_at !== null,
             'openEscalation' => $openEscalation === null ? null : [
                 'reason' => $openEscalation->reason->value,
                 'reasonLabel' => $openEscalation->reasonLabel(),
@@ -265,6 +306,41 @@ final class ReadCompanionConversation
         }
 
         return $result;
+    }
+
+    /** @return list<string> */
+    private function safeActions(
+        ConversationMessage $message,
+        ?CompanionTurn $turn,
+        ?CompanionTurnAttempt $attempt,
+        Conversation $conversation,
+        int $latestSequence,
+        bool $hasOpenHumanRequest,
+    ): array {
+        $metadata = $message->metadata ?? [];
+        $actions = array_values(array_unique(array_filter(explode(',', (string) ($metadata['safe_actions'] ?? '')))));
+        $failureAt = $attempt instanceof CompanionTurnAttempt ? $attempt->completed_at : null;
+        if ($failureAt === null && $turn instanceof CompanionTurn) {
+            $failureAt = $turn->failed_at;
+        }
+        $retryableAfterTakeover = $conversation->last_human_takeover_at === null
+            || ($failureAt !== null && $failureAt->greaterThan($conversation->last_human_takeover_at));
+        $retryableTurn = $turn instanceof CompanionTurn
+            && $turn->status === CompanionTurnStatus::Failed
+            && $turn->outbound_message_id === $message->getKey()
+            && $turn->sequence === $latestSequence
+            && $turn->context_epoch === $conversation->context_epoch
+            && $conversation->automation_state === ConversationAutomationState::AiActive
+            && $retryableAfterTakeover
+            && CompanionFailureCode::tryFrom((string) $turn->failure_code)?->isRetryable() === true;
+
+        return array_values(array_filter($actions, static function (string $action) use ($retryableTurn, $hasOpenHumanRequest): bool {
+            $safeAction = CompanionSafeAction::tryFrom($action);
+
+            return $safeAction !== null
+                && ($safeAction !== CompanionSafeAction::RetryFailedTurn || $retryableTurn)
+                && ($safeAction !== CompanionSafeAction::RequestHuman || ! $hasOpenHumanRequest);
+        }));
     }
 
     /**

@@ -13,6 +13,7 @@ use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
 use App\Modules\Conversations\Application\RecordCompanionMessage;
 use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
+use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationDirection;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
@@ -96,6 +97,10 @@ final class ReplyToCompanion
                     'telegram',
                     (string) $telegramIdentity->external_id,
                 );
+            }
+            if ($conversation->automation_state !== ConversationAutomationState::HumanHandoff
+                || $conversation->last_human_takeover_at === null) {
+                throw ValidationException::withMessages(['body' => 'Сначала подключитесь к диалогу.']);
             }
             $turn = CompanionTurn::query()
                 ->where('organization_id', $organization->getKey())

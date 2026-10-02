@@ -106,7 +106,9 @@ final class ScenarioActionResource extends LocalizedResource
                         if ($record->recipient_type === 'client') {
                             $client = $record->client;
 
-                            return __('Клиент: :name', ['name' => $client instanceof Client ? $client->full_name : __('недоступен')]);
+                            return __('Клиент: :name', ['name' => $client instanceof Client
+                                ? (string) $client->full_name
+                                : (string) __('недоступен')]);
                         }
 
                         $user = $record->recipientUser;
@@ -261,6 +263,7 @@ final class ScenarioActionResource extends LocalizedResource
             'onboarding.started' => __('После начала оформления'),
             'finance.obligation.created' => __('После появления задолженности'),
             'companion.requested_specialist' => __('Клиент запросил специалиста'),
+            'companion.specialist_attention' => __('Сообщение клиента требует внимания'),
             'companion.fallback_failed' => __('Когда AI не смог ответить'),
             'broadcast.delivery_failed' => __('При сбое операционной рассылки'),
             'feedback.submitted' => __('После обратной связи клиента'),

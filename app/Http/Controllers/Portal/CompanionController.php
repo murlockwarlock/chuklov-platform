@@ -6,11 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Portal\RecordPortalCompanionMessageRequest;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
 use App\Modules\ClientCompanion\Application\Actions\RecordCompanionFeedback;
+use App\Modules\ClientCompanion\Application\Actions\RequestCompanionHandoff;
 use App\Modules\ClientCompanion\Application\Actions\ResetCompanionContext;
+use App\Modules\ClientCompanion\Application\Actions\RetryCompanionTurn;
 use App\Modules\ClientCompanion\Application\Actions\UploadCompanionImages;
 use App\Modules\ClientCompanion\Application\Services\ReadCompanionConversation;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionImageReferenceMode;
+use App\Modules\ClientCompanion\Domain\Enums\RetryCompanionTurnResult;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\PortalClientMessages;
@@ -33,8 +36,14 @@ final class CompanionController extends Controller
             'urls' => [
                 'send' => route('portal.companion.send'),
                 'feedback' => route('portal.companion.feedback', ['messageId' => '__id__']),
+                'retry' => route('portal.companion.retry', ['messageId' => '__id__']),
+                'specialist' => route('portal.companion.specialist', ['messageId' => '__id__']),
                 'reset' => route('portal.companion.reset'),
                 'history' => route('portal.companion'),
+            ],
+            'notices' => [
+                'retry' => $request->session()->get('companion_retry_result'),
+                'specialistRequested' => $request->session()->get('companion_specialist_requested'),
             ],
         ]);
     }
@@ -97,6 +106,20 @@ final class CompanionController extends Controller
         $feedback->handle($context->client(), $messageId, $value, $request->input('reason'));
 
         return back();
+    }
+
+    public function retry(int $messageId, ClientPortalContext $context, RetryCompanionTurn $retry): RedirectResponse
+    {
+        $result = $retry->handle($context->client(), $messageId);
+
+        return back()->with('companion_retry_result', $result === RetryCompanionTurnResult::Unavailable ? 'unavailable' : 'accepted');
+    }
+
+    public function specialist(int $messageId, ClientPortalContext $context, RequestCompanionHandoff $requestSpecialist): RedirectResponse
+    {
+        $result = $requestSpecialist->handle($context->client(), $messageId);
+
+        return back()->with('companion_specialist_requested', $result->value);
     }
 
     public function reset(ClientPortalContext $context, ResetCompanionContext $reset): RedirectResponse

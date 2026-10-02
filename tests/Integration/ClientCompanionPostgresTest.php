@@ -2,6 +2,7 @@
 
 namespace Tests\Integration;
 
+use App\Models\User;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Application\Data\AiRunResult;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
@@ -11,12 +12,21 @@ use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
+use App\Modules\ClientCompanion\Application\Actions\RetryCompanionTurn;
+use App\Modules\ClientCompanion\Application\Actions\TakeOverCompanionConversation;
 use App\Modules\ClientCompanion\Application\Services\CompanionTurnProcessor;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnAttemptStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
+use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
+use App\Modules\ClientCompanion\Domain\Models\CompanionTurnAttempt;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurnMessage;
 use App\Modules\Conversations\Application\AdoptLegacyCompanionConversations;
+use App\Modules\Conversations\Application\RecordCompanionMessage;
 use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
+use App\Modules\Conversations\Domain\Enums\ConversationAutomationState as AutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationDirection;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
@@ -24,6 +34,7 @@ use App\Modules\Conversations\Domain\Models\ConversationBinding;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
@@ -71,6 +82,115 @@ final class ClientCompanionPostgresTest extends TestCase
         self::assertSame(1, CompanionTurnMessage::query()
             ->where('organization_id', $organization->id)
             ->where('turn_id', $results[0]['turn_id'])
+            ->count());
+    }
+
+    public function test_postgres_keeps_distinct_open_human_and_safety_escalations(): void
+    {
+        $this->requirePostgres('Distinct open Companion reasons require PostgreSQL partial indexes.');
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        Queue::fake();
+        app(OrganizationContext::class)->set($organization);
+        $turn = app(AcceptCompanionMessage::class)->handle(
+            client: $client,
+            channel: 'portal',
+            body: 'Проверка разных обращений',
+            idempotencyKey: 'pg-distinct-escalations-'.Str::uuid(),
+            originExternalId: 'portal:pg-distinct-escalations-'.Str::uuid(),
+            locale: 'ru',
+        );
+
+        foreach ([CompanionEscalationReason::UrgentSafetyConcern, CompanionEscalationReason::HumanRequested] as $reason) {
+            CompanionEscalation::query()->create([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $client->getKey(),
+                'conversation_id' => $turn->conversation_id,
+                'turn_id' => $turn->getKey(),
+                'reason' => $reason,
+                'status' => CompanionEscalationStatus::Open,
+                'safe_metadata' => ['source' => 'postgres-regression'],
+                'opened_at' => now(),
+            ]);
+        }
+
+        self::assertSame(2, CompanionEscalation::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('conversation_id', $turn->conversation_id)
+            ->where('status', CompanionEscalationStatus::Open)
+            ->count());
+    }
+
+    public function test_postgres_retry_racing_takeover_never_leaves_an_active_ai_execution(): void
+    {
+        $this->requirePostgres('Retry/takeover ordering requires PostgreSQL conversation locks.');
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $failureMessageId = $this->createRetryableFailure($organization, $client);
+
+        $results = Concurrency::driver('process')->run([
+            fn (): string => self::retryPostgresFailure($organization->id, $client->id, $failureMessageId),
+            fn (): bool => self::takeOverPostgresConversation($organization->id, $admin->id, $client->id),
+        ]);
+
+        $conversation = Conversation::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->where('conversation_type', ConversationType::ClientCompanion)
+            ->sole();
+        self::assertSame(AutomationState::HumanHandoff, $conversation->automation_state);
+        self::assertNotNull($conversation->last_human_takeover_at);
+        self::assertContains($results[0], ['queued', 'unavailable']);
+        self::assertSame(0, CompanionTurn::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('conversation_id', $conversation->getKey())
+            ->whereIn('status', [CompanionTurnStatus::Pending, CompanionTurnStatus::Processing])
+            ->count());
+        self::assertSame(0, CompanionTurnAttempt::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereIn('status', [CompanionTurnAttemptStatus::Pending, CompanionTurnAttemptStatus::Processing])
+            ->count());
+    }
+
+    public function test_postgres_duplicate_retry_and_parallel_takeovers_are_idempotent(): void
+    {
+        $this->requirePostgres('Retry/takeover idempotency requires PostgreSQL conversation locks.');
+
+        $organization = Organization::factory()->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $failureMessageId = $this->createRetryableFailure($organization, $client);
+
+        $retryResults = Concurrency::driver('process')->run([
+            fn (): string => self::retryPostgresFailure($organization->id, $client->id, $failureMessageId),
+            fn (): string => self::retryPostgresFailure($organization->id, $client->id, $failureMessageId),
+        ]);
+
+        self::assertEqualsCanonicalizing(['queued', 'already_requested'], $retryResults);
+        self::assertSame(2, CompanionTurnAttempt::query()->count());
+        self::assertSame(1, ConversationMessage::query()
+            ->where('client_id', $client->getKey())
+            ->where('author_type', ConversationAuthorType::Client)
+            ->count());
+
+        $takeoverResults = Concurrency::driver('process')->run([
+            fn (): bool => self::takeOverPostgresConversation($organization->id, $admin->id, $client->id),
+            fn (): bool => self::takeOverPostgresConversation($organization->id, $admin->id, $client->id),
+        ]);
+
+        self::assertSame([true, true], $takeoverResults);
+        self::assertSame(AutomationState::HumanHandoff, Conversation::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->where('conversation_type', ConversationType::ClientCompanion)
+            ->sole()
+            ->automation_state);
+        self::assertSame(1, DB::table('audit_events')
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'companion.handoff.taken_over')
             ->count());
     }
 
@@ -366,6 +486,74 @@ final class ClientCompanionPostgresTest extends TestCase
         if (DB::getDriverName() !== 'pgsql') {
             $this->markTestSkipped($message);
         }
+    }
+
+    private function createRetryableFailure(Organization $organization, Client $client): int
+    {
+        Queue::fake();
+        app(OrganizationContext::class)->set($organization);
+        $turn = app(AcceptCompanionMessage::class)->handle(
+            client: $client,
+            channel: 'portal',
+            body: 'Повторяемый запрос',
+            idempotencyKey: 'pg-retry-'.Str::uuid(),
+            originExternalId: 'portal:pg-retry-'.Str::uuid(),
+            locale: 'ru',
+        );
+        $conversation = Conversation::query()->findOrFail($turn->conversation_id);
+        $message = app(RecordCompanionMessage::class)->handle(
+            organizationId: (int) $organization->getKey(),
+            client: $client,
+            conversation: $conversation,
+            channel: 'portal',
+            direction: ConversationDirection::Outbound,
+            authorType: ConversationAuthorType::Ai,
+            body: 'Не получилось подготовить ответ.',
+            contextEpoch: $conversation->context_epoch,
+            metadata: ['message_type' => 'terminal_failure', 'locale' => 'ru', 'safe_actions' => 'retry_failed_turn,request_human'],
+        );
+        $turn->update([
+            'status' => CompanionTurnStatus::Failed,
+            'outbound_message_id' => $message->getKey(),
+            'failure_code' => 'provider_unavailable',
+            'failed_at' => now(),
+        ]);
+        CompanionTurnAttempt::query()->create([
+            'organization_id' => $organization->getKey(),
+            'turn_id' => $turn->getKey(),
+            'attempt_number' => 1,
+            'execution_key' => 'pg-failed-'.Str::uuid(),
+            'status' => CompanionTurnAttemptStatus::Failed,
+            'failure_code' => 'provider_unavailable',
+            'output_message_id' => $message->getKey(),
+            'completed_at' => now(),
+        ]);
+
+        return (int) $message->getKey();
+    }
+
+    private static function retryPostgresFailure(int $organizationId, int $clientId, int $messageId): string
+    {
+        Queue::fake();
+        $organization = Organization::query()->findOrFail($organizationId);
+        app(OrganizationContext::class)->set($organization);
+
+        return app(RetryCompanionTurn::class)
+            ->handle(Client::query()->findOrFail($clientId), $messageId)
+            ->value;
+    }
+
+    private static function takeOverPostgresConversation(int $organizationId, int $userId, int $clientId): bool
+    {
+        Queue::fake();
+        $organization = Organization::query()->findOrFail($organizationId);
+        app(OrganizationContext::class)->set($organization);
+        app(TakeOverCompanionConversation::class)->handle(
+            User::query()->findOrFail($userId),
+            Client::query()->findOrFail($clientId),
+        );
+
+        return true;
     }
 
     /** @return array{turn_id: int, message_id: int} */

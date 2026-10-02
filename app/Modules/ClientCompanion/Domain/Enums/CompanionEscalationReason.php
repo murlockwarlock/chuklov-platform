@@ -16,7 +16,7 @@ enum CompanionEscalationReason: string
             self::HumanRequested => 'Клиент попросил специалиста',
             self::OutOfScope => 'Вопрос требует специалиста',
             self::UrgentSafetyConcern => 'Требуется внимание специалиста',
-            self::RepeatedExecutionFailure => 'AI временно недоступен',
+            self::RepeatedExecutionFailure => 'Повторная техническая ошибка AI',
             self::Other => 'Другое обращение к специалисту',
         };
     }

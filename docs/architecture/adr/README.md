@@ -27,5 +27,6 @@ ADRs record architecture rationale only. Requirement changes and implementation 
 | 022 | Telegram managed-media upload | Accepted |
 | 023 | Telegram broadcast media albums and private previews | Accepted |
 | 024 | Referral reward ledger and manual partner payouts | Accepted |
+| 025 | Client Companion retry, escalation, and human takeover | Accepted |
 
 Use `000-template.md` for new significant decisions.

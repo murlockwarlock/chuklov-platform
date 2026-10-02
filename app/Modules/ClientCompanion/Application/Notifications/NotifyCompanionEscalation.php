@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -35,6 +36,13 @@ final class NotifyCompanionEscalation
         if ($escalation === null || $escalation->client === null) {
             return;
         }
+        if ($escalation->reason === CompanionEscalationReason::RepeatedExecutionFailure) {
+            return;
+        }
+
+        $eventType = $escalation->reason === CompanionEscalationReason::HumanRequested
+            ? ScenarioEventType::CompanionRequestedSpecialist
+            : ScenarioEventType::CompanionSpecialistAttention;
 
         $organization = Organization::query()->whereKey($organizationId)->first();
         if ($organization === null) {
@@ -43,9 +51,27 @@ final class NotifyCompanionEscalation
 
         $client = $escalation->client;
         $clientName = trim((string) $client->full_name) ?: 'Клиент #'.$client->getKey();
+        [$title, $body] = match ($escalation->reason) {
+            CompanionEscalationReason::HumanRequested => [
+                'Клиент '.$clientName.' попросил подключить специалиста',
+                'Открыто обращение в AI-компаньоне.',
+            ],
+            CompanionEscalationReason::UrgentSafetyConcern => [
+                'Сообщение клиента '.$clientName.' требует внимания',
+                'AI отметил сообщение как требующее внимания специалиста.',
+            ],
+            CompanionEscalationReason::OutOfScope => [
+                'Вопрос клиента '.$clientName.' требует внимания',
+                'Открыто обращение по вопросу клиента.',
+            ],
+            CompanionEscalationReason::Other => [
+                'Новое обращение клиента '.$clientName,
+                'Открыто обращение в AI-компаньоне.',
+            ],
+        };
         $notification = Notification::make()
-            ->title('Клиент '.$clientName.' запросил специалиста')
-            ->body('Открыто новое обращение в AI-компаньоне.')
+            ->title($title)
+            ->body($body)
             ->actions([
                 Action::make('openCompanion')
                     ->label('Открыть диалог')
@@ -64,7 +90,7 @@ final class NotifyCompanionEscalation
         $databaseNotification->data['organization_id'] = $organizationId;
         foreach ($memberships as $membership) {
             if (! $this->permissions->allows(
-                ScenarioEventType::CompanionRequestedSpecialist,
+                $eventType,
                 $organizationId,
                 $membership,
             ) || ! $membership->user instanceof User) {
@@ -101,7 +127,7 @@ final class NotifyCompanionEscalation
                 || $identity->verification_status !== ChannelIdentityStatus::Verified
                 || $membership === null
                 || ! $this->permissions->allows(
-                    ScenarioEventType::CompanionRequestedSpecialist,
+                    $eventType,
                     $organizationId,
                     $membership,
                 )
@@ -111,7 +137,7 @@ final class NotifyCompanionEscalation
 
             $result = $channel->send(new NotificationMessage(
                 recipientExternalId: (string) $identity->external_id,
-                body: 'Клиент '.$clientName.' запросил специалиста. Откройте диалог в CRM.',
+                body: $title.'. '.$body.' Откройте диалог в CRM.',
                 subject: null,
                 locale: 'ru',
                 idempotencyKey: 'companion-handoff:'.$organizationId.':'.$escalation->getKey(),

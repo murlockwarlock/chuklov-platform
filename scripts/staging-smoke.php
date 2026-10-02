@@ -2,6 +2,10 @@
 
 use App\Models\User;
 use App\Modules\B2B\Jobs\ProcessB2bProviderSyncEvent;
+use App\Modules\ClientCompanion\Application\Services\LegacyCompanionHandoffEligibility;
+use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
+use App\Modules\Conversations\Domain\Enums\ConversationType;
+use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Knowledge\Application\CreateKnowledgeSource;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
@@ -571,6 +575,35 @@ function runtimeCheck(): void
     ok('HORIZON', $b2bWorkers.' B2B worker'.($b2bWorkers === 1 ? '' : 's').' queue '.$b2bQueue);
 }
 
+function companionRemediationEvidenceCheck(): void
+{
+    $organizationId = config('tenancy.default_organization_id');
+    if (! is_int($organizationId) && ! (is_string($organizationId) && ctype_digit($organizationId))) {
+        fail('COMPANION PAUSE EVIDENCE', 'server organization is not configured');
+    }
+    $organizationId = (int) $organizationId;
+    $conversations = Conversation::query()
+        ->where('organization_id', $organizationId)
+        ->where('conversation_type', ConversationType::ClientCompanion)
+        ->where('automation_state', ConversationAutomationState::HumanHandoff)
+        ->select(['id', 'organization_id', 'client_id', 'conversation_type', 'automation_state', 'last_human_takeover_at']);
+    $pausedCount = (clone $conversations)->count();
+    $eligibleCount = 0;
+    $eligibility = app(LegacyCompanionHandoffEligibility::class);
+    $conversations->orderBy('id')->chunkById(100, function ($page) use (&$eligibleCount, $eligibility): void {
+        foreach ($page as $conversation) {
+            if ($eligibility->canRestore($conversation)) {
+                $eligibleCount++;
+            }
+        }
+    });
+
+    ok(
+        'COMPANION PAUSE EVIDENCE',
+        'paused='.$pausedCount.' safe_restore='.$eligibleCount.' review_required='.max(0, $pausedCount - $eligibleCount),
+    );
+}
+
 function deepCheck(int $userId, int $clientId): void
 {
     [, $kernel] = bootstrapApplication(true);
@@ -665,6 +698,8 @@ try {
         queueContractCheck();
     } elseif ($check === 'runtime') {
         runtimeCheck();
+    } elseif ($check === 'companion-remediation-evidence') {
+        companionRemediationEvidenceCheck();
     } elseif ($userId !== false && $clientId !== false && $check === 'deep') {
         deepCheck($userId, $clientId);
     } elseif ($userId !== false && $clientId !== false) {

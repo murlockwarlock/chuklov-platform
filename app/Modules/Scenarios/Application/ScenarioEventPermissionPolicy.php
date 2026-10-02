@@ -49,6 +49,7 @@ final class ScenarioEventPermissionPolicy
             ScenarioEventType::B2bLeadSubmitted,
             ScenarioEventType::B2bSalesCallReady => OrganizationPermission::ViewB2bLeads,
             ScenarioEventType::CompanionRequestedSpecialist,
+            ScenarioEventType::CompanionSpecialistAttention,
             ScenarioEventType::CompanionFallbackFailed => OrganizationPermission::ManageCompanionHandoff,
             ScenarioEventType::AiEvaluationFailed => OrganizationPermission::ViewAiRuns,
             ScenarioEventType::KnowledgeIngestionFailed => OrganizationPermission::ViewKnowledge,

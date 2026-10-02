@@ -70,12 +70,6 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->name('admin.knowledge.revision.download');
     Route::post('/admin/clients/{client}/companion/reply', [AdminCompanionController::class, 'reply'])
         ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.reply');
-    Route::post('/admin/clients/{client}/companion/resolve', [AdminCompanionController::class, 'resolve'])
-        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.resolve');
-    Route::post('/admin/clients/{client}/companion/resolve-and-resume', [AdminCompanionController::class, 'resolveAndResume'])
-        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.resolve-and-resume');
-    Route::post('/admin/clients/{client}/companion/resume', [AdminCompanionController::class, 'resume'])
-        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.resume');
     Route::post('/admin/clients/{client}/companion/reset', [AdminCompanionController::class, 'reset'])
         ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.reset');
     Route::get('/admin/b2b-sales-calls/{salesCallId}/host-launch', AdminB2bSalesCallHostLaunchController::class)
@@ -166,6 +160,14 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/companion/feedback/{messageId}', [CompanionController::class, 'feedback'])
                 ->whereNumber('messageId')
                 ->name('portal.companion.feedback');
+            Route::post('/portal/companion/retry/{messageId}', [CompanionController::class, 'retry'])
+                ->whereNumber('messageId')
+                ->middleware('throttle:portal-companion-send')
+                ->name('portal.companion.retry');
+            Route::post('/portal/companion/specialist/{messageId}', [CompanionController::class, 'specialist'])
+                ->whereNumber('messageId')
+                ->middleware('throttle:portal-companion-send')
+                ->name('portal.companion.specialist');
             Route::post('/portal/companion/reset', [CompanionController::class, 'reset'])
                 ->name('portal.companion.reset');
             Route::post('/portal/surveys/{definitionId}/start', [SurveyController::class, 'start'])->whereNumber('definitionId')->name('portal.surveys.start');

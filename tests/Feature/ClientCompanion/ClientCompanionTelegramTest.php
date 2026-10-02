@@ -2,12 +2,21 @@
 
 namespace Tests\Feature\ClientCompanion;
 
+use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionFailureCode;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnAttemptStatus;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
+use App\Modules\ClientCompanion\Domain\Models\CompanionTurnAttempt;
+use App\Modules\Conversations\Application\RecordCompanionMessage;
+use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
+use App\Modules\Conversations\Domain\Enums\ConversationDirection;
 use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -101,11 +110,69 @@ final class ClientCompanionTelegramTest extends TestCase
             'cc:feedback:helpful:1',
             'cc:feedback:not_helpful:1',
             'cc:human:1',
+            'cc:retry:1',
             'cc:reinspect:1',
         ] as $callbackData) {
             $bot->hearCallbackQueryData($callbackData)->reply();
             $bot->assertCalled('answerCallbackQuery');
         }
+    }
+
+    public function test_retry_callback_uses_verified_identity_and_replay_creates_one_new_attempt(): void
+    {
+        $this->verifyTelegram('810006');
+        app(OrganizationContext::class)->set($this->organization);
+        $turn = app(AcceptCompanionMessage::class)->handle(
+            client: $this->client,
+            channel: 'telegram',
+            body: 'Повторить исходное сообщение',
+            idempotencyKey: null,
+            originExternalId: 'retry-callback-message',
+            transportChatId: '910006',
+            locale: 'ru',
+        );
+        $conversation = Conversation::query()->findOrFail($turn->conversation_id);
+        $failure = app(RecordCompanionMessage::class)->handle(
+            organizationId: $this->organization->getKey(),
+            client: $this->client,
+            conversation: $conversation,
+            channel: 'telegram',
+            direction: ConversationDirection::Outbound,
+            authorType: ConversationAuthorType::Ai,
+            body: 'Не получилось подготовить ответ.',
+            contextEpoch: $turn->context_epoch,
+            metadata: ['message_type' => 'terminal_failure', 'locale' => 'ru', 'transport' => 'telegram', 'safe_actions' => 'retry_failed_turn,request_human'],
+        );
+        $turn->update([
+            'status' => CompanionTurnStatus::Failed,
+            'failure_code' => CompanionFailureCode::ProviderUnavailable,
+            'outbound_message_id' => $failure->getKey(),
+            'failed_at' => now(),
+        ]);
+        CompanionTurnAttempt::query()->create([
+            'organization_id' => $this->organization->getKey(),
+            'turn_id' => $turn->getKey(),
+            'attempt_number' => 1,
+            'execution_key' => 'retry-callback-attempt',
+            'status' => CompanionTurnAttemptStatus::Failed,
+            'failure_code' => CompanionFailureCode::ProviderUnavailable,
+            'output_message_id' => $failure->getKey(),
+            'completed_at' => now(),
+        ]);
+
+        $bot = $this->fakeBot(810006, ChatType::PRIVATE, 910006);
+        $callback = 'cc:retry:'.$failure->getKey();
+        $bot->hearCallbackQueryData($callback)->reply();
+        $bot->assertReply('answerCallbackQuery', ['text' => 'Повторяю запрос…'], 0);
+        $bot->hearCallbackQueryData($callback)->reply();
+        $bot->assertReply('answerCallbackQuery', ['text' => 'Запрос уже обрабатывается.'], 0);
+
+        self::assertSame(CompanionTurnStatus::Pending, $turn->fresh()->status);
+        self::assertSame(2, CompanionTurnAttempt::query()->where('turn_id', $turn->getKey())->count());
+        self::assertSame(1, ConversationMessage::query()
+            ->where('conversation_id', $turn->conversation_id)
+            ->where('author_type', ConversationAuthorType::Client)
+            ->count());
     }
 
     private function verifyTelegram(string $externalId): void

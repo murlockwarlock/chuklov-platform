@@ -1,5 +1,10 @@
 # Requirements Changelog
 
+## 2026-10-02 — Owner-confirmed Client Companion failure and takeover separation
+
+- Added `REQ-AI-009` to separate execution failures, specialist requests, staff takeover, and AI pause. Retryable technical failures use the same inbound input with a new durable execution attempt; explicit requests keep AI active until staff deliberately takes over; Telegram and Portal share the authoritative Application actions.
+- This normalizes the accepted remediation without rewriting historical source requirements.
+
 ## 2026-09-26 — Organization Base Currency for ordinary referral ServiceCredit
 
 - Confirmed that ordinary Client ServiceCredit has one authoritative accounting currency: the organization's configured Base Currency. No client-specific accounting currency or parallel wallet is introduced.

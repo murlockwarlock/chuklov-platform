@@ -174,6 +174,8 @@ class RecordAuditEvent
         'companion.feedback.recorded' => ['value'],
         'companion.export.created' => ['format', 'identified', 'metadata_only'],
         'companion.handoff.resolved' => ['reason'],
+        'companion.handoff.taken_over' => ['source'],
+        'companion.handoff.legacy_failure_remediated' => ['escalation_count', 'paused_turn_count'],
         'companion.ai.resumed' => ['source'],
     ];
 

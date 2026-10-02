@@ -92,13 +92,15 @@
                             </div>
                         </div>
                         <div class="flex shrink-0 items-center gap-1">
-                            @if ($canManage && ($historyState['state'] ?? null) === 'human_handoff')
-                                @if ($historyState['openEscalation'] ?? false)
-                                    <x-filament::button type="button" wire:click="resolveAndResume" size="sm" color="primary">{{ __('Вернуть AI') }}</x-filament::button>
-                                    <x-filament::button type="button" wire:click="resolve" size="sm" color="gray" outlined class="hidden sm:inline-flex">{{ __('Закрыть обращение') }}</x-filament::button>
-                                @else
-                                    <x-filament::button type="button" wire:click="resumeAi" size="sm" color="primary">{{ __('Вернуть AI') }}</x-filament::button>
-                                @endif
+                            @if ($canManage && ($historyState['state'] ?? null) === 'human_handoff' && ($historyState['canRemediateLegacyHandoff'] ?? false))
+                                <x-filament::button type="button" wire:click="restoreLegacyAi" size="sm" color="warning">{{ __('Восстановить AI после сбоя') }}</x-filament::button>
+                            @elseif ($canManage && ($historyState['state'] ?? null) === 'human_handoff' && ! ($historyState['humanTakeoverConfirmed'] ?? false))
+                                <x-filament::button type="button" wire:click="takeOver" size="sm" color="gray" outlined>{{ __('Подключиться к диалогу') }}</x-filament::button>
+                                <x-filament::button type="button" wire:click="resumeAi" size="sm" color="primary">{{ __('Вернуть AI-помощника') }}</x-filament::button>
+                            @elseif ($canManage && ($historyState['state'] ?? null) === 'human_handoff')
+                                <x-filament::button type="button" wire:click="resumeAi" size="sm" color="primary">{{ __('Вернуть AI-помощника') }}</x-filament::button>
+                            @elseif ($canManage && ($historyState['state'] ?? null) === 'ai_active')
+                                <x-filament::button type="button" wire:click="takeOver" size="sm" color="gray" outlined>{{ ($selectedDialog['hasConversation'] ?? false) ? __('Подключиться к диалогу') : __('Начать диалог как специалист') }}</x-filament::button>
                             @endif
                             <button type="button" wire:click="openClientInfo" class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 xl:hidden dark:hover:bg-white/10" aria-label="{{ __('Информация о клиенте') }}">
                                 <x-filament::icon icon="heroicon-o-information-circle" class="h-5 w-5" />
@@ -179,9 +181,19 @@
                         </div>
                     </section>
 
-                    @if ($canManage)
+                    @if ($canManage && ($historyState['state'] ?? null) === 'human_handoff' && ($historyState['humanTakeoverConfirmed'] ?? false))
                         <div class="shrink-0 border-t border-gray-200 bg-white px-3 py-2 dark:border-white/10 dark:bg-gray-900 sm:px-5 sm:py-2.5">
                             {{ $this->composer }}
+                        </div>
+                    @elseif ($canManage && ($historyState['state'] ?? null) === 'human_handoff')
+                        <div class="shrink-0 border-t border-gray-200 bg-white px-4 py-3 text-sm text-warning-700 dark:border-white/10 dark:bg-gray-900 dark:text-warning-300">
+                            {{ ($historyState['canRemediateLegacyHandoff'] ?? false)
+                                ? __('Диалог поставлен на паузу из-за повторного технического сбоя. Восстановление доступно, потому что после сбоя специалист не отвечал.')
+                                : __('Старая пауза не подтверждает подключение специалиста. Проверьте историю и выберите действие выше.') }}
+                        </div>
+                    @elseif ($canManage)
+                        <div class="shrink-0 border-t border-gray-200 bg-white px-4 py-3 text-sm text-gray-600 dark:border-white/10 dark:bg-gray-900 dark:text-gray-300">
+                            {{ __('Подключитесь к диалогу, чтобы отвечать клиенту.') }}
                         </div>
                     @endif
                 @else

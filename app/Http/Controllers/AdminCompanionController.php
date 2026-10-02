@@ -5,8 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\User;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
 use App\Modules\ClientCompanion\Application\Actions\ResetCompanionContext;
-use App\Modules\ClientCompanion\Application\Actions\ResolveCompanionHandoff;
-use App\Modules\ClientCompanion\Application\Actions\ResumeCompanionAi;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use Illuminate\Http\RedirectResponse;
@@ -21,27 +19,6 @@ final class AdminCompanionController extends Controller
         $reply->handle($this->actor($request), $clientModel, (string) $data['body']);
 
         return back();
-    }
-
-    public function resolve(Request $request, int $client, ResolveCompanionHandoff $resolve): RedirectResponse
-    {
-        $resolve->handle($this->actor($request), $this->client($client));
-
-        return back()->with('companion_status', 'Обращение закрыто. AI остаётся выключенным.');
-    }
-
-    public function resolveAndResume(Request $request, int $client, ResolveCompanionHandoff $resolve): RedirectResponse
-    {
-        $resolve->handleAndResume($this->actor($request), $this->client($client));
-
-        return back()->with('companion_status', 'Обращение закрыто, AI снова отвечает.');
-    }
-
-    public function resume(Request $request, int $client, ResumeCompanionAi $resume): RedirectResponse
-    {
-        $resume->handle($this->actor($request), $this->client($client));
-
-        return back()->with('companion_status', 'AI снова отвечает в этом диалоге.');
     }
 
     public function reset(Request $request, int $client, ResetCompanionContext $reset): RedirectResponse

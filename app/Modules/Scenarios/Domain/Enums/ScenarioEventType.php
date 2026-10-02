@@ -18,6 +18,7 @@ enum ScenarioEventType: string
     case B2bLeadSubmitted = 'b2b.lead.submitted';
     case B2bSalesCallReady = 'b2b.sales_call.ready';
     case CompanionRequestedSpecialist = 'companion.requested_specialist';
+    case CompanionSpecialistAttention = 'companion.specialist_attention';
     case CompanionFallbackFailed = 'companion.fallback_failed';
     case BroadcastDeliveryFailed = 'broadcast.delivery_failed';
     case ClientFeedbackSubmitted = 'feedback.submitted';

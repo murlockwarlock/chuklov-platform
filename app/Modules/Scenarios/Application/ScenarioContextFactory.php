@@ -8,6 +8,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionFailureCode;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
 use App\Modules\Commerce\Domain\Models\PurchaseItem;
@@ -80,7 +81,8 @@ final class ScenarioContextFactory
             ScenarioEventType::SurveyCompleted, ScenarioEventType::TestStagnationDetected => $this->surveyContext($event, $evaluationEndsAt),
             ScenarioEventType::B2bLeadSubmitted => $this->b2bLeadContext($event, $evaluationEndsAt),
             ScenarioEventType::B2bSalesCallReady => $this->b2bSalesCallContext($event, $evaluationEndsAt),
-            ScenarioEventType::CompanionRequestedSpecialist => $this->companionContext($event, $evaluationEndsAt),
+            ScenarioEventType::CompanionRequestedSpecialist,
+            ScenarioEventType::CompanionSpecialistAttention => $this->companionContext($event, $evaluationEndsAt),
             ScenarioEventType::CompanionFallbackFailed => $this->companionContext($event, $evaluationEndsAt),
             default => $this->genericClientContext($event, $evaluationEndsAt),
         };
@@ -116,7 +118,11 @@ final class ScenarioContextFactory
             $renderContext['client']['telegram_profile_url'] = $this->clientTelegramProfileUrl($context->client);
         }
 
-        if (in_array($context->event->event_name, [ScenarioEventType::CompanionRequestedSpecialist, ScenarioEventType::CompanionFallbackFailed], true)) {
+        if (in_array($context->event->event_name, [
+            ScenarioEventType::CompanionRequestedSpecialist,
+            ScenarioEventType::CompanionSpecialistAttention,
+            ScenarioEventType::CompanionFallbackFailed,
+        ], true)) {
             if (! $context->client instanceof Client) {
                 throw (new ModelNotFoundException)->setModel(Client::class);
             }
@@ -125,6 +131,18 @@ final class ScenarioContextFactory
                 'crm_url' => url('/admin/messages?client='.$context->client->getKey()),
                 'reason' => (string) ($context->event->payload['reason'] ?? ''),
             ];
+            if ($context->event->event_name === ScenarioEventType::CompanionSpecialistAttention) {
+                [$renderContext['companion']['notification_title'], $renderContext['companion']['notification_body']] = $this->companionAttentionCopy(
+                    (string) ($context->event->payload['reason'] ?? ''),
+                    $this->clientDisplayName($context->client),
+                );
+            }
+            if ($context->event->event_name === ScenarioEventType::CompanionFallbackFailed && $recipient->type === 'internal') {
+                $failureCode = CompanionFailureCode::tryFrom((string) ($context->event->payload['failure_code'] ?? ''));
+                $renderContext['companion']['failure_label'] = $failureCode?->label() ?? 'Причина сбоя не определена';
+                $renderContext['companion']['attempt_number'] = max(1, (int) ($context->event->payload['attempt_number'] ?? 1));
+                $renderContext['companion']['ai_monitoring_url'] = route('filament.admin.pages.ai-monitoring-overview');
+            }
         }
 
         if (in_array($context->event->event_name, [ScenarioEventType::PayoutRequested, ScenarioEventType::PayoutStatusChanged], true)) {
@@ -169,7 +187,7 @@ final class ScenarioContextFactory
                 ->whereKey($this->payloadId($context->event, 'revision_id'))
                 ->with('source')
                 ->first();
-            if (! $revision instanceof KnowledgeRevision || $revision->source === null) {
+            if (! $revision instanceof KnowledgeRevision) {
                 throw (new ModelNotFoundException)->setModel(KnowledgeRevision::class);
             }
             $renderContext['knowledge'] = [
@@ -781,6 +799,25 @@ final class ScenarioContextFactory
             client: $client,
             evaluationEndsAt: $evaluationEndsAt,
         );
+    }
+
+    /** @return array{string, string} */
+    private function companionAttentionCopy(string $reason, string $clientName): array
+    {
+        return match ($reason) {
+            'urgent_safety_concern' => [
+                'Сообщение клиента '.$clientName.' требует внимания',
+                'AI отметил сообщение клиента как требующее внимания специалиста. Откройте диалог в CRM.',
+            ],
+            'out_of_scope' => [
+                'Вопрос клиента '.$clientName.' требует внимания',
+                'AI не смог ответить на вопрос клиента. Откройте диалог и проверьте сообщение.',
+            ],
+            default => [
+                'Диалог клиента '.$clientName.' требует внимания',
+                'Откройте диалог клиента и проверьте обращение.',
+            ],
+        };
     }
 
     private function genericClientContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext

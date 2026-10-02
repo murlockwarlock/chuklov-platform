@@ -318,6 +318,7 @@ final class ScenarioRuleForm
             ScenarioEventType::B2bLeadSubmitted->value => __('После B2B-запроса'),
             ScenarioEventType::B2bSalesCallReady->value => __('Когда B2B-разговор готов'),
             ScenarioEventType::CompanionRequestedSpecialist->value => __('Когда клиент просит специалиста'),
+            ScenarioEventType::CompanionSpecialistAttention->value => __('Когда сообщение требует внимания специалиста'),
             ScenarioEventType::CompanionFallbackFailed->value => __('Когда AI не смог ответить'),
             ScenarioEventType::BroadcastDeliveryFailed->value => __('При сбое операционной рассылки'),
             ScenarioEventType::ClientFeedbackSubmitted->value => __('После обратной связи клиента'),

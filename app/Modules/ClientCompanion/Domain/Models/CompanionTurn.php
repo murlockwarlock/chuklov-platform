@@ -93,6 +93,12 @@ class CompanionTurn extends Model
         return $this->hasMany(CompanionDelivery::class, 'turn_id');
     }
 
+    /** @return HasMany<CompanionTurnAttempt, $this> */
+    public function attempts(): HasMany
+    {
+        return $this->hasMany(CompanionTurnAttempt::class, 'turn_id')->orderBy('attempt_number');
+    }
+
     /** @return HasOne<CompanionEscalation, $this> */
     public function escalation(): HasOne
     {

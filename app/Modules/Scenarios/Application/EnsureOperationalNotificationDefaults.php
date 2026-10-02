@@ -27,6 +27,14 @@ final class EnsureOperationalNotificationDefaults
                     variables: ['client.full_name'],
                     subject: 'Запрос специалиста',
                 ),
+                'companion-specialist-attention' => $this->ensureTemplate(
+                    organization: $organization,
+                    key: 'companion-specialist-attention',
+                    name: 'Сообщение клиента требует внимания',
+                    body: '{{ companion.notification_body }}',
+                    variables: ['companion.notification_body'],
+                    subject: '{{ companion.notification_title }}',
+                ),
                 'referral-payout-request' => $this->ensureTemplate(
                     organization: $organization,
                     key: 'referral-payout-request',
@@ -107,14 +115,14 @@ final class EnsureOperationalNotificationDefaults
                     variables: ['client.full_name', 'booking.service_name', 'booking.local_date', 'booking.local_time'],
                     subject: 'Запись клиента отменена',
                 ),
-                'companion-fallback-failed' => $this->ensureTemplate(
+                'companion-fallback-failed' => $this->upgradeDefaultCompanionFailureTemplate($this->ensureTemplate(
                     organization: $organization,
                     key: 'companion-fallback-failed',
-                    name: 'Сбой передачи обращения специалисту',
-                    body: 'AI-компаньон не смог продолжить разговор с клиентом {{ client.full_name }}. Проверьте обращение.',
-                    variables: ['client.full_name'],
-                    subject: 'Нужна проверка обращения',
-                ),
+                    name: 'Сбой AI-компаньона',
+                    body: 'AI-компаньон не смог подготовить ответ клиенту {{ client.full_name }}. Причина: {{ companion.failure_label }} (попытка {{ companion.attempt_number }}). Проверьте настройки AI: {{ companion.ai_monitoring_url }}. Диалог: {{ companion.crm_url }}.',
+                    variables: ['client.full_name', 'companion.failure_label', 'companion.attempt_number', 'companion.ai_monitoring_url', 'companion.crm_url'],
+                    subject: 'Сбой AI-компаньона',
+                )),
                 'survey-completed-crm' => $this->ensureTemplate(
                     organization: $organization,
                     key: 'survey-completed-crm',
@@ -340,6 +348,24 @@ final class EnsureOperationalNotificationDefaults
                     'channel' => 'telegram',
                     'template' => 'companion-handoff',
                     'event' => ScenarioEventType::CompanionRequestedSpecialist->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'manage_companion_handoff'],
+                ],
+                [
+                    'key' => 'companion-specialist-attention-database',
+                    'name' => 'Сообщение требует внимания — уведомление в CRM',
+                    'channel' => 'database',
+                    'template' => 'companion-specialist-attention',
+                    'event' => ScenarioEventType::CompanionSpecialistAttention->value,
+                    'enabled' => true,
+                    'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'manage_companion_handoff'],
+                ],
+                [
+                    'key' => 'companion-specialist-attention-telegram',
+                    'name' => 'Сообщение требует внимания — Telegram сотрудников',
+                    'channel' => 'telegram',
+                    'template' => 'companion-specialist-attention',
+                    'event' => ScenarioEventType::CompanionSpecialistAttention->value,
                     'enabled' => true,
                     'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'manage_companion_handoff'],
                 ],
@@ -725,16 +751,11 @@ final class EnsureOperationalNotificationDefaults
                     ->first();
 
                 if ($existingRule instanceof ScenarioRule) {
-                    $definitionEvent = ScenarioEventType::tryFrom((string) $definition['event']);
-
                     $this->upgradeUntouchedDefaultRule($existingRule, $templates);
 
                     if (isset($definition['recipient']['permission'])
-                        && $definitionEvent !== null
-                        && $existingRule->trigger_event === $definitionEvent) {
-                        $recipientStrategy = is_array($existingRule->recipient_strategy)
-                            ? $existingRule->recipient_strategy
-                            : [];
+                        && $existingRule->trigger_event->value === (string) $definition['event']) {
+                        $recipientStrategy = $existingRule->recipient_strategy;
                         $recipientStrategy['permission'] = $definition['recipient']['permission'];
                         $existingRule->forceFill([
                             'recipient_strategy' => $recipientStrategy,
@@ -756,7 +777,7 @@ final class EnsureOperationalNotificationDefaults
                     'delay_unit' => $definition['delay_unit'] ?? 'minutes',
                     'purpose' => ScenarioRulePurpose::Transactional->value,
                     'conditions' => $definition['conditions'] ?? [],
-                    'recipient_strategy' => $definition['recipient'] ?? ['type' => 'roles', 'roles' => $definition['roles']],
+                    'recipient_strategy' => $definition['recipient'],
                     'channel_priority' => [$definition['channel']],
                     'template_version_id' => $templates[$definition['template']]->getKey(),
                     'max_occurrences' => $definition['max_occurrences'] ?? 1,
@@ -796,6 +817,10 @@ final class EnsureOperationalNotificationDefaults
         if ($rule->rule_key === 'finance-debt-reminder-client-telegram'
             && $rule->template_version_id !== $templates['finance-debt-reminder-client']->getKey()) {
             $attributes['template_version_id'] = $templates['finance-debt-reminder-client']->getKey();
+        }
+        if ($rule->rule_key === 'companion-fallback-failed-database'
+            && $rule->template_version_id !== $templates['companion-fallback-failed']->getKey()) {
+            $attributes['template_version_id'] = $templates['companion-fallback-failed']->getKey();
         }
 
         if ($attributes === []) {
@@ -852,6 +877,34 @@ final class EnsureOperationalNotificationDefaults
             'subject' => $subject,
             'body' => $body,
             'variables' => ['reward.amount'],
+            'published_at' => now(),
+        ])->save();
+
+        return $next;
+    }
+
+    private function upgradeDefaultCompanionFailureTemplate(NotificationTemplateVersion $version): NotificationTemplateVersion
+    {
+        $legacyBody = 'AI-компаньон не смог продолжить разговор с клиентом {{ client.full_name }}. Проверьте обращение.';
+        if ($version->body !== $legacyBody || $version->created_by_user_id !== null) {
+            return $version;
+        }
+
+        NotificationTemplate::query()
+            ->where('organization_id', $version->organization_id)
+            ->whereKey($version->template_id)
+            ->where('name', 'Сбой передачи обращения специалисту')
+            ->update(['name' => 'Сбой AI-компаньона']);
+
+        $next = new NotificationTemplateVersion;
+        $next->forceFill([
+            'organization_id' => $version->organization_id,
+            'template_id' => $version->template_id,
+            'version' => $version->version + 1,
+            'status' => NotificationTemplateStatus::Published->value,
+            'subject' => 'Сбой AI-компаньона',
+            'body' => 'AI-компаньон не смог подготовить ответ клиенту {{ client.full_name }}. Причина: {{ companion.failure_label }} (попытка {{ companion.attempt_number }}). Проверьте настройки AI: {{ companion.ai_monitoring_url }}. Диалог: {{ companion.crm_url }}.',
+            'variables' => ['client.full_name', 'companion.failure_label', 'companion.attempt_number', 'companion.ai_monitoring_url', 'companion.crm_url'],
             'published_at' => now(),
         ])->save();
 

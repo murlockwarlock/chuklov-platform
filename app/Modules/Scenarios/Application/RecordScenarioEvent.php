@@ -4,9 +4,11 @@ namespace App\Modules\Scenarios\Application;
 
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFailureCode;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
+use App\Modules\ClientCompanion\Domain\Models\CompanionTurnAttempt;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Commerce\Domain\Models\FulfillmentEvent;
 use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
@@ -35,6 +37,7 @@ use App\Modules\Tracker\Domain\Enums\TrackerTaskFrequency;
 use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 
 final class RecordScenarioEvent
 {
@@ -62,10 +65,20 @@ final class RecordScenarioEvent
         return $this->record((int) $task->organization_id, $data);
     }
 
-    public function companionRequestedSpecialist(CompanionEscalation $escalation, CarbonImmutable $occurredAt): ScenarioEvent
+    public function companionEscalationRecorded(CompanionEscalation $escalation, CarbonImmutable $occurredAt): ScenarioEvent
     {
+        $eventType = match ($escalation->reason) {
+            CompanionEscalationReason::HumanRequested => ScenarioEventType::CompanionRequestedSpecialist,
+            CompanionEscalationReason::UrgentSafetyConcern,
+            CompanionEscalationReason::OutOfScope,
+            CompanionEscalationReason::Other => ScenarioEventType::CompanionSpecialistAttention,
+            CompanionEscalationReason::RepeatedExecutionFailure => throw new LogicException(
+                'Repeated execution failures must use AI operational monitoring.',
+            ),
+        };
+
         $data = new ScenarioEventData(
-            eventType: ScenarioEventType::CompanionRequestedSpecialist,
+            eventType: $eventType,
             aggregateType: CompanionEscalation::class,
             aggregateId: (string) $escalation->getKey(),
             occurredAt: $occurredAt->utc(),
@@ -76,7 +89,7 @@ final class RecordScenarioEvent
                 'turn_id' => (int) $escalation->turn_id,
                 'reason' => $escalation->reason->value,
             ],
-            idempotencyKey: 'companion.requested_specialist:'.$escalation->organization_id.':'.$escalation->getKey(),
+            idempotencyKey: $eventType->value.':'.$escalation->organization_id.':'.$escalation->getKey(),
             correlationId: 'companion:escalation:'.$escalation->getKey(),
             causationId: null,
         );
@@ -84,7 +97,7 @@ final class RecordScenarioEvent
         return $this->record((int) $escalation->organization_id, $data);
     }
 
-    public function companionFallbackFailed(CompanionTurn $turn, CompanionFailureCode $failureCode, CarbonImmutable $occurredAt): ScenarioEvent
+    public function companionFallbackFailed(CompanionTurn $turn, CompanionTurnAttempt $attempt, CompanionFailureCode $failureCode, CarbonImmutable $occurredAt): ScenarioEvent
     {
         $data = new ScenarioEventData(
             eventType: ScenarioEventType::CompanionFallbackFailed,
@@ -93,11 +106,13 @@ final class RecordScenarioEvent
             occurredAt: $occurredAt->utc(),
             payload: [
                 'turn_id' => (int) $turn->getKey(),
+                'attempt_id' => (int) $attempt->getKey(),
+                'attempt_number' => (int) $attempt->attempt_number,
                 'client_id' => (int) $turn->client_id,
                 'conversation_id' => (int) $turn->conversation_id,
                 'failure_code' => $failureCode->value,
             ],
-            idempotencyKey: 'companion.fallback_failed:'.$turn->organization_id.':'.$turn->getKey(),
+            idempotencyKey: 'companion.fallback_failed:'.$turn->organization_id.':'.$turn->getKey().':'.$attempt->getKey(),
             correlationId: 'companion:turn:'.$turn->getKey(),
             causationId: null,
         );

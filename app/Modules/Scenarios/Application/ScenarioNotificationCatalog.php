@@ -9,7 +9,8 @@ final class ScenarioNotificationCatalog
     {
         return [
             ['event' => 'companion.requested_specialist', 'label' => 'Клиент запросил специалиста', 'recipients' => 'Сотрудники с правом обработки обращений', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Запрос специалиста из AI-компаньона'],
-            ['event' => 'companion.fallback_failed', 'label' => 'AI не смог ответить после разрешённой попытки', 'recipients' => 'Сотрудники, которые обрабатывают обращения', 'channels' => ['CRM'], 'enabled' => true, 'template' => 'Сбой передачи обращения специалисту'],
+            ['event' => 'companion.specialist_attention', 'label' => 'Сообщение клиента требует внимания', 'recipients' => 'Сотрудники с правом обработки обращений', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Сообщение клиента требует внимания'],
+            ['event' => 'companion.fallback_failed', 'label' => 'Технический сбой AI-компаньона', 'recipients' => 'Сотрудники, которые обрабатывают обращения', 'channels' => ['CRM'], 'enabled' => true, 'template' => 'Диагностика сбоя AI-компаньона'],
             ['event' => 'broadcast.delivery_failed', 'label' => 'Сбой автоматического сообщения или рассылки', 'recipients' => 'Ответственные сотрудники', 'channels' => ['CRM', 'Telegram'], 'enabled' => false, 'template' => 'Сбой доставки'],
             ['event' => 'booking.created', 'label' => 'Новая запись', 'recipients' => 'Клиент и назначенный специалист', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Новая запись'],
             ['event' => 'booking.confirmed', 'label' => 'Подтверждение записи', 'recipients' => 'Клиент и специалист', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Подтверждение записи'],
