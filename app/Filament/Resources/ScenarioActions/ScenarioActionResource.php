@@ -54,10 +54,10 @@ final class ScenarioActionResource extends LocalizedResource
                     ->schema([
                         TextEntry::make('business_client')
                             ->label(__('Клиент'))
-                            ->state(fn (ScenarioAction $record): string => $record->client?->full_name ?: '—')
+                            ->state(fn (ScenarioAction $record): string => $record->client?->full_name ?: (self::contextClientName($record) ?? '—'))
                             ->url(fn (ScenarioAction $record): ?string => CrmEntityLinks::clientUrl($record->client))
                             ->color(fn (ScenarioAction $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary')
-                            ->visible(fn (ScenarioAction $record): bool => $record->client instanceof Client),
+                            ->visible(fn (ScenarioAction $record): bool => $record->client instanceof Client || self::contextClientName($record) !== null),
                         TextEntry::make('business_event')
                             ->label(__('Событие'))
                             ->state(fn (ScenarioAction $record): string => self::eventLabel($record->event?->event_name)),
@@ -367,6 +367,13 @@ final class ScenarioActionResource extends LocalizedResource
         }
 
         return $record->recipientUser?->name ?: __('Сотрудник недоступен');
+    }
+
+    private static function contextClientName(ScenarioAction $record): ?string
+    {
+        $name = $record->render_context['client']['full_name'] ?? null;
+
+        return is_string($name) && trim($name) !== '' ? $name : null;
     }
 
     private static function deliverySummary(ScenarioAction $record): string

@@ -8,6 +8,7 @@ use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Channels\Infrastructure\Database\DatabaseNotificationChannel;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
 use App\Modules\ClientCompanion\Application\Actions\RequestCompanionHandoff;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionFailureCode;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\Conversations\Application\RecordCompanionMessage;
@@ -75,13 +76,20 @@ final class OperationalNotificationDeliveryTest extends TestCase
             channel: 'portal',
             direction: ConversationDirection::Outbound,
             authorType: ConversationAuthorType::Ai,
-            body: 'Передаю обращение специалисту.',
+            body: 'Не получилось подготовить ответ.',
             contextEpoch: $turn->context_epoch,
-            metadata: ['message_type' => 'handoff', 'transport' => 'portal'],
+            metadata: [
+                'message_type' => 'terminal_failure',
+                'locale' => 'ru',
+                'transport' => 'portal',
+                'safe_actions' => 'retry_failed_turn,request_human',
+            ],
         );
         $turn->forceFill([
-            'status' => CompanionTurnStatus::Completed,
+            'status' => CompanionTurnStatus::Failed,
             'outbound_message_id' => $outbound->getKey(),
+            'failure_code' => CompanionFailureCode::ProviderUnavailable,
+            'failed_at' => now(),
         ])->save();
         $conversation->forceFill(['automation_state' => ConversationAutomationState::AiActive])->save();
 

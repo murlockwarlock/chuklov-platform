@@ -193,7 +193,6 @@ final class NotificationCatalogTest extends TestCase
             ->forEvent($event)
             ->forRule($rule)
             ->forTemplate($version)
-            ->forClient($client)
             ->create([
                 'recipient_type' => 'internal',
                 'recipient_user_id' => $admin->getKey(),
