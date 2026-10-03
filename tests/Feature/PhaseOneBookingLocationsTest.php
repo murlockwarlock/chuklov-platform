@@ -974,7 +974,13 @@ class PhaseOneBookingLocationsTest extends TestCase
             ->forClient($client)
             ->forSpecialist($secondSpecialist)
             ->forService($service)
-            ->create(['status' => BookingStatus::Requested, 'visit_format' => VisitFormat::Online]);
+            ->create([
+                'status' => BookingStatus::Requested,
+                'visit_format' => VisitFormat::Online,
+                'starts_at' => CarbonImmutable::create(2026, 9, 7, 11, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 7, 12, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 7, 12, 0, 0, 'UTC'),
+            ]);
         $bot->hearCallbackQueryData('booking:confirm:'.$unauthorizedBooking->getKey().':'.$unauthorizedBooking->event_version)->reply();
         $bot->assertReply('answerCallbackQuery', ['text' => 'Действие недоступно. Откройте CRM.'], 0);
         self::assertSame(BookingStatus::Requested, $unauthorizedBooking->refresh()->status);
@@ -994,6 +1000,9 @@ class PhaseOneBookingLocationsTest extends TestCase
                 'status' => BookingStatus::Requested,
                 'visit_format' => VisitFormat::Office,
                 'event_version' => 1,
+                'starts_at' => CarbonImmutable::create(2026, 9, 7, 13, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 7, 14, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 7, 14, 0, 0, 'UTC'),
             ]);
         $staleCallbackData = 'booking:confirm:'.$staleBooking->getKey().':1';
         $staleBooking->forceFill(['event_version' => 2])->save();
@@ -1010,6 +1019,9 @@ class PhaseOneBookingLocationsTest extends TestCase
             ->create([
                 'status' => BookingStatus::Requested,
                 'visit_format' => VisitFormat::HomeVisit,
+                'starts_at' => CarbonImmutable::create(2026, 9, 7, 15, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 7, 16, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 7, 16, 0, 0, 'UTC'),
             ]);
         $bot->hearCallbackQueryData('booking:confirm:'.$homeVisitBooking->getKey().':'.$homeVisitBooking->event_version)->reply();
         $bot->assertReply('answerCallbackQuery', ['text' => 'Состояние записи изменилось. Откройте CRM.'], 0);
