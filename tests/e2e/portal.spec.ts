@@ -880,6 +880,7 @@ test('home keeps one primary booking action and ordinary referrals remain availa
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/');
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
+        await expect(page.getByTestId('home-booking-cta')).toHaveText('Записаться');
         await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
         await assertNoHorizontalOverflow(page);
 
@@ -906,6 +907,20 @@ test('home keeps one primary booking action and ordinary referrals remain availa
     await expect(page.getByTestId('ordinary-referral')).toBeVisible();
     await expect(page.getByTestId('partner-activate')).toHaveCount(0);
     await expect(page.getByTestId('partner-links')).toHaveCount(0);
+});
+
+test('home changes the booking action when an upcoming booking is shown', async ({ page }) => {
+    const fixture = createBookingFixture({ withBooking: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Ближайшая запись' })).toBeVisible();
+    await expect(page.getByTestId('home-booking-cta')).toHaveText('Записаться ещё');
 });
 
 test('CRM-assigned partner can manage multiple campaign links', async ({ page }) => {

@@ -6,7 +6,9 @@ use App\Models\User;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramBotIdentityVerifier;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Application\ConfirmBooking;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -23,6 +25,7 @@ final readonly class HandleTelegramBookingConfirmation
 {
     public function __construct(
         private OrganizationContext $context,
+        private OrganizationAuthorizer $authorizer,
         private TelegramBotIdentityVerifier $identityVerifier,
         private ConfirmBooking $confirmBooking,
     ) {}
@@ -60,21 +63,25 @@ final readonly class HandleTelegramBookingConfirmation
                 ->where('verification_status', ChannelIdentityStatus::Verified->value)
                 ->first();
             $user = $organizationIdentity?->user;
-            $specialist = $user instanceof User
-                ? Specialist::query()
-                    ->where('organization_id', $organization->getKey())
-                    ->where('staff_user_id', $user->getKey())
-                    ->first()
-                : null;
-            $booking = $specialist instanceof Specialist
-                ? Booking::query()
-                    ->where('organization_id', $organization->getKey())
-                    ->where('specialist_id', $specialist->getKey())
-                    ->whereKey((int) $matches[1])
-                    ->first()
-                : null;
+            if (! $user instanceof User) {
+                $bot->answerCallbackQuery(text: 'Действие недоступно. Откройте CRM.');
 
-            if (! $user instanceof User || ! $booking instanceof Booking) {
+                return;
+            }
+
+            $this->authorizer->authorize($user, $organization, OrganizationPermission::ManageScheduling);
+
+            $booking = Booking::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey((int) $matches[1])
+                ->with('specialist')
+                ->first();
+            $specialist = $booking?->specialist;
+
+            if (! $booking instanceof Booking
+                || ! $specialist instanceof Specialist
+                || (int) $specialist->organization_id !== (int) $organization->getKey()
+                || (int) $specialist->staff_user_id !== (int) $user->getKey()) {
                 $bot->answerCallbackQuery(text: 'Действие недоступно. Откройте CRM.');
 
                 return;

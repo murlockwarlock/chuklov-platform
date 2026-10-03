@@ -28,6 +28,9 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use SergiX44\Nutgram\Nutgram;
+use SergiX44\Nutgram\Telegram\Types\User\User as TelegramUser;
+use SergiX44\Nutgram\Testing\FakeNutgram;
 use Tests\TestCase;
 
 final class TelegramOrganizationLinkTest extends TestCase
@@ -163,6 +166,7 @@ final class TelegramOrganizationLinkTest extends TestCase
         self::assertSame($staff->getKey(), $identity->user_id);
         self::assertSame(ChannelIdentityStatus::Verified, $identity->verification_status);
         self::assertSame('telegram_crm_link', $identity->verification_method);
+        self::assertNull($identity->external_username);
         self::assertNotNull($link->fresh()->consumed_at);
         self::assertSame(1, DB::table('audit_events')
             ->where('action', 'organization.channel_identity.verified')
@@ -174,6 +178,137 @@ final class TelegramOrganizationLinkTest extends TestCase
             $token,
             new VerifiedChannelIdentity('telegram', '100200300', 'Иван Сотрудник', 'ru'),
         );
+    }
+
+    public function test_staff_start_route_connects_identity_once_without_client_link_fallback(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        $this->setOrganization($organization);
+
+        $token = $this->tokenFromUrl(app(InitiateTelegramOrganizationLink::class)->handle($admin, $staff->getKey()));
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        $bot = app(Nutgram::class);
+        $bot->setCommonUser(TelegramUser::make(
+            id: 100200300,
+            is_bot: false,
+            first_name: 'Иван',
+            username: 'ivan_staff',
+            language_code: 'ru',
+        ));
+
+        $bot->hearText('/start staff_'.$token)->reply();
+        $bot->assertReply('sendMessage', ['text' => 'Telegram подключён к уведомлениям CRM.'], 0);
+
+        self::assertCount(1, $bot->getRequestHistory());
+        self::assertSame($staff->getKey(), OrganizationChannelIdentity::query()->sole()->user_id);
+        self::assertSame('ivan_staff', OrganizationChannelIdentity::query()->sole()->external_username);
+        self::assertNotNull(OrganizationChannelLinkToken::query()->sole()->consumed_at);
+
+        $bot->hearText('/start staff_'.$token)->reply();
+        $bot->assertReply('sendMessage', ['text' => 'Ссылка недействительна или уже использована.'], 0);
+        self::assertSame(1, DB::table('audit_events')->where('action', 'organization.channel_identity.verified')->count());
+
+        $alreadyConnectedToken = $this->tokenFromUrl(
+            app(InitiateTelegramOrganizationLink::class)->handle($admin, $staff->getKey()),
+        );
+        $bot->hearText('/start staff_'.$alreadyConnectedToken)->reply();
+        $bot->assertReply('sendMessage', ['text' => 'Telegram уже подключён.'], 0);
+    }
+
+    public function test_staff_start_shows_safe_expiry_conflict_and_inactive_membership_messages(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $firstStaff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $secondStaff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $inactiveStaff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        $this->setOrganization($organization);
+
+        $expiredToken = $this->tokenFromUrl(
+            app(InitiateTelegramOrganizationLink::class)->handle($admin, $firstStaff->getKey()),
+        );
+        OrganizationChannelLinkToken::query()->sole()->forceFill(['expires_at' => now()->subSecond()])->save();
+        $expiredBot = $this->fakeTelegramBot(900001);
+        $expiredBot->hearText('/start staff_'.$expiredToken)->reply();
+        $expiredBot->assertReply('sendMessage', ['text' => 'Ссылка устарела. Создайте новую в CRM.'], 0);
+        self::assertNull(OrganizationChannelLinkToken::query()->sole()->consumed_at);
+
+        $validToken = $this->tokenFromUrl(
+            app(InitiateTelegramOrganizationLink::class)->handle($admin, $firstStaff->getKey()),
+        );
+        app(ConnectTelegramOrganizationIdentity::class)->handle(
+            $validToken,
+            new VerifiedChannelIdentity('telegram', '700700', 'Первый сотрудник', 'ru', username: 'first_staff'),
+        );
+
+        $conflictToken = $this->tokenFromUrl(
+            app(InitiateTelegramOrganizationLink::class)->handle($admin, $secondStaff->getKey()),
+        );
+        $conflictBot = $this->fakeTelegramBot(700700);
+        $conflictBot->hearText('/start staff_'.$conflictToken)->reply();
+        $conflictBot->assertReply('sendMessage', [
+            'text' => 'Этот Telegram уже связан с другим аккаунтом CRM. Обратитесь к администратору.',
+        ], 0);
+
+        $inactiveToken = $this->tokenFromUrl(
+            app(InitiateTelegramOrganizationLink::class)->handle($admin, $inactiveStaff->getKey()),
+        );
+        OrganizationMembership::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('user_id', $inactiveStaff->getKey())
+            ->update(['is_active' => false]);
+        $inactiveBot = $this->fakeTelegramBot(900002);
+        $inactiveBot->hearText('/start staff_'.$inactiveToken)->reply();
+        $inactiveBot->assertReply('sendMessage', [
+            'text' => 'Подключение сейчас недоступно. Обратитесь к администратору.',
+        ], 0);
+    }
+
+    public function test_specialist_card_shows_verified_username_without_primary_telegram_id(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $this->setOrganization($organization);
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $specialist->forceFill(['staff_user_id' => $staff->getKey()])->save();
+        $identity = OrganizationChannelIdentity::factory()->forUser($staff)->verified()->create([
+            'external_id' => '987654321',
+            'external_username' => 'ivan_staff',
+        ]);
+        self::assertSame('ivan_staff', $identity->fresh()->external_username);
+        self::assertSame('ivan_staff', $specialist->fresh()->telegramNotificationIdentity?->external_username);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $detail = Livewire::actingAs($admin)
+            ->test(ViewSpecialist::class, ['record' => $specialist->getKey()])
+            ->assertSuccessful();
+        $detail
+            ->assertSee('@ivan_staff')
+            ->assertSee('Подключён')
+            ->assertDontSee('987654321')
+            ->assertDontSee('Telegram ID специалиста');
+        self::assertStringContainsString('https://t.me/ivan_staff', $detail->html());
+
+        $identity->forceFill(['external_username' => null])->save();
+        Livewire::actingAs($admin)
+            ->test(ViewSpecialist::class, ['record' => $specialist->getKey()])
+            ->assertSee('Подключён')
+            ->assertDontSee('@ivan_staff');
+
+        $identity->forceFill(['verification_status' => ChannelIdentityStatus::Revoked])->save();
+        Livewire::actingAs($admin)
+            ->test(ViewSpecialist::class, ['record' => $specialist->getKey()])
+            ->assertSee('Не подключён')
+            ->assertDontSee('@ivan_staff')
+            ->assertDontSee('987654321');
     }
 
     public function test_same_telegram_identity_cannot_be_linked_to_another_staff_member(): void
@@ -292,6 +427,9 @@ final class TelegramOrganizationLinkTest extends TestCase
             displayName: 'Карточка специалиста',
             staffUserId: $staff->getKey(),
         );
+        OrganizationChannelIdentity::factory()->forUser($staff)->create([
+            'external_id' => '1122334455',
+        ]);
         config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
@@ -305,6 +443,7 @@ final class TelegramOrganizationLinkTest extends TestCase
             ->assertSee('Email сотрудника')
             ->assertSee('Telegram')
             ->assertSee('Не подключён')
+            ->assertDontSee('1122334455')
             ->assertSee('Рабочих интервалов')
             ->assertSee('Назначенных услуг')
             ->assertSee('Всего записей')
@@ -328,10 +467,12 @@ final class TelegramOrganizationLinkTest extends TestCase
         config()->set('portal.telegram.bot_username', 'chuklov_test_bot');
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
-        Livewire::actingAs($admin)
+        $edit = Livewire::actingAs($admin)
             ->test(EditSpecialist::class, ['record' => $specialist->getKey()])
             ->assertActionVisible('createTelegramLink')
             ->assertSee('Подключить Telegram')
+            ->assertSee('Аккаунт CRM')
+            ->assertSee('Пользователь CRM, связанный с этим специалистом.')
             ->assertDontSee('Привязка Telegram сотрудника')
             ->assertDontSee('Подтверждённый Telegram ID')
             ->mountAction('createTelegramLink')
@@ -408,5 +549,21 @@ final class TelegramOrganizationLinkTest extends TestCase
     {
         config()->set('tenancy.default_organization_id', $organization->getKey());
         app(OrganizationContext::class)->set($organization);
+    }
+
+    private function fakeTelegramBot(int $id): Nutgram
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        $bot = app(Nutgram::class);
+        $bot->setCommonUser(TelegramUser::make(
+            id: $id,
+            is_bot: false,
+            first_name: 'Сотрудник',
+            username: 'staff_'.$id,
+            language_code: 'ru',
+        ));
+
+        return $bot;
     }
 }

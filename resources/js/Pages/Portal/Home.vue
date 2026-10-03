@@ -58,7 +58,7 @@ const { locale, t } = usePortalLocale();
           class="portal-button portal-button--primary self-start"
           data-testid="home-booking-cta"
         >
-          {{ t('home.book') }}
+          {{ props.upcomingBooking ? t('booking.bookAgain') : t('home.book') }}
         </Link>
       </div>
 

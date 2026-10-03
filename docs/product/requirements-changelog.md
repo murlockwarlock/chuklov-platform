@@ -1,5 +1,13 @@
 # Requirements Changelog
 
+## 2026-10-03 — Owner-accepted booking, Telegram identity, and scheduling UX corrections
+
+- Telegram booking confirmation resolves the callback Booking inside the current organization and matches its Specialist to the verified staff User after `ManageScheduling` authorization. Stale event-version, status, supported-format, locking, and idempotency guards remain in force; one CRM User may still serve multiple Specialists.
+- Telegram staff `/start` routes are mutually exclusive. Verified external Telegram ID remains the identity authority; a validated current username is optional presentation metadata. Expired, already-connected, conflicting, and inactive-membership links receive human-readable responses only where persisted state distinguishes them.
+- Specialist detail shows verified Telegram status and a safe `@username` profile link when available, without making numeric Telegram IDs primary staff information. CRM Booking required fields use human Russian copy. Portal Home changes its booking action only when the existing upcoming-Booking projection is present.
+- Work Schedule keeps the existing exception model while naming its direct actions `Не работает` and `Вернуть по графику`, exposing custom-window editing as `Изменить рабочее время`, and showing the approved regular-schedule explanation. Scheduling Configuration labels clarify B2B duration and the consultation offered after test results.
+- Staging 502 evidence points to nginx reaching a temporarily absent single app listener during forced container recreation; the request did not reach Laravel or PostgreSQL. The current deployment abstraction has no alternate candidate listener and atomic upstream switch, so deployment continuity requires a separate owner decision; no Booking creation code was changed for that incident.
+
 ## 2026-10-02 — Owner-confirmed Client Companion failure and takeover separation
 
 - Added `REQ-AI-009` to separate execution failures, specialist requests, staff takeover, and AI pause. Retryable technical failures use the same inbound input with a new durable execution attempt; explicit requests keep AI active until staff deliberately takes over; Telegram and Portal share the authoritative Application actions.

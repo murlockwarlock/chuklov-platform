@@ -161,6 +161,42 @@ class MilestoneFourCrmBookingTest extends TestCase
         self::assertSame(0, Booking::query()->count());
     }
 
+    public function test_booking_form_uses_human_required_messages_instead_of_translation_keys(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(CreateBooking::class)
+            ->fillForm([
+                'specialist_id' => null,
+                'service_id' => null,
+                'client_id' => null,
+                'starts_at' => null,
+                'visit_format' => null,
+            ])
+            ->call('create')
+            ->assertHasFormErrors(['specialist_id', 'service_id', 'client_id', 'starts_at', 'visit_format'])
+            ->assertSee('Выберите услугу.')
+            ->assertSee('Выберите клиента.')
+            ->assertSee('Выберите специалиста.')
+            ->assertSee('Укажите дату и время записи.')
+            ->assertSee('Выберите формат визита.');
+
+        self::assertStringNotContainsString('validation.required', $component->html());
+
+        $homeVisit = Livewire::actingAs($admin)->test(CreateBooking::class)
+            ->fillForm(['visit_format' => VisitFormat::HomeVisit->value])
+            ->set('data.visit_format', VisitFormat::HomeVisit->value)
+            ->set('data.party_size', null)
+            ->set('data.location', null)
+            ->call('create')
+            ->assertHasFormErrors(['party_size', 'location'])
+            ->assertSee('Укажите количество участников выезда.')
+            ->assertSee('Укажите адрес выезда.');
+
+        self::assertStringNotContainsString('validation.required', $homeVisit->html());
+    }
+
     public function test_client_cannot_use_the_crm_backdated_confirmation(): void
     {
         [$organization, , $client, $specialist, $service] = $this->fixture();
