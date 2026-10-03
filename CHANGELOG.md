@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-10-03 — Owner acceptance remediation: booking, Telegram identity, and CRM scheduling UX
+
+- Telegram booking confirmations now target the Booking's actual Specialist while retaining staff permission, organization, status, format, and event-version checks. A staff User may serve multiple Specialists.
+- Staff Telegram `/start` links now route once, report distinguishable token states in human language, and persist a verified username for the Specialist card. Raw Telegram IDs are hidden from primary staff presentation.
+- CRM Booking required fields show Russian validation copy; Portal Home says `Записаться ещё` when an upcoming Booking is shown; scheduling settings and Work Schedule use the owner-approved labels and controls without changing schedule persistence.
+
+## 2026-10-02 — Client Companion failure, retry, and takeover semantics
+
+- Separated technical AI failures from specialist escalation and human takeover. Retryable failures preserve the failed attempt and let the client retry the original message without creating a duplicate client message; Portal and Telegram call the same retry action.
+- Specialist requests remain open while AI can continue. Only the explicit CRM `Подключиться к диалогу` action pauses AI; resume cancels paused backlog without replay. Notifications and state labels now reflect the actual reason and takeover state.
+- Added a bounded CRM repair action for legacy repeated-failure handoffs when persisted evidence shows no later staff reply or other open escalation.
+
 ## 2026-09-06 — Owner acceptance remediation: partners, payouts, and messaging
 
 - Consolidated the Partner CRM and partner cabinet around primary results, reward provenance, campaign links, balances, payout controls, and secondary history while keeping destructive CRM actions in a secondary group.

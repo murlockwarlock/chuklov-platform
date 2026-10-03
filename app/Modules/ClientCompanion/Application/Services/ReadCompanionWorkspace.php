@@ -3,8 +3,9 @@
 namespace App\Modules\ClientCompanion\Application\Services;
 
 use App\Models\User;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
+use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
-use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
 use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
@@ -100,6 +101,20 @@ final readonly class ReadCompanionWorkspace
             ->map(static fn (mixed $id): int => (int) $id)
             ->values()
             ->all();
+        $conversationIds = $conversations->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->values()
+            ->all();
+        $openEscalationConversationIds = $conversationIds === []
+            ? []
+            : CompanionEscalation::query()
+                ->where('organization_id', $organizationId)
+                ->whereIn('conversation_id', $conversationIds)
+                ->where('status', CompanionEscalationStatus::Open)
+                ->distinct()
+                ->pluck('conversation_id')
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->all();
         $attachmentCounts = $latestMessageIds === []
             ? collect()
             : CompanionMessageAttachment::query()
@@ -122,6 +137,8 @@ final readonly class ReadCompanionWorkspace
                 $conversation,
                 (int) ($attachmentCounts->get($conversation?->latestMessage?->getKey()) ?? 0),
                 $selectedClientId === $clientId,
+                $conversation instanceof Conversation
+                    && in_array((int) $conversation->getKey(), $openEscalationConversationIds, true),
             );
         }
 
@@ -169,7 +186,7 @@ final readonly class ReadCompanionWorkspace
     }
 
     /** @return array<string, mixed> */
-    private function dialog(Client $client, ?Conversation $conversation, int $attachmentCount, bool $selected): array
+    private function dialog(Client $client, ?Conversation $conversation, int $attachmentCount, bool $selected, bool $hasOpenEscalation): array
     {
         $latestMessage = $conversation instanceof Conversation ? $conversation->latestMessage : null;
         $lastActivity = $latestMessage?->occurred_at;
@@ -193,7 +210,7 @@ final readonly class ReadCompanionWorkspace
             'lastActivityLabel' => $this->timeLabel($lastActivity),
             'channel' => $channel,
             'channelLabel' => $this->channelLabel($channel),
-            'stateLabel' => $this->stateLabel($conversation, $latestMessage?->author_type),
+            'stateLabel' => $this->stateLabel($conversation, $hasOpenEscalation),
             'hasConversation' => $conversation instanceof Conversation,
             'selected' => $selected,
         ];
@@ -221,19 +238,21 @@ final readonly class ReadCompanionWorkspace
         return Str::limit($content, 90);
     }
 
-    private function stateLabel(?Conversation $conversation, ?ConversationAuthorType $latestAuthor): string
+    private function stateLabel(?Conversation $conversation, bool $hasOpenEscalation): string
     {
         if (! $conversation instanceof Conversation) {
             return 'Диалог не начат';
         }
 
         if ($conversation->automation_state !== ConversationAutomationState::HumanHandoff) {
-            return 'AI отвечает';
+            return $hasOpenEscalation
+                ? 'Специалист уведомлён · AI продолжает отвечать'
+                : 'AI отвечает';
         }
 
-        return $latestAuthor === ConversationAuthorType::Staff
-            ? 'Диалог ведёт специалист'
-            : 'Нужен специалист';
+        return $conversation->last_human_takeover_at === null
+            ? 'AI на паузе · требуется проверить диалог'
+            : 'Специалист подключён · AI на паузе';
     }
 
     private function channelLabel(?string $channel): ?string

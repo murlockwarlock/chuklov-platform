@@ -13,6 +13,9 @@ use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
+use App\Modules\ClientCompanion\Application\Actions\RestoreLegacyCompanionAi;
+use App\Modules\ClientCompanion\Application\Actions\ResumeCompanionAi;
+use App\Modules\ClientCompanion\Application\Actions\TakeOverCompanionConversation;
 use App\Modules\ClientCompanion\Application\Actions\UploadCompanionCommunicationAttachment;
 use App\Modules\ClientCompanion\Application\Services\CompanionExportService;
 use App\Modules\ClientCompanion\Application\Services\ListCompanionCommunicationAttachments;
@@ -67,7 +70,8 @@ final class ClientCompanionHistory extends LocalizedViewRecord
     public function form(Schema $schema): Schema
     {
         $actor = Auth::user();
-        $client = $this->getRecord();
+        $record = $this->getRecord();
+        $client = $record instanceof Client ? $record : null;
 
         return $schema->components(MessageComposer::make(
             bodyField: 'body',
@@ -143,6 +147,44 @@ final class ClientCompanionHistory extends LocalizedViewRecord
         app(ReplyToCompanion::class)->handle($actor, $client, $body, $attachmentIds);
         $this->form->fill();
         Notification::make()->success()->title(__('Сообщение отправлено'))->send();
+    }
+
+    public function takeOver(): void
+    {
+        $actor = Auth::user();
+        $client = $this->getRecord();
+        abort_unless($actor instanceof User && $client instanceof Client, 403);
+
+        app(TakeOverCompanionConversation::class)->handle($actor, $client);
+        Notification::make()->success()->title(__('Вы подключились к диалогу'))->send();
+    }
+
+    public function resumeAi(): void
+    {
+        $actor = Auth::user();
+        $client = $this->getRecord();
+        abort_unless($actor instanceof User && $client instanceof Client, 403);
+
+        app(ResumeCompanionAi::class)->handle($actor, $client);
+        Notification::make()->success()->title(__('AI-помощник снова отвечает'))->send();
+    }
+
+    public function restoreLegacyAi(): void
+    {
+        $actor = Auth::user();
+        $client = $this->getRecord();
+        abort_unless($actor instanceof User && $client instanceof Client, 403);
+
+        $restored = app(RestoreLegacyCompanionAi::class)->handle($actor, $client);
+        $notification = Notification::make();
+        if ($restored) {
+            $notification->success();
+        } else {
+            $notification->warning();
+        }
+        $notification
+            ->title($restored ? __('AI-помощник снова отвечает') : __('Не удалось безопасно восстановить AI'))
+            ->send();
     }
 
     protected function getHeaderActions(): array
@@ -326,9 +368,6 @@ final class ClientCompanionHistory extends LocalizedViewRecord
             ),
             'urls' => [
                 'reply' => route('admin.clients.companion.reply', ['client' => $client]),
-                'resolve' => route('admin.clients.companion.resolve', ['client' => $client]),
-                'resolveAndResume' => route('admin.clients.companion.resolve-and-resume', ['client' => $client]),
-                'resume' => route('admin.clients.companion.resume', ['client' => $client]),
                 'reset' => route('admin.clients.companion.reset', ['client' => $client]),
                 'history' => ClientResource::getUrl('companion', ['record' => $client]),
             ],

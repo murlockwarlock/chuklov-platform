@@ -5,6 +5,8 @@ namespace App\Modules\ClientCompanion\Application\Actions;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramBotIdentityVerifier;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionImageReferenceMode;
+use App\Modules\ClientCompanion\Domain\Enums\RequestCompanionHandoffResult;
+use App\Modules\ClientCompanion\Domain\Enums\RetryCompanionTurnResult;
 use App\Modules\Identity\Application\RefreshTelegramClientIdentity;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -20,6 +22,7 @@ final class HandleTelegramCompanionCallback
         private readonly AcceptCompanionMessage $accept,
         private readonly RecordCompanionFeedback $feedback,
         private readonly RequestCompanionHandoff $handoff,
+        private readonly RetryCompanionTurn $retry,
         private readonly TelegramBotIdentityVerifier $identityVerifier,
         private readonly RefreshTelegramClientIdentity $refreshIdentity,
     ) {}
@@ -38,6 +41,10 @@ final class HandleTelegramCompanionCallback
         } elseif (preg_match('/^cc:reinspect:(\d+)$/', $data, $reinspectMatch) === 1) {
             $action = 'reinspect';
             $messageId = (int) $reinspectMatch[1];
+            $value = null;
+        } elseif (preg_match('/^cc:retry:(\d+)$/', $data, $retryMatch) === 1) {
+            $action = 'retry';
+            $messageId = (int) $retryMatch[1];
             $value = null;
         } else {
             $bot->answerCallbackQuery(text: 'Действие недоступно.');
@@ -90,9 +97,20 @@ final class HandleTelegramCompanionCallback
                     imageReferenceMessageId: $messageId,
                 );
                 $bot->answerCallbackQuery(text: 'Уточнение принято.');
+            } elseif ($action === 'retry') {
+                $result = $this->retry->handle($client, $messageId);
+                $bot->answerCallbackQuery(text: match ($result) {
+                    RetryCompanionTurnResult::Queued => 'Повторяю запрос…',
+                    RetryCompanionTurnResult::AlreadyRequested => 'Запрос уже обрабатывается.',
+                    RetryCompanionTurnResult::Unavailable => 'Повтор сейчас недоступен.',
+                });
             } else {
-                $this->handoff->handle($client, $messageId);
-                $bot->answerCallbackQuery(text: 'Запрос передан специалисту.');
+                $result = $this->handoff->handle($client, $messageId);
+                $bot->answerCallbackQuery(text: match ($result) {
+                    RequestCompanionHandoffResult::Created => 'Специалист уведомлён. Помощник продолжит отвечать, пока он не подключится.',
+                    RequestCompanionHandoffResult::AlreadyRequested => 'Специалист уже уведомлён. Помощник продолжит отвечать, пока он не подключится.',
+                    RequestCompanionHandoffResult::Unavailable => 'Сейчас запрос специалисту недоступен.',
+                });
             }
             try {
                 $bot->editMessageReplyMarkup(reply_markup: null);

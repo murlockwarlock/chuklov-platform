@@ -13,8 +13,9 @@ use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
-use App\Modules\ClientCompanion\Application\Actions\ResolveCompanionHandoff;
+use App\Modules\ClientCompanion\Application\Actions\RestoreLegacyCompanionAi;
 use App\Modules\ClientCompanion\Application\Actions\ResumeCompanionAi;
+use App\Modules\ClientCompanion\Application\Actions\TakeOverCompanionConversation;
 use App\Modules\ClientCompanion\Application\Actions\UploadCompanionCommunicationAttachment;
 use App\Modules\ClientCompanion\Application\Services\CompanionExportService;
 use App\Modules\ClientCompanion\Application\Services\ListCompanionCommunicationAttachments;
@@ -357,26 +358,6 @@ final class Messages extends LocalizedPage
             ->send();
     }
 
-    public function resolveAndResume(): void
-    {
-        $actor = Auth::user();
-        $client = $this->selectedClient();
-        abort_unless($actor instanceof User && $client instanceof Client, 404);
-
-        app(ResolveCompanionHandoff::class)->handleAndResume($actor, $client);
-        $this->syncHistory();
-    }
-
-    public function resolve(): void
-    {
-        $actor = Auth::user();
-        $client = $this->selectedClient();
-        abort_unless($actor instanceof User && $client instanceof Client, 404);
-
-        app(ResolveCompanionHandoff::class)->handle($actor, $client);
-        $this->syncHistory();
-    }
-
     public function resumeAi(): void
     {
         $actor = Auth::user();
@@ -384,6 +365,26 @@ final class Messages extends LocalizedPage
         abort_unless($actor instanceof User && $client instanceof Client, 404);
 
         app(ResumeCompanionAi::class)->handle($actor, $client);
+        $this->syncHistory();
+    }
+
+    public function takeOver(): void
+    {
+        $actor = Auth::user();
+        $client = $this->selectedClient();
+        abort_unless($actor instanceof User && $client instanceof Client, 404);
+
+        app(TakeOverCompanionConversation::class)->handle($actor, $client);
+        $this->syncHistory();
+    }
+
+    public function restoreLegacyAi(): void
+    {
+        $actor = Auth::user();
+        $client = $this->selectedClient();
+        abort_unless($actor instanceof User && $client instanceof Client, 404);
+
+        app(RestoreLegacyCompanionAi::class)->handle($actor, $client);
         $this->syncHistory();
     }
 
@@ -611,6 +612,8 @@ final class Messages extends LocalizedPage
             'stateLabel' => $history['stateLabel'] ?? __('AI отвечает'),
             'mode' => $history['mode'] ?? 'ai_active',
             'pending' => (bool) ($history['pending'] ?? false),
+            'canRemediateLegacyHandoff' => (bool) ($history['canRemediateLegacyHandoff'] ?? false),
+            'humanTakeoverConfirmed' => (bool) ($history['humanTakeoverConfirmed'] ?? false),
             'hasOlder' => (bool) ($history['hasOlder'] ?? false),
             'nextBeforeMessageId' => $history['nextBeforeMessageId'] ?? null,
             'openEscalation' => $history['openEscalation'] ?? null,

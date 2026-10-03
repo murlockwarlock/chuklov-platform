@@ -1065,7 +1065,8 @@ final class MilestoneFiveScenarioTest extends TestCase
         $this->setFilamentContext($admin, $organization);
 
         $this->get(route('filament.admin.resources.scenario-rules.index'))->assertOk();
-        $this->get(route('filament.admin.resources.scenario-rules.edit', ['record' => $otherRule]))->assertNotFound();
+        $response = $this->get(route('filament.admin.resources.scenario-rules.edit', ['record' => $otherRule]));
+        $response->assertNotFound();
 
         $this->expectException(AuthorizationException::class);
         app(UpdateScenarioRule::class)->handle($admin, $otherRule, [
@@ -1147,6 +1148,64 @@ final class MilestoneFiveScenarioTest extends TestCase
 
         self::assertSame(48, $rule->fresh()->delay_value);
         self::assertSame(2, $rule->fresh()->version);
+    }
+
+    public function test_scenario_rule_editor_preserves_and_edits_new_system_condition_types(): void
+    {
+        [$organization, $admin] = array_slice($this->fixture(), 0, 2);
+        $templateVersion = $this->template($organization);
+        $this->setFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(CreateScenarioRule::class)
+            ->fillForm([
+                'rule_key' => 'typed-system-conditions',
+                'name' => 'Typed system conditions',
+                'trigger_event' => 'finance.payment.succeeded',
+                'is_enabled' => true,
+                'delay_value' => 0,
+                'delay_unit' => 'minutes',
+                'purpose' => 'service',
+                'conditions' => [
+                    ['type' => 'feedback.band', 'operator' => 'equals', 'value' => 'internal'],
+                    ['type' => 'survey.available', 'operator' => 'equals', 'value' => 'true'],
+                    ['type' => 'survey.progress_available', 'operator' => 'equals', 'value' => 'false'],
+                    ['type' => 'payment.is_pre_visit_booking_payment', 'operator' => 'equals', 'value' => 'true'],
+                ],
+                'recipient_strategy' => ['type' => 'client'],
+                'channel_priority' => ['telegram'],
+                'template_version_id' => $templateVersion->id,
+            ])
+            ->call('create')
+            ->assertHasNoErrors();
+
+        $rule = ScenarioRule::query()->sole();
+        self::assertSame([
+            ['type' => 'feedback.band', 'operator' => 'equals', 'value' => 'internal'],
+            ['type' => 'survey.available', 'operator' => 'equals', 'value' => 'true'],
+            ['type' => 'survey.progress_available', 'operator' => 'equals', 'value' => 'false'],
+            ['type' => 'payment.is_pre_visit_booking_payment', 'operator' => 'equals', 'value' => 'true'],
+        ], $rule->conditions);
+
+        Livewire::actingAs($admin)
+            ->test(EditScenarioRule::class, ['record' => $rule->getRouteKey()])
+            ->fillForm([
+                'rule_key' => $rule->rule_key,
+                'name' => $rule->name,
+                'trigger_event' => 'finance.payment.succeeded',
+                'is_enabled' => true,
+                'delay_value' => 0,
+                'delay_unit' => 'minutes',
+                'purpose' => 'service',
+                'conditions' => $rule->conditions,
+                'recipient_strategy' => ['type' => 'client'],
+                'channel_priority' => ['telegram'],
+                'template_version_id' => $templateVersion->id,
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame($rule->conditions, $rule->fresh()->conditions);
     }
 
     /** @return array{Organization, User, Client, Specialist, Service} */

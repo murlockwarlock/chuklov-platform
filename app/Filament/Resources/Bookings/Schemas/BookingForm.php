@@ -46,6 +46,7 @@ class BookingForm
                         ->all())
                     ->searchable()
                     ->required()
+                    ->validationMessages(['required' => __('Выберите специалиста.')])
                     ->live()
                     ->afterStateUpdated(function (Get $get, Set $set): void {
                         $serviceId = (int) $get('service_id');
@@ -82,6 +83,7 @@ class BookingForm
                         ->all())
                     ->searchable()
                     ->required()
+                    ->validationMessages(['required' => __('Выберите услугу.')])
                     ->live(),
                 Select::make('client_id')
                     ->label(__('Клиент'))
@@ -96,12 +98,14 @@ class BookingForm
                         ->all())
                     ->searchable()
                     ->required()
+                    ->validationMessages(['required' => __('Выберите клиента.')])
                     ->helperText(__('Нажмите +, если клиента ещё нет в базе. Telegram подключается отдельной подтверждённой ссылкой после создания.'))
                     ->createOptionModalHeading(__('Добавить клиента'))
                     ->createOptionForm([
                         TextInput::make('full_name')
                             ->label(__('Имя и фамилия'))
                             ->required()
+                            ->validationMessages(['required' => __('Укажите имя клиента.')])
                             ->maxLength(160),
                         TextInput::make('email')
                             ->label('Email')
@@ -118,7 +122,8 @@ class BookingForm
                                 'en' => __('Английский'),
                             ])
                             ->default(fn (): string => (string) config('portal.default_locale', 'ru'))
-                            ->required(),
+                            ->required()
+                            ->validationMessages(['required' => __('Выберите язык клиента.')]),
                         Select::make('timezone')
                             ->label(__('Часовой пояс'))
                             ->options(fn (Get $get): array => TimezoneOptions::options(
@@ -127,7 +132,8 @@ class BookingForm
                             ))
                             ->default(fn (): string => app(OrganizationContext::class)->defaultTimezone())
                             ->searchable()
-                            ->required(),
+                            ->required()
+                            ->validationMessages(['required' => __('Выберите часовой пояс клиента.')]),
                         TextInput::make('lead_source')
                             ->label(__('Источник клиента'))
                             ->placeholder(__('Например: Telegram, Instagram, рекомендация'))
@@ -158,7 +164,8 @@ class BookingForm
                     ->afterStateUpdated(function (Set $set): void {
                         $set('confirm_backdated', false);
                     })
-                    ->required(),
+                    ->required()
+                    ->validationMessages(['required' => __('Укажите дату и время записи.')]),
                 TextEntry::make('backdated_warning')
                     ->label(__('Внимание'))
                     ->state(fn (Get $get): string => self::backdatedWarning($get))
@@ -181,6 +188,7 @@ class BookingForm
                         VisitFormat::Online->value => __('Онлайн'),
                     ])
                     ->required()
+                    ->validationMessages(['required' => __('Выберите формат визита.')])
                     ->live()
                     ->afterStateUpdated(function (Set $set, mixed $state): void {
                         $set('party_size', $state === VisitFormat::HomeVisit->value ? 1 : null);
@@ -237,6 +245,7 @@ class BookingForm
                     ->maxValue(20)
                     ->nullable()
                     ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
+                    ->validationMessages(['required' => __('Укажите количество участников выезда.')])
                     ->helperText(__('Сколько человек будет на выезде. Для обычного приёма поле не нужно.'))
                     ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
                 TextInput::make('location')
@@ -245,6 +254,7 @@ class BookingForm
                         ? app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value')
                         : null)
                     ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
+                    ->validationMessages(['required' => __('Укажите адрес выезда.')])
                     ->helperText(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value
                         ? __('Можно изменить адрес только для этой записи.')
                         : __('Укажите место выезда для этой записи.'))

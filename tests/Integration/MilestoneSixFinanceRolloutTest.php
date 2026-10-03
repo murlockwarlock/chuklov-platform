@@ -3,6 +3,7 @@
 namespace Tests\Integration;
 
 use App\Models\User;
+use App\Modules\Finance\Application\GetOutstandingDebtByBookingIds;
 use App\Modules\Finance\Application\ListFinancialObligationsForCrm;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
@@ -245,6 +246,26 @@ final class MilestoneSixFinanceRolloutTest extends TestCase
         $this->assertPostgresParity($organization, $obligation, FinancialStatus::Settled->value);
         $this->postgresLedger($obligation, -2500, -2500, 'correction', $payment->getKey());
         $this->assertPostgresParity($organization, $obligation, FinancialStatus::PartiallyPaid->value);
+    }
+
+    public function test_postgresql_batch_booking_debt_projection_reuses_finance_reconciliation(): void
+    {
+        $this->requirePostgres();
+        [$organization, , $obligation] = $this->postgresObligationFixture();
+        $bookingId = (int) $obligation->booking_id;
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+        $projection = app(GetOutstandingDebtByBookingIds::class)->handle($organization->getKey(), [$bookingId]);
+        $queryCount = count(DB::getQueryLog());
+        DB::disableQueryLog();
+
+        self::assertTrue($projection[$bookingId]);
+        self::assertSame(2, $queryCount);
+
+        $this->postgresLedger($obligation, 10000, 10000);
+        self::assertFalse(app(GetOutstandingDebtByBookingIds::class)
+            ->handle($organization->getKey(), [$bookingId])[$bookingId]);
     }
 
     #[DataProvider('postgresRoundingCases')]

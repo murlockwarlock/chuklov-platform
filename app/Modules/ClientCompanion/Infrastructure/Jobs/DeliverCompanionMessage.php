@@ -15,6 +15,7 @@ use App\Modules\ClientCompanion\Application\Services\CompanionMessageBodyReader;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionSafeAction;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
+use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use Carbon\CarbonInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -101,8 +102,11 @@ final class DeliverCompanionMessage implements ShouldQueue
             return [];
         }
 
-        $attachments = $delivery->conversationMessage?->companionAttachments
-            ?? collect();
+        $conversationMessage = $delivery->conversationMessage;
+        if (! $conversationMessage instanceof ConversationMessage) {
+            return [];
+        }
+        $attachments = $conversationMessage->companionAttachments;
         $media = [];
         foreach ($attachments as $link) {
             $attachment = $link->medicalAttachment;
@@ -141,6 +145,7 @@ final class DeliverCompanionMessage implements ShouldQueue
                 continue;
             }
             $callback = match ($action) {
+                CompanionSafeAction::RetryFailedTurn => 'cc:retry:'.$delivery->conversation_message_id,
                 CompanionSafeAction::RequestHuman => 'cc:human:'.$delivery->conversation_message_id,
                 CompanionSafeAction::ReinspectRecentImage => 'cc:reinspect:'.$delivery->conversation_message_id,
                 CompanionSafeAction::FeedbackHelpful => 'cc:feedback:helpful:'.$delivery->conversation_message_id,

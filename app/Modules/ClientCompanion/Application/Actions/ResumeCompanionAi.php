@@ -4,8 +4,11 @@ namespace App\Modules\ClientCompanion\Application\Actions;
 
 use App\Models\User;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnAttemptStatus;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
+use App\Modules\ClientCompanion\Domain\Models\CompanionTurnAttempt;
 use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
@@ -33,37 +36,57 @@ final class ResumeCompanionAi
             throw new AuthorizationException('The Companion conversation is outside the organization.');
         }
 
-        $conversation = DB::transaction(function () use ($organization, $client): Conversation {
+        DB::transaction(function () use ($organization, $actor, $client): void {
             $conversation = Conversation::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('client_id', $client->getKey())
                 ->where('conversation_type', ConversationType::ClientCompanion)
                 ->lockForUpdate()
                 ->firstOrFail();
-            $hasOpenEscalation = CompanionEscalation::query()
+            if ($conversation->automation_state !== ConversationAutomationState::HumanHandoff) {
+                return;
+            }
+            $pausedTurns = CompanionTurn::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('conversation_id', $conversation->getKey())
+                ->where('status', CompanionTurnStatus::Paused)
+                ->orderBy('sequence')
+                ->lockForUpdate()
+                ->get();
+            foreach ($pausedTurns as $turn) {
+                $turn->update(['status' => CompanionTurnStatus::Cancelled, 'completed_at' => now()]);
+            }
+            CompanionTurnAttempt::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereIn('turn_id', $pausedTurns->modelKeys())
+                ->whereIn('status', [CompanionTurnAttemptStatus::Pending, CompanionTurnAttemptStatus::Processing])
+                ->update([
+                    'status' => CompanionTurnAttemptStatus::Cancelled,
+                    'completed_at' => now(),
+                ]);
+            $escalations = CompanionEscalation::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('conversation_id', $conversation->getKey())
                 ->where('status', CompanionEscalationStatus::Open)
-                ->exists();
-            if ($hasOpenEscalation) {
-                throw new AuthorizationException('Resolve the active Companion handoff before resuming AI.');
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get();
+            foreach ($escalations as $escalation) {
+                $escalation->update([
+                    'status' => CompanionEscalationStatus::Resolved,
+                    'resolved_by_user_id' => $actor->getKey(),
+                    'resolved_at' => now(),
+                ]);
             }
             $conversation->update(['automation_state' => ConversationAutomationState::AiActive]);
-            CompanionTurn::query()
-                ->where('organization_id', $organization->getKey())
-                ->where('conversation_id', $conversation->getKey())
-                ->where('status', 'paused')
-                ->update(['status' => 'cancelled', 'completed_at' => now()]);
-
-            return $conversation->refresh();
+            $this->audit->handle(
+                organization: $organization,
+                actor: $actor,
+                action: 'companion.ai.resumed',
+                targetType: Conversation::class,
+                targetId: (string) $conversation->getKey(),
+                metadata: ['source' => 'staff_action'],
+            );
         });
-        $this->audit->handle(
-            organization: $organization,
-            actor: $actor,
-            action: 'companion.ai.resumed',
-            targetType: Conversation::class,
-            targetId: (string) $conversation->getKey(),
-            metadata: ['source' => 'staff_action'],
-        );
     }
 }

@@ -31,7 +31,8 @@ final class FinancialLedgerPresentationContract
         $validSign = match ($entryType) {
             FinancialLedgerEntryType::ManualPayment,
             FinancialLedgerEntryType::FakeGatewaySettlement,
-            FinancialLedgerEntryType::GatewaySettlement => $amount->isPositive(),
+            FinancialLedgerEntryType::GatewaySettlement,
+            FinancialLedgerEntryType::ReferralCredit => $amount->isPositive(),
             FinancialLedgerEntryType::Correction => $amount->isNegative(),
         };
 

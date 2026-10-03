@@ -7,5 +7,6 @@ enum FinancialEntrySource: string
     case Crm = 'crm';
     case FakeGateway = 'fake_gateway';
     case PaymentGateway = 'payment_gateway';
+    case Referral = 'referral';
     case System = 'system';
 }

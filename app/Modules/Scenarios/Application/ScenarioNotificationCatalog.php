@@ -9,7 +9,8 @@ final class ScenarioNotificationCatalog
     {
         return [
             ['event' => 'companion.requested_specialist', 'label' => 'Клиент запросил специалиста', 'recipients' => 'Сотрудники с правом обработки обращений', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Запрос специалиста из AI-компаньона'],
-            ['event' => 'companion.fallback_failed', 'label' => 'AI не смог ответить после разрешённой попытки', 'recipients' => 'Сотрудники, которые обрабатывают обращения', 'channels' => ['CRM'], 'enabled' => true, 'template' => 'Сбой передачи обращения специалисту'],
+            ['event' => 'companion.specialist_attention', 'label' => 'Сообщение клиента требует внимания', 'recipients' => 'Сотрудники с правом обработки обращений', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Сообщение клиента требует внимания'],
+            ['event' => 'companion.fallback_failed', 'label' => 'Технический сбой AI-компаньона', 'recipients' => 'Сотрудники, которые обрабатывают обращения', 'channels' => ['CRM'], 'enabled' => true, 'template' => 'Диагностика сбоя AI-компаньона'],
             ['event' => 'broadcast.delivery_failed', 'label' => 'Сбой автоматического сообщения или рассылки', 'recipients' => 'Ответственные сотрудники', 'channels' => ['CRM', 'Telegram'], 'enabled' => false, 'template' => 'Сбой доставки'],
             ['event' => 'booking.created', 'label' => 'Новая запись', 'recipients' => 'Клиент и назначенный специалист', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Новая запись'],
             ['event' => 'booking.confirmed', 'label' => 'Подтверждение записи', 'recipients' => 'Клиент и специалист', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Подтверждение записи'],
@@ -30,12 +31,13 @@ final class ScenarioNotificationCatalog
             ['event' => 'referral.link.visited', 'label' => 'Переход по реферальной ссылке', 'recipients' => 'Никому по умолчанию', 'channels' => [], 'enabled' => false, 'template' => 'Не отправлять по умолчанию'],
             ['event' => 'payment.provider.event.prepared', 'label' => 'Устаревшее событие платёжного провайдера', 'recipients' => 'Не используется', 'channels' => [], 'enabled' => false, 'template' => 'Не используется'],
             ['event' => 'finance.payment.succeeded', 'label' => 'Оплата получена', 'recipients' => 'Клиент', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Оплата получена'],
+            ['event' => 'finance.obligation.reminder_requested', 'label' => 'Напоминание о задолженности', 'recipients' => 'Клиент', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Напоминание об оплате'],
             ['event' => 'finance.payment.failed', 'label' => 'Оплата не прошла', 'recipients' => 'Клиент', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Оплата не прошла'],
             ['event' => 'finance.payment.initiation_unavailable', 'label' => 'Онлайн-оплата недоступна', 'recipients' => 'Финансовые сотрудники', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Проверка настроек онлайн-оплаты'],
             ['event' => 'finance.payment.reconciliation_required', 'label' => 'Платёж требует проверки', 'recipients' => 'Финансовые сотрудники', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Платёж требует проверки'],
             ['event' => 'commerce.fulfillment.failed', 'label' => 'Оплата получена, но доступ не выдан', 'recipients' => 'Клиент и финансовые сотрудники', 'channels' => ['CRM', 'Telegram'], 'enabled' => true, 'template' => 'Оплата получена, доступ не выдан'],
             ['event' => 'commerce.fulfillment.completed', 'label' => 'Доступ выдан', 'recipients' => 'Клиент', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Доступ готов'],
-            ['event' => 'referral.reward.earned', 'label' => 'Начисление по партнёрской программе', 'recipients' => 'Партнёр', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Начисление по партнёрской программе'],
+            ['event' => 'referral.reward.earned', 'label' => 'Начисление реферального бонуса', 'recipients' => 'Клиент', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Начисление реферального бонуса'],
             ['event' => 'tracker.task.daily_assigned', 'label' => 'Ежедневная задача трекера', 'recipients' => 'Клиент с доступом к трекеру', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Ежедневная задача трекера'],
             ['event' => 'tracker.task.weekly_assigned', 'label' => 'Еженедельная задача трекера', 'recipients' => 'Клиент с доступом к трекеру', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Еженедельная задача трекера'],
         ];

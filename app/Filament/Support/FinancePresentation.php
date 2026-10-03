@@ -20,6 +20,7 @@ use App\Modules\Finance\Domain\ValueObjects\FinancialReconciliation;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
@@ -47,6 +48,7 @@ final class FinancePresentation
         private readonly CurrencyCatalog $catalog,
         private readonly OrganizationContext $context,
         private readonly GetBookingFinanceSummary $bookingFinance,
+        private readonly ReferralRewardBalanceProjection $referralBalances,
     ) {}
 
     public function reconciliation(FinancialObligation $record): ?FinancialReconciliation
@@ -119,6 +121,76 @@ final class FinancePresentation
         return $actor instanceof User
             && $this->authorization->allowsManage($actor)
             && $summary?->reconciliation?->outstanding->isPositive() === true;
+    }
+
+    public function canApplyReferralCredit(FinancialObligation $record): bool
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            && $this->authorization->allowsManage($actor)
+            && ($reconciliation = $this->reconciliation($record)) !== null
+            && $reconciliation->outstanding->isPositive()
+            && ($available = $this->referralCreditAvailable($record)) !== null
+            && $available->isPositive();
+    }
+
+    public function canApplyReferralCreditForBooking(Booking $booking): bool
+    {
+        $summary = $this->bookingSummary($booking);
+
+        return $summary?->obligation instanceof FinancialObligation
+            && $this->canApplyReferralCredit($summary->obligation);
+    }
+
+    public function referralCreditAvailable(FinancialObligation $record): ?Money
+    {
+        try {
+            $available = $this->referralCreditBaseAvailable($record);
+            if ($available === null || $available->isNegative()) {
+                return null;
+            }
+
+            $currency = $this->contract->currency($record->getRawOriginal('settlement_currency'));
+
+            return Money::ofMinor(
+                $this->configuration->convert($record->organization_id, $available, $currency)->targetAmountMinor,
+                $currency,
+            );
+        } catch (InvalidArgumentException|UnexpectedValueException|ModelNotFoundException) {
+            return null;
+        }
+    }
+
+    public function referralCreditBaseAvailable(FinancialObligation $record): ?Money
+    {
+        try {
+            $baseCurrency = $this->configuration->configuration($this->context->id())->base_currency;
+            $attributes = $record->getAttributes();
+            $minor = array_key_exists('crm_referral_service_credit_available_minor', $attributes)
+                ? ($attributes['crm_referral_service_credit_available_minor'] ?? '0')
+                : $this->referralBalances
+                    ->serviceCredit((int) $record->getRawOriginal('client_id'))
+                    ->available()
+                    ->minorUnitsString();
+            $available = Money::ofMinor((string) $minor, $baseCurrency);
+
+            return $available->isNegative() ? null : $available;
+        } catch (InvalidArgumentException|UnexpectedValueException) {
+            return null;
+        }
+    }
+
+    public function referralCreditAmountDefault(FinancialObligation $record): ?string
+    {
+        $outstanding = $this->reconciliation($record)?->outstanding;
+        $available = $this->referralCreditAvailable($record);
+
+        if ($outstanding === null || ! $outstanding->isPositive() || $available === null || ! $available->isPositive()) {
+            return null;
+        }
+
+        return ($available->compareTo($outstanding) <= 0 ? $available : $outstanding)->toDecimalString();
     }
 
     public function canViewFinance(): bool
@@ -343,6 +415,7 @@ final class FinancePresentation
             'fake_gateway_settlement' => $entry->getRawOriginal('payment_method') === null
                 ? __('Тестовая оплата')
                 : __('Способ оплаты недоступен'),
+            'referral_credit' => __('Реферальный бонус'),
             'manual_payment' => match ($entry->getRawOriginal('payment_method')) {
                 'cash' => __('Наличные'),
                 'bank_transfer' => __('Банковский перевод'),

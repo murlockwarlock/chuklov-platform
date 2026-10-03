@@ -6,12 +6,14 @@ use App\Models\User;
 use App\Modules\Finance\Application\CreateFinancialObligation;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
 use App\Modules\Finance\Application\RecordManualPayment;
+use App\Modules\Finance\Application\RequestFinancialObligationReminder;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Finance\Application\SaveExchangeRate;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
@@ -121,6 +123,29 @@ final class MilestoneSixFinanceConcurrencyTest extends TestCase
         self::assertSame(1, FinancialObligation::query()->where('organization_id', $organization->id)->count());
         self::assertSame(1, DB::table('scenario_events')->where('organization_id', $organization->id)->where('event_name', 'finance.obligation.created')->count());
         self::assertNotNull($obligation);
+    }
+
+    public function test_two_processes_replay_one_financial_reminder_request_key_once(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, $obligation] = $this->fixture();
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::requestReminderInProcess($organization->id, $admin->id, $obligation->id, 'same-reminder-request'),
+            static fn (): string => self::requestReminderInProcess($organization->id, $admin->id, $obligation->id, 'same-reminder-request'),
+        ]);
+
+        self::assertCount(2, $results);
+        self::assertNotContains('error', $results);
+        self::assertSame(1, count(array_unique($results)));
+        self::assertSame(1, ScenarioEvent::query()
+            ->where('organization_id', $organization->id)
+            ->where('event_name', 'finance.obligation.reminder_requested')
+            ->count());
+        self::assertSame(1, DB::table('audit_events')
+            ->where('organization_id', $organization->id)
+            ->where('action', 'finance.obligation.reminder_requested')
+            ->count());
     }
 
     public function test_postgresql_ledger_history_cannot_be_updated_or_deleted(): void
@@ -301,6 +326,23 @@ final class MilestoneSixFinanceConcurrencyTest extends TestCase
             );
 
             return 'obligation:'.$obligation?->getKey();
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception).':'.$exception->getMessage();
+        }
+    }
+
+    private static function requestReminderInProcess(int $organizationId, int $adminId, int $obligationId, string $requestKey): string
+    {
+        try {
+            $organization = Organization::query()->findOrFail($organizationId);
+            app(OrganizationContext::class)->set($organization);
+            $event = app(RequestFinancialObligationReminder::class)->handle(
+                actor: User::query()->findOrFail($adminId),
+                obligation: FinancialObligation::query()->findOrFail($obligationId),
+                requestIdempotencyKey: $requestKey,
+            );
+
+            return 'event:'.$event->getKey();
         } catch (\Throwable $exception) {
             return 'error:'.get_class($exception).':'.$exception->getMessage();
         }

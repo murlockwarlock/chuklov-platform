@@ -19,6 +19,7 @@ final class ScenarioNotificationPresentation
             ScenarioEventType::PayoutRequested,
             ScenarioEventType::B2bLeadSubmitted,
             ScenarioEventType::CompanionRequestedSpecialist => NotificationSeverity::High,
+            ScenarioEventType::CompanionSpecialistAttention => NotificationSeverity::Critical,
             ScenarioEventType::BookingRescheduled,
             ScenarioEventType::BookingCancelled,
             ScenarioEventType::SurveyCompleted,

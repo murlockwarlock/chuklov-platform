@@ -9,6 +9,7 @@ use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedResource;
 use App\Models\User;
+use App\Modules\Feedback\Domain\Enums\NpsBand;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -53,10 +54,10 @@ final class ScenarioActionResource extends LocalizedResource
                     ->schema([
                         TextEntry::make('business_client')
                             ->label(__('Клиент'))
-                            ->state(fn (ScenarioAction $record): string => $record->client?->full_name ?: '—')
+                            ->state(fn (ScenarioAction $record): string => $record->client?->full_name ?: (self::contextClientName($record) ?? '—'))
                             ->url(fn (ScenarioAction $record): ?string => CrmEntityLinks::clientUrl($record->client))
                             ->color(fn (ScenarioAction $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary')
-                            ->visible(fn (ScenarioAction $record): bool => $record->client instanceof Client),
+                            ->visible(fn (ScenarioAction $record): bool => $record->client instanceof Client || self::contextClientName($record) !== null),
                         TextEntry::make('business_event')
                             ->label(__('Событие'))
                             ->state(fn (ScenarioAction $record): string => self::eventLabel($record->event?->event_name)),
@@ -105,7 +106,9 @@ final class ScenarioActionResource extends LocalizedResource
                         if ($record->recipient_type === 'client') {
                             $client = $record->client;
 
-                            return __('Клиент: :name', ['name' => $client instanceof Client ? $client->full_name : __('недоступен')]);
+                            return __('Клиент: :name', ['name' => $client instanceof Client
+                                ? (string) $client->full_name
+                                : (string) __('недоступен')]);
                         }
 
                         $user = $record->recipientUser;
@@ -260,6 +263,7 @@ final class ScenarioActionResource extends LocalizedResource
             'onboarding.started' => __('После начала оформления'),
             'finance.obligation.created' => __('После появления задолженности'),
             'companion.requested_specialist' => __('Клиент запросил специалиста'),
+            'companion.specialist_attention' => __('Сообщение клиента требует внимания'),
             'companion.fallback_failed' => __('Когда AI не смог ответить'),
             'broadcast.delivery_failed' => __('При сбое операционной рассылки'),
             'feedback.submitted' => __('После обратной связи клиента'),
@@ -365,6 +369,13 @@ final class ScenarioActionResource extends LocalizedResource
         return $record->recipientUser?->name ?: __('Сотрудник недоступен');
     }
 
+    private static function contextClientName(ScenarioAction $record): ?string
+    {
+        $name = $record->render_context['client']['full_name'] ?? null;
+
+        return is_string($name) && trim($name) !== '' ? $name : null;
+    }
+
     private static function deliverySummary(ScenarioAction $record): string
     {
         if ($record->deliveries->isEmpty()) {
@@ -413,8 +424,12 @@ final class ScenarioActionResource extends LocalizedResource
                 'booking.has_qualifying_next_booking' => __('подходящая следующая запись'),
                 'client.language' => __('язык клиента'),
                 'client.marketing_consent' => __('согласие на маркетинговые сообщения'),
+                'feedback.band' => __('категория оценки'),
                 'onboarding.completed' => __('завершение оформления'),
                 'onboarding.stage' => __('этап оформления'),
+                'payment.is_pre_visit_booking_payment' => __('оплата записи до визита'),
+                'survey.available' => __('доступность теста'),
+                'survey.progress_available' => __('доступность сравнения тестов'),
                 default => __('условие'),
             };
             $operator = match ($condition['operator'] ?? null) {
@@ -436,6 +451,8 @@ final class ScenarioActionResource extends LocalizedResource
         return collect($values)->map(static fn (mixed $item): string => match ((string) $item) {
             'true' => __('да'),
             'false' => __('нет'),
+            NpsBand::Positive->value => __('положительная'),
+            NpsBand::Internal->value => __('внутренняя'),
             'contacts' => __('контакты'),
             'profile' => __('профиль'),
             'service' => __('услуга'),

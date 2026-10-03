@@ -2,12 +2,22 @@
 
 namespace App\Modules\ClientCompanion\Application\Actions;
 
+use App\Modules\Channels\Infrastructure\Telegram\TelegramCompanionFormatter;
+use App\Modules\ClientCompanion\Application\Services\CompanionClientMessage;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
-use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionSafeAction;
+use App\Modules\ClientCompanion\Domain\Enums\RequestCompanionHandoffResult;
+use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
+use App\Modules\ClientCompanion\Domain\Models\CompanionTurnAttempt;
+use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
+use App\Modules\Conversations\Application\RecordCompanionMessage;
+use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
 use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
+use App\Modules\Conversations\Domain\Enums\ConversationDirection;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
@@ -15,7 +25,6 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
-use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -27,9 +36,11 @@ final class RequestCompanionHandoff
         private readonly OrganizationContext $context,
         private readonly EnsureOperationalNotificationDefaults $notificationDefaults,
         private readonly RecordScenarioEvent $scenarioEvents,
+        private readonly RecordCompanionMessage $recordMessage,
+        private readonly TelegramCompanionFormatter $formatter,
     ) {}
 
-    public function handle(Client $client, int $messageId): void
+    public function handle(Client $client, int $messageId): RequestCompanionHandoffResult
     {
         $organizationId = $this->context->id();
         if ((int) $client->organization_id !== $organizationId) {
@@ -37,21 +48,22 @@ final class RequestCompanionHandoff
         }
 
         $this->notificationDefaults->handle($this->context->organization());
-
-        $scenarioEvent = DB::transaction(function () use ($organizationId, $client, $messageId): ?ScenarioEvent {
-            $message = ConversationMessage::query()
+        $result = DB::transaction(function () use ($organizationId, $client, $messageId): array {
+            $messageReference = ConversationMessage::query()
                 ->where('organization_id', $organizationId)
                 ->where('client_id', $client->getKey())
                 ->whereKey($messageId)
                 ->first();
-            if ($message === null || ! $message->conversation()->where('conversation_type', ConversationType::ClientCompanion)->exists()) {
+            if (! $messageReference instanceof ConversationMessage
+                || ! $messageReference->conversation()->where('conversation_type', ConversationType::ClientCompanion)->exists()) {
                 throw new AuthorizationException('The Companion action is not available.');
             }
+
             $conversation = Conversation::query()
                 ->where('organization_id', $organizationId)
-                ->whereKey($message->conversation_id)
                 ->where('client_id', $client->getKey())
                 ->where('conversation_type', ConversationType::ClientCompanion)
+                ->whereKey($messageReference->conversation_id)
                 ->lockForUpdate()
                 ->firstOrFail();
             $message = ConversationMessage::query()
@@ -61,37 +73,44 @@ final class RequestCompanionHandoff
                 ->whereKey($messageId)
                 ->lockForUpdate()
                 ->firstOrFail();
+            if ($conversation->automation_state === ConversationAutomationState::HumanHandoff) {
+                return ['result' => RequestCompanionHandoffResult::Unavailable, 'deliveryId' => null, 'scenarioEventId' => null];
+            }
+            $metadata = $message->metadata ?? [];
+            $safeActions = array_filter(explode(',', (string) ($metadata['safe_actions'] ?? '')));
+            if (! in_array(CompanionSafeAction::RequestHuman->value, $safeActions, true)) {
+                throw new AuthorizationException('The Companion action is not available.');
+            }
+
+            $turnId = CompanionTurnAttempt::query()
+                ->where('organization_id', $organizationId)
+                ->where('output_message_id', $message->getKey())
+                ->value('turn_id');
             $turn = CompanionTurn::query()
                 ->where('organization_id', $organizationId)
-                ->where('conversation_id', $message->conversation_id)
-                ->where('outbound_message_id', $message->getKey())
+                ->where('conversation_id', $conversation->getKey())
+                ->when($turnId !== null, fn ($query) => $query->whereKey($turnId), fn ($query) => $query->where('outbound_message_id', $message->getKey()))
                 ->lockForUpdate()
                 ->firstOrFail();
-            if ($conversation->automation_state === ConversationAutomationState::HumanHandoff) {
-                return null;
-            }
-
-            $open = CompanionEscalation::query()
+            $sameRequest = CompanionEscalation::query()
                 ->where('organization_id', $organizationId)
                 ->where('conversation_id', $conversation->getKey())
+                ->where('reason', CompanionEscalationReason::HumanRequested)
+                ->where('safe_metadata->source_message_id', $messageId)
+                ->first();
+            if ($sameRequest instanceof CompanionEscalation) {
+                return ['result' => RequestCompanionHandoffResult::AlreadyRequested, 'deliveryId' => null, 'scenarioEventId' => null];
+            }
+            $existing = CompanionEscalation::query()
+                ->where('organization_id', $organizationId)
+                ->where('conversation_id', $conversation->getKey())
+                ->where('reason', CompanionEscalationReason::HumanRequested)
                 ->where('status', CompanionEscalationStatus::Open)
-                ->exists();
-            if ($open) {
-                return null;
+                ->first();
+            if ($existing instanceof CompanionEscalation) {
+                return ['result' => RequestCompanionHandoffResult::AlreadyRequested, 'deliveryId' => null, 'scenarioEventId' => null];
             }
 
-            if (in_array($turn->status, [CompanionTurnStatus::Assembling, CompanionTurnStatus::Pending, CompanionTurnStatus::Processing], true)) {
-                $turn->update([
-                    'status' => CompanionTurnStatus::Escalated,
-                    'typing_active' => false,
-                    'processing_lease_token' => null,
-                    'processing_lease_expires_at' => null,
-                    'typing_owner_token' => null,
-                    'typing_chat_id' => null,
-                    'escalated_at' => now(),
-                ]);
-            }
-            $conversation->update(['automation_state' => ConversationAutomationState::HumanHandoff]);
             $escalation = CompanionEscalation::query()->create([
                 'organization_id' => $organizationId,
                 'client_id' => $client->getKey(),
@@ -100,15 +119,57 @@ final class RequestCompanionHandoff
                 'ai_run_id' => $turn->ai_run_id,
                 'reason' => CompanionEscalationReason::HumanRequested,
                 'status' => CompanionEscalationStatus::Open,
-                'safe_metadata' => ['source' => 'telegram_button'],
+                'safe_metadata' => ['source' => 'client_action', 'source_message_id' => $messageId],
                 'opened_at' => now(),
             ]);
+            $locale = (string) ($metadata['locale'] ?? $client->language ?? app()->getLocale());
+            $copy = CompanionClientMessage::from($locale);
+            $acknowledgement = $this->recordMessage->handle(
+                organizationId: $organizationId,
+                client: $client,
+                conversation: $conversation,
+                channel: (string) $message->channel,
+                direction: ConversationDirection::Outbound,
+                authorType: ConversationAuthorType::Ai,
+                body: $copy->specialistNotified,
+                contextEpoch: $conversation->context_epoch,
+                metadata: ['message_type' => 'specialist_notified', 'locale' => $copy->locale, 'transport' => $message->channel],
+            );
+            $deliveryId = null;
+            if ($message->channel === 'telegram' && $turn->transport_chat_id !== null) {
+                $chunks = $this->formatter->chunks($copy->specialistNotified);
+                foreach ($chunks as $index => $chunk) {
+                    $delivery = CompanionDelivery::query()->firstOrCreate([
+                        'organization_id' => $organizationId,
+                        'conversation_message_id' => $acknowledgement->getKey(),
+                        'chunk_index' => $index,
+                    ], [
+                        'turn_id' => null,
+                        'channel' => 'telegram',
+                        'recipient_external_id' => $turn->transport_chat_id,
+                        'chunk_count' => count($chunks),
+                        'status' => CompanionDeliveryStatus::Pending,
+                        'attempt_count' => 0,
+                    ]);
+                    $deliveryId ??= (int) $delivery->getKey();
+                }
+            }
+            $scenarioEvent = $this->scenarioEvents->companionEscalationRecorded($escalation, CarbonImmutable::now());
 
-            return $this->scenarioEvents->companionRequestedSpecialist($escalation, CarbonImmutable::now());
+            return [
+                'result' => RequestCompanionHandoffResult::Created,
+                'deliveryId' => $deliveryId,
+                'scenarioEventId' => (int) $scenarioEvent->getKey(),
+            ];
         });
 
-        if ($scenarioEvent instanceof ScenarioEvent) {
-            ProcessScenarioEvent::dispatch((int) $scenarioEvent->getKey())->afterCommit();
+        if ($result['deliveryId'] !== null) {
+            DeliverCompanionMessage::dispatch($organizationId, $result['deliveryId'])->afterCommit();
         }
+        if ($result['scenarioEventId'] !== null) {
+            ProcessScenarioEvent::dispatch((int) $result['scenarioEventId'])->afterCommit();
+        }
+
+        return $result['result'];
     }
 }

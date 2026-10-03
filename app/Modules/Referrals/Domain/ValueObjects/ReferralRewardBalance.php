@@ -14,6 +14,8 @@ final readonly class ReferralRewardBalance
         public Money $reversed,
         public Money $pending,
         public Money $paid,
+        public Money $redeemed,
+        public Money $restored,
     ) {}
 
     public function accrued(): Money
@@ -23,7 +25,11 @@ final readonly class ReferralRewardBalance
 
     public function available(): Money
     {
-        $available = $this->accrued()->subtract($this->pending)->subtract($this->paid);
+        $available = $this->accrued()
+            ->subtract($this->pending)
+            ->subtract($this->paid)
+            ->subtract($this->redeemed)
+            ->add($this->restored);
 
         if ($available->isNegative()) {
             throw new UnexpectedValueException('The referral reward balance is negative.');

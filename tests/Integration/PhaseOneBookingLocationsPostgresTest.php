@@ -4,7 +4,9 @@ namespace Tests\Integration;
 
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Models\User;
+use App\Modules\Channels\Application\HandleTelegramBookingConfirmation;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -41,6 +43,9 @@ use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use SergiX44\Nutgram\Nutgram;
+use SergiX44\Nutgram\Telegram\Types\User\User as TelegramUser;
+use SergiX44\Nutgram\Testing\FakeNutgram;
 use Tests\TestCase;
 
 final class PhaseOneBookingLocationsPostgresTest extends TestCase
@@ -159,6 +164,61 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
             'organization_id' => $organization->getKey(),
             'is_default_office' => true,
         ]);
+    }
+
+    public function test_postgresql_telegram_confirmation_targets_booking_specialist_when_staff_user_has_multiple(): void
+    {
+        $this->requirePostgres();
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $firstSpecialist = Specialist::factory()->forOrganization($organization)->create([
+            'staff_user_id' => $admin->getKey(),
+        ]);
+        $secondSpecialist = Specialist::factory()->forOrganization($organization)->create([
+            'staff_user_id' => $admin->getKey(),
+        ]);
+        $service = Service::factory()->forOrganization($organization)->create([
+            'duration_minutes' => 60,
+            'buffer_minutes' => 0,
+            'formats' => ['office', 'online'],
+        ]);
+        OrganizationChannelIdentity::factory()->forUser($admin)->verified()->create([
+            'external_id' => '88008800',
+        ]);
+        $firstBooking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($firstSpecialist)
+            ->forService($service)
+            ->create(['status' => BookingStatus::Requested, 'visit_format' => VisitFormat::Office]);
+        $targetBooking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($secondSpecialist)
+            ->forService($service)
+            ->create(['status' => BookingStatus::Requested, 'visit_format' => VisitFormat::Online]);
+
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        $bot = FakeNutgram::instance();
+        $bot->setCommonUser(TelegramUser::make(
+            id: 88008800,
+            is_bot: false,
+            first_name: 'Specialist',
+            language_code: 'ru',
+        ));
+        $handler = app(HandleTelegramBookingConfirmation::class);
+        $bot->onCallbackQueryData('booking:confirm:\\d+(?::\\d+)?', function (Nutgram $bot) use ($handler): void {
+            $handler->handle($bot);
+        });
+
+        $bot->hearCallbackQueryData('booking:confirm:'.$targetBooking->getKey().':'.$targetBooking->event_version)->reply();
+
+        $bot->assertReply('answerCallbackQuery', ['text' => '✅ Запись подтверждена'], 0);
+        self::assertSame(BookingStatus::Requested, $firstBooking->refresh()->status);
+        self::assertSame(BookingStatus::Confirmed, $targetBooking->refresh()->status);
     }
 
     public function test_postgresql_unrelated_scheduling_save_preserves_hours_and_viewer_timezone(): void

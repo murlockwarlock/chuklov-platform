@@ -12,9 +12,12 @@ use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionText;
 use App\Modules\Identity\Application\CompleteTelegramWebAuthentication;
 use App\Modules\Identity\Application\ConnectTelegramClientIdentity;
 use App\Modules\Identity\Application\ConnectTelegramOrganizationIdentity;
+use App\Modules\Identity\Application\ExpiredTelegramLinkToken;
 use App\Modules\Identity\Application\InvalidTelegramLinkToken;
 use App\Modules\Identity\Application\InvalidTelegramWebAuthentication;
 use App\Modules\Identity\Application\RefreshTelegramClientIdentity;
+use App\Modules\Identity\Application\TelegramIdentityAlreadyLinked;
+use App\Modules\Identity\Application\TelegramStaffMembershipUnavailable;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Application\HandleReferralTelegramStart;
@@ -126,8 +129,16 @@ $bot->onCommand('start staff_{token}', function (
     ConnectTelegramOrganizationIdentity $connect,
 ): void {
     try {
-        $connect->handle($token, $identityVerifier->handle($bot));
-        $bot->sendMessage('Telegram подключён к уведомлениям CRM.');
+        $alreadyConnected = $connect->handle($token, $identityVerifier->handle($bot));
+        $bot->sendMessage($alreadyConnected
+            ? 'Telegram уже подключён.'
+            : 'Telegram подключён к уведомлениям CRM.');
+    } catch (ExpiredTelegramLinkToken) {
+        $bot->sendMessage('Ссылка устарела. Создайте новую в CRM.');
+    } catch (TelegramIdentityAlreadyLinked) {
+        $bot->sendMessage('Этот Telegram уже связан с другим аккаунтом CRM. Обратитесь к администратору.');
+    } catch (TelegramStaffMembershipUnavailable) {
+        $bot->sendMessage('Подключение сейчас недоступно. Обратитесь к администратору.');
     } catch (InvalidTelegramLinkToken|AuthorizationException|UnauthorizedHttpException) {
         $bot->sendMessage('Ссылка недействительна или уже использована.');
     }
@@ -146,7 +157,7 @@ $bot->onCommand('start {token}', function (
     } catch (InvalidTelegramLinkToken|AuthorizationException|UnauthorizedHttpException) {
         $bot->sendMessage('Ссылка недействительна или уже использована.');
     }
-})->where('token', '(?!web_|ref_)[A-Za-z0-9_-]+')->description('Запустить приложение');
+})->where('token', '(?!(?:staff_|web_|ref_))[A-Za-z0-9_-]+')->description('Запустить приложение');
 
 $bot->onCommand('invite', function (
     Nutgram $bot,
@@ -249,7 +260,7 @@ $bot->onDocument(function (Nutgram $bot, HandleTelegramCompanionDocument $handle
     $handler->handle($bot);
 });
 
-$bot->onCallbackQueryData('cc:(?:feedback:(?:helpful|not_helpful)|human|reinspect):\d+', function (Nutgram $bot, HandleTelegramCompanionCallback $handler): void {
+$bot->onCallbackQueryData('cc:(?:feedback:(?:helpful|not_helpful)|human|reinspect|retry):\d+', function (Nutgram $bot, HandleTelegramCompanionCallback $handler): void {
     $handler->handle($bot);
 });
 

@@ -213,19 +213,19 @@ class SchedulingConfiguration extends LocalizedPage
                     ->helperText(__('За сколько минут до визита клиент может бесплатно отменить или перенести запись.'))
                     ->required(),
                 TextInput::make('b2b_sales_call_duration_minutes')
-                    ->label(__('Длительность B2B-разговора (минуты)'))
+                    ->label(__('Длительность вводной B2B-встречи (минуты)'))
                     ->integer()
                     ->minValue(1)
                     ->maxValue(1440)
-                    ->helperText(__('Укажите длительность разговора. Для автоматической встречи доступная длительность зависит от тарифа Zoom.'))
+                    ->helperText(__('Используется только для B2B-встреч. Длительность обычной консультации задаётся в самой услуге. Для автоматической Zoom-встречи действует ограничение тарифа Zoom.'))
                     ->nullable(),
                 Select::make('online_consultation_service_id')
-                    ->label(__('Онлайн-консультация из Road Map'))
+                    ->label(__('Консультация после результатов теста'))
                     ->options(fn (): array => $this->onlineConsultationServices())
                     ->searchable()
                     ->nullable()
                     ->placeholder(__('Не настроено'))
-                    ->helperText(__('Выберите обычную онлайн-услугу с полной предоплатой. CTA появится в результатах теста только при активной услуге и назначенном специалисте.')),
+                    ->helperText(__('Эта онлайн-услуга будет предложена клиенту после завершения теста. Доступны только активные услуги с полной предоплатой и назначенным специалистом.')),
                 Select::make('default_timezone')
                     ->label(__('Часовой пояс организации'))
                     ->options(fn (Get $get): array => TimezoneOptions::options(

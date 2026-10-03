@@ -67,8 +67,8 @@ final class ScenarioNotificationSeeder extends Seeder
                 'name' => 'Через два дня после визита',
                 'delay' => 48,
                 'body' => $locale === 'ru'
-                    ? 'Надеемся, визит был полезен, {{ client.full_name }}. Поделитесь впечатлениями, когда будет удобно.'
-                    : 'We hope your visit was useful, {{ client.full_name }}. Share your impressions when convenient.',
+                    ? 'Как меняется самочувствие после визита, {{ client.full_name }}? Получается ли выполнять согласованные рекомендации? Расскажите о текущей динамике, если хотите.'
+                    : 'How are you feeling after your visit, {{ client.full_name }}? Have you been able to follow the recommendations you received? Tell us how things are changing.',
                 'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => $locale]],
             ],
             [
@@ -82,6 +82,7 @@ final class ScenarioNotificationSeeder extends Seeder
                 'conditions' => [
                     ['type' => 'client.language', 'operator' => 'equals', 'value' => $locale],
                     ['type' => 'booking.status', 'operator' => 'equals', 'value' => 'completed'],
+                    ['type' => 'booking.has_qualifying_next_booking', 'operator' => 'equals', 'value' => false],
                 ],
             ],
         ] as $seed) {
@@ -493,8 +494,8 @@ final class ScenarioNotificationSeeder extends Seeder
             'name' => 'Оценка визита после завершения ('.$locale.')',
             'trigger_event' => ScenarioEventType::BookingCompleted->value,
             'is_enabled' => true,
-            'delay_value' => 0,
-            'delay_unit' => 'minutes',
+            'delay_value' => 2,
+            'delay_unit' => 'hours',
             'purpose' => ScenarioRulePurpose::Service->value,
             'conditions' => [['type' => 'client.language', 'operator' => 'equals', 'value' => $locale]],
             'recipient_strategy' => ['type' => 'client'],

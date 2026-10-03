@@ -45,7 +45,7 @@ class SpecialistForm
                     })
                     ->helperText(__('Меняет только отображение времени в CRM и уведомлениях. Уже созданные записи не сдвигаются.')),
                 Select::make('staff_user_id')
-                    ->label(__('Сотрудник CRM'))
+                    ->label(__('Аккаунт CRM'))
                     ->options(fn (): array => User::query()
                         ->whereHas('memberships', function ($query): void {
                             $query
@@ -56,7 +56,9 @@ class SpecialistForm
                         ->pluck('name', 'id')
                         ->all())
                     ->searchable()
-                    ->nullable(),
+                    ->nullable()
+                    ->placeholder(__('Не привязан'))
+                    ->helperText(__('Пользователь CRM, связанный с этим специалистом.')),
                 Toggle::make('is_active')
                     ->label(__('Активен'))
                     ->required()

@@ -223,7 +223,20 @@ final class CrmSpecialistWorkspaceTest extends TestCase
 
         self::assertStringContainsString('02.10', $component->instance()->selectedDatesLabel());
         self::assertStringNotContainsString('2026', $component->instance()->selectedDatesLabel());
-        $component->assertSee('Снять выбор')->assertSee('Убрать рабочее время');
+        $component
+            ->assertSee('Снять выбор')
+            ->assertSee('Не работает')
+            ->assertSee('Вернуть по графику')
+            ->assertSee('Изменить рабочее время')
+            ->assertSee('Внесенные здесь изменения не повлияют на установленный регулярный график.')
+            ->assertDontSee('Выходной')
+            ->assertDontSee('По регулярному графику')
+            ->assertDontSee('Своё рабочее время');
+
+        $component->set('overrideType', ScheduleExceptionType::CustomWindow->value);
+        self::assertStringContainsString('border border-gray-300', $component->html());
+        $editorHtml = substr($component->html(), strpos($component->html(), 'Изменить рабочее время'));
+        self::assertTrue(strpos($editorHtml, 'wire:model.live="overrideReason"') < strpos($editorHtml, 'Сохранить изменения'));
 
         $component->call('clearDateSelection')->assertSet('selectedDates', []);
 
@@ -265,10 +278,7 @@ final class CrmSpecialistWorkspaceTest extends TestCase
         self::assertCount(2, $component->instance()->impactBookings);
         $html = $component->html();
         self::assertStringContainsString('05.10.2026 10:00', $html);
-        self::assertLessThan(
-            strpos($html, 'Действие'),
-            strpos($html, 'Изменение затрагивает будущие записи'),
-        );
+        self::assertStringContainsString('Изменение затрагивает будущие записи', $html);
         self::assertDatabaseMissing('schedule_exceptions', [
             'specialist_id' => $specialist->id,
             'exception_date' => '2026-10-05',
