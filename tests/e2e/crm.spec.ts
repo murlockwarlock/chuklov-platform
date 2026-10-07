@@ -634,12 +634,15 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await expect(availableTime).toBeVisible({ timeout: 15_000 });
     await availableTime.click();
     await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
-    const bookingState = async (): Promise<Record<string, string>> => page.locator('input[name^="data["]').evaluateAll((inputs) => Object.fromEntries(
-        inputs
-            .filter((input): input is HTMLInputElement => input instanceof HTMLInputElement)
-            .filter((input) => ['data[booking_time]', 'data[booking_time_snapshot]', 'data[starts_at]'].includes(input.name))
-            .map((input) => [input.name, input.value]),
-    ));
+    const bookingState = async (): Promise<Array<Record<string, unknown>>> => page.evaluate(() => Array.from(document.querySelectorAll('[x-data*="selectFormComponent"]')).map((element) => {
+        const data = (window as typeof window & { Alpine?: { $data: (element: Element) => { select?: { statePath?: string; state?: unknown }; state?: unknown } } }).Alpine?.$data(element);
+
+        return {
+            statePath: data?.select?.statePath,
+            state: data?.select?.state ?? data?.state,
+            text: element.textContent?.trim(),
+        };
+    }).filter((state) => state.statePath === 'data.booking_time' || state.statePath === 'data.client_id' || state.statePath === 'data.booking_time_snapshot' || state.statePath === 'data.starts_at'));
     console.log('booking state before inline client', await bookingState());
 
     const newClientAction = page.getByTestId('booking-create-client');
