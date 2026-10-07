@@ -634,6 +634,13 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await expect(availableTime).toBeVisible({ timeout: 15_000 });
     await availableTime.click();
     await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
+    const bookingState = async (): Promise<Record<string, string>> => page.locator('input[name^="data["]').evaluateAll((inputs) => Object.fromEntries(
+        inputs
+            .filter((input): input is HTMLInputElement => input instanceof HTMLInputElement)
+            .filter((input) => ['data[booking_time]', 'data[booking_time_snapshot]', 'data[starts_at]'].includes(input.name))
+            .map((input) => [input.name, input.value]),
+    ));
+    console.log('booking state before inline client', await bookingState());
 
     const newClientAction = page.getByTestId('booking-create-client');
     await expect(newClientAction).toBeVisible();
@@ -653,6 +660,7 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await expect(page.getByRole('combobox', { name: 'Услуга*', exact: true })).toContainText(fixture.serviceName);
     await expect(page.getByRole('combobox', { name: 'Специалист*', exact: true })).toContainText(fixture.specialistName);
     await expect(dateInput).toHaveValue(fixture.bookingStartsAt.slice(0, 10));
+    console.log('booking state after inline client', await bookingState());
     await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/);
