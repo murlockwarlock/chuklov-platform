@@ -637,18 +637,19 @@ test('staff can create a new client inline while creating a booking', async ({ p
     const bookingState = async (): Promise<Record<string, unknown>> => page.evaluate(() => {
         const root = Array.from(document.querySelectorAll('[wire\\:id]')).find((element) => element.textContent?.includes('Создать запись на приём'));
         const componentId = root?.getAttribute('wire:id');
-        const livewire = (window as typeof window & { Livewire?: { find: (id: string) => { reactive?: Record<string, unknown>; snapshot?: { data?: Record<string, unknown> } } } }).Livewire;
+        const livewire = (window as typeof window & { Livewire?: { find: (id: string) => { $wire?: { $get?: (path: string) => unknown }; reactive?: Record<string, unknown>; snapshot?: { data?: Record<string, unknown> } } } }).Livewire;
 
         if (!componentId || !livewire) {
             return {};
         }
 
         const component = livewire.find(componentId);
-        const state = component.reactive?.data ?? component.snapshot?.data ?? {};
+        const get = (path: string): unknown => component.$wire?.$get?.(path);
 
         return {
             componentId,
-            data: state,
+            reactiveKeys: Object.keys(component.reactive ?? {}),
+            values: Object.fromEntries(['data.booking_time', 'data.booking_time_snapshot', 'data.starts_at', 'data.client_id'].map((path) => [path, get(path)])),
         };
     });
     console.log('booking state before inline client', await bookingState());
