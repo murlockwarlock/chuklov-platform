@@ -168,11 +168,11 @@ class BookingForm
                             ->placeholder(__('Например: Telegram, Instagram, рекомендация'))
                             ->maxLength(120),
                     ])
-                    ->createOptionUsing(function (array $data, Get $get, Set $set): int {
+                    ->createOptionUsing(function (array $data, ?Get $get = null, ?Set $set = null): int {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
 
-                        $selectedTime = self::selectedBookingTime($get);
+                        $selectedTime = $get instanceof Get ? self::selectedBookingTime($get) : null;
 
                         try {
                             $phone = trim((string) ($data['phone'] ?? ''));
@@ -186,7 +186,7 @@ class BookingForm
                                 leadSource: isset($data['lead_source']) && trim((string) $data['lead_source']) !== '' ? (string) $data['lead_source'] : null,
                             );
 
-                            if ($selectedTime !== null) {
+                            if ($selectedTime !== null && $set instanceof Set) {
                                 $set('booking_time_snapshot', $selectedTime);
                                 $set('booking_time', $selectedTime);
                                 $set('starts_at', $selectedTime);
