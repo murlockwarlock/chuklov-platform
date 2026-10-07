@@ -138,7 +138,7 @@ final class ReplyToCompanion
             );
 
             if ($attachmentIds !== []) {
-                if ($turn === null || count($attachmentIds) > 1) {
+                if (count($attachmentIds) > 1) {
                     throw ValidationException::withMessages(['attachments' => 'Выберите не более одного файла для сообщения.']);
                 }
 
@@ -157,7 +157,7 @@ final class ReplyToCompanion
                         'organization_id' => $organization->getKey(),
                         'client_id' => $client->getKey(),
                         'conversation_id' => $conversation->getKey(),
-                        'turn_id' => $turn->getKey(),
+                        'turn_id' => $turn?->getKey(),
                         'conversation_message_id' => $message->getKey(),
                         'medical_attachment_id' => $attachment->getKey(),
                         'source_ordinal' => 1,

@@ -16,11 +16,13 @@ use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
+use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
 use App\Modules\ClientCompanion\Application\Actions\TakeOverCompanionConversation;
 use App\Modules\ClientCompanion\Application\Services\ReadCompanionWorkspace;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
+use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
 use App\Modules\Conversations\Application\RecordCompanionMessage;
 use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
@@ -46,7 +48,9 @@ use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Textarea;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
@@ -395,6 +399,36 @@ final class MessagesWorkspaceTest extends TestCase
         self::assertSame(0, CompanionDelivery::query()->count());
         self::assertSame('portal', ConversationMessage::query()->where('author_type', ConversationAuthorType::Staff)->sole()->channel);
         self::assertSame(1, ConversationMessage::query()->where('metadata->message_type', 'human_takeover')->count());
+    }
+
+    public function test_crm_reply_with_attachment_can_start_a_new_conversation(): void
+    {
+        Storage::fake('private');
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($this->admin)
+            ->test(Messages::class)
+            ->call('selectClient', $this->client->getKey())
+            ->call('takeOver')
+            ->set('data.body', 'Первое сообщение с файлом')
+            ->set('data.new_attachment', UploadedFile::fake()->createWithContent('first-message.txt', 'Безопасный файл'))
+            ->call('sendMessage')
+            ->assertNotified('Сообщение сохранено в истории')
+            ->assertSee('first-message.txt');
+
+        $message = ConversationMessage::query()
+            ->where('client_id', $this->client->getKey())
+            ->where('author_type', ConversationAuthorType::Staff->value)
+            ->where('metadata->message_type', 'staff_reply')
+            ->sole();
+        $link = CompanionMessageAttachment::query()
+            ->where('conversation_message_id', $message->getKey())
+            ->sole();
+        $attachment = MedicalAttachment::query()->findOrFail($link->medical_attachment_id);
+
+        self::assertNull($link->turn_id);
+        self::assertSame('first-message.txt', $attachment->original_filename);
+        Storage::disk('private')->assertExists($attachment->storage_path);
     }
 
     public function test_booking_client_name_links_to_the_scoped_client_resource(): void
