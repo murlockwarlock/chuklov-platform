@@ -594,7 +594,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(writeClient).toHaveAttribute('href', new RegExp(`/admin/messages\\?client=${fixture.clientId}$`));
     await writeClient.click();
     await expect(page).toHaveURL(new RegExp(`/admin/messages\\?client=${fixture.clientId}$`));
-    await expect(page.getByRole('heading', { name: 'Сообщения', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
 });
 
 test('staff sees business labels for client and content settings', async ({ page }) => {
@@ -672,13 +672,13 @@ test('staff can choose and send an attachment in CRM Messages', async ({ page })
 
     await login(page, fixture);
     await page.goto(`/admin/messages?client=${fixture.clientId}`);
-    await expect(page.getByRole('heading', { name: 'Сообщения', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Начать диалог как специалист', exact: true }).click();
     await expect(page.locator('#messages-composer-form')).toBeVisible();
 
     const [fileChooser] = await Promise.all([
         page.waitForEvent('filechooser'),
-        page.getByRole('button', { name: 'Добавить вложение', exact: true }).click(),
+        page.getByTestId('messages-attachment-trigger').click(),
     ]);
     await fileChooser.setFiles({
         name: 'crm-message-attachment.pdf',
