@@ -299,7 +299,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
 
     public function test_crm_create_booking_starts_with_specialist_and_allows_inline_client_creation(): void
     {
-        [$organization, $admin, $specialist, $service] = $this->fixture();
+        [$organization, $admin, $specialist, $service] = $this->fixture('Asia/Almaty');
         OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
             'feature_key' => OrganizationFeature::ClientRecords->value,
             'enabled' => true,
@@ -327,8 +327,6 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'full_name' => 'Новый клиент',
             'email' => 'new-client@example.test',
             'phone' => '+77001234567',
-            'language' => 'ru',
-            'timezone' => 'Asia/Almaty',
             'lead_source' => 'Telegram',
         ]);
         self::assertDatabaseHas('clients', [
