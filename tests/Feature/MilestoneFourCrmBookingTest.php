@@ -33,6 +33,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use RuntimeException;
 use Tests\TestCase;
 
 class MilestoneFourCrmBookingTest extends TestCase
@@ -184,6 +185,46 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->call('create')
             ->assertHasFormErrors(['starts_at'])
             ->assertSee('Это время уже недоступно. Выберите другое.');
+
+        self::assertSame(0, Booking::query()->count());
+    }
+
+    public function test_crm_shows_actionable_error_when_booking_creation_fails_unexpectedly(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        OrganizationFeatureGate::invalidate($organization->getKey(), OrganizationFeature::ClientRecords);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->fillForm([
+                'specialist_id' => $specialist->getKey(),
+                'service_id' => $service->getKey(),
+                'booking_date' => '2026-04-06',
+                'visit_format' => VisitFormat::Office->value,
+            ]);
+        $timeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertInstanceOf(Select::class, $timeField);
+        $selectedTime = array_key_first($timeField->getOptions());
+        self::assertIsString($selectedTime);
+        $component->fillForm([
+            'booking_time' => $selectedTime,
+            'client_id' => $client->getKey(),
+        ]);
+        $this->mock(CreateBookingAction::class, function ($mock): void {
+            $mock->shouldReceive('handle')
+                ->once()
+                ->andThrow(new RuntimeException('booking creation failed'));
+        });
+
+        $component
+            ->call('create')
+            ->assertHasFormErrors(['booking_time'])
+            ->assertSee('Не удалось создать запись. Проверьте дату и доступное время и попробуйте ещё раз.');
 
         self::assertSame(0, Booking::query()->count());
     }
