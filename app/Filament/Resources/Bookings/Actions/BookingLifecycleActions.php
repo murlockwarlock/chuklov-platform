@@ -2,6 +2,8 @@
 
 namespace App\Filament\Resources\Bookings\Actions;
 
+use App\Filament\Resources\Bookings\Support\BookingAvailabilityOptions;
+use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -23,14 +25,16 @@ use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Filament\Actions\Action;
-use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class BookingLifecycleActions
 {
@@ -63,6 +67,8 @@ final class BookingLifecycleActions
                         Notification::make()->success()->title(__('Запись подтверждена'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
+                    } catch (Throwable $exception) {
+                        self::sendUnexpectedErrorNotification($exception);
                     }
                 }),
 
@@ -102,6 +108,8 @@ final class BookingLifecycleActions
                         Notification::make()->success()->title(__('Выезд подтверждён'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
+                    } catch (Throwable $exception) {
+                        self::sendUnexpectedErrorNotification($exception);
                     }
                 }),
 
@@ -130,18 +138,16 @@ final class BookingLifecycleActions
                         Notification::make()->success()->title(__('Заявка на выезд отклонена'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
+                    } catch (Throwable $exception) {
+                        self::sendUnexpectedErrorNotification($exception);
                     }
                 }),
 
             Action::make('reschedule')
                 ->label(__('Перенести'))
                 ->icon('heroicon-o-calendar')
+                ->modalDescription(__('Выберите новую дату, затем свободный интервал. Время показано в часовом поясе CRM.'))
                 ->schema([
-                    DateTimePicker::make('starts_at')
-                        ->label(__('Новая дата и время'))
-                        ->timezone(fn (): string => self::viewerTimezone())
-                        ->seconds(false)
-                        ->required(),
                     Select::make('working_location_id')
                         ->label(__('Локация'))
                         ->options(fn (): array => WorkingLocation::query()
@@ -159,6 +165,7 @@ final class BookingLifecycleActions
                         ->nullable()
                         ->live()
                         ->afterStateUpdated(function (Set $set, mixed $state): void {
+                            self::clearRescheduleTime($set);
                             $location = $state === null || $state === ''
                                 ? null
                                 : WorkingLocation::query()
@@ -172,12 +179,43 @@ final class BookingLifecycleActions
                         ->label(__('Район выезда'))
                         ->default(fn (Booking $record): ?string => $record->location_area)
                         ->maxLength(160)
+                        ->live(onBlur: true)
+                        ->afterStateUpdated(function (Set $set): void {
+                            self::clearRescheduleTime($set);
+                        })
                         ->visible(fn (Booking $record): bool => $record->visit_format === VisitFormat::HomeVisit),
                     TextInput::make('location')
                         ->label(fn (Booking $record): string => $record->visit_format === VisitFormat::Office ? __('Адрес приёма') : __('Адрес выезда'))
                         ->default(fn (Booking $record): ?string => $record->location)
                         ->visible(fn (Booking $record): bool => in_array($record->visit_format, [VisitFormat::Office, VisitFormat::HomeVisit], true))
                         ->maxLength(500),
+                    DatePicker::make('booking_date')
+                        ->label(__('Новая дата'))
+                        ->default(fn (Booking $record): string => $record->startsAtUtc()
+                            ->setTimezone(self::viewerTimezone())
+                            ->toDateString())
+                        ->native()
+                        ->live()
+                        ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
+                        ->afterStateUpdated(function (Set $set): void {
+                            self::clearRescheduleTime($set);
+                        })
+                        ->required(),
+                    Select::make('booking_time')
+                        ->label(__('Доступное время'))
+                        ->options(fn (Get $get, Booking $record): array => self::availableTimeOptions($get, $record))
+                        ->placeholder(__('Выберите доступное время'))
+                        ->native(false)
+                        ->disabled(fn (Get $get): bool => self::rescheduleDate($get('booking_date')) === null)
+                        ->live()
+                        ->afterStateUpdated(function (Set $set, mixed $state): void {
+                            $set('starts_at', is_string($state) && trim($state) !== '' ? $state : null);
+                        })
+                        ->required()
+                        ->helperText(fn (Get $get): string => self::availableTimeHelper($get('booking_date'))),
+                    Hidden::make('starts_at')
+                        ->dehydratedWhenHidden()
+                        ->required(),
                     Hidden::make('expected_event_version')
                         ->default(fn (Booking $record): int => $record->event_version)
                         ->required(),
@@ -188,11 +226,11 @@ final class BookingLifecycleActions
                 ->action(function (Booking $record, array $data): void {
                     $actor = auth()->user();
                     abort_unless($actor instanceof User, 403);
-                    $startsAt = $data['starts_at'] instanceof DateTimeInterface
-                        ? $data['starts_at']
-                        : CarbonImmutable::parse((string) $data['starts_at'], (string) config('app.timezone'));
 
                     try {
+                        $startsAt = $data['starts_at'] instanceof DateTimeInterface
+                            ? $data['starts_at']
+                            : CarbonImmutable::parse((string) $data['starts_at'], (string) config('app.timezone'));
                         app(RescheduleBooking::class)->handle(
                             actor: $actor,
                             booking: $record,
@@ -210,6 +248,8 @@ final class BookingLifecycleActions
                         Notification::make()->success()->title(__('Запись успешно перенесена'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
+                    } catch (Throwable $exception) {
+                        self::sendUnexpectedErrorNotification($exception);
                     }
                 }),
 
@@ -231,6 +271,8 @@ final class BookingLifecycleActions
                         Notification::make()->success()->title(__('Визит успешно завершён'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
+                    } catch (Throwable $exception) {
+                        self::sendUnexpectedErrorNotification($exception);
                     }
                 }),
 
@@ -253,6 +295,8 @@ final class BookingLifecycleActions
                         Notification::make()->success()->title(__('Запись отмечена как не состоявшаяся'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
+                    } catch (Throwable $exception) {
+                        self::sendUnexpectedErrorNotification($exception);
                     }
                 }),
 
@@ -277,6 +321,8 @@ final class BookingLifecycleActions
                         Notification::make()->success()->title(__('Ссылка на встречу обновлена'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
+                    } catch (Throwable $exception) {
+                        self::sendUnexpectedErrorNotification($exception);
                     }
                 }),
 
@@ -299,6 +345,8 @@ final class BookingLifecycleActions
                         Notification::make()->success()->title(__('Запись отменена'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
+                    } catch (Throwable $exception) {
+                        self::sendUnexpectedErrorNotification($exception);
                     }
                 }),
         ];
@@ -306,12 +354,26 @@ final class BookingLifecycleActions
 
     private static function sendErrorNotification(ValidationException $exception): void
     {
-        $message = collect($exception->errors())->flatten()->first() ?: __('Не удалось выполнить действие.');
+        $message = collect($exception->errors())->flatten()->first();
+        if (! is_string($message) || $message === '') {
+            $message = __('Не удалось выполнить действие.');
+        }
 
         Notification::make()
             ->danger()
             ->title(__('Действие отклонено'))
             ->body($message)
+            ->send();
+    }
+
+    private static function sendUnexpectedErrorNotification(Throwable $exception): void
+    {
+        report($exception);
+
+        Notification::make()
+            ->danger()
+            ->title(__('Не удалось выполнить действие'))
+            ->body(__('Данные не изменены. Обновите страницу и попробуйте ещё раз.'))
             ->send();
     }
 
@@ -322,5 +384,92 @@ final class BookingLifecycleActions
         return $actor instanceof User
             ? app(ResolveSpecialistViewerTimezone::class)->forUser($actor)
             : app(OrganizationContext::class)->defaultTimezone();
+    }
+
+    /** @return array<string, string> */
+    private static function availableTimeOptions(Get $get, Booking $record): array
+    {
+        $actor = auth()->user();
+        $date = self::rescheduleDate($get('booking_date'));
+
+        if (! $actor instanceof User || ! $date instanceof CarbonImmutable) {
+            return [];
+        }
+
+        return app(BookingAvailabilityOptions::class)->forDate(
+            actor: $actor,
+            specialistId: (int) $record->specialist_id,
+            serviceId: (int) $record->service_id,
+            format: $record->visit_format,
+            date: $date,
+            displayTimezone: self::viewerTimezone(),
+            workingLocationId: self::positiveInteger($get('working_location_id')),
+            locationArea: self::nullableString($get('location_area')),
+            ignoreBookingId: (int) $record->getKey(),
+        );
+    }
+
+    private static function clearRescheduleTime(Set $set): void
+    {
+        $set('booking_time', null);
+        $set('starts_at', null);
+    }
+
+    private static function availableTimeHelper(mixed $state): string
+    {
+        return self::rescheduleDate($state) instanceof CarbonImmutable
+            ? __('Показываются только свободные интервалы в часовом поясе CRM.')
+            : __('Сначала выберите дату.');
+    }
+
+    private static function rescheduleDate(mixed $state): ?CarbonImmutable
+    {
+        if ($state instanceof DateTimeInterface) {
+            return CarbonImmutable::instance($state)->setTimezone(self::viewerTimezone())->startOfDay();
+        }
+
+        if (! is_string($state) || trim($state) === '') {
+            return null;
+        }
+
+        $value = trim($state);
+        try {
+            $date = CarbonImmutable::createFromFormat('!Y-m-d', $value, self::viewerTimezone());
+        } catch (\InvalidArgumentException) {
+            return null;
+        }
+
+        return $date instanceof CarbonImmutable && $date->format('Y-m-d') === $value ? $date : null;
+    }
+
+    private static function positiveInteger(mixed $value): ?int
+    {
+        if (is_int($value) && $value > 0) {
+            return $value;
+        }
+
+        if (is_string($value) && ctype_digit(trim($value)) && (int) $value > 0) {
+            return (int) $value;
+        }
+
+        return null;
+    }
+
+    private static function nullableString(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
+    }
+
+    private static function viewerTimezoneLabel(): string
+    {
+        $timezone = self::viewerTimezone();
+
+        return TimezoneOptions::label($timezone).' ('.$timezone.')';
     }
 }

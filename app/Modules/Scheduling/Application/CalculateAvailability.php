@@ -58,6 +58,7 @@ class CalculateAvailability
         ?string $displayTimezone = null,
         ?int $workingLocationId = null,
         ?string $locationArea = null,
+        ?int $ignoreBookingId = null,
     ): AvailabilityResult {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
@@ -70,6 +71,7 @@ class CalculateAvailability
             dateTo: $dateTo,
             format: $format,
             displayTimezone: $displayTimezone,
+            ignoreBookingId: $ignoreBookingId,
             workingLocationId: $workingLocationId,
             locationArea: $locationArea,
         );
@@ -264,6 +266,7 @@ class CalculateAvailability
         ?string $displayTimezone,
         ?Client $client = null,
         bool $datesInDisplayTimezone = false,
+        ?int $ignoreBookingId = null,
         ?int $workingLocationId = null,
         ?string $locationArea = null,
     ): AvailabilityResult {
@@ -321,6 +324,7 @@ class CalculateAvailability
             displayTimezone: $displayTimezone,
             client: $client,
             organizationId: $organization->getKey(),
+            ignoreBookingId: $ignoreBookingId,
             displayRangeStart: $displayRangeStart,
             displayRangeEnd: $displayRangeEnd,
             displayDateFrom: $datesInDisplayTimezone ? $requestedDateFrom->value : null,

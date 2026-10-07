@@ -17,6 +17,7 @@ use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Url;
+use Throwable;
 
 class CreateBooking extends LocalizedCreateRecord
 {
@@ -112,16 +113,17 @@ class CreateBooking extends LocalizedCreateRecord
     {
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
-        $context = app(OrganizationContext::class);
-        $organizationId = $context->id();
-        $client = Client::query()->where('organization_id', $organizationId)->findOrFail((int) $data['client_id']);
-        $specialist = Specialist::query()->where('organization_id', $organizationId)->findOrFail((int) $data['specialist_id']);
-        $service = Service::query()->where('organization_id', $organizationId)->findOrFail((int) $data['service_id']);
-        $startsAt = $data['starts_at'] instanceof DateTimeInterface
-            ? $data['starts_at']
-            : CarbonImmutable::parse((string) $data['starts_at'], (string) config('app.timezone'));
 
         try {
+            $context = app(OrganizationContext::class);
+            $organizationId = $context->id();
+            $client = Client::query()->where('organization_id', $organizationId)->findOrFail((int) $data['client_id']);
+            $specialist = Specialist::query()->where('organization_id', $organizationId)->findOrFail((int) $data['specialist_id']);
+            $service = Service::query()->where('organization_id', $organizationId)->findOrFail((int) $data['service_id']);
+            $startsAt = $data['starts_at'] instanceof DateTimeInterface
+                ? $data['starts_at']
+                : CarbonImmutable::parse((string) $data['starts_at'], (string) config('app.timezone'));
+
             return app(CreateBookingAction::class)->handle(
                 actor: $actor,
                 client: $client,
@@ -162,6 +164,12 @@ class CreateBooking extends LocalizedCreateRecord
             unset($errors['startsAt']);
 
             throw ValidationException::withMessages($errors);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            throw ValidationException::withMessages([
+                'data.booking_time' => __('Не удалось создать запись. Проверьте дату и доступное время и попробуйте ещё раз.'),
+            ]);
         }
     }
 

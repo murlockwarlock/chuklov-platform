@@ -459,6 +459,52 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->assertActionExists('noShow');
     }
 
+    public function test_reschedule_action_offers_available_slots_and_uses_the_selected_slot(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            idempotencyKey: 'reschedule-slot-options',
+        );
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->mountAction('reschedule');
+        $timeField = $component->instance()->getSchemaComponent('mountedActionSchema0.booking_time');
+
+        self::assertInstanceOf(Select::class, $timeField);
+        self::assertSame([
+            '09:00–10:00',
+            '10:15–11:15',
+            '11:30–12:30',
+            '12:45–13:45',
+            '14:00–15:00',
+            '15:15–16:15',
+        ], array_values($timeField->getOptions()));
+
+        $options = $timeField->getOptions();
+        $selectedTime = array_keys($options)[1] ?? null;
+        self::assertIsString($selectedTime);
+
+        $component
+            ->setActionData([
+                'booking_date' => '2026-04-06',
+                'booking_time' => $selectedTime,
+                'starts_at' => $selectedTime,
+            ])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotified('Запись успешно перенесена');
+
+        self::assertTrue($booking->fresh()->startsAtUtc()->equalTo(CarbonImmutable::parse($selectedTime)));
+    }
+
     public function test_high_impact_booking_lifecycle_actions_require_confirmation(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();

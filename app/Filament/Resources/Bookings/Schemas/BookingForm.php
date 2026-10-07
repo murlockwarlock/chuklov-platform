@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Bookings\Schemas;
 
+use App\Filament\Resources\Bookings\Support\BookingAvailabilityOptions;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Identity\Application\ClientSearch;
@@ -10,7 +11,6 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scheduling\Application\BookingLocationResolver;
-use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
@@ -35,6 +35,7 @@ use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Throwable;
 
 class BookingForm
 {
@@ -161,18 +162,29 @@ class BookingForm
                     ->createOptionUsing(function (array $data): int {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
-                        $phone = trim((string) ($data['phone'] ?? ''));
-                        $client = app(CreateClientAction::class)->handle(
-                            actor: $actor,
-                            fullName: (string) $data['full_name'],
-                            email: isset($data['email']) && trim((string) $data['email']) !== '' ? (string) $data['email'] : null,
-                            phone: $phone === '' ? null : $phone,
-                            language: (string) config('portal.default_locale', 'ru'),
-                            timezone: app(OrganizationContext::class)->defaultTimezone(),
-                            leadSource: isset($data['lead_source']) && trim((string) $data['lead_source']) !== '' ? (string) $data['lead_source'] : null,
-                        );
 
-                        return (int) $client->getKey();
+                        try {
+                            $phone = trim((string) ($data['phone'] ?? ''));
+                            $client = app(CreateClientAction::class)->handle(
+                                actor: $actor,
+                                fullName: (string) $data['full_name'],
+                                email: isset($data['email']) && trim((string) $data['email']) !== '' ? (string) $data['email'] : null,
+                                phone: $phone === '' ? null : $phone,
+                                language: (string) config('portal.default_locale', 'ru'),
+                                timezone: app(OrganizationContext::class)->defaultTimezone(),
+                                leadSource: isset($data['lead_source']) && trim((string) $data['lead_source']) !== '' ? (string) $data['lead_source'] : null,
+                            );
+
+                            return (int) $client->getKey();
+                        } catch (ValidationException $exception) {
+                            throw $exception;
+                        } catch (Throwable $exception) {
+                            report($exception);
+
+                            throw ValidationException::withMessages([
+                                'full_name' => __('Не удалось добавить клиента. Проверьте данные и попробуйте ещё раз.'),
+                            ]);
+                        }
                     }),
                 Select::make('visit_format')
                     ->label(__('Формат визита'))
@@ -394,34 +406,16 @@ class BookingForm
             return [];
         }
 
-        try {
-            $availability = app(CalculateAvailability::class)->forStaff(
-                actor: $actor,
-                specialistId: $specialistId,
-                serviceId: $serviceId,
-                dateFrom: $date->subDays(2)->toDateString(),
-                dateTo: $date->addDays(2)->toDateString(),
-                format: $format,
-                displayTimezone: self::viewerTimezone(),
-                workingLocationId: self::positiveInteger($get('working_location_id')),
-                locationArea: self::nullableString($get('location_area')),
-            );
-        } catch (InvalidArgumentException|ValidationException) {
-            return [];
-        }
-
-        $options = [];
-        foreach ($availability->slots as $slot) {
-            $startsAt = $slot->startsAt->setTimezone($availability->displayTimezone);
-            if ($startsAt->toDateString() !== $date->toDateString()) {
-                continue;
-            }
-
-            $options[$slot->startsAt->utc()->toIso8601String()] = $startsAt->format('H:i')
-                .'–'.$slot->endsAt->setTimezone($availability->displayTimezone)->format('H:i');
-        }
-
-        return $options;
+        return app(BookingAvailabilityOptions::class)->forDate(
+            actor: $actor,
+            specialistId: $specialistId,
+            serviceId: $serviceId,
+            format: $format,
+            date: $date,
+            displayTimezone: self::viewerTimezone(),
+            workingLocationId: self::positiveInteger($get('working_location_id')),
+            locationArea: self::nullableString($get('location_area')),
+        );
     }
 
     private static function bookingDate(mixed $state): ?CarbonImmutable
