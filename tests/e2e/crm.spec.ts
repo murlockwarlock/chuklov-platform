@@ -634,26 +634,6 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await expect(availableTime).toBeVisible({ timeout: 15_000 });
     await availableTime.click();
     await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
-    const bookingState = async (): Promise<Record<string, unknown>> => page.evaluate(() => {
-        const root = Array.from(document.querySelectorAll('[wire\\:id]')).find((element) => element.textContent?.includes('Создать запись на приём'));
-        const componentId = root?.getAttribute('wire:id');
-        const livewire = (window as typeof window & { Livewire?: { find: (id: string) => { $wire?: { $get?: (path: string) => unknown }; reactive?: Record<string, unknown>; snapshot?: { data?: Record<string, unknown> } } } }).Livewire;
-
-        if (!componentId || !livewire) {
-            return {};
-        }
-
-        const component = livewire.find(componentId);
-        const get = (path: string): unknown => component.$wire?.$get?.(path);
-
-        return {
-            componentId,
-            reactiveKeys: Object.keys(component.reactive ?? {}),
-            values: Object.fromEntries(['data.booking_time', 'data.booking_time_snapshot', 'data.starts_at', 'data.client_id'].map((path) => [path, get(path)])),
-        };
-    });
-    console.log('booking state before inline client', await bookingState());
-
     const newClientAction = page.getByTestId('booking-create-client');
     await expect(newClientAction).toBeVisible();
     await expect(newClientAction).toContainText('Добавить нового клиента');
@@ -672,7 +652,6 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await expect(page.getByRole('combobox', { name: 'Услуга*', exact: true })).toContainText(fixture.serviceName);
     await expect(page.getByRole('combobox', { name: 'Специалист*', exact: true })).toContainText(fixture.specialistName);
     await expect(dateInput).toHaveValue(fixture.bookingStartsAt.slice(0, 10));
-    console.log('booking state after inline client', await bookingState());
     await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/);
