@@ -15,6 +15,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Url;
 
 class CreateBooking extends LocalizedCreateRecord
@@ -117,24 +118,46 @@ class CreateBooking extends LocalizedCreateRecord
             ? $data['starts_at']
             : CarbonImmutable::parse((string) $data['starts_at'], (string) config('app.timezone'));
 
-        return app(CreateBookingAction::class)->handle(
-            actor: $actor,
-            client: $client,
-            specialist: $specialist,
-            service: $service,
-            startsAt: $startsAt,
-            format: VisitFormat::from((string) $data['visit_format']),
-            clientTimezone: null,
-            meetingLinkMode: null,
-            idempotencyKey: null,
-            partySize: (int) ($data['party_size'] ?? 1),
-            location: isset($data['location']) ? (string) $data['location'] : null,
-            workingLocationId: isset($data['working_location_id']) && $data['working_location_id'] !== ''
-                ? (int) $data['working_location_id']
-                : null,
-            locationArea: isset($data['location_area']) ? (string) $data['location_area'] : null,
-            confirmedBackdated: (bool) ($data['confirm_backdated'] ?? false),
-        );
+        try {
+            return app(CreateBookingAction::class)->handle(
+                actor: $actor,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: $startsAt,
+                format: VisitFormat::from((string) $data['visit_format']),
+                clientTimezone: null,
+                meetingLinkMode: null,
+                idempotencyKey: null,
+                partySize: (int) ($data['party_size'] ?? 1),
+                location: isset($data['location']) ? (string) $data['location'] : null,
+                workingLocationId: isset($data['working_location_id']) && $data['working_location_id'] !== ''
+                    ? (int) $data['working_location_id']
+                    : null,
+                locationArea: isset($data['location_area']) ? (string) $data['location_area'] : null,
+                confirmedBackdated: (bool) ($data['confirm_backdated'] ?? false),
+            );
+        } catch (ValidationException $exception) {
+            $errors = $exception->errors();
+            $startsAtMessages = $errors['startsAt'] ?? [];
+
+            if ($startsAtMessages === []) {
+                throw $exception;
+            }
+
+            $errors['data.starts_at'] = array_merge(
+                $errors['data.starts_at'] ?? [],
+                array_map(
+                    static fn (string $message): string => $message === 'The selected time is no longer available.'
+                        ? __('Это время уже недоступно. Выберите другое.')
+                        : $message,
+                    $startsAtMessages,
+                ),
+            );
+            unset($errors['startsAt']);
+
+            throw ValidationException::withMessages($errors);
+        }
     }
 
     protected function getRedirectUrl(): string

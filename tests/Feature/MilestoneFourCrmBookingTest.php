@@ -161,6 +161,31 @@ class MilestoneFourCrmBookingTest extends TestCase
         self::assertSame(0, Booking::query()->count());
     }
 
+    public function test_crm_shows_actionable_error_when_selected_time_is_unavailable(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->fillForm([
+                'client_id' => $client->getKey(),
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 30, 0, 'UTC'),
+                'visit_format' => VisitFormat::Office->value,
+            ])
+            ->call('create')
+            ->assertHasFormErrors(['starts_at'])
+            ->assertSee('Это время уже недоступно. Выберите другое.');
+
+        self::assertSame(0, Booking::query()->count());
+    }
+
     public function test_booking_form_uses_human_required_messages_instead_of_translation_keys(): void
     {
         [$organization, $admin] = $this->fixture();
