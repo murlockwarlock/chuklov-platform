@@ -19,6 +19,7 @@ use App\Modules\Referrals\Application\ApplyReferralCreditToObligation;
 use App\Modules\Referrals\Application\ConsumeFinanceSettlementEvent;
 use App\Modules\Referrals\Application\CreditManualReferralBonus;
 use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
+use App\Modules\Referrals\Application\ReplaceReferralRelationship;
 use App\Modules\Referrals\Application\RequestReferralPayout;
 use App\Modules\Referrals\Application\ReverseReferralReward;
 use App\Modules\Referrals\Application\SaveReferralRewardProgram;
@@ -68,6 +69,31 @@ final class ReferralRewardsConcurrencyTest extends TestCase
         self::assertSame(1, ReferralRewardLedgerEntry::query()->count());
         self::assertSame(1, DB::table('referral_commercial_evidence')->where('integration_event_id', $event->getKey())->count());
         self::assertSame(1, ReferralRewardLedgerEntry::query()->where('entry_type', 'earned')->count());
+    }
+
+    public function test_postgresql_concurrent_referrer_replacements_leave_one_active_relationship(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, $oldReferrer, $referred] = $this->fixture();
+        $newReferrerOne = Client::factory()->forOrganization($organization)->create();
+        $newReferrerTwo = Client::factory()->forOrganization($organization)->create();
+        $this->relationship($organization, $oldReferrer, $referred);
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::replaceInProcess($organization->getKey(), $admin->getKey(), $newReferrerOne->getKey(), $referred->getKey()),
+            static fn (): string => self::replaceInProcess($organization->getKey(), $admin->getKey(), $newReferrerTwo->getKey(), $referred->getKey()),
+        ]);
+
+        self::assertNotContains('error', $results);
+        self::assertSame(1, ReferralRelationship::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('referred_client_id', $referred->getKey())
+            ->whereNull('superseded_at')
+            ->count());
+        self::assertSame(3, ReferralRelationship::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('referred_client_id', $referred->getKey())
+            ->count());
     }
 
     public function test_postgresql_concurrent_first_settled_payments_create_one_reward(): void
@@ -216,6 +242,25 @@ final class ReferralRewardsConcurrencyTest extends TestCase
             return $evidence === null
                 ? 'no-reward'
                 : 'reward:'.ReferralRewardLedgerEntry::query()->where('referral_commercial_evidence_id', $evidence->getKey())->value('id');
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception).':'.$exception->getMessage();
+        }
+    }
+
+    private static function replaceInProcess(int $organizationId, int $adminId, int $referrerId, int $referredId): string
+    {
+        try {
+            $organization = Organization::query()->findOrFail($organizationId);
+            app(OrganizationContext::class)->set($organization);
+            $relationship = app(ReplaceReferralRelationship::class)->handle(
+                actor: User::query()->findOrFail($adminId),
+                referrerClientId: $referrerId,
+                referredClientId: $referredId,
+            );
+
+            return 'replacement:'.$relationship->getKey();
+        } catch (ValidationException) {
+            return 'validation';
         } catch (\Throwable $exception) {
             return 'error:'.get_class($exception).':'.$exception->getMessage();
         }

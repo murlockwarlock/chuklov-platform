@@ -192,7 +192,7 @@ final class MessageComposer
                 ->extraAttributes(['class' => 'messages-attachment-upload-hidden'])
                 ->extraFieldWrapperAttributes(['class' => 'messages-attachment-field-hidden'])
                 ->extraAlpineAttributes([
-                    'x-on:messages-open-attachment.window' => '$refs.input.click()',
+                    'x-on:messages-open-attachment.window' => 'pond ? pond.browse() : $refs.input.click()',
                     'x-on:messages-remove-attachment.window' => 'pond && pond.getFiles().forEach(file => pond.removeFile(file.id, { revert: true }))',
                     'x-init' => <<<'JS'
                         $watch('pond', (pond) => {

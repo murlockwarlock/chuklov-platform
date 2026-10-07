@@ -18,6 +18,7 @@ use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
 use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Finance\Domain\ValueObjects\Money;
+use App\Modules\Identity\Application\VerifiedChannelIdentity;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -116,6 +117,7 @@ final class ScenarioContextFactory
         if ($recipient->type === 'internal' && $context->client !== null) {
             $renderContext['client']['telegram_contact'] = $this->clientTelegramContact($context->client);
             $renderContext['client']['telegram_profile_url'] = $this->clientTelegramProfileUrl($context->client);
+            $renderContext['client']['crm_url'] = url('/admin/messages?client='.$context->client->getKey());
         }
 
         if (in_array($context->event->event_name, [
@@ -931,14 +933,14 @@ final class ScenarioContextFactory
             return 'не указан';
         }
 
-        $username = trim((string) $identity->external_username);
+        $username = VerifiedChannelIdentity::normalizeUsername($identity->external_username);
         $externalId = trim((string) $identity->external_id);
 
-        if ($username !== '' && $externalId !== '') {
+        if ($username !== null && $externalId !== '') {
             return '@'.ltrim($username, '@').' (ID: '.$externalId.')';
         }
 
-        if ($username !== '') {
+        if ($username !== null) {
             return '@'.ltrim($username, '@');
         }
 
@@ -953,11 +955,9 @@ final class ScenarioContextFactory
             ->where('channel', 'telegram')
             ->where('verification_status', ChannelIdentityStatus::Verified->value)
             ->first();
-        $externalId = trim((string) $identity?->external_id);
+        $username = VerifiedChannelIdentity::normalizeUsername($identity?->external_username);
 
-        return preg_match('/^[1-9][0-9]{0,19}$/', $externalId) === 1
-            ? 'tg://user?id='.$externalId
-            : null;
+        return $username === null ? null : 'https://t.me/'.$username;
     }
 
     private function clientDisplayName(Client $client): string

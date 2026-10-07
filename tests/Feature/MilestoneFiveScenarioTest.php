@@ -212,7 +212,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertNotNull($specialistAction);
         self::assertSame('Aikhana', $specialistAction->render_context['client']['full_name']);
         self::assertSame('@aikhana (ID: 123456789)', $specialistAction->render_context['client']['telegram_contact']);
-        self::assertSame('tg://user?id=123456789', $specialistAction->render_context['client']['telegram_profile_url']);
+        self::assertSame('https://t.me/aikhana', $specialistAction->render_context['client']['telegram_profile_url']);
 
         foreach ($actions as $action) {
             $this->makeDue($action);
@@ -229,7 +229,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertNotNull($specialistMessage);
         self::assertStringContainsString('Aikhana', $specialistMessage->body);
         self::assertStringContainsString('@aikhana (ID: 123456789)', $specialistMessage->body);
-        self::assertSame('tg://user?id=123456789', $specialistMessage->actionButton?->url);
+        self::assertSame(url('/admin/messages?client='.$client->getKey()), $specialistMessage->actionButton?->url);
         self::assertStringNotContainsString('не указан', $specialistMessage->body);
     }
 
@@ -288,6 +288,8 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame(url('/admin/bookings/'.$booking->getKey()), $specialistMessage->actionButtons[0]->url);
         self::assertSame('✅ Подтвердить', $specialistMessage->actionButtons[1]->text);
         self::assertSame('booking:confirm:'.$booking->getKey().':'.$booking->event_version, $specialistMessage->actionButtons[1]->callbackData);
+        self::assertSame('Написать клиенту', $specialistMessage->actionButton?->text);
+        self::assertSame(url('/admin/messages?client='.$client->getKey()), $specialistMessage->actionButton?->url);
     }
 
     public function test_booking_created_notifications_render_visit_format_and_physical_location_once(): void
@@ -457,7 +459,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame(url('/admin/bookings/'.$booking->getKey()), $message->actionButtons[0]->url);
     }
 
-    public function test_specialist_notification_without_username_uses_verified_id_and_profile_action(): void
+    public function test_specialist_notification_without_username_uses_crm_conversation_action(): void
     {
         [$organization, , $client, $specialist, $service] = $this->fixture();
         ClientChannelIdentity::factory()->forClient($client)->create([
@@ -492,7 +494,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertStringContainsString('ID: 987654321', $message->body);
         self::assertStringNotContainsString('@', $message->body);
         self::assertStringNotContainsString('не указан', $message->body);
-        self::assertSame('tg://user?id=987654321', $message->actionButton?->url);
+        self::assertSame(url('/admin/messages?client='.$client->getKey()), $message->actionButton?->url);
     }
 
     public function test_rescheduled_and_cancelled_bookings_notify_with_local_date_format(): void

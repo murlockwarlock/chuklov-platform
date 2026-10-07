@@ -27,6 +27,7 @@ use App\Modules\Referrals\Application\GetClientReferralOverview;
 use App\Modules\Referrals\Application\GetReferralRewardProgram;
 use App\Modules\Referrals\Application\QualifyReferralReward;
 use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
+use App\Modules\Referrals\Application\ReplaceReferralRelationship;
 use App\Modules\Referrals\Application\RequestReferralPayout;
 use App\Modules\Referrals\Application\ReverseReferralReward;
 use App\Modules\Referrals\Application\SaveReferralRewardProgram;
@@ -258,6 +259,35 @@ final class ReferralRewardsTest extends TestCase
         self::assertNotSame($firstVersion->getKey(), $secondVersion->getKey());
         self::assertSame([1000, 2500], ReferralRewardLedgerEntry::query()->orderBy('id')->pluck('amount_minor')->all());
         self::assertSame([$firstVersion->getKey(), $secondVersion->getKey()], ReferralRewardLedgerEntry::query()->orderBy('id')->pluck('reward_program_version_id')->all());
+    }
+
+    public function test_replacing_relationship_keeps_historical_reward_and_uses_new_referrer_for_future_settlements(): void
+    {
+        [$organization, $admin, $oldReferrer, $referred] = $this->fixture();
+        $newReferrer = Client::factory()->forOrganization($organization)->create();
+        $oldRelationship = $this->relationship($organization, $oldReferrer, $referred, 'automatic_referral_link');
+        $this->configureFixed($organization, $admin, '10.00', 'USD', 'every_settled_payment');
+
+        $first = $this->settledEvent($organization, $referred, 'replacement-history-first');
+        app(ConsumeFinanceSettlementEvent::class)->handle($first->getKey());
+        $firstEntry = ReferralRewardLedgerEntry::query()->sole();
+
+        $newRelationship = app(ReplaceReferralRelationship::class)->handle(
+            actor: $admin,
+            referrerClientId: $newReferrer->getKey(),
+            referredClientId: $referred->getKey(),
+        );
+        $second = $this->settledEvent($organization, $referred, 'replacement-history-second');
+        app(ConsumeFinanceSettlementEvent::class)->handle($second->getKey());
+
+        $entries = ReferralRewardLedgerEntry::query()->orderBy('id')->get();
+        self::assertCount(2, $entries);
+        self::assertSame($oldReferrer->getKey(), $firstEntry->fresh()->beneficiary_client_id);
+        self::assertSame($oldRelationship->getKey(), $firstEntry->fresh()->referral_relationship_id);
+        self::assertSame($newReferrer->getKey(), $entries->last()->beneficiary_client_id);
+        self::assertSame($newRelationship->getKey(), $entries->last()->referral_relationship_id);
+        self::assertNotNull($oldRelationship->fresh()->superseded_at);
+        self::assertSame($newRelationship->getKey(), $referred->fresh()->referralRelationship?->getKey());
     }
 
     public function test_disabling_the_current_version_stops_future_qualification_without_changing_history(): void

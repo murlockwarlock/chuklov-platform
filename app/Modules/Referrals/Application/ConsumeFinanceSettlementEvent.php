@@ -186,6 +186,8 @@ final class ConsumeFinanceSettlementEvent
             $relationship = ReferralRelationship::query()
                 ->where('organization_id', $organizationId)
                 ->where('referred_client_id', $obligation->client_id)
+                ->whereNull('superseded_at')
+                ->lockForUpdate()
                 ->first();
             $organization = Organization::query()->findOrFail($organizationId);
             $evidence = new ReferralCommercialEvidence;

@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Bookings\Schemas;
 
 use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\CrmLabel;
+use App\Filament\Support\FinancePaymentActions;
 use App\Filament\Support\FinancePresentation;
 use App\Models\User;
 use App\Modules\Finance\Application\BookingFinanceSummary;
@@ -117,14 +118,22 @@ class BookingInfolist
                             ->columnSpanFull(),
                     ]),
 
-                Section::make(__('Расчёт'))
+                Section::make(__('Оплата'))
                     ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->bookingSummary($record) !== null)
+                    ->headerActions([
+                        FinancePaymentActions::forBooking(),
+                    ])
                     ->schema([
                         TextEntry::make('finance_amount')
                             ->label(__('Сумма'))
                             ->state(fn (Booking $record): string => self::bookingSummary($record) === null
                                 ? '—'
                                 : app(FinancePresentation::class)->bookingAmount(self::bookingSummary($record))),
+                        TextEntry::make('finance_currency')
+                            ->label(__('Валюта'))
+                            ->state(fn (Booking $record): string => self::bookingSummary($record) === null
+                                ? '—'
+                                : app(FinancePresentation::class)->bookingCurrency(self::bookingSummary($record))),
                         TextEntry::make('finance_paid')
                             ->label(__('Оплачено'))
                             ->state(fn (Booking $record): string => self::bookingSummary($record) === null

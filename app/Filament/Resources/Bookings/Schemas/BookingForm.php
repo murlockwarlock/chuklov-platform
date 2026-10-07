@@ -4,8 +4,8 @@ namespace App\Filament\Resources\Bookings\Schemas;
 
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
+use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Application\CreateClient as CreateClientAction;
-use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\BookingLocationResolver;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
@@ -87,16 +87,34 @@ class BookingForm
                     ->live(),
                 Select::make('client_id')
                     ->label(__('Клиент'))
-                    ->options(fn (): array => Client::query()
-                        ->where('organization_id', app(OrganizationContext::class)->id())
-                        ->orderBy('full_name')
-                        ->orderBy('id')
-                        ->get(['id', 'full_name'])
-                        ->mapWithKeys(static fn (Client $client): array => [
-                            $client->getKey() => trim((string) $client->full_name) ?: '#'.$client->getKey(),
-                        ])
-                        ->all())
+                    ->options([])
                     ->searchable()
+                    ->getSearchResultsUsing(function (string $search): array {
+                        $actor = auth()->user();
+
+                        if (! $actor instanceof User) {
+                            return [];
+                        }
+
+                        $clients = app(ClientSearch::class);
+
+                        return $clients->formatOptionLabels(
+                            $clients->withVerifiedTelegramIdentity(
+                                $clients->query($actor, $search),
+                            )
+                                ->orderBy('full_name')
+                                ->orderBy('id')
+                                ->limit(ClientSearch::MAX_RESULTS)
+                                ->get(['id', 'full_name', 'email', 'phone']),
+                        );
+                    })
+                    ->getOptionLabelUsing(function (mixed $value): ?string {
+                        $actor = auth()->user();
+
+                        return $actor instanceof User
+                            ? app(ClientSearch::class)->optionLabel($actor, $value)
+                            : null;
+                    })
                     ->required()
                     ->validationMessages(['required' => __('Выберите клиента.')])
                     ->helperText(__('Нажмите +, если клиента ещё нет в базе. Telegram подключается отдельной подтверждённой ссылкой после создания.'))

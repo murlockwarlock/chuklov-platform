@@ -94,6 +94,32 @@ final class MilestoneSixFinanceTest extends TestCase
             ->metadata);
     }
 
+    public function test_completed_unpaid_booking_is_visible_in_payments_and_stays_visible_after_partial_payment(): void
+    {
+        [$organization, $admin, $client, $booking] = $this->pricedCompletedBooking('USD', 10000);
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->firstOrFail();
+        $unpaid = app(ReconcileFinancialObligation::class)->handle($organization->getKey(), $obligation->getKey());
+
+        self::assertSame(0, $unpaid->applied->minorUnits());
+        self::assertSame(10000, $unpaid->outstanding->minorUnits());
+        $this->actingAs($admin)
+            ->get(route('filament.admin.resources.financial-obligations.index'))
+            ->assertOk()
+            ->assertSee($client->full_name)
+            ->assertSee('100.00 USD');
+
+        app(RecordManualPayment::class)->handle($admin, $obligation, '50.00', 'USD', 'cash', now(), null, null, 'unpaid-visibility-partial');
+        $partial = app(ReconcileFinancialObligation::class)->handle($organization->getKey(), $obligation->getKey());
+
+        self::assertSame(5000, $partial->applied->minorUnits());
+        self::assertSame(5000, $partial->outstanding->minorUnits());
+        $this->actingAs($admin)
+            ->get(route('filament.admin.resources.financial-obligations.index'))
+            ->assertOk()
+            ->assertSee($client->full_name)
+            ->assertSee('50.00 USD');
+    }
+
     public function test_currency_configuration_rejects_missing_directed_rates_atomically_and_allows_same_currency(): void
     {
         $organization = Organization::factory()->create();

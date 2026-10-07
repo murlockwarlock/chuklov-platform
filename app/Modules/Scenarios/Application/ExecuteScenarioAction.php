@@ -362,15 +362,23 @@ final class ExecuteScenarioAction
                 );
             }
 
-            $url = $action->render_context['client']['telegram_profile_url'] ?? null;
-            if (! is_string($url) || trim($url) === '') {
-                return null;
+            $crmUrl = $action->render_context['client']['crm_url'] ?? null;
+            if (is_string($crmUrl) && trim($crmUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $this->isRussian($locale) ? 'Написать клиенту' : 'Message client',
+                    url: $crmUrl,
+                );
             }
 
-            return new NotificationActionButton(
-                text: $this->isRussian($locale) ? '💬 Написать клиенту' : '💬 Message client',
-                url: $url,
-            );
+            $telegramUrl = $action->render_context['client']['telegram_profile_url'] ?? null;
+            if (is_string($telegramUrl) && trim($telegramUrl) !== '') {
+                return new NotificationActionButton(
+                    text: $this->isRussian($locale) ? 'Открыть Telegram' : 'Open Telegram',
+                    url: $telegramUrl,
+                );
+            }
+
+            return null;
         }
 
         if ($action->recipient_type !== 'client') {

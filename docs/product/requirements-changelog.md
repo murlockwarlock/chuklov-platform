@@ -1,5 +1,12 @@
 # Requirements Changelog
 
+## 2026-10-07 — Phase 1 bounded remediation normalization
+
+- Normalized the owner-accepted CRM identity contract: a Client card shows verified Telegram state, a validated `@username` contact link when available, and the numeric Telegram ID only as secondary fallback.
+- Normalized the owner-accepted CRM workflow contract: Booking Client search uses the shared organization-scoped ClientSearch abstraction for full name, phone, Telegram username, and email with rich labels; `Написать клиенту` opens the canonical CRM Messages conversation with the selected Client.
+- Superseded the ordinary no-reassignment rule for referrals with an explicit authorized CRM administrator replacement operation. Replacement is append-only evidence with PostgreSQL uniqueness/locking and audit; historical referral rewards and Finance entries remain attached to the old relationship, and future qualification uses the new active relationship.
+- Kept the accepted Finance and attachment contracts unchanged while closing their user-visible remediation paths: the Booking payment block uses the existing derived ledger projection, and the Messages attachment browser journey uses the existing private storage/application action.
+
 ## 2026-10-03 — Owner-accepted booking, Telegram identity, and scheduling UX corrections
 
 - Telegram booking confirmation resolves the callback Booking inside the current organization and matches its Specialist to the verified staff User after `ManageScheduling` authorization. Stale event-version, status, supported-format, locking, and idempotency guards remain in force; one CRM User may still serve multiple Specialists.

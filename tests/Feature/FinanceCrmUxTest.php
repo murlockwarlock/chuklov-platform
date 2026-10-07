@@ -601,11 +601,11 @@ final class FinanceCrmUxTest extends TestCase
         $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
         $this->resolveFilamentContext($staff, $organization);
 
-        Livewire::actingAs($staff)
+        $bookingPage = Livewire::actingAs($staff)
             ->test(ViewBooking::class, ['record' => $booking->getRouteKey()])
             ->assertSuccessful()
-            ->assertActionExists('openPayment')
-            ->assertActionHidden('recordBookingPayment');
+            ->assertActionExists('openPayment');
+        self::assertStringNotContainsString('Записать оплату', $bookingPage->html());
 
         Livewire::actingAs($staff)
             ->test(ViewFinancialObligation::class, ['record' => $obligation->getRouteKey()])
@@ -643,8 +643,7 @@ final class FinanceCrmUxTest extends TestCase
             ->assertSuccessful()
             ->assertSee('Оплата пока недоступна')
             ->assertSee('Сначала завершите визит.')
-            ->assertSee('Для услуги не настроена положительная цена.')
-            ->assertActionHidden('recordBookingPayment');
+            ->assertSee('Для услуги не настроена положительная цена.');
     }
 
     public function test_manage_finance_user_sees_advanced_currency_controls_only_in_multi_currency_mode(): void
@@ -953,10 +952,12 @@ final class FinanceCrmUxTest extends TestCase
         ]);
         $bookingPage
             ->assertSuccessful()
-            ->assertSee('Расчёт')
+            ->assertSee('Оплата')
             ->assertSee('100.00 USD')
-            ->assertActionExists('openPayment')
-            ->assertActionExists('recordBookingPayment');
+            ->assertSee('Оплачено')
+            ->assertSee('Осталось')
+            ->assertSee('Записать оплату')
+            ->assertActionExists('openPayment');
 
         self::assertStringContainsString((string) $obligation->getKey(), $bookingPage->html());
     }

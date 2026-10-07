@@ -13,6 +13,8 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property Carbon|null $registered_at
+ * @property Carbon|null $superseded_at
+ * @property int|null $superseded_by_relationship_id
  * @property ReferralEstablishmentMethod $establishment_method
  * @property int|null $commercial_evidence_count
  * @property Carbon|null $commercial_evidence_max_observed_at
@@ -56,6 +58,7 @@ class ReferralRelationship extends Model
         return [
             'establishment_method' => ReferralEstablishmentMethod::class,
             'registered_at' => 'datetime',
+            'superseded_at' => 'datetime',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];

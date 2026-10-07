@@ -440,6 +440,21 @@ final class FinancePresentation
         );
     }
 
+    public function bookingCurrency(BookingFinanceSummary $summary): string
+    {
+        if ($summary->reconciliation === null) {
+            return '—';
+        }
+
+        try {
+            return $this->contract->currency(
+                $summary->obligation->getRawOriginal('display_currency'),
+            )->value;
+        } catch (UnexpectedValueException) {
+            return '—';
+        }
+    }
+
     public function bookingPaid(BookingFinanceSummary $summary): string
     {
         return $this->money($summary->reconciliation?->displayApplied);

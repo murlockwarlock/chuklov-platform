@@ -212,20 +212,18 @@ class SchedulingConfiguration extends LocalizedPage
                     ->minValue(0)
                     ->helperText(__('За сколько минут до визита клиент может бесплатно отменить или перенести запись.'))
                     ->required(),
-                TextInput::make('b2b_sales_call_duration_minutes')
-                    ->label(__('Длительность вводной B2B-встречи (минуты)'))
-                    ->integer()
-                    ->minValue(1)
-                    ->maxValue(1440)
-                    ->helperText(__('Используется только для B2B-встреч. Длительность обычной консультации задаётся в самой услуге. Для автоматической Zoom-встречи действует ограничение тарифа Zoom.'))
-                    ->nullable(),
-                Select::make('online_consultation_service_id')
-                    ->label(__('Консультация после результатов теста'))
-                    ->options(fn (): array => $this->onlineConsultationServices())
-                    ->searchable()
-                    ->nullable()
-                    ->placeholder(__('Не настроено'))
-                    ->helperText(__('Эта онлайн-услуга будет предложена клиенту после завершения теста. Доступны только активные услуги с полной предоплатой и назначенным специалистом.')),
+                Section::make(__('После результатов теста'))
+                    ->description(__('Эта услуга предлагается клиенту после завершения теста.'))
+                    ->schema([
+                        Select::make('online_consultation_service_id')
+                            ->label(__('Консультация после результатов теста'))
+                            ->options(fn (): array => $this->onlineConsultationServices())
+                            ->searchable()
+                            ->nullable()
+                            ->placeholder(__('Не настроено'))
+                            ->helperText(__('Доступны только активные услуги с полной предоплатой и назначенным специалистом.')),
+                    ])
+                    ->columnSpanFull(),
                 Select::make('default_timezone')
                     ->label(__('Часовой пояс организации'))
                     ->options(fn (Get $get): array => TimezoneOptions::options(
@@ -235,9 +233,6 @@ class SchedulingConfiguration extends LocalizedPage
                     ->searchable()
                     ->required()
                     ->helperText(__('Используется для расписаний и уведомлений в CRM.')),
-                Checkbox::make('b2b_zoom_host_licensed')
-                    ->label(__('У Zoom-хоста есть лицензия Meetings'))
-                    ->helperText(__('Не включайте, если хост использует бесплатный тариф Zoom.')),
                 TextInput::make('office_location')
                     ->label(__('Адрес по умолчанию'))
                     ->helperText(__('Подставляется в новые записи в кабинете. Адрес уже созданных записей не изменится.'))
@@ -262,9 +257,19 @@ class SchedulingConfiguration extends LocalizedPage
                     ])
                     ->columns(1)
                     ->columnSpanFull(),
-                Section::make(__('Подключение Zoom'))
+                Section::make(__('B2B-встречи'))
                     ->description(__('Подключите Zoom для автоматического создания встреч. Если подключение не настроено, используйте ручную ссылку.'))
                     ->schema([
+                        TextInput::make('b2b_sales_call_duration_minutes')
+                            ->label(__('Длительность вводной B2B-встречи (минуты)'))
+                            ->integer()
+                            ->minValue(1)
+                            ->maxValue(1440)
+                            ->helperText(__('Используется только для B2B-встреч. Длительность обычной консультации задаётся в самой услуге. Для автоматической Zoom-встречи действует ограничение тарифа Zoom.'))
+                            ->nullable(),
+                        Checkbox::make('b2b_zoom_host_licensed')
+                            ->label(__('У Zoom-хоста есть лицензия Meetings'))
+                            ->helperText(__('Не включайте, если хост использует бесплатный тариф Zoom.')),
                         Placeholder::make('zoom_instructions')
                             ->label(__('Что увидит клиент'))
                             ->content(__('Встреча создаётся автоматически, а ссылка появится у клиента.')),

@@ -24,6 +24,7 @@ Status vocabulary:
 - `TO_IMPLEMENT` — accepted change/fix still missing.
 - `REAL_BUG` — current behavior is functionally broken.
 - `UX_CONFUSION` — current behavior may be technically correct but is unclear to a normal manager/specialist.
+- `DIAGNOSED / NO_CURRENT_REAL_BUG_REPRODUCED` — the focused valid-state path works; the reported failure is not reproducible in the current implementation.
 - `NEEDS_OWNER_DECISION` — product semantics are not yet authoritative enough to implement safely.
 - `NEW_SCOPE` — not part of the original Phase 1 v2.2 scope in its current detailed form.
 - `DEFERRED_INFRA` — confirmed infrastructure issue intentionally separated from ordinary product fixes.
@@ -36,7 +37,7 @@ Current Draft PR:
 
 - PR: #53 — Phase 1 functional closeout
 - Branch: `codex/chuklov-phase1-functional-closeout`
-- Current baseline when this document was created: `c55ab4a48188d422d72d262378f9984972aa457b`
+- Current remediation-pass starting SHA: `b349ce68749408a07f76465fce51a54352fcf401`
 - PR remains Draft / not merged.
 
 The current branch already contains the ServiceCredit Base Currency remediation, Client Companion retry/handoff remediation, and the booking/Telegram/Work Schedule acceptance pass.
@@ -49,7 +50,7 @@ Do not reopen already accepted architecture without a concrete defect.
 
 ## Attachment button regression
 
-Status: `REAL_BUG / TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 In CRM Messages the paperclip attachment button is visible but a real browser click does not open the file chooser.
 
@@ -66,13 +67,15 @@ Required remediation:
 - do not accept DOM-presence/event-registration tests as sufficient for clickable UI;
 - if a button is user-facing, acceptance must assert a visible result or human-readable error.
 
+The FilePond browser path now opens the native chooser, keeps the selected file visible in the composer, and sends it through the existing protected attachment action. The focused Playwright regression covers the full click → selection → composer → send/history journey; staging and owner acceptance remain pending.
+
 ---
 
 # 3. Client / CRM workspace
 
 ## 3.1 Telegram contact presentation
 
-Status: `TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 Client card should show:
 
@@ -88,9 +91,11 @@ If the deep link is unreliable:
 - primary external action = `@username` link when username exists;
 - Telegram ID remains visible/copyable as a fallback where useful.
 
+Implemented with verified identity state and a validated `https://t.me/<username>` primary contact link. `tg://user?id=...` is not used as the primary action.
+
 ## 3.2 "Написать клиенту"
 
-Status: `TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 From CRM notifications / booking actions, the primary action `Написать клиенту` should open the CRM conversation with that client.
 
@@ -100,9 +105,11 @@ External Telegram contact can exist as a separate secondary action.
 
 Reuse the existing authoritative CRM Messages/Companion conversation.
 
+Booking and internal notification actions now use the CRM Messages URL with the selected Client. Verified Telegram remains a separate secondary external action.
+
 ## 3.3 "Новый сеанс"
 
-Status: `TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 Move `Новый сеанс` from `Дополнительные действия` to the primary action layer on the Client page.
 
@@ -110,9 +117,11 @@ Reason: this is a common specialist workflow, not an exceptional/technical actio
 
 Preserve existing action semantics and authorization.
 
+The action is now in the Client page primary header action layer.
+
 ## 3.4 Client search in Booking form
 
-Status: `TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 Current problem: clients with identical/similar names are difficult to distinguish.
 
@@ -135,13 +144,15 @@ Use the same human-readable pattern already used in referral-person search: sear
 
 Do not expose internal Client IDs.
 
+The existing tenant-scoped ClientSearch abstraction now supplies rich labels and searches full name, phone, verified Telegram username, and email. Telegram ID remains an exact-match capability of the shared search abstraction but is not displayed in option labels.
+
 ---
 
 # 4. Referral / attribution UX and owner decision
 
 ## 4.1 Human wording
 
-Status: `TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 Replace user-facing technical wording:
 
@@ -153,9 +164,11 @@ Replace user-facing technical wording:
 
 Its helper text must say this clearly.
 
+Implemented as `Уточнить источник` with `Комментарий к источнику`; the helper explicitly separates attribution text from `Кто пригласил`.
+
 ## 4.2 Existing referrer must be shown before change
 
-Status: `TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 If a Client already has a canonical referrer, opening the "who invited" action must immediately show:
 
@@ -165,11 +178,13 @@ If a Client already has a canonical referrer, opening the "who invited" action m
 
 Do not let the user fill the whole form and only then return:
 
-`У клиента уже указан реферер`.
+`У клиента уже указан пригласивший`.
+
+The existing relationship and its method are now shown when the action opens, before submit.
 
 ## 4.3 Admin may forcibly replace referrer
 
-Status: `OWNER_ACCEPTED / TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 Latest owner decision supersedes the earlier "canonical referrer cannot be changed" ordinary-rule for authorized CRM admin operations.
 
@@ -193,6 +208,8 @@ Already qualified/paid/redeemed reward evidence stays attached to its historical
 The new referrer applies prospectively unless the owner later explicitly defines a separate historical correction workflow.
 
 Do not silently mutate append-only financial/reward history.
+
+The privileged application action uses the `manage_referral_relationships` permission, keeps the old relationship as superseded evidence, creates a new active manual relationship, records old/new IDs in audit, and applies the new relationship only to future qualification.
 
 ---
 
@@ -221,7 +238,7 @@ Real owner click acceptance is still required for:
 
 ## 6.1 B2B meeting duration
 
-Status: `UX_CONFUSION / TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 `Длительность вводной B2B-встречи (минуты)` is not an ordinary client service duration.
 
@@ -238,9 +255,11 @@ Keep the helper explicit:
 
 ordinary consultation duration is defined in the Service itself.
 
+The fields are grouped under `B2B-встречи`.
+
 ## 6.2 Consultation after test
 
-Status: `UX_CONFUSION / TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 `Консультация после результатов теста` selects an existing online Service that is proposed after test/survey results.
 
@@ -253,13 +272,17 @@ Preferred placement:
 
 Do not change its existing eligibility rules merely to move the setting.
 
+The field is grouped under `После результатов теста` with human helper text; eligibility rules are unchanged.
+
 ## 6.3 Zoom Meetings license
 
-Status: `UX_CONFUSION / TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 The setting `У Zoom-хоста есть лицензия Meetings` is related to automatic Zoom/B2B meeting capability.
 
 Group it with the B2B/Zoom settings rather than mixing it into generic schedule fields.
+
+The license capability is now in `B2B-встречи`.
 
 ---
 
@@ -313,7 +336,7 @@ Do **not** add a manual editable `Статус оплаты` that bypasses the l
 
 ## 9.2 Payment entry on Booking page
 
-Status: `TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 Manual payment exists but is too hidden.
 
@@ -329,15 +352,19 @@ Do not require a specialist to discover payment entry in an opaque `Действ
 
 Reuse the existing Finance payment action/application authority.
 
+The Booking infolist now renders `Оплата` with total, currency, paid, remaining, derived status, and visible `Записать оплату` when outstanding exists.
+
 ## 9.3 Unpaid sessions in "Оплаты"
 
-Status: `TO_DIAGNOSE / POSSIBLE_REAL_BUG`
+Status: `DIAGNOSED / NO_CURRENT_REAL_BUG_REPRODUCED`
 
 The Payments/Financial Obligations list should show existing unpaid obligations, including `paid = 0`.
 
 If a completed post-pay Booking with a positive configured price has no obligation and therefore does not appear in Payments, diagnose why obligation materialization failed.
 
 Do not fix by inventing a second payment table.
+
+A focused lifecycle test completes a valid positive-price post-pay Booking, observes a zero-paid FinancialObligation in `Оплаты`, and confirms it remains listed after a partial payment. No current A/B materialization or list-filter bug reproduced; the owner screenshot is consistent with a pre-completion/configuration/data state (C/D). No fake debt or second payment table was added. PostgreSQL/staging acceptance remains required.
 
 ## 9.4 Manual payment methods
 
@@ -389,13 +416,15 @@ Do not reuse Home Visit transport-deposit semantics as a generic service deposit
 
 ## 10.1 Attachment paperclip
 
-Status: `REAL_BUG / TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 See testing rule above.
 
+The real browser regression is present; local execution was blocked by the unavailable local PostgreSQL role, so staging/browser acceptance remains pending.
+
 ## 10.2 Internal feedback copy
 
-Status: `UX_CONFUSION / TO_IMPLEMENT`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 Current copy:
 
@@ -415,6 +444,8 @@ Keep the existing privacy/security boundary:
 - do not copy protected body text into audit logs.
 
 This is a wording cleanup, not permission weakening.
+
+Implemented as `Комментарий клиента` with the human helper text while preserving protected-text authorization and audit boundaries.
 
 ---
 

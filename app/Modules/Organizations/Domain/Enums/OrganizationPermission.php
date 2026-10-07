@@ -8,6 +8,7 @@ enum OrganizationPermission: string
     case ViewHorizon = 'view_horizon';
     case ViewClients = 'view_clients';
     case ManageClients = 'manage_clients';
+    case ManageReferralRelationships = 'manage_referral_relationships';
     case RecordConsent = 'record_consent';
     case ManageServices = 'manage_services';
     case ViewSpecialists = 'view_specialists';
