@@ -26,6 +26,7 @@ use App\Modules\Referrals\Application\SaveReferralRewardProgram;
 use App\Modules\Referrals\Domain\Enums\ReferralRewardCategory;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
+use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Referrals\Domain\Models\ReferralRewardLedgerEntry;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
