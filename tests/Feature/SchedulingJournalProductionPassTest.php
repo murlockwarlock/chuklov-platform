@@ -34,7 +34,7 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
-use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -366,9 +366,8 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertSame('2026-10-05 14:00', CarbonImmutable::parse((string) $startsAt)->format('Y-m-d H:i'));
         self::assertSame('2026-10-05', $component->instance()->data['booking_date']);
         self::assertSame('2026-10-05T07:00:00+00:00', $component->instance()->data['booking_time']);
-        $dateTimeField = $component->instance()->getSchemaComponent('form.starts_at', withHidden: true);
-        self::assertInstanceOf(DateTimePicker::class, $dateTimeField);
-        self::assertSame('Asia/Bangkok', $dateTimeField->getTimezone());
+        $startsAtField = $component->instance()->getSchemaComponent('form.starts_at', withHidden: true);
+        self::assertInstanceOf(Hidden::class, $startsAtField);
 
         $component->fillForm([
             'service_id' => $service->getKey(),
