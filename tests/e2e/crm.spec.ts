@@ -689,7 +689,7 @@ test('staff can choose and send an attachment in CRM Messages', async ({ page })
 
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill('Сообщение с вложением');
     await page.getByRole('button', { name: 'Отправить', exact: true }).click();
-    await expect(page.getByText('crm-message-attachment.pdf', { exact: true })).toBeVisible();
+    await expect(page.locator('article').getByText('crm-message-attachment.pdf', { exact: true })).toBeVisible();
 });
 
 test('staff can activate a partner, create a campaign link, and assign a referrer from a client page', async ({ page }) => {

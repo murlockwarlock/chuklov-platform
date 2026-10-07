@@ -194,6 +194,13 @@ final class MessageComposer
                 ->extraAlpineAttributes([
                     'x-on:messages-open-attachment.window' => '$el.querySelector(".filepond--browser, input[type=file]")?.click()',
                     'x-on:messages-remove-attachment.window' => 'pond && pond.getFiles().forEach(file => pond.removeFile(file.id, { revert: true }))',
+                    'x-on:change' => <<<'JS'
+                        if ($event.target?.matches?.('input[type=file]') && $event.target.files?.[0]) {
+                            window.dispatchEvent(new CustomEvent('messages-attachment-selected', {
+                                detail: { name: $event.target.files[0].name },
+                            }))
+                        }
+                    JS,
                     'x-init' => <<<'JS'
                         $watch('pond', (pond) => {
                             if (! pond || $el.__messagesAttachmentEventsPond === pond) {
