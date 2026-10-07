@@ -628,10 +628,10 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await newClientAction.click();
 
     const modal = page.getByRole('dialog').last();
-    await expect(modal.getByLabel('Имя и фамилия', { exact: true })).toBeVisible();
+    await expect(modal.getByLabel('Имя и фамилия*', { exact: true })).toBeVisible();
     await expect(modal.getByLabel('Язык', { exact: true })).toHaveCount(0);
     await expect(modal.getByLabel('Часовой пояс', { exact: true })).toHaveCount(0);
-    await modal.getByLabel('Имя и фамилия', { exact: true }).fill(newClientName);
+    await modal.getByLabel('Имя и фамилия*', { exact: true }).fill(newClientName);
     await modal.getByLabel('Телефон', { exact: true }).fill(newClientPhone);
     await modal.getByRole('button', { name: 'Создать', exact: true }).click();
     await expect(modal).not.toBeVisible();
