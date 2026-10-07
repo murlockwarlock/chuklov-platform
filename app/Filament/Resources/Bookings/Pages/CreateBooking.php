@@ -58,6 +58,9 @@ class CreateBooking extends LocalizedCreateRecord
             );
             if ($local instanceof CarbonImmutable) {
                 $prefill['starts_at'] = $local;
+                $prefill['booking_date'] = $local->toDateString();
+                $prefill['booking_time'] = $local->utc()->toIso8601String();
+                $prefill['booking_time_prefilled'] = true;
             }
         }
 
@@ -145,15 +148,17 @@ class CreateBooking extends LocalizedCreateRecord
                 throw $exception;
             }
 
+            $humanMessages = array_map(
+                static fn (string $message): string => $message === 'The selected time is no longer available.'
+                    ? __('Это время уже недоступно. Выберите другое.')
+                    : $message,
+                $startsAtMessages,
+            );
             $errors['data.starts_at'] = array_merge(
                 $errors['data.starts_at'] ?? [],
-                array_map(
-                    static fn (string $message): string => $message === 'The selected time is no longer available.'
-                        ? __('Это время уже недоступно. Выберите другое.')
-                        : $message,
-                    $startsAtMessages,
-                ),
+                $humanMessages,
             );
+            $errors['data.booking_time'] = array_merge($errors['data.booking_time'] ?? [], $humanMessages);
             unset($errors['startsAt']);
 
             throw ValidationException::withMessages($errors);

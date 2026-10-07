@@ -9,6 +9,7 @@ use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -26,6 +27,7 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -278,6 +280,60 @@ class MilestoneFourCrmBookingTest extends TestCase
         $booking = Booking::query()->sole();
         self::assertSame($organization->getKey(), $booking->organization_id);
         self::assertSame($createdClient->getKey(), $booking->client_id);
+    }
+
+    public function test_booking_form_offers_only_available_times_and_creates_from_selected_slot(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $organization->forceFill(['timezone' => 'Asia/Yekaterinburg'])->save();
+        $specialist->forceFill([
+            'timezone' => 'Asia/Bangkok',
+            'staff_user_id' => $admin->getKey(),
+            'viewer_timezone' => 'Asia/Yekaterinburg',
+        ])->save();
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        OrganizationFeatureGate::invalidate($organization->getKey(), OrganizationFeature::ClientRecords);
+        app(OrganizationContext::class)->set($organization->refresh());
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->fillForm([
+                'client_id' => $client->getKey(),
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'booking_date' => '2026-04-06',
+                'visit_format' => VisitFormat::Office->value,
+            ]);
+
+        $timeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertInstanceOf(Select::class, $timeField);
+        self::assertSame([
+            '07:00–08:00',
+            '08:15–09:15',
+            '09:30–10:30',
+            '10:45–11:45',
+            '12:00–13:00',
+            '13:15–14:15',
+        ], array_values($timeField->getOptions()));
+
+        $selectedTime = array_key_first($timeField->getOptions());
+        self::assertIsString($selectedTime);
+        $component
+            ->fillForm(['booking_time' => $selectedTime])
+            ->assertHasNoErrors();
+
+        $component
+            ->call('create')
+            ->assertHasNoErrors()
+            ->assertRedirect();
+
+        $booking = Booking::query()->sole();
+        self::assertSame($client->getKey(), $booking->client_id);
+        self::assertTrue($booking->startsAtUtc()->equalTo(CarbonImmutable::parse($selectedTime)));
     }
 
     public function test_client_cannot_use_the_crm_backdated_confirmation(): void

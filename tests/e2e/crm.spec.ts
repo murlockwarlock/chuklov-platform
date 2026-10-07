@@ -569,10 +569,10 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await page.getByText(fixture.serviceName, { exact: true }).click();
     await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
     await page.getByText(fixture.specialistName, { exact: true }).click();
-    const dateInput = page.getByLabel('Дата и время');
-    await dateInput.fill(fixture.bookingStartsAt);
+    const dateInput = page.getByLabel('Дата');
+    await dateInput.fill(fixture.bookingStartsAt.slice(0, 10));
     await dateInput.blur();
-    await expect(dateInput).toHaveValue(fixture.bookingStartsAt);
+    await expect(dateInput).toHaveValue(fixture.bookingStartsAt.slice(0, 10));
     await page.getByLabel('Формат визита').selectOption('office');
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
@@ -582,6 +582,12 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await locationOption.click();
     await expect(workingLocation).not.toContainText('Выбрать вариант', { timeout: 15_000 });
     await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/, { timeout: 15_000 });
+    const bookingTime = page.getByRole('combobox', { name: 'Доступное время*', exact: true });
+    await bookingTime.click();
+    const availableTime = page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.bookingStartsAt.slice(11, 16) }).first();
+    await expect(availableTime).toBeVisible({ timeout: 15_000 });
+    await availableTime.click();
+    await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
     const createButton = page.getByRole('button', { name: 'Создать', exact: true });
     await expect(createButton).toBeEnabled({ timeout: 15_000 });
     await createButton.click();
@@ -614,13 +620,20 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
     await page.getByRole('option', { name: fixture.serviceName, exact: true }).click();
-    const dateInput = page.getByLabel('Дата и время');
-    await dateInput.fill(fixture.bookingStartsAt);
+    const dateInput = page.getByLabel('Дата');
+    await dateInput.fill(fixture.bookingStartsAt.slice(0, 10));
     await dateInput.blur();
+    await expect(dateInput).toHaveValue(fixture.bookingStartsAt.slice(0, 10));
     await page.getByLabel('Формат визита').selectOption('office');
     const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
     await workingLocation.click();
     await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.workingLocationName }).first().click();
+    const bookingTime = page.getByRole('combobox', { name: 'Доступное время*', exact: true });
+    await bookingTime.click();
+    const availableTime = page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.bookingStartsAt.slice(11, 16) }).first();
+    await expect(availableTime).toBeVisible({ timeout: 15_000 });
+    await availableTime.click();
+    await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
 
     const newClientAction = page.getByTestId('booking-create-client');
     await expect(newClientAction).toBeVisible();
@@ -639,7 +652,8 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await expect(page.getByRole('combobox', { name: 'Клиент*', exact: true })).toContainText(newClientName);
     await expect(page.getByRole('combobox', { name: 'Услуга*', exact: true })).toContainText(fixture.serviceName);
     await expect(page.getByRole('combobox', { name: 'Специалист*', exact: true })).toContainText(fixture.specialistName);
-    await expect(dateInput).toHaveValue(fixture.bookingStartsAt);
+    await expect(dateInput).toHaveValue(fixture.bookingStartsAt.slice(0, 10));
+    await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/);
 

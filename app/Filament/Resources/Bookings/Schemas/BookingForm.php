@@ -10,6 +10,7 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scheduling\Application\BookingLocationResolver;
+use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
@@ -21,7 +22,9 @@ use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
@@ -53,6 +56,8 @@ class BookingForm
                     ->validationMessages(['required' => __('Выберите специалиста.')])
                     ->live()
                     ->afterStateUpdated(function (Get $get, Set $set): void {
+                        self::clearAvailableTime($set);
+
                         $serviceId = (int) $get('service_id');
                         $specialistId = (int) $get('specialist_id');
                         if ($serviceId === 0 || $specialistId === 0) {
@@ -88,7 +93,10 @@ class BookingForm
                     ->searchable()
                     ->required()
                     ->validationMessages(['required' => __('Выберите услугу.')])
-                    ->live(),
+                    ->live()
+                    ->afterStateUpdated(function (Get $get, Set $set): void {
+                        self::preservePrefilledTimeOrClear($get, $set);
+                    }),
                 Select::make('client_id')
                     ->label(__('Клиент'))
                     ->options([])
@@ -166,10 +174,37 @@ class BookingForm
 
                         return (int) $client->getKey();
                     }),
-                DateTimePicker::make('starts_at')
-                    ->label(__('Дата и время'))
-                    ->timezone(fn (): string => self::viewerTimezone())
+                DatePicker::make('booking_date')
+                    ->label(__('Дата'))
+                    ->native()
                     ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
+                    ->live()
+                    ->afterStateUpdated(function (Set $set): void {
+                        self::clearAvailableTime($set);
+                    })
+                    ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
+                    ->validationMessages(['required' => __('Укажите дату и время записи.')]),
+                Select::make('booking_time')
+                    ->label(__('Доступное время'))
+                    ->options(fn (Get $get): array => self::availableTimeOptions($get))
+                    ->placeholder(__('Выберите доступное время'))
+                    ->native(false)
+                    ->live()
+                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                        $set('starts_at', is_string($state) && trim($state) !== '' ? $state : null);
+                        $set('confirm_backdated', false);
+                        $set('booking_time_prefilled', false);
+                    })
+                    ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
+                    ->validationMessages(['required' => __('Выберите доступное время.')])
+                    ->helperText(fn (): string => __('Показываются только свободные интервалы в часовом поясе CRM.')),
+                Hidden::make('booking_time_prefilled')
+                    ->default(false)
+                    ->dehydrated(false),
+                DateTimePicker::make('starts_at')
+                    ->hidden()
+                    ->dehydratedWhenHidden()
+                    ->timezone(fn (): string => self::viewerTimezone())
                     ->live(onBlur: true)
                     ->seconds(false)
                     ->afterStateUpdated(function (Set $set): void {
@@ -201,7 +236,8 @@ class BookingForm
                     ->required()
                     ->validationMessages(['required' => __('Выберите формат визита.')])
                     ->live()
-                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                    ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
+                        self::preservePrefilledTimeOrClear($get, $set);
                         $set('party_size', $state === VisitFormat::HomeVisit->value ? 1 : null);
 
                         if ($state === VisitFormat::Office->value) {
@@ -218,6 +254,8 @@ class BookingForm
                             $set('location', null);
                             $set('working_location_id', null);
                         }
+
+                        $set('booking_time_prefilled', false);
                     }),
                 Select::make('working_location_id')
                     ->label(__('Локация'))
@@ -234,7 +272,8 @@ class BookingForm
                     ->searchable()
                     ->nullable()
                     ->live()
-                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                    ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
+                        self::preservePrefilledTimeOrClear($get, $set);
                         $location = $state === null || $state === ''
                             ? null
                             : WorkingLocation::query()
@@ -248,6 +287,10 @@ class BookingForm
                 TextInput::make('location_area')
                     ->label(__('Район выезда'))
                     ->maxLength(160)
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(function (Get $get, Set $set): void {
+                        self::preservePrefilledTimeOrClear($get, $set);
+                    })
                     ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
                 TextInput::make('party_size')
                     ->label(__('Количество участников выезда'))
@@ -284,6 +327,115 @@ class BookingForm
                 app(OrganizationContext::class)->organization(),
                 OrganizationPermission::ManageClients,
             );
+    }
+
+    private static function clearAvailableTime(Set $set): void
+    {
+        $set('booking_time', null);
+        $set('starts_at', null);
+        $set('confirm_backdated', false);
+        $set('booking_time_prefilled', false);
+    }
+
+    private static function preservePrefilledTimeOrClear(Get $get, Set $set): void
+    {
+        if ($get('booking_time_prefilled') === true
+            || ($get('booking_date') === null && $get('booking_time') === null)) {
+            return;
+        }
+
+        self::clearAvailableTime($set);
+    }
+
+    /** @return array<string, string> */
+    private static function availableTimeOptions(Get $get): array
+    {
+        $actor = auth()->user();
+        $specialistId = self::positiveInteger($get('specialist_id'));
+        $serviceId = self::positiveInteger($get('service_id'));
+        $format = VisitFormat::tryFrom((string) $get('visit_format'));
+        $date = self::bookingDate($get('booking_date'));
+
+        if (! $actor instanceof User
+            || $specialistId === null
+            || $serviceId === null
+            || ! $format instanceof VisitFormat
+            || ! $date instanceof CarbonImmutable) {
+            return [];
+        }
+
+        try {
+            $availability = app(CalculateAvailability::class)->forStaff(
+                actor: $actor,
+                specialistId: $specialistId,
+                serviceId: $serviceId,
+                dateFrom: $date->subDays(2)->toDateString(),
+                dateTo: $date->addDays(2)->toDateString(),
+                format: $format,
+                displayTimezone: self::viewerTimezone(),
+                workingLocationId: self::positiveInteger($get('working_location_id')),
+                locationArea: self::nullableString($get('location_area')),
+            );
+        } catch (InvalidArgumentException|ValidationException) {
+            return [];
+        }
+
+        $options = [];
+        foreach ($availability->slots as $slot) {
+            $startsAt = $slot->startsAt->setTimezone($availability->displayTimezone);
+            if ($startsAt->toDateString() !== $date->toDateString()) {
+                continue;
+            }
+
+            $options[$slot->startsAt->utc()->toIso8601String()] = $startsAt->format('H:i')
+                .'–'.$slot->endsAt->setTimezone($availability->displayTimezone)->format('H:i');
+        }
+
+        return $options;
+    }
+
+    private static function bookingDate(mixed $state): ?CarbonImmutable
+    {
+        if ($state instanceof DateTimeInterface) {
+            return CarbonImmutable::instance($state)->setTimezone(self::viewerTimezone())->startOfDay();
+        }
+
+        if (! is_string($state) || trim($state) === '') {
+            return null;
+        }
+
+        $value = trim($state);
+        try {
+            $date = CarbonImmutable::createFromFormat('!Y-m-d', $value, self::viewerTimezone());
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+
+        return $date instanceof CarbonImmutable && $date->format('Y-m-d') === $value ? $date : null;
+    }
+
+    private static function positiveInteger(mixed $value): ?int
+    {
+        if (is_int($value) && $value > 0) {
+            return $value;
+        }
+
+        if (is_string($value) && ctype_digit(trim($value)) && (int) $value > 0) {
+            return (int) $value;
+        }
+
+        return null;
+    }
+
+    private static function nullableString(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
     }
 
     private static function viewerTimezone(): string

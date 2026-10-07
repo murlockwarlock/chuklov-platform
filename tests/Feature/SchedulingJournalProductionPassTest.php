@@ -347,7 +347,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
 
     public function test_journal_create_prefill_keeps_clicked_time_in_the_crm_viewer_timezone(): void
     {
-        [$organization, $admin, $specialist] = $this->fixture('UTC', 'Africa/Cairo');
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC', 'Africa/Cairo');
         $specialist->forceFill([
             'staff_user_id' => $admin->getKey(),
             'viewer_timezone' => 'Asia/Bangkok',
@@ -364,9 +364,19 @@ final class SchedulingJournalProductionPassTest extends TestCase
 
         $startsAt = $component->instance()->data['starts_at'];
         self::assertSame('2026-10-05 14:00', CarbonImmutable::parse((string) $startsAt)->format('Y-m-d H:i'));
-        $dateTimeField = $component->instance()->getSchemaComponent('form.starts_at');
+        self::assertSame('2026-10-05', $component->instance()->data['booking_date']);
+        self::assertSame('2026-10-05T07:00:00+00:00', $component->instance()->data['booking_time']);
+        $dateTimeField = $component->instance()->getSchemaComponent('form.starts_at', withHidden: true);
         self::assertInstanceOf(DateTimePicker::class, $dateTimeField);
         self::assertSame('Asia/Bangkok', $dateTimeField->getTimezone());
+
+        $component->fillForm([
+            'service_id' => $service->getKey(),
+            'visit_format' => VisitFormat::Online->value,
+        ]);
+
+        self::assertSame('2026-10-05T07:00:00+00:00', $component->instance()->data['booking_time']);
+        self::assertSame('2026-10-05 14:00', CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->format('Y-m-d H:i'));
     }
 
     public function test_journal_drag_drop_uses_authoritative_reschedule_and_rejects_stale_or_unavailable_drops(): void
