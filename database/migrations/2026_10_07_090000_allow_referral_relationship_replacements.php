@@ -24,7 +24,11 @@ return new class extends Migration
                 ->restrictOnDelete();
         });
 
-        DB::statement('DROP INDEX IF EXISTS ref_rel_org_referred_unique');
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('ALTER TABLE referral_relationships DROP CONSTRAINT IF EXISTS ref_rel_org_referred_unique');
+        } else {
+            DB::statement('DROP INDEX IF EXISTS ref_rel_org_referred_unique');
+        }
         DB::statement(
             'CREATE UNIQUE INDEX ref_rel_org_referred_active_unique ON referral_relationships (organization_id, referred_client_id) WHERE superseded_at IS NULL',
         );
