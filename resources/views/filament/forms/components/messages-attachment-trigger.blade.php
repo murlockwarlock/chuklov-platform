@@ -1,7 +1,7 @@
 <button
     type="button"
     class="messages-attachment-trigger"
-    x-on:click="$dispatch('messages-open-attachment')"
+    x-on:click="$el.closest('form')?.querySelector('.filepond--browser, input[type=file]')?.click()"
     aria-label="{{ __('Добавить вложение') }}"
     title="{{ __('Добавить вложение') }}"
 >

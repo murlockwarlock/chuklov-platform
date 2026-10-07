@@ -192,17 +192,7 @@ final class MessageComposer
                 ->extraAttributes(['class' => 'messages-attachment-upload-hidden'])
                 ->extraFieldWrapperAttributes(['class' => 'messages-attachment-field-hidden'])
                 ->extraAlpineAttributes([
-                    'x-on:messages-open-attachment.window' => <<<'JS'
-                        const input = $el.querySelector('input[type="file"]')
-
-                        if (input instanceof HTMLInputElement) {
-                            input.click()
-
-                            return
-                        }
-
-                        pond?.browse()
-                    JS,
+                    'x-on:messages-open-attachment.window' => '$el.querySelector(".filepond--browser, input[type=file]")?.click()',
                     'x-on:messages-remove-attachment.window' => 'pond && pond.getFiles().forEach(file => pond.removeFile(file.id, { revert: true }))',
                     'x-init' => <<<'JS'
                         $watch('pond', (pond) => {
