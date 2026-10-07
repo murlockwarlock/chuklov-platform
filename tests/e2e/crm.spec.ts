@@ -582,7 +582,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await locationOption.click();
     await expect(workingLocation).not.toContainText('Выбрать вариант', { timeout: 15_000 });
     await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/, { timeout: 15_000 });
-    const bookingTime = page.getByRole('combobox', { name: 'Доступное время*', exact: true });
+    const bookingTime = page.getByRole('combobox', { name: /^Доступное время/ }).first();
     await bookingTime.click();
     const availableTime = page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.bookingStartsAt.slice(11, 16) }).first();
     await expect(availableTime).toBeVisible({ timeout: 15_000 });
@@ -628,7 +628,7 @@ test('staff can create a new client inline while creating a booking', async ({ p
     const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
     await workingLocation.click();
     await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.workingLocationName }).first().click();
-    const bookingTime = page.getByRole('combobox', { name: 'Доступное время*', exact: true });
+    const bookingTime = page.getByRole('combobox', { name: /^Доступное время/ }).first();
     await bookingTime.click();
     const availableTime = page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.bookingStartsAt.slice(11, 16) }).first();
     await expect(availableTime).toBeVisible({ timeout: 15_000 });

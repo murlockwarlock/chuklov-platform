@@ -254,7 +254,9 @@ class MilestoneFourCrmBookingTest extends TestCase
         self::assertIsString($selectedTime);
         $component->fillForm(['booking_time' => $selectedTime]);
 
-        self::assertTrue($component->instance()->getSchemaComponent('form.client_id')->getCreateOptionAction()?->isButton());
+        $createClientAction = $component->instance()->getSchemaComponent('form.client_id')->getCreateOptionAction();
+        self::assertTrue($createClientAction?->isButton());
+        self::assertSame('disabled', $createClientAction?->getExtraAttributes()['wire:loading.attr'] ?? null);
 
         $component
             ->callFormComponentAction('client_id', 'createOption', [
