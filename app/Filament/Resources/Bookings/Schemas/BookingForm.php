@@ -128,6 +128,14 @@ class BookingForm
                             : null;
                     })
                     ->afterStateUpdated(function (Get $get, Set $set): void {
+                        $selectedTime = $get('booking_time_snapshot');
+                        if (is_string($selectedTime) && trim($selectedTime) !== '') {
+                            $set('booking_time', $selectedTime);
+                            $set('starts_at', $selectedTime);
+
+                            return;
+                        }
+
                         $bookingTime = $get('booking_time');
                         if (is_string($bookingTime) && trim($bookingTime) !== '') {
                             $set('booking_time', $bookingTime);
@@ -305,7 +313,9 @@ class BookingForm
                     ->disabled(fn (Get $get): bool => ! self::hasAvailableTimePrerequisites($get))
                     ->live()
                     ->afterStateUpdated(function (Set $set, mixed $state): void {
-                        $set('starts_at', is_string($state) && trim($state) !== '' ? $state : null);
+                        $selectedTime = is_string($state) && trim($state) !== '' ? $state : null;
+                        $set('booking_time_snapshot', $selectedTime);
+                        $set('starts_at', $selectedTime);
                         $set('confirm_backdated', false);
                         $set('booking_time_prefilled', false);
                     })
@@ -314,6 +324,8 @@ class BookingForm
                     ->helperText(fn (Get $get): string => self::availableTimeHelper($get)),
                 Hidden::make('booking_time_prefilled')
                     ->default(false)
+                    ->dehydrated(false),
+                Hidden::make('booking_time_snapshot')
                     ->dehydrated(false),
                 Hidden::make('starts_at')
                     ->hidden()
@@ -356,6 +368,7 @@ class BookingForm
     private static function clearAvailableTime(Set $set): void
     {
         $set('booking_time', null);
+        $set('booking_time_snapshot', null);
         $set('starts_at', null);
         $set('confirm_backdated', false);
         $set('booking_time_prefilled', false);

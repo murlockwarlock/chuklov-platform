@@ -61,6 +61,7 @@ class CreateBooking extends LocalizedCreateRecord
                 $prefill['starts_at'] = $local;
                 $prefill['booking_date'] = $local->toDateString();
                 $prefill['booking_time'] = $local->utc()->toIso8601String();
+                $prefill['booking_time_snapshot'] = $prefill['booking_time'];
                 $prefill['booking_time_prefilled'] = true;
             }
         }
