@@ -130,7 +130,15 @@ class BookingForm
                     ->afterStateUpdated(function (Get $get, Set $set): void {
                         $bookingTime = $get('booking_time');
                         if (is_string($bookingTime) && trim($bookingTime) !== '') {
+                            $set('booking_time', $bookingTime);
                             $set('starts_at', $bookingTime);
+
+                            return;
+                        }
+
+                        $startsAt = $get('starts_at');
+                        if (is_string($startsAt) && trim($startsAt) !== '') {
+                            $set('booking_time', $startsAt);
                         }
                     })
                     ->required()
