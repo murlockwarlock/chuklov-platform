@@ -38,6 +38,7 @@ Current Draft PR:
 - PR: #53 — Phase 1 functional closeout
 - Branch: `codex/chuklov-phase1-functional-closeout`
 - Current remediation-pass starting SHA: `b349ce68749408a07f76465fce51a54352fcf401`
+- Code candidate for this pass: `c6469f4eb80ca9dabd9ed82e8b1b559fd118e8f2`
 - PR remains Draft / not merged.
 
 The current branch already contains the ServiceCredit Base Currency remediation, Client Companion retry/handoff remediation, and the booking/Telegram/Work Schedule acceptance pass.
@@ -67,7 +68,7 @@ Required remediation:
 - do not accept DOM-presence/event-registration tests as sufficient for clickable UI;
 - if a button is user-facing, acceptance must assert a visible result or human-readable error.
 
-The FilePond browser path now opens the native chooser, keeps the selected file visible in the composer, and sends it through the existing protected attachment action. The focused Playwright regression covers the full click → selection → composer → send/history journey; staging and owner acceptance remain pending.
+The FilePond browser path now opens the native chooser, keeps the selected file visible in the composer, and sends it through the existing protected attachment action. The focused Playwright regression covers the full click → selection → composer → send/history journey and passed on both desktop and mobile in hosted E2E. The exact candidate was deployed and passed staging smoke; owner acceptance remains pending.
 
 ---
 
@@ -364,7 +365,7 @@ If a completed post-pay Booking with a positive configured price has no obligati
 
 Do not fix by inventing a second payment table.
 
-A focused lifecycle test completes a valid positive-price post-pay Booking, observes a zero-paid FinancialObligation in `Оплаты`, and confirms it remains listed after a partial payment. No current A/B materialization or list-filter bug reproduced; the owner screenshot is consistent with a pre-completion/configuration/data state (C/D). No fake debt or second payment table was added. PostgreSQL/staging acceptance remains required.
+A focused lifecycle test completes a valid positive-price post-pay Booking, observes a zero-paid FinancialObligation in `Оплаты`, and confirms it remains listed after a partial payment. Hosted PostgreSQL integration/concurrency and the exact staging smoke passed. No current A/B materialization or list-filter bug reproduced; the owner screenshot is consistent with a pre-completion/configuration/data state (C/D). No fake debt or second payment table was added. Owner acceptance remains pending.
 
 ## 9.4 Manual payment methods
 
@@ -420,7 +421,7 @@ Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 See testing rule above.
 
-The real browser regression is present; local execution was blocked by the unavailable local PostgreSQL role, so staging/browser acceptance remains pending.
+The real browser regression is present and passed on desktop and mobile in hosted E2E, including chooser opening, selected-file visibility, first-message send, and history visibility. Local browser execution was blocked by the unavailable local PostgreSQL role. The exact candidate passed staging smoke; owner acceptance remains pending.
 
 ## 10.2 Internal feedback copy
 

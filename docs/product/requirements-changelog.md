@@ -6,6 +6,7 @@
 - Normalized the owner-accepted CRM workflow contract: Booking Client search uses the shared organization-scoped ClientSearch abstraction for full name, phone, Telegram username, and email with rich labels; `Написать клиенту` opens the canonical CRM Messages conversation with the selected Client.
 - Superseded the ordinary no-reassignment rule for referrals with an explicit authorized CRM administrator replacement operation. Replacement is append-only evidence with PostgreSQL uniqueness/locking and audit; historical referral rewards and Finance entries remain attached to the old relationship, and future qualification uses the new active relationship.
 - Kept the accepted Finance and attachment contracts unchanged while closing their user-visible remediation paths: the Booking payment block uses the existing derived ledger projection, and the Messages attachment browser journey uses the existing private storage/application action.
+- Normalized the accepted CRM presentation details for this closeout: the current referrer and replacement warning are visible before editing, source attribution is clearly separate from referral assignment, the Client page exposes `Новый сеанс` as a primary action, scheduling settings separate B2B meetings and post-test consultation, and protected client feedback uses human wording without changing its security boundary.
 
 ## 2026-10-03 — Owner-accepted booking, Telegram identity, and scheduling UX corrections
 
