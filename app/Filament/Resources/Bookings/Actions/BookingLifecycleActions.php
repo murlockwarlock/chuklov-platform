@@ -418,7 +418,7 @@ final class BookingLifecycleActions
     private static function availableTimeHelper(mixed $state): string
     {
         return self::rescheduleDate($state) instanceof CarbonImmutable
-            ? __('Показываются только свободные интервалы в часовом поясе CRM.')
+            ? __('Показываются только свободные интервалы в часовом поясе CRM. Если список пуст, на эту дату свободного времени нет.')
             : __('Сначала выберите дату.');
     }
 

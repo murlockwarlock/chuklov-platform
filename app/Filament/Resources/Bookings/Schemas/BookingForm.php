@@ -144,7 +144,10 @@ class BookingForm
                         ->label(__('Добавить нового клиента'))
                         ->button()
                         ->icon(Heroicon::Plus)
-                        ->extraAttributes(['data-testid' => 'booking-create-client'])
+                        ->extraAttributes([
+                            'data-testid' => 'booking-create-client',
+                            'wire:loading.attr' => 'disabled',
+                        ])
                         ->visible(fn (): bool => self::canCreateClient()))
                     ->createOptionForm([
                         TextInput::make('full_name')

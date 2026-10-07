@@ -14,6 +14,7 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
+use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Url;
@@ -68,6 +69,26 @@ class CreateBooking extends LocalizedCreateRecord
 
         if ($prefill !== []) {
             $this->form->fillPartially($prefill, array_keys($prefill));
+        }
+    }
+
+    public function create(bool $another = false): void
+    {
+        try {
+            parent::create($another);
+        } catch (ValidationException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            $message = __('Не удалось создать запись. Проверьте клиента, услугу, дату и доступное время и попробуйте ещё раз.');
+            $this->addError('data.booking_time', $message);
+            $this->addError('data.starts_at', $message);
+            Notification::make()
+                ->danger()
+                ->title(__('Не удалось создать запись'))
+                ->body($message)
+                ->send();
         }
     }
 
