@@ -609,11 +609,11 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await page.goto('/admin/bookings/create');
     await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
 
-    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
-    await page.getByText(fixture.serviceName, { exact: true }).click();
     await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
     await page.getByText(fixture.specialistName, { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
+    await page.getByRole('option', { name: fixture.serviceName, exact: true }).click();
     const dateInput = page.getByLabel('Дата и время');
     await dateInput.fill(fixture.bookingStartsAt);
     await dateInput.blur();
