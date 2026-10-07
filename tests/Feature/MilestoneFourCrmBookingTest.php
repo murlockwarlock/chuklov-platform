@@ -306,11 +306,16 @@ class MilestoneFourCrmBookingTest extends TestCase
                 'service_id' => $service->getKey(),
                 'specialist_id' => $specialist->getKey(),
                 'booking_date' => '2026-04-06',
-                'visit_format' => VisitFormat::Office->value,
             ]);
 
         $timeField = $component->instance()->getSchemaComponent('form.booking_time');
         self::assertInstanceOf(Select::class, $timeField);
+        self::assertTrue($timeField->isDisabled());
+        self::assertStringContainsString('Сначала выберите формат визита.', $component->html());
+
+        $component->fillForm(['visit_format' => VisitFormat::Office->value]);
+        $timeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertFalse($timeField->isDisabled());
         self::assertSame([
             '07:00–08:00',
             '08:15–09:15',

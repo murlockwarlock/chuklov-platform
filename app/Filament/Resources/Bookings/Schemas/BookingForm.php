@@ -174,58 +174,6 @@ class BookingForm
 
                         return (int) $client->getKey();
                     }),
-                DatePicker::make('booking_date')
-                    ->label(__('Дата'))
-                    ->native()
-                    ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
-                    ->live()
-                    ->afterStateUpdated(function (Set $set): void {
-                        self::clearAvailableTime($set);
-                    })
-                    ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
-                    ->validationMessages(['required' => __('Укажите дату и время записи.')]),
-                Select::make('booking_time')
-                    ->label(__('Доступное время'))
-                    ->options(fn (Get $get): array => self::availableTimeOptions($get))
-                    ->placeholder(__('Выберите доступное время'))
-                    ->native(false)
-                    ->live()
-                    ->afterStateUpdated(function (Set $set, mixed $state): void {
-                        $set('starts_at', is_string($state) && trim($state) !== '' ? $state : null);
-                        $set('confirm_backdated', false);
-                        $set('booking_time_prefilled', false);
-                    })
-                    ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
-                    ->validationMessages(['required' => __('Выберите доступное время.')])
-                    ->helperText(fn (): string => __('Показываются только свободные интервалы в часовом поясе CRM.')),
-                Hidden::make('booking_time_prefilled')
-                    ->default(false)
-                    ->dehydrated(false),
-                DateTimePicker::make('starts_at')
-                    ->hidden()
-                    ->dehydratedWhenHidden()
-                    ->timezone(fn (): string => self::viewerTimezone())
-                    ->live(onBlur: true)
-                    ->seconds(false)
-                    ->afterStateUpdated(function (Set $set): void {
-                        $set('confirm_backdated', false);
-                    })
-                    ->required()
-                    ->validationMessages(['required' => __('Укажите дату и время записи.')]),
-                TextEntry::make('backdated_warning')
-                    ->label(__('Внимание'))
-                    ->state(fn (Get $get): string => self::backdatedWarning($get))
-                    ->visible(fn (Get $get): bool => self::isBackdated($get))
-                    ->columnSpanFull(),
-                Checkbox::make('confirm_backdated')
-                    ->label(__('Подтверждаю создание записи задним числом'))
-                    ->default(false)
-                    ->accepted(fn (Get $get): bool => self::isBackdated($get))
-                    ->validationMessages([
-                        'accepted' => __('Подтвердите создание записи задним числом.'),
-                    ])
-                    ->visible(fn (Get $get): bool => self::isBackdated($get))
-                    ->columnSpanFull(),
                 Select::make('visit_format')
                     ->label(__('Формат визита'))
                     ->options([
@@ -314,6 +262,59 @@ class BookingForm
                         : __('Укажите место выезда для этой записи.'))
                     ->maxLength(500)
                     ->visible(fn (Get $get): bool => in_array($get('visit_format'), [VisitFormat::Office->value, VisitFormat::HomeVisit->value], true)),
+                DatePicker::make('booking_date')
+                    ->label(__('Дата'))
+                    ->native()
+                    ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
+                    ->live()
+                    ->afterStateUpdated(function (Set $set): void {
+                        self::clearAvailableTime($set);
+                    })
+                    ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
+                    ->validationMessages(['required' => __('Укажите дату и время записи.')]),
+                Select::make('booking_time')
+                    ->label(__('Доступное время'))
+                    ->options(fn (Get $get): array => self::availableTimeOptions($get))
+                    ->placeholder(__('Выберите доступное время'))
+                    ->native(false)
+                    ->disabled(fn (Get $get): bool => ! self::hasAvailableTimePrerequisites($get))
+                    ->live()
+                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                        $set('starts_at', is_string($state) && trim($state) !== '' ? $state : null);
+                        $set('confirm_backdated', false);
+                        $set('booking_time_prefilled', false);
+                    })
+                    ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
+                    ->validationMessages(['required' => __('Выберите доступное время.')])
+                    ->helperText(fn (Get $get): string => self::availableTimeHelper($get)),
+                Hidden::make('booking_time_prefilled')
+                    ->default(false)
+                    ->dehydrated(false),
+                DateTimePicker::make('starts_at')
+                    ->hidden()
+                    ->dehydratedWhenHidden()
+                    ->timezone(fn (): string => self::viewerTimezone())
+                    ->live(onBlur: true)
+                    ->seconds(false)
+                    ->afterStateUpdated(function (Set $set): void {
+                        $set('confirm_backdated', false);
+                    })
+                    ->required()
+                    ->validationMessages(['required' => __('Укажите дату и время записи.')]),
+                TextEntry::make('backdated_warning')
+                    ->label(__('Внимание'))
+                    ->state(fn (Get $get): string => self::backdatedWarning($get))
+                    ->visible(fn (Get $get): bool => self::isBackdated($get))
+                    ->columnSpanFull(),
+                Checkbox::make('confirm_backdated')
+                    ->label(__('Подтверждаю создание записи задним числом'))
+                    ->default(false)
+                    ->accepted(fn (Get $get): bool => self::isBackdated($get))
+                    ->validationMessages([
+                        'accepted' => __('Подтвердите создание записи задним числом.'),
+                    ])
+                    ->visible(fn (Get $get): bool => self::isBackdated($get))
+                    ->columnSpanFull(),
             ]);
     }
 
@@ -345,6 +346,35 @@ class BookingForm
         }
 
         self::clearAvailableTime($set);
+    }
+
+    private static function hasAvailableTimePrerequisites(Get $get): bool
+    {
+        $format = VisitFormat::tryFrom((string) $get('visit_format'));
+
+        return self::positiveInteger($get('specialist_id')) !== null
+            && self::positiveInteger($get('service_id')) !== null
+            && $format instanceof VisitFormat
+            && self::bookingDate($get('booking_date')) instanceof CarbonImmutable;
+    }
+
+    private static function availableTimeHelper(Get $get): string
+    {
+        if (self::positiveInteger($get('specialist_id')) === null
+            || self::positiveInteger($get('service_id')) === null) {
+            return __('Сначала выберите специалиста и услугу.');
+        }
+
+        $format = VisitFormat::tryFrom((string) $get('visit_format'));
+        if (! $format instanceof VisitFormat) {
+            return __('Сначала выберите формат визита.');
+        }
+
+        if (! (self::bookingDate($get('booking_date')) instanceof CarbonImmutable)) {
+            return __('Сначала выберите дату.');
+        }
+
+        return __('Показываются только свободные интервалы в часовом поясе CRM. Если список пуст, на эту дату свободного времени нет.');
     }
 
     /** @return array<string, string> */
