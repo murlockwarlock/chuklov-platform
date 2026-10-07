@@ -128,25 +128,10 @@ class BookingForm
                             : null;
                     })
                     ->afterStateUpdated(function (Get $get, Set $set): void {
-                        $selectedTime = $get('booking_time_snapshot');
-                        if (is_string($selectedTime) && trim($selectedTime) !== '') {
+                        $selectedTime = self::selectedBookingTime($get);
+                        if ($selectedTime !== null) {
                             $set('booking_time', $selectedTime);
                             $set('starts_at', $selectedTime);
-
-                            return;
-                        }
-
-                        $bookingTime = $get('booking_time');
-                        if (is_string($bookingTime) && trim($bookingTime) !== '') {
-                            $set('booking_time', $bookingTime);
-                            $set('starts_at', $bookingTime);
-
-                            return;
-                        }
-
-                        $startsAt = $get('starts_at');
-                        if (is_string($startsAt) && trim($startsAt) !== '') {
-                            $set('booking_time', $startsAt);
                         }
                     })
                     ->required()
@@ -180,9 +165,11 @@ class BookingForm
                             ->placeholder(__('Например: Telegram, Instagram, рекомендация'))
                             ->maxLength(120),
                     ])
-                    ->createOptionUsing(function (array $data): int {
+                    ->createOptionUsing(function (array $data, Get $get, Set $set): int {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
+
+                        $selectedTime = self::selectedBookingTime($get);
 
                         try {
                             $phone = trim((string) ($data['phone'] ?? ''));
@@ -195,6 +182,12 @@ class BookingForm
                                 timezone: app(OrganizationContext::class)->defaultTimezone(),
                                 leadSource: isset($data['lead_source']) && trim((string) $data['lead_source']) !== '' ? (string) $data['lead_source'] : null,
                             );
+
+                            if ($selectedTime !== null) {
+                                $set('booking_time_snapshot', $selectedTime);
+                                $set('booking_time', $selectedTime);
+                                $set('starts_at', $selectedTime);
+                            }
 
                             return (int) $client->getKey();
                         } catch (ValidationException $exception) {
@@ -372,6 +365,19 @@ class BookingForm
         $set('starts_at', null);
         $set('confirm_backdated', false);
         $set('booking_time_prefilled', false);
+    }
+
+    private static function selectedBookingTime(Get $get): ?string
+    {
+        foreach (['booking_time_snapshot', 'booking_time', 'starts_at'] as $field) {
+            $value = $get($field);
+
+            if (is_string($value) && trim($value) !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     private static function preservePrefilledTimeOrClear(Get $get, Set $set): void
