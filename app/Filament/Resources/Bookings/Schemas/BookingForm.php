@@ -23,7 +23,6 @@ use DateTimeInterface;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -127,6 +126,12 @@ class BookingForm
                         return $actor instanceof User
                             ? app(ClientSearch::class)->optionLabel($actor, $value)
                             : null;
+                    })
+                    ->afterStateUpdated(function (Get $get, Set $set): void {
+                        $bookingTime = $get('booking_time');
+                        if (is_string($bookingTime) && trim($bookingTime) !== '') {
+                            $set('starts_at', $bookingTime);
+                        }
                     })
                     ->required()
                     ->validationMessages(['required' => __('Выберите клиента.')])
@@ -302,12 +307,10 @@ class BookingForm
                 Hidden::make('booking_time_prefilled')
                     ->default(false)
                     ->dehydrated(false),
-                DateTimePicker::make('starts_at')
+                Hidden::make('starts_at')
                     ->hidden()
                     ->dehydratedWhenHidden()
-                    ->timezone(fn (): string => self::viewerTimezone())
-                    ->live(onBlur: true)
-                    ->seconds(false)
+                    ->live()
                     ->afterStateUpdated(function (Set $set): void {
                         $set('confirm_backdated', false);
                     })

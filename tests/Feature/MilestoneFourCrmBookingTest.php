@@ -244,9 +244,15 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->fillForm([
                 'specialist_id' => $specialist->getKey(),
                 'service_id' => $service->getKey(),
-                'starts_at' => $startsAt,
+                'booking_date' => $startsAt->setTimezone('Asia/Almaty')->toDateString(),
                 'visit_format' => VisitFormat::Office->value,
             ]);
+
+        $timeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertInstanceOf(Select::class, $timeField);
+        $selectedTime = array_key_first($timeField->getOptions());
+        self::assertIsString($selectedTime);
+        $component->fillForm(['booking_time' => $selectedTime]);
 
         self::assertTrue($component->instance()->getSchemaComponent('form.client_id')->getCreateOptionAction()?->isButton());
 
@@ -270,7 +276,8 @@ class MilestoneFourCrmBookingTest extends TestCase
         self::assertSame($specialist->getKey(), (int) $component->instance()->data['specialist_id']);
         self::assertSame($service->getKey(), (int) $component->instance()->data['service_id']);
         self::assertSame('office', $component->instance()->data['visit_format']);
-        self::assertTrue(CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->equalTo($startsAt));
+        self::assertSame($selectedTime, $component->instance()->data['booking_time']);
+        self::assertTrue(CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->equalTo(CarbonImmutable::parse($selectedTime)));
 
         $component
             ->call('create')
