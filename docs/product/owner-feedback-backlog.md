@@ -147,6 +147,14 @@ Do not expose internal Client IDs.
 
 The existing tenant-scoped ClientSearch abstraction now supplies rich labels and searches full name, phone, verified Telegram username, and email. Telegram ID remains an exact-match capability of the shared search abstraction but is not displayed in option labels.
 
+## 3.5 Booking quick-create client discoverability
+
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
+
+Booking always references a canonical Client, but staff may create that Client inline during Booking creation. Telegram is not required.
+
+The Client field now exposes a visible `Добавить нового клиента` action beside the selector. Its quick-create modal asks only for name, with optional phone, email, and existing source attribution. Language and timezone use server-derived defaults; the created Client is selected immediately and the existing Booking form state remains in place. The ClientSearch path remains authoritative for existing phone/email matches and tenant isolation.
+
 ---
 
 # 4. Referral / attribution UX and owner decision

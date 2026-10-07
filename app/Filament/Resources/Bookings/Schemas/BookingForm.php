@@ -6,7 +6,9 @@ use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Application\CreateClient as CreateClientAction;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scheduling\Application\BookingLocationResolver;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -17,6 +19,7 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
+use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
@@ -25,6 +28,7 @@ use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -117,8 +121,16 @@ class BookingForm
                     })
                     ->required()
                     ->validationMessages(['required' => __('Выберите клиента.')])
-                    ->helperText(__('Нажмите +, если клиента ещё нет в базе. Telegram подключается отдельной подтверждённой ссылкой после создания.'))
+                    ->helperText(fn (): string => self::canCreateClient()
+                        ? __('Найдите клиента по имени, телефону, Telegram или email. Если его ещё нет в базе — добавьте нового.')
+                        : __('Выберите клиента из списка.'))
                     ->createOptionModalHeading(__('Добавить клиента'))
+                    ->createOptionAction(fn (Action $action): Action => $action
+                        ->label(__('Добавить нового клиента'))
+                        ->button()
+                        ->icon(Heroicon::Plus)
+                        ->extraAttributes(['data-testid' => 'booking-create-client'])
+                        ->visible(fn (): bool => self::canCreateClient()))
                     ->createOptionForm([
                         TextInput::make('full_name')
                             ->label(__('Имя и фамилия'))
@@ -133,25 +145,6 @@ class BookingForm
                             ->label(__('Телефон'))
                             ->tel()
                             ->maxLength(32),
-                        Select::make('language')
-                            ->label(__('Язык'))
-                            ->options([
-                                'ru' => __('Русский'),
-                                'en' => __('Английский'),
-                            ])
-                            ->default(fn (): string => (string) config('portal.default_locale', 'ru'))
-                            ->required()
-                            ->validationMessages(['required' => __('Выберите язык клиента.')]),
-                        Select::make('timezone')
-                            ->label(__('Часовой пояс'))
-                            ->options(fn (Get $get): array => TimezoneOptions::options(
-                                current: $get('timezone'),
-                                organization: app(OrganizationContext::class)->defaultTimezone(),
-                            ))
-                            ->default(fn (): string => app(OrganizationContext::class)->defaultTimezone())
-                            ->searchable()
-                            ->required()
-                            ->validationMessages(['required' => __('Выберите часовой пояс клиента.')]),
                         TextInput::make('lead_source')
                             ->label(__('Источник клиента'))
                             ->placeholder(__('Например: Telegram, Instagram, рекомендация'))
@@ -166,8 +159,8 @@ class BookingForm
                             fullName: (string) $data['full_name'],
                             email: isset($data['email']) && trim((string) $data['email']) !== '' ? (string) $data['email'] : null,
                             phone: $phone === '' ? null : $phone,
-                            language: (string) ($data['language'] ?? config('portal.default_locale', 'ru')),
-                            timezone: (string) ($data['timezone'] ?? app(OrganizationContext::class)->defaultTimezone()),
+                            language: (string) config('portal.default_locale', 'ru'),
+                            timezone: app(OrganizationContext::class)->defaultTimezone(),
                             leadSource: isset($data['lead_source']) && trim((string) $data['lead_source']) !== '' ? (string) $data['lead_source'] : null,
                         );
 
@@ -279,6 +272,18 @@ class BookingForm
                     ->maxLength(500)
                     ->visible(fn (Get $get): bool => in_array($get('visit_format'), [VisitFormat::Office->value, VisitFormat::HomeVisit->value], true)),
             ]);
+    }
+
+    private static function canCreateClient(): bool
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            && app(OrganizationAuthorizer::class)->allows(
+                $actor,
+                app(OrganizationContext::class)->organization(),
+                OrganizationPermission::ManageClients,
+            );
     }
 
     private static function viewerTimezone(): string

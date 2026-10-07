@@ -197,6 +197,64 @@ class MilestoneFourCrmBookingTest extends TestCase
         self::assertStringNotContainsString('validation.required', $homeVisit->html());
     }
 
+    public function test_booking_quick_create_client_is_visible_minimal_and_preserves_form_state(): void
+    {
+        [$organization, $admin, $existingClient, $specialist, $service] = $this->fixture();
+        $organization->forceFill(['timezone' => 'Asia/Almaty'])->save();
+        app(OrganizationContext::class)->set($organization->refresh());
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+        $startsAt = CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC');
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->assertFormComponentActionExists('client_id', 'createOption')
+            ->assertFormComponentActionHasLabel('client_id', 'createOption', 'Добавить нового клиента')
+            ->assertSee('Найдите клиента по имени, телефону, Telegram или email.')
+            ->fillForm([
+                'specialist_id' => $specialist->getKey(),
+                'service_id' => $service->getKey(),
+                'starts_at' => $startsAt,
+                'visit_format' => VisitFormat::Office->value,
+            ]);
+
+        self::assertTrue($component->instance()->getSchemaComponent('form.client_id')->getCreateOptionAction()?->isButton());
+
+        $component
+            ->callFormComponentAction('client_id', 'createOption', [
+                'full_name' => 'Иван Петров',
+                'phone' => '+7 700 123-45-67',
+                'email' => 'ivan.petrov@example.test',
+            ])
+            ->assertHasNoFormComponentActionErrors();
+
+        $createdClient = Client::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('full_name', 'Иван Петров')
+            ->sole();
+
+        self::assertNotSame($existingClient->getKey(), $createdClient->getKey());
+        self::assertSame((string) config('portal.default_locale', 'ru'), $createdClient->language);
+        self::assertSame('Asia/Almaty', $createdClient->timezone);
+        self::assertSame($createdClient->getKey(), (int) $component->instance()->data['client_id']);
+        self::assertSame($specialist->getKey(), (int) $component->instance()->data['specialist_id']);
+        self::assertSame($service->getKey(), (int) $component->instance()->data['service_id']);
+        self::assertSame('office', $component->instance()->data['visit_format']);
+        self::assertTrue(CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->equalTo($startsAt));
+
+        $component
+            ->call('create')
+            ->assertHasNoErrors()
+            ->assertRedirect();
+
+        $booking = Booking::query()->sole();
+        self::assertSame($organization->getKey(), $booking->organization_id);
+        self::assertSame($createdClient->getKey(), $booking->client_id);
+    }
+
     public function test_client_cannot_use_the_crm_backdated_confirmation(): void
     {
         [$organization, , $client, $specialist, $service] = $this->fixture();

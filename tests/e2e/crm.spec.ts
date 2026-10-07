@@ -597,6 +597,58 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
 });
 
+test('staff can create a new client inline while creating a booking', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    const fixture = createCrmFixture();
+    const newClientName = `Новый CRM клиент ${Date.now()}`;
+    const newClientPhone = '+7 700 234-56-78';
+
+    await login(page, fixture);
+
+    await page.goto('/admin/bookings/create');
+    await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
+
+    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
+    await page.getByText(fixture.serviceName, { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
+    await page.getByText(fixture.specialistName, { exact: true }).click();
+    const dateInput = page.getByLabel('Дата и время');
+    await dateInput.fill(fixture.bookingStartsAt);
+    await dateInput.blur();
+    await page.getByLabel('Формат визита').selectOption('office');
+    const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
+    await workingLocation.click();
+    await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.workingLocationName }).first().click();
+
+    const newClientAction = page.getByTestId('booking-create-client');
+    await expect(newClientAction).toBeVisible();
+    await expect(newClientAction).toContainText('Добавить нового клиента');
+    await newClientAction.click();
+
+    const modal = page.getByRole('dialog').last();
+    await expect(modal.getByLabel('Имя и фамилия', { exact: true })).toBeVisible();
+    await expect(modal.getByLabel('Язык', { exact: true })).toHaveCount(0);
+    await expect(modal.getByLabel('Часовой пояс', { exact: true })).toHaveCount(0);
+    await modal.getByLabel('Имя и фамилия', { exact: true }).fill(newClientName);
+    await modal.getByLabel('Телефон', { exact: true }).fill(newClientPhone);
+    await modal.getByRole('button', { name: 'Создать', exact: true }).click();
+    await expect(modal).not.toBeVisible();
+
+    await expect(page.getByRole('combobox', { name: 'Клиент*', exact: true })).toContainText(newClientName);
+    await expect(page.getByRole('combobox', { name: 'Услуга*', exact: true })).toContainText(fixture.serviceName);
+    await expect(page.getByRole('combobox', { name: 'Специалист*', exact: true })).toContainText(fixture.specialistName);
+    await expect(dateInput).toHaveValue(fixture.bookingStartsAt);
+    await expect(page.getByLabel('Формат визита')).toHaveValue('office');
+    await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/);
+
+    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
+    await expect(page.locator('.fi-in-text-item').filter({ hasText: newClientName }).first()).toBeVisible();
+});
+
 test('staff sees business labels for client and content settings', async ({ page }) => {
     const fixture = createCrmFixture();
 
