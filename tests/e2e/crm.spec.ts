@@ -634,15 +634,19 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await expect(availableTime).toBeVisible({ timeout: 15_000 });
     await availableTime.click();
     await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
-    const bookingState = async (): Promise<Array<Record<string, unknown>>> => page.evaluate(() => Array.from(document.querySelectorAll('[x-data*="selectFormComponent"]')).map((element) => {
-        const data = (window as typeof window & { Alpine?: { $data: (element: Element) => { select?: { statePath?: string; state?: unknown }; state?: unknown } } }).Alpine?.$data(element);
+    const bookingState = async (): Promise<Record<string, unknown>> => page.evaluate(() => {
+        const root = document.querySelector('[wire\\:id]');
+        const componentId = root?.getAttribute('wire:id');
+        const livewire = (window as typeof window & { Livewire?: { find: (id: string) => { get: (path: string) => unknown } } }).Livewire;
 
-        return {
-            statePath: data?.select?.statePath,
-            state: data?.select?.state ?? data?.state,
-            text: element.textContent?.trim(),
-        };
-    }).filter((state) => state.statePath === 'data.booking_time' || state.statePath === 'data.client_id' || state.statePath === 'data.booking_time_snapshot' || state.statePath === 'data.starts_at'));
+        if (!componentId || !livewire) {
+            return {};
+        }
+
+        const component = livewire.find(componentId);
+
+        return Object.fromEntries(['data.booking_time', 'data.booking_time_snapshot', 'data.starts_at', 'data.client_id'].map((path) => [path, component.get(path)]));
+    });
     console.log('booking state before inline client', await bookingState());
 
     const newClientAction = page.getByTestId('booking-create-client');
