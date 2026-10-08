@@ -40,6 +40,7 @@ function createGiftCertificateFixture(): GiftCertificateFixture {
             'credential_name' => 'default',
         ]);
         $credential->forceFill([
+            'organization_id' => $organization->getKey(),
             'revision_id' => \\Illuminate\\Support\\Str::uuid()->toString(),
             'status' => \\App\\Modules\\Security\\Domain\\Enums\\CredentialStatus::Active->value,
             'last_rotated_at' => now(),
