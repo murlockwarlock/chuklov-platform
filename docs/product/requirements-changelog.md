@@ -1,5 +1,9 @@
 # Requirements Changelog
 
+## 2026-10-08 — Booking notification delivery remediation
+
+- Normalized the confirmed-booking notification contract: after a successful Booking transaction, the existing Scenario Engine processor is queued immediately after commit for CRM, Telegram, and Client delivery; the durable event and idempotent scheduler remain the recovery path, and stale scheduler overlap is bounded and cleared during staging deployment.
+
 ## 2026-10-08 — CRM finishing pack owner-acceptance remediation
 
 - Normalized the Pain VAS editing contract: the optional slider exposes a live numeric value, preserves the distinction between `null`, `0`, and `10`, and the session-dynamics projection includes the decrypted numeric value without changing protected storage.

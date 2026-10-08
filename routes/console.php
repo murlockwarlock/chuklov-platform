@@ -61,7 +61,7 @@ Artisan::command('scenarios:run', function (ScheduleScenarioWork $scheduler): vo
     $this->info('Dispatched '.$result['events'].' scenario event(s) and '.$result['actions'].' scenario action(s).');
 })->purpose('Dispatch due scenario events and notification actions.');
 
-Schedule::command('scenarios:run')->everyMinute()->withoutOverlapping();
+Schedule::command('scenarios:run')->everyMinute()->withoutOverlapping(2);
 
 Artisan::command('referrals:run', function (ScheduleReferralIntegrationEvents $scheduler): void {
     $this->info('Dispatched '.$scheduler->handle().' referral integration event(s).');

@@ -30,6 +30,7 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEventData;
+use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyReport;
@@ -38,6 +39,7 @@ use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use LogicException;
+use Throwable;
 
 final class RecordScenarioEvent
 {
@@ -63,6 +65,20 @@ final class RecordScenarioEvent
         );
 
         return $this->record((int) $task->organization_id, $data);
+    }
+
+    public function dispatchProcessing(ScenarioEvent $event): void
+    {
+        $eventId = (int) $event->getKey();
+
+        DB::afterCommit(function () use ($eventId): void {
+            try {
+                ProcessScenarioEvent::dispatch($eventId)
+                    ->onQueue((string) config('scenarios.queue', 'scenarios'));
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        });
     }
 
     public function companionEscalationRecorded(CompanionEscalation $escalation, CarbonImmutable $occurredAt): ScenarioEvent

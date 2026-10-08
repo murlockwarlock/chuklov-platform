@@ -13,6 +13,8 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Illuminate\Console\Scheduling\Event;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Artisan;
@@ -32,6 +34,15 @@ class HorizonFoundationTest extends TestCase
     {
         self::assertSame(0, Artisan::call('schedule:list'));
         self::assertStringContainsString('horizon:snapshot', Artisan::output());
+    }
+
+    public function test_scenario_scheduler_has_a_bounded_overlap_mutex(): void
+    {
+        $scenarioScheduler = collect(app(Schedule::class)->events())
+            ->first(static fn (Event $event): bool => str_contains((string) $event->command, 'scenarios:run'));
+
+        self::assertInstanceOf(Event::class, $scenarioScheduler);
+        self::assertSame(2, $scenarioScheduler->expiresAt);
     }
 
     public function test_b2b_job_retains_redis_connection_after_serialization(): void

@@ -746,6 +746,7 @@ runtime_compose=(docker compose --project-name "$project" --env-file "$environme
 "${runtime_compose[@]}" run --rm --no-deps app php artisan db:seed --class=Database\\Seeders\\PlatformSurveySeeder --force < /dev/null
 "${runtime_compose[@]}" run --rm --no-deps app php artisan optimize < /dev/null
 "${runtime_compose[@]}" run --rm --no-deps app php artisan filament:optimize < /dev/null
+"${runtime_compose[@]}" run --rm --no-deps app php artisan schedule:clear-cache < /dev/null
 
 prepare_runtime_ownership() {
     local runtime_path

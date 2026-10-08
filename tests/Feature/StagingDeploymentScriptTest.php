@@ -29,6 +29,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('PlatformSurveySeeder', $script);
         self::assertStringContainsString('db:seed --class=Database\\\\Seeders\\\\ScenarioNotificationSeeder --force', $script);
         self::assertStringContainsString('--force-recreate app horizon scheduler telegram', $script);
+        self::assertStringContainsString('php artisan schedule:clear-cache', $script);
         self::assertSame(2, substr_count($script, '--force-recreate app horizon scheduler telegram < /dev/null'));
         self::assertStringContainsString('up -d --wait < /dev/null', $script);
         self::assertStringContainsString("'[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == \$image and .user == \"33:33\")'", $script);

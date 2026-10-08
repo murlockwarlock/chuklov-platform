@@ -74,6 +74,7 @@ final class ConfirmBooking
                 causationId: (string) $bookingEvent->getKey(),
                 occurredAt: CarbonImmutable::instance($bookingEvent->occurred_at),
             );
+            $this->scenarioEvents->dispatchProcessing($scenarioEvent);
             $this->reminders->schedule($lockedBooking, $scenarioEvent);
             $this->audit->handle(
                 organization: $organization,

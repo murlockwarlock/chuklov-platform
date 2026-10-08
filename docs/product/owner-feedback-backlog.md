@@ -176,6 +176,7 @@ The bounded CRM finishing pack keeps the accepted Client, Medical Profile, Booki
 - Default reception address wording — `IMPLEMENTED_PENDING_ACCEPTANCE`: the appointment setting is labeled `Адрес приёма по умолчанию`.
 - Service break time — `ALREADY_IMPLEMENTED`: authoritative `buffer_minutes` remains the scheduling rule; only its human-facing label/helper were clarified.
 - Referral statistics — `ALREADY_IMPLEMENTED`: existing referral statistics architecture is retained; no parallel statistics subsystem is added.
+- Booking confirmation notifications — `REAL_BUG` → `IMPLEMENTED_PENDING_ACCEPTANCE`: the confirmed-booking scenario is dispatched after the booking transaction commits, while the existing scheduler remains an idempotent backstop with a bounded overlap lock; deployment clears stale schedule locks.
 
 # 4. Referral / attribution UX and owner decision
 
