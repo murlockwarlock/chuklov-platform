@@ -478,6 +478,7 @@ class BookingForm
             displayTimezone: self::viewerTimezone(),
             workingLocationId: self::positiveInteger($get('working_location_id')),
             locationArea: self::nullableString($get('location_area')),
+            allowHistorical: true,
         );
     }
 

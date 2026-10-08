@@ -59,6 +59,8 @@ class CalculateAvailability
         ?int $workingLocationId = null,
         ?string $locationArea = null,
         ?int $ignoreBookingId = null,
+        ?int $leadTimeMinutes = null,
+        ?CarbonImmutable $now = null,
     ): AvailabilityResult {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
@@ -74,6 +76,8 @@ class CalculateAvailability
             ignoreBookingId: $ignoreBookingId,
             workingLocationId: $workingLocationId,
             locationArea: $locationArea,
+            leadTimeMinutes: $leadTimeMinutes,
+            now: $now,
         );
     }
 
@@ -269,6 +273,8 @@ class CalculateAvailability
         ?int $ignoreBookingId = null,
         ?int $workingLocationId = null,
         ?string $locationArea = null,
+        ?int $leadTimeMinutes = null,
+        ?CarbonImmutable $now = null,
     ): AvailabilityResult {
         $organization = $this->context->organization();
         $specialist = Specialist::query()->find($specialistId);
@@ -332,6 +338,8 @@ class CalculateAvailability
             maxDateCount: $datesInDisplayTimezone ? 33 : 31,
             durationMinutes: $service->durationMinutes() ?? 0,
             bufferMinutes: $service->buffer_minutes,
+            leadTimeMinutes: $leadTimeMinutes,
+            now: $now,
             workingLocation: $workingLocation,
             locationArea: $locationArea,
             locationDays: $locationDays,

@@ -108,10 +108,48 @@
                         </div>
                     </header>
 
-                    <section class="min-h-0 flex-1 overflow-y-auto bg-gray-50/60 px-3 py-4 dark:bg-gray-950/30 sm:px-5">
+                    <section
+                        data-testid="messages-history"
+                        x-data="{
+                            followHistory: true,
+                            olderScrollHeight: null,
+                            olderScrollTop: null,
+                            isNearBottom() {
+                                return this.$refs.history.scrollHeight - this.$refs.history.scrollTop - this.$refs.history.clientHeight <= 80;
+                            },
+                            updateFollowState() {
+                                this.followHistory = this.isNearBottom();
+                            },
+                            scrollToBottom() {
+                                this.$refs.history.scrollTop = this.$refs.history.scrollHeight;
+                            },
+                            rememberOlderPosition() {
+                                this.olderScrollHeight = this.$refs.history.scrollHeight;
+                                this.olderScrollTop = this.$refs.history.scrollTop;
+                            },
+                            restoreOlderPosition() {
+                                if (this.olderScrollHeight === null || this.olderScrollTop === null) {
+                                    return;
+                                }
+
+                                this.$refs.history.scrollTop = this.olderScrollTop + (this.$refs.history.scrollHeight - this.olderScrollHeight);
+                                this.olderScrollHeight = null;
+                                this.olderScrollTop = null;
+                                this.updateFollowState();
+                            },
+                        }"
+                        x-init="$nextTick(() => { scrollToBottom(); updateFollowState(); })"
+                        x-on:scroll.passive="updateFollowState()"
+                        x-on:messages-history-selected.window="$nextTick(() => { scrollToBottom(); updateFollowState(); })"
+                        x-on:messages-history-message-sent.window="$nextTick(() => { scrollToBottom(); updateFollowState(); })"
+                        x-on:messages-history-refreshed.window="$nextTick(() => { if (followHistory) { scrollToBottom(); } updateFollowState(); })"
+                        x-on:messages-history-older-loaded.window="$nextTick(() => { restoreOlderPosition(); })"
+                        x-ref="history"
+                        class="min-h-0 flex-1 overflow-y-auto bg-gray-50/60 px-3 py-4 dark:bg-gray-950/30 sm:px-5"
+                    >
                         @if (($historyState['hasOlder'] ?? false))
                             <div class="mb-4 text-center">
-                                <x-filament::button type="button" wire:click="loadOlderMessages" size="sm" color="gray" outlined>{{ __('Загрузить предыдущие') }}</x-filament::button>
+                                <x-filament::button type="button" wire:click="loadOlderMessages" x-on:click="rememberOlderPosition()" data-testid="messages-load-older" size="sm" color="gray" outlined>{{ __('Загрузить предыдущие') }}</x-filament::button>
                             </div>
                         @endif
 
@@ -134,7 +172,7 @@
                                             ? 'bg-amber-50 text-amber-950 ring-1 ring-amber-200 dark:bg-amber-950/30 dark:text-amber-100 dark:ring-amber-800'
                                             : 'bg-primary-50 text-primary-950 ring-1 ring-primary-200 dark:bg-primary-950/30 dark:text-primary-100 dark:ring-primary-800');
                                 @endphp
-                                <div wire:key="timeline-{{ $message['id'] }}" class="flex {{ $isSystemMessage ? 'justify-center' : ($isClientMessage ? 'justify-start' : 'justify-end') }}">
+                                <div wire:key="timeline-{{ $message['id'] }}" data-message-id="{{ $message['id'] }}" class="flex {{ $isSystemMessage ? 'justify-center' : ($isClientMessage ? 'justify-start' : 'justify-end') }}">
                                     <article class="min-w-0 max-w-[min(44rem,90%)] rounded-2xl px-4 py-3 shadow-sm {{ $isSystemMessage ? 'border border-gray-200 bg-white text-gray-600 dark:border-white/10 dark:bg-white/5 dark:text-gray-300' : $bubbleClass }}">
                                         <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs font-semibold">
                                             <span>{{ __($message['roleLabel']) }}</span>

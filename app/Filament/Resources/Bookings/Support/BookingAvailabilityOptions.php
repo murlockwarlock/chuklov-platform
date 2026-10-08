@@ -26,7 +26,11 @@ final class BookingAvailabilityOptions
         ?int $workingLocationId = null,
         ?string $locationArea = null,
         ?int $ignoreBookingId = null,
+        bool $allowHistorical = false,
     ): array {
+        $isHistoricalDate = $allowHistorical
+            && $date->toDateString() <= CarbonImmutable::now($displayTimezone)->toDateString();
+
         try {
             $availability = $this->availability->forStaff(
                 actor: $actor,
@@ -39,6 +43,8 @@ final class BookingAvailabilityOptions
                 workingLocationId: $workingLocationId,
                 locationArea: $locationArea,
                 ignoreBookingId: $ignoreBookingId,
+                leadTimeMinutes: $isHistoricalDate ? 0 : null,
+                now: $isHistoricalDate ? $date->subSecond()->utc() : null,
             );
         } catch (InvalidArgumentException|ValidationException) {
             return [];
