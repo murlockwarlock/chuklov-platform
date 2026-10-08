@@ -2,6 +2,12 @@ name: E2E
 
 on:
   workflow_dispatch:
+    inputs:
+      test_filter:
+        description: Optional Playwright title filter for the CRM spec
+        required: false
+        default: ''
+        type: string
   schedule:
     - cron: '15 2 * * *'
 
@@ -73,7 +79,15 @@ jobs:
       - run: php artisan migrate --seed --force
       - run: npm run build
       - run: npx playwright install --with-deps chromium webkit
-      - run: npm run test:e2e
+      - name: Run Playwright suite
+        env:
+          E2E_TEST_FILTER: ${{ inputs.test_filter }}
+        run: |
+          if [ -n "$E2E_TEST_FILTER" ]; then
+            npx playwright test tests/e2e/crm.spec.ts -g "$E2E_TEST_FILTER"
+          else
+            npm run test:e2e
+          fi
       - if: failure()
         name: Print safe portal reschedule diagnostics
         run: grep -R -F 'portal.booking.reschedule.' storage/logs || true

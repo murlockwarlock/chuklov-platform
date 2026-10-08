@@ -22,6 +22,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
 use App\Modules\Scheduling\Application\CreateMultipleBookings as CreateMultipleBookingsAction;
+use App\Modules\Scheduling\Application\SetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -711,9 +712,10 @@ class MilestoneFourCrmBookingTest extends TestCase
 
     public function test_today_crm_availability_exposes_valid_past_and_future_slots(): void
     {
-        [$organization, $admin, , $specialist, $service] = $this->fixture();
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
         CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 3, 23, 12, 0, 0, 'UTC'));
+        app(SetBookingLeadTime::class)->handle($admin, 180);
 
         $options = app(BookingAvailabilityOptions::class)->forDate(
             actor: $admin,
@@ -726,7 +728,36 @@ class MilestoneFourCrmBookingTest extends TestCase
         );
 
         self::assertArrayHasKey('2026-03-23T09:00:00+00:00', $options);
-        self::assertArrayHasKey('2026-03-23T14:00:00+00:00', $options);
+        self::assertArrayHasKey('2026-03-23T11:30:00+00:00', $options);
+        self::assertArrayNotHasKey('2026-03-23T14:00:00+00:00', $options);
+        self::assertArrayHasKey('2026-03-23T15:15:00+00:00', $options);
+
+        try {
+            app(CreateBookingAction::class)->handle(
+                actor: $admin,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: CarbonImmutable::create(2026, 3, 23, 14, 0, 0, 'UTC'),
+                format: VisitFormat::Office,
+                idempotencyKey: 'today-lead-time-rejected',
+            );
+            self::fail('A same-day booking inside the lead time must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('startsAt', $exception->errors());
+        }
+
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 3, 23, 15, 15, 0, 'UTC'),
+            format: VisitFormat::Office,
+            idempotencyKey: 'today-lead-time-accepted',
+        );
+
+        self::assertTrue($booking->startsAtUtc()->equalTo(CarbonImmutable::create(2026, 3, 23, 15, 15, 0, 'UTC')));
     }
 
     public function test_client_cannot_use_the_crm_backdated_confirmation(): void

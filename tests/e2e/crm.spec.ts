@@ -689,22 +689,22 @@ test('staff can create a backdated booking from the ordinary availability form',
     await page.goto('/admin/bookings/create');
     await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
 
-    await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
-    await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
+    await page.getByText(fixture.specialistName, { exact: true }).click();
     await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
     await page.getByRole('option', { name: fixture.serviceName, exact: true }).click();
-    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
-    await page.getByText(fixture.specialistName, { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
+    await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
 
-    const dateInput = page.getByLabel('Дата');
-    await dateInput.fill(fixture.pastBookingDate);
-    await dateInput.blur();
     await page.getByLabel('Формат визита').selectOption('office');
     const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
     await workingLocation.click();
     await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.workingLocationName }).first().click();
+    const dateInput = page.getByLabel('Дата');
+    await dateInput.fill(fixture.pastBookingDate);
+    await dateInput.blur();
 
     const bookingTime = page.getByRole('combobox', { name: /^Доступное время/ }).first();
     await bookingTime.click();
@@ -749,30 +749,30 @@ test('staff Messages opens at the latest history and preserves intentional scrol
     };
 
     await expect.poll(isAtBottom).toBe(true);
-    await expect(page.getByText(`CRM long history ${fixture.clientId} message 65`, { exact: true })).toBeVisible();
+    await expect(history.getByText(`CRM long history ${fixture.clientId} message 65`, { exact: true })).toBeVisible();
 
     await selectDialog(fixture.partnerId);
-    await expect(page.getByText(`CRM long history ${fixture.partnerId} message 40`, { exact: true })).toBeVisible();
+    await expect(history.getByText(`CRM long history ${fixture.partnerId} message 40`, { exact: true })).toBeVisible();
     await expect.poll(isAtBottom).toBe(true);
 
     await page.getByRole('button', { name: 'Подключиться к диалогу', exact: true }).click();
     await expect(page.locator('#messages-composer-form')).toBeVisible();
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill('Новое CRM сообщение');
     await page.getByRole('button', { name: 'Отправить', exact: true }).click();
-    await expect(page.getByText('Новое CRM сообщение', { exact: true })).toBeVisible();
+    await expect(history.getByText('Новое CRM сообщение', { exact: true })).toBeVisible();
     await expect.poll(isAtBottom).toBe(true);
 
     await selectDialog(fixture.clientId);
-    await expect(page.getByText(`CRM long history ${fixture.clientId} message 65`, { exact: true })).toBeVisible();
+    await expect(history.getByText(`CRM long history ${fixture.clientId} message 65`, { exact: true })).toBeVisible();
     await expect.poll(isAtBottom).toBe(true);
 
-    const existingMessage = page.getByText(`CRM long history ${fixture.clientId} message 36`, { exact: true });
+    const existingMessage = history.getByText(`CRM long history ${fixture.clientId} message 36`, { exact: true });
     await history.evaluate((element) => {
         (element as HTMLElement).scrollTop = 120;
     });
     const existingMessageTop = await existingMessage.evaluate((element) => element.getBoundingClientRect().top);
     await page.getByTestId('messages-load-older').click({ force: true });
-    await expect(page.getByText(`CRM long history ${fixture.clientId} message 1`, { exact: true })).toBeVisible();
+    await expect(history.getByText(`CRM long history ${fixture.clientId} message 1`, { exact: true })).toBeVisible();
     const existingMessageTopAfterLoad = await existingMessage.evaluate((element) => element.getBoundingClientRect().top);
     expect(Math.abs(existingMessageTopAfterLoad - existingMessageTop)).toBeLessThan(2);
 
@@ -782,7 +782,7 @@ test('staff Messages opens at the latest history and preserves intentional scrol
     });
     await expect.poll(isAtBottom).toBe(true);
     appendCrmMessage(fixture.clientId, 'Сообщение из poll у нижней границы');
-    await expect(page.getByText('Сообщение из poll у нижней границы', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(history.getByText('Сообщение из poll у нижней границы', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect.poll(isAtBottom, { timeout: 15_000 }).toBe(true);
 
     await history.evaluate((element) => {
@@ -790,7 +790,7 @@ test('staff Messages opens at the latest history and preserves intentional scrol
     });
     const scrollTopBeforePoll = await history.evaluate((element) => (element as HTMLElement).scrollTop);
     appendCrmMessage(fixture.clientId, 'Сообщение из poll при чтении истории');
-    await expect(page.getByText('Сообщение из poll при чтении истории', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(history.getByText('Сообщение из poll при чтении истории', { exact: true })).toBeVisible({ timeout: 15_000 });
     const scrollTopAfterPoll = await history.evaluate((element) => (element as HTMLElement).scrollTop);
     expect(Math.abs(scrollTopAfterPoll - scrollTopBeforePoll)).toBeLessThan(5);
 });
