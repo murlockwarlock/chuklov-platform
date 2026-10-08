@@ -207,6 +207,29 @@ final class FinanceCrmUxTest extends TestCase
         self::assertSame('2026-08-21 07:00:00', $payment->occurred_at->utc()->format('Y-m-d H:i:s'));
     }
 
+    public function test_finance_detail_refreshes_reconciliation_after_manual_payment(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(ViewFinancialObligation::class, ['record' => $obligation->getRouteKey()])
+            ->assertSee('К оплате')
+            ->mountAction('recordPayment')
+            ->setActionData([
+                'amount' => '25.00',
+                'payment_method' => 'cash',
+                'occurred_at' => '2026-08-21 12:00',
+                'note' => 'Оплата в клинике',
+                'idempotency_key' => 'detail-refresh-payment',
+            ])
+            ->callMountedAction()
+            ->assertNotified('Оплата записана. Остаток обновлён.')
+            ->assertSee('Оплачено частично')
+            ->assertSee('25.00 USD')
+            ->assertSee('75.00 USD');
+    }
+
     public function test_barter_payment_form_requires_description_and_history_presents_it(): void
     {
         [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);

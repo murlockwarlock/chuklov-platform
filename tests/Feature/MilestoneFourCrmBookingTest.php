@@ -848,6 +848,29 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->assertActionExists('noShow');
     }
 
+    public function test_view_booking_renders_event_history_as_structured_entries(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            idempotencyKey: 'structured-booking-history',
+        );
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->assertSee('Журнал изменений')
+            ->assertSee('Запись создана')
+            ->assertSee('Кто изменил');
+
+        self::assertStringNotContainsString('Изменил:', $component->html());
+    }
+
     public function test_reschedule_action_offers_available_slots_and_uses_the_selected_slot(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();

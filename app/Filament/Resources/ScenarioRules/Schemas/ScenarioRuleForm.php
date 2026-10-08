@@ -353,6 +353,7 @@ final class ScenarioRuleForm
     private static function conditionOptions(): array
     {
         return [
+            'booking.source' => __('Источник записи'),
             'booking.status' => __('Статус записи'),
             'booking.has_qualifying_next_booking' => __('Есть следующая запись'),
             'client.language' => __('Язык клиента'),
@@ -371,6 +372,10 @@ final class ScenarioRuleForm
     private static function conditionValues(mixed $type): array
     {
         return match ($type) {
+            'booking.source' => [
+                'portal' => __('Клиентский портал'),
+                'crm' => __('CRM'),
+            ],
             'booking.status' => [
                 'requested' => __('Ожидает подтверждения'),
                 'pending_review' => __('На рассмотрении'),
@@ -420,6 +425,7 @@ final class ScenarioRuleForm
     private static function conditionValueLabel(Get $get, bool $multiple): string
     {
         return match ($get('type')) {
+            'booking.source' => __('Источник записи'),
             'booking.status' => __('Статус записи'),
             'client.language' => __('Язык'),
             'booking.has_qualifying_next_booking',

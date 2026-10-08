@@ -24,6 +24,7 @@ use App\Modules\Scenarios\Application\UpdateScenarioRule;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
+use App\Modules\Scheduling\Domain\Enums\BookingSource;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -411,6 +412,7 @@ final class CrmNotificationCenterTest extends TestCase
             ->forService($service)
             ->create([
                 'status' => $status->value,
+                'source' => BookingSource::Portal->value,
                 'visit_format' => VisitFormat::Office->value,
                 'starts_at' => $start,
                 'ends_at' => $start->copy()->addHour(),

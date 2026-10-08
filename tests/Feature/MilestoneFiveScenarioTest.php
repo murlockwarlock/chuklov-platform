@@ -41,6 +41,7 @@ use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
 use App\Modules\Scheduling\Application\CompleteBooking;
 use App\Modules\Scheduling\Application\ConfirmBooking;
 use App\Modules\Scheduling\Application\SetOnlineMeetingUrl;
+use App\Modules\Scheduling\Domain\Enums\BookingSource;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -265,6 +266,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame($booking->id, $event->payload['booking_id']);
         self::assertSame($client->id, $event->payload['client_id']);
         self::assertSame($specialist->id, $event->payload['specialist_id']);
+        self::assertSame(BookingSource::Portal->value, $event->payload['source']);
 
         app(MaterializeScenarioEvent::class)->handle($event->getKey());
 
@@ -306,6 +308,27 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame('booking:confirm:'.$booking->getKey().':'.$booking->event_version, $specialistMessage->actionButtons[1]->callbackData);
         self::assertSame('Написать клиенту', $specialistMessage->actionButton?->text);
         self::assertSame(url('/admin/messages?client='.$client->getKey()), $specialistMessage->actionButton?->url);
+    }
+
+    public function test_crm_booking_does_not_create_client_request_notifications(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $this->verifiedTelegramIdentity($organization, $client);
+        $staff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        $specialist->forceFill(['staff_user_id' => $staff->getKey()])->save();
+        OrganizationChannelIdentity::factory()->forUser($staff)->verified()->create();
+        app(ScenarioNotificationSeeder::class)->run();
+
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Requested);
+        $booking->forceFill(['source' => BookingSource::Crm->value])->save();
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'crm-booking-created', CarbonImmutable::now());
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+
+        self::assertSame([], ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->pluck('id')
+            ->all());
     }
 
     public function test_booking_created_notifications_render_visit_format_and_physical_location_once(): void
@@ -1281,6 +1304,7 @@ final class MilestoneFiveScenarioTest extends TestCase
             ->forService($service)
             ->create([
                 'status' => $status->value,
+                'source' => BookingSource::Portal->value,
                 'starts_at' => $start,
                 'ends_at' => $start->addHour(),
                 'blocking_ends_at' => $start->addHour(),

@@ -29,6 +29,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
+use Livewire\Component as LivewireComponent;
 
 final class FinancePaymentActions
 {
@@ -98,7 +99,7 @@ final class FinancePaymentActions
                     && self::canCorrect($record)
                     && ! (bool) $record->getAttribute('has_correction');
             })
-            ->action(function (FinancialLedgerEntry $record, array $data): void {
+            ->action(function (Action $action, FinancialLedgerEntry $record, array $data): void {
                 $actor = auth()->user();
                 abort_unless($actor instanceof User, 403);
                 if ($record->getRawOriginal('entry_type') === FinancialLedgerEntryType::ReferralCredit->value) {
@@ -116,6 +117,10 @@ final class FinancePaymentActions
                         idempotencyKey: (string) $data['idempotency_key'],
                     );
                 }
+                $obligation = $record->obligation;
+                if ($obligation instanceof FinancialObligation) {
+                    self::refreshFinanceUi($action, $obligation);
+                }
                 Notification::make()
                     ->success()
                     ->title(__('Оплата исправлена. Исходная запись сохранена в истории.'))
@@ -131,7 +136,7 @@ final class FinancePaymentActions
             ->modalHeading(__('Записать оплату'))
             ->modalSubmitActionLabel(__('Записать оплату'))
             ->schema(self::paymentSchema())
-            ->action(function (Model $record, array $data): void {
+            ->action(function (Action $action, Model $record, array $data): void {
                 $actor = auth()->user();
                 abort_unless($actor instanceof User, 403);
                 $obligation = self::obligation($record);
@@ -156,6 +161,7 @@ final class FinancePaymentActions
                     receipt: $receipt,
                     idempotencyKey: (string) $data['idempotency_key'],
                 );
+                self::refreshFinanceUi($action, $obligation, $record instanceof Booking ? $record : null);
                 Notification::make()->success()->title(__('Оплата записана. Остаток обновлён.'))->send();
             });
     }
@@ -224,7 +230,7 @@ final class FinancePaymentActions
                 Hidden::make('idempotency_key')
                     ->default(fn (): string => 'crm-referral-credit-'.Str::uuid()->toString()),
             ])
-            ->action(function (Model $record, array $data): void {
+            ->action(function (Action $action, Model $record, array $data): void {
                 $actor = auth()->user();
                 abort_unless($actor instanceof User, 403);
                 $obligation = self::obligation($record);
@@ -236,6 +242,7 @@ final class FinancePaymentActions
                     amount: (string) ($data['amount'] ?? ''),
                     idempotencyKey: (string) $data['idempotency_key'],
                 );
+                self::refreshFinanceUi($action, $obligation, $record instanceof Booking ? $record : null);
                 Notification::make()->success()->title(__('Бонусы списаны. Остаток обновлён.'))->send();
             });
     }
@@ -415,5 +422,23 @@ final class FinancePaymentActions
         } catch (\UnexpectedValueException) {
             return false;
         }
+    }
+
+    private static function refreshFinanceUi(Action $action, FinancialObligation $obligation, ?Booking $booking = null): void
+    {
+        app(FinancePresentation::class)->forget($obligation, $booking);
+        $livewire = $action->getLivewire();
+
+        if (! $livewire instanceof LivewireComponent) {
+            return;
+        }
+
+        if (method_exists($livewire, 'flushCachedTableRecords')) {
+            $livewire->flushCachedTableRecords();
+        }
+
+        $livewire->forceRender();
+
+        $livewire->dispatch('refresh-page');
     }
 }

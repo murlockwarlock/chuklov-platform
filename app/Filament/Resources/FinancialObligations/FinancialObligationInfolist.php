@@ -62,7 +62,9 @@ final class FinancialObligationInfolist
                         ))
                         ->color(fn (FinancialObligation $record): string => app(FinancePresentation::class)->statusColor(
                             app(FinancePresentation::class)->reconciliation($record),
-                        )),
+                        ))
+                        ->columnSpanFull()
+                        ->extraAttributes(['class' => 'min-w-0 max-w-full']),
                     TextEntry::make('fulfillment_status')
                         ->label(__('Выдача доступа'))
                         ->state(fn (FinancialObligation $record): string => CommerceFulfillmentPresentation::status($record))

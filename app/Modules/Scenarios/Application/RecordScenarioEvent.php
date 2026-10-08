@@ -383,6 +383,7 @@ final class RecordScenarioEvent
             'service_id' => (int) $booking->service_id,
             'specialist_id' => (int) $booking->specialist_id,
             'event_version' => (int) $booking->event_version,
+            'source' => $booking->source->value,
             'status' => $booking->status->value,
             'visit_format' => $booking->visit_format->value,
             'starts_at' => $booking->startsAtUtc()->toIso8601String(),

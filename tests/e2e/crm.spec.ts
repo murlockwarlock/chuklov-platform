@@ -1078,15 +1078,20 @@ test('staff can complete a visit and record a manual payment through the normal 
     await recordPaymentButton.click();
     const paymentDialog = page.locator('.fi-modal-window:visible').last();
     await expect(paymentDialog).toBeVisible();
-    await expect(paymentDialog.getByRole('textbox', { name: /^Сумма оплаты/ })).toHaveValue('100.00');
+    const paymentAmount = paymentDialog.getByRole('textbox', { name: /^Сумма оплаты/ });
+    await expect(paymentAmount).toHaveValue('100.00');
+    await paymentAmount.fill('25.00');
     await paymentDialog.getByRole('combobox', { name: /^Способ оплаты/ }).selectOption('cash');
     await paymentDialog.getByRole('button', { name: 'Записать оплату', exact: true }).click();
     await expect(page.getByText('Оплата записана. Остаток обновлён.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Оплачено частично', { exact: true })).toBeVisible();
+    await expect(page.getByText('25.00 USD', { exact: true })).toBeVisible();
+    await expect(page.getByText('75.00 USD', { exact: true })).toBeVisible();
 
     await page.goto('/admin/financial-obligations');
     await expect(page.getByRole('heading', { name: 'Оплаты', exact: true })).toBeVisible();
     await searchTableFor(page, fixture.clientName);
-    await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toContainText('Оплачено');
+    await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toContainText('Оплачено частично');
 });
 
 test('staff can reject, approve, and mark a partner payout as paid from CRM', async ({ page }) => {

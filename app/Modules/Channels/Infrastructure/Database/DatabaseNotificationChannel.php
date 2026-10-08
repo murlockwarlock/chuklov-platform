@@ -113,8 +113,8 @@ final class DatabaseNotificationChannel implements NotificationChannel
     {
         $buttons = [];
         $candidateButtons = array_merge(
-            $message->actionButton === null ? [] : [$message->actionButton],
             $message->actionButtons,
+            $message->actionButton === null ? [] : [$message->actionButton],
         );
 
         foreach ($candidateButtons as $index => $button) {

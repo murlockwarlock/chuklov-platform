@@ -70,9 +70,10 @@ class BookingResource extends LocalizedResource
         );
     }
 
+    /** @return Builder<Booking> */
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
+        return Booking::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->with(['client', 'specialist', 'service']);
     }

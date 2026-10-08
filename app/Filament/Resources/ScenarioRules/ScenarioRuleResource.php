@@ -250,6 +250,7 @@ final class ScenarioRuleResource extends LocalizedResource
             }
 
             $type = match ($condition['type'] ?? null) {
+                'booking.source' => __('источник записи'),
                 'booking.status' => __('статус записи'),
                 'booking.has_qualifying_next_booking' => __('подходящая следующая запись'),
                 'client.language' => __('язык клиента'),

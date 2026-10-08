@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Scenarios\Application\BookingSourceConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingStatusConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientLanguageConditionEvaluator;
 use App\Modules\Scenarios\Application\ConditionEvaluatorRegistry;
@@ -10,6 +11,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioConditionSet;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRuleConfiguration;
+use App\Modules\Scheduling\Domain\Enums\BookingSource;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use InvalidArgumentException;
@@ -61,6 +63,23 @@ final class MilestoneFiveRemediationDomainTest extends TestCase
         ]), $context));
     }
 
+    public function test_booking_source_condition_distinguishes_portal_and_crm_bookings(): void
+    {
+        $booking = new Booking;
+        $booking->forceFill(['source' => BookingSource::Crm->value]);
+        $event = new ScenarioEvent;
+        $event->forceFill(['payload' => ['booking_id' => 1]]);
+        $context = new ScenarioEvaluationContext($event, $booking, null);
+        $registry = new ConditionEvaluatorRegistry([new BookingSourceConditionEvaluator]);
+
+        self::assertTrue($registry->matches(ScenarioConditionSet::from([
+            ['type' => 'booking.source', 'operator' => 'equals', 'value' => 'crm'],
+        ]), $context));
+        self::assertFalse($registry->matches(ScenarioConditionSet::from([
+            ['type' => 'booking.source', 'operator' => 'equals', 'value' => 'portal'],
+        ]), $context));
+    }
+
     public static function invalidTypedConditions(): array
     {
         return [
@@ -76,12 +95,19 @@ final class MilestoneFiveRemediationDomainTest extends TestCase
             'invalid client language list item' => [
                 ['type' => 'client.language', 'operator' => 'in', 'value' => ['en', 'de']],
             ],
+            'invalid booking source scalar' => [
+                ['type' => 'booking.source', 'operator' => 'equals', 'value' => 'unknown'],
+            ],
+            'invalid booking source list item' => [
+                ['type' => 'booking.source', 'operator' => 'in', 'value' => ['portal', 'unknown']],
+            ],
         ];
     }
 
     private function registry(): ConditionEvaluatorRegistry
     {
         return new ConditionEvaluatorRegistry([
+            new BookingSourceConditionEvaluator,
             new BookingStatusConditionEvaluator,
             new ClientLanguageConditionEvaluator,
         ]);
