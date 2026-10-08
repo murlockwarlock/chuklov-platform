@@ -20,6 +20,7 @@ final readonly class CreateSessionCommand
         public ?string $rootCauseHypothesis = null,
         public ?string $protocol = null,
         public ?string $result = null,
+        public ?int $painVas = null,
     ) {}
 
     /**
@@ -46,6 +47,7 @@ final readonly class CreateSessionCommand
             rootCauseHypothesis: self::optionalTrimmedString($data, 'root_cause_hypothesis'),
             protocol: self::optionalTrimmedString($data, 'protocol'),
             result: self::optionalTrimmedString($data, 'result'),
+            painVas: self::optionalPainVas($data),
         );
     }
 
@@ -81,5 +83,27 @@ final readonly class CreateSessionCommand
         }
 
         return null;
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function optionalPainVas(array $data): ?int
+    {
+        if (! array_key_exists('pain_vas', $data) || $data['pain_vas'] === null || $data['pain_vas'] === '') {
+            return null;
+        }
+
+        if (is_int($data['pain_vas'])) {
+            return $data['pain_vas'];
+        }
+
+        if ((is_float($data['pain_vas']) || is_string($data['pain_vas']))
+            && is_numeric($data['pain_vas'])
+            && (float) $data['pain_vas'] === (float) (int) $data['pain_vas']) {
+            return (int) $data['pain_vas'];
+        }
+
+        throw ValidationException::withMessages([
+            'pain_vas' => 'Укажите целое значение боли от 0 до 10.',
+        ]);
     }
 }

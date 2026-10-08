@@ -79,6 +79,15 @@ class ClientsTable
                     ->tooltip(fn (Client $record): string => $record->activeBookingRestriction === null
                         ? __('Запись разрешена')
                         : __('Запись ограничена: :reason', ['reason' => $record->activeBookingRestriction->reason])),
+                TextColumn::make('blacklist_status')
+                    ->label(__('Чёрный список'))
+                    ->state(fn (Client $record): string => $record->activeBlacklistRestriction === null
+                        ? __('Нет')
+                        : __('Да'))
+                    ->badge()
+                    ->color(fn (Client $record): string => $record->activeBlacklistRestriction === null ? 'gray' : 'danger')
+                    ->description(fn (Client $record): ?string => $record->activeBlacklistRestriction?->reason)
+                    ->wrap(),
             ])
             ->filters([
                 SelectFilter::make('segment')
@@ -93,6 +102,15 @@ class ClientsTable
                     ->queries(
                         true: fn ($query) => $query->whereDoesntHave('activeBookingRestriction'),
                         false: fn ($query) => $query->whereHas('activeBookingRestriction'),
+                    ),
+                TernaryFilter::make('activeBlacklistRestriction')
+                    ->label(__('Чёрный список'))
+                    ->placeholder(__('Все клиенты'))
+                    ->trueLabel(__('В чёрном списке'))
+                    ->falseLabel(__('Не в чёрном списке'))
+                    ->queries(
+                        true: fn ($query) => $query->whereHas('activeBlacklistRestriction'),
+                        false: fn ($query) => $query->whereDoesntHave('activeBlacklistRestriction'),
                     ),
             ])
             ->emptyStateHeading(__('Клиентов пока нет'))

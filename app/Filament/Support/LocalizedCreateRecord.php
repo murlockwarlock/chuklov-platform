@@ -2,6 +2,7 @@
 
 namespace App\Filament\Support;
 
+use Filament\Actions\Action;
 use Filament\Resources\Pages\CreateRecord;
 use Illuminate\Contracts\Support\Htmlable;
 
@@ -17,5 +18,15 @@ abstract class LocalizedCreateRecord extends CreateRecord
     public function getBreadcrumb(): string
     {
         return __(parent::getBreadcrumb());
+    }
+
+    protected function getCreateFormAction(): Action
+    {
+        return parent::getCreateFormAction()->label(__('Сохранить'));
+    }
+
+    protected function getCreateAnotherFormAction(): Action
+    {
+        return parent::getCreateAnotherFormAction()->label(__('Сохранить и создать ещё'));
     }
 }

@@ -32,9 +32,9 @@ final readonly class UpdateBroadcastCampaign
         if ((int) $campaign->organization_id !== $organization->getKey()) {
             throw new AuthorizationException('The campaign is outside the current organization.');
         }
-        $hasMediaReplacement = array_key_exists('media', $attributes)
-            || filled($attributes['media_image'] ?? null)
-            || filled($attributes['media_url'] ?? null);
+        $hasMediaReplacement = filled($attributes['media_image'] ?? null)
+            || filled($attributes['media_url'] ?? null)
+            || (is_array($attributes['media'] ?? null) && $attributes['media'] !== []);
         if (! (bool) ($attributes['remove_media'] ?? false)
             && ! $hasMediaReplacement
             && $campaign->media !== null) {

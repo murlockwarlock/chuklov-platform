@@ -124,7 +124,7 @@ class AiContextAssembler implements AiContextAssemblerInterface
                         $variables['anamnesis'] = $capability === AiCapability::ClinicalSynthesizer
                             ? ($this->medicalProfileContext ?? app(ClinicalSynthesizerMedicalProfileContext::class))->build($profile)
                             : ($profile->anamnesis ?? '');
-                        $variables['complaints_goals'] = $profile->complaintsGoals ?? '';
+                        $variables['complaints_goals'] = $profile->complaintsGoalsForCompatibility() ?? '';
                         $provenanceSummary['medical_summary_included'] = true;
                     }
                 }

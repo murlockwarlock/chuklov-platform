@@ -75,6 +75,13 @@ final readonly class UpdateSession
             $existingRootCauseHypothesis = $this->encryptor->decryptField($orgId, $existing->root_cause_hypothesis, $previousKeyVersion);
             $existingProtocol = $this->encryptor->decryptField($orgId, $existing->protocol, $previousKeyVersion);
             $existingResult = $this->encryptor->decryptField($orgId, $existing->result, $previousKeyVersion);
+            $existingPainVas = $this->painVas($this->encryptor->decryptField($orgId, $existing->pain_vas, $previousKeyVersion));
+            $painVas = $command->shouldUpdatePainVas() ? $command->painVas : $existingPainVas;
+            $encryptedPainVas = $this->encryptor->encryptField(
+                $orgId,
+                $painVas === null ? null : (string) $painVas,
+                $keyVersion,
+            );
 
             $updatedFields = $this->diffUpdatedFieldNames(
                 previous: [
@@ -84,12 +91,15 @@ final readonly class UpdateSession
                     'root_cause_hypothesis' => $existingRootCauseHypothesis,
                     'protocol' => $existingProtocol,
                     'result' => $existingResult,
+                    'pain_vas' => $existingPainVas,
                 ],
                 command: $command,
+                painVas: $painVas,
             );
 
             $existing->forceFill([
                 'pain' => $encrypted->encryptedPain,
+                'pain_vas' => $encryptedPainVas,
                 'tests' => $encrypted->encryptedTests,
                 'observations' => $encrypted->encryptedObservations,
                 'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
@@ -128,6 +138,7 @@ final readonly class UpdateSession
                 occurredAt: $existing->occurred_at,
                 createdAt: $existing->created_at,
                 updatedAt: $existing->updated_at,
+                painVas: $painVas,
             );
         });
 
@@ -152,13 +163,19 @@ final readonly class UpdateSession
                 ]);
             }
         }
+
+        if ($command->painVas !== null && ($command->painVas < 0 || $command->painVas > 10)) {
+            throw ValidationException::withMessages([
+                'pain_vas' => 'Укажите значение боли от 0 до 10.',
+            ]);
+        }
     }
 
     /**
-     * @param  array<string, string|null>  $previous
+     * @param  array<string, mixed>  $previous
      * @return list<string>
      */
-    private function diffUpdatedFieldNames(array $previous, UpdateSessionCommand $command): array
+    private function diffUpdatedFieldNames(array $previous, UpdateSessionCommand $command, ?int $painVas): array
     {
         $fields = [];
 
@@ -180,7 +197,15 @@ final readonly class UpdateSession
         if ($previous['result'] !== $command->result) {
             $fields[] = 'result';
         }
+        if ($previous['pain_vas'] !== $painVas) {
+            $fields[] = 'pain_vas';
+        }
 
         return $fields;
+    }
+
+    private function painVas(?string $value): ?int
+    {
+        return $value !== null && preg_match('/^-?\d+$/D', $value) === 1 ? (int) $value : null;
     }
 }

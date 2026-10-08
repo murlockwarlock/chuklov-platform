@@ -80,6 +80,7 @@ final class SessionInfolist
                                 TextEntry::make('specialist')->label(__('Специалист')),
                                 TextEntry::make('booking')->label(__('Запись на приём'))->columnSpanFull(),
                                 TextEntry::make('pain')->label(__('Боль'))->placeholder(__('Не заполнено')),
+                                TextEntry::make('pain_vas')->label(__('Шкала боли'))->suffix('/10')->placeholder(__('Не указана')),
                                 TextEntry::make('tests')->label(__('Тесты'))->placeholder(__('Не заполнено')),
                                 TextEntry::make('observations')->label(__('Наблюдения'))->placeholder(__('Не заполнено')),
                                 TextEntry::make('root_cause_hypothesis')->label(__('Первопричина'))->placeholder(__('Не заполнено')),

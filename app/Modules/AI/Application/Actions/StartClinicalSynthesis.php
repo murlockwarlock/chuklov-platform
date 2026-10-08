@@ -84,7 +84,7 @@ final readonly class StartClinicalSynthesis
         $inputVariables = [
             'client_name' => (string) ($client->full_name ?: 'Клиент'),
             'anamnesis' => $this->medicalProfileContext->build($profile),
-            'complaints_goals' => $this->boundedText($profile->complaintsGoals ?? '', 700),
+            'complaints_goals' => $this->boundedText($profile?->complaintsGoalsForCompatibility() ?? '', 700),
             'recent_sessions' => $this->sessionsContext($sessionHistory),
             'agent_one_result' => $this->documentContext($documentResult?->outputPayload),
             'agent_two_result' => $this->postureContext($postureResult?->outputPayload),

@@ -10,12 +10,23 @@ final readonly class ClinicalSynthesizerMedicalProfileContext
 
     public function build(?MedicalProfileData $profile): string
     {
-        $sections = array_filter([
+        $sections = [
             $this->section('Анамнез', $profile?->anamnesis, 400),
-            $this->section('Операции и травмы', $profile?->operationsInjuries, 350),
-            $this->section('Лекарства', $profile?->medicines, 300),
-            $this->section('БАДы', $profile?->supplements, 300),
-        ]);
+        ];
+
+        if ($profile?->hasSplitFields()) {
+            $sections[] = $this->section('Жалобы', $profile->complaints, 300);
+            $sections[] = $this->section('Цели', $profile->goals, 300);
+            $sections[] = $this->section('Операции', $profile->operations, 250);
+            $sections[] = $this->section('Травмы', $profile->injuries, 250);
+        } else {
+            $sections[] = $this->section('Жалобы и цели', $profile?->complaintsGoals, 350);
+            $sections[] = $this->section('Операции и травмы', $profile?->operationsInjuries, 350);
+        }
+
+        $sections[] = $this->section('Лекарства', $profile?->medicines, 300);
+        $sections[] = $this->section('БАДы', $profile?->supplements, 300);
+        $sections = array_filter($sections);
 
         if ($sections === []) {
             return 'Данные медицинского профиля не заполнены.';

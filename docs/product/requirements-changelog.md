@@ -1,5 +1,24 @@
 # Requirements Changelog
 
+## 2026-10-08 — Booking notification delivery remediation
+
+- Normalized the confirmed-booking notification contract: after a successful Booking transaction, the existing Scenario Engine processor is queued immediately after commit for CRM, Telegram, and Client delivery; the durable event and idempotent scheduler remain the recovery path, and stale scheduler overlap is bounded and cleared during staging deployment.
+
+## 2026-10-08 — CRM finishing pack owner-acceptance remediation
+
+- Normalized the Pain VAS editing contract: the optional slider exposes a live numeric value, preserves the distinction between `null`, `0`, and `10`, and the session-dynamics projection includes the decrypted numeric value without changing protected storage.
+- Normalized schedule-impact presentation: a detected future-booking impact produces a prominent warning, readable affected-booking list, actionable confirmation notification, and explicit acknowledgement; digest, locking, and no-silent-rewrite safety remain unchanged.
+- Normalized Telegram test-send diagnostics for the observed media-group caption-position rejection by applying one consistent album setting, mapping the known rejection to a safe actionable code, and using only a safe attempt reference for unknown rejections.
+
+## 2026-10-08 — CRM finishing pack normalization
+
+- Normalized organization-scoped Client Notes as protected CRM data with author/date projection, permission enforcement, and audit metadata that never stores note plaintext.
+- Normalized Client blacklist as a typed restriction with required reason, tenant-scoped filtering/status, audited old/new state, and no automatic Booking denial for authorized CRM staff.
+- Normalized the Medical Profile projection into separate encrypted `Жалобы`, `Цели`, `Операции`, and `Травмы` fields while retaining legacy combined values without destructive rewriting.
+- Normalized session Pain VAS as an encrypted numeric value constrained to 0–10; the existing narrative pain field remains available.
+- Normalized the broadcast edit contract so unchanged private media is preserved through save, preview, and test delivery using the existing media architecture.
+- Normalized standard CRM create-form wording to `Сохранить` and `Сохранить и создать ещё`, and clarified the default appointment reception address label.
+
 ## 2026-10-07 — Phase 1 bounded remediation normalization
 
 - Normalized the owner-accepted CRM identity contract: a Client card shows verified Telegram state, a validated `@username` contact link when available, and the numeric Telegram ID only as secondary fallback.

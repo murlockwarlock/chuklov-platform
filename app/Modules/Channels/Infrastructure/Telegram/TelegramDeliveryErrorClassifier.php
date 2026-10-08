@@ -18,6 +18,9 @@ final class TelegramDeliveryErrorClassifier
             $this->containsAny($description, ["can't parse entities", 'cannot parse entities', 'cant parse entities']) => 'telegram_formatting_rejected',
             $this->containsAny($description, ['message is too long', 'caption is too long', 'text is too long']) => 'telegram_message_too_long',
             $message->mode->includesImage() && $this->containsAny($description, [
+                'show_caption_above_media must be the same for all messages',
+            ]) => 'telegram_media_group_caption_conflict',
+            $message->mode->includesImage() && $this->containsAny($description, [
                 'failed to get http url content',
                 'wrong type of the web page content',
                 'wrong file identifier',

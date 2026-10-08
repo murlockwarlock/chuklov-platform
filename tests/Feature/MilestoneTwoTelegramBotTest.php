@@ -334,6 +334,39 @@ class MilestoneTwoTelegramBotTest extends TestCase
         self::assertSame('delivered', $result->outcome->value);
     }
 
+    public function test_media_group_repeats_caption_position_on_every_media_item(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        $bot = $this->createMock(Nutgram::class);
+        $bot->expects($this->once())
+            ->method('sendMediaGroup')
+            ->willReturnCallback(function (array $media): ?array {
+                self::assertCount(2, $media);
+                self::assertTrue($media[0]->show_caption_above_media);
+                self::assertTrue($media[1]->show_caption_above_media);
+                self::assertNotNull($media[0]->caption);
+                self::assertNull($media[1]->caption);
+
+                return null;
+            });
+
+        $result = (new TelegramNotificationChannel($bot))->send(new NotificationMessage(
+            recipientExternalId: 'caption-album-chat',
+            body: '<p>Подпись альбома</p>',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'caption-album',
+            mode: NotificationMessageMode::ImageWithCaption,
+            showCaptionAboveMedia: true,
+            mediaItems: [
+                new NotificationMedia('photo', url: 'https://cdn.example.test/one.jpg', fileName: 'one.jpg'),
+                new NotificationMedia('photo', url: 'https://cdn.example.test/two.jpg', fileName: 'two.jpg'),
+            ],
+        ));
+
+        self::assertSame('delivered', $result->outcome->value);
+    }
+
     public function test_documents_are_sent_as_one_telegram_document_album(): void
     {
         config()->set('nutgram.token', FakeNutgram::TOKEN);
@@ -407,6 +440,38 @@ class MilestoneTwoTelegramBotTest extends TestCase
 
         self::assertSame('permanent_failure', $result->outcome->value);
         self::assertSame('telegram_media_unavailable', $result->errorCode);
+    }
+
+    public function test_telegram_media_group_caption_rejection_is_classified_without_provider_text(): void
+    {
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        $bot = FakeNutgram::instance(responses: [new Response(
+            400,
+            [],
+            json_encode([
+                'ok' => false,
+                'error_code' => 400,
+                'description' => 'Bad Request: parameter show_caption_above_media must be the same for all messages',
+            ], JSON_THROW_ON_ERROR),
+        )]);
+
+        $result = (new TelegramNotificationChannel($bot))->send(new NotificationMessage(
+            recipientExternalId: 'media-group-error-chat',
+            body: '<p>Подпись</p>',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'media-group-error',
+            mode: NotificationMessageMode::ImageWithCaption,
+            showCaptionAboveMedia: true,
+            mediaItems: [
+                new NotificationMedia('photo', url: 'https://cdn.example.test/one.jpg', fileName: 'one.jpg'),
+                new NotificationMedia('photo', url: 'https://cdn.example.test/two.jpg', fileName: 'two.jpg'),
+            ],
+            requireKnownExternalOutcome: true,
+        ));
+
+        self::assertSame('permanent_failure', $result->outcome->value);
+        self::assertSame('telegram_media_group_caption_conflict', $result->errorCode);
     }
 
     public function test_caption_position_and_telegram_boundaries_are_enforced(): void

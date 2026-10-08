@@ -15,69 +15,66 @@ use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
-use InvalidArgumentException;
 
-class BlockClientSelfBooking
+final readonly class UnblockClientBlacklist
 {
     public function __construct(
-        private readonly OrganizationContext $context,
-        private readonly OrganizationAuthorizer $authorizer,
-        private readonly OrganizationFeatureGate $features,
-        private readonly RecordAuditEvent $audit,
+        private OrganizationContext $context,
+        private OrganizationAuthorizer $authorizer,
+        private OrganizationFeatureGate $features,
+        private RecordAuditEvent $audit,
     ) {}
 
-    public function handle(User $actor, Client $client, string $reason): ClientBookingRestriction
+    public function handle(User $actor, Client $client): ClientBookingRestriction
     {
         $organization = $this->context->organization();
 
-        if ((int) $client->organization_id !== $organization->getKey()) {
+        if ((int) $client->organization_id !== (int) $organization->getKey()) {
             throw new AuthorizationException('The client is outside the current organization.');
         }
 
         $this->features->authorize($organization, OrganizationFeature::ClientRecords);
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
-        $reason = trim($reason);
 
-        if ($reason === '' || mb_strlen($reason) > 500) {
-            throw new InvalidArgumentException('The self-booking restriction reason is invalid.');
-        }
-
-        return DB::transaction(function () use ($actor, $client, $organization, $reason): ClientBookingRestriction {
-            Client::query()
+        return DB::transaction(function () use ($actor, $client, $organization): ClientBookingRestriction {
+            $lockedClient = Client::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($client->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
-
-            if (ClientBookingRestriction::query()
+            $restriction = ClientBookingRestriction::query()
                 ->where('organization_id', $organization->getKey())
-                ->where('client_id', $client->getKey())
-                ->where('restriction_type', ClientRestrictionType::SelfBooking->value)
+                ->where('client_id', $lockedClient->getKey())
+                ->where('restriction_type', ClientRestrictionType::Blacklist->value)
                 ->whereNull('unblocked_at')
-                ->exists()) {
+                ->lockForUpdate()
+                ->first();
+
+            if (! $restriction instanceof ClientBookingRestriction) {
                 throw ValidationException::withMessages([
-                    'client' => 'The client is already blocked from self-service booking.',
+                    'client' => 'Клиент не находится в чёрном списке.',
                 ]);
             }
 
-            $restriction = new ClientBookingRestriction;
             $restriction->forceFill([
-                'organization_id' => $organization->getKey(),
-                'client_id' => $client->getKey(),
-                'restriction_type' => ClientRestrictionType::SelfBooking,
-                'blocked_by_user_id' => $actor->getKey(),
-                'reason' => $reason,
-                'blocked_at' => now(),
+                'unblocked_by_user_id' => $actor->getKey(),
+                'unblocked_at' => now(),
             ]);
             $restriction->save();
 
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
-                action: 'client.self_booking.blocked',
+                action: 'client.blacklist.removed',
                 targetType: ClientBookingRestriction::class,
                 targetId: (string) $restriction->getKey(),
-                metadata: ['source' => 'crm'],
+                metadata: [
+                    'source' => 'crm',
+                    'client_id' => $lockedClient->getKey(),
+                    'old_blacklist_state' => true,
+                    'new_blacklist_state' => false,
+                    'reason_present' => filled($restriction->reason),
+                ],
             );
 
             return $restriction->refresh();

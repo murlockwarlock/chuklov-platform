@@ -119,9 +119,13 @@ final class ViewBroadcastCampaign extends LocalizedViewRecord
 
                     $delivered = $recipient->state->value === 'delivered';
                     $reason = $recipient->last_error_code ?: $recipient->exclusion_code;
+                    $attemptReference = $recipient->attempts()
+                        ->where('organization_id', $recipient->organization_id)
+                        ->latest('attempt_number')
+                        ->value('id');
                     $body = $delivered
                         ? __('Тестовая отправка отмечена отдельно и не затрагивает список рассылки.')
-                        : BroadcastFailurePresentation::label($reason);
+                        : BroadcastFailurePresentation::label($reason, is_numeric($attemptReference) ? (int) $attemptReference : null);
 
                     Notification::make()
                         ->title($delivered ? __('Тестовое сообщение доставлено') : __('Тестовая отправка завершилась с ошибкой'))

@@ -74,11 +74,12 @@ class ServiceForm
                             ->minValue(1)
                             ->maxValue(65535),
                         TextInput::make('buffer_minutes')
-                            ->label(__('Пауза после визита (минуты)'))
+                            ->label(__('Перерыв после приёма, минут'))
                             ->integer()
                             ->default(0)
                             ->minValue(0)
-                            ->maxValue(65535),
+                            ->maxValue(65535)
+                            ->helperText(__('Это время блокируется после завершения услуги перед следующей записью.')),
                         CheckboxList::make('formats')
                             ->options([
                                 'office' => __('В клинике'),

@@ -248,10 +248,9 @@ final class TelegramNotificationChannel implements NotificationChannel
         foreach ($message->mediaItems as $index => $item) {
             $itemCaption = $index === 0 && $caption !== '' ? $caption : null;
             $parseMode = $itemCaption === null ? null : ParseMode::HTML;
-            $showCaptionAboveMedia = null;
-            if ($itemCaption !== null && $message->mode === NotificationMessageMode::ImageWithCaption) {
-                $showCaptionAboveMedia = $message->showCaptionAboveMedia;
-            }
+            $showCaptionAboveMedia = $message->mode === NotificationMessageMode::ImageWithCaption
+                ? $message->showCaptionAboveMedia
+                : null;
             $uploadable = $this->uploadable($item, $index);
 
             $media[] = match ($item->type) {

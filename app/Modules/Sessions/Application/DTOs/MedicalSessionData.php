@@ -22,6 +22,7 @@ final readonly class MedicalSessionData
         public ?DateTimeInterface $occurredAt = null,
         public ?DateTimeInterface $createdAt = null,
         public ?DateTimeInterface $updatedAt = null,
+        public ?int $painVas = null,
     ) {}
 
     public function occurredAtAtom(): ?string
@@ -39,6 +40,7 @@ final readonly class MedicalSessionData
             'specialist_id' => $this->specialistId,
             'booking_id' => $this->bookingId,
             'pain' => $this->pain,
+            'pain_vas' => $this->painVas,
             'tests' => $this->tests,
             'observations' => $this->observations,
             'root_cause_hypothesis' => $this->rootCauseHypothesis,

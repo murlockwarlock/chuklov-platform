@@ -80,7 +80,7 @@ final readonly class BuildClinicalCourseReportInput
         $inputVariables = [
             'client_name' => $this->boundedText($client->full_name ?: 'Клиент', 200),
             'anamnesis' => $this->medicalProfileContext->build($profile),
-            'complaints_goals' => $this->boundedText($profile?->complaintsGoals, 700),
+            'complaints_goals' => $this->boundedText($profile?->complaintsGoalsForCompatibility(), 700),
             'course_period' => $this->coursePeriod($courseStart, $courseEnd),
             'course_sessions' => $sessionsContext,
             'course_surveys' => $surveysContext,

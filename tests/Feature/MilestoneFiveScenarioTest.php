@@ -89,6 +89,22 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame('booking.completed:'.$organization->id.':'.$booking->id.':2', $event->idempotency_key);
     }
 
+    public function test_booking_event_dispatches_processing_after_transaction_commit(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Requested);
+        app(OrganizationContext::class)->set($organization);
+        Queue::fake();
+
+        app(ConfirmBooking::class)->handle($admin, $booking);
+
+        $event = ScenarioEvent::query()->where('organization_id', $organization->id)->sole();
+
+        Queue::assertPushed(ProcessScenarioEvent::class, static function (ProcessScenarioEvent $job) use ($event): bool {
+            return $job->scenarioEventId === $event->getKey();
+        });
+    }
+
     public function test_confirmed_online_booking_notifies_client_with_schedule_and_inline_meeting_button(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
@@ -438,6 +454,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         $specialist->forceFill(['staff_user_id' => $staff->getKey()])->save();
         $staffIdentity = OrganizationChannelIdentity::factory()->forUser($staff)->verified()->create();
         app(ScenarioNotificationSeeder::class)->run();
+        Queue::fake();
 
         $booking = $this->booking($organization, $client, $specialist, $service, BookingStatus::Requested);
         $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'stale-booking-confirmation', CarbonImmutable::now());

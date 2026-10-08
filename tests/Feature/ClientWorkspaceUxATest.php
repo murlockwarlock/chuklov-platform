@@ -424,8 +424,10 @@ final class ClientWorkspaceUxATest extends TestCase
         self::assertSame(1, $sections[0]->getColumns('lg'));
         self::assertSame([
             'anamnesis',
-            'complaints_goals',
-            'operations_injuries',
+            'complaints',
+            'goals',
+            'operations',
+            'injuries',
             'medicines',
             'supplements',
         ], array_map(

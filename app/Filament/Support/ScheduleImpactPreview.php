@@ -8,6 +8,7 @@ use Carbon\CarbonImmutable;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Hidden;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Schemas\Components\Callout;
 use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -26,17 +27,29 @@ final class ScheduleImpactPreview
                 ->dehydrated(),
             Hidden::make('schedule_impact_bookings')
                 ->dehydrated(false),
+            Callout::make('schedule_impact_warning')
+                ->heading(__('Изменение затронет будущие записи'))
+                ->description(fn (Get $get): string => self::impactDescription($get('schedule_impact_bookings')))
+                ->warning()
+                ->extraAttributes(['role' => 'alert'])
+                ->visible(fn (Get $get): bool => self::hasBookings($get('schedule_impact_bookings')))
+                ->columnSpanFull(),
             TextEntry::make('schedule_impact_preview')
                 ->label(__('Затронутые будущие записи'))
                 ->state(fn (Get $get): string => self::formatBookings($get('schedule_impact_bookings')))
                 ->visible(fn (Get $get): bool => self::hasBookings($get('schedule_impact_bookings')))
                 ->columnSpanFull(),
             Checkbox::make('acknowledge_impact')
-                ->label(__('Подтверждаю влияние на будущие записи'))
+                ->label(__('Подтверждаю изменение несмотря на влияние на будущие записи'))
                 ->default(false)
                 ->visible(fn (Get $get): bool => self::hasBookings($get('schedule_impact_bookings')))
                 ->columnSpanFull(),
         ];
+    }
+
+    public static function isImpactValidation(ValidationException $exception): bool
+    {
+        return self::stateFromValidationException($exception) !== null;
     }
 
     /** @return array{impact_digest: string|null, schedule_impact_bookings: list<array<string, mixed>>, acknowledge_impact: bool} */
@@ -125,6 +138,15 @@ final class ScheduleImpactPreview
     private static function hasBookings(mixed $bookings): bool
     {
         return is_array($bookings) && $bookings !== [];
+    }
+
+    private static function impactDescription(mixed $bookings): string
+    {
+        $count = is_array($bookings) ? count($bookings) : 0;
+
+        return __('Новые параметры услуги могут сделать будущие записи несовместимыми с расписанием. Затронутых записей: :count. Проверьте список ниже и подтвердите изменение.', [
+            'count' => $count,
+        ]);
     }
 
     public static function dateTimeLabel(mixed $value): string

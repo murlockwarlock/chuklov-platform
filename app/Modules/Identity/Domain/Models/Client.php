@@ -6,6 +6,7 @@ use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
+use App\Modules\Identity\Domain\Enums\ClientRestrictionType;
 use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -115,7 +116,23 @@ class Client extends Model
     /** @return HasOne<ClientBookingRestriction, $this> */
     public function activeBookingRestriction(): HasOne
     {
-        return $this->hasOne(ClientBookingRestriction::class)->whereNull('unblocked_at');
+        return $this->hasOne(ClientBookingRestriction::class)
+            ->where('restriction_type', ClientRestrictionType::SelfBooking->value)
+            ->whereNull('unblocked_at');
+    }
+
+    /** @return HasOne<ClientBookingRestriction, $this> */
+    public function activeBlacklistRestriction(): HasOne
+    {
+        return $this->hasOne(ClientBookingRestriction::class)
+            ->where('restriction_type', ClientRestrictionType::Blacklist->value)
+            ->whereNull('unblocked_at');
+    }
+
+    /** @return HasMany<ClientNote, $this> */
+    public function clientNotes(): HasMany
+    {
+        return $this->hasMany(ClientNote::class)->latest('created_at')->latest('id');
     }
 
     /** @return HasMany<Booking, $this> */
