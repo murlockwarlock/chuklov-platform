@@ -49,6 +49,7 @@ final readonly class SessionDynamicsData
             'specialist' => $specialist,
             'booking' => $booking,
             'pain' => $session->pain,
+            'pain_vas' => $session->painVas,
             'tests' => $session->tests,
             'observations' => $session->observations,
             'root_cause_hypothesis' => $session->rootCauseHypothesis,

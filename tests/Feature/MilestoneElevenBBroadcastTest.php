@@ -59,6 +59,7 @@ use App\Support\RichText\RichTextDocument;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
+use Filament\Notifications\Notification;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Contracts\Bus\Dispatcher;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -841,6 +842,30 @@ final class MilestoneElevenBBroadcastTest extends TestCase
             ->assertNotified('Тестовая отправка не выполнена');
 
         self::assertSame(0, BroadcastRecipient::query()->count());
+    }
+
+    public function test_test_send_action_presents_unknown_provider_rejection_with_safe_attempt_reference(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $target = $this->client($organization, consent: true, verified: true, language: 'ru');
+        $campaign = $this->campaign($actor, []);
+        $this->channel = new RecordingNotificationChannel('telegram', NotificationDeliveryResult::permanentFailure('telegram_provider_rejected'));
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$this->channel]));
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($actor)
+            ->test(ViewBroadcastCampaignPage::class, ['record' => $campaign->getKey()])
+            ->mountAction('test')
+            ->setActionData(['test_client_id' => $target->getKey()])
+            ->callMountedAction();
+
+        $recipient = BroadcastRecipient::query()->where('campaign_id', $campaign->getKey())->sole();
+        $attempt = $recipient->attempts()->sole();
+
+        $component->assertNotified(Notification::make()
+            ->title('Тестовая отправка завершилась с ошибкой')
+            ->body("Telegram отклонил запрос по неизвестной причине. Код попытки: #{$attempt->getKey()}. Повторите тест или передайте код для диагностики")
+            ->danger());
     }
 
     public function test_language_referral_source_booking_last_visit_no_rebooking_tags_and_survey_completion_queries_are_scoped(): void

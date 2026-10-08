@@ -4,7 +4,7 @@ namespace App\Filament\Support;
 
 final class BroadcastFailurePresentation
 {
-    public static function label(?string $code): string
+    public static function label(?string $code, ?int $diagnosticReference = null): string
     {
         return match ($code) {
             'organization_mismatch' => __('Клиент не принадлежит текущей организации'),
@@ -22,7 +22,8 @@ final class BroadcastFailurePresentation
             'provider_not_configured' => __('Telegram-бот не настроен. Подключите бота и повторите тест'),
             'telegram_identity_unavailable' => __('У клиента нет доступного Telegram'),
             'provider_error' => __('Telegram не принял сообщение. Проверьте подключение бота и доступ клиента'),
-            'telegram_provider_rejected' => __('Telegram отклонил запрос. Проверьте чат и параметры сообщения'),
+            'telegram_provider_rejected' => self::unknownTelegramRejection($diagnosticReference),
+            'telegram_media_group_caption_conflict' => __('Telegram отклонил настройки подписи для группы медиа. Повторите отправку после сохранения шаблона заново'),
             'telegram_bot_blocked' => __('Клиент заблокировал Telegram-бота'),
             'telegram_chat_not_found' => __('Telegram-чат клиента недоступен'),
             'telegram_user_deactivated' => __('Telegram-аккаунт клиента деактивирован'),
@@ -44,5 +45,16 @@ final class BroadcastFailurePresentation
             'channel_error', 'telegram_channel_unavailable' => __('Не удалось связаться с Telegram. Повторите попытку'),
             default => __('Отправка не выполнена. Проверьте настройки Telegram и получателя'),
         };
+    }
+
+    private static function unknownTelegramRejection(?int $diagnosticReference): string
+    {
+        if ($diagnosticReference === null || $diagnosticReference < 1) {
+            return __('Telegram отклонил запрос по неизвестной причине. Повторите тест или передайте код попытки для диагностики');
+        }
+
+        return __('Telegram отклонил запрос по неизвестной причине. Код попытки: #:id. Повторите тест или передайте код для диагностики', [
+            'id' => $diagnosticReference,
+        ]);
     }
 }

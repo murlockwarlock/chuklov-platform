@@ -398,6 +398,7 @@ final class SessionCockpitTest extends TestCase
             $specialist,
             occurredAt: Carbon::parse('2026-08-16 10:00:00', 'UTC'),
             pain: 'Первичная запись о боли',
+            painVas: 4,
         );
 
         $this
@@ -409,6 +410,7 @@ final class SessionCockpitTest extends TestCase
             ->assertSuccessful()
             ->assertSee('Первичная запись о боли')
             ->assertSee('Предыдущая запись о боли')
+            ->assertSee('4/10')
             ->assertSee('Файлы сеанса');
     }
 
@@ -608,10 +610,17 @@ final class SessionCockpitTest extends TestCase
         $this->resolveFilamentContext($admin, $organization);
 
         $component = Livewire::actingAs($admin)
-            ->test(CreateMedicalSession::class, ['parentRecord' => $client])
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client]);
+
+        self::assertFalse($component->instance()->getSchemaComponent('form.pain_vas')->isRequired());
+        $component->assertSet('data.pain_vas', null);
+        $component
+            ->set('data.pain_vas', 4)
+            ->assertSee('4 / 10')
             ->fillForm([
                 'occurred_at' => '2026-08-16 10:00',
                 'specialist_id' => $specialist->getKey(),
+                'pain_vas' => 4,
                 'pain' => 'Сильная боль в шее',
                 'tests' => 'МРТ шейного отдела',
                 'observations' => 'Сглаженный лордоз',
@@ -636,6 +645,7 @@ final class SessionCockpitTest extends TestCase
 
         $retrieved = app(GetSession::class)->handle($admin, $session, $client);
         self::assertSame('Сильная боль в шее', $retrieved?->pain);
+        self::assertSame(4, $retrieved?->painVas);
     }
 
     public function test_filament_create_session_denies_cross_organization_actor_for_parent_client(): void
@@ -681,11 +691,21 @@ final class SessionCockpitTest extends TestCase
         [$organization, $admin, $client, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
 
-        $session = $this->createSession($admin, $client, $specialist, pain: 'Первоначальная боль', protocol: 'Первоначальный протокол');
+        $session = $this->createSession(
+            $admin,
+            $client,
+            $specialist,
+            pain: 'Первоначальная боль',
+            protocol: 'Первоначальный протокол',
+            painVas: 4,
+        );
 
         $component = Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->assertSet('data.pain_vas', 4)
+            ->assertSee('4 / 10')
             ->fillForm([
+                'pain_vas' => 4,
                 'pain' => 'Обновлённая боль',
                 'tests' => '',
                 'observations' => '',
@@ -701,6 +721,7 @@ final class SessionCockpitTest extends TestCase
         $updated = app(GetSession::class)->handle($admin, MedicalSession::findOrFail($session->getKey()), $client);
 
         self::assertSame('Обновлённая боль', $updated?->pain);
+        self::assertSame(4, $updated?->painVas);
         self::assertSame('Расширенный протокол', $updated->protocol);
         self::assertNull($updated->tests);
         self::assertNull($updated->observations);
@@ -946,12 +967,14 @@ final class SessionCockpitTest extends TestCase
         ?Carbon $occurredAt = null,
         ?string $pain = null,
         ?string $protocol = null,
+        ?int $painVas = null,
     ): MedicalSession {
         $result = app(CreateSession::class)->handle($actor, $client, new CreateSessionCommand(
             specialistId: (int) $specialist->getKey(),
             occurredAt: $occurredAt ?? Carbon::now('UTC'),
             pain: $pain ?? 'Тестовая боль',
             protocol: $protocol,
+            painVas: $painVas,
         ));
 
         return MedicalSession::query()

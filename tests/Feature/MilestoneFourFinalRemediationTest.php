@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Resources\ScheduleExceptions\Pages\ListScheduleExceptions;
+use App\Filament\Resources\Services\Pages\EditService;
 use App\Filament\Resources\Specialists\Pages\ListSpecialists;
+use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -29,6 +31,7 @@ use Carbon\CarbonImmutable;
 use Database\Seeders\LegalDocumentSeeder;
 use Database\Seeders\ScenarioNotificationSeeder;
 use Filament\Facades\Filament;
+use Filament\Schemas\Components\Callout;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -129,6 +132,54 @@ class MilestoneFourFinalRemediationTest extends TestCase
             ->assertHasNoErrors();
 
         self::assertSame('10:00', substr((string) $specialist->workingHours()->firstOrFail()->start_time, 0, 5));
+    }
+
+    public function test_filament_edit_service_requires_visible_impact_acknowledgement_before_mutation(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->createBooking($client, $specialist, $service, 'filament-service-impact');
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditService::class, ['record' => $service->getRouteKey()])
+            ->set('data.buffer_minutes', 30)
+            ->call('save')
+            ->assertHasErrors('schedule_impact')
+            ->assertSet('data.buffer_minutes', 30)
+            ->assertSee('Изменение затронет будущие записи')
+            ->assertSee('Затронутых записей: 1')
+            ->assertSee('Затронутые будущие записи')
+            ->assertSee($client->full_name)
+            ->assertSee('Подтверждаю изменение несмотря на влияние на будущие записи')
+            ->assertNotified('Нужно подтвердить изменение');
+
+        $callout = collect(ScheduleImpactPreview::components())->first(
+            static fn (mixed $component): bool => $component instanceof Callout,
+        );
+        self::assertInstanceOf(Callout::class, $callout);
+        self::assertSame('warning', $callout->getStatus());
+        self::assertSame(15, $service->refresh()->buffer_minutes);
+
+        $component
+            ->set('data.acknowledge_impact', true)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame(30, $service->refresh()->buffer_minutes);
+    }
+
+    public function test_filament_edit_service_without_affected_bookings_saves_without_acknowledgement(): void
+    {
+        [$organization, $admin, , , $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(EditService::class, ['record' => $service->getRouteKey()])
+            ->set('data.buffer_minutes', 30)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame(30, $service->refresh()->buffer_minutes);
     }
 
     public function test_filament_preview_refreshes_when_the_affected_booking_set_changes(): void

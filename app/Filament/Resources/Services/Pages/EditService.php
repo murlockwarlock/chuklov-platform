@@ -14,6 +14,7 @@ use App\Modules\Services\Application\ServiceSnapshotHasher;
 use App\Modules\Services\Application\UpdateService;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Services\Domain\ValueObjects\ServicePriceMatrix;
+use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -87,6 +88,14 @@ class EditService extends LocalizedEditRecord
             return $updated;
         } catch (ValidationException $exception) {
             $this->form->fill(ScheduleImpactPreview::mergeValidationPreview([...$data, 'acknowledge_impact' => $acknowledgeImpact, 'impact_digest' => $impactDigest], $exception));
+
+            if (ScheduleImpactPreview::isImpactValidation($exception)) {
+                Notification::make()
+                    ->title(__('Нужно подтвердить изменение'))
+                    ->body(__('Изменение затрагивает будущие записи. Проверьте список ниже и поставьте подтверждение перед сохранением.'))
+                    ->warning()
+                    ->send();
+            }
 
             throw $exception;
         }

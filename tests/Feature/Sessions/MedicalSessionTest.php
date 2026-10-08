@@ -17,6 +17,7 @@ use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GetSession;
+use App\Modules\Sessions\Application\GetSessionDynamics;
 use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
@@ -132,6 +133,50 @@ final class MedicalSessionTest extends TestCase
 
         self::assertNotNull($retrieved);
         self::assertSame(5, $retrieved->painVas);
+
+        $updatedToTen = app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($created->id), new UpdateSessionCommand(
+            pain: 'Описательная запись боли.',
+            tests: null,
+            observations: null,
+            rootCauseHypothesis: null,
+            protocol: null,
+            result: null,
+            painVas: 10,
+        ));
+
+        self::assertSame(10, $updatedToTen->painVas);
+    }
+
+    public function test_session_dynamics_projects_null_zero_and_ten_pain_vas_without_collapsing_values(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+
+        $nullSession = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-01-10 09:00:00', 'UTC'),
+            painVas: null,
+        ));
+        $zeroSession = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-01-11 09:00:00', 'UTC'),
+            painVas: 0,
+        ));
+        $tenSession = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-01-12 09:00:00', 'UTC'),
+            painVas: 10,
+        ));
+
+        $comparison = app(GetSessionDynamics::class)
+            ->handle($admin, MedicalSession::findOrFail($tenSession->id), $client)
+            ->comparison();
+
+        self::assertSame(10, $comparison[0]['pain_vas']);
+        self::assertSame(0, $comparison[1]['pain_vas']);
+
+        self::assertNull(app(GetSession::class)->handle($admin, MedicalSession::findOrFail($nullSession->id), $client)?->painVas);
+        self::assertSame(0, app(GetSession::class)->handle($admin, MedicalSession::findOrFail($zeroSession->id), $client)?->painVas);
+        self::assertSame($organization->getKey(), $client->organization_id);
     }
 
     public function test_pain_vas_rejects_values_outside_zero_to_ten(): void

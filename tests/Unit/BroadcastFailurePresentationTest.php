@@ -44,5 +44,13 @@ final class BroadcastFailurePresentationTest extends TestCase
             'Не удалось связаться с Telegram. Повторите попытку',
             BroadcastFailurePresentation::label('telegram_channel_unavailable'),
         );
+        self::assertSame(
+            'Telegram отклонил настройки подписи для группы медиа. Повторите отправку после сохранения шаблона заново',
+            BroadcastFailurePresentation::label('telegram_media_group_caption_conflict'),
+        );
+        self::assertSame(
+            'Telegram отклонил запрос по неизвестной причине. Код попытки: #123. Повторите тест или передайте код для диагностики',
+            BroadcastFailurePresentation::label('telegram_provider_rejected', 123),
+        );
     }
 }

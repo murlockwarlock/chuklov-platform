@@ -1,5 +1,11 @@
 # Requirements Changelog
 
+## 2026-10-08 — CRM finishing pack owner-acceptance remediation
+
+- Normalized the Pain VAS editing contract: the optional slider exposes a live numeric value, preserves the distinction between `null`, `0`, and `10`, and the session-dynamics projection includes the decrypted numeric value without changing protected storage.
+- Normalized schedule-impact presentation: a detected future-booking impact produces a prominent warning, readable affected-booking list, actionable confirmation notification, and explicit acknowledgement; digest, locking, and no-silent-rewrite safety remain unchanged.
+- Normalized Telegram test-send diagnostics for the observed media-group caption-position rejection by applying one consistent album setting, mapping the known rejection to a safe actionable code, and using only a safe attempt reference for unknown rejections.
+
 ## 2026-10-08 — CRM finishing pack normalization
 
 - Normalized organization-scoped Client Notes as protected CRM data with author/date projection, permission enforcement, and audit metadata that never stores note plaintext.
