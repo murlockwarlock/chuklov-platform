@@ -739,24 +739,30 @@ test('staff Messages opens at the latest history and preserves intentional scrol
 
         return container.scrollHeight - container.scrollTop - container.clientHeight <= 2;
     });
+    const selectDialog = async (clientId: number): Promise<void> => {
+        const dialogButton = page.locator(`[wire\\:key="dialog-${clientId}"]`).getByRole('button');
+        if (! await dialogButton.isVisible()) {
+            await page.getByRole('button', { name: 'К списку диалогов', exact: true }).click();
+        }
+        await expect(dialogButton).toBeVisible();
+        await dialogButton.click();
+    };
 
     await expect.poll(isAtBottom).toBe(true);
     await expect(page.getByText(`CRM long history ${fixture.clientId} message 65`, { exact: true })).toBeVisible();
 
-    const partnerDialog = page.locator(`[wire\\:key="dialog-${fixture.partnerId}"]`).getByRole('button');
-    await partnerDialog.click();
+    await selectDialog(fixture.partnerId);
     await expect(page.getByText(`CRM long history ${fixture.partnerId} message 40`, { exact: true })).toBeVisible();
     await expect.poll(isAtBottom).toBe(true);
 
-    await page.getByRole('button', { name: 'Начать диалог как специалист', exact: true }).click();
+    await page.getByRole('button', { name: 'Подключиться к диалогу', exact: true }).click();
     await expect(page.locator('#messages-composer-form')).toBeVisible();
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill('Новое CRM сообщение');
     await page.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Новое CRM сообщение', { exact: true })).toBeVisible();
     await expect.poll(isAtBottom).toBe(true);
 
-    const clientDialog = page.locator(`[wire\\:key="dialog-${fixture.clientId}"]`).getByRole('button');
-    await clientDialog.click();
+    await selectDialog(fixture.clientId);
     await expect(page.getByText(`CRM long history ${fixture.clientId} message 65`, { exact: true })).toBeVisible();
     await expect.poll(isAtBottom).toBe(true);
 
