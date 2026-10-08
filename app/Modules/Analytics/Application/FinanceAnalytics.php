@@ -94,6 +94,7 @@ final class FinanceAnalytics
                 FinancialLedgerEntryType::ManualPayment->value,
                 FinancialLedgerEntryType::FakeGatewaySettlement->value,
                 FinancialLedgerEntryType::GatewaySettlement->value,
+                FinancialLedgerEntryType::GiftCertificateRedemption->value,
             ])
             ->where('base_amount_minor', '>', 0)
             ->selectRaw('COALESCE(SUM(base_amount_minor), 0) as total')

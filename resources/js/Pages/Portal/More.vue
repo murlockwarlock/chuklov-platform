@@ -57,6 +57,16 @@ const { t } = usePortalLocale();
           />
         </Link>
         <Link
+          :href="props.portal.urls.giftCertificates"
+          class="portal-list__row"
+        >
+          <strong class="portal-list__title">{{ t('more.giftCertificates') }}</strong>
+          <PortalIcon
+            name="arrow"
+            class="portal-list__chevron"
+          />
+        </Link>
+        <Link
           :href="props.portal.urls.referrals"
           class="portal-list__row"
           data-testid="more-partnership-link"

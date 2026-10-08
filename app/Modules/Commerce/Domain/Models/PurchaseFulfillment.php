@@ -8,7 +8,18 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $organization_id
+ * @property int $purchase_item_id
+ * @property string $provider_type
+ * @property CommerceFulfillmentStatus $status
+ * @property int $attempts
+ * @property array<string, mixed>|null $provider_metadata
+ * @property string|null $last_error
+ * @property Carbon|null $fulfilled_at
+ */
 #[Fillable([])]
 class PurchaseFulfillment extends Model
 {

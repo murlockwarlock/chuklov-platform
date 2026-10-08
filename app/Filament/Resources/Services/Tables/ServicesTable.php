@@ -25,6 +25,7 @@ class ServicesTable
                     ->formatStateUsing(fn (CatalogItemType|string|null $state): string => match ($state instanceof CatalogItemType ? $state : CatalogItemType::tryFrom((string) $state)) {
                         CatalogItemType::PhysicalProduct => __('Физический товар'),
                         CatalogItemType::OnlineProduct => __('Онлайн-товар'),
+                        CatalogItemType::GiftCertificate => __('Подарочный сертификат'),
                         default => __('Услуга'),
                     }),
                 TextColumn::make('category')->label(__('Категория'))->placeholder('—')->sortable(),

@@ -19,6 +19,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Services\Application\ServicePriceResolver;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Tracker\Domain\Models\TrackerPlan;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
@@ -90,6 +91,34 @@ final class StartPurchaseCheckout
         );
     }
 
+    public function giftCertificate(
+        Organization $organization,
+        Client $client,
+        Service $product,
+        string $gateway,
+        string $idempotencyKey,
+        string $buyerEmail,
+        ?User $actor = null,
+        ?string $successfulReturnUrl = null,
+        ?string $failureReturnUrl = null,
+        ?string $cancelReturnUrl = null,
+    ): CommercePurchaseCheckoutResult {
+        return $this->catalogProduct(
+            organization: $organization,
+            client: $client,
+            product: $product,
+            expectedType: CatalogItemType::GiftCertificate,
+            purchaseKind: 'gift_certificate',
+            gateway: $gateway,
+            idempotencyKey: $idempotencyKey,
+            buyerEmail: $buyerEmail,
+            actor: $actor,
+            successfulReturnUrl: $successfulReturnUrl,
+            failureReturnUrl: $failureReturnUrl,
+            cancelReturnUrl: $cancelReturnUrl,
+        );
+    }
+
     private function catalogProduct(
         Organization $organization,
         Client $client,
@@ -138,7 +167,7 @@ final class StartPurchaseCheckout
                 'kind' => $purchaseKind,
                 'product' => $productSnapshot,
             ],
-            fulfillmentProvider: 'manual',
+            fulfillmentProvider: $purchaseKind === 'gift_certificate' ? 'gift_certificate' : 'manual',
             mapping: $mapping,
             actor: $actor,
             successfulReturnUrl: $successfulReturnUrl,
@@ -168,9 +197,11 @@ final class StartPurchaseCheckout
         }
 
         $version->loadMissing('plan');
-        if ((int) $version->organization_id !== (int) $organization->getKey()
-            || ! $version->plan?->is_active
-            || ! $version->plan?->is_visible
+        $plan = $version->getRelationValue('plan');
+        if (! $plan instanceof TrackerPlan
+            || (int) $version->organization_id !== (int) $organization->getKey()
+            || ! $plan->is_active
+            || ! $plan->is_visible
             || ! $version->included_access
             || $version->price_minor <= 0) {
             throw ValidationException::withMessages(['plan' => 'Выбранный тариф недоступен для покупки.']);
@@ -181,7 +212,7 @@ final class StartPurchaseCheckout
             'kind' => 'tracker_plan',
             'plan_id' => (int) $version->tracker_plan_id,
             'plan_version_id' => (int) $version->getKey(),
-            'plan_name' => (string) $version->plan->name,
+            'plan_name' => (string) $plan->name,
             'version' => (int) $version->version,
             'price_minor' => (int) $version->price_minor,
             'currency' => $currency->value,
@@ -211,6 +242,10 @@ final class StartPurchaseCheckout
         );
     }
 
+    /**
+     * @param  array<string, mixed>  $itemSnapshot
+     * @param  array<string, mixed>  $purchaseSnapshot
+     */
     private function start(
         Organization $organization,
         Client $client,
@@ -426,6 +461,10 @@ final class StartPurchaseCheckout
                 || str_contains($exception->getMessage(), 'checkout_idempotency_key'));
     }
 
+    /**
+     * @param  array<string, mixed>  $snapshot
+     * @return array<string, mixed>
+     */
     private function requestSnapshot(array $snapshot): array
     {
         unset($snapshot['captured_at']);
@@ -466,6 +505,7 @@ final class StartPurchaseCheckout
         throw ValidationException::withMessages(['product' => 'У товара не настроена цена и предложение Lava для доступной валюты.']);
     }
 
+    /** @return array<string, mixed> */
     private function catalogProductSnapshot(Service $product, Money $amount, string $kind): array
     {
         return [
@@ -482,6 +522,7 @@ final class StartPurchaseCheckout
         ];
     }
 
+    /** @param array<string, mixed> $snapshot */
     private function sellableType(array $snapshot): string
     {
         return ($snapshot['kind'] ?? null) === 'tracker_plan'
@@ -489,6 +530,7 @@ final class StartPurchaseCheckout
             : Service::class;
     }
 
+    /** @param array<string, mixed> $snapshot */
     private function sellableId(array $snapshot): int
     {
         return (int) (($snapshot['kind'] ?? null) === 'tracker_plan'

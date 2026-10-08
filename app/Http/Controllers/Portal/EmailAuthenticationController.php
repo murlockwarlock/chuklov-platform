@@ -53,6 +53,11 @@ class EmailAuthenticationController extends Controller
         $request->session()->put('client_portal.client_id', $client->getKey());
         $this->applySessionLocale($request, $client, $applyLocale);
 
+        $claimToken = $request->session()->pull('gift_certificate_claim_token');
+        if (is_string($claimToken) && preg_match('/^[a-f0-9]{64}$/', $claimToken) === 1) {
+            return to_route('gift-certificates.claim', ['token' => $claimToken]);
+        }
+
         return to_route('portal.home');
     }
 

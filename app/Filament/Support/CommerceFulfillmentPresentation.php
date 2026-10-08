@@ -7,13 +7,15 @@ use App\Modules\Commerce\Domain\Enums\PurchaseStatus;
 use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
 use App\Modules\Commerce\Domain\Models\PurchaseItem;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 
 final class CommerceFulfillmentPresentation
 {
     public static function productName(FinancialObligation $record): string
     {
-        $service = $record->booking?->service ?? $record->service;
+        $booking = $record->getRelationValue('booking');
+        $service = $booking instanceof Booking ? $booking->service : $record->service;
 
         if ($service instanceof Service) {
             return $service->name;
@@ -21,7 +23,7 @@ final class CommerceFulfillmentPresentation
 
         $names = $record->purchase?->items
             ->map(function (PurchaseItem $item): ?string {
-                $snapshot = $item->product_snapshot;
+                $snapshot = $item->getAttribute('product_snapshot');
 
                 foreach (['name', 'plan_name'] as $key) {
                     if (is_array($snapshot) && is_string($snapshot[$key] ?? null) && filled($snapshot[$key])) {
@@ -41,12 +43,16 @@ final class CommerceFulfillmentPresentation
     public static function status(FinancialObligation $record): string
     {
         return match (self::statusKey($record)) {
-            'fulfilled' => self::isPhysical($record) ? __('Товар передан') : __('Доступ выдан'),
+            'fulfilled' => self::isGiftCertificate($record)
+                ? __('Сертификат выпущен')
+                : (self::isPhysical($record) ? __('Товар передан') : __('Доступ выдан')),
             'pending_payment' => __('Ожидает оплаты'),
             'failed' => __('Ошибка выдачи'),
             'processing' => __('Выдаётся'),
             'manual_pending' => self::isPhysical($record) ? __('Ожидает передачи') : __('Требуется выдача'),
-            'automatic_pending' => __('Выдаётся автоматически'),
+            'automatic_pending' => self::isGiftCertificate($record)
+                ? __('Сертификат подготавливается')
+                : __('Выдаётся автоматически'),
             default => '—',
         };
     }
@@ -76,9 +82,14 @@ final class CommerceFulfillmentPresentation
 
     public static function isPhysical(FinancialObligation $record): bool
     {
-        $snapshot = $record->purchase?->items->first()?->product_snapshot;
+        $snapshot = $record->purchase?->items->first()?->getAttribute('product_snapshot');
 
         return is_array($snapshot) && ($snapshot['catalog_type'] ?? null) === 'physical_product';
+    }
+
+    private static function isGiftCertificate(FinancialObligation $record): bool
+    {
+        return $record->purchase?->items->first()?->fulfillment?->provider_type === 'gift_certificate';
     }
 
     private static function statusKey(FinancialObligation $record): ?string

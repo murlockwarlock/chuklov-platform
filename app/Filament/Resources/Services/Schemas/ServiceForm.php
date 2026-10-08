@@ -256,6 +256,7 @@ class ServiceForm
             CatalogItemType::Service->value => __('Услуга'),
             CatalogItemType::PhysicalProduct->value => __('Физический товар'),
             CatalogItemType::OnlineProduct->value => __('Онлайн-товар'),
+            CatalogItemType::GiftCertificate->value => __('Подарочный сертификат'),
         ];
 
         return $options;
@@ -273,7 +274,7 @@ class ServiceForm
     private static function activeLabel(mixed $catalogType): string
     {
         return match (self::catalogType($catalogType)) {
-            CatalogItemType::OnlineProduct, CatalogItemType::PhysicalProduct => __('Показывать клиентам'),
+            CatalogItemType::OnlineProduct, CatalogItemType::PhysicalProduct, CatalogItemType::GiftCertificate => __('Показывать клиентам'),
             default => __('Доступна для записи'),
         };
     }
@@ -291,7 +292,9 @@ class ServiceForm
     {
         $subject = self::isCatalogType($catalogType, CatalogItemType::OnlineProduct)
             ? __('этот товар')
-            : (self::isCatalogType($catalogType, CatalogItemType::Service) ? __('эту услугу') : __('это предложение'));
+            : (self::isCatalogType($catalogType, CatalogItemType::GiftCertificate)
+                ? __('этот сертификат')
+                : (self::isCatalogType($catalogType, CatalogItemType::Service) ? __('эту услугу') : __('это предложение')));
 
         return __('ID предложения из кабинета Lava. Он связывает ').$subject.__(' с предложением, созданным в Lava.');
     }

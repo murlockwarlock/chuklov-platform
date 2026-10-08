@@ -19,6 +19,8 @@ use App\Http\Controllers\Portal\EmailAuthenticationController;
 use App\Http\Controllers\Portal\FeedbackController;
 use App\Http\Controllers\Portal\FinanceController;
 use App\Http\Controllers\Portal\FinanceReceiptController;
+use App\Http\Controllers\Portal\GiftCertificateClaimController;
+use App\Http\Controllers\Portal\GiftCertificateController;
 use App\Http\Controllers\Portal\HealthController as PortalHealthController;
 use App\Http\Controllers\Portal\HomeController;
 use App\Http\Controllers\Portal\LocaleController;
@@ -106,6 +108,12 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             ->name('portal.referral');
         Route::get('/', HomeController::class)->name('portal.home');
         Route::get('/portal/services', ServiceIndexController::class)->name('portal.services.index');
+        Route::get('/gift-certificates/claim/{token}', [GiftCertificateClaimController::class, 'show'])
+            ->where('token', '[a-f0-9]{64}')
+            ->name('gift-certificates.claim');
+        Route::post('/gift-certificates/claim/{token}', [GiftCertificateClaimController::class, 'claim'])
+            ->where('token', '[a-f0-9]{64}')
+            ->name('gift-certificates.claim.submit');
         Route::get('/portal/b2b', B2bController::class)->name('portal.b2b');
         Route::get('/portal/sections/{section}', SectionController::class)->name('portal.section');
 
@@ -118,6 +126,14 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/medical-attachments/{uuid}', MedicalAttachmentController::class)->name('portal.medical-attachments.download');
             Route::get('/portal/more', MoreController::class)->name('portal.more');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
+            Route::get('/portal/gift-certificates', [GiftCertificateController::class, 'index'])
+                ->name('portal.gift-certificates.index');
+            Route::post('/portal/gift-certificates/{certificateId}/transfer', [GiftCertificateController::class, 'transfer'])
+                ->whereNumber('certificateId')
+                ->name('portal.gift-certificates.transfer');
+            Route::post('/portal/gift-certificates/{certificateId}/apply/{obligationId}', [GiftCertificateController::class, 'apply'])
+                ->whereNumber(['certificateId', 'obligationId'])
+                ->name('portal.gift-certificates.apply');
             Route::post('/portal/finance/{obligationId}/lava/start', [FinanceController::class, 'startLavaPayment'])
                 ->whereNumber('obligationId')
                 ->name('portal.finance.lava.start');

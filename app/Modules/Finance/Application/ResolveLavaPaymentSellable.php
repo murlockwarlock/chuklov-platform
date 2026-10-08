@@ -10,6 +10,7 @@ use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
 
 final class ResolveLavaPaymentSellable
 {
+    /** @return array{type: class-string, id: int}|null */
     public function handle(FinancialObligation $obligation): ?array
     {
         $service = $obligation->booking?->service;
@@ -21,9 +22,10 @@ final class ResolveLavaPaymentSellable
         }
 
         $item = $obligation->purchase?->items->first();
+        $snapshot = $item?->getAttribute('product_snapshot');
         if (! $item instanceof PurchaseItem
-            || ! is_array($item->product_snapshot)
-            || ! in_array($item->product_snapshot['kind'] ?? null, ['online_product', 'tracker_plan'], true)
+            || ! is_array($snapshot)
+            || ! in_array($snapshot['kind'] ?? null, ['online_product', 'tracker_plan', 'gift_certificate'], true)
             || ! in_array($item->sellable_type, [Service::class, TrackerPlanVersion::class], true)
             || (int) $item->sellable_id <= 0) {
             return null;

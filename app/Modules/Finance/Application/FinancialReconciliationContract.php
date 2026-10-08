@@ -320,14 +320,23 @@ final class FinancialReconciliationContract
             ? FinancialEntrySource::tryFrom($entry->getRawOriginal('source'))
             : null;
 
-        if ($entryType !== FinancialLedgerEntryType::ManualPayment
-            || $source !== FinancialEntrySource::Crm
+        $isManual = $entryType === FinancialLedgerEntryType::ManualPayment
+            && $source === FinancialEntrySource::Crm;
+        $isGiftCertificate = $entryType === FinancialLedgerEntryType::GiftCertificateRedemption
+            && $source === FinancialEntrySource::GiftCertificate;
+
+        if ((! $isManual && ! $isGiftCertificate)
             || $entry->getRawOriginal('corrects_ledger_entry_id') !== null) {
             throw new UnexpectedValueException('The ledger entry cannot be corrected.');
         }
 
-        if (! is_string($entry->getRawOriginal('payment_method'))
-            || PaymentMethod::tryFrom($entry->getRawOriginal('payment_method')) === null) {
+        if ($isManual
+            && (! is_string($entry->getRawOriginal('payment_method'))
+                || PaymentMethod::tryFrom($entry->getRawOriginal('payment_method')) === null)) {
+            throw new UnexpectedValueException('The ledger payment method is invalid.');
+        }
+
+        if ($isGiftCertificate && $entry->getRawOriginal('payment_method') !== null) {
             throw new UnexpectedValueException('The ledger payment method is invalid.');
         }
 

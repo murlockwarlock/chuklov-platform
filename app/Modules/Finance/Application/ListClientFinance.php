@@ -6,6 +6,7 @@ use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Commerce\Domain\Enums\CommerceFulfillmentStatus;
 use App\Modules\Commerce\Domain\Enums\PurchaseStatus;
 use App\Modules\Commerce\Domain\Models\PaymentProviderOfferMapping;
+use App\Modules\Commerce\Domain\Models\PurchaseItem;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayStatus;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
@@ -291,6 +292,7 @@ final class ListClientFinance
                 : null);
 
         return [
+            'obligationId' => (int) $obligation->getKey(),
             'serviceName' => $service === null
                 ? ($purchaseName
                     ?? (is_array($priceSnapshot) && is_string($priceSnapshot['service_name'] ?? null)
@@ -321,21 +323,28 @@ final class ListClientFinance
         }
 
         $isTracker = $fulfillment->provider_type === 'tracker_entitlement';
-        $isPhysical = is_array($productSnapshot = $purchase->items->first()?->product_snapshot)
+        $isGiftCertificate = $fulfillment->provider_type === 'gift_certificate';
+        $firstItem = $purchase->items->all()[0] ?? null;
+        $productSnapshot = $firstItem instanceof PurchaseItem ? $firstItem->getAttribute('product_snapshot') : null;
+        $isPhysical = is_array($productSnapshot)
             && ($productSnapshot['catalog_type'] ?? null) === 'physical_product';
 
         return match ($fulfillment->status) {
             CommerceFulfillmentStatus::Fulfilled => [
-                'statusLabel' => $isTracker
+                'statusLabel' => $isGiftCertificate
+                    ? ($locale === 'en' ? 'Certificate issued' : 'Сертификат выпущен')
+                    : ($isTracker
                     ? ($locale === 'en' ? 'Access active' : 'Доступ активен')
                     : ($isPhysical
                         ? ($locale === 'en' ? 'Product handed over' : 'Товар передан')
-                        : ($locale === 'en' ? 'Access granted' : 'Доступ выдан')),
-                'message' => $isTracker
+                        : ($locale === 'en' ? 'Access granted' : 'Доступ выдан'))),
+                'message' => $isGiftCertificate
+                    ? ($locale === 'en' ? 'Your gift certificate is ready.' : 'Ваш подарочный сертификат готов.')
+                    : ($isTracker
                     ? ($locale === 'en' ? 'Your Tracker access is active.' : 'Доступ к Трекеру активен.')
                     : ($isPhysical
                         ? ($locale === 'en' ? 'The product has been handed over to you.' : 'Товар передан вам.')
-                        : ($locale === 'en' ? 'The product access has been granted.' : 'Доступ к продукту выдан.')),
+                        : ($locale === 'en' ? 'The product access has been granted.' : 'Доступ к продукту выдан.'))),
                 'accessUrl' => null,
             ],
             CommerceFulfillmentStatus::Failed => [
@@ -345,11 +354,13 @@ final class ListClientFinance
             ],
             default => [
                 'statusLabel' => $locale === 'en' ? 'Access pending' : 'Требуется выдача',
-                'message' => $isTracker
+                'message' => $isGiftCertificate
+                    ? ($locale === 'en' ? 'The certificate is being prepared.' : 'Сертификат подготавливается.')
+                    : ($isTracker
                     ? ($locale === 'en' ? 'Tracker access is being prepared.' : 'Доступ к Трекеру подготавливается.')
                     : ($isPhysical
                         ? ($locale === 'en' ? 'Your paid product is waiting for handover.' : 'Оплаченный товар ожидает передачи.')
-                        : ($locale === 'en' ? 'Access will be granted by a specialist or administrator.' : 'Доступ будет выдан специалистом или администратором.')),
+                        : ($locale === 'en' ? 'Access will be granted by a specialist or administrator.' : 'Доступ будет выдан специалистом или администратором.'))),
                 'accessUrl' => null,
             ],
         };
@@ -487,6 +498,7 @@ final class ListClientFinance
                 'fake_gateway_settlement' => 'Test payment',
                 'gateway_settlement' => 'Online payment',
                 'referral_credit' => 'Referral credit',
+                'gift_certificate_redemption' => 'Gift certificate',
             ]
             : [
                 'cash' => 'Наличные',
@@ -498,6 +510,7 @@ final class ListClientFinance
                 'fake_gateway_settlement' => 'Тестовая оплата',
                 'gateway_settlement' => 'Оплата через платёжный сервис',
                 'referral_credit' => 'Реферальный бонус',
+                'gift_certificate_redemption' => 'Подарочный сертификат',
             ];
 
         if ($entryType === 'manual_payment' && is_string($method) && in_array($method, [

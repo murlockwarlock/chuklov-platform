@@ -40,8 +40,8 @@ final class PortalCommerceController extends Controller
         }
 
         try {
-            $result = $product->catalogItemType() === CatalogItemType::PhysicalProduct
-                ? $checkout->physicalProduct(
+            $result = match ($product->catalogItemType()) {
+                CatalogItemType::GiftCertificate => $checkout->giftCertificate(
                     organization: $organization,
                     client: $client,
                     product: $product,
@@ -51,8 +51,8 @@ final class PortalCommerceController extends Controller
                     successfulReturnUrl: route('portal.finance.index'),
                     failureReturnUrl: route('portal.finance.index'),
                     cancelReturnUrl: route('portal.finance.index'),
-                )
-                : $checkout->onlineProduct(
+                ),
+                CatalogItemType::PhysicalProduct => $checkout->physicalProduct(
                     organization: $organization,
                     client: $client,
                     product: $product,
@@ -62,7 +62,19 @@ final class PortalCommerceController extends Controller
                     successfulReturnUrl: route('portal.finance.index'),
                     failureReturnUrl: route('portal.finance.index'),
                     cancelReturnUrl: route('portal.finance.index'),
-                );
+                ),
+                default => $checkout->onlineProduct(
+                    organization: $organization,
+                    client: $client,
+                    product: $product,
+                    gateway: 'lava',
+                    idempotencyKey: (string) $data['idempotency_key'],
+                    buyerEmail: (string) $client->email,
+                    successfulReturnUrl: route('portal.finance.index'),
+                    failureReturnUrl: route('portal.finance.index'),
+                    cancelReturnUrl: route('portal.finance.index'),
+                ),
+            };
         } catch (PaymentGatewayInitiationFailure $exception) {
             return back()->withErrors(['payment' => $paymentErrors->gateway($exception)]);
         } catch (ValidationException $exception) {

@@ -35,6 +35,7 @@ class ListPublishedServices
                 CatalogItemType::Service->value,
                 CatalogItemType::PhysicalProduct->value,
                 CatalogItemType::OnlineProduct->value,
+                CatalogItemType::GiftCertificate->value,
             ])
             ->orderBy('name')
             ->get()

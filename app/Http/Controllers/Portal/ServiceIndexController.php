@@ -25,6 +25,7 @@ class ServiceIndexController extends Controller
                         'purchaseUrl' => in_array($service->catalogItemType(), [
                             CatalogItemType::OnlineProduct,
                             CatalogItemType::PhysicalProduct,
+                            CatalogItemType::GiftCertificate,
                         ], true)
                             ? route('portal.services.purchase', $service->getKey())
                             : null,

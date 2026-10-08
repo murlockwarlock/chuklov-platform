@@ -68,9 +68,14 @@ class TelegramWebAuthenticationController extends Controller
         $this->applySessionLocale($request, $client, $applyLocale);
         $startOnboarding->handle($client);
 
+        $claimToken = $request->session()->pull('gift_certificate_claim_token');
+        $redirect = is_string($claimToken) && preg_match('/^[a-f0-9]{64}$/', $claimToken) === 1
+            ? route('gift-certificates.claim', ['token' => $claimToken])
+            : route('portal.home');
+
         return response()->json([
             'status' => 'authenticated',
-            'redirect' => route('portal.home'),
+            'redirect' => $redirect,
         ]);
     }
 

@@ -34,6 +34,10 @@ use Illuminate\Support\Carbon;
  * @property array<string, mixed> $price_snapshot
  * @property array<string, mixed> $conversion_snapshots
  * @property Carbon $created_at
+ * @property Client $client
+ * @property Booking|null $booking
+ * @property Service|null $service
+ * @property Purchase|null $purchase
  */
 #[Fillable([])]
 class FinancialObligation extends Model
