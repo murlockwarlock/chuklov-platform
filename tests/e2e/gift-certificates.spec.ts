@@ -17,11 +17,13 @@ function createGiftCertificateFixture(): GiftCertificateFixture {
         $buyer = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'Gift buyer '.$suffix,
             'email' => 'gift-buyer-'.$suffix.'@example.test',
+            'language' => 'ru',
             'timezone' => 'UTC',
         ]);
         $recipient = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'Gift recipient '.$suffix,
             'email' => 'gift-recipient-'.$suffix.'@example.test',
+            'language' => 'ru',
             'timezone' => 'UTC',
         ]);
         app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
@@ -32,12 +34,15 @@ function createGiftCertificateFixture(): GiftCertificateFixture {
             'force_single_currency' => true,
             'rounding_mode' => 'half_up',
         ]);
-        $credential = \\App\\Modules\\Security\\Domain\\Models\\OrganizationCredential::factory()->forOrganization($organization)->make([
+        $credential = \\App\\Modules\\Security\\Domain\\Models\\OrganizationCredential::query()->firstOrNew([
+            'organization_id' => $organization->getKey(),
             'provider' => 'lava',
             'credential_name' => 'default',
-            'status' => \\App\\Modules\\Security\\Domain\\Enums\\CredentialStatus::Active->value,
         ]);
         $credential->forceFill([
+            'revision_id' => \\Illuminate\\Support\\Str::uuid()->toString(),
+            'status' => \\App\\Modules\\Security\\Domain\\Enums\\CredentialStatus::Active->value,
+            'last_rotated_at' => now(),
             'credentials' => ['api_key' => 'playwright-lava-key', 'webhook_api_key' => 'playwright-lava-webhook-key'],
         ])->save();
         $giftService = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create([
