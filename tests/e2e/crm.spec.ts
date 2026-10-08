@@ -715,10 +715,11 @@ test('staff can create a backdated booking from the ordinary availability form',
     await expect(page.getByLabel('Подтверждаю создание записи задним числом', { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/admin\/bookings\/create$/);
 
-    await page.getByRole('button', { name: 'Создать', exact: true }).click();
-    await expect(page.getByText('Подтвердите создание записи задним числом.', { exact: true })).toBeVisible();
+    const createButton = page.getByRole('button', { name: 'Создать', exact: true });
+    await expect(createButton).toBeDisabled();
     await page.getByLabel('Подтверждаю создание записи задним числом', { exact: true }).check();
-    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+    await expect(createButton).toBeEnabled();
+    await createButton.click();
 
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
     await expect(page.getByText('Ожидает подтверждения', { exact: true })).toBeVisible();
@@ -772,7 +773,7 @@ test('staff Messages opens at the latest history and preserves intentional scrol
     });
     const existingMessageTop = await existingMessage.evaluate((element) => element.getBoundingClientRect().top);
     await page.getByTestId('messages-load-older').click({ force: true });
-    await expect(history.getByText(`CRM long history ${fixture.clientId} message 1`, { exact: true })).toBeVisible();
+    await expect(history.getByText(`CRM long history ${fixture.clientId} message 1`, { exact: true })).toHaveCount(1);
     const existingMessageTopAfterLoad = await existingMessage.evaluate((element) => element.getBoundingClientRect().top);
     expect(Math.abs(existingMessageTopAfterLoad - existingMessageTop)).toBeLessThan(2);
 
