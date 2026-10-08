@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Modules\Finance\Application\GetOutstandingDebtByBookingIds;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scenarios\Application\HasQualifyingNextBooking;
+use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scheduling\Application\GetScheduleCalendar;
 use App\Modules\Scheduling\Application\RescheduleBooking;
@@ -46,12 +47,19 @@ class ListBookings extends LocalizedListRecords
     #[Url(as: 'specialist_id', history: true, nullable: true)]
     public ?int $selectedSpecialistId = null;
 
+    /** @return Builder<Booking> */
     protected function getTableQuery(): Builder
     {
-        return parent::getTableQuery()
+        return BookingResource::getEloquentQuery()
             ->when($this->selectedSpecialistId !== null, fn (Builder $query): Builder => $query->where(
                 'specialist_id',
                 $this->selectedSpecialistId,
+            ))
+            ->when($this->viewMode === 'list', fn (Builder $query): Builder => BookingLocalDateRange::apply(
+                $query,
+                $this->weekStart,
+                $this->weekDate()->addDays(6)->toDateString(),
+                $this->journalTimezone(),
             ));
     }
 
@@ -80,26 +88,32 @@ class ListBookings extends LocalizedListRecords
     public function previousWeek(): void
     {
         $this->weekStart = $this->weekDate()->subWeek()->toDateString();
+        $this->flushCachedTableRecords();
     }
 
     public function nextWeek(): void
     {
         $this->weekStart = $this->weekDate()->addWeek()->toDateString();
+        $this->flushCachedTableRecords();
     }
 
     public function today(): void
     {
         $this->weekStart = CarbonImmutable::now($this->journalTimezone())->startOfWeek(CarbonImmutable::MONDAY)->toDateString();
+        $this->flushCachedTableRecords();
     }
 
     public function setViewMode(string $mode): void
     {
         $this->viewMode = in_array($mode, ['week', 'list'], true) ? $mode : 'week';
+        $this->flushCachedTableRecords();
     }
 
     public function updatedSelectedSpecialistId(): void
     {
         if ($this->selectedSpecialist() instanceof Specialist) {
+            $this->flushCachedTableRecords();
+
             return;
         }
 
@@ -112,6 +126,7 @@ class ListBookings extends LocalizedListRecords
                 ->where('organization_id', app(OrganizationContext::class)->id())
                 ->orderBy('display_name')
                 ->value('id');
+        $this->flushCachedTableRecords();
     }
 
     /** @return array<string, array{date: string, day_number: int, weekday: string, is_today: bool, is_working: bool, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>, bookings: list<array<string, mixed>>}> */
@@ -299,12 +314,10 @@ class ListBookings extends LocalizedListRecords
             ->first();
 
         if ($rule instanceof ScenarioRule) {
-            $multiplier = match ($rule->delay_unit->value) {
-                'minutes' => 1,
-                'hours' => 60,
-                'days' => 1440,
-                'weeks' => 10080,
-                default => 1440,
+            $multiplier = match ($rule->delay_unit) {
+                ScenarioDelayUnit::Minutes => 1,
+                ScenarioDelayUnit::Hours => 60,
+                ScenarioDelayUnit::Days => 1440,
             };
 
             return max(1, (int) $rule->delay_value * $multiplier);
@@ -320,7 +333,7 @@ class ListBookings extends LocalizedListRecords
         $value = $date.' '.$time;
         $localStart = CarbonImmutable::createFromFormat('!Y-m-d H:i', $value, $timezone);
 
-        if ($localStart === false
+        if (! $localStart instanceof CarbonImmutable
             || $localStart->format('Y-m-d H:i') !== $value
             || ! in_array($localStart->minute, [0, 30], true)) {
             $this->addError('calendar', __('Выберите корректное время журнала.'));

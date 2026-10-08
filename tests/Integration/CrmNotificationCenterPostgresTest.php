@@ -17,6 +17,7 @@ use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scheduling\Domain\Enums\BookingSource;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -54,6 +55,7 @@ final class CrmNotificationCenterPostgresTest extends TestCase
             ->forService($service)
             ->create([
                 'status' => BookingStatus::PendingReview->value,
+                'source' => BookingSource::Portal->value,
                 'visit_format' => VisitFormat::HomeVisit->value,
                 'starts_at' => CarbonImmutable::now()->addDay(),
                 'ends_at' => CarbonImmutable::now()->addDay()->addHour(),
@@ -118,6 +120,7 @@ final class CrmNotificationCenterPostgresTest extends TestCase
             ->forService($service)
             ->create([
                 'status' => BookingStatus::Requested->value,
+                'source' => BookingSource::Portal->value,
                 'visit_format' => VisitFormat::Office->value,
                 'starts_at' => CarbonImmutable::now()->addDay(),
                 'ends_at' => CarbonImmutable::now()->addDay()->addHour(),

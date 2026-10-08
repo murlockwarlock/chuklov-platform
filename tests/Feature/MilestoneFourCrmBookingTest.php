@@ -7,6 +7,7 @@ use App\Filament\Resources\Bookings\Pages\CreateBooking;
 use App\Filament\Resources\Bookings\Pages\CreateMultipleBookings;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\Bookings\Pages\ViewBooking;
+use App\Filament\Resources\Bookings\Support\BookingAvailabilityOptions;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -21,6 +22,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
 use App\Modules\Scheduling\Application\CreateMultipleBookings as CreateMultipleBookingsAction;
+use App\Modules\Scheduling\Application\SetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -614,6 +616,150 @@ class MilestoneFourCrmBookingTest extends TestCase
         self::assertTrue($booking->startsAtUtc()->equalTo(CarbonImmutable::parse($selectedTime)));
     }
 
+    public function test_crm_form_exposes_historical_slots_without_url_prefill_and_requires_confirmation(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->enableClientRecords($organization);
+        $this->resolveFilamentContext($admin, $organization);
+        $pastDate = CarbonImmutable::create(2026, 3, 23, 0, 0, 0, 'UTC');
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->fillForm([
+                'client_id' => $client->getKey(),
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'booking_date' => $pastDate->toDateString(),
+                'visit_format' => VisitFormat::Office->value,
+            ]);
+
+        self::assertNull($component->instance()->data['starts_at']);
+        $timeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertInstanceOf(Select::class, $timeField);
+        self::assertSame([
+            '09:00–10:00',
+            '10:15–11:15',
+            '11:30–12:30',
+            '12:45–13:45',
+            '14:00–15:00',
+            '15:15–16:15',
+        ], array_values($timeField->getOptions()));
+
+        $selectedTime = array_key_first($timeField->getOptions());
+        self::assertIsString($selectedTime);
+        $component
+            ->fillForm(['booking_time' => $selectedTime])
+            ->assertSee('Вы создаёте запись задним числом: 23.03.2026 09:00.')
+            ->call('create')
+            ->assertHasFormErrors(['confirm_backdated']);
+
+        self::assertSame(0, Booking::query()->count());
+
+        $component
+            ->set('data.confirm_backdated', true)
+            ->call('create')
+            ->assertHasNoErrors()
+            ->assertRedirect();
+
+        $booking = Booking::query()->sole();
+        self::assertTrue($booking->startsAtUtc()->equalTo(CarbonImmutable::parse($selectedTime)));
+    }
+
+    public function test_historical_crm_availability_keeps_schedule_and_conflict_invariants(): void
+    {
+        [$organization, $admin, , $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $pastDate = CarbonImmutable::create(2026, 3, 23, 0, 0, 0, 'UTC');
+        $availability = app(BookingAvailabilityOptions::class);
+
+        $options = $availability->forDate(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            format: VisitFormat::Office,
+            date: $pastDate,
+            displayTimezone: 'UTC',
+            allowHistorical: true,
+        );
+
+        self::assertArrayNotHasKey($pastDate->setTime(8, 0)->toIso8601String(), $options);
+        self::assertArrayNotHasKey($pastDate->setTime(16, 30)->toIso8601String(), $options);
+
+        app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: Client::factory()->forOrganization($organization)->create(),
+            specialist: $specialist,
+            service: $service,
+            startsAt: $pastDate->setTime(10, 15),
+            format: VisitFormat::Office,
+            idempotencyKey: 'historical-occupied-slot',
+            confirmedBackdated: true,
+        );
+
+        $options = $availability->forDate(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            format: VisitFormat::Office,
+            date: $pastDate,
+            displayTimezone: 'UTC',
+            allowHistorical: true,
+        );
+
+        self::assertArrayNotHasKey($pastDate->setTime(10, 15)->toIso8601String(), $options);
+        self::assertArrayHasKey($pastDate->setTime(9, 0)->toIso8601String(), $options);
+    }
+
+    public function test_today_crm_availability_exposes_valid_past_and_future_slots(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 3, 23, 12, 0, 0, 'UTC'));
+        app(SetBookingLeadTime::class)->handle($admin, 180);
+
+        $options = app(BookingAvailabilityOptions::class)->forDate(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            format: VisitFormat::Office,
+            date: CarbonImmutable::create(2026, 3, 23, 0, 0, 0, 'UTC'),
+            displayTimezone: 'UTC',
+            allowHistorical: true,
+        );
+
+        self::assertArrayHasKey('2026-03-23T09:00:00+00:00', $options);
+        self::assertArrayHasKey('2026-03-23T11:30:00+00:00', $options);
+        self::assertArrayNotHasKey('2026-03-23T14:00:00+00:00', $options);
+        self::assertArrayHasKey('2026-03-23T15:15:00+00:00', $options);
+
+        try {
+            app(CreateBookingAction::class)->handle(
+                actor: $admin,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: CarbonImmutable::create(2026, 3, 23, 14, 0, 0, 'UTC'),
+                format: VisitFormat::Office,
+                idempotencyKey: 'today-lead-time-rejected',
+            );
+            self::fail('A same-day booking inside the lead time must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('startsAt', $exception->errors());
+        }
+
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 3, 23, 15, 15, 0, 'UTC'),
+            format: VisitFormat::Office,
+            idempotencyKey: 'today-lead-time-accepted',
+        );
+
+        self::assertTrue($booking->startsAtUtc()->equalTo(CarbonImmutable::create(2026, 3, 23, 15, 15, 0, 'UTC')));
+    }
+
     public function test_client_cannot_use_the_crm_backdated_confirmation(): void
     {
         [$organization, , $client, $specialist, $service] = $this->fixture();
@@ -731,6 +877,29 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->assertActionExists('reschedule')
             ->assertActionExists('cancel')
             ->assertActionExists('noShow');
+    }
+
+    public function test_view_booking_renders_event_history_as_structured_entries(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            idempotencyKey: 'structured-booking-history',
+        );
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->assertSee('Журнал изменений')
+            ->assertSee('Запись создана')
+            ->assertSee('Кто изменил');
+
+        self::assertStringNotContainsString('Изменил:', $component->html());
     }
 
     public function test_reschedule_action_offers_available_slots_and_uses_the_selected_slot(): void

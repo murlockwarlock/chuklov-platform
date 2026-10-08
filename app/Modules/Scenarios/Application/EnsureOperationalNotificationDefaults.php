@@ -395,7 +395,10 @@ final class EnsureOperationalNotificationDefaults
                     'event' => ScenarioEventType::BookingCreated->value,
                     'enabled' => true,
                     'recipient' => ['type' => 'assigned_specialist'],
-                    'conditions' => [['type' => 'booking.status', 'operator' => 'equals', 'value' => 'requested']],
+                    'conditions' => [
+                        ['type' => 'booking.source', 'operator' => 'equals', 'value' => 'portal'],
+                        ['type' => 'booking.status', 'operator' => 'equals', 'value' => 'requested'],
+                    ],
                 ],
                 [
                     'key' => 'booking-home-visit-review-database',
@@ -405,7 +408,10 @@ final class EnsureOperationalNotificationDefaults
                     'event' => ScenarioEventType::BookingCreated->value,
                     'enabled' => true,
                     'recipient' => ['type' => 'roles', 'roles' => ['owner', 'administrator', 'staff'], 'permission' => 'manage_scheduling'],
-                    'conditions' => [['type' => 'booking.status', 'operator' => 'equals', 'value' => 'pending_review']],
+                    'conditions' => [
+                        ['type' => 'booking.source', 'operator' => 'equals', 'value' => 'portal'],
+                        ['type' => 'booking.status', 'operator' => 'equals', 'value' => 'pending_review'],
+                    ],
                 ],
                 [
                     'key' => 'booking-confirmed-specialist-database',

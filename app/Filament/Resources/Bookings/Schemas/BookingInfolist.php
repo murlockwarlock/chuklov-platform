@@ -18,6 +18,7 @@ use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use Carbon\CarbonImmutable;
+use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -88,25 +89,41 @@ class BookingInfolist
                             ->label(__('Условие оплаты'))
                             ->formatStateUsing(fn (PaymentRequirementType|string|null $state): string => self::paymentRequirementLabel($state))
                             ->wrap(),
-                        Section::make(__('История событий'))
-                            ->schema([
-                                TextEntry::make('history')
-                                    ->label(__('Журнал изменений'))
-                                    ->state(function (Booking $record): string {
-                                        return $record->events()
-                                            ->with(['actorUser', 'actorClient'])
-                                            ->orderBy('occurred_at')
-                                            ->get()
-                                            ->map(fn (BookingEvent $event): string => self::formatHistoryEvent($event))
-                                            ->implode("\n");
-                                    })
-                                    ->placeholder(__('Событий пока нет'))
-                                    ->columnSpanFull()
-                                    ->wrap(),
-                            ])
-                            ->columnSpanFull(),
                     ])
                     ->columns(['default' => 1, 'sm' => 2]),
+
+                Section::make(__('Журнал изменений'))
+                    ->schema([
+                        RepeatableEntry::make('history')
+                            ->hiddenLabel()
+                            ->schema([
+                                TextEntry::make('event')
+                                    ->hiddenLabel()
+                                    ->weight('semibold')
+                                    ->wrap()
+                                    ->columnSpanFull(),
+                                TextEntry::make('occurred_at')->label(__('Когда')),
+                                TextEntry::make('actor')->label(__('Кто изменил'))->wrap(),
+                                TextEntry::make('details')
+                                    ->label(__('Подробности'))
+                                    ->placeholder('—')
+                                    ->wrap()
+                                    ->columnSpanFull(),
+                            ])
+                            ->columns(2)
+                            ->state(function (Booking $record): array {
+                                return $record->events()
+                                    ->with(['actorUser', 'actorClient'])
+                                    ->orderBy('occurred_at')
+                                    ->get()
+                                    ->map(fn (BookingEvent $event): array => self::formatHistoryEvent($event))
+                                    ->all();
+                            })
+                            ->placeholder(__('Событий пока нет'))
+                            ->columnSpanFull(),
+                    ])
+                    ->compact()
+                    ->columnSpanFull(),
 
                 Section::make(__('Оплата пока недоступна'))
                     ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->bookingPaymentReadiness($record) !== null)
@@ -152,7 +169,9 @@ class BookingInfolist
                                 : app(FinancePresentation::class)->bookingStatus(self::bookingSummary($record)))
                             ->color(fn (Booking $record): string => self::bookingSummary($record) === null
                                 ? 'gray'
-                                : app(FinancePresentation::class)->bookingStatusColor(self::bookingSummary($record))),
+                                : app(FinancePresentation::class)->bookingStatusColor(self::bookingSummary($record)))
+                            ->columnSpanFull()
+                            ->extraAttributes(['class' => 'min-w-0 max-w-full']),
                         TextEntry::make('finance_error')
                             ->label(__('Состояние расчёта'))
                             ->state(__('Расчёт недоступен. Проверьте историю оплат.'))
@@ -165,35 +184,37 @@ class BookingInfolist
             ]);
     }
 
-    private static function formatHistoryEvent(BookingEvent $event): string
+    /** @return array{event: string, occurred_at: string, actor: string, details: string|null} */
+    private static function formatHistoryEvent(BookingEvent $event): array
     {
         $oldStart = self::safeValue($event->old_values, 'starts_at');
         $newStart = self::safeValue($event->new_values, 'starts_at');
         $actor = match ($event->actor_type) {
-            'user' => $event->actorUser instanceof User ? $event->actorUser->name : __('Сотрудник'),
-            'client' => $event->actorClient instanceof Client ? $event->actorClient->full_name : __('Клиент'),
+            'user' => $event->actorUser instanceof User ? (string) $event->actorUser->name : __('Сотрудник'),
+            'client' => $event->actorClient instanceof Client ? (string) $event->actorClient->full_name : __('Клиент'),
             default => __('Система'),
         };
-        $values = [
-            self::eventLabel($event),
-            $event->occurred_at->copy()
-                ->setTimezone(self::viewerTimezone())
-                ->format('d.m.Y H:i'),
-            __('Изменил: :actor', ['actor' => $actor]),
-        ];
+        $details = [];
 
         if ($event->event_type === BookingEventType::Rescheduled && $oldStart !== null && $newStart !== null) {
-            $values[] = __('С :old на :new', [
+            $details[] = __('С :old на :new', [
                 'old' => self::humanDateTime($oldStart),
                 'new' => self::humanDateTime($newStart),
             ]);
         }
 
         if ($event->reason !== null) {
-            $values[] = __('Причина: :reason', ['reason' => $event->reason]);
+            $details[] = __('Причина: :reason', ['reason' => $event->reason]);
         }
 
-        return implode(' · ', $values);
+        return [
+            'event' => self::eventLabel($event),
+            'occurred_at' => $event->occurred_at->copy()
+                ->setTimezone(self::viewerTimezone())
+                ->format('d.m.Y H:i'),
+            'actor' => $actor,
+            'details' => $details === [] ? null : implode(' · ', $details),
+        ];
     }
 
     private static function humanDateTime(string $value): string

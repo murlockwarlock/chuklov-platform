@@ -481,6 +481,7 @@ final class ListClientFinance
                 'cash' => 'Cash',
                 'bank_transfer' => 'Bank transfer',
                 'manual_card' => 'Card at the clinic',
+                'barter' => 'Barter',
                 'other' => 'Other',
                 'correction' => 'Payment correction',
                 'fake_gateway_settlement' => 'Test payment',
@@ -491,6 +492,7 @@ final class ListClientFinance
                 'cash' => 'Наличные',
                 'bank_transfer' => 'Перевод',
                 'manual_card' => 'Карта в клинике',
+                'barter' => 'Бартер',
                 'other' => 'Другое',
                 'correction' => 'Исправление оплаты',
                 'fake_gateway_settlement' => 'Тестовая оплата',
@@ -502,6 +504,7 @@ final class ListClientFinance
             'cash',
             'bank_transfer',
             'manual_card',
+            'barter',
             'other',
         ], true)) {
             return [$labels[$method], true];

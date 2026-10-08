@@ -258,6 +258,40 @@ final class CustomizableCopySafetyTest extends TestCase
         self::assertSame($version->getKey(), $rule->fresh()->template_version_id);
     }
 
+    public function test_untouched_booking_request_rules_are_scoped_to_portal_once(): void
+    {
+        [$organization] = $this->organizationFixture();
+        [, , $rule] = $this->legacyBookingTemplate(
+            organization: $organization,
+            templateKey: 'booking-created-crm',
+            ruleKey: 'booking-created-specialist-database',
+            name: 'Новая запись в CRM',
+            subject: 'Новая запись',
+            body: 'Новая запись: {{ client.full_name }}.',
+            variables: ['client.full_name'],
+            event: ScenarioEventType::BookingCreated,
+        );
+        $rule->forceFill([
+            'conditions' => [[
+                'type' => 'booking.status',
+                'operator' => 'equals',
+                'value' => 'requested',
+            ]],
+        ])->save();
+
+        $this->runBookingSourceMigration();
+
+        self::assertSame([
+            ['type' => 'booking.source', 'operator' => 'equals', 'value' => 'portal'],
+            ['type' => 'booking.status', 'operator' => 'equals', 'value' => 'requested'],
+        ], $rule->fresh()->conditions);
+        self::assertSame(2, $rule->fresh()->version);
+
+        $this->runBookingSourceMigration();
+
+        self::assertSame(2, $rule->fresh()->version);
+    }
+
     public function test_custom_template_body_skips_legacy_upgrade(): void
     {
         [$organization, $admin] = $this->organizationFixture();
@@ -452,6 +486,12 @@ final class CustomizableCopySafetyTest extends TestCase
     private function runBookingCopyMigration(): void
     {
         $migration = require database_path('migrations/2026_09_13_100000_upgrade_untouched_booking_notification_defaults.php');
+        $migration->up();
+    }
+
+    private function runBookingSourceMigration(): void
+    {
+        $migration = require database_path('migrations/2026_10_08_100000_scope_booking_created_notifications_to_portal.php');
         $migration->up();
     }
 }

@@ -18,6 +18,7 @@ type CrmFixture = {
     attachmentFilename: string;
     workingLocationName: string;
     bookingStartsAt: string;
+    pastBookingDate: string;
     financeBookingId: number | null;
     partnerProfileId: number | null;
 };
@@ -39,7 +40,7 @@ function validPdfBuffer(): Buffer {
     ].join('\n'));
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -119,6 +120,37 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             ->value('integer_value') ?? 0);
         $minimumBookingStart = \\Carbon\\CarbonImmutable::now($organizationTimezone)->addMinutes($leadTimeMinutes + 60);
         $bookingStartsAt = $minimumBookingStart->startOfDay()->addDay()->setTime(9, 0);
+        $pastBookingDate = \\Carbon\\CarbonImmutable::now($organizationTimezone)->subDay()->toDateString();
+        if (getenv('PLAYWRIGHT_MESSAGES_FLOW') === '1') {
+            config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
+            $recordMessage = app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class);
+            foreach ([[$client, 65], [$partner, 40]] as [$messageClient, $messageCount]) {
+                $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::factory()
+                    ->forOrganization($organization)
+                    ->forClient($messageClient)
+                    ->create([
+                        'conversation_type' => \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationType::ClientCompanion,
+                    ]);
+                $historyNow = \\Carbon\\CarbonImmutable::now('UTC');
+                for ($index = 1; $index <= $messageCount; $index++) {
+                    $recordMessage->handle(
+                        organizationId: $organization->getKey(),
+                        client: $messageClient,
+                        conversation: $conversation,
+                        channel: 'portal',
+                        direction: $index % 2 === 0
+                            ? \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound
+                            : \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Inbound,
+                        authorType: $index % 2 === 0
+                            ? \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Staff
+                            : \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Client,
+                        body: 'CRM long history '.$messageClient->getKey().' message '.$index,
+                        authorUserId: $index % 2 === 0 ? $admin->getKey() : null,
+                        occurredAt: $historyNow->subMinutes($messageCount - $index),
+                    );
+                }
+            }
+        }
         $financeBooking = null;
         $partnerProfileId = null;
         if (getenv('PLAYWRIGHT_FINANCE_FLOW') === '1') {
@@ -385,6 +417,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'attachmentFilename' => $attachmentFilename,
             'workingLocationName' => $workingLocation->name,
             'bookingStartsAt' => $bookingStartsAt->format('Y-m-d').'T'.$bookingStartsAt->format('H:i'),
+            'pastBookingDate' => $pastBookingDate,
             'financeBookingId' => $financeBooking?->getKey(),
             'partnerProfileId' => $partnerProfileId,
         ], JSON_THROW_ON_ERROR);
@@ -407,6 +440,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
                 PLAYWRIGHT_FINANCE_FLOW: options.financeFlow ? '1' : '0',
                 PLAYWRIGHT_PAYOUT_FLOW: options.payoutFlow ? '1' : '0',
+                PLAYWRIGHT_MESSAGES_FLOW: options.messagesFlow ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -416,6 +450,49 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
     }
 
     return JSON.parse(output.trim().split('\n').at(-1) ?? '') as CrmFixture;
+}
+
+function appendCrmMessage(clientId: number, body: string): void {
+    const encodedBody = Buffer.from(body).toString('base64');
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey(${clientId})
+            ->firstOrFail();
+        $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->where('conversation_type', \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationType::ClientCompanion)
+            ->firstOrFail();
+        app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+            organizationId: $organization->getKey(),
+            client: $client,
+            conversation: $conversation,
+            channel: 'portal',
+            direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Inbound,
+            authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Client,
+            body: base64_decode('${encodedBody}', true),
+        );
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-message-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            XDG_CONFIG_HOME: psyshConfigDirectory,
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
 }
 
 async function login(page: Page, fixture: CrmFixture): Promise<void> {
@@ -601,6 +678,122 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await writeClient.click();
     await expect(page).toHaveURL(new RegExp(`/admin/messages\\?client=${fixture.clientId}$`));
     await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
+});
+
+test('staff can create a backdated booking from the ordinary availability form', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto('/admin/bookings/create');
+    await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
+
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
+    await page.getByText(fixture.specialistName, { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
+    await page.getByRole('option', { name: fixture.serviceName, exact: true }).click();
+    await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
+    await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
+
+    await page.getByLabel('Формат визита').selectOption('office');
+    const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
+    await workingLocation.click();
+    await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.workingLocationName }).first().click();
+    const dateInput = page.getByLabel('Дата');
+    await dateInput.fill(fixture.pastBookingDate);
+    await dateInput.blur();
+
+    const bookingTime = page.getByRole('combobox', { name: /^Доступное время/ }).first();
+    await bookingTime.click();
+    const availableTime = page.locator('.fi-select-input-option:visible').filter({ hasText: '10:00–11:00' }).first();
+    await expect(availableTime).toBeVisible({ timeout: 15_000 });
+    await availableTime.click();
+    await expect(page.getByText(/Вы создаёте запись задним числом:/)).toBeVisible();
+    await expect(page.getByLabel('Подтверждаю создание записи задним числом', { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/admin\/bookings\/create$/);
+
+    const saveButton = page.getByRole('button', { name: 'Сохранить', exact: true });
+    await saveButton.click();
+    await expect(page.getByText('Подтвердите создание записи задним числом.', { exact: true })).toBeVisible();
+    await page.getByLabel('Подтверждаю создание записи задним числом', { exact: true }).check();
+    await saveButton.click();
+
+    await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
+    await expect(page.getByText('Ожидает подтверждения', { exact: true })).toBeVisible();
+});
+
+test('staff Messages opens at the latest history and preserves intentional scrolling', async ({ page }) => {
+    test.setTimeout(90_000);
+
+    const fixture = createCrmFixture({ messagesFlow: true });
+
+    await login(page, fixture);
+    await page.goto(`/admin/messages?client=${fixture.clientId}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
+
+    const history = page.getByTestId('messages-history');
+    const isAtBottom = async (): Promise<boolean> => history.evaluate((element) => {
+        const container = element as HTMLElement;
+
+        return container.scrollHeight - container.scrollTop - container.clientHeight <= 2;
+    });
+    const selectDialog = async (clientId: number): Promise<void> => {
+        const dialogButton = page.locator(`[wire\\:key="dialog-${clientId}"]`).getByRole('button');
+        if (! await dialogButton.isVisible()) {
+            await page.getByRole('button', { name: 'К списку диалогов', exact: true }).click();
+        }
+        await expect(dialogButton).toBeVisible();
+        await dialogButton.click();
+    };
+
+    await expect.poll(isAtBottom).toBe(true);
+    await expect(history.getByText(`CRM long history ${fixture.clientId} message 65`, { exact: true })).toBeVisible();
+
+    await selectDialog(fixture.partnerId);
+    await expect(history.getByText(`CRM long history ${fixture.partnerId} message 40`, { exact: true })).toBeVisible();
+    await expect.poll(isAtBottom).toBe(true);
+
+    await page.getByRole('button', { name: 'Подключиться к диалогу', exact: true }).click();
+    await expect(page.locator('#messages-composer-form')).toBeVisible();
+    await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill('Новое CRM сообщение');
+    await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(history.getByText('Новое CRM сообщение', { exact: true })).toBeVisible();
+    await expect.poll(isAtBottom).toBe(true);
+
+    await selectDialog(fixture.clientId);
+    await expect(history.getByText(`CRM long history ${fixture.clientId} message 65`, { exact: true })).toBeVisible();
+    await expect.poll(isAtBottom).toBe(true);
+
+    const existingMessage = history.getByText(`CRM long history ${fixture.clientId} message 36`, { exact: true });
+    await history.evaluate((element) => {
+        (element as HTMLElement).scrollTop = 120;
+    });
+    const existingMessageTop = await existingMessage.evaluate((element) => element.getBoundingClientRect().top);
+    await page.getByTestId('messages-load-older').dispatchEvent('click');
+    await expect(history.getByText(`CRM long history ${fixture.clientId} message 6`, { exact: true })).toHaveCount(1);
+    const existingMessageTopAfterLoad = await existingMessage.evaluate((element) => element.getBoundingClientRect().top);
+    expect(Math.abs(existingMessageTopAfterLoad - existingMessageTop)).toBeLessThan(2);
+
+    await history.evaluate((element) => {
+        const container = element as HTMLElement;
+        container.scrollTop = container.scrollHeight;
+    });
+    await expect.poll(isAtBottom).toBe(true);
+    appendCrmMessage(fixture.clientId, 'Сообщение из poll у нижней границы');
+    await expect(history.getByText('Сообщение из poll у нижней границы', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect.poll(isAtBottom, { timeout: 15_000 }).toBe(true);
+
+    await history.evaluate((element) => {
+        (element as HTMLElement).scrollTop = 120;
+    });
+    const scrollTopBeforePoll = await history.evaluate((element) => (element as HTMLElement).scrollTop);
+    appendCrmMessage(fixture.clientId, 'Сообщение из poll при чтении истории');
+    await expect(history.getByText('Сообщение из poll при чтении истории', { exact: true })).toBeVisible({ timeout: 15_000 });
+    const scrollTopAfterPoll = await history.evaluate((element) => (element as HTMLElement).scrollTop);
+    expect(Math.abs(scrollTopAfterPoll - scrollTopBeforePoll)).toBeLessThan(5);
 });
 
 test('staff can create a new client inline while creating a booking', async ({ page }) => {
@@ -886,15 +1079,20 @@ test('staff can complete a visit and record a manual payment through the normal 
     await recordPaymentButton.click();
     const paymentDialog = page.locator('.fi-modal-window:visible').last();
     await expect(paymentDialog).toBeVisible();
-    await expect(paymentDialog.getByRole('textbox', { name: /^Сумма оплаты/ })).toHaveValue('100.00');
+    const paymentAmount = paymentDialog.getByRole('textbox', { name: /^Сумма оплаты/ });
+    await expect(paymentAmount).toHaveValue('100.00');
+    await paymentAmount.fill('25.00');
     await paymentDialog.getByRole('combobox', { name: /^Способ оплаты/ }).selectOption('cash');
     await paymentDialog.getByRole('button', { name: 'Записать оплату', exact: true }).click();
     await expect(page.getByText('Оплата записана. Остаток обновлён.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Оплачено частично', { exact: true })).toBeVisible();
+    await expect(page.getByText('25.00 USD', { exact: true })).toBeVisible();
+    await expect(page.getByText('75.00 USD', { exact: true })).toBeVisible();
 
     await page.goto('/admin/financial-obligations');
     await expect(page.getByRole('heading', { name: 'Оплаты', exact: true })).toBeVisible();
     await searchTableFor(page, fixture.clientName);
-    await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toContainText('Оплачено');
+    await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toContainText('Оплачено частично');
 });
 
 test('staff can reject, approve, and mark a partner payout as paid from CRM', async ({ page }) => {

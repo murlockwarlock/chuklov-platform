@@ -37,6 +37,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Support\SupportedLocale;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Textarea;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -204,6 +205,74 @@ final class FinanceCrmUxTest extends TestCase
         self::assertSame(2500, $payment->payment_amount_minor);
         self::assertSame('Оплата в клинике', $payment->note);
         self::assertSame('2026-08-21 07:00:00', $payment->occurred_at->utc()->format('Y-m-d H:i:s'));
+    }
+
+    public function test_finance_detail_refreshes_reconciliation_after_manual_payment(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(ViewFinancialObligation::class, ['record' => $obligation->getRouteKey()])
+            ->assertSee('К оплате')
+            ->mountAction('recordPayment')
+            ->setActionData([
+                'amount' => '25.00',
+                'payment_method' => 'cash',
+                'occurred_at' => '2026-08-21 12:00',
+                'note' => 'Оплата в клинике',
+                'idempotency_key' => 'detail-refresh-payment',
+            ])
+            ->callMountedAction()
+            ->assertNotified('Оплата записана. Остаток обновлён.')
+            ->assertSee('Оплачено частично')
+            ->assertSee('25.00 USD')
+            ->assertSee('75.00 USD');
+    }
+
+    public function test_barter_payment_form_requires_description_and_history_presents_it(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $form = Livewire::actingAs($admin)
+            ->test(ListFinancialObligations::class)
+            ->mountTableAction('recordPayment', $obligation)
+            ->setTableActionData(['payment_method' => 'barter'])
+            ->assertFormFieldExists('note', function (Textarea $field): bool {
+                return $field->getLabel() === 'Что получено по бартеру'
+                    && $field->getPlaceholder() === 'Например: рекламная интеграция, фотосъёмка, услуга специалиста.'
+                    && $field->isRequired();
+            });
+
+        $form
+            ->callMountedTableAction()
+            ->assertHasTableActionErrors(['note']);
+
+        $submitted = Livewire::actingAs($admin)
+            ->test(ListFinancialObligations::class)
+            ->mountTableAction('recordPayment', $obligation)
+            ->setTableActionData([
+                'amount' => '20.00',
+                'payment_method' => 'barter',
+                'occurred_at' => '2026-08-21 12:00',
+                'note' => 'Рекламная интеграция',
+                'idempotency_key' => 'crm-ux-barter-one',
+            ])
+            ->callMountedTableAction();
+
+        $submitted->assertSuccessful();
+        $payment = FinancialLedgerEntry::query()->where('obligation_id', $obligation->getKey())->sole();
+
+        $history = Livewire::actingAs($admin)->test(FinancialPaymentsRelationManager::class, [
+            'ownerRecord' => $obligation,
+            'pageClass' => ViewFinancialObligation::class,
+        ]);
+
+        $history
+            ->loadTable()
+            ->assertTableColumnStateSet('payment_method_summary', 'Бартер', $payment)
+            ->assertTableColumnStateSet('note', 'Рекламная интеграция', $payment);
     }
 
     public function test_multi_currency_payment_default_uses_settlement_amount_not_display_amount(): void

@@ -272,6 +272,7 @@ final class Messages extends LocalizedPage
         $this->showClientInfo = false;
         $this->resetHistory();
         $this->resetComposer();
+        $this->dispatch('messages-history-selected');
     }
 
     public function openClientInfo(): void
@@ -293,6 +294,7 @@ final class Messages extends LocalizedPage
     public function refreshWorkspace(): void
     {
         $this->syncHistory();
+        $this->dispatch('messages-history-refreshed');
     }
 
     public function loadOlderMessages(): void
@@ -314,6 +316,7 @@ final class Messages extends LocalizedPage
         $this->historyMessages = $this->mergeMessages($this->historyMessages, $history['messages']);
         $this->historyHasLoadedOlder = (bool) $history['hasOlder'];
         $this->historyState = $this->historyMetadata($history);
+        $this->dispatch('messages-history-older-loaded');
     }
 
     public function sendMessage(): void
@@ -340,6 +343,7 @@ final class Messages extends LocalizedPage
         $channel = app(ReplyToCompanion::class)->handle($actor, $client, $body, $attachmentIds);
         $this->resetComposer();
         $this->syncHistory();
+        $this->dispatch('messages-history-message-sent');
 
         if ($channel === 'telegram') {
             Notification::make()
@@ -366,6 +370,7 @@ final class Messages extends LocalizedPage
 
         app(ResumeCompanionAi::class)->handle($actor, $client);
         $this->syncHistory();
+        $this->dispatch('messages-history-refreshed');
     }
 
     public function takeOver(): void
@@ -376,6 +381,7 @@ final class Messages extends LocalizedPage
 
         app(TakeOverCompanionConversation::class)->handle($actor, $client);
         $this->syncHistory();
+        $this->dispatch('messages-history-refreshed');
     }
 
     public function restoreLegacyAi(): void
@@ -386,6 +392,7 @@ final class Messages extends LocalizedPage
 
         app(RestoreLegacyCompanionAi::class)->handle($actor, $client);
         $this->syncHistory();
+        $this->dispatch('messages-history-refreshed');
     }
 
     /** @return array<string, mixed> */

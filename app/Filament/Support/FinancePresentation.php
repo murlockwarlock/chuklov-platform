@@ -103,6 +103,17 @@ final class FinancePresentation
         return $summary;
     }
 
+    public function forget(FinancialObligation $obligation, ?Booking $booking = null): void
+    {
+        if (self::$reconciliationCache !== null) {
+            unset(self::$reconciliationCache[$obligation]);
+        }
+
+        if ($booking instanceof Booking && self::$bookingSummaryCache !== null) {
+            unset(self::$bookingSummaryCache[$booking]);
+        }
+    }
+
     public function canRecordPayment(FinancialObligation $record): bool
     {
         $actor = auth()->user();
@@ -420,6 +431,7 @@ final class FinancePresentation
                 'cash' => __('Наличные'),
                 'bank_transfer' => __('Банковский перевод'),
                 'manual_card' => __('Карта в клинике'),
+                'barter' => __('Бартер'),
                 'other' => __('Другое'),
                 null => __('Оплата'),
                 default => __('Способ оплаты недоступен'),

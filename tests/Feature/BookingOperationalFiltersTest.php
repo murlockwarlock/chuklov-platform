@@ -184,6 +184,45 @@ final class BookingOperationalFiltersTest extends TestCase
             ->assertCanNotSeeTableRecords([$excluded]);
     }
 
+    public function test_list_mode_limits_records_to_the_selected_week_and_refreshes_after_navigation(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture('UTC', 'Asia/Almaty');
+        $selectedWeekBooking = $this->createBooking(
+            $organization,
+            $client,
+            $specialist,
+            $service,
+            CarbonImmutable::create(2026, 10, 5, 5, 0, 0, 'UTC'),
+        );
+        $selectedWeekEndBooking = $this->createBooking(
+            $organization,
+            $client,
+            $specialist,
+            $service,
+            CarbonImmutable::create(2026, 10, 11, 5, 0, 0, 'UTC'),
+        );
+        $nextWeekBooking = $this->createBooking(
+            $organization,
+            $client,
+            $specialist,
+            $service,
+            CarbonImmutable::create(2026, 10, 12, 5, 0, 0, 'UTC'),
+        );
+
+        $component = Livewire::withQueryParams([
+            'view' => 'list',
+            'week' => '2026-10-05',
+            'specialist_id' => $specialist->getKey(),
+        ])->actingAs($admin)->test(ListBookings::class);
+
+        $component
+            ->assertCanSeeTableRecords([$selectedWeekBooking, $selectedWeekEndBooking])
+            ->assertCanNotSeeTableRecords([$nextWeekBooking])
+            ->call('nextWeek')
+            ->assertCanSeeTableRecords([$nextWeekBooking])
+            ->assertCanNotSeeTableRecords([$selectedWeekBooking, $selectedWeekEndBooking]);
+    }
+
     public function test_booking_filters_and_relationship_selectors_are_organization_scoped_and_bounded(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();

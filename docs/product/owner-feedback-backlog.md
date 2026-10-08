@@ -402,9 +402,9 @@ Current known methods include money payment methods and `Другое`.
 
 Owner questions introduce explicit barter semantics.
 
-Status: `NEEDS_OWNER_DECISION`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE` for Barter
 
-Potential desired methods:
+Implemented manual methods:
 
 - cash;
 - bank transfer / cashless;
@@ -412,14 +412,15 @@ Potential desired methods:
 - barter;
 - mixed payment (represented as multiple ledger entries, not one ambiguous status).
 
-Recommended model if owner accepts barter:
+Implemented barter semantics:
 
 - add `Бартер` as an explicit payment method;
-- require a note describing consideration received;
+- require a trimmed, non-empty description of what was received in exchange, stored under the existing 2000-character note limit;
+- value the barter in an existing payment currency and reduce the existing `FinancialObligation` balance;
 - mixed money + barter = separate append-only entries against the same obligation;
 - payment status remains derived from the obligation balance.
 
-Do not implement barter from the question alone until owner explicitly accepts it as a real accounting method.
+The CRM implementation uses the existing manual-payment ledger, reconciliation, idempotency, audit, and correction paths. No separate barter balance, obligation, payment status, or ledger is introduced.
 
 ## 9.5 Ordinary partial deposit
 

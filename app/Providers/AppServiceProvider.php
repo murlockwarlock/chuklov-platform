@@ -70,6 +70,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
 use App\Modules\Scenarios\Application\BookingNextBookingConditionEvaluator;
+use App\Modules\Scenarios\Application\BookingSourceConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingStatusConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientLanguageConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientMarketingConsentConditionEvaluator;
@@ -177,6 +178,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(
             ConditionEvaluatorRegistry::class,
             fn (): ConditionEvaluatorRegistry => new ConditionEvaluatorRegistry([
+                new BookingSourceConditionEvaluator,
                 new BookingStatusConditionEvaluator,
                 app(BookingNextBookingConditionEvaluator::class),
                 new ClientLanguageConditionEvaluator,
