@@ -145,8 +145,8 @@ final class PaymentFoundationPostgresTest extends TestCase
             $obligation->getKey(),
         );
 
-        self::assertSame('barter', DB::table('financial_ledger_entries')->whereKey($entry->getKey())->value('payment_method'));
-        self::assertSame('Рекламная интеграция', DB::table('financial_ledger_entries')->whereKey($entry->getKey())->value('note'));
+        self::assertSame('barter', DB::table('financial_ledger_entries')->where('id', $entry->getKey())->value('payment_method'));
+        self::assertSame('Рекламная интеграция', DB::table('financial_ledger_entries')->where('id', $entry->getKey())->value('note'));
         self::assertSame(0, $reconciliation->outstanding->minorUnits());
         self::assertSame('settled', $reconciliation->status->value);
     }
