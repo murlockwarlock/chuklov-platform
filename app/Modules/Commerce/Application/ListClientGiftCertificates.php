@@ -5,6 +5,7 @@ namespace App\Modules\Commerce\Application;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Commerce\Domain\Enums\GiftCertificateMovementType;
 use App\Modules\Commerce\Domain\Models\GiftCertificate;
+use App\Modules\Commerce\Domain\Models\GiftCertificateClaim;
 use App\Modules\Commerce\Domain\Models\GiftCertificateMovement;
 use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use Carbon\CarbonImmutable;
@@ -27,6 +28,7 @@ final class ListClientGiftCertificates
             ->where('current_holder_client_id', $client->getKey())
             ->with([
                 'purchaser:id,organization_id,full_name',
+                'pendingClaim:id,organization_id,certificate_id,status',
                 'movements' => fn ($query) => $query->orderBy('occurred_at')->orderBy('id'),
             ])
             ->orderByDesc('issued_at')
@@ -48,18 +50,23 @@ final class ListClientGiftCertificates
             }
 
             $issuedAt = $certificate->issued_at;
+            $pending = $certificate->pendingClaim;
+            $status = $pending instanceof GiftCertificateClaim
+                ? 'pending'
+                : ($balance->isPositive() ? 'available' : 'spent');
             $result[] = [
                 'id' => (int) $certificate->getKey(),
                 'originalAmountMinor' => (int) $certificate->original_amount_minor,
                 'balanceMinor' => $balance->minorUnits(),
                 'currency' => $certificate->currency->value,
-                'status' => $balance->isPositive() ? 'available' : 'spent',
-                'statusLabel' => $this->statusLabel($balance->isPositive(), $locale),
+                'status' => $status,
+                'statusLabel' => $this->statusLabel($status, $locale),
                 'purchaserName' => $certificate->purchaser?->full_name,
                 'issuedAt' => $issuedAt instanceof \DateTimeInterface
                     ? CarbonImmutable::instance($issuedAt)->setTimezone($client->timezone)->format('d.m.Y H:i')
                     : '—',
                 'transferUrl' => route('portal.gift-certificates.transfer', $certificate->getKey()),
+                'cancelTransferUrl' => route('portal.gift-certificates.transfer.cancel', $certificate->getKey()),
                 'history' => $certificate->movements
                     ->map(fn (GiftCertificateMovement $movement): array => [
                         'type' => $movement->movement_type->value,
@@ -78,11 +85,13 @@ final class ListClientGiftCertificates
         return $result;
     }
 
-    private function statusLabel(bool $available, ?string $locale): string
+    private function statusLabel(string $status, ?string $locale): string
     {
-        return $available
-            ? ($locale === 'en' ? 'Available' : 'Доступен')
-            : ($locale === 'en' ? 'Fully used' : 'Использован');
+        return match ($status) {
+            'pending' => $locale === 'en' ? 'Waiting for recipient' : 'Ожидает получателя',
+            'available' => $locale === 'en' ? 'Available' : 'Доступен',
+            default => $locale === 'en' ? 'Fully used' : 'Использован',
+        };
     }
 
     private function movementLabel(mixed $type, ?string $locale): string

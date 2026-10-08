@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Carbon;
 
 /**
@@ -68,6 +69,12 @@ class GiftCertificate extends Model
     public function claims(): HasMany
     {
         return $this->hasMany(GiftCertificateClaim::class, 'certificate_id');
+    }
+
+    /** @return HasOne<GiftCertificateClaim, $this> */
+    public function pendingClaim(): HasOne
+    {
+        return $this->hasOne(GiftCertificateClaim::class, 'certificate_id')->where('status', 'pending');
     }
 
     /** @return HasMany<GiftCertificateMovement, $this> */

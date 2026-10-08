@@ -5,6 +5,7 @@ namespace App\Modules\Commerce\Application;
 use App\Models\User;
 use App\Modules\Commerce\Domain\Enums\GiftCertificateMovementType;
 use App\Modules\Commerce\Domain\Models\GiftCertificate;
+use App\Modules\Commerce\Domain\Models\GiftCertificateClaim;
 use App\Modules\Commerce\Domain\Models\GiftCertificateRedemption;
 use App\Modules\Commerce\Domain\Models\PurchaseItem;
 use App\Modules\Finance\Application\AppendFinancialLedgerEntry;
@@ -119,6 +120,16 @@ final class ApplyGiftCertificateToObligation
                 ->first();
             if (! $lockedCertificate instanceof GiftCertificate) {
                 throw new AuthorizationException('The gift certificate is outside the current organization.');
+            }
+
+            if (GiftCertificateClaim::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('certificate_id', $lockedCertificate->getKey())
+                ->where('status', 'pending')
+                ->exists()) {
+                throw ValidationException::withMessages([
+                    'certificate' => 'Сертификат ожидает получателя. Сначала отмените передачу.',
+                ]);
             }
 
             $beneficiary = Client::query()

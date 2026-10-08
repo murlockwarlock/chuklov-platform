@@ -81,7 +81,7 @@ class TelegramAuthenticationController extends Controller
 
         $claimToken = $request->session()->pull('gift_certificate_claim_token');
         if (is_string($claimToken) && preg_match('/^[a-f0-9]{64}$/', $claimToken) === 1) {
-            return redirect()->to(route('gift-certificates.claim', ['token' => $claimToken]));
+            return redirect()->to(route('gift-certificates.claim').'#token='.rawurlencode($claimToken));
         }
 
         return redirect()->to($destination);

@@ -19,11 +19,12 @@ type Certificate = {
     originalAmountMinor: number;
     balanceMinor: number;
     currency: string;
-    status: 'available' | 'spent';
+    status: 'available' | 'pending' | 'spent';
     statusLabel: string;
     purchaserName: string | null;
     issuedAt: string;
     transferUrl: string;
+    cancelTransferUrl: string;
     applyUrls: Record<string, string>;
     history: Movement[];
 };
@@ -124,6 +125,10 @@ function applyCertificate(certificate: Certificate, obligation: Obligation): voi
 
 function createTransfer(certificate: Certificate): void {
     router.post(certificate.transferUrl, {}, { preserveScroll: true });
+}
+
+function cancelTransfer(certificate: Certificate): void {
+    router.post(certificate.cancelTransferUrl, {}, { preserveScroll: true });
 }
 
 async function copyTransferUrl(): Promise<void> {
@@ -232,12 +237,20 @@ async function copyTransferUrl(): Promise<void> {
           </dl>
 
           <button
-            v-if="certificate.status === 'available'"
+            v-if="certificate.status === 'available' || certificate.status === 'pending'"
             type="button"
             class="portal-button portal-button--secondary"
             @click="createTransfer(certificate)"
           >
-            {{ t('giftCertificates.gift') }}
+            {{ certificate.status === 'pending' ? t('giftCertificates.replaceLink') : t('giftCertificates.gift') }}
+          </button>
+          <button
+            v-if="certificate.status === 'pending'"
+            type="button"
+            class="portal-button portal-button--secondary"
+            @click="cancelTransfer(certificate)"
+          >
+            {{ t('giftCertificates.cancelTransfer') }}
           </button>
 
           <div

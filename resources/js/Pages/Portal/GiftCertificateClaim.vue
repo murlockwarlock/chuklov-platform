@@ -1,20 +1,25 @@
 <script setup lang="ts">
 import { Head, router, usePage } from '@inertiajs/vue3';
+import { onMounted, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
+type Certificate = {
+    originalAmountMinor: number;
+    balanceMinor: number;
+    currency: string;
+    purchaserName: string | null;
+};
+
 type PageProps = {
-    token: string;
+    token: string | null;
     authenticated: boolean;
-    certificate: {
-        originalAmountMinor: number;
-        currency: string;
-        purchaserName: string | null;
-    };
+    certificate: Certificate | null;
     portal: PortalShell;
     urls: {
         home: string;
+        preview: string;
         claim: string;
     };
     errors?: Record<string, string | string[]>;
@@ -23,6 +28,7 @@ type PageProps = {
 const props = defineProps<PageProps>();
 const page = usePage<PageProps>();
 const { t, locale } = usePortalLocale();
+const loading = ref(true);
 
 function formatMoney(minor: number, currency: string): string {
     const digits = currency === 'JPY' ? 0 : 2;
@@ -36,8 +42,34 @@ function formatMoney(minor: number, currency: string): string {
 }
 
 function claim(): void {
-    router.post(props.urls.claim, {}, { preserveScroll: true });
+    if (props.token === null) {
+        return;
+    }
+
+    router.post(props.urls.claim, { token: props.token }, { preserveScroll: true });
 }
+
+function fragmentToken(): string | null {
+    const match = window.location.hash.match(/^#token=([a-f0-9]{64})$/);
+
+    return match?.[1] ?? null;
+}
+
+onMounted(() => {
+    const token = fragmentToken();
+    if (token === null) {
+        loading.value = false;
+
+        return;
+    }
+
+    router.post(props.urls.preview, { token }, {
+        preserveScroll: true,
+        onFinish: () => {
+            loading.value = false;
+        },
+    });
+});
 </script>
 
 <template>
@@ -52,37 +84,55 @@ function claim(): void {
         <h1 class="portal-heading portal-heading--section">
           {{ t('giftCertificates.claimTitle') }}
         </h1>
-        <p class="portal-text">
-          {{ t('giftCertificates.claimDescription', { amount: formatMoney(props.certificate.originalAmountMinor, props.certificate.currency) }) }}
-        </p>
         <p
-          v-if="props.certificate.purchaserName"
-          class="portal-muted"
+          v-if="loading"
+          class="portal-text"
         >
-          {{ t('giftCertificates.from') }}: {{ props.certificate.purchaserName }}
+          {{ t('giftCertificates.loading') }}
         </p>
+        <template v-else-if="props.certificate">
+          <p class="portal-text">
+            {{ t('giftCertificates.claimDescription', { amount: formatMoney(props.certificate.balanceMinor, props.certificate.currency) }) }}
+          </p>
+          <p class="portal-muted">
+            {{ t('giftCertificates.nominal') }}: {{ formatMoney(props.certificate.originalAmountMinor, props.certificate.currency) }}
+          </p>
+          <p
+            v-if="props.certificate.purchaserName"
+            class="portal-muted"
+          >
+            {{ t('giftCertificates.from') }}: {{ props.certificate.purchaserName }}
+          </p>
+          <div
+            v-if="page.props.errors?.token"
+            class="portal-notice portal-notice--error"
+            role="alert"
+          >
+            {{ Array.isArray(page.props.errors.token) ? page.props.errors.token[0] : page.props.errors.token }}
+          </div>
+          <button
+            v-if="props.authenticated"
+            type="button"
+            class="portal-button portal-button--primary"
+            @click="claim"
+          >
+            {{ t('giftCertificates.receive') }}
+          </button>
+          <a
+            v-else
+            :href="props.urls.home"
+            class="portal-button portal-button--primary text-center"
+          >
+            {{ t('giftCertificates.signInToReceive') }}
+          </a>
+        </template>
         <div
-          v-if="page.props.errors?.token"
+          v-else
           class="portal-notice portal-notice--error"
           role="alert"
         >
-          {{ Array.isArray(page.props.errors.token) ? page.props.errors.token[0] : page.props.errors.token }}
+          {{ t('giftCertificates.invalidLink') }}
         </div>
-        <button
-          v-if="props.authenticated"
-          type="button"
-          class="portal-button portal-button--primary"
-          @click="claim"
-        >
-          {{ t('giftCertificates.receive') }}
-        </button>
-        <a
-          v-else
-          :href="props.urls.home"
-          class="portal-button portal-button--primary text-center"
-        >
-          {{ t('giftCertificates.signInToReceive') }}
-        </a>
       </div>
     </section>
   </AppShell>

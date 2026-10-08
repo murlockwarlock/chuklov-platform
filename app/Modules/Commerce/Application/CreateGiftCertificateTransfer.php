@@ -42,21 +42,26 @@ final class CreateGiftCertificateTransfer
                 throw new AuthorizationException('The gift certificate is not owned by this client.');
             }
 
+            $pendingClaims = GiftCertificateClaim::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('certificate_id', $locked->getKey())
+                ->where('status', 'pending')
+                ->lockForUpdate()
+                ->get();
+
             if (! $this->balances->balance($locked, true)->isPositive()) {
                 throw ValidationException::withMessages([
                     'certificate' => 'Сертификат с нулевым остатком нельзя передать.',
                 ]);
             }
 
-            GiftCertificateClaim::query()
-                ->where('organization_id', $organization->getKey())
-                ->where('certificate_id', $locked->getKey())
-                ->where('status', 'pending')
-                ->update([
+            foreach ($pendingClaims as $pendingClaim) {
+                $pendingClaim->forceFill([
                     'status' => 'revoked',
                     'revoked_at' => now(),
                     'updated_at' => now(),
-                ]);
+                ])->save();
+            }
 
             $rawToken = bin2hex(random_bytes(32));
             $claim = new GiftCertificateClaim;
@@ -99,7 +104,7 @@ final class CreateGiftCertificateTransfer
 
             return new GiftCertificateTransfer(
                 claim: $claim->refresh(),
-                url: route('gift-certificates.claim', ['token' => $rawToken]),
+                url: route('gift-certificates.claim').'#token='.rawurlencode($rawToken),
                 rawToken: $rawToken,
             );
         });

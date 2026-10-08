@@ -5,8 +5,10 @@ namespace App\Http\Controllers\Portal;
 use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Commerce\Application\ClaimGiftCertificate;
+use App\Modules\Commerce\Application\GiftCertificateBalanceProjection;
 use App\Modules\Commerce\Domain\Models\GiftCertificate;
 use App\Modules\Commerce\Domain\Models\GiftCertificateClaim;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -17,45 +19,36 @@ use LogicException;
 
 final class GiftCertificateClaimController extends Controller
 {
-    public function show(
+    public function __construct(
+        private readonly GiftCertificateBalanceProjection $balances,
+    ) {}
+
+    public function show(ClientPortalContext $clientContext): Response
+    {
+        return $this->render(null, $this->clientOrNull($clientContext) !== null, null);
+    }
+
+    public function preview(
         Request $request,
         OrganizationContext $organizationContext,
         ClientPortalContext $clientContext,
-        string $token,
     ): Response {
+        $token = $this->validatedToken($request);
         $claim = $this->findClaim($organizationContext, $token);
-        $certificate = $claim->certificate;
-        if (! $certificate instanceof GiftCertificate) {
-            abort(404);
-        }
-        $client = null;
-        try {
-            $client = $clientContext->client();
-        } catch (LogicException) {
+        $client = $this->clientOrNull($clientContext);
+        if ($client === null) {
             $request->session()->put('gift_certificate_claim_token', $token);
         }
 
-        return Inertia::render('Portal/GiftCertificateClaim', [
-            'token' => $token,
-            'authenticated' => $client !== null,
-            'certificate' => [
-                'originalAmountMinor' => (int) $certificate->original_amount_minor,
-                'currency' => $certificate->currency->value,
-                'purchaserName' => $certificate->purchaser?->full_name,
-            ],
-            'urls' => [
-                'home' => route('portal.home'),
-                'claim' => route('gift-certificates.claim', ['token' => $token]),
-            ],
-        ]);
+        return $this->render($token, $client !== null, $claim);
     }
 
     public function claim(
         Request $request,
         ClientPortalContext $clientContext,
         ClaimGiftCertificate $claim,
-        string $token,
     ): RedirectResponse {
+        $token = $this->validatedToken($request);
         try {
             $client = $clientContext->client();
         } catch (LogicException) {
@@ -76,22 +69,76 @@ final class GiftCertificateClaimController extends Controller
                 : 'Сертификат получен.');
     }
 
-    private function findClaim(OrganizationContext $organizationContext, string $token): GiftCertificateClaim
+    private function render(?string $token, bool $authenticated, ?GiftCertificateClaim $claim): Response
     {
-        if (preg_match('/^[a-f0-9]{64}$/', $token) !== 1) {
-            abort(404);
+        $certificate = $claim?->certificate;
+        $certificateData = null;
+        if ($certificate instanceof GiftCertificate) {
+            $balance = $this->balances->balance($certificate);
+            $certificateData = [
+                'originalAmountMinor' => (int) $certificate->original_amount_minor,
+                'balanceMinor' => $balance->minorUnits(),
+                'currency' => $certificate->currency->value,
+                'purchaserName' => $certificate->purchaser?->full_name,
+            ];
         }
 
+        return Inertia::render('Portal/GiftCertificateClaim', [
+            'token' => $token,
+            'authenticated' => $authenticated,
+            'certificate' => $certificateData,
+            'urls' => [
+                'home' => route('portal.home'),
+                'preview' => route('gift-certificates.claim.preview'),
+                'claim' => route('gift-certificates.claim.submit'),
+            ],
+        ]);
+    }
+
+    private function findClaim(OrganizationContext $organizationContext, string $token): GiftCertificateClaim
+    {
         $claim = GiftCertificateClaim::query()
             ->where('organization_id', $organizationContext->id())
             ->where('token_hash', hash('sha256', $token))
             ->where('status', 'pending')
             ->with(['certificate.purchaser'])
             ->first();
-        if (! $claim instanceof GiftCertificateClaim) {
+        $certificate = $claim?->certificate;
+        if (! $claim instanceof GiftCertificateClaim
+            || ! $certificate instanceof GiftCertificate
+            || (int) $certificate->current_holder_client_id !== (int) $claim->initiated_by_client_id
+            || ! $this->balances->balance($certificate)->isPositive()) {
             abort(404);
         }
 
         return $claim;
+    }
+
+    private function validatedToken(Request $request): string
+    {
+        $token = $request->input('token');
+        if (! is_string($token)) {
+            throw ValidationException::withMessages([
+                'token' => 'Ссылка на сертификат недействительна или уже использована.',
+            ]);
+        }
+
+        $token = trim($token);
+        if (preg_match('/^[a-f0-9]{64}$/', $token) !== 1) {
+            throw ValidationException::withMessages([
+                'token' => 'Ссылка на сертификат недействительна или уже использована.',
+            ]);
+        }
+
+        return $token;
+    }
+
+    private function clientOrNull(ClientPortalContext $clientContext): ?Client
+    {
+        try {
+            return $clientContext->client();
+        } catch (LogicException) {
+            return null;
+        }
     }
 }

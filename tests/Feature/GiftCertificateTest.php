@@ -159,20 +159,109 @@ final class GiftCertificateTest extends TestCase
         $certificate = GiftCertificate::query()->sole();
         $recipient = Client::factory()->forOrganization($organization)->create();
         $transfer = app(CreateGiftCertificateTransfer::class)->handle($client, $certificate);
+        $parts = parse_url($transfer->url);
 
-        $this->get(route('gift-certificates.claim', ['token' => $transfer->rawToken]))
+        self::assertArrayHasKey('path', $parts);
+        self::assertSame('/gift-certificates/claim', $parts['path']);
+        self::assertArrayNotHasKey('query', $parts);
+        self::assertSame('token='.$transfer->rawToken, $parts['fragment'] ?? null);
+        self::assertStringNotContainsString($transfer->rawToken, ($parts['path'] ?? '').($parts['query'] ?? ''));
+
+        $this->get(route('gift-certificates.claim'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/GiftCertificateClaim')
+                ->where('certificate', null));
+
+        $this->post(route('gift-certificates.claim.preview'), ['token' => $transfer->rawToken])
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
                 ->component('Portal/GiftCertificateClaim')
                 ->where('authenticated', false)
-                ->where('certificate.originalAmountMinor', 100000));
+                ->where('certificate.originalAmountMinor', 100000)
+                ->where('certificate.balanceMinor', 100000));
 
         self::assertSame($transfer->rawToken, session('gift_certificate_claim_token'));
 
         $this->withSession(['client_portal.client_id' => $recipient->getKey()])
-            ->post(route('gift-certificates.claim.submit', ['token' => $transfer->rawToken]))
+            ->post(route('gift-certificates.claim.submit'), ['token' => $transfer->rawToken])
             ->assertRedirect(route('portal.gift-certificates.index'));
 
+        self::assertSame($recipient->getKey(), $certificate->refresh()->current_holder_client_id);
+    }
+
+    public function test_pending_transfer_reserves_value_until_cancel_and_replacement_invalidates_old_link(): void
+    {
+        [$organization, $admin, $client, $giftService] = $this->fixture();
+        $checkout = $this->checkout($organization, $client, $giftService, 'gift-pending-transfer');
+        $this->settle($organization, $checkout->transaction->provider_reference, 1000.00, 'gift-pending-transfer');
+        $certificate = GiftCertificate::query()->sole();
+        $obligation = $this->bookingObligation($organization, $admin, $client, 300000);
+
+        app(ApplyGiftCertificateToObligation::class)->handle(
+            client: $client,
+            certificate: $certificate,
+            obligationId: $obligation->getKey(),
+            amount: '100.00',
+            currency: 'USD',
+            idempotencyKey: 'gift-pending-before-transfer',
+        );
+        $transfer = app(CreateGiftCertificateTransfer::class)->handle($client, $certificate);
+
+        try {
+            app(ApplyGiftCertificateToObligation::class)->handle(
+                client: $client,
+                certificate: $certificate,
+                obligationId: $obligation->getKey(),
+                amount: '100.00',
+                currency: 'USD',
+                idempotencyKey: 'gift-pending-blocked-redemption',
+            );
+            self::fail('A pending transfer must reserve the certificate value.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('certificate', $exception->errors());
+        }
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.gift-certificates.index'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('certificates.0.status', 'pending')
+                ->where('certificates.0.balanceMinor', 90000));
+
+        $this->post(route('gift-certificates.claim.preview'), ['token' => $transfer->rawToken])
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('certificate.balanceMinor', 90000)
+                ->where('certificate.originalAmountMinor', 100000));
+
+        $this->from(route('portal.gift-certificates.index'))
+            ->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.gift-certificates.transfer.cancel', $certificate->getKey()))
+            ->assertRedirect(route('portal.gift-certificates.index'));
+        self::assertSame('revoked', $transfer->claim->refresh()->status);
+
+        app(ApplyGiftCertificateToObligation::class)->handle(
+            client: $client,
+            certificate: $certificate,
+            obligationId: $obligation->getKey(),
+            amount: '100.00',
+            currency: 'USD',
+            idempotencyKey: 'gift-after-transfer-cancel',
+        );
+
+        $replacement = app(CreateGiftCertificateTransfer::class)->handle($client, $certificate);
+        $secondReplacement = app(CreateGiftCertificateTransfer::class)->handle($client, $certificate);
+        self::assertSame('revoked', $replacement->claim->refresh()->status);
+
+        $recipient = Client::factory()->forOrganization($organization)->create();
+        try {
+            app(ClaimGiftCertificate::class)->handle($recipient, $replacement->rawToken);
+            self::fail('Replacing a transfer must revoke the previous link.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('token', $exception->errors());
+        }
+
+        app(ClaimGiftCertificate::class)->handle($recipient, $secondReplacement->rawToken);
         self::assertSame($recipient->getKey(), $certificate->refresh()->current_holder_client_id);
     }
 

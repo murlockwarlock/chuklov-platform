@@ -12,6 +12,7 @@ use App\Modules\Commerce\Domain\Enums\CommerceFulfillmentStatus;
 use App\Modules\Commerce\Domain\Enums\GiftCertificateMovementType;
 use App\Modules\Commerce\Domain\Enums\PurchaseStatus;
 use App\Modules\Commerce\Domain\Models\GiftCertificate;
+use App\Modules\Commerce\Domain\Models\GiftCertificateClaim;
 use App\Modules\Commerce\Domain\Models\GiftCertificateMovement;
 use App\Modules\Commerce\Domain\Models\GiftCertificateRedemption;
 use App\Modules\Commerce\Domain\Models\Purchase;
@@ -30,6 +31,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
@@ -87,6 +89,28 @@ final class GiftCertificateConcurrencyTest extends TestCase
         self::assertSame(1, GiftCertificateMovement::query()
             ->where('certificate_id', $certificate->getKey())
             ->where('movement_type', GiftCertificateMovementType::Claimed->value)
+            ->count());
+    }
+
+    public function test_postgresql_concurrent_claim_and_transfer_replacement_share_certificate_lock_order(): void
+    {
+        $this->requirePostgres();
+        [$organization, $client, $certificate] = $this->fixture(withObligation: false);
+        $recipient = Client::factory()->forOrganization($organization)->create();
+        $transfer = app(CreateGiftCertificateTransfer::class)->handle($client, $certificate);
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::claimInProcess($organization->getKey(), $recipient->getKey(), $transfer->rawToken),
+            static fn (): string => self::replaceTransferInProcess($organization->getKey(), $client->getKey(), $certificate->getKey()),
+        ]);
+
+        self::assertNotContains('error', $results);
+        self::assertSame(1, count(array_filter($results, static fn (string $result): bool => str_starts_with($result, 'claimed:')))
+            + count(array_filter($results, static fn (string $result): bool => str_starts_with($result, 'replaced:'))));
+        self::assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'validation')));
+        self::assertLessThanOrEqual(1, GiftCertificateClaim::query()
+            ->where('certificate_id', $certificate->getKey())
+            ->where('status', 'pending')
             ->count());
     }
 
@@ -280,6 +304,24 @@ final class GiftCertificateConcurrencyTest extends TestCase
 
             return 'claimed:'.$certificate->getKey();
         } catch (ValidationException) {
+            return 'validation';
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception).':'.$exception->getMessage();
+        }
+    }
+
+    private static function replaceTransferInProcess(int $organizationId, int $clientId, int $certificateId): string
+    {
+        try {
+            $organization = Organization::query()->findOrFail($organizationId);
+            app(OrganizationContext::class)->set($organization);
+            app(CreateGiftCertificateTransfer::class)->handle(
+                Client::query()->findOrFail($clientId),
+                GiftCertificate::query()->findOrFail($certificateId),
+            );
+
+            return 'replaced:'.$certificateId;
+        } catch (ValidationException|AuthorizationException) {
             return 'validation';
         } catch (\Throwable $exception) {
             return 'error:'.get_class($exception).':'.$exception->getMessage();

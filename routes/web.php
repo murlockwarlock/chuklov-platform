@@ -108,11 +108,11 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             ->name('portal.referral');
         Route::get('/', HomeController::class)->name('portal.home');
         Route::get('/portal/services', ServiceIndexController::class)->name('portal.services.index');
-        Route::get('/gift-certificates/claim/{token}', [GiftCertificateClaimController::class, 'show'])
-            ->where('token', '[a-f0-9]{64}')
+        Route::get('/gift-certificates/claim', [GiftCertificateClaimController::class, 'show'])
             ->name('gift-certificates.claim');
-        Route::post('/gift-certificates/claim/{token}', [GiftCertificateClaimController::class, 'claim'])
-            ->where('token', '[a-f0-9]{64}')
+        Route::post('/gift-certificates/claim/preview', [GiftCertificateClaimController::class, 'preview'])
+            ->name('gift-certificates.claim.preview');
+        Route::post('/gift-certificates/claim', [GiftCertificateClaimController::class, 'claim'])
             ->name('gift-certificates.claim.submit');
         Route::get('/portal/b2b', B2bController::class)->name('portal.b2b');
         Route::get('/portal/sections/{section}', SectionController::class)->name('portal.section');
@@ -131,6 +131,9 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/gift-certificates/{certificateId}/transfer', [GiftCertificateController::class, 'transfer'])
                 ->whereNumber('certificateId')
                 ->name('portal.gift-certificates.transfer');
+            Route::post('/portal/gift-certificates/{certificateId}/transfer/cancel', [GiftCertificateController::class, 'cancelTransfer'])
+                ->whereNumber('certificateId')
+                ->name('portal.gift-certificates.transfer.cancel');
             Route::post('/portal/gift-certificates/{certificateId}/apply/{obligationId}', [GiftCertificateController::class, 'apply'])
                 ->whereNumber(['certificateId', 'obligationId'])
                 ->name('portal.gift-certificates.apply');

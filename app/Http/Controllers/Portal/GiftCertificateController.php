@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Portal;
 use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Commerce\Application\ApplyGiftCertificateToObligation;
+use App\Modules\Commerce\Application\CancelGiftCertificateTransfer;
 use App\Modules\Commerce\Application\CreateGiftCertificateTransfer;
 use App\Modules\Commerce\Application\ListClientGiftCertificates;
 use App\Modules\Commerce\Domain\Models\GiftCertificate;
@@ -70,6 +71,21 @@ final class GiftCertificateController extends Controller
         );
 
         return back()->with('gift_certificate_transfer_url', $result->url);
+    }
+
+    public function cancelTransfer(
+        ClientPortalContext $clientContext,
+        CancelGiftCertificateTransfer $cancel,
+        int $certificateId,
+    ): RedirectResponse {
+        $cancel->handle(
+            currentHolder: $clientContext->client(),
+            certificate: $certificateId,
+        );
+
+        return back()->with('success', app()->getLocale() === 'en'
+            ? 'Gift certificate transfer cancelled.'
+            : 'Передача сертификата отменена.');
     }
 
     public function apply(

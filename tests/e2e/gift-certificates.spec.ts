@@ -190,7 +190,11 @@ test('client can transfer, claim, and apply a gift certificate', async ({ page }
     const transferLink = page.getByTestId('gift-transfer-link');
     await expect(transferLink).toBeVisible();
     const claimUrl = await transferLink.getAttribute('href');
-    expect(claimUrl).toMatch(/\/gift-certificates\/claim\/[a-f0-9]{64}$/);
+    expect(claimUrl).not.toBeNull();
+    const claimLocation = new URL(claimUrl as string, page.url());
+    expect(claimLocation.pathname).toBe('/gift-certificates/claim');
+    expect(claimLocation.search).toBe('');
+    expect(claimLocation.hash).toMatch(/^#token=[a-f0-9]{64}$/);
 
     await page.context().addCookies([
         {

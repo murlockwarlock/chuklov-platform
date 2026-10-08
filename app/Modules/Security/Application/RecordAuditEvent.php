@@ -138,6 +138,7 @@ class RecordAuditEvent
         'finance.payment.corrected' => ['source', 'correction_of', 'reason_present'],
         'gift_certificate.issued' => ['purchase_item_id', 'amount_minor', 'currency'],
         'gift_certificate.transfer.initiated' => ['certificate_id', 'from_client_id', 'currency'],
+        'gift_certificate.transfer.cancelled' => ['certificate_id', 'from_client_id', 'currency'],
         'gift_certificate.claimed' => ['claim_id', 'recipient_client_id'],
         'finance.gift_certificate.redeemed' => ['certificate_id', 'client_id', 'obligation_id', 'amount_minor', 'currency', 'source'],
         'finance.gift_certificate.redemption.corrected' => ['correction_of', 'certificate_id', 'amount_minor', 'currency'],

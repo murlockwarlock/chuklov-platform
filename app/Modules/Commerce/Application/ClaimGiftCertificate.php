@@ -17,6 +17,7 @@ final class ClaimGiftCertificate
 {
     public function __construct(
         private readonly OrganizationContext $context,
+        private readonly GiftCertificateBalanceProjection $balances,
         private readonly AppendGiftCertificateMovement $movements,
         private readonly RecordAuditEvent $audit,
     ) {}
@@ -42,22 +43,38 @@ final class ClaimGiftCertificate
             throw ValidationException::withMessages(['token' => 'Ссылка на сертификат недействительна или уже использована.']);
         }
 
-        return DB::transaction(function () use ($organization, $recipient, $tokenHash, $claimId): GiftCertificate {
+        $certificateId = GiftCertificateClaim::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey($claimId)
+            ->where('token_hash', $tokenHash)
+            ->value('certificate_id');
+        if ($certificateId === null) {
+            throw ValidationException::withMessages(['token' => 'Ссылка на сертификат недействительна или уже использована.']);
+        }
+
+        return DB::transaction(function () use ($organization, $recipient, $tokenHash, $claimId, $certificateId): GiftCertificate {
+            $certificate = GiftCertificate::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($certificateId)
+                ->lockForUpdate()
+                ->first();
+            if (! $certificate instanceof GiftCertificate) {
+                throw ValidationException::withMessages(['token' => 'Ссылка на сертификат недействительна или уже использована.']);
+            }
+
             $claim = GiftCertificateClaim::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($claimId)
                 ->where('token_hash', $tokenHash)
                 ->lockForUpdate()
                 ->first();
-            if (! $claim instanceof GiftCertificateClaim || $claim->status !== 'pending') {
+            if (! $claim instanceof GiftCertificateClaim
+                || $claim->status !== 'pending'
+                || (int) $claim->certificate_id !== (int) $certificate->getKey()
+                || (int) $certificate->current_holder_client_id !== (int) $claim->initiated_by_client_id
+                || ! $this->balances->balance($certificate, true)->isPositive()) {
                 throw ValidationException::withMessages(['token' => 'Ссылка на сертификат недействительна или уже использована.']);
             }
-
-            $certificate = GiftCertificate::query()
-                ->where('organization_id', $organization->getKey())
-                ->whereKey($claim->certificate_id)
-                ->lockForUpdate()
-                ->firstOrFail();
             if ((int) $certificate->current_holder_client_id === (int) $recipient->getKey()
                 || (int) $claim->initiated_by_client_id === (int) $recipient->getKey()) {
                 throw ValidationException::withMessages([
