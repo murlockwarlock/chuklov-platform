@@ -3,7 +3,6 @@
 namespace App\Modules\Referrals\Application;
 
 use App\Models\User;
-use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -21,18 +20,12 @@ final class DeactivateReferralCampaignLink
         private readonly RecordAuditEvent $audit,
     ) {}
 
-    public function handle(ReferralCampaignLink|int $link, Client|User $actor): ReferralCampaignLink
+    public function handle(ReferralCampaignLink|int $link, User $actor): ReferralCampaignLink
     {
         $organization = $this->context->organization();
-        $actorClient = $actor instanceof Client ? $actor : null;
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
 
-        if ($actor instanceof User) {
-            $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
-        } else {
-            abort_unless((int) $actor->organization_id === (int) $organization->getKey(), 404);
-        }
-
-        return DB::transaction(function () use ($organization, $link, $actor, $actorClient): ReferralCampaignLink {
+        return DB::transaction(function () use ($organization, $link, $actor): ReferralCampaignLink {
             $query = ReferralCampaignLink::query()
                 ->where('organization_id', $organization->getKey())
                 ->lockForUpdate();
@@ -41,10 +34,6 @@ final class DeactivateReferralCampaignLink
                 $query->whereKey($link->getKey());
             } else {
                 $query->whereKey($link);
-            }
-
-            if ($actorClient instanceof Client) {
-                $query->where('partner_client_id', $actorClient->getKey());
             }
 
             $campaignLink = $query->first();
@@ -60,12 +49,12 @@ final class DeactivateReferralCampaignLink
             $campaignLink->forceFill([
                 'is_active' => false,
                 'disabled_at' => now(),
-                'disabled_by_user_id' => $actor instanceof User ? $actor->getKey() : null,
+                'disabled_by_user_id' => $actor->getKey(),
                 'updated_at' => now(),
             ])->save();
             $this->audit->handle(
                 organization: $organization,
-                actor: $actor instanceof User ? $actor : null,
+                actor: $actor,
                 action: 'referral.campaign_link.disabled',
                 targetType: ReferralCampaignLink::class,
                 targetId: (string) $campaignLink->getKey(),

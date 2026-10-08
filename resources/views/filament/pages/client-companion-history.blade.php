@@ -29,20 +29,17 @@
 
             @if ($canManage)
                 <div class="mt-4 flex flex-wrap items-center gap-2">
-                    @if ($companion['state'] === 'human_handoff' && $companion['openEscalation'])
-                        <form method="post" action="{{ $urls['resolveAndResume'] }}">
-                            @csrf
-                            <x-filament::button type="submit" color="primary" size="sm">{{ __('Закрыть обращение и вернуть AI') }}</x-filament::button>
-                        </form>
-                        <form method="post" action="{{ $urls['resolve'] }}">
-                            @csrf
-                            <x-filament::button type="submit" color="gray" outlined size="sm">{{ __('Закрыть, но оставить AI выключенным') }}</x-filament::button>
-                        </form>
+                    @if ($companion['state'] === 'human_handoff' && $companion['canRemediateLegacyHandoff'])
+                        <x-filament::button type="button" wire:click="restoreLegacyAi" color="warning" size="sm">{{ __('Восстановить AI после сбоя') }}</x-filament::button>
+                    @elseif ($companion['state'] === 'human_handoff' && ! $companion['humanTakeoverConfirmed'])
+                        <x-filament::button type="button" wire:click="takeOver" color="gray" outlined size="sm">{{ __('Подключиться к диалогу') }}</x-filament::button>
+                        <x-filament::button type="button" wire:click="resumeAi" color="primary" size="sm">{{ __('Вернуть AI-помощника') }}</x-filament::button>
                     @elseif ($companion['state'] === 'human_handoff')
-                        <form method="post" action="{{ $urls['resume'] }}">
-                            @csrf
-                            <x-filament::button type="submit" color="success" size="sm">{{ __('Возобновить AI-помощника') }}</x-filament::button>
-                        </form>
+                        <x-filament::button type="button" wire:click="resumeAi" color="primary" size="sm">{{ __('Вернуть AI-помощника') }}</x-filament::button>
+                    @else
+                        <x-filament::button type="button" wire:click="takeOver" color="gray" outlined size="sm">
+                            {{ $companion['conversation'] === null ? __('Начать диалог как специалист') : __('Подключиться к диалогу') }}
+                        </x-filament::button>
                     @endif
                     <form method="post" action="{{ $urls['reset'] }}" onsubmit="return confirm(@js(__('История останется сохранённой, но AI не будет использовать предыдущие сообщения как память нового контекста. Продолжить?'))) ">
                         @csrf
@@ -54,10 +51,16 @@
 
         </x-filament::section>
 
-        @if ($canManage)
-            <x-filament::section :heading="__('Написать сообщение')" :description="__('Сообщение уйдёт в тот же канал, что и последнее сообщение клиента. Специалист может написать вручную, даже когда AI отвечает.')">
+        @if ($canManage && $companion['state'] === 'human_handoff' && $companion['humanTakeoverConfirmed'])
+            <x-filament::section :heading="__('Ответить клиенту')" :description="__('Специалист подключён к диалогу. AI временно не отвечает.')">
                 {{ $this->composer }}
             </x-filament::section>
+        @elseif ($canManage && $companion['state'] !== 'human_handoff')
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ __('AI продолжит отвечать, пока специалист не подключится.') }}</p>
+        @elseif ($canManage && $companion['canRemediateLegacyHandoff'])
+            <p class="text-sm text-warning-700 dark:text-warning-300">{{ __('Диалог приостановлен после технического сбоя. Восстановите AI, если специалист не подключался.') }}</p>
+        @elseif ($canManage && $companion['state'] === 'human_handoff')
+            <p class="text-sm text-warning-700 dark:text-warning-300">{{ __('Старая пауза не подтверждает подключение специалиста. Проверьте историю и выберите действие выше.') }}</p>
         @endif
 
         <x-filament::section :heading="__('Диалог')" :description="__('Сначала показаны последние сообщения. Более ранняя история загружается отдельно.')">

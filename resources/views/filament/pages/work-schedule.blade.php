@@ -75,7 +75,7 @@
                                     <span class="mt-1 block break-words text-[10px] leading-3 text-gray-600 dark:text-gray-400 sm:truncate sm:whitespace-nowrap">{{ $interval['start'] }} – {{ $interval['end'] }}</span>
                                 @endforeach
                             @elseif ($cell['exception_type'] === 'day_off')
-                                <span class="mt-2 block text-[11px] font-medium text-amber-700 dark:text-amber-300">{{ __('Выходной') }}</span>
+                                <span class="mt-2 block text-[11px] font-medium text-amber-700 dark:text-amber-300">{{ __('Не работает') }}</span>
                             @else
                                 <span class="mt-2 block text-[11px] text-gray-400 dark:text-gray-500">{{ __('Не работает') }}</span>
                             @endif
@@ -90,11 +90,11 @@
                 <div class="flex min-w-0 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div class="min-w-0">
                         <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Изменение выбранных дат') }}</h2>
-                        <p class="mt-1 break-words text-sm text-gray-500 dark:text-gray-400">{{ __(':dates. Изменение действует только для выбранных дат и не меняет регулярный график.', ['dates' => $this->selectedDatesLabel()]) }}</p>
+                        <p class="mt-1 break-words text-sm text-gray-500 dark:text-gray-400">{{ $this->selectedDatesLabel() }}</p>
+                        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Внесенные здесь изменения не повлияют на установленный регулярный график.') }}</p>
                     </div>
                     <div class="flex min-w-0 flex-wrap gap-2">
-                        <button type="button" wire:click="saveOverride" wire:loading.attr="disabled" class="rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-500 disabled:opacity-60">{{ __('Сохранить изменения') }}</button>
-                        <button type="button" wire:click="clearSelectedDates" class="rounded-lg border border-rose-200 px-4 py-2.5 text-sm font-medium text-rose-700 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/30">{{ __('Убрать рабочее время') }}</button>
+                        <button type="button" wire:click="clearSelectedDates" class="rounded-lg border border-rose-200 px-4 py-2.5 text-sm font-medium text-rose-700 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-300 dark:hover:bg-rose-950/30">{{ __('Не работает') }}</button>
                         <button type="button" wire:click="returnToRegularSchedule" class="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">{{ __('Вернуть по графику') }}</button>
                     </div>
                 </div>
@@ -118,18 +118,16 @@
                     </div>
                 @endif
 
-                <div class="mt-5 grid min-w-0 gap-4 md:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]">
-                    <label class="min-w-0 text-sm font-medium text-gray-950 dark:text-white">
-                        {{ __('Действие') }}
-                        <select wire:model.live="overrideType" class="mt-2 block w-full min-w-0 rounded-lg border-gray-300 bg-white text-sm shadow-sm dark:border-gray-700 dark:bg-gray-900">
-                            <option value="working">{{ __('По регулярному графику') }}</option>
-                            <option value="day_off">{{ __('Выходной') }}</option>
-                            <option value="custom_window">{{ __('Своё рабочее время') }}</option>
-                        </select>
-                    </label>
+                <div class="mt-5 min-w-0">
+                    <button
+                        type="button"
+                        wire:click="$set('overrideType', 'custom_window')"
+                        aria-pressed="{{ $overrideType === 'custom_window' ? 'true' : 'false' }}"
+                        class="rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                    >{{ __('Изменить рабочее время') }}</button>
 
                     @if ($overrideType === 'custom_window')
-                        <div class="min-w-0">
+                        <div class="mt-4 min-w-0">
                             <div class="flex items-center justify-between gap-3">
                                 <p class="text-sm font-medium text-gray-950 dark:text-white">{{ __('Рабочие интервалы') }}</p>
                                 <button type="button" wire:click="addOverrideInterval" class="shrink-0 text-sm font-medium text-primary-600 hover:text-primary-700 dark:text-primary-400">{{ __('+ Добавить интервал') }}</button>
@@ -154,16 +152,19 @@
                                 @endforelse
                             </div>
                         </div>
-                    @else
-                        <p class="self-end rounded-lg bg-gray-50 px-3 py-2 text-sm text-gray-600 dark:bg-gray-950 dark:text-gray-400">{{ $overrideType === 'day_off' ? __('Рабочее время будет убрано только у выбранных дат.') : __('Локальное изменение будет удалено, и даты снова возьмут регулярный график.') }}</p>
                     @endif
                 </div>
 
                 <label class="mt-4 block min-w-0 text-sm font-medium text-gray-950 dark:text-white">
                     {{ __('Причина') }} <span class="font-normal text-gray-400">{{ __('необязательно') }}</span>
-                    <input type="text" wire:model.live="overrideReason" maxlength="500" class="mt-2 block w-full min-w-0 rounded-lg border-gray-300 bg-white text-sm shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                    <input type="text" wire:model.live="overrideReason" maxlength="500" class="mt-2 block w-full min-w-0 rounded-lg border border-gray-300 bg-white text-sm shadow-sm dark:border-gray-700 dark:bg-gray-900">
                 </label>
 
+                @if ($overrideType === 'custom_window')
+                    <div class="mt-5 flex justify-end">
+                        <button type="button" wire:click="saveOverride" wire:loading.attr="disabled" class="rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-primary-500 disabled:opacity-60">{{ __('Сохранить изменения') }}</button>
+                    </div>
+                @endif
             </section>
         @endif
     </div>

@@ -45,10 +45,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Livewire;
+use Tests\Support\AuthenticatesMfaConfiguredAdmin;
 use Tests\TestCase;
 
 final class ClientWorkspaceUxATest extends TestCase
 {
+    use AuthenticatesMfaConfiguredAdmin;
     use RefreshDatabase;
 
     public function test_client_search_matches_name_email_id_and_phone_variants(): void
@@ -102,6 +104,42 @@ final class ClientWorkspaceUxATest extends TestCase
         self::assertSame([$aikhia->id], $search->query($admin, '806750628')->pluck('id')->all());
         self::assertSame([$aikhia->id], $search->query($admin, 'tg:806750628')->pluck('id')->all());
         self::assertNotContains($foreign->id, $search->query($admin, '@Aikhia')->pluck('id')->all());
+    }
+
+    public function test_client_option_labels_distinguish_same_names_with_available_contacts(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $first = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Анна Иванова',
+            'phone' => '+7 999 111 22 33',
+            'email' => 'anna.one@example.test',
+        ]);
+        $second = Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'Анна Иванова',
+            'phone' => '+7 999 444 55 66',
+            'email' => 'anna.two@example.test',
+        ]);
+        ClientChannelIdentity::factory()->forClient($first)->create([
+            'external_username' => 'anna_one',
+            'verification_status' => ChannelIdentityStatus::Verified,
+            'verified_at' => now(),
+        ]);
+        ClientChannelIdentity::factory()->forClient($second)->create([
+            'external_username' => 'anna_two',
+            'verification_status' => ChannelIdentityStatus::Verified,
+            'verified_at' => now(),
+        ]);
+
+        $search = app(ClientSearch::class);
+        $labels = $search->formatOptionLabels(
+            $search->withVerifiedTelegramIdentity(
+                $search->query($admin, 'Анна Иванова'),
+            )->get(['id', 'full_name', 'email', 'phone']),
+        );
+
+        self::assertSame('Анна Иванова · @anna_one · +7 999 111 22 33 · anna.one@example.test', $labels[$first->getKey()]);
+        self::assertSame('Анна Иванова · @anna_two · +7 999 444 55 66 · anna.two@example.test', $labels[$second->getKey()]);
+        self::assertStringNotContainsString('#', implode(' ', $labels));
     }
 
     public function test_client_search_preserves_non_russian_country_digits(): void
@@ -654,6 +692,7 @@ final class ClientWorkspaceUxATest extends TestCase
             'enabled' => true,
         ]);
         app(OrganizationContext::class)->set($organization);
+        $this->authenticateConfiguredAdmin($admin, $organization);
 
         return [$organization, $admin];
     }
@@ -813,6 +852,7 @@ final class ClientWorkspaceUxATest extends TestCase
             'client_id' => $client->id,
             'channel' => 'telegram',
             'external_id' => '12345678',
+            'external_username' => 'anna_ivanova',
             'verification_status' => ChannelIdentityStatus::Verified,
             'verified_at' => now(),
         ]);
@@ -827,11 +867,15 @@ final class ClientWorkspaceUxATest extends TestCase
             ->assertSee('Анна Иванова')
             ->assertSee('+7 (999) 123-45-67')
             ->assertSee('anna@example.test')
+            ->assertSee('Telegram: Подключён')
+            ->assertSee('https://t.me/anna_ivanova')
+            ->assertSee('anna_ivanova')
             ->assertSee('Telegram ID: 12345678')
             ->assertSee('Инстаграм')
             ->assertSee('REF123')
             ->assertActionExists('edit')
             ->assertActionExists('editMedicalProfile')
+            ->assertActionExists('newSession')
             ->assertSee('Дополнительные действия');
     }
 

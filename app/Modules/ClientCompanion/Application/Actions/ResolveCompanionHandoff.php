@@ -5,8 +5,6 @@ namespace App\Modules\ClientCompanion\Application\Actions;
 use App\Models\User;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
-use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
-use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Identity\Domain\Models\Client;
@@ -23,19 +21,20 @@ final class ResolveCompanionHandoff
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly RecordAuditEvent $audit,
+        private readonly ResumeCompanionAi $resume,
     ) {}
 
     public function handle(User $actor, Client $client): void
     {
-        $this->resolve($actor, $client, false);
+        $this->resolve($actor, $client);
     }
 
     public function handleAndResume(User $actor, Client $client): void
     {
-        $this->resolve($actor, $client, true);
+        $this->resume->handle($actor, $client);
     }
 
-    private function resolve(User $actor, Client $client, bool $resumeAi): void
+    private function resolve(User $actor, Client $client): void
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageCompanionHandoff);
@@ -43,7 +42,7 @@ final class ResolveCompanionHandoff
             throw new AuthorizationException('The Companion conversation is outside the organization.');
         }
 
-        $escalation = DB::transaction(function () use ($organization, $actor, $client, $resumeAi): ?CompanionEscalation {
+        $escalation = DB::transaction(function () use ($organization, $actor, $client): ?CompanionEscalation {
             $conversation = Conversation::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('client_id', $client->getKey())
@@ -65,14 +64,6 @@ final class ResolveCompanionHandoff
                 'resolved_by_user_id' => $actor->getKey(),
                 'resolved_at' => now(),
             ]);
-            if ($resumeAi) {
-                $conversation->update(['automation_state' => ConversationAutomationState::AiActive]);
-                CompanionTurn::query()
-                    ->where('organization_id', $organization->getKey())
-                    ->where('conversation_id', $conversation->getKey())
-                    ->where('status', 'paused')
-                    ->update(['status' => 'cancelled', 'completed_at' => now()]);
-            }
 
             return $escalation->refresh();
         });
@@ -81,7 +72,7 @@ final class ResolveCompanionHandoff
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
-                action: $resumeAi ? 'companion.handoff.resolved_and_ai_resumed' : 'companion.handoff.resolved',
+                action: 'companion.handoff.resolved',
                 targetType: CompanionEscalation::class,
                 targetId: (string) $escalation->getKey(),
                 metadata: ['reason' => $escalation->reason->value],

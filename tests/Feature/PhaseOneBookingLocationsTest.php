@@ -9,6 +9,7 @@ use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
@@ -894,6 +895,9 @@ class PhaseOneBookingLocationsTest extends TestCase
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
         $specialist->forceFill(['staff_user_id' => $admin->getKey()])->save();
+        $secondSpecialist = Specialist::factory()->forOrganization($organization)->create([
+            'staff_user_id' => $admin->getKey(),
+        ]);
         OrganizationChannelIdentity::factory()->forUser($admin)->verified()->create([
             'external_id' => '424242',
         ]);
@@ -908,6 +912,20 @@ class PhaseOneBookingLocationsTest extends TestCase
                 'starts_at' => CarbonImmutable::create(2026, 9, 7, 7, 0, 0, 'UTC'),
                 'ends_at' => CarbonImmutable::create(2026, 9, 7, 8, 0, 0, 'UTC'),
                 'blocking_ends_at' => CarbonImmutable::create(2026, 9, 7, 8, 0, 0, 'UTC'),
+                'schedule_timezone' => 'Europe/Berlin',
+                'client_timezone' => 'Asia/Almaty',
+            ]);
+        $secondBooking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($secondSpecialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Requested,
+                'visit_format' => VisitFormat::Online,
+                'starts_at' => CarbonImmutable::create(2026, 9, 7, 9, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 7, 10, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 7, 10, 0, 0, 'UTC'),
                 'schedule_timezone' => 'Europe/Berlin',
                 'client_timezone' => 'Asia/Almaty',
             ]);
@@ -926,25 +944,65 @@ class PhaseOneBookingLocationsTest extends TestCase
             $handler->handle($bot);
         });
 
-        $callbackData = 'booking:confirm:'.$booking->getKey().':'.$booking->event_version;
+        $callbackData = 'booking:confirm:'.$secondBooking->getKey().':'.$secondBooking->event_version;
         $bot->hearCallbackQueryData($callbackData)->reply();
         $bot->assertReply('answerCallbackQuery', ['text' => '✅ Запись подтверждена'], 0);
         $bot->hearCallbackQueryData($callbackData)->reply();
         $bot->assertReply('answerCallbackQuery', ['text' => 'Запись уже подтверждена.'], 0);
 
+        $bot->hearCallbackQueryData('booking:confirm:'.$booking->getKey().':'.$booking->event_version)->reply();
+        $bot->assertReply('answerCallbackQuery', ['text' => '✅ Запись подтверждена'], 0);
+
         self::assertSame(BookingStatus::Confirmed, $booking->refresh()->status);
+        self::assertSame(BookingStatus::Confirmed, $secondBooking->refresh()->status);
         self::assertSame(1, BookingEvent::query()->where('booking_id', $booking->getKey())->count());
-        self::assertSame(1, DB::table('audit_events')->where('action', 'booking.confirmed')->count());
+        self::assertSame(1, BookingEvent::query()->where('booking_id', $secondBooking->getKey())->count());
+        self::assertSame(2, DB::table('audit_events')->where('action', 'booking.confirmed')->count());
+
+        $otherStaff = User::factory()->forOrganization($organization, OrganizationRole::Staff)->create();
+        OrganizationChannelIdentity::factory()->forUser($otherStaff)->verified()->create([
+            'external_id' => '434343',
+        ]);
+        $bot->setCommonUser(TelegramUser::make(
+            id: 434343,
+            is_bot: false,
+            first_name: 'Other Staff',
+            language_code: 'ru',
+        ));
+        $unauthorizedBooking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($secondSpecialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Requested,
+                'visit_format' => VisitFormat::Online,
+                'starts_at' => CarbonImmutable::create(2026, 9, 7, 11, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 7, 12, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 7, 12, 0, 0, 'UTC'),
+            ]);
+        $bot->hearCallbackQueryData('booking:confirm:'.$unauthorizedBooking->getKey().':'.$unauthorizedBooking->event_version)->reply();
+        $bot->assertReply('answerCallbackQuery', ['text' => 'Действие недоступно. Откройте CRM.'], 0);
+        self::assertSame(BookingStatus::Requested, $unauthorizedBooking->refresh()->status);
+        $bot->setCommonUser(TelegramUser::make(
+            id: 424242,
+            is_bot: false,
+            first_name: 'Specialist',
+            language_code: 'ru',
+        ));
 
         $staleBooking = Booking::factory()
             ->forOrganization($organization)
             ->forClient($client)
-            ->forSpecialist($specialist)
+            ->forSpecialist($secondSpecialist)
             ->forService($service)
             ->create([
                 'status' => BookingStatus::Requested,
                 'visit_format' => VisitFormat::Office,
                 'event_version' => 1,
+                'starts_at' => CarbonImmutable::create(2026, 9, 7, 13, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 7, 14, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 7, 14, 0, 0, 'UTC'),
             ]);
         $staleCallbackData = 'booking:confirm:'.$staleBooking->getKey().':1';
         $staleBooking->forceFill(['event_version' => 2])->save();
@@ -952,6 +1010,22 @@ class PhaseOneBookingLocationsTest extends TestCase
         $bot->hearCallbackQueryData($staleCallbackData)->reply();
         $bot->assertReply('answerCallbackQuery', ['text' => 'Состояние записи изменилось. Откройте CRM.'], 0);
         self::assertSame(BookingStatus::Requested, $staleBooking->refresh()->status);
+
+        $homeVisitBooking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($secondSpecialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Requested,
+                'visit_format' => VisitFormat::HomeVisit,
+                'starts_at' => CarbonImmutable::create(2026, 9, 7, 15, 0, 0, 'UTC'),
+                'ends_at' => CarbonImmutable::create(2026, 9, 7, 16, 0, 0, 'UTC'),
+                'blocking_ends_at' => CarbonImmutable::create(2026, 9, 7, 16, 0, 0, 'UTC'),
+            ]);
+        $bot->hearCallbackQueryData('booking:confirm:'.$homeVisitBooking->getKey().':'.$homeVisitBooking->event_version)->reply();
+        $bot->assertReply('answerCallbackQuery', ['text' => 'Состояние записи изменилось. Откройте CRM.'], 0);
+        self::assertSame(BookingStatus::Requested, $homeVisitBooking->refresh()->status);
 
         $bot->hearCallbackQueryData('booking:confirm:'.$staleBooking->getKey())->reply();
         $bot->assertReply('answerCallbackQuery', ['text' => 'Состояние записи изменилось. Откройте CRM.'], 0);

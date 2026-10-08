@@ -8,6 +8,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionFailureCode;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
 use App\Modules\Commerce\Domain\Models\PurchaseItem;
@@ -17,6 +18,7 @@ use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
 use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Finance\Domain\ValueObjects\Money;
+use App\Modules\Identity\Application\VerifiedChannelIdentity;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -34,7 +36,11 @@ use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Surveys\Application\SurveyComparisonPresentation;
+use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
+use App\Modules\Surveys\Domain\Models\SurveyComparison;
+use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
 use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
@@ -49,6 +55,8 @@ final class ScenarioContextFactory
     public function __construct(
         private readonly BookingDateTimeFormatter $bookingDateTime,
         private readonly BuildClientReferralLink $referralLinks,
+        private readonly SurveyComparisonPresentation $comparisonPresentation,
+        private readonly PaymentPreVisitBookingEligibility $paymentEligibility,
     ) {}
 
     public function evaluationContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt = null): ScenarioEvaluationContext
@@ -62,7 +70,8 @@ final class ScenarioContextFactory
             ScenarioEventType::HomeVisitChanged => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::BookingCompleted => $this->bookingContext($event, $evaluationEndsAt),
             ScenarioEventType::OnboardingStarted => $this->onboardingContext($event, $evaluationEndsAt),
-            ScenarioEventType::FinancialObligationCreated => $this->financialContext($event, $evaluationEndsAt),
+            ScenarioEventType::FinancialObligationCreated,
+            ScenarioEventType::FinancialDebtReminderRequested => $this->financialContext($event, $evaluationEndsAt),
             ScenarioEventType::PaymentSucceeded,
             ScenarioEventType::PaymentFailed,
             ScenarioEventType::PaymentInitiationUnavailable,
@@ -73,7 +82,8 @@ final class ScenarioContextFactory
             ScenarioEventType::SurveyCompleted, ScenarioEventType::TestStagnationDetected => $this->surveyContext($event, $evaluationEndsAt),
             ScenarioEventType::B2bLeadSubmitted => $this->b2bLeadContext($event, $evaluationEndsAt),
             ScenarioEventType::B2bSalesCallReady => $this->b2bSalesCallContext($event, $evaluationEndsAt),
-            ScenarioEventType::CompanionRequestedSpecialist => $this->companionContext($event, $evaluationEndsAt),
+            ScenarioEventType::CompanionRequestedSpecialist,
+            ScenarioEventType::CompanionSpecialistAttention => $this->companionContext($event, $evaluationEndsAt),
             ScenarioEventType::CompanionFallbackFailed => $this->companionContext($event, $evaluationEndsAt),
             default => $this->genericClientContext($event, $evaluationEndsAt),
         };
@@ -107,9 +117,14 @@ final class ScenarioContextFactory
         if ($recipient->type === 'internal' && $context->client !== null) {
             $renderContext['client']['telegram_contact'] = $this->clientTelegramContact($context->client);
             $renderContext['client']['telegram_profile_url'] = $this->clientTelegramProfileUrl($context->client);
+            $renderContext['client']['crm_url'] = url('/admin/messages?client='.$context->client->getKey());
         }
 
-        if (in_array($context->event->event_name, [ScenarioEventType::CompanionRequestedSpecialist, ScenarioEventType::CompanionFallbackFailed], true)) {
+        if (in_array($context->event->event_name, [
+            ScenarioEventType::CompanionRequestedSpecialist,
+            ScenarioEventType::CompanionSpecialistAttention,
+            ScenarioEventType::CompanionFallbackFailed,
+        ], true)) {
             if (! $context->client instanceof Client) {
                 throw (new ModelNotFoundException)->setModel(Client::class);
             }
@@ -118,6 +133,18 @@ final class ScenarioContextFactory
                 'crm_url' => url('/admin/messages?client='.$context->client->getKey()),
                 'reason' => (string) ($context->event->payload['reason'] ?? ''),
             ];
+            if ($context->event->event_name === ScenarioEventType::CompanionSpecialistAttention) {
+                [$renderContext['companion']['notification_title'], $renderContext['companion']['notification_body']] = $this->companionAttentionCopy(
+                    (string) ($context->event->payload['reason'] ?? ''),
+                    $this->clientDisplayName($context->client),
+                );
+            }
+            if ($context->event->event_name === ScenarioEventType::CompanionFallbackFailed && $recipient->type === 'internal') {
+                $failureCode = CompanionFailureCode::tryFrom((string) ($context->event->payload['failure_code'] ?? ''));
+                $renderContext['companion']['failure_label'] = $failureCode?->label() ?? 'Причина сбоя не определена';
+                $renderContext['companion']['attempt_number'] = max(1, (int) ($context->event->payload['attempt_number'] ?? 1));
+                $renderContext['companion']['ai_monitoring_url'] = route('filament.admin.pages.ai-monitoring-overview');
+            }
         }
 
         if (in_array($context->event->event_name, [ScenarioEventType::PayoutRequested, ScenarioEventType::PayoutStatusChanged], true)) {
@@ -162,7 +189,7 @@ final class ScenarioContextFactory
                 ->whereKey($this->payloadId($context->event, 'revision_id'))
                 ->with('source')
                 ->first();
-            if (! $revision instanceof KnowledgeRevision || $revision->source === null) {
+            if (! $revision instanceof KnowledgeRevision) {
                 throw (new ModelNotFoundException)->setModel(KnowledgeRevision::class);
             }
             $renderContext['knowledge'] = [
@@ -170,6 +197,17 @@ final class ScenarioContextFactory
                 'revision_version' => (int) $revision->version,
                 'crm_url' => $recipient->type === 'internal'
                     ? url('/admin/knowledge-sources/'.$revision->source->getKey().'/edit')
+                    : null,
+            ];
+        }
+
+        if ($context->event->event_name === ScenarioEventType::ClientFeedbackSubmitted) {
+            $feedbackId = $this->optionalPayloadId($context->event, 'feedback_submission_id');
+            $renderContext['feedback'] = [
+                'score' => (int) ($context->event->payload['score'] ?? 0),
+                'has_internal_feedback' => (bool) ($context->event->payload['has_internal_feedback'] ?? false),
+                'crm_url' => $recipient->type === 'internal' && $feedbackId !== null
+                    ? url('/admin/feedback-submissions/'.$feedbackId)
                     : null,
             ];
         }
@@ -245,6 +283,7 @@ final class ScenarioContextFactory
                 'amount' => $context->obligation->display_amount_minor,
                 'currency' => $context->obligation->display_currency->value,
                 'outstanding_amount' => $reconciliation->displayOutstanding->minorUnits(),
+                'outstanding_amount_display' => $reconciliation->displayOutstanding->toDecimalString(),
                 'status' => $reconciliation->status->value,
             ];
         }
@@ -270,10 +309,31 @@ final class ScenarioContextFactory
         }
 
         if ($context->surveyAttempt !== null) {
+            $comparison = SurveyComparison::query()
+                ->where('organization_id', $context->event->organization_id)
+                ->where('current_attempt_id', $context->surveyAttempt->getKey())
+                ->first();
+            $previous = $comparison === null
+                ? null
+                : SurveyAttempt::query()
+                    ->where('organization_id', $context->event->organization_id)
+                    ->whereKey($comparison->previous_attempt_id)
+                    ->first();
+            $progress = $comparison === null
+                ? null
+                : $this->comparisonPresentation->handle(
+                    $comparison,
+                    $context->surveyAttempt,
+                    $previous,
+                    $recipient->locale,
+                );
             $renderContext['survey'] = [
                 'title' => $context->surveyAttempt->surveyVersion->title,
                 'version' => $context->surveyAttempt->surveyVersion->version,
                 'completed_at' => $context->surveyAttempt->completed_at?->toIso8601String(),
+                'portal_url' => $recipient->type === 'client' ? route('portal.surveys.index') : null,
+                'has_progress' => $progress['hasData'] ?? false,
+                'progress_summary' => $progress['telegramText'] ?? '',
                 'crm_url' => $recipient->type === 'internal'
                     ? url('/admin/survey-attempts/'.$context->surveyAttempt->getKey())
                     : null,
@@ -487,6 +547,12 @@ final class ScenarioContextFactory
                 ? $this->clientDisplayName($context->client)
                 : 'Клиент не сопоставлен',
             'message' => $message,
+            'survey_url' => $recipient->type === 'client'
+                && $event->event_name === ScenarioEventType::PaymentSucceeded
+                && $this->paymentEligibility->handle($context)
+                && $this->hasAvailableSurvey($event->organization_id)
+                ? route('portal.surveys.index')
+                : null,
             'crm_url' => $recipient->type === 'internal'
                 ? ($event->event_name === ScenarioEventType::PaymentInitiationUnavailable
                     ? url('/admin/finance-configuration')
@@ -672,6 +738,17 @@ final class ScenarioContextFactory
         );
     }
 
+    private function hasAvailableSurvey(int $organizationId): bool
+    {
+        return SurveyDefinition::query()
+            ->where('organization_id', $organizationId)
+            ->where('is_available', true)
+            ->whereHas('activeVersion', fn ($query) => $query
+                ->where('organization_id', $organizationId)
+                ->where('status', SurveyVersionStatus::Published->value))
+            ->exists();
+    }
+
     private function b2bLeadContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
     {
         $lead = B2bLead::query()
@@ -724,6 +801,25 @@ final class ScenarioContextFactory
             client: $client,
             evaluationEndsAt: $evaluationEndsAt,
         );
+    }
+
+    /** @return array{string, string} */
+    private function companionAttentionCopy(string $reason, string $clientName): array
+    {
+        return match ($reason) {
+            'urgent_safety_concern' => [
+                'Сообщение клиента '.$clientName.' требует внимания',
+                'AI отметил сообщение клиента как требующее внимания специалиста. Откройте диалог в CRM.',
+            ],
+            'out_of_scope' => [
+                'Вопрос клиента '.$clientName.' требует внимания',
+                'AI не смог ответить на вопрос клиента. Откройте диалог и проверьте сообщение.',
+            ],
+            default => [
+                'Диалог клиента '.$clientName.' требует внимания',
+                'Откройте диалог клиента и проверьте обращение.',
+            ],
+        };
     }
 
     private function genericClientContext(ScenarioEvent $event, ?CarbonImmutable $evaluationEndsAt): ScenarioEvaluationContext
@@ -837,14 +933,14 @@ final class ScenarioContextFactory
             return 'не указан';
         }
 
-        $username = trim((string) $identity->external_username);
+        $username = VerifiedChannelIdentity::normalizeUsername($identity->external_username);
         $externalId = trim((string) $identity->external_id);
 
-        if ($username !== '' && $externalId !== '') {
+        if ($username !== null && $externalId !== '') {
             return '@'.ltrim($username, '@').' (ID: '.$externalId.')';
         }
 
-        if ($username !== '') {
+        if ($username !== null) {
             return '@'.ltrim($username, '@');
         }
 
@@ -859,11 +955,9 @@ final class ScenarioContextFactory
             ->where('channel', 'telegram')
             ->where('verification_status', ChannelIdentityStatus::Verified->value)
             ->first();
-        $externalId = trim((string) $identity?->external_id);
+        $username = VerifiedChannelIdentity::normalizeUsername($identity?->external_username);
 
-        return preg_match('/^[1-9][0-9]{0,19}$/', $externalId) === 1
-            ? 'tg://user?id='.$externalId
-            : null;
+        return $username === null ? null : 'https://t.me/'.$username;
     }
 
     private function clientDisplayName(Client $client): string

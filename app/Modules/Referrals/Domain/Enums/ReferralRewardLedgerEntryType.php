@@ -7,6 +7,8 @@ enum ReferralRewardLedgerEntryType: string
     case Earned = 'earned';
     case Reversed = 'reversed';
     case ManualCredit = 'manual_credit';
+    case Redeemed = 'redeemed';
+    case Restored = 'restored';
 
     public function label(): string
     {
@@ -14,6 +16,8 @@ enum ReferralRewardLedgerEntryType: string
             self::Earned => 'Начисление',
             self::Reversed => 'Сторно',
             self::ManualCredit => 'Ручной бонус',
+            self::Redeemed => 'Использование бонуса',
+            self::Restored => 'Возврат бонуса',
         };
     }
 }

@@ -13,6 +13,8 @@ use App\Modules\Finance\Application\GetClientBalanceSummary;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Application\GetClientCommunicationIdentities;
 use App\Modules\Identity\Application\GetLatestClientMarketingConsent;
+use App\Modules\Identity\Application\VerifiedChannelIdentity;
+use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
@@ -54,16 +56,35 @@ final class ClientWorkspaceInfolist
 
                                 $identities = app(GetClientCommunicationIdentities::class)->handle($actor, $record);
 
-                                if ($identities === []) {
-                                    return __('Каналы не подключены');
+                                $telegram = collect($identities)->firstWhere('channel', 'telegram');
+                                $telegramConnected = $telegram !== null
+                                    && $telegram['verificationStatus'] === ChannelIdentityStatus::Verified;
+                                $lines = [
+                                    e('Telegram: '.($telegramConnected ? __('Подключён') : __('Не подключён'))),
+                                ];
+
+                                if ($telegramConnected) {
+                                    $username = VerifiedChannelIdentity::normalizeUsername($telegram['externalUsername']);
+                                    if ($username !== null && $telegram['telegramUrl'] !== null) {
+                                        $lines[] = '<a href="'.e($telegram['telegramUrl']).'" target="_blank" rel="noopener noreferrer" class="crm-entity-link">@'.e($username).'</a>';
+                                    }
+                                    $externalId = trim($telegram['externalId']);
+                                    if ($externalId !== '') {
+                                        $lines[] = e('Telegram ID: '.$externalId);
+                                    }
                                 }
 
-                                return collect($identities)
-                                    ->map(fn (array $item): string => $item['summary'])
-                                    ->implode("\n");
+                                foreach ($identities as $item) {
+                                    if ($item['channel'] !== 'telegram') {
+                                        $lines[] = e($item['summary']);
+                                    }
+                                }
+
+                                return implode('<br>', array_filter($lines));
                             })
                             ->placeholder(__('Каналы не подключены'))
                             ->columnSpanFull()
+                            ->html()
                             ->wrap(),
                         TextEntry::make('language')
                             ->label(__('Язык'))
@@ -83,7 +104,7 @@ final class ClientWorkspaceInfolist
                             ->placeholder(__('Не указан'))
                             ->wrap(),
                         TextEntry::make('attribution_source')
-                            ->label(__('Первая атрибуция'))
+                            ->label(__('Первый источник'))
                             ->state(function (Client $record): string {
                                 $attribution = $record->getRelationValue('attribution');
 
@@ -97,7 +118,7 @@ final class ClientWorkspaceInfolist
                             ->placeholder(__('Не указан'))
                             ->wrap(),
                         TextEntry::make('referrer_summary')
-                            ->label(__('Пригласил'))
+                            ->label(__('Кто пригласил'))
                             ->state(function (Client $record): string {
                                 $relationship = $record->getRelationValue('referralRelationship');
                                 $referrer = $relationship?->getRelationValue('referrer');

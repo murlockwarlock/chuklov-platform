@@ -3,7 +3,9 @@
 namespace App\Modules\Identity\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -11,6 +13,8 @@ use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 final readonly class ClientSearch
@@ -59,6 +63,65 @@ final readonly class ClientSearch
                 ->orderBy('full_name')
                 ->orderBy('id'),
         );
+    }
+
+    /**
+     * @param  Builder<Client>  $query
+     * @return Builder<Client>
+     */
+    public function withVerifiedTelegramIdentity(Builder $query): Builder
+    {
+        return $query->with([
+            'channelIdentities' => static function (Relation $query): void {
+                $query
+                    ->where('channel', 'telegram')
+                    ->where('verification_status', ChannelIdentityStatus::Verified->value)
+                    ->select(['id', 'client_id', 'external_username']);
+            },
+        ]);
+    }
+
+    public function optionLabel(User $actor, mixed $value): ?string
+    {
+        if (! is_scalar($value) || ! is_numeric($value) || (int) $value < 1) {
+            return null;
+        }
+
+        $client = $this->withVerifiedTelegramIdentity(
+            $this->selectionQuery($actor)->whereKey((int) $value),
+        )->first();
+
+        return $client instanceof Client ? $this->formatOptionLabel($client) : null;
+    }
+
+    public function formatOptionLabel(Client $client): string
+    {
+        $identity = $client->channelIdentities->first();
+        $username = $identity instanceof ClientChannelIdentity
+            ? VerifiedChannelIdentity::normalizeUsername($identity->external_username)
+            : null;
+        $contacts = array_values(array_filter([
+            $username === null ? null : '@'.$username,
+            trim((string) $client->phone),
+            trim((string) $client->email),
+        ], static fn (mixed $value): bool => is_string($value) && $value !== ''));
+        $name = trim((string) $client->full_name);
+
+        return implode(' · ', array_values(array_filter([
+            $name !== '' ? $name : null,
+            ...$contacts,
+        ], static fn (?string $value): bool => $value !== null))) ?: __('Клиент без имени');
+    }
+
+    /**
+     * @param  Collection<int, Client>  $clients
+     * @return array<int|string, string>
+     */
+    public function formatOptionLabels(Collection $clients): array
+    {
+        return $clients
+            ->mapWithKeys(fn (Client $client): array => [$client->getKey() => $this->formatOptionLabel($client)])
+            ->all();
     }
 
     /**

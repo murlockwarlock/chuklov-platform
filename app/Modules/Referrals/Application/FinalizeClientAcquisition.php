@@ -214,6 +214,7 @@ final class FinalizeClientAcquisition
         $existing = ReferralRelationship::query()
             ->where('organization_id', $organizationId)
             ->where('referred_client_id', $client->getKey())
+            ->whereNull('superseded_at')
             ->lockForUpdate()
             ->first();
 

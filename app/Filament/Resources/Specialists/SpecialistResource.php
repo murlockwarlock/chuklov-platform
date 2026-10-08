@@ -11,7 +11,9 @@ use App\Filament\Resources\Specialists\Tables\SpecialistsTable;
 use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\LocalizedResource;
 use App\Filament\Support\TimezoneOptions;
+use App\Modules\Identity\Application\VerifiedChannelIdentity;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
+use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use BackedEnum;
@@ -61,7 +63,7 @@ class SpecialistResource extends LocalizedResource
                     ->label(__('Часовой пояс CRM'))
                     ->formatStateUsing(fn (?string $state): string => self::timezoneLabel($state, __('Часовой пояс организации'))),
                 TextEntry::make('staffUser.name')
-                    ->label(__('Сотрудник CRM'))
+                    ->label(__('Аккаунт CRM'))
                     ->placeholder(__('Не привязан'))
                     ->url(fn (Specialist $record): ?string => $record->staff_user_id === null
                         ? null
@@ -70,14 +72,12 @@ class SpecialistResource extends LocalizedResource
                         ? null
                         : (CrmEntityLinks::specialistUrl($record) === null ? null : 'primary')),
                 TextEntry::make('staffUser.email')->label(__('Email сотрудника'))->placeholder(__('Не указан')),
-                TextEntry::make('telegramNotificationIdentity.verification_status')
+                TextEntry::make('id')
                     ->label('Telegram')
-                    ->formatStateUsing(fn (?ChannelIdentityStatus $state): string => $state === ChannelIdentityStatus::Verified
-                        ? __('Подключён')
-                        : __('Не подключён')),
-                TextEntry::make('telegramNotificationIdentity.external_id')
-                    ->label(__('Telegram ID специалиста'))
-                    ->placeholder(__('Не подключён')),
+                    ->formatStateUsing(fn (Specialist $record): string => self::telegramStatusLabel($record))
+                    ->url(fn (Specialist $record): ?string => ($username = self::verifiedTelegramUsername($record)) === null
+                        ? null
+                        : 'https://t.me/'.$username),
                 TextEntry::make('notifications_enabled')
                     ->label(__('Уведомления специалисту'))
                     ->formatStateUsing(fn (bool $state): string => $state ? __('Включены') : __('Выключены')),
@@ -128,5 +128,37 @@ class SpecialistResource extends LocalizedResource
             'view' => ViewSpecialist::route('/{record}'),
             'edit' => EditSpecialist::route('/{record}/edit'),
         ];
+    }
+
+    private static function telegramStatusLabel(Specialist $record): string
+    {
+        $identity = self::verifiedTelegramIdentity($record);
+
+        if ($identity === null) {
+            return __('Не подключён');
+        }
+
+        $username = VerifiedChannelIdentity::normalizeUsername($identity->external_username);
+
+        return __('Подключён').($username === null ? '' : ' · @'.$username);
+    }
+
+    private static function verifiedTelegramUsername(Specialist $record): ?string
+    {
+        return VerifiedChannelIdentity::normalizeUsername(self::verifiedTelegramIdentity($record)?->external_username);
+    }
+
+    private static function verifiedTelegramIdentity(Specialist $record): ?OrganizationChannelIdentity
+    {
+        if ($record->staff_user_id === null) {
+            return null;
+        }
+
+        return OrganizationChannelIdentity::query()
+            ->where('organization_id', $record->organization_id)
+            ->where('user_id', $record->staff_user_id)
+            ->where('channel', 'telegram')
+            ->where('verification_status', ChannelIdentityStatus::Verified->value)
+            ->first(['verification_status', 'external_username']);
     }
 }

@@ -22,6 +22,7 @@ use App\Http\Controllers\Portal\FinanceReceiptController;
 use App\Http\Controllers\Portal\HealthController as PortalHealthController;
 use App\Http\Controllers\Portal\HomeController;
 use App\Http\Controllers\Portal\LocaleController;
+use App\Http\Controllers\Portal\MedicalAttachmentController;
 use App\Http\Controllers\Portal\MoreController;
 use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\PortalCommerceController;
@@ -69,12 +70,6 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->name('admin.knowledge.revision.download');
     Route::post('/admin/clients/{client}/companion/reply', [AdminCompanionController::class, 'reply'])
         ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.reply');
-    Route::post('/admin/clients/{client}/companion/resolve', [AdminCompanionController::class, 'resolve'])
-        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.resolve');
-    Route::post('/admin/clients/{client}/companion/resolve-and-resume', [AdminCompanionController::class, 'resolveAndResume'])
-        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.resolve-and-resume');
-    Route::post('/admin/clients/{client}/companion/resume', [AdminCompanionController::class, 'resume'])
-        ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.resume');
     Route::post('/admin/clients/{client}/companion/reset', [AdminCompanionController::class, 'reset'])
         ->middleware(['auth', EnsurePrivilegedSessionIsCurrent::class])->whereNumber('client')->name('admin.clients.companion.reset');
     Route::get('/admin/b2b-sales-calls/{salesCallId}/host-launch', AdminB2bSalesCallHostLaunchController::class)
@@ -120,11 +115,15 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/bookings', [BookingController::class, 'store'])->name('portal.bookings.store');
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
             Route::get('/portal/health', PortalHealthController::class)->name('portal.health');
+            Route::get('/portal/medical-attachments/{uuid}', MedicalAttachmentController::class)->name('portal.medical-attachments.download');
             Route::get('/portal/more', MoreController::class)->name('portal.more');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
             Route::post('/portal/finance/{obligationId}/lava/start', [FinanceController::class, 'startLavaPayment'])
                 ->whereNumber('obligationId')
                 ->name('portal.finance.lava.start');
+            Route::post('/portal/finance/{obligationId}/referral-credit', [FinanceController::class, 'applyReferralCredit'])
+                ->whereNumber('obligationId')
+                ->name('portal.finance.referral-credit.apply');
             Route::post('/portal/services/{serviceId}/purchase', [PortalCommerceController::class, 'purchase'])
                 ->whereNumber('serviceId')
                 ->name('portal.services.purchase');
@@ -136,11 +135,7 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
                 ->whereIn('outcome', ['success', 'fail', 'refund'])
                 ->name('portal.finance.fake.simulate');
             Route::get('/portal/referrals', ReferralController::class)->name('portal.referrals');
-            Route::post('/portal/referrals/activate', [ReferralPartnerController::class, 'activate'])->name('portal.referrals.activate');
             Route::post('/portal/referrals/links', [ReferralPartnerController::class, 'store'])->name('portal.referrals.links.store');
-            Route::post('/portal/referrals/links/{campaignLinkId}/disable', [ReferralPartnerController::class, 'disable'])
-                ->whereNumber('campaignLinkId')
-                ->name('portal.referrals.links.disable');
             Route::post('/portal/referrals/payouts', [ReferralPayoutController::class, 'store'])->name('portal.referrals.payouts.store');
             Route::post('/portal/referrals/payouts/{payoutRequestId}/cancel', [ReferralPayoutController::class, 'cancel'])
                 ->whereNumber('payoutRequestId')
@@ -165,6 +160,14 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/companion/feedback/{messageId}', [CompanionController::class, 'feedback'])
                 ->whereNumber('messageId')
                 ->name('portal.companion.feedback');
+            Route::post('/portal/companion/retry/{messageId}', [CompanionController::class, 'retry'])
+                ->whereNumber('messageId')
+                ->middleware('throttle:portal-companion-send')
+                ->name('portal.companion.retry');
+            Route::post('/portal/companion/specialist/{messageId}', [CompanionController::class, 'specialist'])
+                ->whereNumber('messageId')
+                ->middleware('throttle:portal-companion-send')
+                ->name('portal.companion.specialist');
             Route::post('/portal/companion/reset', [CompanionController::class, 'reset'])
                 ->name('portal.companion.reset');
             Route::post('/portal/surveys/{definitionId}/start', [SurveyController::class, 'start'])->whereNumber('definitionId')->name('portal.surveys.start');

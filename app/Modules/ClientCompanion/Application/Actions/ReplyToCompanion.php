@@ -13,6 +13,7 @@ use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
 use App\Modules\Conversations\Application\RecordCompanionMessage;
 use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
+use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationDirection;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
@@ -97,6 +98,10 @@ final class ReplyToCompanion
                     (string) $telegramIdentity->external_id,
                 );
             }
+            if ($conversation->automation_state !== ConversationAutomationState::HumanHandoff
+                || $conversation->last_human_takeover_at === null) {
+                throw ValidationException::withMessages(['body' => 'Сначала подключитесь к диалогу.']);
+            }
             $turn = CompanionTurn::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('conversation_id', $conversation->getKey())
@@ -133,7 +138,7 @@ final class ReplyToCompanion
             );
 
             if ($attachmentIds !== []) {
-                if ($turn === null || count($attachmentIds) > 1) {
+                if (count($attachmentIds) > 1) {
                     throw ValidationException::withMessages(['attachments' => 'Выберите не более одного файла для сообщения.']);
                 }
 
@@ -152,7 +157,7 @@ final class ReplyToCompanion
                         'organization_id' => $organization->getKey(),
                         'client_id' => $client->getKey(),
                         'conversation_id' => $conversation->getKey(),
-                        'turn_id' => $turn->getKey(),
+                        'turn_id' => $turn?->getKey(),
                         'conversation_message_id' => $message->getKey(),
                         'medical_attachment_id' => $attachment->getKey(),
                         'source_ordinal' => 1,

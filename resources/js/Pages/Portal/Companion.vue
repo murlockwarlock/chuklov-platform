@@ -19,6 +19,7 @@ type TimelineItem = {
     feedback: 'helpful' | 'not_helpful' | null;
     attachmentCount: number;
     traceUrl: null;
+    safeActions: string[];
 };
 
 type CompanionState = {
@@ -27,6 +28,7 @@ type CompanionState = {
     nextBeforeMessageId: number | null;
     state: 'ai_active' | 'human_handoff';
     stateLabel: string;
+    mode: 'ai_active' | 'specialist_notified' | 'staff_active' | 'handoff_paused';
     pending: boolean;
     canReinspectRecentImages: boolean;
     openEscalation: { reasonLabel: string; openedAt: string } | null;
@@ -35,7 +37,8 @@ type CompanionState = {
 const props = defineProps<{
     portal: PortalShell;
     companion: CompanionState;
-    urls: { send: string; feedback: string; reset: string; history: string };
+    urls: { send: string; feedback: string; retry: string; specialist: string; reset: string; history: string };
+    notices: { retry: string | null; specialistRequested: string | null };
 }>();
 
 const { t, locale } = usePortalLocale();
@@ -45,6 +48,7 @@ const imageInput = ref<HTMLInputElement | null>(null);
 const historyElement = ref<HTMLElement | null>(null);
 const showNewMessages = ref(false);
 const followNewest = ref(true);
+const actionPendingId = ref<string | null>(null);
 const sendForm = useForm<{ body: string; idempotency_key: string; images: File[]; reinspect_recent_images: boolean }>({
     body: '',
     idempotency_key: '',
@@ -160,6 +164,24 @@ function submitFeedback(message: TimelineItem, value: 'helpful' | 'not_helpful')
     router.post(props.urls.feedback.replace('__id__', String(message.id)), { value }, { preserveScroll: true });
 }
 
+function submitSafeAction(message: TimelineItem, action: 'retry_failed_turn' | 'request_human'): void {
+    const actionId = `${message.id}:${action}`;
+    if (actionPendingId.value !== null) {
+        return;
+    }
+
+    actionPendingId.value = actionId;
+    const url = action === 'retry_failed_turn'
+        ? props.urls.retry.replace('__id__', String(message.id))
+        : props.urls.specialist.replace('__id__', String(message.id));
+    router.post(url, {}, {
+        preserveScroll: true,
+        onFinish: () => {
+            actionPendingId.value = null;
+        },
+    });
+}
+
 function resetContext(): void {
     if (window.confirm(t('companion.resetConfirm'))) {
         router.post(props.urls.reset, {}, { preserveScroll: true });
@@ -264,6 +286,29 @@ watch(messageSignature, async () => {
               {{ t('companion.images', { count: message.attachmentCount }) }}
             </p>
             <div
+              v-if="message.type === 'message' && message.role === 'ai' && message.safeActions.length"
+              class="mt-3 flex flex-wrap gap-2"
+            >
+              <button
+                v-if="message.safeActions.includes('retry_failed_turn')"
+                class="portal-button portal-button--primary"
+                type="button"
+                :disabled="actionPendingId !== null || props.companion.state !== 'ai_active'"
+                @click="submitSafeAction(message, 'retry_failed_turn')"
+              >
+                {{ actionPendingId === `${message.id}:retry_failed_turn` ? t('companion.retrying') : t('companion.retry') }}
+              </button>
+              <button
+                v-if="message.safeActions.includes('request_human') && ['ai_active', 'specialist_notified'].includes(props.companion.mode)"
+                class="portal-button portal-button--secondary"
+                type="button"
+                :disabled="actionPendingId !== null"
+                @click="submitSafeAction(message, 'request_human')"
+              >
+                {{ t('companion.requestSpecialist') }}
+              </button>
+            </div>
+            <div
               v-if="message.type === 'message' && message.role === 'ai'"
               class="mt-3 flex flex-wrap gap-2"
             >
@@ -313,18 +358,35 @@ watch(messageSignature, async () => {
             {{ t('companion.newMessages') }}
           </button>
           <div
-            v-if="props.companion.state === 'human_handoff'"
             class="portal-panel"
             role="status"
           >
             <p class="portal-copy">
-              {{ t('companion.paused') }}
+              {{ props.companion.mode === 'staff_active' ? t('companion.paused') : props.companion.mode === 'handoff_paused' ? t('companion.pausedUnconfirmed') : props.companion.mode === 'specialist_notified' ? t('companion.stateSpecialistNotified') : t('companion.stateAiActive') }}
             </p>
             <p
               v-if="props.companion.openEscalation"
               class="portal-copy portal-copy--small"
             >
               {{ props.companion.openEscalation.reasonLabel }}
+            </p>
+            <p
+              v-if="props.notices.retry === 'accepted'"
+              class="portal-copy portal-copy--small"
+            >
+              {{ t('companion.retryAccepted') }}
+            </p>
+            <p
+              v-else-if="props.notices.retry === 'unavailable'"
+              class="portal-copy portal-copy--small text-[var(--portal-color-danger)]"
+            >
+              {{ t('companion.retryUnavailable') }}
+            </p>
+            <p
+              v-if="props.notices.specialistRequested === 'unavailable'"
+              class="portal-copy portal-copy--small text-[var(--portal-color-danger)]"
+            >
+              {{ t('companion.specialistUnavailable') }}
             </p>
           </div>
         </div>

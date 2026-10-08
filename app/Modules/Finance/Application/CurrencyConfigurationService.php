@@ -281,4 +281,66 @@ final class CurrencyConfigurationService
             targetScale: $converted->scale(),
         );
     }
+
+    public function convertTargetAmountToSource(
+        Organization|int $organization,
+        Money $targetAmount,
+        CurrencyCode|string $sourceCurrency,
+        ?FinancialRoundingMode $roundingMode = null,
+    ): MoneyConversionSnapshot {
+        $source = $this->assertAllowed($organization, $sourceCurrency);
+        $target = $this->assertAllowed($organization, $targetAmount->currency());
+        $roundingMode ??= $this->roundingMode($organization);
+
+        if ($source === $target) {
+            return new MoneyConversionSnapshot(
+                sourceAmountMinor: $targetAmount->minorUnitsString(),
+                sourceCurrency: $source,
+                targetAmountMinor: $targetAmount->minorUnitsString(),
+                targetCurrency: $target,
+                rate: '1',
+                rateId: null,
+                rateVersion: null,
+                effectiveAt: null,
+                roundingMode: $roundingMode,
+                sourceScale: $targetAmount->scale(),
+                targetScale: $targetAmount->scale(),
+            );
+        }
+
+        $organizationId = $organization instanceof Organization ? (int) $organization->getKey() : $organization;
+        $rate = OrganizationExchangeRate::query()
+            ->where('organization_id', $organizationId)
+            ->where('source_currency', $source->value)
+            ->where('target_currency', $target->value)
+            ->first();
+
+        if ($rate === null) {
+            throw (new ModelNotFoundException)->setModel(OrganizationExchangeRate::class);
+        }
+
+        $rateValue = BigDecimal::of((string) $rate->getRawOriginal('rate'))
+            ->strippedOfTrailingZeros()
+            ->__toString();
+        $sourceScale = $this->catalog->scale($source);
+        $sourceMinor = BigDecimal::ofUnscaledValue($targetAmount->minorUnits(), $targetAmount->scale())
+            ->dividedBy(BigDecimal::of($rateValue), $sourceScale + 18, FinancialRoundingMode::HalfUp->brick())
+            ->toScale($sourceScale, $roundingMode->brick())
+            ->getUnscaledValue();
+        $sourceAmount = Money::ofMinor($sourceMinor->toString(), $source);
+
+        return new MoneyConversionSnapshot(
+            sourceAmountMinor: $sourceAmount->minorUnitsString(),
+            sourceCurrency: $source,
+            targetAmountMinor: $targetAmount->minorUnitsString(),
+            targetCurrency: $target,
+            rate: $rateValue,
+            rateId: (int) $rate->getKey(),
+            rateVersion: (int) $rate->version,
+            effectiveAt: CarbonImmutable::parse($rate->effective_at->toIso8601String()),
+            roundingMode: $roundingMode,
+            sourceScale: $sourceAmount->scale(),
+            targetScale: $targetAmount->scale(),
+        );
+    }
 }

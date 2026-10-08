@@ -8,4 +8,5 @@ enum PaymentMethod: string
     case Cash = 'cash';
     case ManualCard = 'manual_card';
     case Other = 'other';
+    case ReferralCredit = 'referral_credit';
 }

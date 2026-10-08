@@ -5,13 +5,17 @@ namespace App\Modules\Finance\Application;
 use App\Modules\Finance\Domain\Enums\FinancialStatus;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Query\Expression;
 
 final class ListFinancialObligationsForCrm
 {
-    public function __construct(private readonly FinancialReconciliationProjection $projection) {}
+    public function __construct(
+        private readonly FinancialReconciliationProjection $projection,
+        private readonly ReferralRewardBalanceProjection $referralBalances,
+    ) {}
 
     /** @return Builder<FinancialObligation> */
     public function query(int $organizationId): Builder
@@ -22,6 +26,7 @@ final class ListFinancialObligationsForCrm
 
         $appliedSettlement = $this->projection->appliedSettlementQuery($obligationTable, $ledgerTable);
         $incompatibleLedgerRows = $this->projection->incompatibleLedgerRowsQuery($obligationTable, $ledgerTable);
+        $availableServiceCredit = $this->referralBalances->availableServiceCreditQuery($obligationTable);
 
         return FinancialObligation::query()
             ->select($obligationTable.'.*')
@@ -29,6 +34,7 @@ final class ListFinancialObligationsForCrm
             ->addSelect([
                 'crm_applied_settlement_minor' => $appliedSettlement,
                 'crm_incompatible_ledger_rows' => $incompatibleLedgerRows,
+                'crm_referral_service_credit_available_minor' => $availableServiceCredit,
             ])
             ->with(['client', 'booking.service', 'service', 'purchase.items.fulfillment'])
             ->orderByDesc(

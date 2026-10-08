@@ -2,11 +2,14 @@
 
 namespace App\Filament\Resources\Bookings\Schemas;
 
+use App\Filament\Resources\Bookings\Support\BookingAvailabilityOptions;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
+use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Application\CreateClient as CreateClientAction;
-use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scheduling\Application\BookingLocationResolver;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -17,17 +20,21 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
+use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
-use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Throwable;
 
 class BookingForm
 {
@@ -46,8 +53,11 @@ class BookingForm
                         ->all())
                     ->searchable()
                     ->required()
+                    ->validationMessages(['required' => __('Выберите специалиста.')])
                     ->live()
                     ->afterStateUpdated(function (Get $get, Set $set): void {
+                        self::clearAvailableTime($set);
+
                         $serviceId = (int) $get('service_id');
                         $specialistId = (int) $get('specialist_id');
                         if ($serviceId === 0 || $specialistId === 0) {
@@ -82,26 +92,68 @@ class BookingForm
                         ->all())
                     ->searchable()
                     ->required()
-                    ->live(),
+                    ->validationMessages(['required' => __('Выберите услугу.')])
+                    ->live()
+                    ->afterStateUpdated(function (Get $get, Set $set): void {
+                        self::preservePrefilledTimeOrClear($get, $set);
+                    }),
                 Select::make('client_id')
                     ->label(__('Клиент'))
-                    ->options(fn (): array => Client::query()
-                        ->where('organization_id', app(OrganizationContext::class)->id())
-                        ->orderBy('full_name')
-                        ->orderBy('id')
-                        ->get(['id', 'full_name'])
-                        ->mapWithKeys(static fn (Client $client): array => [
-                            $client->getKey() => trim((string) $client->full_name) ?: '#'.$client->getKey(),
-                        ])
-                        ->all())
+                    ->options([])
                     ->searchable()
+                    ->getSearchResultsUsing(function (string $search): array {
+                        $actor = auth()->user();
+
+                        if (! $actor instanceof User) {
+                            return [];
+                        }
+
+                        $clients = app(ClientSearch::class);
+
+                        return $clients->formatOptionLabels(
+                            $clients->withVerifiedTelegramIdentity(
+                                $clients->query($actor, $search),
+                            )
+                                ->orderBy('full_name')
+                                ->orderBy('id')
+                                ->limit(ClientSearch::MAX_RESULTS)
+                                ->get(['id', 'full_name', 'email', 'phone']),
+                        );
+                    })
+                    ->getOptionLabelUsing(function (mixed $value): ?string {
+                        $actor = auth()->user();
+
+                        return $actor instanceof User
+                            ? app(ClientSearch::class)->optionLabel($actor, $value)
+                            : null;
+                    })
+                    ->afterStateUpdated(function (Get $get, Set $set): void {
+                        $selectedTime = self::selectedBookingTime($get);
+                        if ($selectedTime !== null) {
+                            $set('booking_time', $selectedTime);
+                            $set('starts_at', $selectedTime);
+                        }
+                    })
                     ->required()
-                    ->helperText(__('Нажмите +, если клиента ещё нет в базе. Telegram подключается отдельной подтверждённой ссылкой после создания.'))
+                    ->validationMessages(['required' => __('Выберите клиента.')])
+                    ->helperText(fn (): string => self::canCreateClient()
+                        ? __('Найдите клиента по имени, телефону, Telegram или email. Если его ещё нет в базе — добавьте нового.')
+                        : __('Выберите клиента из списка.'))
                     ->createOptionModalHeading(__('Добавить клиента'))
+                    ->createOptionAction(fn (Action $action): Action => $action
+                        ->label(__('Добавить нового клиента'))
+                        ->button()
+                        ->icon(Heroicon::Plus)
+                        ->extraAttributes([
+                            'data-testid' => 'booking-create-client',
+                            'wire:loading.attr' => 'disabled',
+                        ])
+                        ->visible(fn (): bool => self::canCreateClient()))
                     ->createOptionForm([
                         TextInput::make('full_name')
                             ->label(__('Имя и фамилия'))
                             ->required()
+                            ->validationMessages(['required' => __('Укажите имя клиента.')])
                             ->maxLength(160),
                         TextInput::make('email')
                             ->label('Email')
@@ -111,68 +163,46 @@ class BookingForm
                             ->label(__('Телефон'))
                             ->tel()
                             ->maxLength(32),
-                        Select::make('language')
-                            ->label(__('Язык'))
-                            ->options([
-                                'ru' => __('Русский'),
-                                'en' => __('Английский'),
-                            ])
-                            ->default(fn (): string => (string) config('portal.default_locale', 'ru'))
-                            ->required(),
-                        Select::make('timezone')
-                            ->label(__('Часовой пояс'))
-                            ->options(fn (Get $get): array => TimezoneOptions::options(
-                                current: $get('timezone'),
-                                organization: app(OrganizationContext::class)->defaultTimezone(),
-                            ))
-                            ->default(fn (): string => app(OrganizationContext::class)->defaultTimezone())
-                            ->searchable()
-                            ->required(),
                         TextInput::make('lead_source')
                             ->label(__('Источник клиента'))
                             ->placeholder(__('Например: Telegram, Instagram, рекомендация'))
                             ->maxLength(120),
                     ])
-                    ->createOptionUsing(function (array $data): int {
+                    ->createOptionUsing(function (array $data, ?Get $get = null, ?Set $set = null): int {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
-                        $phone = trim((string) ($data['phone'] ?? ''));
-                        $client = app(CreateClientAction::class)->handle(
-                            actor: $actor,
-                            fullName: (string) $data['full_name'],
-                            email: isset($data['email']) && trim((string) $data['email']) !== '' ? (string) $data['email'] : null,
-                            phone: $phone === '' ? null : $phone,
-                            language: (string) ($data['language'] ?? config('portal.default_locale', 'ru')),
-                            timezone: (string) ($data['timezone'] ?? app(OrganizationContext::class)->defaultTimezone()),
-                            leadSource: isset($data['lead_source']) && trim((string) $data['lead_source']) !== '' ? (string) $data['lead_source'] : null,
-                        );
 
-                        return (int) $client->getKey();
+                        $selectedTime = $get instanceof Get ? self::selectedBookingTime($get) : null;
+
+                        try {
+                            $phone = trim((string) ($data['phone'] ?? ''));
+                            $client = app(CreateClientAction::class)->handle(
+                                actor: $actor,
+                                fullName: (string) $data['full_name'],
+                                email: isset($data['email']) && trim((string) $data['email']) !== '' ? (string) $data['email'] : null,
+                                phone: $phone === '' ? null : $phone,
+                                language: (string) config('portal.default_locale', 'ru'),
+                                timezone: app(OrganizationContext::class)->defaultTimezone(),
+                                leadSource: isset($data['lead_source']) && trim((string) $data['lead_source']) !== '' ? (string) $data['lead_source'] : null,
+                            );
+
+                            if ($selectedTime !== null && $set instanceof Set) {
+                                $set('booking_time_snapshot', $selectedTime);
+                                $set('booking_time', $selectedTime);
+                                $set('starts_at', $selectedTime);
+                            }
+
+                            return (int) $client->getKey();
+                        } catch (ValidationException $exception) {
+                            throw $exception;
+                        } catch (Throwable $exception) {
+                            report($exception);
+
+                            throw ValidationException::withMessages([
+                                'full_name' => __('Не удалось добавить клиента. Проверьте данные и попробуйте ещё раз.'),
+                            ]);
+                        }
                     }),
-                DateTimePicker::make('starts_at')
-                    ->label(__('Дата и время'))
-                    ->timezone(fn (): string => self::viewerTimezone())
-                    ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
-                    ->live(onBlur: true)
-                    ->seconds(false)
-                    ->afterStateUpdated(function (Set $set): void {
-                        $set('confirm_backdated', false);
-                    })
-                    ->required(),
-                TextEntry::make('backdated_warning')
-                    ->label(__('Внимание'))
-                    ->state(fn (Get $get): string => self::backdatedWarning($get))
-                    ->visible(fn (Get $get): bool => self::isBackdated($get))
-                    ->columnSpanFull(),
-                Checkbox::make('confirm_backdated')
-                    ->label(__('Подтверждаю создание записи задним числом'))
-                    ->default(false)
-                    ->accepted(fn (Get $get): bool => self::isBackdated($get))
-                    ->validationMessages([
-                        'accepted' => __('Подтвердите создание записи задним числом.'),
-                    ])
-                    ->visible(fn (Get $get): bool => self::isBackdated($get))
-                    ->columnSpanFull(),
                 Select::make('visit_format')
                     ->label(__('Формат визита'))
                     ->options([
@@ -181,8 +211,10 @@ class BookingForm
                         VisitFormat::Online->value => __('Онлайн'),
                     ])
                     ->required()
+                    ->validationMessages(['required' => __('Выберите формат визита.')])
                     ->live()
-                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                    ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
+                        self::preservePrefilledTimeOrClear($get, $set);
                         $set('party_size', $state === VisitFormat::HomeVisit->value ? 1 : null);
 
                         if ($state === VisitFormat::Office->value) {
@@ -199,6 +231,8 @@ class BookingForm
                             $set('location', null);
                             $set('working_location_id', null);
                         }
+
+                        $set('booking_time_prefilled', false);
                     }),
                 Select::make('working_location_id')
                     ->label(__('Локация'))
@@ -215,7 +249,8 @@ class BookingForm
                     ->searchable()
                     ->nullable()
                     ->live()
-                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                    ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
+                        self::preservePrefilledTimeOrClear($get, $set);
                         $location = $state === null || $state === ''
                             ? null
                             : WorkingLocation::query()
@@ -229,6 +264,10 @@ class BookingForm
                 TextInput::make('location_area')
                     ->label(__('Район выезда'))
                     ->maxLength(160)
+                    ->live(onBlur: true)
+                    ->afterStateUpdated(function (Get $get, Set $set): void {
+                        self::preservePrefilledTimeOrClear($get, $set);
+                    })
                     ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
                 TextInput::make('party_size')
                     ->label(__('Количество участников выезда'))
@@ -237,6 +276,7 @@ class BookingForm
                     ->maxValue(20)
                     ->nullable()
                     ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
+                    ->validationMessages(['required' => __('Укажите количество участников выезда.')])
                     ->helperText(__('Сколько человек будет на выезде. Для обычного приёма поле не нужно.'))
                     ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
                 TextInput::make('location')
@@ -245,12 +285,214 @@ class BookingForm
                         ? app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value')
                         : null)
                     ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
+                    ->validationMessages(['required' => __('Укажите адрес выезда.')])
                     ->helperText(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value
                         ? __('Можно изменить адрес только для этой записи.')
                         : __('Укажите место выезда для этой записи.'))
                     ->maxLength(500)
                     ->visible(fn (Get $get): bool => in_array($get('visit_format'), [VisitFormat::Office->value, VisitFormat::HomeVisit->value], true)),
+                DatePicker::make('booking_date')
+                    ->label(__('Дата'))
+                    ->native()
+                    ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
+                    ->live()
+                    ->afterStateUpdated(function (Set $set): void {
+                        self::clearAvailableTime($set);
+                    })
+                    ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
+                    ->validationMessages(['required' => __('Укажите дату и время записи.')]),
+                Select::make('booking_time')
+                    ->label(__('Доступное время'))
+                    ->options(fn (Get $get): array => self::availableTimeOptions($get))
+                    ->placeholder(__('Выберите доступное время'))
+                    ->native(false)
+                    ->disabled(fn (Get $get): bool => ! self::hasAvailableTimePrerequisites($get))
+                    ->live()
+                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                        $selectedTime = is_string($state) && trim($state) !== '' ? $state : null;
+                        $set('booking_time_snapshot', $selectedTime);
+                        $set('starts_at', $selectedTime);
+                        $set('confirm_backdated', false);
+                        $set('booking_time_prefilled', false);
+                    })
+                    ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
+                    ->validationMessages(['required' => __('Выберите доступное время.')])
+                    ->helperText(fn (Get $get): string => self::availableTimeHelper($get)),
+                Hidden::make('booking_time_prefilled')
+                    ->default(false)
+                    ->dehydrated(false),
+                Hidden::make('booking_time_snapshot')
+                    ->dehydrated(false),
+                Hidden::make('starts_at')
+                    ->hidden()
+                    ->dehydratedWhenHidden()
+                    ->live()
+                    ->afterStateUpdated(function (Set $set): void {
+                        $set('confirm_backdated', false);
+                    })
+                    ->required()
+                    ->validationMessages(['required' => __('Укажите дату и время записи.')]),
+                TextEntry::make('backdated_warning')
+                    ->label(__('Внимание'))
+                    ->state(fn (Get $get): string => self::backdatedWarning($get))
+                    ->visible(fn (Get $get): bool => self::isBackdated($get))
+                    ->columnSpanFull(),
+                Checkbox::make('confirm_backdated')
+                    ->label(__('Подтверждаю создание записи задним числом'))
+                    ->default(false)
+                    ->accepted(fn (Get $get): bool => self::isBackdated($get))
+                    ->validationMessages([
+                        'accepted' => __('Подтвердите создание записи задним числом.'),
+                    ])
+                    ->visible(fn (Get $get): bool => self::isBackdated($get))
+                    ->columnSpanFull(),
             ]);
+    }
+
+    private static function canCreateClient(): bool
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            && app(OrganizationAuthorizer::class)->allows(
+                $actor,
+                app(OrganizationContext::class)->organization(),
+                OrganizationPermission::ManageClients,
+            );
+    }
+
+    private static function clearAvailableTime(Set $set): void
+    {
+        $set('booking_time', null);
+        $set('booking_time_snapshot', null);
+        $set('starts_at', null);
+        $set('confirm_backdated', false);
+        $set('booking_time_prefilled', false);
+    }
+
+    private static function selectedBookingTime(Get $get): ?string
+    {
+        foreach (['booking_time_snapshot', 'booking_time', 'starts_at'] as $field) {
+            $value = $get($field);
+
+            if (is_string($value) && trim($value) !== '') {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private static function preservePrefilledTimeOrClear(Get $get, Set $set): void
+    {
+        if ($get('booking_time_prefilled') === true
+            || ($get('booking_date') === null && $get('booking_time') === null)) {
+            return;
+        }
+
+        self::clearAvailableTime($set);
+    }
+
+    private static function hasAvailableTimePrerequisites(Get $get): bool
+    {
+        $format = VisitFormat::tryFrom((string) $get('visit_format'));
+
+        return self::positiveInteger($get('specialist_id')) !== null
+            && self::positiveInteger($get('service_id')) !== null
+            && $format instanceof VisitFormat
+            && self::bookingDate($get('booking_date')) instanceof CarbonImmutable;
+    }
+
+    private static function availableTimeHelper(Get $get): string
+    {
+        if (self::positiveInteger($get('specialist_id')) === null
+            || self::positiveInteger($get('service_id')) === null) {
+            return __('Сначала выберите специалиста и услугу.');
+        }
+
+        $format = VisitFormat::tryFrom((string) $get('visit_format'));
+        if (! $format instanceof VisitFormat) {
+            return __('Сначала выберите формат визита.');
+        }
+
+        if (! (self::bookingDate($get('booking_date')) instanceof CarbonImmutable)) {
+            return __('Сначала выберите дату.');
+        }
+
+        return __('Показываются только свободные интервалы в часовом поясе CRM. Если список пуст, на эту дату свободного времени нет.');
+    }
+
+    /** @return array<string, string> */
+    private static function availableTimeOptions(Get $get): array
+    {
+        $actor = auth()->user();
+        $specialistId = self::positiveInteger($get('specialist_id'));
+        $serviceId = self::positiveInteger($get('service_id'));
+        $format = VisitFormat::tryFrom((string) $get('visit_format'));
+        $date = self::bookingDate($get('booking_date'));
+
+        if (! $actor instanceof User
+            || $specialistId === null
+            || $serviceId === null
+            || ! $format instanceof VisitFormat
+            || ! $date instanceof CarbonImmutable) {
+            return [];
+        }
+
+        return app(BookingAvailabilityOptions::class)->forDate(
+            actor: $actor,
+            specialistId: $specialistId,
+            serviceId: $serviceId,
+            format: $format,
+            date: $date,
+            displayTimezone: self::viewerTimezone(),
+            workingLocationId: self::positiveInteger($get('working_location_id')),
+            locationArea: self::nullableString($get('location_area')),
+        );
+    }
+
+    private static function bookingDate(mixed $state): ?CarbonImmutable
+    {
+        if ($state instanceof DateTimeInterface) {
+            return CarbonImmutable::instance($state)->setTimezone(self::viewerTimezone())->startOfDay();
+        }
+
+        if (! is_string($state) || trim($state) === '') {
+            return null;
+        }
+
+        $value = trim($state);
+        try {
+            $date = CarbonImmutable::createFromFormat('!Y-m-d', $value, self::viewerTimezone());
+        } catch (InvalidArgumentException) {
+            return null;
+        }
+
+        return $date instanceof CarbonImmutable && $date->format('Y-m-d') === $value ? $date : null;
+    }
+
+    private static function positiveInteger(mixed $value): ?int
+    {
+        if (is_int($value) && $value > 0) {
+            return $value;
+        }
+
+        if (is_string($value) && ctype_digit(trim($value)) && (int) $value > 0) {
+            return (int) $value;
+        }
+
+        return null;
+    }
+
+    private static function nullableString(mixed $value): ?string
+    {
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return $value === '' ? null : $value;
     }
 
     private static function viewerTimezone(): string

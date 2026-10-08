@@ -9,9 +9,14 @@ use App\Modules\Commerce\Domain\Models\PaymentProviderOfferMapping;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayStatus;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
+use App\Modules\Referrals\Domain\ValueObjects\ReferralRewardBalance;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Log;
+use InvalidArgumentException;
 use UnexpectedValueException;
 
 final class ListClientFinance
@@ -21,6 +26,8 @@ final class ListClientFinance
         private readonly ReconcileFinancialObligation $reconciliation,
         private readonly FinancialReconciliationContract $contract,
         private readonly ResolveLavaPaymentSellable $sellable,
+        private readonly ReferralRewardBalanceProjection $referralBalances,
+        private readonly CurrencyConfigurationService $configuration,
     ) {}
 
     /** @return array{obligations: list<array<string, mixed>>, totals: list<array<string, mixed>>, hasUnavailableObligations: bool} */
@@ -38,8 +45,9 @@ final class ListClientFinance
             ])
             ->orderByDesc('created_at')
             ->get();
+        $referralBalance = $this->referralBalances->serviceCredit($client);
         $projections = $obligations
-            ->map(fn (FinancialObligation $obligation): array => $this->projection($obligation, $client, $locale))
+            ->map(fn (FinancialObligation $obligation): array => $this->projection($obligation, $client, $locale, $referralBalance))
             ->values()
             ->all();
         $totals = [];
@@ -75,8 +83,12 @@ final class ListClientFinance
     }
 
     /** @return array<string, mixed> */
-    private function projection(FinancialObligation $obligation, Client $client, ?string $locale): array
-    {
+    private function projection(
+        FinancialObligation $obligation,
+        Client $client,
+        ?string $locale,
+        ReferralRewardBalance $referralBalance,
+    ): array {
         try {
             $reconciliation = $this->reconciliation->handle(
                 (int) $obligation->organization_id,
@@ -110,6 +122,7 @@ final class ListClientFinance
             'status' => $reconciliation->status->value,
             'statusLabel' => $this->statusLabel($reconciliation->status->value, $locale),
             'history' => $entries->map(fn (FinancialLedgerEntry $entry): array => $this->historyEntry($entry, $timezone, $locale))->all(),
+            'referralCredit' => $this->referralCredit($obligation, $referralBalance, $reconciliation->outstanding),
             'demoPayment' => $this->demoPayment($obligation, $reconciliation->outstanding->minorUnits() > 0, $locale),
             'lavaPayment' => $this->lavaPayment($obligation, $reconciliation->outstanding->minorUnits() > 0, $client, $locale),
         ];
@@ -136,8 +149,43 @@ final class ListClientFinance
                 ->sortBy('id')
                 ->values()
                 ->map(fn (FinancialLedgerEntry $entry): array => $this->historyEntry($entry, $timezone, $locale))->all(),
+            'referralCredit' => null,
             'demoPayment' => null,
             'lavaPayment' => null,
+        ];
+    }
+
+    /** @return array{availableMinor: int, currency: string, baseAvailableMinor: int, baseCurrency: string, outstandingMinor: int, conversionAvailable: bool, applyUrl: string}|null */
+    private function referralCredit(
+        FinancialObligation $obligation,
+        ReferralRewardBalance $referralBalance,
+        Money $outstanding,
+    ): ?array {
+        if (! $outstanding->isPositive()) {
+            return null;
+        }
+
+        $baseAvailable = $referralBalance->available();
+        $currency = $obligation->settlement_currency;
+        $availableMinor = 0;
+        $conversionAvailable = true;
+
+        try {
+            $availableMinor = (int) $this->configuration
+                ->convert($obligation->organization_id, $baseAvailable, $currency)
+                ->targetAmountMinor;
+        } catch (ModelNotFoundException|InvalidArgumentException|UnexpectedValueException) {
+            $conversionAvailable = false;
+        }
+
+        return [
+            'availableMinor' => $availableMinor,
+            'currency' => $currency->value,
+            'baseAvailableMinor' => $baseAvailable->minorUnits(),
+            'baseCurrency' => $baseAvailable->currency()->value,
+            'outstandingMinor' => $outstanding->minorUnits(),
+            'conversionAvailable' => $conversionAvailable,
+            'applyUrl' => route('portal.finance.referral-credit.apply', $obligation->getKey()),
         ];
     }
 
@@ -437,6 +485,7 @@ final class ListClientFinance
                 'correction' => 'Payment correction',
                 'fake_gateway_settlement' => 'Test payment',
                 'gateway_settlement' => 'Online payment',
+                'referral_credit' => 'Referral credit',
             ]
             : [
                 'cash' => 'Наличные',
@@ -446,6 +495,7 @@ final class ListClientFinance
                 'correction' => 'Исправление оплаты',
                 'fake_gateway_settlement' => 'Тестовая оплата',
                 'gateway_settlement' => 'Оплата через платёжный сервис',
+                'referral_credit' => 'Реферальный бонус',
             ];
 
         if ($entryType === 'manual_payment' && is_string($method) && in_array($method, [

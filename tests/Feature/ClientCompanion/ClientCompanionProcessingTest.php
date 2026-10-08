@@ -21,16 +21,27 @@ use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
+use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
+use App\Modules\ClientCompanion\Application\Actions\RequestCompanionHandoff;
 use App\Modules\ClientCompanion\Application\Actions\ResolveCompanionHandoff;
+use App\Modules\ClientCompanion\Application\Actions\RestoreLegacyCompanionAi;
+use App\Modules\ClientCompanion\Application\Actions\RetryCompanionTurn;
+use App\Modules\ClientCompanion\Application\Actions\TakeOverCompanionConversation;
 use App\Modules\ClientCompanion\Application\Services\CompanionMessageBodyReader;
 use App\Modules\ClientCompanion\Application\Services\CompanionTurnProcessor;
+use App\Modules\ClientCompanion\Application\Services\ReadCompanionConversation;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnAttemptStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
+use App\Modules\ClientCompanion\Domain\Enums\RequestCompanionHandoffResult;
+use App\Modules\ClientCompanion\Domain\Enums\RetryCompanionTurnResult;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
+use App\Modules\ClientCompanion\Domain\Models\CompanionTurnAttempt;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurnMessage;
 use App\Modules\ClientCompanion\Infrastructure\Jobs\DeliverCompanionMessage;
 use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
@@ -40,13 +51,17 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use Carbon\Carbon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Inertia\Testing\AssertableInertia;
 use InvalidArgumentException;
 use Mockery;
 use Tests\TestCase;
@@ -137,6 +152,11 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame('not_configured', $second->fresh()->failure_code);
         self::assertSame(ConversationAutomationState::AiActive, $second->conversation()->firstOrFail()->automation_state);
         self::assertSame(0, CompanionEscalation::query()->count());
+        $failure = ConversationMessage::query()->findOrFail($second->fresh()->outbound_message_id);
+        self::assertStringNotContainsString('provider', app(CompanionMessageBodyReader::class)->read($this->organization->getKey(), $failure));
+        self::assertNotContains('retry_failed_turn', explode(',', (string) ($failure->metadata['safe_actions'] ?? '')));
+        self::assertSame(2, ScenarioEvent::query()->where('event_name', ScenarioEventType::CompanionFallbackFailed)->count());
+        self::assertSame('not_configured', ScenarioEvent::query()->latest('id')->firstOrFail()->payload['failure_code']);
     }
 
     public function test_untyped_preparation_configuration_failure_is_not_reclassified_as_repeated_provider_failure_or_handoff(): void
@@ -156,10 +176,11 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame('not_configured', $second->fresh()->failure_code);
         self::assertSame(ConversationAutomationState::AiActive, $second->conversation()->firstOrFail()->automation_state);
         self::assertSame(0, CompanionEscalation::query()->count());
-        self::assertSame(0, ScenarioEvent::query()->count());
+        self::assertSame(2, ScenarioEvent::query()->where('event_name', ScenarioEventType::CompanionFallbackFailed)->count());
+        self::assertSame(0, ScenarioEvent::query()->where('event_name', ScenarioEventType::CompanionRequestedSpecialist)->count());
     }
 
-    public function test_unavailable_ai_provider_keeps_provider_failure_semantics_and_hands_off_after_repeated_failures(): void
+    public function test_repeated_unavailable_ai_provider_failures_keep_companion_active_without_escalation(): void
     {
         $this->app->instance(AiWorkflowEngine::class, new ProviderUnavailableCompanionEngine);
         $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
@@ -173,8 +194,293 @@ final class ClientCompanionProcessingTest extends TestCase
         app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $second->getKey());
 
         self::assertSame('provider_unavailable', $first->fresh()->failure_code);
-        self::assertSame(CompanionTurnStatus::Escalated, $second->fresh()->status);
-        self::assertSame(CompanionEscalationReason::RepeatedExecutionFailure, CompanionEscalation::query()->sole()->reason);
+        self::assertSame(CompanionTurnStatus::Failed, $second->fresh()->status);
+        self::assertSame(ConversationAutomationState::AiActive, $second->conversation()->firstOrFail()->automation_state);
+        self::assertSame(0, CompanionEscalation::query()->count());
+        self::assertSame(0, ScenarioEvent::query()->where('event_name', 'companion.requested_specialist')->count());
+        self::assertSame(2, ScenarioEvent::query()->where('event_name', 'companion.fallback_failed')->count());
+
+        $recoveredEngine = new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Succeeded,
+            outputPayload: [
+                'decision' => 'reply',
+                'reply' => 'Привет! Я могу помочь.',
+                'handoff_reason' => '',
+                'suggested_safe_actions' => [],
+            ],
+        ));
+        $this->app->instance(AiWorkflowEngine::class, $recoveredEngine);
+        $greeting = $this->accept('привет');
+        $greeting->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $greeting->getKey());
+
+        self::assertSame(CompanionTurnStatus::Completed, $greeting->fresh()->status);
+        self::assertSame(ConversationAutomationState::AiActive, $greeting->conversation()->firstOrFail()->automation_state);
+        self::assertSame('привет', $recoveredEngine->request?->inputVariables['current_message']);
+    }
+
+    public function test_retry_reuses_failed_input_with_a_new_attempt_and_preserves_failure_evidence(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new ProviderUnavailableCompanionEngine);
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('Повторите исходный запрос');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        $turn->refresh();
+        $failureMessageId = (int) $turn->outbound_message_id;
+        $failureMessage = ConversationMessage::query()->findOrFail($failureMessageId);
+        self::assertSame('Не получилось подготовить ответ.', app(CompanionMessageBodyReader::class)->read($this->organization->getKey(), $failureMessage));
+        self::assertSame(['retry_failed_turn', 'request_human'], array_values(array_filter(explode(',', $failureMessage->metadata['safe_actions']))));
+        $firstAttempt = CompanionTurnAttempt::query()->where('turn_id', $turn->getKey())->sole();
+        self::assertSame(CompanionTurnAttemptStatus::Failed, $firstAttempt->status);
+        self::assertSame('provider_unavailable', $firstAttempt->failure_code);
+
+        $retry = app(RetryCompanionTurn::class);
+        self::assertSame(RetryCompanionTurnResult::Queued, $retry->handle($this->client, $failureMessageId));
+        self::assertSame(RetryCompanionTurnResult::AlreadyRequested, $retry->handle($this->client, $failureMessageId));
+        self::assertSame(CompanionTurnStatus::Pending, $turn->fresh()->status);
+        self::assertSame(2, CompanionTurnAttempt::query()->where('turn_id', $turn->getKey())->count());
+        self::assertSame(1, ConversationMessage::query()->where('conversation_id', $turn->conversation_id)->where('author_type', 'client')->count());
+
+        $engine = new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Succeeded,
+            outputPayload: [
+                'decision' => 'reply',
+                'reply' => 'Готово, вот ответ.',
+                'handoff_reason' => '',
+                'suggested_safe_actions' => [],
+            ],
+        ));
+        $this->app->instance(AiWorkflowEngine::class, $engine);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        $turn->refresh();
+        $attempts = CompanionTurnAttempt::query()->where('turn_id', $turn->getKey())->orderBy('attempt_number')->get();
+        self::assertSame(CompanionTurnStatus::Completed, $turn->status);
+        self::assertSame('Повторите исходный запрос', $engine->request?->inputVariables['current_message']);
+        self::assertSame('companion-turn:'.$attempts[1]->execution_key, $engine->request?->idempotencyKey);
+        self::assertNotSame($attempts[0]->execution_key, $attempts[1]->execution_key);
+        self::assertSame(CompanionTurnAttemptStatus::Failed, $attempts[0]->status);
+        self::assertSame($failureMessageId, (int) $attempts[0]->output_message_id);
+        self::assertSame(CompanionTurnAttemptStatus::Succeeded, $attempts[1]->status);
+        self::assertSame(2, ConversationMessage::query()->where('conversation_id', $turn->conversation_id)->where('author_type', 'ai')->count());
+        self::assertSame(1, ConversationMessage::query()->where('conversation_id', $turn->conversation_id)->where('author_type', 'client')->count());
+        self::assertNotSame($failureMessageId, (int) $turn->outbound_message_id);
+        self::assertSame(2, CompanionDelivery::query()->whereIn('conversation_message_id', [$failureMessageId, $turn->outbound_message_id])->count());
+        self::assertSame(1, CompanionDelivery::query()->where('conversation_message_id', $failureMessageId)->where('turn_id', $turn->getKey())->count());
+        self::assertSame(1, CompanionDelivery::query()->where('conversation_message_id', $turn->outbound_message_id)->whereNull('turn_id')->count());
+    }
+
+    public function test_retryable_telegram_failure_delivers_a_retry_button_for_its_failed_message(): void
+    {
+        $channel = new RecordingCompanionChannel;
+        $this->app->instance(AiWorkflowEngine::class, new ProviderUnavailableCompanionEngine);
+        $this->app->instance(MessagingChannel::class, $channel);
+
+        $turn = $this->accept('Не удалось ответить');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+        $failureMessageId = (int) $turn->fresh()->outbound_message_id;
+        $delivery = CompanionDelivery::query()->where('conversation_message_id', $failureMessageId)->sole();
+
+        (new DeliverCompanionMessage($this->organization->getKey(), $delivery->getKey()))
+            ->handle($channel, app(CompanionMessageBodyReader::class));
+
+        self::assertSame(['Повторить', 'Позвать специалиста'], array_map(
+            static fn ($button): string => $button->text,
+            $channel->chunks[0]->buttons,
+        ));
+        self::assertSame('cc:retry:'.$failureMessageId, $channel->chunks[0]->buttons[0]->callbackData);
+        self::assertSame('cc:human:'.$failureMessageId, $channel->chunks[0]->buttons[1]->callbackData);
+    }
+
+    public function test_portal_retry_uses_the_same_application_action_and_keeps_one_client_message(): void
+    {
+        config()->set('tenancy.default_organization_id', $this->organization->getKey());
+        $this->app->instance(AiWorkflowEngine::class, new ProviderUnavailableCompanionEngine);
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('Повторите сообщение из портала');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+        $failureMessageId = (int) $turn->fresh()->outbound_message_id;
+        $portalSession = ['client_portal.client_id' => $this->client->getKey()];
+
+        $this->withSession($portalSession)
+            ->get(route('portal.companion'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/Companion')
+                ->where('urls.retry', route('portal.companion.retry', ['messageId' => '__id__']))
+                ->where('companion.messages.1.safeActions', ['retry_failed_turn', 'request_human']));
+
+        $this->withSession($portalSession)
+            ->post(route('portal.companion.retry', ['messageId' => $failureMessageId]))
+            ->assertRedirect()
+            ->assertSessionHas('companion_retry_result', 'accepted');
+
+        self::assertSame(CompanionTurnStatus::Pending, $turn->fresh()->status);
+        self::assertSame(2, CompanionTurnAttempt::query()->where('turn_id', $turn->getKey())->count());
+        self::assertSame(1, ConversationMessage::query()
+            ->where('conversation_id', $turn->conversation_id)
+            ->where('author_type', 'client')
+            ->count());
+    }
+
+    public function test_portal_specialist_request_keeps_ai_active_and_returns_visible_result(): void
+    {
+        config()->set('tenancy.default_organization_id', $this->organization->getKey());
+        $this->app->instance(AiWorkflowEngine::class, new ProviderUnavailableCompanionEngine);
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('Позову специалиста, если понадобится');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+        $failureMessageId = (int) $turn->fresh()->outbound_message_id;
+
+        $this->withSession(['client_portal.client_id' => $this->client->getKey()])
+            ->post(route('portal.companion.specialist', ['messageId' => $failureMessageId]))
+            ->assertRedirect()
+            ->assertSessionHas('companion_specialist_requested', 'created');
+
+        self::assertSame(ConversationAutomationState::AiActive, $turn->conversation()->firstOrFail()->automation_state);
+        self::assertSame(CompanionEscalationReason::HumanRequested, CompanionEscalation::query()->sole()->reason);
+    }
+
+    public function test_retry_rejects_another_clients_message_and_a_stale_context_epoch(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new ProviderUnavailableCompanionEngine);
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('Проверка защиты повтора');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+        $failureMessageId = (int) $turn->fresh()->outbound_message_id;
+
+        $otherClient = Client::factory()->forOrganization($this->organization)->create();
+        try {
+            app(RetryCompanionTurn::class)->handle($otherClient, $failureMessageId);
+            self::fail('A different client must not retry this turn.');
+        } catch (AuthorizationException) {
+        }
+
+        $turn->conversation()->firstOrFail()->update(['context_epoch' => $turn->context_epoch + 1]);
+        self::assertSame(
+            RetryCompanionTurnResult::Unavailable,
+            app(RetryCompanionTurn::class)->handle($this->client, $failureMessageId),
+        );
+        self::assertSame(CompanionTurnStatus::Failed, $turn->fresh()->status);
+        self::assertSame(1, CompanionTurnAttempt::query()->where('turn_id', $turn->getKey())->count());
+    }
+
+    public function test_retry_from_before_a_real_human_takeover_is_unavailable_after_resume(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new ProviderUnavailableCompanionEngine);
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('Сбой перед подключением специалиста');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+        $failureMessageId = (int) $turn->fresh()->outbound_message_id;
+        $admin = User::factory()->forOrganization($this->organization, OrganizationRole::Administrator)->create();
+
+        app(TakeOverCompanionConversation::class)->handle($admin, $this->client);
+        app(ResolveCompanionHandoff::class)->handleAndResume($admin, $this->client);
+
+        self::assertSame(
+            RetryCompanionTurnResult::Unavailable,
+            app(RetryCompanionTurn::class)->handle($this->client, $failureMessageId),
+        );
+        $history = app(ReadCompanionConversation::class)->forClient($this->client);
+        $failure = collect($history['messages'])->firstWhere('id', $failureMessageId);
+        self::assertNotContains('retry_failed_turn', $failure['safeActions']);
+    }
+
+    public function test_verified_legacy_technical_handoff_can_be_restored_without_replaying_paused_messages(): void
+    {
+        $failedTurn = $this->accept('Сообщение до автоматического handoff');
+        $conversation = $failedTurn->conversation()->firstOrFail();
+        $failedTurn->update([
+            'status' => CompanionTurnStatus::Failed,
+            'failure_code' => 'provider_unavailable',
+            'failed_at' => now(),
+        ]);
+        $conversation->update(['automation_state' => ConversationAutomationState::HumanHandoff]);
+        $escalation = CompanionEscalation::query()->create([
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'conversation_id' => $conversation->getKey(),
+            'turn_id' => $failedTurn->getKey(),
+            'reason' => CompanionEscalationReason::RepeatedExecutionFailure,
+            'status' => CompanionEscalationStatus::Open,
+            'safe_metadata' => ['source' => 'legacy_failure'],
+            'opened_at' => now(),
+        ]);
+        $pausedTurn = $this->accept('Сообщение, принятое во время старой паузы');
+        $admin = User::factory()->forOrganization($this->organization, OrganizationRole::Administrator)->create();
+
+        self::assertSame(CompanionTurnStatus::Paused, $pausedTurn->fresh()->status);
+        self::assertTrue(app(ReadCompanionConversation::class)->forStaff($admin, $this->client)['canRemediateLegacyHandoff']);
+        self::assertTrue(app(RestoreLegacyCompanionAi::class)->handle($admin, $this->client));
+
+        self::assertSame(ConversationAutomationState::AiActive, $conversation->fresh()->automation_state);
+        self::assertSame(CompanionEscalationStatus::Resolved, $escalation->fresh()->status);
+        self::assertSame(CompanionTurnStatus::Cancelled, $pausedTurn->fresh()->status);
+        self::assertDatabaseHas('audit_events', [
+            'organization_id' => $this->organization->getKey(),
+            'action' => 'companion.handoff.legacy_failure_remediated',
+            'target_id' => (string) $conversation->getKey(),
+        ]);
+    }
+
+    public function test_legacy_restore_rejects_a_handoff_with_a_real_request_for_specialist(): void
+    {
+        $turn = $this->accept('Запрос специалисту');
+        $conversation = $turn->conversation()->firstOrFail();
+        $conversation->update(['automation_state' => ConversationAutomationState::HumanHandoff]);
+        CompanionEscalation::query()->create([
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'conversation_id' => $conversation->getKey(),
+            'turn_id' => $turn->getKey(),
+            'reason' => CompanionEscalationReason::HumanRequested,
+            'status' => CompanionEscalationStatus::Open,
+            'safe_metadata' => ['source' => 'client_action'],
+            'opened_at' => now(),
+        ]);
+        $admin = User::factory()->forOrganization($this->organization, OrganizationRole::Administrator)->create();
+
+        self::assertFalse(app(RestoreLegacyCompanionAi::class)->handle($admin, $this->client));
+        self::assertSame(ConversationAutomationState::HumanHandoff, $conversation->fresh()->automation_state);
+        self::assertSame(CompanionEscalationStatus::Open, CompanionEscalation::query()->sole()->status);
+    }
+
+    public function test_ambiguous_legacy_pause_requires_explicit_takeover_before_staff_reply(): void
+    {
+        $turn = $this->accept('Старое состояние паузы');
+        $conversation = $turn->conversation()->firstOrFail();
+        $conversation->update(['automation_state' => ConversationAutomationState::HumanHandoff]);
+        $admin = User::factory()->forOrganization($this->organization, OrganizationRole::Administrator)->create();
+
+        $history = app(ReadCompanionConversation::class)->forStaff($admin, $this->client);
+        self::assertSame('handoff_paused', $history['mode']);
+        self::assertFalse($history['humanTakeoverConfirmed']);
+
+        try {
+            app(ReplyToCompanion::class)->handle($admin, $this->client, 'Ответ до подтверждения takeover');
+            self::fail('An ambiguous legacy pause must not accept a specialist reply.');
+        } catch (ValidationException) {
+        }
+
+        app(TakeOverCompanionConversation::class)->handle($admin, $this->client);
+
+        self::assertNotNull($conversation->fresh()->last_human_takeover_at);
+        app(ReplyToCompanion::class)->handle($admin, $this->client, 'Ответ после подтверждения takeover');
+        self::assertSame(1, ConversationMessage::query()->where('conversation_id', $conversation->getKey())->where('author_type', 'staff')->count());
     }
 
     public function test_repeated_provider_failure_for_a_negated_human_request_does_not_create_a_handoff(): void
@@ -244,7 +550,7 @@ final class ClientCompanionProcessingTest extends TestCase
             ->once();
     }
 
-    public function test_direct_human_request_escalates_and_pauses_the_same_conversation(): void
+    public function test_direct_human_request_notifies_specialist_without_pausing_ai(): void
     {
         $engine = new RecordingCompanionEngine(new AiRunResult(runId: 0, status: AiRunStatus::Succeeded));
         $channel = new RecordingCompanionChannel;
@@ -256,11 +562,68 @@ final class ClientCompanionProcessingTest extends TestCase
         app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
 
         $turn->refresh();
-        self::assertSame(CompanionTurnStatus::Escalated, $turn->status);
+        self::assertSame(CompanionTurnStatus::Completed, $turn->status);
         self::assertSame(0, $engine->calls);
         self::assertSame(CompanionEscalationReason::HumanRequested, CompanionEscalation::query()->sole()->reason);
-        self::assertSame('human_handoff', $turn->conversation()->firstOrFail()->automation_state->value);
+        self::assertSame(ConversationAutomationState::AiActive, $turn->conversation()->firstOrFail()->automation_state);
         self::assertFalse($turn->typing_active);
+        self::assertSame('Специалист уведомлён. Пока он не подключился, помощник продолжит отвечать.', app(CompanionMessageBodyReader::class)->read(
+            $this->organization->getKey(),
+            ConversationMessage::query()->findOrFail($turn->outbound_message_id),
+        ));
+    }
+
+    public function test_urgent_safety_escalation_uses_attention_event_without_claiming_client_requested_a_specialist(): void
+    {
+        $channel = new RecordingCompanionChannel;
+        $this->app->instance(MessagingChannel::class, $channel);
+
+        $turn = $this->accept('Сильная боль в груди, трудно дышать.');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        $turn->refresh();
+        $event = ScenarioEvent::query()->sole();
+
+        self::assertSame(CompanionTurnStatus::Completed, $turn->status);
+        self::assertSame(ConversationAutomationState::AiActive, $turn->conversation()->firstOrFail()->automation_state);
+        self::assertSame(CompanionEscalationReason::UrgentSafetyConcern, CompanionEscalation::query()->sole()->reason);
+        self::assertSame(ScenarioEventType::CompanionSpecialistAttention, $event->event_name);
+        self::assertSame(CompanionEscalationReason::UrgentSafetyConcern->value, $event->payload['reason']);
+        self::assertArrayNotHasKey('message', $event->payload);
+        self::assertSame(0, ScenarioEvent::query()->where('event_name', ScenarioEventType::CompanionRequestedSpecialist)->count());
+    }
+
+    public function test_explicit_specialist_request_is_recorded_even_while_a_safety_escalation_is_open(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new ProviderUnavailableCompanionEngine);
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('Не удалось подготовить ответ');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+        $failureMessage = ConversationMessage::query()->findOrFail($turn->fresh()->outbound_message_id);
+        CompanionEscalation::query()->create([
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'conversation_id' => $turn->conversation_id,
+            'turn_id' => $turn->getKey(),
+            'reason' => CompanionEscalationReason::UrgentSafetyConcern,
+            'status' => CompanionEscalationStatus::Open,
+            'safe_metadata' => ['source' => 'safety_classifier'],
+            'opened_at' => now(),
+        ]);
+
+        self::assertSame(RequestCompanionHandoffResult::Created, app(RequestCompanionHandoff::class)->handle(
+            $this->client,
+            (int) $failureMessage->getKey(),
+        ));
+
+        self::assertSame(2, CompanionEscalation::query()->where('status', CompanionEscalationStatus::Open)->count());
+        self::assertSame(1, CompanionEscalation::query()->where('reason', CompanionEscalationReason::HumanRequested)->count());
+        self::assertSame(ConversationAutomationState::AiActive, $turn->conversation()->firstOrFail()->automation_state);
+        self::assertCount(2, collect(app(ReadCompanionConversation::class)->forClient($this->client)['messages'])
+            ->where('type', 'handoff'));
     }
 
     public function test_model_cannot_infer_human_requested_when_the_client_did_not_explicitly_request_it(): void
@@ -335,7 +698,7 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(0, ScenarioEvent::query()->count());
     }
 
-    public function test_serious_diagnosis_cannot_be_escalated_by_a_model_without_a_human_request(): void
+    public function test_out_of_scope_reply_stays_usable_without_escalation_or_handoff(): void
     {
         $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
             runId: 0,
@@ -353,16 +716,16 @@ final class ClientCompanionProcessingTest extends TestCase
         $turn->update(['burst_expires_at' => now()->subSecond()]);
         app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
 
-        self::assertSame(CompanionTurnStatus::Failed, $turn->fresh()->status);
-        self::assertSame('invalid_output', $turn->fresh()->failure_code);
+        self::assertSame(CompanionTurnStatus::Completed, $turn->fresh()->status);
         self::assertSame(ConversationAutomationState::AiActive, $turn->conversation()->firstOrFail()->automation_state);
         self::assertSame(0, CompanionEscalation::query()->count());
+        self::assertContains('request_human', explode(',', ConversationMessage::query()->findOrFail($turn->fresh()->outbound_message_id)->metadata['safe_actions'] ?? ''));
     }
 
-    public function test_resolve_and_resume_then_normal_greeting_produces_an_ai_reply(): void
+    public function test_staff_takeover_and_resume_then_normal_greeting_produces_an_ai_reply(): void
     {
         $admin = User::factory()->forOrganization($this->organization, OrganizationRole::Administrator)->create();
-        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+        $engine = new RecordingCompanionEngine(new AiRunResult(
             runId: 0,
             status: AiRunStatus::Succeeded,
             outputPayload: [
@@ -371,14 +734,55 @@ final class ClientCompanionProcessingTest extends TestCase
                 'handoff_reason' => '',
                 'suggested_safe_actions' => [],
             ],
-        )));
+        ));
         $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+        $this->app->instance(AiWorkflowEngine::class, $engine);
 
         $handoff = $this->accept('Мне нужен специалист');
         $handoff->update(['burst_expires_at' => now()->subSecond()]);
         app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $handoff->getKey());
 
+        self::assertSame(ConversationAutomationState::AiActive, $handoff->conversation()->firstOrFail()->automation_state);
+
+        $aiContinues = $this->accept('привет');
+        $aiContinues->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $aiContinues->getKey());
+        self::assertSame(CompanionTurnStatus::Completed, $aiContinues->fresh()->status);
+        self::assertSame(1, $engine->calls);
+        self::assertSame(1, CompanionEscalation::query()->where('status', 'open')->count());
+
+        app(TakeOverCompanionConversation::class)->handle($admin, $this->client);
+        $takeoverNotice = ConversationMessage::query()
+            ->where('conversation_id', $handoff->conversation_id)
+            ->where('author_type', 'system')
+            ->where('metadata->message_type', 'human_takeover')
+            ->sole();
+        self::assertSame(
+            'К диалогу подключился специалист. AI-помощник временно не отвечает.',
+            app(CompanionMessageBodyReader::class)->read($this->organization->getKey(), $takeoverNotice),
+        );
+        app(TakeOverCompanionConversation::class)->handle($admin, $this->client);
+        self::assertSame(1, ConversationMessage::query()
+            ->where('conversation_id', $handoff->conversation_id)
+            ->where('metadata->message_type', 'human_takeover')
+            ->count());
+        self::assertSame(1, CompanionDelivery::query()
+            ->where('conversation_message_id', $takeoverNotice->getKey())
+            ->count());
+        self::assertSame(ConversationAutomationState::HumanHandoff, $handoff->conversation()->firstOrFail()->automation_state);
+        self::assertNotNull($handoff->conversation()->firstOrFail()->last_human_takeover_at);
+
+        $paused = $this->accept('Новое сообщение специалисту');
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $paused->getKey());
+        self::assertSame(CompanionTurnStatus::Paused, $paused->fresh()->status);
+        self::assertSame(1, $engine->calls);
+
+        app(ReplyToCompanion::class)->handle($admin, $this->client, 'Я подключился к диалогу.');
+        self::assertSame(1, ConversationMessage::query()->where('conversation_id', $handoff->conversation_id)->where('author_type', 'staff')->count());
+
         app(ResolveCompanionHandoff::class)->handleAndResume($admin, $this->client);
+        self::assertSame(CompanionTurnStatus::Cancelled, $paused->fresh()->status);
+        self::assertSame(0, CompanionEscalation::query()->where('status', 'open')->count());
 
         $greeting = $this->accept('привет');
         $greeting->update(['burst_expires_at' => now()->subSecond()]);
@@ -393,6 +797,21 @@ final class ClientCompanionProcessingTest extends TestCase
         ));
         self::assertSame(1, CompanionEscalation::query()->count());
         self::assertSame(1, ScenarioEvent::query()->where('event_name', 'companion.requested_specialist')->count());
+        self::assertSame(2, $engine->calls);
+    }
+
+    public function test_only_staff_with_companion_handoff_permission_can_take_over(): void
+    {
+        $turn = $this->accept('Запрос на проверку разрешений');
+        $unauthorized = User::factory()->create();
+
+        try {
+            app(TakeOverCompanionConversation::class)->handle($unauthorized, $this->client);
+            self::fail('A staff member without Companion permissions must not take over.');
+        } catch (AuthorizationException) {
+        }
+
+        self::assertSame(ConversationAutomationState::AiActive, $turn->conversation()->firstOrFail()->automation_state);
     }
 
     public function test_long_reply_delivers_ordered_chunks_with_actions_only_on_the_final_chunk_and_retry_is_idempotent(): void
@@ -768,6 +1187,7 @@ final class ClientCompanionProcessingTest extends TestCase
 
     public function test_human_handoff_during_processing_prevents_late_ai_output(): void
     {
+        $admin = User::factory()->forOrganization($this->organization, OrganizationRole::Administrator)->create();
         $turn = $this->accept('Пауза специалистом');
         $turn->update(['burst_expires_at' => now()->subSecond()]);
         $this->app->instance(AiWorkflowEngine::class, new InterleavingCompanionEngine(
@@ -776,8 +1196,8 @@ final class ClientCompanionProcessingTest extends TestCase
                 status: AiRunStatus::Succeeded,
                 outputPayload: ['decision' => 'reply', 'reply' => 'Не публиковать', 'handoff_reason' => '', 'suggested_safe_actions' => []],
             ),
-            function () use ($turn): void {
-                Conversation::query()->whereKey($turn->conversation_id)->update(['automation_state' => ConversationAutomationState::HumanHandoff]);
+            function () use ($admin): void {
+                app(TakeOverCompanionConversation::class)->handle($admin, $this->client);
             },
         ));
         $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
@@ -787,6 +1207,7 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(CompanionTurnStatus::Paused, $turn->fresh()->status);
         self::assertNull($turn->fresh()->outbound_message_id);
         self::assertSame(0, ConversationMessage::query()->where('author_type', 'ai')->count());
+        self::assertSame(CompanionTurnAttemptStatus::Cancelled, CompanionTurnAttempt::query()->sole()->status);
     }
 
     public function test_explicit_retryable_delivery_failure_is_bounded_and_persisted(): void

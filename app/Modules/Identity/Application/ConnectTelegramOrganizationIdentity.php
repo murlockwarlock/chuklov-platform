@@ -5,6 +5,7 @@ namespace App\Modules\Identity\Application;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Identity\Domain\Models\OrganizationChannelLinkToken;
+use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -16,7 +17,7 @@ final class ConnectTelegramOrganizationIdentity
 {
     public function __construct(private readonly RecordAuditEvent $audit) {}
 
-    public function handle(string $token, VerifiedChannelIdentity $verifiedIdentity): void
+    public function handle(string $token, VerifiedChannelIdentity $verifiedIdentity): bool
     {
         if ($verifiedIdentity->channel !== 'telegram'
             || trim($verifiedIdentity->externalId) === ''
@@ -29,8 +30,10 @@ final class ConnectTelegramOrganizationIdentity
             throw new InvalidTelegramLinkToken('The Telegram connection token is invalid.');
         }
 
+        $alreadyConnected = false;
+
         try {
-            DB::transaction(function () use ($token, $verifiedIdentity): void {
+            DB::transaction(function () use ($token, $verifiedIdentity, &$alreadyConnected): void {
                 $linkToken = OrganizationChannelLinkToken::query()
                     ->where('token_hash', hash('sha256', $token))
                     ->where('channel', 'telegram')
@@ -38,10 +41,11 @@ final class ConnectTelegramOrganizationIdentity
                     ->lockForUpdate()
                     ->first();
 
-                if (! $linkToken instanceof OrganizationChannelLinkToken
-                    || $linkToken->consumed_at !== null
-                    || $linkToken->expires_at->isPast()) {
+                if (! $linkToken instanceof OrganizationChannelLinkToken || $linkToken->consumed_at !== null) {
                     throw new InvalidTelegramLinkToken('The Telegram connection token is invalid or expired.');
+                }
+                if ($linkToken->expires_at->isPast()) {
+                    throw new ExpiredTelegramLinkToken('The Telegram connection token has expired.');
                 }
 
                 $membership = OrganizationMembership::query()
@@ -51,7 +55,7 @@ final class ConnectTelegramOrganizationIdentity
                     ->lockForUpdate()
                     ->first();
                 if ($membership === null) {
-                    throw new AuthorizationException('The staff member is no longer active in this organization.');
+                    throw new TelegramStaffMembershipUnavailable('The staff member is no longer active in this organization.');
                 }
 
                 $identities = OrganizationChannelIdentity::query()
@@ -75,11 +79,14 @@ final class ConnectTelegramOrganizationIdentity
 
                 if ($incomingIdentity instanceof OrganizationChannelIdentity
                     && (int) $incomingIdentity->user_id !== (int) $linkToken->user_id) {
-                    throw new AuthorizationException('The Telegram identity is already linked to another staff member.');
+                    throw new TelegramIdentityAlreadyLinked('The Telegram identity is already linked to another staff member.');
                 }
 
                 $isRebinding = $identity instanceof OrganizationChannelIdentity
                     && (string) $identity->external_id !== $verifiedIdentity->externalId;
+                $alreadyConnected = $identity instanceof OrganizationChannelIdentity
+                    && (string) $identity->external_id === $verifiedIdentity->externalId
+                    && $identity->verification_status === ChannelIdentityStatus::Verified;
 
                 if (! $identity instanceof OrganizationChannelIdentity) {
                     $identity = new OrganizationChannelIdentity;
@@ -97,12 +104,17 @@ final class ConnectTelegramOrganizationIdentity
 
                 $identity->forceFill([
                     'external_id' => $verifiedIdentity->externalId,
+                    'external_username' => $verifiedIdentity->username,
                     'verification_status' => ChannelIdentityStatus::Verified,
                     'verification_method' => 'telegram_crm_link',
                     'verified_at' => now(),
                 ])->save();
 
                 $organization = $linkToken->organization;
+                if (! $organization instanceof Organization) {
+                    throw new InvalidTelegramLinkToken('The Telegram connection token is invalid.');
+                }
+
                 $this->audit->handle(
                     organization: $organization,
                     actor: null,
@@ -120,7 +132,9 @@ final class ConnectTelegramOrganizationIdentity
                 $linkToken->forceFill(['consumed_at' => now()])->save();
             });
         } catch (UniqueConstraintViolationException) {
-            throw new AuthorizationException('The Telegram identity is already linked to another staff member.');
+            throw new TelegramIdentityAlreadyLinked('The Telegram identity is already linked to another staff member.');
         }
+
+        return $alreadyConnected;
     }
 }

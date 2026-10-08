@@ -105,11 +105,11 @@ final class FeedbackSubmissionResource extends LocalizedResource
                     TextEntry::make('submitted_at')->label(__('Отправлено'))->dateTime('d.m.Y H:i'),
                 ])
                 ->columns(2),
-            Section::make(__('Внутренняя обратная связь'))
-                ->description(__('Текст доступен только в авторизованном просмотре клиента и не участвует в поиске или аудите.'))
+            Section::make(__('Комментарий клиента'))
+                ->description(__('Комментарий виден только сотрудникам с доступом к клиенту.'))
                 ->schema([
                     TextEntry::make('internal_feedback')
-                        ->label(__('Текст'))
+                        ->label(__('Комментарий'))
                         ->placeholder(__('Текст не оставлен'))
                         ->columnSpanFull()
                         ->wrap(),

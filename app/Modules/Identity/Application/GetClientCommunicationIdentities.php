@@ -23,6 +23,8 @@ final readonly class GetClientCommunicationIdentities
      *     channel: string,
      *     externalId: string,
      *     verificationStatus: ChannelIdentityStatus,
+     *     externalUsername: string|null,
+     *     telegramUrl: string|null,
      *     verifiedAt: ?\DateTimeInterface,
      *     summary: string,
      * }>
@@ -39,7 +41,7 @@ final readonly class GetClientCommunicationIdentities
         return array_values(ClientChannelIdentity::query()
             ->where('organization_id', $organization->getKey())
             ->where('client_id', $client->getKey())
-            ->select(['id', 'organization_id', 'client_id', 'channel', 'external_id', 'verification_status', 'verified_at'])
+            ->select(['id', 'organization_id', 'client_id', 'channel', 'external_id', 'external_username', 'verification_status', 'verified_at'])
             ->orderBy('channel')
             ->orderBy('id')
             ->limit(10)
@@ -67,10 +69,20 @@ final readonly class GetClientCommunicationIdentities
                     throw new \LogicException('The client identity verified_at attribute must be a datetime or null.');
                 }
 
+                $username = $identity->channel === 'telegram'
+                    ? VerifiedChannelIdentity::normalizeUsername($identity->external_username)
+                    : null;
+
                 return [
                     'channel' => $identity->channel,
                     'externalId' => (string) $identity->external_id,
                     'verificationStatus' => $identity->verification_status,
+                    'externalUsername' => $username,
+                    'telegramUrl' => $identity->channel === 'telegram'
+                        && $identity->verification_status === ChannelIdentityStatus::Verified
+                        && $username !== null
+                        ? 'https://t.me/'.$username
+                        : null,
                     'verifiedAt' => $verifiedAt,
                     'summary' => $channelName.' ('.$idLabel.', '.$statusLabel.')',
                 ];

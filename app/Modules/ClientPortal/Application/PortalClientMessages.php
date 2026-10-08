@@ -29,17 +29,9 @@ final class PortalClientMessages
             'ru' => 'Оставить отзыв',
             'en' => 'Leave a review',
         ],
-        'referral_partner_activated' => [
-            'ru' => 'Партнёрская программа подключена.',
-            'en' => 'The partner program is now active.',
-        ],
         'referral_link_created' => [
             'ru' => 'Ссылка создана.',
             'en' => 'Link created.',
-        ],
-        'referral_link_disabled' => [
-            'ru' => 'Ссылка отключена.',
-            'en' => 'Link disabled.',
         ],
         'referral_link_not_found' => [
             'ru' => 'Реферальная ссылка не найдена.',
@@ -56,6 +48,30 @@ final class PortalClientMessages
         'referral_payout_cancelled' => [
             'ru' => 'Запрос на выплату отменён.',
             'en' => 'Payout request cancelled.',
+        ],
+        'referral_partner_required' => [
+            'ru' => 'Создание кампаний доступно только партнёрам.',
+            'en' => 'Campaign links are available to partners only.',
+        ],
+        'referral_credit_applied' => [
+            'ru' => 'Бонус применён к оплате.',
+            'en' => 'Referral credit applied to the payment.',
+        ],
+        'referral_credit_amount_invalid' => [
+            'ru' => 'Укажите сумму бонуса в допустимом формате.',
+            'en' => 'Enter a valid referral credit amount.',
+        ],
+        'referral_credit_unavailable' => [
+            'ru' => 'Сумма превышает доступный бонус или остаток к оплате.',
+            'en' => 'The amount exceeds the available credit or remaining balance.',
+        ],
+        'referral_credit_currency_invalid' => [
+            'ru' => 'Бонус можно применить только в валюте обязательства.',
+            'en' => 'Referral credit can only be applied in the obligation currency.',
+        ],
+        'referral_credit_retry' => [
+            'ru' => 'Повторите операцию с новой страницы.',
+            'en' => 'Refresh the page and try the operation again.',
         ],
         'b2b_date_time_invalid' => [
             'ru' => 'Выберите корректные дату и время.',
@@ -178,8 +194,8 @@ final class PortalClientMessages
             'en' => 'Choose a supported currency.',
         ],
         'payout_partner_required' => [
-            'ru' => 'Сначала активируйте партнёрскую программу.',
-            'en' => 'Activate the partner program first.',
+            'ru' => 'Денежные выплаты доступны только партнёрам.',
+            'en' => 'Cash payouts are available to partners only.',
         ],
         'payout_amount_unavailable' => [
             'ru' => 'Сумма превышает доступный остаток.',
@@ -272,6 +288,12 @@ final class PortalClientMessages
             'payout_cancel' => [
                 'idempotency_key.required' => $this->message('payout_retry'),
             ],
+            'referral_credit' => [
+                'amount.required' => $this->message('referral_credit_amount_invalid'),
+                'amount.regex' => $this->message('referral_credit_amount_invalid'),
+                'currency.required' => $this->message('referral_credit_currency_invalid'),
+                'idempotency_key.required' => $this->message('referral_credit_retry'),
+            ],
             'attribution' => [
                 'source_detail.string' => $this->message('attribution_detail_invalid'),
                 'source_detail.max' => $this->message('attribution_detail_too_long'),
@@ -308,7 +330,7 @@ final class PortalClientMessages
             },
             'referral_link' => match ($field) {
                 'name' => $this->message('referral_name_min'),
-                'partner' => $this->message('payout_partner_required'),
+                'partner' => $this->message('referral_partner_required'),
                 'link' => $this->message('referral_link_not_found'),
                 default => $this->message('request_invalid'),
             },
@@ -319,6 +341,12 @@ final class PortalClientMessages
                     ? $this->message('payout_amount_invalid')
                     : $this->message('payout_amount_unavailable'),
                 'currency' => $this->message('payout_currency_invalid'),
+                default => $this->message('request_invalid'),
+            },
+            'referral_credit' => match ($field) {
+                'idempotency_key' => $this->message('referral_credit_retry'),
+                'currency' => $this->message('referral_credit_currency_invalid'),
+                'amount' => $this->message('referral_credit_unavailable'),
                 default => $this->message('request_invalid'),
             },
             'tracker' => match ($field) {

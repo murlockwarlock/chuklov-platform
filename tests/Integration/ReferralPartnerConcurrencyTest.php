@@ -2,6 +2,7 @@
 
 namespace Tests\Integration;
 
+use App\Models\User;
 use App\Modules\Attribution\Application\CapturePreAuthAttribution;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Identity\Application\RegisterClientAcquisition;
@@ -38,12 +39,13 @@ final class ReferralPartnerConcurrencyTest extends TestCase
     {
         $this->requirePostgres();
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization)->create();
         $client = Client::factory()->forOrganization($organization)->create();
         app(OrganizationContext::class)->set($organization);
 
         $results = Concurrency::driver('process')->run([
-            static fn (): string => self::activateInProcess($organization->getKey(), $client->getKey()),
-            static fn (): string => self::activateInProcess($organization->getKey(), $client->getKey()),
+            static fn (): string => self::activateInProcess($organization->getKey(), $client->getKey(), $admin->getKey()),
+            static fn (): string => self::activateInProcess($organization->getKey(), $client->getKey(), $admin->getKey()),
         ]);
 
         self::assertNotContains('error', $results, implode(', ', $results));
@@ -56,9 +58,10 @@ final class ReferralPartnerConcurrencyTest extends TestCase
     {
         $this->requirePostgres();
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization)->create();
         $client = Client::factory()->forOrganization($organization)->create();
         app(OrganizationContext::class)->set($organization);
-        app(ActivateReferralPartner::class)->handle($client, 'portal');
+        app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
 
         $results = Concurrency::driver('process')->run([
             static fn (): string => self::createLinkInProcess($organization->getKey(), $client->getKey(), 'Instagram'),
@@ -77,8 +80,9 @@ final class ReferralPartnerConcurrencyTest extends TestCase
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
         $partner = Client::factory()->forOrganization($organization)->create();
         $referred = Client::factory()->forOrganization($organization)->create(['lead_source' => null]);
+        $admin = User::factory()->forOrganization($organization)->create();
         app(OrganizationContext::class)->set($organization);
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $link = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Telegram channel',
@@ -109,8 +113,9 @@ final class ReferralPartnerConcurrencyTest extends TestCase
         $this->requirePostgres();
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
         $partner = Client::factory()->forOrganization($organization)->create();
+        $admin = User::factory()->forOrganization($organization)->create();
         app(OrganizationContext::class)->set($organization);
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        app(ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
         $link = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Concurrent campaign',
@@ -130,12 +135,16 @@ final class ReferralPartnerConcurrencyTest extends TestCase
         self::assertSame(['visit'], array_values(array_unique($results)));
     }
 
-    private static function activateInProcess(int $organizationId, int $clientId): string
+    private static function activateInProcess(int $organizationId, int $clientId, int $actorId): string
     {
         try {
             $organization = Organization::query()->findOrFail($organizationId);
             app(OrganizationContext::class)->set($organization);
-            $profile = app(ActivateReferralPartner::class)->handle(Client::query()->where('organization_id', $organizationId)->findOrFail($clientId), 'portal');
+            $profile = app(ActivateReferralPartner::class)->handle(
+                Client::query()->where('organization_id', $organizationId)->findOrFail($clientId),
+                'crm',
+                User::query()->findOrFail($actorId),
+            );
 
             return 'profile:'.$profile->getKey();
         } catch (\Throwable $exception) {

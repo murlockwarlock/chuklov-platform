@@ -30,7 +30,7 @@ final class EstablishManualReferralRelationship
 
         if ($referrerClientId === $referredClientId) {
             throw ValidationException::withMessages([
-                'referrer_client_id' => 'Клиент не может быть реферером сам себе.',
+                'referrer_client_id' => 'Клиент не может быть пригласившим сам себе.',
             ]);
         }
 
@@ -57,6 +57,7 @@ final class EstablishManualReferralRelationship
                 $existing = ReferralRelationship::query()
                     ->where('organization_id', $organization->getKey())
                     ->where('referred_client_id', $referred->getKey())
+                    ->whereNull('superseded_at')
                     ->lockForUpdate()
                     ->first();
 
@@ -66,7 +67,7 @@ final class EstablishManualReferralRelationship
                     $referrerName = $referrerName !== '' ? $referrerName : 'клиент #'.$existing->referrer_client_id;
 
                     throw ValidationException::withMessages([
-                        'referrer_client_id' => 'У клиента уже указан реферер: '.$referrerName.'. Обычное назначение не меняет зафиксированный источник.',
+                        'referrer_client_id' => 'У клиента уже указан пригласивший: '.$referrerName.'. Обычное назначение не меняет зафиксированный источник.',
                     ]);
                 }
 
@@ -108,7 +109,7 @@ final class EstablishManualReferralRelationship
             });
         } catch (UniqueConstraintViolationException) {
             throw ValidationException::withMessages([
-                'referrer_client_id' => 'У клиента уже указан реферер. Обычное назначение не меняет зафиксированный источник.',
+                'referrer_client_id' => 'У клиента уже указан пригласивший. Обычное назначение не меняет зафиксированный источник.',
             ]);
         }
     }

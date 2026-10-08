@@ -23,16 +23,14 @@ final readonly class SearchClientsForReferralAssignment
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
 
-        return $this->clients
-            ->query($actor, $search)
-            ->where('id', '<>', $excludedClientId)
-            ->orderBy('full_name')
-            ->limit(ClientSearch::MAX_RESULTS)
-            ->get(['id', 'full_name', 'email', 'phone'])
-            ->mapWithKeys(static fn (Client $client): array => [
-                $client->getKey() => self::formatLabel($client),
-            ])
-            ->all();
+        return $this->clients->formatOptionLabels(
+            $this->clients
+                ->withVerifiedTelegramIdentity($this->clients->query($actor, $search))
+                ->where('id', '<>', $excludedClientId)
+                ->orderBy('full_name')
+                ->limit(ClientSearch::MAX_RESULTS)
+                ->get(['id', 'full_name', 'email', 'phone']),
+        );
     }
 
     public function optionLabel(User $actor, mixed $value): ?string
@@ -43,24 +41,12 @@ final readonly class SearchClientsForReferralAssignment
 
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
-        $client = Client::query()
-            ->where('organization_id', $organization->getKey())
-            ->whereKey((int) $value)
-            ->first();
+        $client = $this->clients->withVerifiedTelegramIdentity(
+            Client::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey((int) $value),
+        )->first();
 
-        return $client instanceof Client ? self::formatLabel($client) : null;
-    }
-
-    private static function formatLabel(Client $client): string
-    {
-        $name = trim((string) $client->full_name);
-        $contacts = array_filter([
-            trim((string) $client->email),
-            trim((string) $client->phone),
-        ]);
-
-        return $name !== ''
-            ? $name.(($contacts === []) ? '' : ' · '.implode(' · ', $contacts))
-            : ($contacts === [] ? 'Клиент без имени' : implode(' · ', $contacts));
+        return $client instanceof Client ? $this->clients->formatOptionLabel($client) : null;
     }
 }

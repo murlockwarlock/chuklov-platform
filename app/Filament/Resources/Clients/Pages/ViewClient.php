@@ -28,7 +28,10 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\DeactivateReferralPartner;
 use App\Modules\Referrals\Application\EstablishManualReferralRelationship;
+use App\Modules\Referrals\Application\ReplaceReferralRelationship;
 use App\Modules\Referrals\Application\SearchActivePartnersForReferralAssignment;
+use App\Modules\Referrals\Domain\Enums\ReferralEstablishmentMethod;
+use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Tracker\Application\AssignTrackerTask;
 use App\Modules\Tracker\Application\EndTrackerAccess;
 use App\Modules\Tracker\Application\ExtendTrackerAccess;
@@ -154,6 +157,11 @@ class ViewClient extends LocalizedViewRecord
             $this->openPartnerWorkspaceAction(),
             $this->deactivatePartnerAction(),
             $this->assignPartnerAction(),
+            Action::make('newSession')
+                ->label(__('Новый сеанс'))
+                ->icon('heroicon-o-plus')
+                ->url(fn (): string => MedicalSessionResource::getUrl('create', ['client' => $this->clientRecord()]))
+                ->visible(fn (): bool => MedicalSessionResource::canCreate()),
             ActionGroup::make([
                 $this->assignTrackerTaskAction(),
                 $this->grantTrackerAccessAction(),
@@ -168,27 +176,22 @@ class ViewClient extends LocalizedViewRecord
             ActionGroup::make([
                 $this->marketingConsentActionGroup(),
                 Action::make('sourceDetail')
-                    ->label(__('Уточнение источника'))
-                    ->modalHeading(__('Уточнение источника'))
+                    ->label(__('Уточнить источник'))
+                    ->modalHeading(__('Уточнить источник'))
                     ->modalSubmitActionLabel(__('Сохранить'))
                     ->authorize(fn (): bool => ClientResource::canEdit($this->clientRecord()))
                     ->visible(fn (): bool => ClientResource::canEdit($this->clientRecord()))
                     ->fillForm(fn (): array => ['source_detail' => app(ManageAttributionSourceDetail::class)->read($this->actor(), $this->clientRecord())])
                     ->schema([
                         Textarea::make('source_detail')
-                            ->label(__('Кто порекомендовал или откуда узнали'))
-                            ->helperText(__('Имя, Telegram, телефон или другое уточнение.'))
+                            ->label(__('Комментарий к источнику'))
+                            ->helperText(__('Например: знакомые, Telegram, сайт или другое уточнение. Это поле не назначает того, кто пригласил клиента. Для реферальной связи используйте «Кто пригласил».'))
                             ->maxLength(500)
                             ->rows(3),
                     ])
                     ->action(function (array $data): void {
                         app(ManageAttributionSourceDetail::class)->update($this->actor(), $this->clientRecord(), $data['source_detail'] ?? null);
                     }),
-                Action::make('newSession')
-                    ->label(__('Новый сеанс'))
-                    ->icon('heroicon-o-plus')
-                    ->url(fn (): string => MedicalSessionResource::getUrl('create', shouldGuessMissingParameters: true))
-                    ->visible(fn (): bool => MedicalSessionResource::canCreate()),
                 ActionGroup::make([
                     $this->blockSelfBookingAction(),
                     $this->unblockSelfBookingAction(),
@@ -423,11 +426,37 @@ class ViewClient extends LocalizedViewRecord
     private function assignPartnerAction(): Action
     {
         return Action::make('assignPartner')
-            ->label(__('Указать, кто пригласил'))
+            ->label(fn (): string => $this->currentReferralRelationship() instanceof ReferralRelationship
+                ? __('Заменить пригласившего')
+                : __('Указать, кто пригласил'))
             ->icon('heroicon-o-user-plus')
+            ->modalHeading(fn (): string => $this->currentReferralRelationship() instanceof ReferralRelationship
+                ? __('Заменить пригласившего')
+                : __('Кто пригласил'))
+            ->modalSubmitActionLabel(fn (): string => $this->currentReferralRelationship() instanceof ReferralRelationship
+                ? __('Заменить пригласившего')
+                : __('Сохранить'))
+            ->requiresConfirmation(fn (): bool => $this->currentReferralRelationship() instanceof ReferralRelationship)
+            ->fillForm(fn (): array => [
+                'current_referrer' => $this->currentReferrerSummary(),
+                'replacement_warning' => $this->currentReferralRelationship() instanceof ReferralRelationship
+                    ? __('У клиента уже указан пригласивший. Изменение заменит текущую реферальную связь. Начисленные ранее вознаграждения останутся в истории за прежним пригласившим.')
+                    : null,
+            ])
             ->schema([
+                TextInput::make('current_referrer')
+                    ->label(__('Текущий пригласивший'))
+                    ->disabled()
+                    ->dehydrated(false)
+                    ->visible(fn (): bool => $this->currentReferralRelationship() instanceof ReferralRelationship),
+                Textarea::make('replacement_warning')
+                    ->label(__('Внимание'))
+                    ->disabled()
+                    ->dehydrated(false)
+                    ->rows(3)
+                    ->visible(fn (): bool => $this->currentReferralRelationship() instanceof ReferralRelationship),
                 Select::make('referrer_client_id')
-                    ->label(__('Реферер'))
+                    ->label(__('Кто пригласил'))
                     ->searchable()
                     ->native(false)
                     ->options([])
@@ -448,14 +477,26 @@ class ViewClient extends LocalizedViewRecord
                             : null;
                     })
                     ->required(),
+                Textarea::make('replacement_reason')
+                    ->label(__('Причина замены'))
+                    ->maxLength(500)
+                    ->rows(3)
+                    ->visible(fn (): bool => $this->currentReferralRelationship() instanceof ReferralRelationship),
             ])
             ->visible(function (): bool {
                 $actor = auth()->user();
+                if (! $actor instanceof User) {
+                    return false;
+                }
 
-                return $actor instanceof User && app(OrganizationAuthorizer::class)->allows(
+                $permission = $this->currentReferralRelationship() instanceof ReferralRelationship
+                    ? OrganizationPermission::ManageReferralRelationships
+                    : OrganizationPermission::ManageClients;
+
+                return app(OrganizationAuthorizer::class)->allows(
                     $actor,
                     app(OrganizationContext::class)->organization(),
-                    OrganizationPermission::ManageClients,
+                    $permission,
                 );
             })
             ->action(function (array $data): void {
@@ -463,16 +504,28 @@ class ViewClient extends LocalizedViewRecord
                 abort_unless($actor instanceof User, 403);
 
                 try {
-                    app(EstablishManualReferralRelationship::class)->handle(
-                        actor: $actor,
-                        referrerClientId: (int) $data['referrer_client_id'],
-                        referredClientId: (int) $this->clientRecord()->getKey(),
-                    );
+                    $current = $this->currentReferralRelationship();
+                    if ($current instanceof ReferralRelationship) {
+                        app(ReplaceReferralRelationship::class)->handle(
+                            actor: $actor,
+                            referrerClientId: (int) $data['referrer_client_id'],
+                            referredClientId: (int) $this->clientRecord()->getKey(),
+                            reason: isset($data['replacement_reason']) ? (string) $data['replacement_reason'] : null,
+                        );
+                    } else {
+                        app(EstablishManualReferralRelationship::class)->handle(
+                            actor: $actor,
+                            referrerClientId: (int) $data['referrer_client_id'],
+                            referredClientId: (int) $this->clientRecord()->getKey(),
+                        );
+                    }
                     $this->clientRecord()->load('referralRelationship.referrer');
-                    Notification::make()->title(__('Реферер указан'))->success()->send();
+                    Notification::make()->title($current instanceof ReferralRelationship
+                        ? __('Пригласивший заменён')
+                        : __('Пригласивший указан'))->success()->send();
                 } catch (ValidationException $exception) {
                     Notification::make()
-                        ->title(__('Не удалось указать реферера'))
+                        ->title(__('Не удалось сохранить реферальную связь'))
                         ->body(implode(' ', array_map(
                             static fn (array $messages): string => implode(' ', $messages),
                             $exception->errors(),
@@ -481,6 +534,35 @@ class ViewClient extends LocalizedViewRecord
                         ->send();
                 }
             });
+    }
+
+    private function currentReferralRelationship(): ?ReferralRelationship
+    {
+        return ReferralRelationship::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('referred_client_id', $this->clientRecord()->getKey())
+            ->whereNull('superseded_at')
+            ->with('referrer')
+            ->first();
+    }
+
+    private function currentReferrerSummary(): ?string
+    {
+        $relationship = $this->currentReferralRelationship();
+        if (! $relationship instanceof ReferralRelationship) {
+            return null;
+        }
+
+        $referrer = $relationship->referrer;
+        $name = trim((string) $referrer?->full_name);
+        $method = match ($relationship->establishment_method) {
+            ReferralEstablishmentMethod::AutomaticReferralLink => $relationship->referral_campaign_link_id === null
+                ? __('персональная ссылка')
+                : __('кампания'),
+            ReferralEstablishmentMethod::ManualCrm => __('указан в CRM'),
+        };
+
+        return trim(($name !== '' ? $name : __('Клиент')).' · '.$method);
     }
 
     private function canViewClients(): bool

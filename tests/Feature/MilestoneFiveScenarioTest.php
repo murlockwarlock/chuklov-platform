@@ -212,7 +212,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertNotNull($specialistAction);
         self::assertSame('Aikhana', $specialistAction->render_context['client']['full_name']);
         self::assertSame('@aikhana (ID: 123456789)', $specialistAction->render_context['client']['telegram_contact']);
-        self::assertSame('tg://user?id=123456789', $specialistAction->render_context['client']['telegram_profile_url']);
+        self::assertSame('https://t.me/aikhana', $specialistAction->render_context['client']['telegram_profile_url']);
 
         foreach ($actions as $action) {
             $this->makeDue($action);
@@ -229,7 +229,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertNotNull($specialistMessage);
         self::assertStringContainsString('Aikhana', $specialistMessage->body);
         self::assertStringContainsString('@aikhana (ID: 123456789)', $specialistMessage->body);
-        self::assertSame('tg://user?id=123456789', $specialistMessage->actionButton?->url);
+        self::assertSame(url('/admin/messages?client='.$client->getKey()), $specialistMessage->actionButton?->url);
         self::assertStringNotContainsString('не указан', $specialistMessage->body);
     }
 
@@ -288,6 +288,8 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame(url('/admin/bookings/'.$booking->getKey()), $specialistMessage->actionButtons[0]->url);
         self::assertSame('✅ Подтвердить', $specialistMessage->actionButtons[1]->text);
         self::assertSame('booking:confirm:'.$booking->getKey().':'.$booking->event_version, $specialistMessage->actionButtons[1]->callbackData);
+        self::assertSame('Написать клиенту', $specialistMessage->actionButton?->text);
+        self::assertSame(url('/admin/messages?client='.$client->getKey()), $specialistMessage->actionButton?->url);
     }
 
     public function test_booking_created_notifications_render_visit_format_and_physical_location_once(): void
@@ -457,7 +459,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertSame(url('/admin/bookings/'.$booking->getKey()), $message->actionButtons[0]->url);
     }
 
-    public function test_specialist_notification_without_username_uses_verified_id_and_profile_action(): void
+    public function test_specialist_notification_without_username_uses_crm_conversation_action(): void
     {
         [$organization, , $client, $specialist, $service] = $this->fixture();
         ClientChannelIdentity::factory()->forClient($client)->create([
@@ -492,7 +494,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         self::assertStringContainsString('ID: 987654321', $message->body);
         self::assertStringNotContainsString('@', $message->body);
         self::assertStringNotContainsString('не указан', $message->body);
-        self::assertSame('tg://user?id=987654321', $message->actionButton?->url);
+        self::assertSame(url('/admin/messages?client='.$client->getKey()), $message->actionButton?->url);
     }
 
     public function test_rescheduled_and_cancelled_bookings_notify_with_local_date_format(): void
@@ -1065,7 +1067,8 @@ final class MilestoneFiveScenarioTest extends TestCase
         $this->setFilamentContext($admin, $organization);
 
         $this->get(route('filament.admin.resources.scenario-rules.index'))->assertOk();
-        $this->get(route('filament.admin.resources.scenario-rules.edit', ['record' => $otherRule]))->assertNotFound();
+        $response = $this->get(route('filament.admin.resources.scenario-rules.edit', ['record' => $otherRule]));
+        $response->assertNotFound();
 
         $this->expectException(AuthorizationException::class);
         app(UpdateScenarioRule::class)->handle($admin, $otherRule, [
@@ -1147,6 +1150,64 @@ final class MilestoneFiveScenarioTest extends TestCase
 
         self::assertSame(48, $rule->fresh()->delay_value);
         self::assertSame(2, $rule->fresh()->version);
+    }
+
+    public function test_scenario_rule_editor_preserves_and_edits_new_system_condition_types(): void
+    {
+        [$organization, $admin] = array_slice($this->fixture(), 0, 2);
+        $templateVersion = $this->template($organization);
+        $this->setFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(CreateScenarioRule::class)
+            ->fillForm([
+                'rule_key' => 'typed-system-conditions',
+                'name' => 'Typed system conditions',
+                'trigger_event' => 'finance.payment.succeeded',
+                'is_enabled' => true,
+                'delay_value' => 0,
+                'delay_unit' => 'minutes',
+                'purpose' => 'service',
+                'conditions' => [
+                    ['type' => 'feedback.band', 'operator' => 'equals', 'value' => 'internal'],
+                    ['type' => 'survey.available', 'operator' => 'equals', 'value' => 'true'],
+                    ['type' => 'survey.progress_available', 'operator' => 'equals', 'value' => 'false'],
+                    ['type' => 'payment.is_pre_visit_booking_payment', 'operator' => 'equals', 'value' => 'true'],
+                ],
+                'recipient_strategy' => ['type' => 'client'],
+                'channel_priority' => ['telegram'],
+                'template_version_id' => $templateVersion->id,
+            ])
+            ->call('create')
+            ->assertHasNoErrors();
+
+        $rule = ScenarioRule::query()->sole();
+        self::assertSame([
+            ['type' => 'feedback.band', 'operator' => 'equals', 'value' => 'internal'],
+            ['type' => 'survey.available', 'operator' => 'equals', 'value' => 'true'],
+            ['type' => 'survey.progress_available', 'operator' => 'equals', 'value' => 'false'],
+            ['type' => 'payment.is_pre_visit_booking_payment', 'operator' => 'equals', 'value' => 'true'],
+        ], $rule->conditions);
+
+        Livewire::actingAs($admin)
+            ->test(EditScenarioRule::class, ['record' => $rule->getRouteKey()])
+            ->fillForm([
+                'rule_key' => $rule->rule_key,
+                'name' => $rule->name,
+                'trigger_event' => 'finance.payment.succeeded',
+                'is_enabled' => true,
+                'delay_value' => 0,
+                'delay_unit' => 'minutes',
+                'purpose' => 'service',
+                'conditions' => $rule->conditions,
+                'recipient_strategy' => ['type' => 'client'],
+                'channel_priority' => ['telegram'],
+                'template_version_id' => $templateVersion->id,
+            ])
+            ->call('save')
+            ->assertHasNoErrors();
+
+        self::assertSame($rule->conditions, $rule->fresh()->conditions);
     }
 
     /** @return array{Organization, User, Client, Specialist, Service} */

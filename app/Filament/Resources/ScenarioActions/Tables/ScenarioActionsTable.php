@@ -90,6 +90,7 @@ final class ScenarioActionsTable
             'booking.completed' => __('После визита'),
             'onboarding.started' => __('Начало оформления'),
             'finance.obligation.created' => __('Задолженность за визит'),
+            'finance.obligation.reminder_requested' => __('Напоминание о задолженности'),
             'survey.completed' => __('Завершение теста'),
             'finance.payment.succeeded' => __('Оплата получена'),
             'finance.payment.failed' => __('Оплата не прошла'),

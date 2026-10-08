@@ -15,6 +15,7 @@ use App\Modules\Referrals\Application\DeactivateReferralPartner;
 use App\Modules\Referrals\Application\EnsureReferralIdentity;
 use App\Modules\Referrals\Application\GetReferralPartnerOverview;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
+use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use SergiX44\Nutgram\Nutgram;
@@ -38,7 +39,7 @@ final class ReferralTelegramFlowTest extends TestCase
     {
         $organization = $this->organization();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $this->activate($organization, $partner);
         $campaign = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Instagram',
@@ -57,7 +58,7 @@ final class ReferralTelegramFlowTest extends TestCase
     {
         $organization = $this->organization();
         $partner = Client::factory()->forOrganization($organization)->create();
-        $profile = app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $profile = $this->activate($organization, $partner);
         $personal = app(EnsureReferralIdentity::class)->handle($partner);
         $campaign = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
@@ -88,14 +89,14 @@ final class ReferralTelegramFlowTest extends TestCase
         $organization = $this->organization();
         $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $this->activate($organization, $partner, $admin);
         $personal = app(EnsureReferralIdentity::class)->handle($partner);
         $campaign = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Disabled campaign',
             channel: ReferralCampaignChannel::Website,
         );
-        app(DeactivateReferralCampaignLink::class)->handle($campaign, $partner);
+        app(DeactivateReferralCampaignLink::class)->handle($campaign, $admin);
 
         $disabledBot = $this->fakeBot(930003);
         $disabledBot->hearText('/start ref_'.$campaign->public_token)->reply();
@@ -125,7 +126,7 @@ final class ReferralTelegramFlowTest extends TestCase
     {
         $organization = $this->organization();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $this->activate($organization, $partner);
         $campaign = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Legacy URL',
@@ -147,7 +148,7 @@ final class ReferralTelegramFlowTest extends TestCase
     {
         $organization = $this->organization();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $this->activate($organization, $partner);
         $campaign = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Query campaign',
@@ -167,7 +168,7 @@ final class ReferralTelegramFlowTest extends TestCase
     {
         $organization = $this->organization();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $this->activate($organization, $partner);
         $campaign = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'Auth campaign',
@@ -199,7 +200,7 @@ final class ReferralTelegramFlowTest extends TestCase
     {
         $organization = $this->organization();
         $partner = Client::factory()->forOrganization($organization)->create();
-        app(ActivateReferralPartner::class)->handle($partner, 'portal');
+        $this->activate($organization, $partner);
         $first = app(CreateReferralCampaignLink::class)->handle(
             client: $partner,
             name: 'First campaign',
@@ -289,5 +290,12 @@ final class ReferralTelegramFlowTest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         return $organization;
+    }
+
+    private function activate(Organization $organization, Client $client, ?User $admin = null): ReferralPartnerProfile
+    {
+        $admin ??= User::factory()->forOrganization($organization)->create();
+
+        return app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
     }
 }

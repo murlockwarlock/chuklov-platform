@@ -563,16 +563,16 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
 
     await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
-    await page.getByText(fixture.clientName, { exact: true }).click();
+    await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
     await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
     await page.getByText(fixture.serviceName, { exact: true }).click();
     await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
     await page.getByText(fixture.specialistName, { exact: true }).click();
-    const dateInput = page.getByLabel('Дата и время');
-    await dateInput.fill(fixture.bookingStartsAt);
+    const dateInput = page.getByLabel('Дата');
+    await dateInput.fill(fixture.bookingStartsAt.slice(0, 10));
     await dateInput.blur();
-    await expect(dateInput).toHaveValue(fixture.bookingStartsAt);
+    await expect(dateInput).toHaveValue(fixture.bookingStartsAt.slice(0, 10));
     await page.getByLabel('Формат визита').selectOption('office');
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
@@ -582,6 +582,12 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await locationOption.click();
     await expect(workingLocation).not.toContainText('Выбрать вариант', { timeout: 15_000 });
     await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/, { timeout: 15_000 });
+    const bookingTime = page.getByRole('combobox', { name: /^Доступное время/ }).first();
+    await bookingTime.click();
+    const availableTime = page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.bookingStartsAt.slice(11, 16) }).first();
+    await expect(availableTime).toBeVisible({ timeout: 15_000 });
+    await availableTime.click();
+    await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
     const createButton = page.getByRole('button', { name: 'Создать', exact: true });
     await expect(createButton).toBeEnabled({ timeout: 15_000 });
     await createButton.click();
@@ -590,6 +596,70 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();
     await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();
     await expect(page.getByText(/idempotency|event version|schedule timezone|client timezone/i)).toHaveCount(0);
+    const writeClient = page.getByRole('link', { name: 'Написать клиенту', exact: true });
+    await expect(writeClient).toHaveAttribute('href', new RegExp(`/admin/messages\\?client=${fixture.clientId}$`));
+    await writeClient.click();
+    await expect(page).toHaveURL(new RegExp(`/admin/messages\\?client=${fixture.clientId}$`));
+    await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
+});
+
+test('staff can create a new client inline while creating a booking', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    const fixture = createCrmFixture();
+    const newClientName = `Новый CRM клиент ${Date.now()}`;
+    const newClientPhone = '+7 700 234-56-78';
+
+    await login(page, fixture);
+
+    await page.goto('/admin/bookings/create');
+    await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
+
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
+    await page.getByText(fixture.specialistName, { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
+    await page.getByRole('option', { name: fixture.serviceName, exact: true }).click();
+    const dateInput = page.getByLabel('Дата');
+    await dateInput.fill(fixture.bookingStartsAt.slice(0, 10));
+    await dateInput.blur();
+    await expect(dateInput).toHaveValue(fixture.bookingStartsAt.slice(0, 10));
+    await page.getByLabel('Формат визита').selectOption('office');
+    const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
+    await workingLocation.click();
+    await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.workingLocationName }).first().click();
+    const bookingTime = page.getByRole('combobox', { name: /^Доступное время/ }).first();
+    await bookingTime.click();
+    const availableTime = page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.bookingStartsAt.slice(11, 16) }).first();
+    await expect(availableTime).toBeVisible({ timeout: 15_000 });
+    await availableTime.click();
+    await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
+    const newClientAction = page.getByTestId('booking-create-client');
+    await expect(newClientAction).toBeVisible();
+    await expect(newClientAction).toContainText('Добавить нового клиента');
+    await newClientAction.click();
+
+    const modal = page.getByRole('dialog').last();
+    await expect(modal.getByLabel('Имя и фамилия*', { exact: true })).toBeVisible();
+    await expect(modal.getByLabel('Язык', { exact: true })).toHaveCount(0);
+    await expect(modal.getByLabel('Часовой пояс', { exact: true })).toHaveCount(0);
+    await modal.getByLabel('Имя и фамилия*', { exact: true }).fill(newClientName);
+    await modal.getByLabel('Телефон', { exact: true }).fill(newClientPhone);
+    await modal.getByRole('button', { name: 'Создать', exact: true }).click();
+    await expect(modal).not.toBeVisible();
+
+    await expect(page.getByRole('combobox', { name: 'Клиент*', exact: true })).toContainText(newClientName);
+    await expect(page.getByRole('combobox', { name: 'Услуга*', exact: true })).toContainText(fixture.serviceName);
+    await expect(page.getByRole('combobox', { name: 'Специалист*', exact: true })).toContainText(fixture.specialistName);
+    await expect(dateInput).toHaveValue(fixture.bookingStartsAt.slice(0, 10));
+    await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
+    await expect(page.getByLabel('Формат визита')).toHaveValue('office');
+    await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/);
+
+    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
+    await expect(page.locator('.fi-in-text-item').filter({ hasText: newClientName }).first()).toBeVisible();
 });
 
 test('staff sees business labels for client and content settings', async ({ page }) => {
@@ -662,6 +732,31 @@ test('staff sees the Telegram limit and preview while writing to a client', asyn
     await expect(telegramPreview).toContainText(message);
 });
 
+test('staff can choose and send an attachment in CRM Messages', async ({ page }) => {
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto(`/admin/messages?client=${fixture.clientId}`);
+    await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Начать диалог как специалист', exact: true }).click();
+    await expect(page.locator('#messages-composer-form')).toBeVisible();
+
+    const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser'),
+        page.getByTestId('messages-attachment-trigger').click(),
+    ]);
+    await fileChooser.setFiles({
+        name: 'crm-message-attachment.pdf',
+        mimeType: 'application/pdf',
+        buffer: validPdfBuffer(),
+    });
+    await expect(page.locator('.messages-attachment-summary')).toContainText('crm-message-attachment.pdf');
+
+    await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill('Сообщение с вложением');
+    await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.locator('article').getByText('crm-message-attachment.pdf', { exact: true })).toBeVisible();
+});
+
 test('staff can activate a partner, create a campaign link, and assign a referrer from a client page', async ({ page }) => {
     const fixture = createCrmFixture();
 
@@ -702,13 +797,13 @@ test('staff can activate a partner, create a campaign link, and assign a referre
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await assertNoHorizontalOverflow(page);
     await page.getByRole('button', { name: 'Указать, кто пригласил', exact: true }).click();
-    const assignmentDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Реферер' }).last();
-    const referrerSelect = assignmentDialog.getByRole('combobox', { name: /^Реферер/ });
+    const assignmentDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Кто пригласил' }).last();
+    const referrerSelect = assignmentDialog.getByRole('combobox', { name: /^Кто пригласил/ });
     await referrerSelect.click();
     await page.getByRole('textbox', { name: 'Search', exact: true }).last().fill(fixture.partnerName);
     await page.getByRole('option').filter({ hasText: fixture.partnerName }).last().click();
     await assignmentDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
-    await expect(page.getByText('Реферер указан', { exact: true })).toBeVisible();
+    await expect(page.getByText('Пригласивший указан', { exact: true })).toBeVisible();
 
     await page.goto('/admin/referral-relationships');
     await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
@@ -786,8 +881,9 @@ test('staff can complete a visit and record a manual payment through the normal 
     await completionDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Визит успешно завершён', { exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Действия', exact: true }).click();
-    await page.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    const recordPaymentButton = page.getByRole('button', { name: 'Записать оплату', exact: true });
+    await expect(recordPaymentButton).toBeVisible();
+    await recordPaymentButton.click();
     const paymentDialog = page.locator('.fi-modal-window:visible').last();
     await expect(paymentDialog).toBeVisible();
     await expect(paymentDialog.getByRole('textbox', { name: /^Сумма оплаты/ })).toHaveValue('100.00');

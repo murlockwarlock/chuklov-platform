@@ -14,8 +14,11 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
+use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Url;
+use Throwable;
 
 class CreateBooking extends LocalizedCreateRecord
 {
@@ -57,11 +60,35 @@ class CreateBooking extends LocalizedCreateRecord
             );
             if ($local instanceof CarbonImmutable) {
                 $prefill['starts_at'] = $local;
+                $prefill['booking_date'] = $local->toDateString();
+                $prefill['booking_time'] = $local->utc()->toIso8601String();
+                $prefill['booking_time_snapshot'] = $prefill['booking_time'];
+                $prefill['booking_time_prefilled'] = true;
             }
         }
 
         if ($prefill !== []) {
             $this->form->fillPartially($prefill, array_keys($prefill));
+        }
+    }
+
+    public function create(bool $another = false): void
+    {
+        try {
+            parent::create($another);
+        } catch (ValidationException $exception) {
+            throw $exception;
+        } catch (Throwable $exception) {
+            report($exception);
+
+            $message = __('Не удалось создать запись. Проверьте клиента, услугу, дату и доступное время и попробуйте ещё раз.');
+            $this->addError('data.booking_time', $message);
+            $this->addError('data.starts_at', $message);
+            Notification::make()
+                ->danger()
+                ->title(__('Не удалось создать запись'))
+                ->body($message)
+                ->send();
         }
     }
 
@@ -108,33 +135,64 @@ class CreateBooking extends LocalizedCreateRecord
     {
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
-        $context = app(OrganizationContext::class);
-        $organizationId = $context->id();
-        $client = Client::query()->where('organization_id', $organizationId)->findOrFail((int) $data['client_id']);
-        $specialist = Specialist::query()->where('organization_id', $organizationId)->findOrFail((int) $data['specialist_id']);
-        $service = Service::query()->where('organization_id', $organizationId)->findOrFail((int) $data['service_id']);
-        $startsAt = $data['starts_at'] instanceof DateTimeInterface
-            ? $data['starts_at']
-            : CarbonImmutable::parse((string) $data['starts_at'], (string) config('app.timezone'));
 
-        return app(CreateBookingAction::class)->handle(
-            actor: $actor,
-            client: $client,
-            specialist: $specialist,
-            service: $service,
-            startsAt: $startsAt,
-            format: VisitFormat::from((string) $data['visit_format']),
-            clientTimezone: null,
-            meetingLinkMode: null,
-            idempotencyKey: null,
-            partySize: (int) ($data['party_size'] ?? 1),
-            location: isset($data['location']) ? (string) $data['location'] : null,
-            workingLocationId: isset($data['working_location_id']) && $data['working_location_id'] !== ''
-                ? (int) $data['working_location_id']
-                : null,
-            locationArea: isset($data['location_area']) ? (string) $data['location_area'] : null,
-            confirmedBackdated: (bool) ($data['confirm_backdated'] ?? false),
-        );
+        try {
+            $context = app(OrganizationContext::class);
+            $organizationId = $context->id();
+            $client = Client::query()->where('organization_id', $organizationId)->findOrFail((int) $data['client_id']);
+            $specialist = Specialist::query()->where('organization_id', $organizationId)->findOrFail((int) $data['specialist_id']);
+            $service = Service::query()->where('organization_id', $organizationId)->findOrFail((int) $data['service_id']);
+            $startsAt = $data['starts_at'] instanceof DateTimeInterface
+                ? $data['starts_at']
+                : CarbonImmutable::parse((string) $data['starts_at'], (string) config('app.timezone'));
+
+            return app(CreateBookingAction::class)->handle(
+                actor: $actor,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: $startsAt,
+                format: VisitFormat::from((string) $data['visit_format']),
+                clientTimezone: null,
+                meetingLinkMode: null,
+                idempotencyKey: null,
+                partySize: (int) ($data['party_size'] ?? 1),
+                location: isset($data['location']) ? (string) $data['location'] : null,
+                workingLocationId: isset($data['working_location_id']) && $data['working_location_id'] !== ''
+                    ? (int) $data['working_location_id']
+                    : null,
+                locationArea: isset($data['location_area']) ? (string) $data['location_area'] : null,
+                confirmedBackdated: (bool) ($data['confirm_backdated'] ?? false),
+            );
+        } catch (ValidationException $exception) {
+            $errors = $exception->errors();
+            $startsAtMessages = $errors['startsAt'] ?? [];
+
+            if ($startsAtMessages === []) {
+                throw $exception;
+            }
+
+            $humanMessages = array_map(
+                static fn (string $message): string => $message === 'The selected time is no longer available.'
+                    ? __('Это время уже недоступно. Выберите другое.')
+                    : $message,
+                $startsAtMessages,
+            );
+            $errors['data.starts_at'] = array_merge(
+                $errors['data.starts_at'] ?? [],
+                $humanMessages,
+            );
+            $errors['data.booking_time'] = array_merge($errors['data.booking_time'] ?? [], $humanMessages);
+            unset($errors['startsAt']);
+
+            throw ValidationException::withMessages($errors);
+        } catch (Throwable $exception) {
+            report($exception);
+
+            throw ValidationException::withMessages([
+                'data.booking_time' => __('Не удалось создать запись. Проверьте дату и доступное время и попробуйте ещё раз.'),
+            ]);
+        }
     }
 
     protected function getRedirectUrl(): string

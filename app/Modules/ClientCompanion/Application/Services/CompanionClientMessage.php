@@ -9,7 +9,11 @@ final class CompanionClientMessage
     public function __construct(
         public readonly string $locale,
         public readonly string $failure,
-        public readonly string $handoff,
+        public readonly string $unavailable,
+        public readonly string $specialistNotified,
+        public readonly string $humanTakeover,
+        public readonly string $urgentSafety,
+        public readonly string $outOfScope,
     ) {}
 
     public static function from(?string $locale): self
@@ -19,13 +23,21 @@ final class CompanionClientMessage
         return $isRussian
             ? new self(
                 locale: 'ru',
-                failure: 'Не удалось подготовить ответ. Попробуйте ещё раз или попросите специалиста подключиться.',
-                handoff: 'Я передал обращение специалисту. Новые сообщения сохранены, а AI-помощник временно приостановлен.',
+                failure: 'Не получилось подготовить ответ.',
+                unavailable: 'Помощник сейчас недоступен. Попробуйте позже.',
+                specialistNotified: 'Специалист уведомлён. Пока он не подключился, помощник продолжит отвечать.',
+                humanTakeover: 'К диалогу подключился специалист. AI-помощник временно не отвечает.',
+                urgentSafety: 'Это сообщение требует внимания специалиста. Если нужна срочная медицинская помощь, обратитесь в экстренную службу.',
+                outOfScope: 'Я не могу ответить на этот вопрос. Могу позвать специалиста.',
             )
             : new self(
                 locale: 'en',
-                failure: 'I could not prepare a response. Please try again or ask a specialist to join the conversation.',
-                handoff: 'I have passed this conversation to a specialist. New messages are saved while the AI Companion is paused.',
+                failure: 'I could not prepare a response.',
+                unavailable: 'The assistant is temporarily unavailable. Please try again later.',
+                specialistNotified: 'A specialist has been notified. The assistant will keep responding until they join.',
+                humanTakeover: 'A specialist has joined the conversation. The AI assistant is temporarily paused.',
+                urgentSafety: 'This message needs a specialist’s attention. If you need urgent medical help, contact emergency services.',
+                outOfScope: 'I can’t answer this question. I can ask a specialist to help.',
             );
     }
 

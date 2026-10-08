@@ -9,6 +9,7 @@ use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -26,11 +27,13 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use RuntimeException;
 use Tests\TestCase;
 
 class MilestoneFourCrmBookingTest extends TestCase
@@ -161,6 +164,233 @@ class MilestoneFourCrmBookingTest extends TestCase
         self::assertSame(0, Booking::query()->count());
     }
 
+    public function test_crm_shows_actionable_error_when_selected_time_is_unavailable(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->fillForm([
+                'client_id' => $client->getKey(),
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 30, 0, 'UTC'),
+                'visit_format' => VisitFormat::Office->value,
+            ])
+            ->call('create')
+            ->assertHasFormErrors(['starts_at'])
+            ->assertSee('Это время уже недоступно. Выберите другое.');
+
+        self::assertSame(0, Booking::query()->count());
+    }
+
+    public function test_crm_shows_actionable_error_when_booking_creation_fails_unexpectedly(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        OrganizationFeatureGate::invalidate($organization->getKey(), OrganizationFeature::ClientRecords);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->fillForm([
+                'specialist_id' => $specialist->getKey(),
+                'service_id' => $service->getKey(),
+                'booking_date' => '2026-04-06',
+                'visit_format' => VisitFormat::Office->value,
+            ]);
+        $timeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertInstanceOf(Select::class, $timeField);
+        $selectedTime = array_key_first($timeField->getOptions());
+        self::assertIsString($selectedTime);
+        $component->fillForm([
+            'booking_time' => $selectedTime,
+            'client_id' => $client->getKey(),
+        ]);
+        $this->mock(CreateBookingAction::class, function ($mock): void {
+            $mock->shouldReceive('handle')
+                ->once()
+                ->andThrow(new RuntimeException('booking creation failed'));
+        });
+
+        $component
+            ->call('create')
+            ->assertHasFormErrors(['booking_time'])
+            ->assertSee('Не удалось создать запись. Проверьте дату и доступное время и попробуйте ещё раз.');
+
+        self::assertSame(0, Booking::query()->count());
+    }
+
+    public function test_booking_form_uses_human_required_messages_instead_of_translation_keys(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)->test(CreateBooking::class)
+            ->fillForm([
+                'specialist_id' => null,
+                'service_id' => null,
+                'client_id' => null,
+                'starts_at' => null,
+                'visit_format' => null,
+            ])
+            ->call('create')
+            ->assertHasFormErrors(['specialist_id', 'service_id', 'client_id', 'starts_at', 'visit_format'])
+            ->assertSee('Выберите услугу.')
+            ->assertSee('Выберите клиента.')
+            ->assertSee('Выберите специалиста.')
+            ->assertSee('Укажите дату и время записи.')
+            ->assertSee('Выберите формат визита.');
+
+        self::assertStringNotContainsString('validation.required', $component->html());
+
+        $homeVisit = Livewire::actingAs($admin)->test(CreateBooking::class)
+            ->fillForm(['visit_format' => VisitFormat::HomeVisit->value])
+            ->set('data.visit_format', VisitFormat::HomeVisit->value)
+            ->set('data.party_size', null)
+            ->set('data.location', null)
+            ->call('create')
+            ->assertHasFormErrors(['party_size', 'location'])
+            ->assertSee('Укажите количество участников выезда.')
+            ->assertSee('Укажите адрес выезда.');
+
+        self::assertStringNotContainsString('validation.required', $homeVisit->html());
+    }
+
+    public function test_booking_quick_create_client_is_visible_minimal_and_preserves_form_state(): void
+    {
+        [$organization, $admin, $existingClient, $specialist, $service] = $this->fixture();
+        $organization->forceFill(['timezone' => 'Asia/Almaty'])->save();
+        app(OrganizationContext::class)->set($organization->refresh());
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+        $startsAt = CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC');
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->assertFormComponentActionExists('client_id', 'createOption')
+            ->assertFormComponentActionHasLabel('client_id', 'createOption', 'Добавить нового клиента')
+            ->assertSee('Найдите клиента по имени, телефону, Telegram или email.')
+            ->fillForm([
+                'specialist_id' => $specialist->getKey(),
+                'service_id' => $service->getKey(),
+                'booking_date' => $startsAt->setTimezone('Asia/Almaty')->toDateString(),
+                'visit_format' => VisitFormat::Office->value,
+            ]);
+
+        $timeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertInstanceOf(Select::class, $timeField);
+        $selectedTime = array_key_first($timeField->getOptions());
+        self::assertIsString($selectedTime);
+        $component->fillForm(['booking_time' => $selectedTime]);
+
+        $createClientAction = $component->instance()->getSchemaComponent('form.client_id')->getCreateOptionAction();
+        self::assertTrue($createClientAction?->isButton());
+        self::assertSame('disabled', $createClientAction?->getExtraAttributes()['wire:loading.attr'] ?? null);
+
+        $component
+            ->callFormComponentAction('client_id', 'createOption', [
+                'full_name' => 'Иван Петров',
+                'phone' => '+7 700 123-45-67',
+                'email' => 'ivan.petrov@example.test',
+            ])
+            ->assertHasNoFormComponentActionErrors();
+
+        $createdClient = Client::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('full_name', 'Иван Петров')
+            ->sole();
+
+        self::assertNotSame($existingClient->getKey(), $createdClient->getKey());
+        self::assertSame((string) config('portal.default_locale', 'ru'), $createdClient->language);
+        self::assertSame('Asia/Almaty', $createdClient->timezone);
+        self::assertSame($createdClient->getKey(), (int) $component->instance()->data['client_id']);
+        self::assertSame($specialist->getKey(), (int) $component->instance()->data['specialist_id']);
+        self::assertSame($service->getKey(), (int) $component->instance()->data['service_id']);
+        self::assertSame('office', $component->instance()->data['visit_format']);
+        self::assertSame($selectedTime, $component->instance()->data['booking_time']);
+        self::assertTrue(CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->equalTo(CarbonImmutable::parse($selectedTime)));
+
+        $component
+            ->call('create')
+            ->assertHasNoErrors()
+            ->assertRedirect();
+
+        $booking = Booking::query()->sole();
+        self::assertSame($organization->getKey(), $booking->organization_id);
+        self::assertSame($createdClient->getKey(), $booking->client_id);
+    }
+
+    public function test_booking_form_offers_only_available_times_and_creates_from_selected_slot(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $organization->forceFill(['timezone' => 'Asia/Yekaterinburg'])->save();
+        $specialist->forceFill([
+            'timezone' => 'Asia/Bangkok',
+            'staff_user_id' => $admin->getKey(),
+            'viewer_timezone' => 'Asia/Yekaterinburg',
+        ])->save();
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        OrganizationFeatureGate::invalidate($organization->getKey(), OrganizationFeature::ClientRecords);
+        app(OrganizationContext::class)->set($organization->refresh());
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->fillForm([
+                'client_id' => $client->getKey(),
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'booking_date' => '2026-04-06',
+            ]);
+
+        $timeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertInstanceOf(Select::class, $timeField);
+        self::assertTrue($timeField->isDisabled());
+        self::assertStringContainsString('Сначала выберите формат визита.', $component->html());
+
+        $component->fillForm(['visit_format' => VisitFormat::Office->value]);
+        $timeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertFalse($timeField->isDisabled());
+        self::assertSame([
+            '07:00–08:00',
+            '08:15–09:15',
+            '09:30–10:30',
+            '10:45–11:45',
+            '12:00–13:00',
+            '13:15–14:15',
+        ], array_values($timeField->getOptions()));
+
+        $selectedTime = array_key_first($timeField->getOptions());
+        self::assertIsString($selectedTime);
+        $component
+            ->fillForm(['booking_time' => $selectedTime])
+            ->assertHasNoErrors();
+
+        $component
+            ->call('create')
+            ->assertHasNoErrors()
+            ->assertRedirect();
+
+        $booking = Booking::query()->sole();
+        self::assertSame($client->getKey(), $booking->client_id);
+        self::assertTrue($booking->startsAtUtc()->equalTo(CarbonImmutable::parse($selectedTime)));
+    }
+
     public function test_client_cannot_use_the_crm_backdated_confirmation(): void
     {
         [$organization, , $client, $specialist, $service] = $this->fixture();
@@ -277,6 +507,52 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->assertActionExists('reschedule')
             ->assertActionExists('cancel')
             ->assertActionExists('noShow');
+    }
+
+    public function test_reschedule_action_offers_available_slots_and_uses_the_selected_slot(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            idempotencyKey: 'reschedule-slot-options',
+        );
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->mountAction('reschedule');
+        $timeField = $component->instance()->getSchemaComponent('mountedActionSchema0.booking_time');
+
+        self::assertInstanceOf(Select::class, $timeField);
+        self::assertSame([
+            '09:00–10:00',
+            '10:15–11:15',
+            '11:30–12:30',
+            '12:45–13:45',
+            '14:00–15:00',
+            '15:15–16:15',
+        ], array_values($timeField->getOptions()));
+
+        $options = $timeField->getOptions();
+        $selectedTime = array_keys($options)[1] ?? null;
+        self::assertIsString($selectedTime);
+
+        $component
+            ->setActionData([
+                'booking_date' => '2026-04-06',
+                'booking_time' => $selectedTime,
+                'starts_at' => $selectedTime,
+            ])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotified('Запись успешно перенесена');
+
+        self::assertTrue($booking->fresh()->startsAtUtc()->equalTo(CarbonImmutable::parse($selectedTime)));
     }
 
     public function test_high_impact_booking_lifecycle_actions_require_confirmation(): void

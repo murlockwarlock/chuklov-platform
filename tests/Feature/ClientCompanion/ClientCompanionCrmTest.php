@@ -10,6 +10,8 @@ use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
 use App\Modules\ClientCompanion\Application\Actions\RecordCompanionFeedback;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
+use App\Modules\ClientCompanion\Application\Actions\ResumeCompanionAi;
+use App\Modules\ClientCompanion\Application\Actions\TakeOverCompanionConversation;
 use App\Modules\ClientCompanion\Application\Actions\UploadCompanionCommunicationAttachment;
 use App\Modules\ClientCompanion\Application\Services\CompanionExportService;
 use App\Modules\ClientCompanion\Application\Services\CompanionMessageBodyReader;
@@ -91,10 +93,10 @@ final class ClientCompanionCrmTest extends TestCase
         $history = app(ReadCompanionConversation::class)->forStaff($this->admin, $this->client);
         $messages = array_values(array_filter($history['messages'], static fn (array $item): bool => $item['type'] === 'message'));
 
-        self::assertSame(['client', 'client', 'ai', 'staff'], array_column($messages, 'role'));
-        self::assertSame(['Портал', 'Telegram', 'Telegram', 'Telegram'], array_column($messages, 'transportLabel'));
+        self::assertSame(['client', 'client', 'ai', 'system', 'staff'], array_column($messages, 'role'));
+        self::assertSame(['Портал', 'Telegram', 'Telegram', 'Telegram', 'Telegram'], array_column($messages, 'transportLabel'));
         self::assertSame('helpful', $messages[2]['feedback']);
-        self::assertSame('Специалист отвечает', $history['stateLabel']);
+        self::assertSame('Специалист подключён · AI на паузе', $history['stateLabel']);
         self::assertNotNull($history['openEscalation']);
         self::assertTrue(collect($history['messages'])->contains(fn (array $item): bool => $item['type'] === 'handoff'));
         self::assertSame($conversation->getKey(), $turn->conversation_id);
@@ -106,7 +108,7 @@ final class ClientCompanionCrmTest extends TestCase
             ->assertSee('Общение с клиентом')
             ->assertSee('Портал')
             ->assertSee('Telegram')
-            ->assertSee('Написать сообщение');
+            ->assertSee('Ответить клиенту');
     }
 
     public function test_staff_history_is_bounded_and_id_access_is_tenant_and_permission_scoped(): void
@@ -177,7 +179,7 @@ final class ClientCompanionCrmTest extends TestCase
         $identified = json_decode($export->history($this->admin, $this->client, 'json', 'identified'), true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('client_companion_history_v1', $identified['schema_version']);
         self::assertSame('client_'.$this->client->getKey(), $identified['identity']['label']);
-        self::assertCount(4, $identified['messages']);
+        self::assertCount(5, $identified['messages']);
 
         $pseudonymized = json_decode($export->history($this->admin, $this->client, 'json', 'pseudonymized'), true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('client_1', $pseudonymized['identity']['label']);
@@ -294,6 +296,8 @@ final class ClientCompanionCrmTest extends TestCase
 
         Livewire::actingAs($this->admin)
             ->test(ClientCompanionHistory::class, ['record' => $this->client->getKey()])
+            ->call('takeOver')
+            ->assertNotified('Вы подключились к диалогу')
             ->set('data', ['body' => '<p>Первое сообщение</p>'])
             ->call('sendReply')
             ->assertNotified('Сообщение отправлено');
@@ -436,15 +440,12 @@ final class ClientCompanionCrmTest extends TestCase
         self::assertSame(0, ConversationMessage::query()->where('author_type', ConversationAuthorType::Staff->value)->count());
     }
 
-    public function test_closing_handoff_and_resuming_ai_is_one_authoritative_action(): void
+    public function test_staff_can_return_a_taken_over_conversation_to_ai(): void
     {
         [$conversation] = $this->seedHandoffHistory();
         $escalation = CompanionEscalation::query()->where('conversation_id', $conversation->getKey())->where('status', CompanionEscalationStatus::Open)->sole();
 
-        $this->actingAs($this->admin)
-            ->post(route('admin.clients.companion.resolve-and-resume', ['client' => $this->client]))
-            ->assertRedirect()
-            ->assertSessionHas('companion_status', 'Обращение закрыто, AI снова отвечает.');
+        app(ResumeCompanionAi::class)->handle($this->admin, $this->client);
 
         self::assertSame(ConversationAutomationState::AiActive, $conversation->fresh()->automation_state);
         self::assertSame(CompanionEscalationStatus::Resolved, $escalation->fresh()->status);
@@ -493,7 +494,7 @@ final class ClientCompanionCrmTest extends TestCase
             'escalated_at' => now(),
             'burst_expires_at' => now()->subSecond(),
         ]);
-        $conversation->update(['automation_state' => ConversationAutomationState::HumanHandoff]);
+        $conversation->update(['automation_state' => ConversationAutomationState::AiActive]);
         CompanionEscalation::create([
             'organization_id' => $this->organization->getKey(),
             'client_id' => $this->client->getKey(),
@@ -505,6 +506,7 @@ final class ClientCompanionCrmTest extends TestCase
             'opened_at' => now(),
         ]);
         app(RecordCompanionFeedback::class)->handle($this->client, $aiMessage->getKey(), CompanionFeedbackValue::Helpful);
+        app(TakeOverCompanionConversation::class)->handle($this->admin, $this->client);
         app(ReplyToCompanion::class)->handle($this->admin, $this->client, 'Ответ специалиста из CRM.');
         Carbon::setTestNow();
 

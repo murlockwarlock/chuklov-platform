@@ -2,11 +2,16 @@
 
 namespace App\Filament\Resources\Bookings\Pages;
 
+use App\Filament\Pages\Messages;
 use App\Filament\Resources\Bookings\Actions\BookingLifecycleActions;
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Support\FinancePaymentActions;
 use App\Filament\Support\LocalizedViewRecord;
+use App\Models\User;
+use App\Modules\Identity\Application\GetClientCommunicationIdentities;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -48,10 +53,23 @@ class ViewBooking extends LocalizedViewRecord
                 ->icon('heroicon-o-arrow-left')
                 ->url(fn (): string => $this->journalReturnUrl())
                 ->visible(fn (): bool => $this->returnToJournal),
+            Action::make('writeClient')
+                ->label(__('Написать клиенту'))
+                ->icon('heroicon-o-chat-bubble-left-right')
+                ->color('primary')
+                ->url(fn (): ?string => $this->clientConversationUrl())
+                ->visible(fn (): bool => Messages::canAccess() && $this->clientConversationUrl() !== null),
+            Action::make('openTelegram')
+                ->label(__('Открыть Telegram'))
+                ->icon('heroicon-o-paper-airplane')
+                ->color('gray')
+                ->url(fn (): ?string => $this->clientTelegramUrl())
+                ->openUrlInNewTab()
+                ->visible(fn (): bool => $this->clientTelegramUrl() !== null),
             ActionGroup::make([
                 ...BookingLifecycleActions::all(),
                 FinancePaymentActions::openForBooking(),
-                FinancePaymentActions::forBooking(),
+                FinancePaymentActions::referralCreditForBooking(),
             ])
                 ->label(__('Действия'))
                 ->icon('heroicon-o-ellipsis-horizontal')
@@ -94,6 +112,34 @@ class ViewBooking extends LocalizedViewRecord
     {
         return is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $value) === 1
             ? $value
+            : null;
+    }
+
+    private function clientConversationUrl(): ?string
+    {
+        $record = $this->getRecord();
+        $client = $record instanceof Booking ? $record->client : null;
+
+        return $client instanceof Client
+            ? Messages::getUrl(['client' => $client->getKey()])
+            : null;
+    }
+
+    private function clientTelegramUrl(): ?string
+    {
+        $actor = auth()->user();
+        $record = $this->getRecord();
+        $client = $record instanceof Booking ? $record->client : null;
+
+        if (! $actor instanceof User || ! $client instanceof Client || ! Messages::canAccess()) {
+            return null;
+        }
+
+        $telegram = collect(app(GetClientCommunicationIdentities::class)->handle($actor, $client))
+            ->firstWhere('channel', 'telegram');
+
+        return is_array($telegram) && is_string($telegram['telegramUrl'] ?? null)
+            ? $telegram['telegramUrl']
             : null;
     }
 }

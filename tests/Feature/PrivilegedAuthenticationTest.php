@@ -13,7 +13,6 @@ use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Infrastructure\Filament\AuditedAppAuthentication;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Livewire\Livewire;
@@ -48,6 +47,7 @@ class PrivilegedAuthenticationTest extends TestCase
             ->assertSet('userUndertakingMultiFactorAuthentication', null);
 
         self::assertAuthenticatedAs($admin);
+        $this->get('/admin')->assertOk();
     }
 
     public function test_user_with_configured_mfa_enters_crm_without_a_login_challenge(): void
@@ -58,15 +58,63 @@ class PrivilegedAuthenticationTest extends TestCase
         app(OrganizationContext::class)->set($organization);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $this->actingAs($admin);
-        app(AuditedAppAuthentication::class)->saveSecret($admin, 'configured-secret');
-        Auth::logout();
+        $secret = app(AuditedAppAuthentication::class)->generateSecret();
+        app(AuditedAppAuthentication::class)->saveSecret($admin, $secret);
+        Filament::auth()->logout();
 
-        Livewire::test(AdminLogin::class)
+        $login = Livewire::test(AdminLogin::class)
             ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
-            ->call('authenticate')
-            ->assertSet('userUndertakingMultiFactorAuthentication', null);
+            ->call('authenticate');
 
+        self::assertNull($login->get('userUndertakingMultiFactorAuthentication'));
         self::assertAuthenticatedAs($admin);
+        $this->get('/admin')->assertOk();
+    }
+
+    public function test_existing_profile_route_remains_available_for_mfa_management(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $this->actingAs($admin)
+            ->get(route('filament.admin.auth.profile'))
+            ->assertOk();
+    }
+
+    public function test_recovery_code_provider_capability_consumes_and_audits_only_a_valid_code(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($admin);
+        $provider = app(AuditedAppAuthentication::class);
+        $provider->saveSecret($admin, $provider->generateSecret());
+        $recoveryCode = 'recovery-code-1';
+        $provider->saveRecoveryCodes($admin, [$recoveryCode]);
+
+        self::assertTrue($provider->verifyRecoveryCode($recoveryCode));
+
+        self::assertSame([], $admin->fresh()->getAppAuthenticationRecoveryCodes());
+        $audit = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'privileged.mfa.recovery_code.used')
+            ->sole();
+        self::assertNull($audit->actor_user_id);
+        self::assertSame(User::class, $audit->target_type);
+        self::assertSame((string) $admin->getKey(), $audit->target_id);
+        self::assertSame([], $audit->metadata);
+        self::assertStringNotContainsString($recoveryCode, (string) DB::table('audit_events')->where('id', $audit->getKey())->value('metadata'));
+
+        self::assertFalse($provider->verifyRecoveryCode($recoveryCode));
+        self::assertSame(1, AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'privileged.mfa.recovery_code.used')
+            ->count());
     }
 
     public function test_mfa_secrets_are_encrypted_and_lifecycle_changes_are_audited(): void
@@ -113,10 +161,13 @@ class PrivilegedAuthenticationTest extends TestCase
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
         config()->set('tenancy.default_organization_id', $organization->getKey());
 
+        app(OrganizationContext::class)->set($organization);
+        $this->actingAs($admin);
+        app(AuditedAppAuthentication::class)->saveSecret($admin, 'configured-secret');
         $this->actingAs($admin)->get('/admin')->assertOk();
         OrganizationMembership::query()->where('user_id', $admin->getKey())->update(['is_active' => false]);
 
-        $this->get('/admin')->assertForbidden();
+        $this->get('/admin')->assertRedirect(route('filament.admin.auth.login'));
     }
 
     public function test_revoked_session_version_invalidates_an_existing_admin_session(): void
@@ -125,6 +176,9 @@ class PrivilegedAuthenticationTest extends TestCase
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
         config()->set('tenancy.default_organization_id', $organization->getKey());
 
+        app(OrganizationContext::class)->set($organization);
+        $this->actingAs($admin);
+        app(AuditedAppAuthentication::class)->saveSecret($admin, 'configured-secret');
         $this->actingAs($admin)->get('/admin')->assertOk();
         $admin->increment('privileged_session_version');
 

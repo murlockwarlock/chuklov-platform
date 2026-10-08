@@ -21,6 +21,7 @@ type BookingFixture = {
 type BookingFixtureOptions = {
     withBooking?: boolean;
     withCompanionMessages?: boolean;
+    withCompanionFailure?: boolean;
     withPartnerRewards?: boolean;
     withCompanionPending?: boolean;
     multipleChoices?: boolean;
@@ -41,6 +42,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
         $withCompanionPending = getenv('PLAYWRIGHT_WITH_COMPANION_PENDING') === '1';
+        $withCompanionFailure = getenv('PLAYWRIGHT_WITH_COMPANION_FAILURE') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
             'feature_key' => 'service_catalog',
@@ -102,6 +104,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 percentage: null,
                 effectiveAt: \\Carbon\\CarbonImmutable::now()->subMinute(),
             );
+            app(\\App\\Modules\\Referrals\\Application\\ActivateReferralPartner::class)->handle($client, 'crm', $rewardAdmin);
             $referred = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
                 'full_name' => 'Playwright Referred '.$suffix,
                 'email' => 'playwright-referred-'.$suffix.'@example.test',
@@ -201,14 +204,60 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 'timezone' => 'UTC',
             ]);
         }
-        if ($withCompanionMessages || $withCompanionPending) {
+        if ($withCompanionMessages || $withCompanionPending || $withCompanionFailure) {
             config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
-            $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::factory()
-                ->forOrganization($organization)
-                ->forClient($client)
-                ->create([
-                    'conversation_type' => \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationType::ClientCompanion,
+            app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+            if ($withCompanionFailure) {
+                \\Illuminate\\Support\\Facades\\Queue::fake();
+                $failedTurn = app(\\App\\Modules\\ClientCompanion\\Application\\Actions\\AcceptCompanionMessage::class)->handle(
+                    client: $client,
+                    channel: 'portal',
+                    body: 'Повторите исходный запрос без копирования.',
+                    idempotencyKey: 'playwright-failure-'.$suffix,
+                    originExternalId: 'portal:playwright-failure-'.$suffix,
+                    locale: 'ru',
+                );
+                $conversation = $failedTurn->conversation()->firstOrFail();
+                $failureMessage = app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+                    organizationId: $organization->getKey(),
+                    client: $client,
+                    conversation: $conversation,
+                    channel: 'portal',
+                    direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
+                    authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
+                    body: 'Не получилось подготовить ответ.',
+                    contextEpoch: $failedTurn->context_epoch,
+                    metadata: [
+                        'message_type' => 'terminal_failure',
+                        'locale' => 'ru',
+                        'transport' => 'portal',
+                        'safe_actions' => 'retry_failed_turn,request_human',
+                    ],
+                );
+                $failedTurn->update([
+                    'status' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionTurnStatus::Failed,
+                    'failure_code' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionFailureCode::ProviderUnavailable,
+                    'outbound_message_id' => $failureMessage->getKey(),
+                    'failed_at' => now(),
                 ]);
+                \\App\\Modules\\ClientCompanion\\Domain\\Models\\CompanionTurnAttempt::query()->create([
+                    'organization_id' => $organization->getKey(),
+                    'turn_id' => $failedTurn->getKey(),
+                    'attempt_number' => 1,
+                    'execution_key' => 'playwright-failure-'.$suffix,
+                    'status' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionTurnAttemptStatus::Failed,
+                    'failure_code' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionFailureCode::ProviderUnavailable,
+                    'output_message_id' => $failureMessage->getKey(),
+                    'completed_at' => now(),
+                ]);
+            } else {
+                $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::factory()
+                    ->forOrganization($organization)
+                    ->forClient($client)
+                    ->create([
+                        'conversation_type' => \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationType::ClientCompanion,
+                    ]);
+            }
             $fence = str_repeat(chr(96), 3);
             $body = "# Безопасный ответ\n\n**Важная информация** и _пояснение_.\n\n- Первый пункт\n- Второй пункт\n\n[Безопасная HTTPS ссылка](https://example.test/secure)\n[HTTP ссылка не должна быть активной](http://example.test/insecure)\n[javascript ссылка не должна быть активной](javascript:alert(1))\n[data ссылка не должна быть активной](data:text/html,unsafe)\n[file ссылка не должна быть активной](file:///tmp/unsafe)\n[Относительная ссылка не должна быть активной](//example.test/insecure)\n[userinfo ссылка не должна быть активной](https://user:pass@example.test/insecure)\n\n".$fence."\n".str_repeat('TOKEN', 1400)."\n".$fence."\n\n<script>alert('unsafe')</script> https://example.test/".str_repeat('long-segment-', 80);
             if ($withCompanionMessages) {
@@ -391,11 +440,12 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
         PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
         PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
-                PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
-                PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
-                PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
-                PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
-                PLAYWRIGHT_HOME_VISIT: normalizedOptions.homeVisit ? '1' : '0',
+        PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
+        PLAYWRIGHT_WITH_COMPANION_FAILURE: normalizedOptions.withCompanionFailure ? '1' : '0',
+        PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
+        PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
+        PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
+        PLAYWRIGHT_HOME_VISIT: normalizedOptions.homeVisit ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -719,7 +769,6 @@ test('Telegram Mini App partner launch authenticates and displays the partner ca
                         status: 'active',
                         activatedAt: null,
                         link: 'https://t.me/chuklov_test_bot?start=ref_legacy-referral-code',
-                        activationUrl: '/portal/referrals/activate',
                         createLinkUrl: '/portal/referrals/links',
                         stats: {
                             visits: 0,
@@ -818,7 +867,7 @@ test('feedback keeps the selected score visible and the portal within mobile bou
     }
 });
 
-test('home keeps one primary booking action and makes referrals discoverable at target widths', async ({ page }) => {
+test('home keeps one primary booking action and ordinary referrals remain available', async ({ page }) => {
     const fixture = createBookingFixture();
 
     await page.context().addCookies([{
@@ -831,7 +880,7 @@ test('home keeps one primary booking action and makes referrals discoverable at 
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/');
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
-        await expect(page.getByTestId('home-referrals-cta')).toContainText('🤝 Стать партнёром');
+        await expect(page.getByTestId('home-booking-cta')).toHaveText('Записаться');
         await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
         await assertNoHorizontalOverflow(page);
 
@@ -852,19 +901,30 @@ test('home keeps one primary booking action and makes referrals discoverable at 
         await page.screenshot({ path: `/tmp/chuklov-portal-home-${width}.png`, fullPage: true });
     }
 
-    await page.getByTestId('home-referrals-cta').click();
+    await page.goto('/portal/referrals');
     await expect(page).toHaveURL(/\/portal\/referrals$/);
-    await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
-    await page.getByTestId('partner-activate').click();
-    await page.goto('/');
-    await expect(page.getByTestId('home-referrals-cta')).toContainText('🤝 Партнёрский кабинет');
-    await page.getByTestId('home-referrals-cta').click();
-    await expect(page).toHaveURL(/\/portal\/referrals$/);
-    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Пригласить друга', exact: true })).toBeVisible();
+    await expect(page.getByTestId('ordinary-referral')).toBeVisible();
+    await expect(page.getByTestId('partner-activate')).toHaveCount(0);
+    await expect(page.getByTestId('partner-links')).toHaveCount(0);
 });
 
-test('client can activate the partner cabinet and manage multiple campaign links', async ({ page }) => {
-    const fixture = createBookingFixture();
+test('home changes the booking action when an upcoming booking is shown', async ({ page }) => {
+    const fixture = createBookingFixture({ withBooking: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Ближайшая запись' })).toBeVisible();
+    await expect(page.getByTestId('home-booking-cta')).toHaveText('Записаться ещё');
+});
+
+test('CRM-assigned partner can manage multiple campaign links', async ({ page }) => {
+    const fixture = createBookingFixture({ withPartnerRewards: true });
 
     await page.context().addCookies([{
         name: fixture.cookieName,
@@ -872,10 +932,6 @@ test('client can activate the partner cabinet and manage multiple campaign links
         url: 'http://127.0.0.1:8000',
     }]);
     await page.goto('/portal/referrals');
-    await expect(page.getByRole('heading', { name: 'Стать партнёром', exact: true })).toBeVisible();
-    await expect(page.getByTestId('partner-activate')).toBeVisible();
-    await page.getByTestId('partner-activate').click();
-
     await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
     await expect(page.getByTestId('partner-links')).toBeVisible();
     await expect(page.getByTestId('invite-friend')).toHaveCount(0);
@@ -903,6 +959,10 @@ test('client can activate the partner cabinet and manage multiple campaign links
         await expect(link.getByText('Регистрации', { exact: true })).toBeVisible();
         await expect(link.getByText('Оплатили', { exact: true })).toBeVisible();
         await expect(link.getByText('Начислено', { exact: true })).toBeVisible();
+        await expect(link.getByRole('button', { name: 'Отключить', exact: true })).toHaveCount(0);
+        await expect(link.getByRole('button', { name: 'Включить', exact: true })).toHaveCount(0);
+        await expect(link.getByText('Активна', { exact: true })).toHaveCount(0);
+        await expect(link.getByText('Отключена', { exact: true })).toHaveCount(0);
         await expect(link.getByText('0', { exact: true })).toHaveCount(3);
         await expect(link.getByText('—', { exact: true })).toHaveCount(1);
     }
@@ -935,7 +995,6 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     }]);
 
     await page.goto('/portal/referrals');
-    await page.getByTestId('partner-activate').click();
     await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
     await expect(page.getByTestId('invite-friend')).toHaveCount(0);
     await expect(page.getByTestId('partner-balance-USD')).toContainText(/10[,.]00.*(?:\$|USD)/);
@@ -1096,6 +1155,41 @@ test('companion safely renders rich long messages without viewport overflow', as
             return bounds.left >= -1 && bounds.right <= document.documentElement.clientWidth + 1;
         }))).toBe(true);
     }
+});
+
+test('portal retries a failed Companion turn without duplicating the client message', async ({ page }) => {
+    const fixture = createBookingFixture({ withCompanionFailure: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    for (const width of [1440, 1024, 768, 390, 360, 320]) {
+        await page.setViewportSize({ width, height: 844 });
+        await page.goto('/portal/companion');
+        await expect(page.getByRole('heading', { name: 'AI-компаньон', exact: true })).toBeVisible();
+        await expect(page.getByText('Не получилось подготовить ответ.', { exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Повторить', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Позвать специалиста', exact: true })).toBeVisible();
+        await expect(page.locator('.portal-companion__message--client')).toHaveCount(1);
+        await expect(page.getByText('Повторите исходный запрос без копирования.', { exact: true })).toHaveCount(1);
+        await assertNoHorizontalOverflow(page);
+        await assertRenderedViewportGeometry(
+            page,
+            ['.portal-companion__message--client', '.portal-companion__message--ai button'],
+            ['.portal-companion__history', '.portal-companion__composer'],
+        );
+    }
+
+    const retryResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+        && response.url().includes('/portal/companion/retry/'));
+    await page.getByRole('button', { name: 'Повторить', exact: true }).click();
+    await assertPortalResponseAccepted(retryResponse, 'Companion retry');
+    await expect(page.getByText('Повторный запрос запущен.', { exact: true })).toBeVisible();
+    await expect(page.locator('.portal-companion__message--client')).toHaveCount(1);
+    await expect(page.getByText('Повторите исходный запрос без копирования.', { exact: true })).toHaveCount(1);
 });
 
 test('companion shows accessible typing feedback and respects intentional history scrolling', async ({ page }) => {

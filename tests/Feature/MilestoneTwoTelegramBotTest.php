@@ -36,7 +36,7 @@ class MilestoneTwoTelegramBotTest extends TestCase
             'b2b' => 'Развить бизнес',
             'partner' => 'Партнёры',
             'invite_friend' => 'Пригласить друга',
-            'partner_cabinet' => 'Стать партнёром',
+            'partner_cabinet' => 'Пригласить друга',
         ]);
         $this->assertLocalizedMenu('en', [
             'portal' => 'Open client portal',
@@ -45,7 +45,7 @@ class MilestoneTwoTelegramBotTest extends TestCase
             'b2b' => 'Grow your business',
             'partner' => 'Partners',
             'invite_friend' => 'Invite a friend',
-            'partner_cabinet' => 'Become a partner',
+            'partner_cabinet' => 'Invite a friend',
         ]);
     }
 
