@@ -43,7 +43,7 @@ final class ClientFinishingPackTest extends TestCase
         self::assertSame($admin->getKey(), $note->author_user_id);
         self::assertNotNull($note->created_at);
 
-        $rawBody = (string) DB::table('client_notes')->whereKey($note->getKey())->value('body');
+        $rawBody = (string) DB::table('client_notes')->where('id', $note->getKey())->value('body');
         self::assertNotSame($body, $rawBody);
         self::assertStringNotContainsString($body, $rawBody);
 
