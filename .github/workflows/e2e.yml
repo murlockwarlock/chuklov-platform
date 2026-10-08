@@ -4,9 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       test_filter:
-        description: Optional Playwright title filter for the CRM spec
+        description: Optional Playwright title filter for a targeted test file
         required: false
         default: ''
+        type: string
+      test_path:
+        description: Playwright test file to run for a targeted dispatch
+        required: false
+        default: tests/e2e/crm.spec.ts
         type: string
   schedule:
     - cron: '15 2 * * *'
@@ -82,9 +87,12 @@ jobs:
       - name: Run Playwright suite
         env:
           E2E_TEST_FILTER: ${{ inputs.test_filter }}
+          E2E_TEST_PATH: ${{ inputs.test_path }}
         run: |
           if [ -n "$E2E_TEST_FILTER" ]; then
-            npx playwright test tests/e2e/crm.spec.ts -g "$E2E_TEST_FILTER"
+            npx playwright test "${E2E_TEST_PATH:-tests/e2e/crm.spec.ts}" -g "$E2E_TEST_FILTER"
+          elif [ -n "$E2E_TEST_PATH" ]; then
+            npx playwright test "$E2E_TEST_PATH"
           else
             npm run test:e2e
           fi
