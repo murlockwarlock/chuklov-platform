@@ -25,23 +25,23 @@ return new class extends Migration
             $table->unique(['organization_id', 'purchase_item_id']);
             $table->unique(['organization_id', 'purchase_fulfillment_id']);
             $table->index(['organization_id', 'current_holder_client_id']);
-            $table->foreign(['organization_id', 'purchase_id'])
+            $table->foreign(['organization_id', 'purchase_id'], 'gift_certificates_org_purchase_fk')
                 ->references(['organization_id', 'id'])
                 ->on('commerce_purchases')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'purchase_item_id'])
+            $table->foreign(['organization_id', 'purchase_item_id'], 'gift_certificates_org_item_fk')
                 ->references(['organization_id', 'id'])
                 ->on('commerce_purchase_items')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'purchase_fulfillment_id'])
+            $table->foreign(['organization_id', 'purchase_fulfillment_id'], 'gift_certificates_org_fulfillment_fk')
                 ->references(['organization_id', 'id'])
                 ->on('commerce_purchase_fulfillments')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'purchaser_client_id'])
+            $table->foreign(['organization_id', 'purchaser_client_id'], 'gift_certificates_org_purchaser_fk')
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'current_holder_client_id'])
+            $table->foreign(['organization_id', 'current_holder_client_id'], 'gift_certificates_org_holder_fk')
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
@@ -62,15 +62,15 @@ return new class extends Migration
             $table->unique(['organization_id', 'certificate_id', 'id'], 'gift_certificate_claims_org_certificate_id_unique');
             $table->unique(['organization_id', 'token_hash']);
             $table->index(['organization_id', 'certificate_id', 'status']);
-            $table->foreign(['organization_id', 'certificate_id'])
+            $table->foreign(['organization_id', 'certificate_id'], 'gift_claims_org_certificate_fk')
                 ->references(['organization_id', 'id'])
                 ->on('gift_certificates')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'initiated_by_client_id'])
+            $table->foreign(['organization_id', 'initiated_by_client_id'], 'gift_claims_org_initiator_fk')
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'claimed_client_id'])
+            $table->foreign(['organization_id', 'claimed_client_id'], 'gift_claims_org_recipient_fk')
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
@@ -93,23 +93,23 @@ return new class extends Migration
             $table->unique(['organization_id', 'certificate_id', 'id'], 'gift_certificate_redemptions_org_certificate_id_unique');
             $table->unique(['organization_id', 'idempotency_key']);
             $table->unique(['organization_id', 'financial_ledger_entry_id']);
-            $table->foreign(['organization_id', 'certificate_id'])
+            $table->foreign(['organization_id', 'certificate_id'], 'gift_redemptions_org_certificate_fk')
                 ->references(['organization_id', 'id'])
                 ->on('gift_certificates')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'holder_client_id'])
+            $table->foreign(['organization_id', 'holder_client_id'], 'gift_redemptions_org_holder_fk')
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'financial_obligation_id'])
+            $table->foreign(['organization_id', 'financial_obligation_id'], 'gift_redemptions_org_obligation_fk')
                 ->references(['organization_id', 'id'])
                 ->on('financial_obligations')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'financial_ledger_entry_id'])
+            $table->foreign(['organization_id', 'financial_ledger_entry_id'], 'gift_redemptions_org_ledger_fk')
                 ->references(['organization_id', 'id'])
                 ->on('financial_ledger_entries')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'created_by_user_id'])
+            $table->foreign(['organization_id', 'created_by_user_id'], 'gift_redemptions_org_creator_fk')
                 ->references(['organization_id', 'user_id'])
                 ->on('organization_memberships')
                 ->nullOnDelete();
@@ -137,15 +137,15 @@ return new class extends Migration
             $table->unique(['organization_id', 'idempotency_key']);
             $table->unique(['organization_id', 'redemption_id', 'movement_type']);
             $table->unique(['organization_id', 'reverses_movement_id']);
-            $table->foreign(['organization_id', 'certificate_id'])
+            $table->foreign(['organization_id', 'certificate_id'], 'gift_movements_org_certificate_fk')
                 ->references(['organization_id', 'id'])
                 ->on('gift_certificates')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'from_holder_client_id'])
+            $table->foreign(['organization_id', 'from_holder_client_id'], 'gift_movements_org_from_holder_fk')
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'to_holder_client_id'])
+            $table->foreign(['organization_id', 'to_holder_client_id'], 'gift_movements_org_to_holder_fk')
                 ->references(['organization_id', 'id'])
                 ->on('clients')
                 ->restrictOnDelete();
@@ -161,7 +161,7 @@ return new class extends Migration
                 ->references(['organization_id', 'certificate_id', 'id'])
                 ->on('gift_certificate_movements')
                 ->restrictOnDelete();
-            $table->foreign(['organization_id', 'actor_user_id'])
+            $table->foreign(['organization_id', 'actor_user_id'], 'gift_movements_org_actor_fk')
                 ->references(['organization_id', 'user_id'])
                 ->on('organization_memberships')
                 ->nullOnDelete();
