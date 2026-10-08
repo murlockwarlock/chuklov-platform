@@ -3,6 +3,7 @@
 namespace App\Modules\Scheduling\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Domain\Enums\ClientRestrictionType;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientBookingRestriction;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -248,6 +249,7 @@ class CreateBooking
             if ($actor instanceof Client && ClientBookingRestriction::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('client_id', $lockedClient->getKey())
+                ->where('restriction_type', ClientRestrictionType::SelfBooking->value)
                 ->whereNull('unblocked_at')
                 ->exists()) {
                 throw ValidationException::withMessages([

@@ -1,6 +1,6 @@
 # Owner Feedback Backlog
 
-Updated: 2026-10-07
+Updated: 2026-10-08
 
 This is the working backlog for owner acceptance findings, owner-confirmed product changes, and new Change Requests that are not yet fully normalized into `docs/product/requirements.md`.
 
@@ -33,12 +33,16 @@ Status vocabulary:
 
 # 1. Current baseline
 
-Current Draft PR:
+Current Phase 1 baseline:
 
-- PR: #53 — Phase 1 functional closeout
-- Branch: `codex/chuklov-phase1-functional-closeout`
-- Current remediation-pass starting SHA: `b349ce68749408a07f76465fce51a54352fcf401`
-- Code candidate for this pass: `c6469f4eb80ca9dabd9ed82e8b1b559fd118e8f2`
+- PR: #53 — Phase 1 functional closeout — MERGED
+- Merge commit: `a28a5f7bd122f7b08bbdc54e4dc56d664a3460be`
+
+Current finishing pack:
+
+- PR: #54 — CRM finishing pack
+- Branch: `codex/crm-finishing-pack`
+- Starting SHA: `a28a5f7bd122f7b08bbdc54e4dc56d664a3460be`
 - PR remains Draft / not merged.
 
 The current branch already contains the ServiceCredit Base Currency remediation, Client Companion retry/handoff remediation, and the booking/Telegram/Work Schedule acceptance pass.
@@ -156,6 +160,20 @@ Booking always references a canonical Client, but staff may create that Client i
 The Client field now exposes a visible `Добавить нового клиента` action beside the selector. Its quick-create modal asks only for name, with optional phone, email, and existing source attribution. Language and timezone use server-derived defaults; the created Client is selected immediately and the existing Booking form state remains in place. The ClientSearch path remains authoritative for existing phone/email matches and tenant isolation.
 
 ---
+
+## 3.6 CRM finishing pack — PR #54
+
+The bounded CRM finishing pack keeps the accepted Client, Medical Profile, Booking, Telegram, Finance, and Messages architecture unchanged.
+
+- Client Note — `IMPLEMENTED_PENDING_ACCEPTANCE`: organization-scoped protected note with author/date projection, permission checks, and structural audit metadata only.
+- Blacklist — `IMPLEMENTED_PENDING_ACCEPTANCE`: typed Client restriction with required reason, CRM list filter, status/reason projection, safe state-change audit, and no automatic CRM Booking blocker.
+- Medical Profile split — `IMPLEMENTED_PENDING_ACCEPTANCE`: separate `Жалобы`, `Цели`, `Операции`, and `Травмы` fields use additive encrypted storage; historical combined text is retained and shown as historical data when present.
+- Pain VAS — `IMPLEMENTED_PENDING_ACCEPTANCE`: the existing narrative pain field remains authoritative and the new encrypted numeric VAS value is constrained to 0–10 with a labeled slider.
+- Broadcast template media bug — `IMPLEMENTED_PENDING_ACCEPTANCE`: editing without a new upload preserves persisted private media through the existing preview and Telegram delivery pipeline.
+- Standard create button wording — `IMPLEMENTED_PENDING_ACCEPTANCE`: standard record forms use `Сохранить` and `Сохранить и создать ещё`; domain-specific action labels are unchanged.
+- Default reception address wording — `IMPLEMENTED_PENDING_ACCEPTANCE`: the appointment setting is labeled `Адрес приёма по умолчанию`.
+- Service break time — `ALREADY_IMPLEMENTED`: authoritative `buffer_minutes` remains the scheduling rule; only its human-facing label/helper were clarified.
+- Referral statistics — `ALREADY_IMPLEMENTED`: existing referral statistics architecture is retained; no parallel statistics subsystem is added.
 
 # 4. Referral / attribution UX and owner decision
 

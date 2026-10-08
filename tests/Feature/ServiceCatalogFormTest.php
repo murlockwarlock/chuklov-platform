@@ -64,6 +64,11 @@ final class ServiceCatalogFormTest extends TestCase
         self::assertInstanceOf(Select::class, $paymentRequirementField);
         self::assertSame('Доступна для записи', $activeField->getLabel());
         self::assertSame('Когда клиент оплачивает', $paymentRequirementField->getLabel());
+        self::assertSame('Перерыв после приёма, минут', $page->getSchemaComponent('form.buffer_minutes')->getLabel());
+        self::assertStringContainsString(
+            'Это время блокируется после завершения услуги перед следующей записью.',
+            $component->html(),
+        );
     }
 
     public function test_service_form_labels_follow_the_english_crm_locale(): void

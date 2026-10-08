@@ -8,6 +8,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -49,7 +50,12 @@ final class SessionForm
                     ])->columns(2)->columnSpanFull(),
                 Section::make(__('Клинические заметки (опционально)'))
                     ->schema([
-                        Textarea::make('pain')->label(__('Боль'))->rows(3)->placeholder(__('Что беспокоит клиента и где')),
+                        Slider::make('pain_vas')
+                            ->label(__('Шкала боли (0–10)'))
+                            ->range(minValue: 0, maxValue: 10)
+                            ->step(1)
+                            ->helperText(__('0 — нет боли; 10 — максимальная боль')),
+                        Textarea::make('pain')->label(__('Описание боли'))->rows(3)->placeholder(__('Что беспокоит клиента и где')),
                         Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
                         Textarea::make('observations')->label(__('Наблюдения'))->rows(3)->placeholder(__('Субъективные и объективные наблюдения')),
                         Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),

@@ -1,5 +1,14 @@
 # Requirements Changelog
 
+## 2026-10-08 — CRM finishing pack normalization
+
+- Normalized organization-scoped Client Notes as protected CRM data with author/date projection, permission enforcement, and audit metadata that never stores note plaintext.
+- Normalized Client blacklist as a typed restriction with required reason, tenant-scoped filtering/status, audited old/new state, and no automatic Booking denial for authorized CRM staff.
+- Normalized the Medical Profile projection into separate encrypted `Жалобы`, `Цели`, `Операции`, and `Травмы` fields while retaining legacy combined values without destructive rewriting.
+- Normalized session Pain VAS as an encrypted numeric value constrained to 0–10; the existing narrative pain field remains available.
+- Normalized the broadcast edit contract so unchanged private media is preserved through save, preview, and test delivery using the existing media architecture.
+- Normalized standard CRM create-form wording to `Сохранить` and `Сохранить и создать ещё`, and clarified the default appointment reception address label.
+
 ## 2026-10-07 — Phase 1 bounded remediation normalization
 
 - Normalized the owner-accepted CRM identity contract: a Client card shows verified Telegram state, a validated `@username` contact link when available, and the numeric Telegram ID only as secondary fallback.

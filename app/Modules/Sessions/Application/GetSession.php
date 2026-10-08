@@ -47,6 +47,7 @@ final class GetSession
             specialistId: (int) $persisted->specialist_id,
             bookingId: $persisted->booking_id !== null ? (int) $persisted->booking_id : null,
             pain: $this->encryptor->decryptField($orgId, $persisted->pain, $keyVersion),
+            painVas: $this->painVas($this->encryptor->decryptField($orgId, $persisted->pain_vas, $keyVersion)),
             tests: $this->encryptor->decryptField($orgId, $persisted->tests, $keyVersion),
             observations: $this->encryptor->decryptField($orgId, $persisted->observations, $keyVersion),
             rootCauseHypothesis: $this->encryptor->decryptField($orgId, $persisted->root_cause_hypothesis, $keyVersion),
@@ -59,6 +60,11 @@ final class GetSession
         );
 
         return $this->resolved[$cacheKey] = $data;
+    }
+
+    private function painVas(?string $value): ?int
+    {
+        return $value !== null && preg_match('/^-?\d+$/D', $value) === 1 ? (int) $value : null;
     }
 
     public function invalidate(?int $actorId = null, ?int $orgId = null, ?int $sessionId = null): void

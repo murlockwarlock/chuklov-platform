@@ -16,6 +16,10 @@ use Illuminate\Support\Carbon;
  * @property string|null $anamnesis
  * @property string|null $complaints_goals
  * @property string|null $operations_injuries
+ * @property string|null $complaints
+ * @property string|null $goals
+ * @property string|null $operations
+ * @property string|null $injuries
  * @property string|null $medicines
  * @property string|null $supplements
  * @property int $encryption_key_version
@@ -24,7 +28,7 @@ use Illuminate\Support\Carbon;
  * @property-read Organization $organization
  * @property-read Client $client
  */
-#[Fillable(['organization_id', 'client_id', 'anamnesis', 'complaints_goals', 'operations_injuries', 'medicines', 'supplements', 'encryption_key_version'])]
+#[Fillable(['organization_id', 'client_id', 'anamnesis', 'complaints_goals', 'operations_injuries', 'complaints', 'goals', 'operations', 'injuries', 'medicines', 'supplements', 'encryption_key_version'])]
 class MedicalProfile extends Model
 {
     /** @return BelongsTo<Organization, $this> */

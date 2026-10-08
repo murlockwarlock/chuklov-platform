@@ -9,6 +9,7 @@ use App\Filament\Resources\BroadcastCampaigns\Pages\ViewBroadcastCampaign as Vie
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule as CreateScenarioRulePage;
 use App\Models\User;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
+use App\Modules\Broadcasts\Application\BroadcastCampaignMedia;
 use App\Modules\Broadcasts\Application\BroadcastEligibilityPolicy;
 use App\Modules\Broadcasts\Application\BroadcastMediaPreviewUrl;
 use App\Modules\Broadcasts\Application\BroadcastSegmentQuery;
@@ -683,6 +684,57 @@ final class MilestoneElevenBBroadcastTest extends TestCase
             ->assertRedirect(BroadcastCampaignResource::getUrl('view', ['record' => $campaign]));
 
         self::assertSame('https://cdn.example.test/existing.jpg', $campaign->refresh()->media['image'] ?? null);
+    }
+
+    public function test_filament_media_upload_survives_save_reopen_preview_and_delivery(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $client = $this->client($organization, consent: true, verified: true, language: 'ru');
+        Storage::fake('private');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($actor)
+            ->test(CreateBroadcastCampaignPage::class)
+            ->fillForm([
+                'name' => 'Медиа из формы',
+                'audience_type' => 'all',
+                'selected_client_ids' => [],
+                'message_mode' => 'compose',
+                'delivery_mode' => NotificationMessageMode::Image->value,
+                'message_body' => '',
+                'media_image' => UploadedFile::fake()->image('journey.jpg'),
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $campaign = BroadcastCampaign::query()->latest('id')->firstOrFail();
+        self::assertCount(1, app(BroadcastCampaignMedia::class)->items($campaign->media));
+        self::assertSame('photo', app(BroadcastCampaignMedia::class)->items($campaign->media)[0]['type'] ?? null);
+        $originalMedia = $campaign->media;
+
+        $edit = Livewire::actingAs($actor)
+            ->test(EditBroadcastCampaignPage::class, ['record' => $campaign->getKey()]);
+        self::assertSame($campaign->media, $edit->get('data.media'));
+
+        $edit
+            ->fillForm(['name' => 'Медиа из формы обновлена']);
+        self::assertSame($campaign->media, $edit->get('data.media'));
+
+        $edit
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        $campaign->refresh();
+        self::assertNotNull($campaign->media);
+        self::assertSame(json_encode($originalMedia), json_encode($campaign->media));
+        self::assertCount(1, app(BroadcastCampaignMedia::class)->items($campaign->media));
+        $preview = app(PreviewBroadcastCampaign::class)->message($actor, $campaign);
+        self::assertTrue($preview['mediaUrl'] !== null || $preview['mediaItems'] !== []);
+
+        app(TestBroadcastCampaign::class)->handle($actor, $campaign, $client->getKey());
+
+        self::assertCount(1, $this->channel->messages);
+        self::assertTrue($this->channel->messages[0]->mediaUrl !== null || is_resource($this->channel->messages[0]->mediaStream));
     }
 
     public function test_immediate_send_materializes_once_batches_and_replay_does_not_redeliver(): void

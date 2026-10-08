@@ -12,5 +12,6 @@ final readonly class EncryptedSessionPayload
         public ?string $encryptedProtocol,
         public ?string $encryptedResult,
         public int $keyVersion = 1,
+        public ?string $encryptedPainVas = null,
     ) {}
 }

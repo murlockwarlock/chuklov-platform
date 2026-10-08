@@ -9,10 +9,12 @@ use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResourc
 use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
 use App\Modules\Attribution\Application\ManageAttributionSourceDetail;
+use App\Modules\Identity\Application\BlockClientBlacklist;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
 use App\Modules\Identity\Application\GetLatestClientMarketingConsent;
 use App\Modules\Identity\Application\RecordClientConsent;
 use App\Modules\Identity\Application\ResetStagingClientAccount;
+use App\Modules\Identity\Application\UnblockClientBlacklist;
 use App\Modules\Identity\Application\UnblockClientSelfBooking;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
@@ -132,8 +134,10 @@ class ViewClient extends LocalizedViewRecord
 
                     return [
                         'anamnesis' => $profile?->anamnesis,
-                        'complaints_goals' => $profile?->complaintsGoals,
-                        'operations_injuries' => $profile?->operationsInjuries,
+                        'complaints' => $profile?->complaints,
+                        'goals' => $profile?->goals,
+                        'operations' => $profile?->operations,
+                        'injuries' => $profile?->injuries,
                         'medicines' => $profile?->medicines,
                         'supplements' => $profile?->supplements,
                         'expected_snapshot' => app(MedicalProfileSnapshotHasher::class)->forProfile($profileRecord),
@@ -198,6 +202,12 @@ class ViewClient extends LocalizedViewRecord
                 ])
                     ->label(__('Доступ к записи'))
                     ->icon('heroicon-o-lock-closed'),
+                ActionGroup::make([
+                    $this->blockBlacklistAction(),
+                    $this->unblockBlacklistAction(),
+                ])
+                    ->label(__('Чёрный список'))
+                    ->icon('heroicon-o-no-symbol'),
             ])
                 ->label(__('Дополнительные действия'))
                 ->icon('heroicon-o-ellipsis-horizontal')
@@ -769,6 +779,43 @@ class ViewClient extends LocalizedViewRecord
             });
     }
 
+    private function blockBlacklistAction(): Action
+    {
+        return Action::make('blockBlacklist')
+            ->label(__('Добавить в чёрный список'))
+            ->color('danger')
+            ->schema([
+                Textarea::make('reason')
+                    ->label(__('Причина'))
+                    ->required()
+                    ->maxLength(500),
+            ])
+            ->visible(fn (): bool => $this->clientRecord()->activeBlacklistRestriction === null
+                && ClientResource::canEdit($this->clientRecord()))
+            ->action(function (array $data): void {
+                app(BlockClientBlacklist::class)->handle(
+                    $this->actor(),
+                    $this->clientRecord(),
+                    (string) $data['reason'],
+                );
+                $this->clientRecord()->load('activeBlacklistRestriction');
+            });
+    }
+
+    private function unblockBlacklistAction(): Action
+    {
+        return Action::make('unblockBlacklist')
+            ->label(__('Убрать из чёрного списка'))
+            ->color('success')
+            ->requiresConfirmation()
+            ->visible(fn (): bool => $this->clientRecord()->activeBlacklistRestriction !== null
+                && ClientResource::canEdit($this->clientRecord()))
+            ->action(function (): void {
+                app(UnblockClientBlacklist::class)->handle($this->actor(), $this->clientRecord());
+                $this->clientRecord()->load('activeBlacklistRestriction');
+            });
+    }
+
     /** @return array<int, Hidden|Textarea> */
     private static function medicalProfileSchema(): array
     {
@@ -778,12 +825,20 @@ class ViewClient extends LocalizedViewRecord
                 ->label(__('Анамнез'))
                 ->rows(3)
                 ->maxLength(10000),
-            Textarea::make('complaints_goals')
-                ->label(__('Жалобы и цели'))
+            Textarea::make('complaints')
+                ->label(__('Жалобы'))
                 ->rows(3)
                 ->maxLength(10000),
-            Textarea::make('operations_injuries')
-                ->label(__('Операции и травмы'))
+            Textarea::make('goals')
+                ->label(__('Цели'))
+                ->rows(3)
+                ->maxLength(10000),
+            Textarea::make('operations')
+                ->label(__('Операции'))
+                ->rows(3)
+                ->maxLength(10000),
+            Textarea::make('injuries')
+                ->label(__('Травмы'))
                 ->rows(3)
                 ->maxLength(10000),
             Textarea::make('medicines')

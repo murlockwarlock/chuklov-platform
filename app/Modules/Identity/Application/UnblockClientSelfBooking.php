@@ -3,6 +3,7 @@
 namespace App\Modules\Identity\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Domain\Enums\ClientRestrictionType;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientBookingRestriction;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -44,6 +45,7 @@ class UnblockClientSelfBooking
             $restriction = ClientBookingRestriction::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('client_id', $client->getKey())
+                ->where('restriction_type', ClientRestrictionType::SelfBooking->value)
                 ->whereNull('unblocked_at')
                 ->lockForUpdate()
                 ->first();

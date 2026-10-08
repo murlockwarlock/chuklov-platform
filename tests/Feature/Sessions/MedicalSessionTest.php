@@ -95,6 +95,58 @@ final class MedicalSessionTest extends TestCase
         self::assertSame('Дисфункция крестцово-подвздошного сочленения.', $retrieved->rootCauseHypothesis);
     }
 
+    public function test_pain_vas_is_saved_as_a_protected_numeric_value_and_can_be_updated(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+
+        $created = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::now('UTC'),
+            pain: 'Описательная запись боли.',
+            painVas: 0,
+        ));
+
+        self::assertSame(0, $created->painVas);
+
+        $rawRow = DB::table('medical_sessions')
+            ->where('organization_id', $organization->getKey())
+            ->where('id', $created->id)
+            ->first();
+
+        self::assertNotNull($rawRow);
+        self::assertNotSame('0', (string) $rawRow->pain_vas);
+
+        $updated = app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($created->id), new UpdateSessionCommand(
+            pain: 'Описательная запись боли.',
+            tests: null,
+            observations: null,
+            rootCauseHypothesis: null,
+            protocol: null,
+            result: null,
+            painVas: 5,
+        ));
+
+        self::assertSame(5, $updated->painVas);
+
+        $retrieved = app(GetSession::class)->handle($admin, MedicalSession::findOrFail($created->id));
+
+        self::assertNotNull($retrieved);
+        self::assertSame(5, $retrieved->painVas);
+    }
+
+    public function test_pain_vas_rejects_values_outside_zero_to_ten(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+
+        $this->expectException(ValidationException::class);
+
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::now('UTC'),
+            painVas: 11,
+        ));
+    }
+
     public function test_session_can_be_created_without_booking_and_booking_id_is_null(): void
     {
         [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();

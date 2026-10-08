@@ -9,6 +9,7 @@ use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
+use App\Modules\MedicalProfiles\Domain\ValueObjects\EncryptedMedicalPayload;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -32,21 +33,9 @@ final readonly class UpdateMedicalProfile
         $orgId = (int) $organization->getKey();
 
         $this->validateCommand($command);
-
         $keyVersion = $this->keyResolver->getCurrentKeyVersion($orgId);
 
-        $plainData = new MedicalProfileData(
-            anamnesis: $command->anamnesis,
-            complaintsGoals: $command->complaintsGoals,
-            operationsInjuries: $command->operationsInjuries,
-            medicines: $command->medicines,
-            supplements: $command->supplements,
-            encryptionKeyVersion: $keyVersion,
-        );
-
-        $encrypted = $this->encryptor->encryptProfile($orgId, $plainData, $keyVersion);
-
-        $result = DB::transaction(function () use ($actor, $organization, $client, $plainData, $encrypted, $keyVersion, $orgId, $command) {
+        $result = DB::transaction(function () use ($actor, $organization, $client, $command, $keyVersion, $orgId): MedicalProfileData {
             Client::query()
                 ->where('organization_id', $orgId)
                 ->whereKey($client->getKey())
@@ -67,22 +56,47 @@ final readonly class UpdateMedicalProfile
                 ]);
             }
 
+            $previous = $existing instanceof MedicalProfile
+                ? $this->decryptProfile($orgId, $existing)
+                : new MedicalProfileData(
+                    anamnesis: null,
+                    complaintsGoals: null,
+                    operationsInjuries: null,
+                    medicines: null,
+                    supplements: null,
+                );
+
+            $plainData = new MedicalProfileData(
+                anamnesis: $command->shouldUpdateAnamnesis() ? $command->anamnesis : $previous->anamnesis,
+                complaintsGoals: $command->shouldUpdateComplaintsGoals() ? $command->complaintsGoals : $previous->complaintsGoals,
+                operationsInjuries: $command->shouldUpdateOperationsInjuries() ? $command->operationsInjuries : $previous->operationsInjuries,
+                medicines: $command->shouldUpdateMedicines() ? $command->medicines : $previous->medicines,
+                supplements: $command->shouldUpdateSupplements() ? $command->supplements : $previous->supplements,
+                encryptionKeyVersion: $keyVersion,
+                complaints: $command->shouldUpdateComplaints() ? $command->complaints : $previous->complaints,
+                goals: $command->shouldUpdateGoals() ? $command->goals : $previous->goals,
+                operations: $command->shouldUpdateOperations() ? $command->operations : $previous->operations,
+                injuries: $command->shouldUpdateInjuries() ? $command->injuries : $previous->injuries,
+            );
+            $encrypted = $this->encryptor->encryptProfile($orgId, $plainData, $keyVersion);
+
             $isNew = $existing === null;
             $profile = $existing ?? new MedicalProfile;
-
             $profile->forceFill([
                 'organization_id' => $orgId,
                 'client_id' => $client->getKey(),
                 'anamnesis' => $encrypted->encryptedAnamnesis,
                 'complaints_goals' => $encrypted->encryptedComplaintsGoals,
                 'operations_injuries' => $encrypted->encryptedOperationsInjuries,
+                'complaints' => $encrypted->encryptedComplaints,
+                'goals' => $encrypted->encryptedGoals,
+                'operations' => $encrypted->encryptedOperations,
+                'injuries' => $encrypted->encryptedInjuries,
                 'medicines' => $encrypted->encryptedMedicines,
                 'supplements' => $encrypted->encryptedSupplements,
                 'encryption_key_version' => $keyVersion,
             ]);
             $profile->save();
-
-            $updatedFields = $this->collectUpdatedFieldNames($plainData);
 
             $this->audit->handle(
                 organization: $organization,
@@ -93,7 +107,7 @@ final readonly class UpdateMedicalProfile
                 metadata: [
                     'source' => 'crm',
                     'key_version' => $keyVersion,
-                    'updated_fields' => implode(',', $updatedFields),
+                    'updated_fields' => implode(',', $this->collectUpdatedFieldNames($command)),
                 ],
             );
 
@@ -105,6 +119,10 @@ final readonly class UpdateMedicalProfile
                 supplements: $plainData->supplements,
                 encryptionKeyVersion: $keyVersion,
                 updatedAt: $profile->updated_at,
+                complaints: $plainData->complaints,
+                goals: $plainData->goals,
+                operations: $plainData->operations,
+                injuries: $plainData->injuries,
             );
         });
 
@@ -113,12 +131,36 @@ final readonly class UpdateMedicalProfile
         return $result;
     }
 
+    private function decryptProfile(int $organizationId, MedicalProfile $profile): MedicalProfileData
+    {
+        return $this->encryptor->decryptProfile(
+            $organizationId,
+            (int) $profile->encryption_key_version,
+            new EncryptedMedicalPayload(
+                encryptedAnamnesis: $profile->getRawOriginal('anamnesis'),
+                encryptedComplaintsGoals: $profile->getRawOriginal('complaints_goals'),
+                encryptedOperationsInjuries: $profile->getRawOriginal('operations_injuries'),
+                encryptedMedicines: $profile->getRawOriginal('medicines'),
+                encryptedSupplements: $profile->getRawOriginal('supplements'),
+                keyVersion: (int) $profile->encryption_key_version,
+                encryptedComplaints: $profile->getRawOriginal('complaints'),
+                encryptedGoals: $profile->getRawOriginal('goals'),
+                encryptedOperations: $profile->getRawOriginal('operations'),
+                encryptedInjuries: $profile->getRawOriginal('injuries'),
+            ),
+        );
+    }
+
     private function validateCommand(UpdateMedicalProfileCommand $command): void
     {
         $fields = [
             'anamnesis' => $command->anamnesis,
             'complaints_goals' => $command->complaintsGoals,
             'operations_injuries' => $command->operationsInjuries,
+            'complaints' => $command->complaints,
+            'goals' => $command->goals,
+            'operations' => $command->operations,
+            'injuries' => $command->injuries,
             'medicines' => $command->medicines,
             'supplements' => $command->supplements,
         ];
@@ -133,22 +175,35 @@ final readonly class UpdateMedicalProfile
     }
 
     /** @return list<string> */
-    private function collectUpdatedFieldNames(MedicalProfileData $data): array
+    private function collectUpdatedFieldNames(UpdateMedicalProfileCommand $command): array
     {
         $fields = [];
-        if ($data->anamnesis !== null) {
+
+        if ($command->shouldUpdateAnamnesis()) {
             $fields[] = 'anamnesis';
         }
-        if ($data->complaintsGoals !== null) {
+        if ($command->shouldUpdateComplaintsGoals()) {
             $fields[] = 'complaints_goals';
         }
-        if ($data->operationsInjuries !== null) {
+        if ($command->shouldUpdateOperationsInjuries()) {
             $fields[] = 'operations_injuries';
         }
-        if ($data->medicines !== null) {
+        if ($command->shouldUpdateComplaints()) {
+            $fields[] = 'complaints';
+        }
+        if ($command->shouldUpdateGoals()) {
+            $fields[] = 'goals';
+        }
+        if ($command->shouldUpdateOperations()) {
+            $fields[] = 'operations';
+        }
+        if ($command->shouldUpdateInjuries()) {
+            $fields[] = 'injuries';
+        }
+        if ($command->shouldUpdateMedicines()) {
             $fields[] = 'medicines';
         }
-        if ($data->supplements !== null) {
+        if ($command->shouldUpdateSupplements()) {
             $fields[] = 'supplements';
         }
 

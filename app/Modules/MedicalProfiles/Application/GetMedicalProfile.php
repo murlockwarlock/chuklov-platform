@@ -45,6 +45,10 @@ final class GetMedicalProfile
             encryptedMedicines: $profile->medicines,
             encryptedSupplements: $profile->supplements,
             keyVersion: $profile->encryption_key_version,
+            encryptedComplaints: $profile->complaints,
+            encryptedGoals: $profile->goals,
+            encryptedOperations: $profile->operations,
+            encryptedInjuries: $profile->injuries,
         );
 
         $data = $this->encryptor->decryptProfile($orgId, $profile->encryption_key_version, $payload);
@@ -57,6 +61,10 @@ final class GetMedicalProfile
             supplements: $data->supplements,
             encryptionKeyVersion: $profile->encryption_key_version,
             updatedAt: $profile->updated_at,
+            complaints: $data->complaints,
+            goals: $data->goals,
+            operations: $data->operations,
+            injuries: $data->injuries,
         );
     }
 

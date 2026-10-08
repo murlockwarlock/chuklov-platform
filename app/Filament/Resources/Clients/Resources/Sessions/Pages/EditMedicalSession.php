@@ -14,6 +14,7 @@ use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -38,7 +39,12 @@ class EditMedicalSession extends LocalizedEditRecord
                 Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
                 Section::make(__('Клинические заметки'))
                     ->schema([
-                        Textarea::make('pain')->label(__('Боль'))->rows(3)->placeholder(__('Что беспокоит клиента и где')),
+                        Slider::make('pain_vas')
+                            ->label(__('Шкала боли (0–10)'))
+                            ->range(minValue: 0, maxValue: 10)
+                            ->step(1)
+                            ->helperText(__('0 — нет боли; 10 — максимальная боль')),
+                        Textarea::make('pain')->label(__('Описание боли'))->rows(3)->placeholder(__('Что беспокоит клиента и где')),
                         Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
                         Textarea::make('observations')->label(__('Наблюдения'))->rows(3)->placeholder(__('Субъективные и объективные наблюдения')),
                         Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),
@@ -71,6 +77,7 @@ class EditMedicalSession extends LocalizedEditRecord
 
         return [
             'pain' => $decrypted->pain,
+            'pain_vas' => $decrypted->painVas,
             'tests' => $decrypted->tests,
             'observations' => $decrypted->observations,
             'root_cause_hypothesis' => $decrypted->rootCauseHypothesis,
@@ -151,6 +158,7 @@ class EditMedicalSession extends LocalizedEditRecord
     {
         $fields = [
             'pain',
+            'pain_vas',
             'tests',
             'observations',
             'root_cause_hypothesis',

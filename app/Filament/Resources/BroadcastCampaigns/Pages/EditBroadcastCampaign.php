@@ -21,7 +21,11 @@ final class EditBroadcastCampaign extends LocalizedEditRecord
         abort_unless($record instanceof BroadcastCampaign, 404);
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
-        if (! array_key_exists('media', $data)) {
+        $hasMediaReplacement = filled($data['media_image'] ?? null)
+            || filled($data['media_url'] ?? null)
+            || (is_array($data['media'] ?? null) && $data['media'] !== []);
+
+        if (! (bool) ($data['remove_media'] ?? false) && ! $hasMediaReplacement) {
             $data['media'] = $record->media;
         }
 

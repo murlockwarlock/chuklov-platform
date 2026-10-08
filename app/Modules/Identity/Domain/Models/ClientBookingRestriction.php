@@ -3,6 +3,7 @@
 namespace App\Modules\Identity\Domain\Models;
 
 use App\Models\User;
+use App\Modules\Identity\Domain\Enums\ClientRestrictionType;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Database\Factories\ClientBookingRestrictionFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -16,7 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property-read User $blockedBy
  * @property-read User|null $unblockedBy
  */
-#[Fillable(['reason'])]
+#[Fillable(['reason', 'restriction_type'])]
 class ClientBookingRestriction extends Model
 {
     /** @use HasFactory<ClientBookingRestrictionFactory> */
@@ -54,6 +55,7 @@ class ClientBookingRestriction extends Model
     protected function casts(): array
     {
         return [
+            'restriction_type' => ClientRestrictionType::class,
             'blocked_at' => 'datetime',
             'unblocked_at' => 'datetime',
         ];

@@ -234,7 +234,7 @@ class SchedulingConfiguration extends LocalizedPage
                     ->required()
                     ->helperText(__('Используется для расписаний и уведомлений в CRM.')),
                 TextInput::make('office_location')
-                    ->label(__('Адрес по умолчанию'))
+                    ->label(__('Адрес приёма по умолчанию'))
                     ->helperText(__('Подставляется в новые записи в кабинете. Адрес уже созданных записей не изменится.'))
                     ->maxLength(500),
                 Section::make(__('Напоминания о записи'))

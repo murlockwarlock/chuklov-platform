@@ -14,6 +14,8 @@ final readonly class UpdateSessionCommand
         public ?string $protocol,
         public ?string $result,
         public ?string $expectedSnapshot = null,
+        public ?int $painVas = null,
+        public ?bool $painVasProvided = null,
     ) {}
 
     /**
@@ -51,6 +53,8 @@ final readonly class UpdateSessionCommand
             protocol: self::normalizeOptionalValue($data['protocol'], 'protocol'),
             result: self::normalizeOptionalValue($data['result'], 'result'),
             expectedSnapshot: isset($data['expected_snapshot']) && is_string($data['expected_snapshot']) ? $data['expected_snapshot'] : null,
+            painVas: self::normalizePainVas($data),
+            painVasProvided: array_key_exists('pain_vas', $data),
         );
     }
 
@@ -66,6 +70,33 @@ final readonly class UpdateSessionCommand
 
         throw ValidationException::withMessages([
             $field => 'The "'.$field.'" field must be a string or null.',
+        ]);
+    }
+
+    public function shouldUpdatePainVas(): bool
+    {
+        return $this->painVasProvided ?? $this->painVas !== null;
+    }
+
+    /** @param array<string, mixed> $data */
+    private static function normalizePainVas(array $data): ?int
+    {
+        if (! array_key_exists('pain_vas', $data) || $data['pain_vas'] === null || $data['pain_vas'] === '') {
+            return null;
+        }
+
+        if (is_int($data['pain_vas'])) {
+            return $data['pain_vas'];
+        }
+
+        if ((is_float($data['pain_vas']) || is_string($data['pain_vas']))
+            && is_numeric($data['pain_vas'])
+            && (float) $data['pain_vas'] === (float) (int) $data['pain_vas']) {
+            return (int) $data['pain_vas'];
+        }
+
+        throw ValidationException::withMessages([
+            'pain_vas' => 'Укажите целое значение боли от 0 до 10.',
         ]);
     }
 }

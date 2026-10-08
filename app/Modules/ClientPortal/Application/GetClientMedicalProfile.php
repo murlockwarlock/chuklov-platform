@@ -45,6 +45,10 @@ final readonly class GetClientMedicalProfile
                     encryptedMedicines: $profile->medicines,
                     encryptedSupplements: $profile->supplements,
                     keyVersion: (int) $profile->encryption_key_version,
+                    encryptedComplaints: $profile->complaints,
+                    encryptedGoals: $profile->goals,
+                    encryptedOperations: $profile->operations,
+                    encryptedInjuries: $profile->injuries,
                 ),
             );
         } catch (\Throwable) {
@@ -63,8 +67,8 @@ final readonly class GetClientMedicalProfile
             'available' => true,
             'updatedAt' => $profile->updated_at?->toIso8601String(),
             'anamnesis' => $data->anamnesis,
-            'complaintsGoals' => $data->complaintsGoals,
-            'operationsInjuries' => $data->operationsInjuries,
+            'complaintsGoals' => $data->complaintsGoalsForCompatibility(),
+            'operationsInjuries' => $data->operationsInjuriesForCompatibility(),
             'medicines' => $data->medicines,
             'supplements' => $data->supplements,
         ];

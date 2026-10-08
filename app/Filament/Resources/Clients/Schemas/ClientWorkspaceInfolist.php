@@ -17,6 +17,7 @@ use App\Modules\Identity\Application\VerifiedChannelIdentity;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
+use App\Modules\MedicalProfiles\Application\DTOs\MedicalProfileData;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
@@ -198,6 +199,16 @@ final class ClientWorkspaceInfolist
                                 ? __('Причина: :reason', ['reason' => $record->activeBookingRestriction->reason])
                                 : null)
                             ->wrap(),
+                        TextEntry::make('blacklist_status')
+                            ->label(__('Чёрный список'))
+                            ->state(fn (Client $record): string => $record->activeBlacklistRestriction === null ? 'not_blacklisted' : 'blacklisted')
+                            ->formatStateUsing(fn (string $state): string => $state === 'blacklisted' ? __('В чёрном списке') : __('Не в чёрном списке'))
+                            ->badge()
+                            ->color(fn (string $state): string => $state === 'blacklisted' ? 'danger' : 'gray')
+                            ->helperText(fn (Client $record): ?string => $record->activeBlacklistRestriction === null
+                                ? null
+                                : (string) __('Причина: :reason. Запись сотрудником CRM доступна.', ['reason' => (string) $record->activeBlacklistRestriction->reason]))
+                            ->wrap(),
                         TextEntry::make('balance_summary')
                             ->label(__('К оплате'))
                             ->state(function (Client $record): string {
@@ -255,69 +266,52 @@ final class ClientWorkspaceInfolist
                     ->schema([
                         TextEntry::make('anamnesis')
                             ->label(__('Клинический анамнез'))
-                            ->state(function (Client $record): ?string {
-                                $actor = auth()->user();
-
-                                if (! $actor instanceof User) {
-                                    return __('Требуется авторизация');
-                                }
-
-                                return app(GetMedicalProfile::class)->handle($actor, $record)?->anamnesis;
-                            })
+                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'anamnesis'))
                             ->placeholder(__('Не заполнен'))
                             ->columnSpanFull()
                             ->wrap(),
-                        TextEntry::make('complaints_goals')
-                            ->label(__('Жалобы, ВАШ и цели'))
-                            ->state(function (Client $record): ?string {
-                                $actor = auth()->user();
-
-                                if (! $actor instanceof User) {
-                                    return __('Требуется авторизация');
-                                }
-
-                                return app(GetMedicalProfile::class)->handle($actor, $record)?->complaintsGoals;
-                            })
+                        TextEntry::make('complaints')
+                            ->label(__('Жалобы'))
+                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'complaints'))
                             ->placeholder(__('Не указаны'))
+                            ->wrap(),
+                        TextEntry::make('goals')
+                            ->label(__('Цели'))
+                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'goals'))
+                            ->placeholder(__('Не указаны'))
+                            ->wrap(),
+                        TextEntry::make('operations')
+                            ->label(__('Операции'))
+                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'operations'))
+                            ->placeholder(__('Не указаны'))
+                            ->wrap(),
+                        TextEntry::make('injuries')
+                            ->label(__('Травмы'))
+                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'injuries'))
+                            ->placeholder(__('Не указаны'))
+                            ->wrap(),
+                        TextEntry::make('legacy_complaints_goals')
+                            ->label(__('Историческая запись: жалобы и цели'))
+                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'complaintsGoals'))
+                            ->visible(fn (Client $record): bool => self::medicalProfile($record)?->complaintsGoals !== null)
+                            ->placeholder(__('Нет исторической записи'))
                             ->columnSpanFull()
                             ->wrap(),
-                        TextEntry::make('operations_injuries')
-                            ->label(__('Операции и травмы'))
-                            ->state(function (Client $record): ?string {
-                                $actor = auth()->user();
-
-                                if (! $actor instanceof User) {
-                                    return __('Требуется авторизация');
-                                }
-
-                                return app(GetMedicalProfile::class)->handle($actor, $record)?->operationsInjuries;
-                            })
-                            ->placeholder(__('Не указаны'))
+                        TextEntry::make('legacy_operations_injuries')
+                            ->label(__('Историческая запись: операции и травмы'))
+                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'operationsInjuries'))
+                            ->visible(fn (Client $record): bool => self::medicalProfile($record)?->operationsInjuries !== null)
+                            ->placeholder(__('Нет исторической записи'))
+                            ->columnSpanFull()
                             ->wrap(),
                         TextEntry::make('medicines')
                             ->label(__('Лекарственные препараты'))
-                            ->state(function (Client $record): ?string {
-                                $actor = auth()->user();
-
-                                if (! $actor instanceof User) {
-                                    return __('Требуется авторизация');
-                                }
-
-                                return app(GetMedicalProfile::class)->handle($actor, $record)?->medicines;
-                            })
+                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'medicines'))
                             ->placeholder(__('Не указаны'))
                             ->wrap(),
                         TextEntry::make('supplements')
                             ->label(__('Нутрицевтики и БАДы'))
-                            ->state(function (Client $record): ?string {
-                                $actor = auth()->user();
-
-                                if (! $actor instanceof User) {
-                                    return __('Требуется авторизация');
-                                }
-
-                                return app(GetMedicalProfile::class)->handle($actor, $record)?->supplements;
-                            })
+                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'supplements'))
                             ->placeholder(__('Не указаны'))
                             ->columnSpanFull()
                             ->wrap(),
@@ -336,6 +330,39 @@ final class ClientWorkspaceInfolist
             'written' => __('Письменное согласие'),
             'portal' => __('Подтверждено клиентом в портале'),
             default => __('Источник не указан'),
+        };
+    }
+
+    private static function medicalProfile(Client $record): ?MedicalProfileData
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            ? app(GetMedicalProfile::class)->handle($actor, $record)
+            : null;
+    }
+
+    private static function medicalProfileField(Client $record, string $field): ?string
+    {
+        $actor = auth()->user();
+
+        if (! $actor instanceof User) {
+            return __('Требуется авторизация');
+        }
+
+        $profile = app(GetMedicalProfile::class)->handle($actor, $record);
+
+        return match ($field) {
+            'anamnesis' => $profile?->anamnesis,
+            'complaints' => $profile?->complaints,
+            'goals' => $profile?->goals,
+            'operations' => $profile?->operations,
+            'injuries' => $profile?->injuries,
+            'complaintsGoals' => $profile?->complaintsGoals,
+            'operationsInjuries' => $profile?->operationsInjuries,
+            'medicines' => $profile?->medicines,
+            'supplements' => $profile?->supplements,
+            default => null,
         };
     }
 }

@@ -83,6 +83,50 @@ final class MedicalProfileTest extends TestCase
         self::assertSame('Витамин D3 2000 МЕ, Омега-3 1000 мг.', $retrieved->supplements);
     }
 
+    public function test_split_medical_fields_are_saved_independently_without_losing_legacy_text(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $updateAction = app(UpdateMedicalProfile::class);
+
+        $updateAction->handle($admin, $client, new UpdateMedicalProfileCommand(
+            complaintsGoals: 'Исторический текст жалоб и целей.',
+            operationsInjuries: 'Исторический текст операций и травм.',
+        ));
+
+        $result = $updateAction->handle($admin, $client, UpdateMedicalProfileCommand::fromArray([
+            'complaints' => 'Боль в спине.',
+            'goals' => 'Улучшить подвижность.',
+            'operations' => 'Операция в 2018 году.',
+            'injuries' => 'Перелом в 2015 году.',
+        ]));
+
+        self::assertSame('Боль в спине.', $result->complaints);
+        self::assertSame('Улучшить подвижность.', $result->goals);
+        self::assertSame('Операция в 2018 году.', $result->operations);
+        self::assertSame('Перелом в 2015 году.', $result->injuries);
+        self::assertSame('Исторический текст жалоб и целей.', $result->complaintsGoals);
+        self::assertSame('Исторический текст операций и травм.', $result->operationsInjuries);
+
+        $retrieved = app(GetMedicalProfile::class)->handle($admin, $client);
+
+        self::assertNotNull($retrieved);
+        self::assertSame('Боль в спине.', $retrieved->complaints);
+        self::assertSame('Улучшить подвижность.', $retrieved->goals);
+        self::assertSame('Операция в 2018 году.', $retrieved->operations);
+        self::assertSame('Перелом в 2015 году.', $retrieved->injuries);
+        self::assertSame('Исторический текст жалоб и целей.', $retrieved->complaintsGoals);
+        self::assertSame('Исторический текст операций и травм.', $retrieved->operationsInjuries);
+
+        $rawRow = DB::table('medical_profiles')
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->first();
+
+        self::assertNotNull($rawRow);
+        self::assertStringNotContainsString('Боль в спине.', (string) $rawRow->complaints);
+        self::assertStringNotContainsString('Операция в 2018 году.', (string) $rawRow->operations);
+    }
+
     public function test_medical_profile_updates_preserve_organization_and_client_ownership(): void
     {
         [$organization, $admin, $client] = $this->setupOrganizationWithClient();

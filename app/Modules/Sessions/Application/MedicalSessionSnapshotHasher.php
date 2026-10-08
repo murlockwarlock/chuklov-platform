@@ -15,6 +15,7 @@ final class MedicalSessionSnapshotHasher
             'specialist_id' => (int) $session->specialist_id,
             'booking_id' => $session->booking_id === null ? null : (int) $session->booking_id,
             'pain' => $session->getRawOriginal('pain'),
+            'pain_vas' => $session->getRawOriginal('pain_vas'),
             'tests' => $session->getRawOriginal('tests'),
             'observations' => $session->getRawOriginal('observations'),
             'root_cause_hypothesis' => $session->getRawOriginal('root_cause_hypothesis'),

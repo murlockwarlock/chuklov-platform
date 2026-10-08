@@ -224,12 +224,28 @@ final class CrmUxRemediationTest extends TestCase
             ->assertSee('Консультация после результатов теста')
             ->assertSee('Эта услуга предлагается клиенту после завершения теста.')
             ->assertDontSee('защищённое подключение')
-            ->assertSee('Адрес по умолчанию')
+            ->assertSee('Адрес приёма по умолчанию')
             ->assertSee('Напоминания о записи')
             ->assertSee('Клиенту')
             ->assertSee('Себе / специалисту')
             ->assertSee('Добавить напоминание')
             ->assertSee('задним числом не отправляется');
+    }
+
+    public function test_standard_create_actions_use_save_copy(): void
+    {
+        [, $admin] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(CreateBroadcastCampaign::class);
+        $page = $component->instance();
+        $method = new \ReflectionMethod($page, 'getFormActions');
+        $method->setAccessible(true);
+        $actions = collect($method->invoke($page))->keyBy(fn ($action): string => $action->getName());
+
+        self::assertSame('Сохранить', $actions['create']->getLabel());
+        self::assertSame('Сохранить и создать ещё', $actions['createAnother']->getLabel());
+        self::assertSame('Отмена', $actions['cancel']->getLabel());
     }
 
     public function test_feedback_rule_controls_use_full_width_without_label_overflow(): void

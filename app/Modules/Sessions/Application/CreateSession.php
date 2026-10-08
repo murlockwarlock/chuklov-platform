@@ -57,6 +57,11 @@ final readonly class CreateSession
             encryptedProtocol: $this->encryptor->encryptField($orgId, $command->protocol, $keyVersion),
             encryptedResult: $this->encryptor->encryptField($orgId, $command->result, $keyVersion),
             keyVersion: $keyVersion,
+            encryptedPainVas: $this->encryptor->encryptField(
+                $orgId,
+                $command->painVas === null ? null : (string) $command->painVas,
+                $keyVersion,
+            ),
         );
 
         $occurredAtUtc = $command->occurredAtUtc();
@@ -69,6 +74,7 @@ final readonly class CreateSession
                 'specialist_id' => $specialist->getKey(),
                 'booking_id' => $booking?->getKey(),
                 'pain' => $encrypted->encryptedPain,
+                'pain_vas' => $encrypted->encryptedPainVas,
                 'tests' => $encrypted->encryptedTests,
                 'observations' => $encrypted->encryptedObservations,
                 'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
@@ -110,6 +116,7 @@ final readonly class CreateSession
                 occurredAt: $session->occurred_at,
                 createdAt: $session->created_at,
                 updatedAt: $session->updated_at,
+                painVas: $command->painVas,
             );
         });
     }
@@ -168,6 +175,12 @@ final readonly class CreateSession
                     $field => 'Поле превышает максимальную длину в '.self::MAX_FIELD_LENGTH.' символов.',
                 ]);
             }
+        }
+
+        if ($command->painVas !== null && ($command->painVas < 0 || $command->painVas > 10)) {
+            throw ValidationException::withMessages([
+                'pain_vas' => 'Укажите значение боли от 0 до 10.',
+            ]);
         }
     }
 }
