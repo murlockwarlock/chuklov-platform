@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Pages\CreateBooking;
+use App\Filament\Resources\Bookings\Pages\CreateMultipleBookings;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Models\User;
@@ -19,6 +20,7 @@ use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
+use App\Modules\Scheduling\Application\CreateMultipleBookings as CreateMultipleBookingsAction;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -55,6 +57,7 @@ class MilestoneFourCrmBookingTest extends TestCase
     public function test_authorized_crm_creation_uses_scoped_application_path_and_replays_safely(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->enableClientRecords($organization);
         $this->resolveFilamentContext($admin, $organization);
         $payload = [
             'client_id' => $client->getKey(),
@@ -93,6 +96,225 @@ class MilestoneFourCrmBookingTest extends TestCase
         self::assertSame(1, Booking::query()->count());
         self::assertSame(1, $booking->fresh()->events()->count());
         self::assertSame(1, ScenarioEvent::query()->where('event_name', 'booking.created')->count());
+    }
+
+    public function test_crm_can_create_three_independent_bookings_from_one_form(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->enableClientRecords($organization);
+        $this->resolveFilamentContext($admin, $organization);
+        $slots = [
+            CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            CarbonImmutable::create(2026, 4, 13, 9, 0, 0, 'UTC'),
+            CarbonImmutable::create(2026, 4, 20, 9, 0, 0, 'UTC'),
+        ];
+
+        Livewire::actingAs($admin)
+            ->test(CreateMultipleBookings::class)
+            ->assertFormFieldExists('slots')
+            ->assertSee('Создать записи')
+            ->fillForm([
+                'client_id' => $client->getKey(),
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'visit_format' => VisitFormat::Office->value,
+                'slots' => array_map(static fn (CarbonImmutable $slot): array => [
+                    'date' => $slot->toDateString(),
+                    'time' => $slot->toIso8601String(),
+                ], $slots),
+            ])
+            ->call('create')
+            ->assertHasNoErrors()
+            ->assertNotified('Создано 3 записей')
+            ->assertRedirect();
+
+        $bookings = Booking::query()->where('organization_id', $organization->getKey())->orderBy('starts_at')->get();
+        self::assertCount(3, $bookings);
+        self::assertSame([$client->getKey()], $bookings->pluck('client_id')->unique()->values()->all());
+        self::assertSame([$specialist->getKey()], $bookings->pluck('specialist_id')->unique()->values()->all());
+        self::assertSame([$service->getKey()], $bookings->pluck('service_id')->unique()->values()->all());
+        self::assertSame(
+            array_map(static fn (CarbonImmutable $slot): string => $slot->toIso8601String(), $slots),
+            $bookings->map(static fn (Booking $booking): string => $booking->startsAtUtc()->toIso8601String())->all(),
+        );
+        self::assertSame(3, ScenarioEvent::query()->where('event_name', 'booking.created')->count());
+        self::assertSame(3, DB::table('booking_idempotency_keys')->count());
+    }
+
+    public function test_ordinary_single_booking_creation_still_uses_the_existing_form(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->enableClientRecords($organization);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->fillForm([
+                'client_id' => $client->getKey(),
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+                'visit_format' => VisitFormat::Office->value,
+                'party_size' => 1,
+            ])
+            ->call('create')
+            ->assertHasNoErrors()
+            ->assertRedirect();
+
+        self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_repeating_the_same_multi_booking_submit_replays_without_duplicates(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $slots = [
+            CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            CarbonImmutable::create(2026, 4, 13, 9, 0, 0, 'UTC'),
+        ];
+
+        $create = function () use ($admin, $client, $specialist, $service, $slots): array {
+            return app(CreateMultipleBookingsAction::class)->handle(
+                actor: $admin,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                format: VisitFormat::Office,
+                slots: array_map(static fn (CarbonImmutable $slot): array => [
+                    'date' => $slot->toDateString(),
+                    'time' => $slot->toIso8601String(),
+                ], $slots),
+                batchIntentKey: 'stable-batch-intent',
+            );
+        };
+
+        $first = $create();
+        $second = $create();
+
+        self::assertSame(
+            array_map(static fn (Booking $booking): int => (int) $booking->getKey(), $first),
+            array_map(static fn (Booking $booking): int => (int) $booking->getKey(), $second),
+        );
+        self::assertSame(2, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(2, ScenarioEvent::query()->where('event_name', 'booking.created')->count());
+        self::assertSame(2, DB::table('booking_idempotency_keys')->count());
+    }
+
+    public function test_multi_booking_conflict_rolls_back_the_whole_batch_and_identifies_the_slot(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $occupiedSlot = CarbonImmutable::create(2026, 4, 13, 9, 0, 0, 'UTC');
+        app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $occupiedSlot,
+            format: VisitFormat::Office,
+            idempotencyKey: 'occupied-before-batch',
+        );
+
+        try {
+            app(CreateMultipleBookingsAction::class)->handle(
+                actor: $admin,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                format: VisitFormat::Office,
+                slots: [
+                    [
+                        'date' => '2026-04-06',
+                        'time' => '2026-04-06T09:00:00+00:00',
+                    ],
+                    [
+                        'date' => $occupiedSlot->toDateString(),
+                        'time' => $occupiedSlot->toIso8601String(),
+                    ],
+                ],
+                batchIntentKey: 'conflicting-batch-intent',
+            );
+            self::fail('A batch with an occupied slot must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertStringContainsString('13.04.2026 09:00', $exception->errors()['slots'][0]);
+        }
+
+        self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertDatabaseMissing('bookings', [
+            'organization_id' => $organization->getKey(),
+            'starts_at' => '2026-04-06 09:00:00',
+        ]);
+        self::assertSame(1, ScenarioEvent::query()->where('event_name', 'booking.created')->count());
+        self::assertSame(1, DB::table('booking_idempotency_keys')->count());
+    }
+
+    public function test_multi_booking_form_keeps_selected_slots_after_a_conflict(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->enableClientRecords($organization);
+        $this->resolveFilamentContext($admin, $organization);
+        $occupiedSlot = CarbonImmutable::create(2026, 4, 13, 9, 0, 0, 'UTC');
+        app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $occupiedSlot,
+            format: VisitFormat::Office,
+            idempotencyKey: 'occupied-before-form-batch',
+        );
+        $selectedSlots = [
+            [
+                'date' => '2026-04-06',
+                'time' => '2026-04-06T09:00:00+00:00',
+            ],
+            [
+                'date' => $occupiedSlot->toDateString(),
+                'time' => $occupiedSlot->toIso8601String(),
+            ],
+        ];
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMultipleBookings::class)
+            ->fillForm([
+                'client_id' => $client->getKey(),
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'visit_format' => VisitFormat::Office->value,
+                'slots' => $selectedSlots,
+            ])
+            ->call('create');
+        $component
+            ->assertHasFormErrors(['slots'])
+            ->assertSee('Слот 13.04.2026 09:00 больше недоступен.');
+
+        self::assertSame($selectedSlots, array_values($component->instance()->data['slots']));
+        self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_multi_booking_rejects_cross_organization_client(): void
+    {
+        [$organization, $admin, , $specialist, $service] = $this->fixture();
+        $otherOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+        $otherClient = Client::factory()->forOrganization($otherOrganization)->create(['timezone' => 'UTC']);
+
+        $this->expectException(AuthorizationException::class);
+
+        try {
+            app(CreateMultipleBookingsAction::class)->handle(
+                actor: $admin,
+                client: $otherClient,
+                specialist: $specialist,
+                service: $service,
+                format: VisitFormat::Office,
+                slots: [
+                    ['date' => '2026-04-06', 'time' => '2026-04-06T09:00:00+00:00'],
+                    ['date' => '2026-04-13', 'time' => '2026-04-13T09:00:00+00:00'],
+                ],
+                batchIntentKey: 'cross-organization-batch',
+            );
+        } finally {
+            self::assertSame($organization->getKey(), app(OrganizationContext::class)->id());
+            self::assertSame(0, Booking::query()->count());
+        }
     }
 
     public function test_crm_can_create_a_confirmed_backdated_booking_without_adjusting_datetime(): void
@@ -143,6 +365,7 @@ class MilestoneFourCrmBookingTest extends TestCase
     public function test_crm_form_shows_backdated_warning_and_requires_confirmation(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->enableClientRecords($organization);
         $this->resolveFilamentContext($admin, $organization);
         $past = CarbonImmutable::create(2026, 3, 23, 9, 0, 0, 'UTC');
 
@@ -430,6 +653,7 @@ class MilestoneFourCrmBookingTest extends TestCase
     public function test_crm_booking_creation_generates_idempotency_key_server_side(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->enableClientRecords($organization);
         $this->resolveFilamentContext($admin, $organization);
 
         Livewire::actingAs($admin)
@@ -690,5 +914,14 @@ class MilestoneFourCrmBookingTest extends TestCase
         $this->actingAs($user);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         app(OrganizationContext::class)->set($organization);
+    }
+
+    private function enableClientRecords(Organization $organization): void
+    {
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        OrganizationFeatureGate::invalidate($organization->getKey(), OrganizationFeature::ClientRecords);
     }
 }

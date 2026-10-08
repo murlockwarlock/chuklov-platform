@@ -1,5 +1,9 @@
 # Requirements Changelog
 
+## 2026-10-08 — CRM multi-booking creation
+
+- Normalized the CRM batch-creation contract for multiple independent Booking records: shared booking parameters are entered once, selected slots come from the existing authoritative availability path, every slot is revalidated through `CreateBooking`, the batch is all-or-nothing, and per-slot idempotency replays do not create duplicates. MedicalSession bulk creation and new booking/notification engines remain out of scope.
+
 ## 2026-10-08 — Booking notification delivery remediation
 
 - Normalized the confirmed-booking notification contract: after a successful Booking transaction, the existing Scenario Engine processor is queued immediately after commit for CRM, Telegram, and Client delivery; the durable event and idempotent scheduler remain the recovery path, and stale scheduler overlap is bounded and cleared during staging deployment.

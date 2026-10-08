@@ -270,6 +270,20 @@ class ListBookings extends LocalizedListRecords
         return BookingResource::getUrl('create').'?'.http_build_query($parameters);
     }
 
+    public function multipleBookingUrl(): string
+    {
+        $parameters = [
+            'return_to_journal' => '1',
+            'week' => $this->weekStart,
+            'view' => $this->viewMode,
+        ];
+        if ($this->selectedSpecialistId !== null) {
+            $parameters['specialist_id'] = (string) $this->selectedSpecialistId;
+        }
+
+        return BookingResource::getUrl('create-multiple').'?'.http_build_query($parameters);
+    }
+
     public function canCreateBooking(): bool
     {
         $specialist = $this->selectedSpecialist();

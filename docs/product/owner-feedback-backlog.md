@@ -575,7 +575,7 @@ The 26.09 lists also contain additional proposed scope such as:
 
 - client notes;
 - blacklist;
-- booking multiple sessions in one operation;
+- booking multiple sessions in one operation — IMPLEMENTED_PENDING_ACCEPTANCE (создание нескольких независимых Booking через существующий availability/CreateBooking path, с общей транзакцией и per-slot idempotency);
 - visual pain scale;
 - referral statistics;
 - service-format buffers;

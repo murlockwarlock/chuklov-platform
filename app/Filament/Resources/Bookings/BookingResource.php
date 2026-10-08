@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Bookings;
 
 use App\Filament\Resources\Bookings\Pages\CreateBooking;
+use App\Filament\Resources\Bookings\Pages\CreateMultipleBookings;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Filament\Resources\Bookings\Schemas\BookingForm;
@@ -81,6 +82,7 @@ class BookingResource extends LocalizedResource
         return [
             'index' => ListBookings::route('/'),
             'create' => CreateBooking::route('/create'),
+            'create-multiple' => CreateMultipleBookings::route('/create-multiple'),
             'view' => ViewBooking::route('/{record}'),
         ];
     }

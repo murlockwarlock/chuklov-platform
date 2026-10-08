@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Bookings\Schemas;
 
 use App\Filament\Resources\Bookings\Support\BookingAvailabilityOptions;
+use App\Filament\Resources\Bookings\Support\MultipleBookingSlots;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Identity\Application\ClientSearch;
@@ -38,315 +39,332 @@ use Throwable;
 
 class BookingForm
 {
-    public static function configure(Schema $schema): Schema
+    public static function configure(Schema $schema, bool $multiple = false): Schema
     {
-        return $schema
-            ->components([
-                Select::make('specialist_id')
-                    ->label(__('Специалист'))
-                    ->options(fn (): array => Specialist::query()
+        return $schema->components([
+            ...self::sharedComponents($multiple),
+            ...($multiple ? MultipleBookingSlots::components() : self::singleComponents()),
+        ]);
+    }
+
+    /** @return array<int, mixed> */
+    private static function sharedComponents(bool $multiple): array
+    {
+        return [
+            Select::make('specialist_id')
+                ->label(__('Специалист'))
+                ->options(fn (): array => Specialist::query()
+                    ->where('organization_id', app(OrganizationContext::class)->id())
+                    ->where('is_active', true)
+                    ->orderBy('display_name')
+                    ->orderBy('id')
+                    ->pluck('display_name', 'id')
+                    ->all())
+                ->searchable()
+                ->required()
+                ->validationMessages(['required' => __('Выберите специалиста.')])
+                ->live()
+                ->afterStateUpdated(function (Get $get, Set $set) use ($multiple): void {
+                    self::clearAvailableTime($set, $get, $multiple);
+
+                    $serviceId = (int) $get('service_id');
+                    $specialistId = (int) $get('specialist_id');
+                    if ($serviceId === 0 || $specialistId === 0) {
+                        return;
+                    }
+
+                    $isAssigned = SpecialistServiceAssignment::query()
                         ->where('organization_id', app(OrganizationContext::class)->id())
-                        ->where('is_active', true)
-                        ->orderBy('display_name')
-                        ->orderBy('id')
-                        ->pluck('display_name', 'id')
-                        ->all())
-                    ->searchable()
-                    ->required()
-                    ->validationMessages(['required' => __('Выберите специалиста.')])
-                    ->live()
-                    ->afterStateUpdated(function (Get $get, Set $set): void {
-                        self::clearAvailableTime($set);
-
-                        $serviceId = (int) $get('service_id');
-                        $specialistId = (int) $get('specialist_id');
-                        if ($serviceId === 0 || $specialistId === 0) {
-                            return;
-                        }
-
-                        $isAssigned = SpecialistServiceAssignment::query()
+                        ->where('specialist_id', $specialistId)
+                        ->where('service_id', $serviceId)
+                        ->exists();
+                    if (! $isAssigned) {
+                        $set('service_id', null);
+                    }
+                }),
+            Select::make('service_id')
+                ->label(__('Услуга'))
+                ->options(fn (Get $get): array => Service::query()
+                    ->where('organization_id', app(OrganizationContext::class)->id())
+                    ->where('is_active', true)
+                    ->where('catalog_type', CatalogItemType::Service->value)
+                    ->when((int) $get('specialist_id') > 0, fn (Builder $query): Builder => $query->whereIn(
+                        'id',
+                        SpecialistServiceAssignment::query()
                             ->where('organization_id', app(OrganizationContext::class)->id())
-                            ->where('specialist_id', $specialistId)
-                            ->where('service_id', $serviceId)
-                            ->exists();
-                        if (! $isAssigned) {
-                            $set('service_id', null);
-                        }
-                    }),
-                Select::make('service_id')
-                    ->label(__('Услуга'))
-                    ->options(fn (Get $get): array => Service::query()
-                        ->where('organization_id', app(OrganizationContext::class)->id())
-                        ->where('is_active', true)
-                        ->where('catalog_type', CatalogItemType::Service->value)
-                        ->when((int) $get('specialist_id') > 0, fn (Builder $query): Builder => $query->whereIn(
-                            'id',
-                            SpecialistServiceAssignment::query()
-                                ->where('organization_id', app(OrganizationContext::class)->id())
-                                ->where('specialist_id', (int) $get('specialist_id'))
-                                ->select('service_id'),
-                        ))
-                        ->orderBy('name')
-                        ->orderBy('id')
-                        ->pluck('name', 'id')
-                        ->all())
-                    ->searchable()
-                    ->required()
-                    ->validationMessages(['required' => __('Выберите услугу.')])
-                    ->live()
-                    ->afterStateUpdated(function (Get $get, Set $set): void {
-                        self::preservePrefilledTimeOrClear($get, $set);
-                    }),
-                Select::make('client_id')
-                    ->label(__('Клиент'))
-                    ->options([])
-                    ->searchable()
-                    ->getSearchResultsUsing(function (string $search): array {
-                        $actor = auth()->user();
+                            ->where('specialist_id', (int) $get('specialist_id'))
+                            ->select('service_id'),
+                    ))
+                    ->orderBy('name')
+                    ->orderBy('id')
+                    ->pluck('name', 'id')
+                    ->all())
+                ->searchable()
+                ->required()
+                ->validationMessages(['required' => __('Выберите услугу.')])
+                ->live()
+                ->afterStateUpdated(function (Get $get, Set $set) use ($multiple): void {
+                    self::preservePrefilledTimeOrClear($get, $set, $multiple);
+                }),
+            Select::make('client_id')
+                ->label(__('Клиент'))
+                ->options([])
+                ->searchable()
+                ->getSearchResultsUsing(function (string $search): array {
+                    $actor = auth()->user();
 
-                        if (! $actor instanceof User) {
-                            return [];
-                        }
+                    if (! $actor instanceof User) {
+                        return [];
+                    }
 
-                        $clients = app(ClientSearch::class);
+                    $clients = app(ClientSearch::class);
 
-                        return $clients->formatOptionLabels(
-                            $clients->withVerifiedTelegramIdentity(
-                                $clients->query($actor, $search),
-                            )
-                                ->orderBy('full_name')
-                                ->orderBy('id')
-                                ->limit(ClientSearch::MAX_RESULTS)
-                                ->get(['id', 'full_name', 'email', 'phone']),
-                        );
-                    })
-                    ->getOptionLabelUsing(function (mixed $value): ?string {
-                        $actor = auth()->user();
+                    return $clients->formatOptionLabels(
+                        $clients->withVerifiedTelegramIdentity(
+                            $clients->query($actor, $search),
+                        )
+                            ->orderBy('full_name')
+                            ->orderBy('id')
+                            ->limit(ClientSearch::MAX_RESULTS)
+                            ->get(['id', 'full_name', 'email', 'phone']),
+                    );
+                })
+                ->getOptionLabelUsing(function (mixed $value): ?string {
+                    $actor = auth()->user();
 
-                        return $actor instanceof User
-                            ? app(ClientSearch::class)->optionLabel($actor, $value)
-                            : null;
-                    })
-                    ->afterStateUpdated(function (Get $get, Set $set): void {
+                    return $actor instanceof User
+                        ? app(ClientSearch::class)->optionLabel($actor, $value)
+                        : null;
+                })
+                ->afterStateUpdated(function (Get $get, Set $set) use ($multiple): void {
+                    if (! $multiple) {
                         $selectedTime = self::selectedBookingTime($get);
                         if ($selectedTime !== null) {
                             $set('booking_time', $selectedTime);
                             $set('starts_at', $selectedTime);
                         }
-                    })
-                    ->required()
-                    ->validationMessages(['required' => __('Выберите клиента.')])
-                    ->helperText(fn (): string => self::canCreateClient()
-                        ? __('Найдите клиента по имени, телефону, Telegram или email. Если его ещё нет в базе — добавьте нового.')
-                        : __('Выберите клиента из списка.'))
-                    ->createOptionModalHeading(__('Добавить клиента'))
-                    ->createOptionAction(fn (Action $action): Action => $action
-                        ->label(__('Добавить нового клиента'))
-                        ->button()
-                        ->icon(Heroicon::Plus)
-                        ->extraAttributes([
-                            'data-testid' => 'booking-create-client',
-                            'wire:loading.attr' => 'disabled',
-                        ])
-                        ->visible(fn (): bool => self::canCreateClient()))
-                    ->createOptionForm([
-                        TextInput::make('full_name')
-                            ->label(__('Имя и фамилия'))
-                            ->required()
-                            ->validationMessages(['required' => __('Укажите имя клиента.')])
-                            ->maxLength(160),
-                        TextInput::make('email')
-                            ->label('Email')
-                            ->email()
-                            ->maxLength(320),
-                        TextInput::make('phone')
-                            ->label(__('Телефон'))
-                            ->tel()
-                            ->maxLength(32),
-                        TextInput::make('lead_source')
-                            ->label(__('Источник клиента'))
-                            ->placeholder(__('Например: Telegram, Instagram, рекомендация'))
-                            ->maxLength(120),
+                    }
+                })
+                ->required()
+                ->validationMessages(['required' => __('Выберите клиента.')])
+                ->helperText(fn (): string => self::canCreateClient()
+                    ? __('Найдите клиента по имени, телефону, Telegram или email. Если его ещё нет в базе — добавьте нового.')
+                    : __('Выберите клиента из списка.'))
+                ->createOptionModalHeading(__('Добавить клиента'))
+                ->createOptionAction(fn (Action $action): Action => $action
+                    ->label(__('Добавить нового клиента'))
+                    ->button()
+                    ->icon(Heroicon::Plus)
+                    ->extraAttributes([
+                        'data-testid' => 'booking-create-client',
+                        'wire:loading.attr' => 'disabled',
                     ])
-                    ->createOptionUsing(function (array $data, ?Get $get = null, ?Set $set = null): int {
-                        $actor = auth()->user();
-                        abort_unless($actor instanceof User, 403);
+                    ->visible(fn (): bool => self::canCreateClient()))
+                ->createOptionForm([
+                    TextInput::make('full_name')
+                        ->label(__('Имя и фамилия'))
+                        ->required()
+                        ->validationMessages(['required' => __('Укажите имя клиента.')])
+                        ->maxLength(160),
+                    TextInput::make('email')
+                        ->label('Email')
+                        ->email()
+                        ->maxLength(320),
+                    TextInput::make('phone')
+                        ->label(__('Телефон'))
+                        ->tel()
+                        ->maxLength(32),
+                    TextInput::make('lead_source')
+                        ->label(__('Источник клиента'))
+                        ->placeholder(__('Например: Telegram, Instagram, рекомендация'))
+                        ->maxLength(120),
+                ])
+                ->createOptionUsing(function (array $data, ?Get $get = null, ?Set $set = null) use ($multiple): int {
+                    $actor = auth()->user();
+                    abort_unless($actor instanceof User, 403);
 
-                        $selectedTime = $get instanceof Get ? self::selectedBookingTime($get) : null;
+                    $selectedTime = ! $multiple && $get instanceof Get ? self::selectedBookingTime($get) : null;
 
-                        try {
-                            $phone = trim((string) ($data['phone'] ?? ''));
-                            $client = app(CreateClientAction::class)->handle(
-                                actor: $actor,
-                                fullName: (string) $data['full_name'],
-                                email: isset($data['email']) && trim((string) $data['email']) !== '' ? (string) $data['email'] : null,
-                                phone: $phone === '' ? null : $phone,
-                                language: (string) config('portal.default_locale', 'ru'),
-                                timezone: app(OrganizationContext::class)->defaultTimezone(),
-                                leadSource: isset($data['lead_source']) && trim((string) $data['lead_source']) !== '' ? (string) $data['lead_source'] : null,
-                            );
+                    try {
+                        $phone = trim((string) ($data['phone'] ?? ''));
+                        $client = app(CreateClientAction::class)->handle(
+                            actor: $actor,
+                            fullName: (string) $data['full_name'],
+                            email: isset($data['email']) && trim((string) $data['email']) !== '' ? (string) $data['email'] : null,
+                            phone: $phone === '' ? null : $phone,
+                            language: (string) config('portal.default_locale', 'ru'),
+                            timezone: app(OrganizationContext::class)->defaultTimezone(),
+                            leadSource: isset($data['lead_source']) && trim((string) $data['lead_source']) !== '' ? (string) $data['lead_source'] : null,
+                        );
 
-                            if ($selectedTime !== null && $set instanceof Set) {
-                                $set('booking_time_snapshot', $selectedTime);
-                                $set('booking_time', $selectedTime);
-                                $set('starts_at', $selectedTime);
-                            }
-
-                            return (int) $client->getKey();
-                        } catch (ValidationException $exception) {
-                            throw $exception;
-                        } catch (Throwable $exception) {
-                            report($exception);
-
-                            throw ValidationException::withMessages([
-                                'full_name' => __('Не удалось добавить клиента. Проверьте данные и попробуйте ещё раз.'),
-                            ]);
-                        }
-                    }),
-                Select::make('visit_format')
-                    ->label(__('Формат визита'))
-                    ->options([
-                        VisitFormat::Office->value => __('В клинике'),
-                        VisitFormat::HomeVisit->value => __('Выезд на дом'),
-                        VisitFormat::Online->value => __('Онлайн'),
-                    ])
-                    ->required()
-                    ->validationMessages(['required' => __('Выберите формат визита.')])
-                    ->live()
-                    ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
-                        self::preservePrefilledTimeOrClear($get, $set);
-                        $set('party_size', $state === VisitFormat::HomeVisit->value ? 1 : null);
-
-                        if ($state === VisitFormat::Office->value) {
-                            $location = WorkingLocation::query()
-                                ->where('organization_id', app(OrganizationContext::class)->id())
-                                ->where('is_active', true)
-                                ->orderByDesc('is_default_office')
-                                ->orderBy('name')
-                                ->first();
-                            $set('working_location_id', $location?->getKey());
-                            $set('location', $location->address ?? app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value'));
-                        }
-                        if ($state === VisitFormat::Online->value) {
-                            $set('location', null);
-                            $set('working_location_id', null);
+                        if ($selectedTime !== null && $set instanceof Set) {
+                            $set('booking_time_snapshot', $selectedTime);
+                            $set('booking_time', $selectedTime);
+                            $set('starts_at', $selectedTime);
                         }
 
-                        $set('booking_time_prefilled', false);
-                    }),
-                Select::make('working_location_id')
-                    ->label(__('Локация'))
-                    ->options(fn (): array => WorkingLocation::query()
-                        ->where('organization_id', app(OrganizationContext::class)->id())
-                        ->where('is_active', true)
-                        ->orderByDesc('is_default_office')
-                        ->orderBy('name')
-                        ->get()
-                        ->mapWithKeys(fn (WorkingLocation $location): array => [
-                            $location->getKey() => $location->name.' — '.$location->address,
-                        ])
-                        ->all())
-                    ->searchable()
-                    ->nullable()
-                    ->live()
-                    ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
-                        self::preservePrefilledTimeOrClear($get, $set);
-                        $location = $state === null || $state === ''
-                            ? null
-                            : WorkingLocation::query()
-                                ->where('organization_id', app(OrganizationContext::class)->id())
-                                ->whereKey((int) $state)
-                                ->first();
-                        $set('location', $location?->address);
-                    })
-                    ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::Office->value)
-                    ->helperText(__('Время доступности рассчитывается по часовому поясу выбранной локации.')),
-                TextInput::make('location_area')
-                    ->label(__('Район выезда'))
-                    ->maxLength(160)
-                    ->live(onBlur: true)
-                    ->afterStateUpdated(function (Get $get, Set $set): void {
-                        self::preservePrefilledTimeOrClear($get, $set);
-                    })
-                    ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
-                TextInput::make('party_size')
-                    ->label(__('Количество участников выезда'))
-                    ->integer()
-                    ->minValue(1)
-                    ->maxValue(20)
-                    ->nullable()
-                    ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
-                    ->validationMessages(['required' => __('Укажите количество участников выезда.')])
-                    ->helperText(__('Сколько человек будет на выезде. Для обычного приёма поле не нужно.'))
-                    ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
-                TextInput::make('location')
-                    ->label(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value ? __('Адрес приёма') : __('Адрес выезда'))
-                    ->default(fn (Get $get): ?string => $get('visit_format') === VisitFormat::Office->value
-                        ? app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value')
-                        : null)
-                    ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
-                    ->validationMessages(['required' => __('Укажите адрес выезда.')])
-                    ->helperText(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value
-                        ? __('Можно изменить адрес только для этой записи.')
-                        : __('Укажите место выезда для этой записи.'))
-                    ->maxLength(500)
-                    ->visible(fn (Get $get): bool => in_array($get('visit_format'), [VisitFormat::Office->value, VisitFormat::HomeVisit->value], true)),
-                DatePicker::make('booking_date')
-                    ->label(__('Дата'))
-                    ->native()
-                    ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
-                    ->live()
-                    ->afterStateUpdated(function (Set $set): void {
-                        self::clearAvailableTime($set);
-                    })
-                    ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
-                    ->validationMessages(['required' => __('Укажите дату и время записи.')]),
-                Select::make('booking_time')
-                    ->label(__('Доступное время'))
-                    ->options(fn (Get $get): array => self::availableTimeOptions($get))
-                    ->placeholder(__('Выберите доступное время'))
-                    ->native(false)
-                    ->disabled(fn (Get $get): bool => ! self::hasAvailableTimePrerequisites($get))
-                    ->live()
-                    ->afterStateUpdated(function (Set $set, mixed $state): void {
-                        $selectedTime = is_string($state) && trim($state) !== '' ? $state : null;
-                        $set('booking_time_snapshot', $selectedTime);
-                        $set('starts_at', $selectedTime);
-                        $set('confirm_backdated', false);
-                        $set('booking_time_prefilled', false);
-                    })
-                    ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
-                    ->validationMessages(['required' => __('Выберите доступное время.')])
-                    ->helperText(fn (Get $get): string => self::availableTimeHelper($get)),
-                Hidden::make('booking_time_prefilled')
-                    ->default(false)
-                    ->dehydrated(false),
-                Hidden::make('booking_time_snapshot')
-                    ->dehydrated(false),
-                Hidden::make('starts_at')
-                    ->hidden()
-                    ->dehydratedWhenHidden()
-                    ->live()
-                    ->afterStateUpdated(function (Set $set): void {
-                        $set('confirm_backdated', false);
-                    })
-                    ->required()
-                    ->validationMessages(['required' => __('Укажите дату и время записи.')]),
-                TextEntry::make('backdated_warning')
-                    ->label(__('Внимание'))
-                    ->state(fn (Get $get): string => self::backdatedWarning($get))
-                    ->visible(fn (Get $get): bool => self::isBackdated($get))
-                    ->columnSpanFull(),
-                Checkbox::make('confirm_backdated')
-                    ->label(__('Подтверждаю создание записи задним числом'))
-                    ->default(false)
-                    ->accepted(fn (Get $get): bool => self::isBackdated($get))
-                    ->validationMessages([
-                        'accepted' => __('Подтвердите создание записи задним числом.'),
+                        return (int) $client->getKey();
+                    } catch (ValidationException $exception) {
+                        throw $exception;
+                    } catch (Throwable $exception) {
+                        report($exception);
+
+                        throw ValidationException::withMessages([
+                            'full_name' => __('Не удалось добавить клиента. Проверьте данные и попробуйте ещё раз.'),
+                        ]);
+                    }
+                }),
+            Select::make('visit_format')
+                ->label(__('Формат визита'))
+                ->options([
+                    VisitFormat::Office->value => __('В клинике'),
+                    VisitFormat::HomeVisit->value => __('Выезд на дом'),
+                    VisitFormat::Online->value => __('Онлайн'),
+                ])
+                ->required()
+                ->validationMessages(['required' => __('Выберите формат визита.')])
+                ->live()
+                ->afterStateUpdated(function (Get $get, Set $set, mixed $state) use ($multiple): void {
+                    self::preservePrefilledTimeOrClear($get, $set, $multiple);
+                    $set('party_size', $state === VisitFormat::HomeVisit->value ? 1 : null);
+
+                    if ($state === VisitFormat::Office->value) {
+                        $location = WorkingLocation::query()
+                            ->where('organization_id', app(OrganizationContext::class)->id())
+                            ->where('is_active', true)
+                            ->orderByDesc('is_default_office')
+                            ->orderBy('name')
+                            ->first();
+                        $set('working_location_id', $location?->getKey());
+                        $set('location', $location->address ?? app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value'));
+                    }
+                    if ($state === VisitFormat::Online->value) {
+                        $set('location', null);
+                        $set('working_location_id', null);
+                    }
+
+                    $set('booking_time_prefilled', false);
+                }),
+            Select::make('working_location_id')
+                ->label(__('Локация'))
+                ->options(fn (): array => WorkingLocation::query()
+                    ->where('organization_id', app(OrganizationContext::class)->id())
+                    ->where('is_active', true)
+                    ->orderByDesc('is_default_office')
+                    ->orderBy('name')
+                    ->get()
+                    ->mapWithKeys(fn (WorkingLocation $location): array => [
+                        $location->getKey() => $location->name.' — '.$location->address,
                     ])
-                    ->visible(fn (Get $get): bool => self::isBackdated($get))
-                    ->columnSpanFull(),
-            ]);
+                    ->all())
+                ->searchable()
+                ->nullable()
+                ->live()
+                ->afterStateUpdated(function (Get $get, Set $set, mixed $state) use ($multiple): void {
+                    self::preservePrefilledTimeOrClear($get, $set, $multiple);
+                    $location = $state === null || $state === ''
+                        ? null
+                        : WorkingLocation::query()
+                            ->where('organization_id', app(OrganizationContext::class)->id())
+                            ->whereKey((int) $state)
+                            ->first();
+                    $set('location', $location?->address);
+                })
+                ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::Office->value)
+                ->helperText(__('Время доступности рассчитывается по часовому поясу выбранной локации.')),
+            TextInput::make('location_area')
+                ->label(__('Район выезда'))
+                ->maxLength(160)
+                ->live(onBlur: true)
+                ->afterStateUpdated(function (Get $get, Set $set) use ($multiple): void {
+                    self::preservePrefilledTimeOrClear($get, $set, $multiple);
+                })
+                ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
+            TextInput::make('party_size')
+                ->label(__('Количество участников выезда'))
+                ->integer()
+                ->minValue(1)
+                ->maxValue(20)
+                ->nullable()
+                ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
+                ->validationMessages(['required' => __('Укажите количество участников выезда.')])
+                ->helperText(__('Сколько человек будет на выезде. Для обычного приёма поле не нужно.'))
+                ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
+            TextInput::make('location')
+                ->label(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value ? __('Адрес приёма') : __('Адрес выезда'))
+                ->default(fn (Get $get): ?string => $get('visit_format') === VisitFormat::Office->value
+                    ? app(OrganizationContext::class)->organization()->settings()->where('setting_key', 'office_location')->value('string_value')
+                    : null)
+                ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
+                ->validationMessages(['required' => __('Укажите адрес выезда.')])
+                ->helperText(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value
+                    ? __('Можно изменить адрес только для этой записи.')
+                    : __('Укажите место выезда для этой записи.'))
+                ->maxLength(500)
+                ->visible(fn (Get $get): bool => in_array($get('visit_format'), [VisitFormat::Office->value, VisitFormat::HomeVisit->value], true)),
+        ];
+    }
+
+    /** @return array<int, mixed> */
+    private static function singleComponents(): array
+    {
+        return [
+            DatePicker::make('booking_date')
+                ->label(__('Дата'))
+                ->native()
+                ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
+                ->live()
+                ->afterStateUpdated(function (Set $set): void {
+                    self::clearAvailableTime($set);
+                })
+                ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
+                ->validationMessages(['required' => __('Укажите дату и время записи.')]),
+            Select::make('booking_time')
+                ->label(__('Доступное время'))
+                ->options(fn (Get $get): array => self::availableTimeOptions($get))
+                ->placeholder(__('Выберите доступное время'))
+                ->native(false)
+                ->disabled(fn (Get $get): bool => ! self::hasAvailableTimePrerequisites($get))
+                ->live()
+                ->afterStateUpdated(function (Set $set, mixed $state): void {
+                    $selectedTime = is_string($state) && trim($state) !== '' ? $state : null;
+                    $set('booking_time_snapshot', $selectedTime);
+                    $set('starts_at', $selectedTime);
+                    $set('confirm_backdated', false);
+                    $set('booking_time_prefilled', false);
+                })
+                ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
+                ->validationMessages(['required' => __('Выберите доступное время.')])
+                ->helperText(fn (Get $get): string => self::availableTimeHelper($get)),
+            Hidden::make('booking_time_prefilled')
+                ->default(false)
+                ->dehydrated(false),
+            Hidden::make('booking_time_snapshot')
+                ->dehydrated(false),
+            Hidden::make('starts_at')
+                ->hidden()
+                ->dehydratedWhenHidden()
+                ->live()
+                ->afterStateUpdated(function (Set $set): void {
+                    $set('confirm_backdated', false);
+                })
+                ->required()
+                ->validationMessages(['required' => __('Укажите дату и время записи.')]),
+            TextEntry::make('backdated_warning')
+                ->label(__('Внимание'))
+                ->state(fn (Get $get): string => self::backdatedWarning($get))
+                ->visible(fn (Get $get): bool => self::isBackdated($get))
+                ->columnSpanFull(),
+            Checkbox::make('confirm_backdated')
+                ->label(__('Подтверждаю создание записи задним числом'))
+                ->default(false)
+                ->accepted(fn (Get $get): bool => self::isBackdated($get))
+                ->validationMessages([
+                    'accepted' => __('Подтвердите создание записи задним числом.'),
+                ])
+                ->visible(fn (Get $get): bool => self::isBackdated($get))
+                ->columnSpanFull(),
+        ];
     }
 
     private static function canCreateClient(): bool
@@ -361,8 +379,14 @@ class BookingForm
             );
     }
 
-    private static function clearAvailableTime(Set $set): void
+    private static function clearAvailableTime(Set $set, ?Get $get = null, bool $multiple = false): void
     {
+        if ($multiple) {
+            MultipleBookingSlots::clearTimes($get, $set);
+
+            return;
+        }
+
         $set('booking_time', null);
         $set('booking_time_snapshot', null);
         $set('starts_at', null);
@@ -383,8 +407,14 @@ class BookingForm
         return null;
     }
 
-    private static function preservePrefilledTimeOrClear(Get $get, Set $set): void
+    private static function preservePrefilledTimeOrClear(Get $get, Set $set, bool $multiple = false): void
     {
+        if ($multiple) {
+            MultipleBookingSlots::clearTimes($get, $set);
+
+            return;
+        }
+
         if ($get('booking_time_prefilled') === true
             || ($get('booking_date') === null && $get('booking_time') === null)) {
             return;

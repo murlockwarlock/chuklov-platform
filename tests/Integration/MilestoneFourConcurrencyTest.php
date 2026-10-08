@@ -10,6 +10,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
+use App\Modules\Scheduling\Application\CreateMultipleBookings as CreateMultipleBookingsAction;
 use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -179,6 +180,95 @@ class MilestoneFourConcurrencyTest extends TestCase
             ->count());
     }
 
+    public function test_postgresql_multi_booking_race_replays_one_batch_without_duplicates(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('The race test requires PostgreSQL batch idempotency and exclusion constraints.');
+        }
+
+        [$organization, $admin, $client, $specialist, $service] = $this->schedulingFixture();
+        $slots = [
+            ['date' => '2027-04-05', 'time' => '2027-04-05T09:00:00+00:00'],
+            ['date' => '2027-04-12', 'time' => '2027-04-12T09:00:00+00:00'],
+        ];
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::createMultipleInProcess(
+                organizationId: $organization->getKey(),
+                adminId: $admin->getKey(),
+                clientId: $client->getKey(),
+                specialistId: $specialist->getKey(),
+                serviceId: $service->getKey(),
+                slots: $slots,
+                batchIntentKey: 'same-batch-race',
+            ),
+            static fn (): string => self::createMultipleInProcess(
+                organizationId: $organization->getKey(),
+                adminId: $admin->getKey(),
+                clientId: $client->getKey(),
+                specialistId: $specialist->getKey(),
+                serviceId: $service->getKey(),
+                slots: $slots,
+                batchIntentKey: 'same-batch-race',
+            ),
+        ]);
+
+        self::assertCount(2, $results);
+        self::assertSame(2, count(array_filter($results, static fn (string $result): bool => str_starts_with($result, 'batch:'))));
+        self::assertSame(2, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(2, BookingEvent::query()->count());
+        self::assertSame(2, DB::table('booking_idempotency_keys')->where('organization_id', $organization->getKey())->count());
+        self::assertSame(2, AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'booking.created')
+            ->count());
+    }
+
+    public function test_postgresql_multi_booking_conflict_rolls_back_previous_slots(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('The invariant test requires PostgreSQL exclusion constraints.');
+        }
+
+        [$organization, $admin, $client, $specialist, $service] = $this->schedulingFixture();
+        $occupiedSlot = CarbonImmutable::create(2027, 4, 12, 9, 0, 0, 'UTC');
+        app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $occupiedSlot,
+            format: VisitFormat::Office,
+            idempotencyKey: 'postgres-occupied-before-batch',
+        );
+
+        try {
+            app(CreateMultipleBookingsAction::class)->handle(
+                actor: $admin,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                format: VisitFormat::Office,
+                slots: [
+                    ['date' => '2027-04-05', 'time' => '2027-04-05T09:00:00+00:00'],
+                    ['date' => $occupiedSlot->toDateString(), 'time' => $occupiedSlot->toIso8601String()],
+                ],
+                batchIntentKey: 'postgres-conflicting-batch',
+            );
+            self::fail('A PostgreSQL exclusion conflict must roll back the complete batch.');
+        } catch (ValidationException $exception) {
+            self::assertStringContainsString('12.04.2027 09:00', $exception->errors()['slots'][0]);
+        }
+
+        self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertDatabaseMissing('bookings', [
+            'organization_id' => $organization->getKey(),
+            'starts_at' => '2027-04-05 09:00:00',
+        ]);
+        self::assertSame(1, BookingEvent::query()->count());
+        self::assertSame(1, DB::table('booking_idempotency_keys')->where('organization_id', $organization->getKey())->count());
+    }
+
     public function test_postgresql_booking_events_cannot_be_deleted(): void
     {
         if (DB::getDriverName() !== 'pgsql') {
@@ -308,5 +398,31 @@ class MilestoneFourConcurrencyTest extends TestCase
         );
 
         return 'booking:'.$booking->getKey();
+    }
+
+    /** @param list<array{date: string, time: string}> $slots */
+    private static function createMultipleInProcess(
+        int $organizationId,
+        int $adminId,
+        int $clientId,
+        int $specialistId,
+        int $serviceId,
+        array $slots,
+        string $batchIntentKey,
+    ): string {
+        $organization = Organization::query()->findOrFail($organizationId);
+        app(OrganizationContext::class)->set($organization);
+
+        $bookings = app(CreateMultipleBookingsAction::class)->handle(
+            actor: User::query()->findOrFail($adminId),
+            client: Client::query()->findOrFail($clientId),
+            specialist: Specialist::query()->findOrFail($specialistId),
+            service: Service::query()->findOrFail($serviceId),
+            format: VisitFormat::Office,
+            slots: $slots,
+            batchIntentKey: $batchIntentKey,
+        );
+
+        return 'batch:'.implode(',', array_map(static fn (Booking $booking): string => (string) $booking->getKey(), $bookings));
     }
 }

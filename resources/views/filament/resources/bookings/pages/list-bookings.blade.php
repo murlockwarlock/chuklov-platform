@@ -43,7 +43,10 @@
                     </div>
                 @endif
                 @if ($this->canCreateBooking())
-                    <a href="{{ $this->newBookingUrl() }}" class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500">{{ __('Добавить запись') }}</a>
+                    <div class="flex min-w-0 flex-wrap gap-2">
+                        <a href="{{ $this->newBookingUrl() }}" class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500">{{ __('Добавить запись') }}</a>
+                        <a href="{{ $this->multipleBookingUrl() }}" class="inline-flex items-center justify-center rounded-lg border border-primary-200 px-4 py-2.5 text-sm font-semibold text-primary-700 hover:bg-primary-50 dark:border-primary-900/60 dark:text-primary-300 dark:hover:bg-primary-950/30">{{ __('Создать несколько записей') }}</a>
+                    </div>
                 @endif
             </div>
         </div>
