@@ -25,6 +25,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Component;
+use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
@@ -293,8 +294,10 @@ final class FinancePaymentActions
                     PaymentMethod::Cash->value => __('Наличные'),
                     PaymentMethod::BankTransfer->value => __('Банковский перевод'),
                     PaymentMethod::ManualCard->value => __('Карта в клинике'),
+                    PaymentMethod::Barter->value => __('Бартер'),
                     PaymentMethod::Other->value => __('Другое'),
                 ])
+                ->live()
                 ->required(),
             DateTimePicker::make('occurred_at')
                 ->label(__('Дата и время оплаты'))
@@ -303,7 +306,16 @@ final class FinancePaymentActions
                 ->seconds(false)
                 ->required(),
             Textarea::make('note')
-                ->label(__('Примечание'))
+                ->label(fn (Get $get): string => $get('payment_method') === PaymentMethod::Barter->value
+                    ? (string) __('Что получено по бартеру')
+                    : (string) __('Примечание'))
+                ->placeholder(fn (Get $get): ?string => $get('payment_method') === PaymentMethod::Barter->value
+                    ? (string) __('Например: рекламная интеграция, фотосъёмка, услуга специалиста.')
+                    : null)
+                ->helperText(fn (Get $get): ?string => $get('payment_method') === PaymentMethod::Barter->value
+                    ? (string) __('Опишите, что получено взамен.')
+                    : null)
+                ->required(fn (Get $get): bool => $get('payment_method') === PaymentMethod::Barter->value)
                 ->maxLength(2000),
             FileUpload::make('receipt')
                 ->label(__('Квитанция'))

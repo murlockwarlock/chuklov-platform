@@ -4,11 +4,14 @@ namespace Tests\Integration;
 
 use App\Models\User;
 use App\Modules\Finance\Application\InitiateFakePayment;
+use App\Modules\Finance\Application\ReconcileFinancialObligation;
+use App\Modules\Finance\Application\RecordManualPayment;
 use App\Modules\Finance\Application\RefundFakePayment;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Finance\Application\SettleFakePayment;
 use App\Modules\Finance\Domain\Contracts\PaymentGateway;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayStatus;
+use App\Modules\Finance\Domain\Enums\PaymentMethod;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\ValueObjects\GatewayRefundEvidence;
 use App\Modules\Finance\Domain\ValueObjects\GatewayRefundRequest;
@@ -119,6 +122,33 @@ final class PaymentFoundationPostgresTest extends TestCase
             ->where('organization_id', $organization->getKey())
             ->whereKey($transaction->getKey())
             ->update(['status' => 'invalid']);
+    }
+
+    public function test_postgres_accepts_barter_manual_payment_and_reconciles_its_monetary_value(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, $obligation] = $this->fixture();
+
+        $entry = app(RecordManualPayment::class)->handle(
+            actor: $admin,
+            obligation: $obligation,
+            amount: '100.00',
+            currency: 'USD',
+            paymentMethod: PaymentMethod::Barter,
+            occurredAt: now(),
+            note: 'Рекламная интеграция',
+            receipt: null,
+            idempotencyKey: 'pg-barter-payment',
+        );
+        $reconciliation = app(ReconcileFinancialObligation::class)->handle(
+            $organization->getKey(),
+            $obligation->getKey(),
+        );
+
+        self::assertSame('barter', DB::table('financial_ledger_entries')->whereKey($entry->getKey())->value('payment_method'));
+        self::assertSame('Рекламная интеграция', DB::table('financial_ledger_entries')->whereKey($entry->getKey())->value('note'));
+        self::assertSame(0, $reconciliation->outstanding->minorUnits());
+        self::assertSame('settled', $reconciliation->status->value);
     }
 
     /** @return array{Organization, User, FinancialObligation} */

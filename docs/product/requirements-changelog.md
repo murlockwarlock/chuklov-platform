@@ -1,5 +1,9 @@
 # Requirements Changelog
 
+## 2026-10-08 — CRM barter manual payment
+
+- Normalized Barter as an explicit manual payment method with a required description of the consideration received. Its monetary valuation reduces the existing FinancialObligation; mixed payment remains multiple ledger entries and payment status remains derived.
+
 ## 2026-10-08 — CRM multi-booking creation
 
 - Normalized the CRM batch-creation contract for multiple independent Booking records: shared booking parameters are entered once, selected slots come from the existing authoritative availability path, every slot is revalidated through `CreateBooking`, the batch is all-or-nothing, and per-slot idempotency replays do not create duplicates. MedicalSession bulk creation and new booking/notification engines remain out of scope.

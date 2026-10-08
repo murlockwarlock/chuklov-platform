@@ -420,6 +420,7 @@ final class FinancePresentation
                 'cash' => __('Наличные'),
                 'bank_transfer' => __('Банковский перевод'),
                 'manual_card' => __('Карта в клинике'),
+                'barter' => __('Бартер'),
                 'other' => __('Другое'),
                 null => __('Оплата'),
                 default => __('Способ оплаты недоступен'),

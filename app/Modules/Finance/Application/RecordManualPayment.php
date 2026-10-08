@@ -168,6 +168,10 @@ final class RecordManualPayment
                 $displaySnapshot = $this->configuration->convert($organization, $money, $lockedObligation->display_currency);
                 $note = $note === null ? null : trim($note);
 
+                if ($paymentMethod === PaymentMethod::Barter && ($note === null || $note === '')) {
+                    throw ValidationException::withMessages(['note' => 'Для оплаты бартером укажите, что получено.']);
+                }
+
                 if ($note !== null && ($note === '' || mb_strlen($note) > 2000)) {
                     throw ValidationException::withMessages(['note' => 'Примечание должно содержать не более 2000 символов.']);
                 }
