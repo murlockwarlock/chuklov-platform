@@ -143,7 +143,7 @@
                         x-on:messages-history-selected.window="$nextTick(() => { scrollToBottom(); updateFollowState(); })"
                         x-on:messages-history-message-sent.window="$nextTick(() => { scrollToBottom(); updateFollowState(); })"
                         x-on:messages-history-refreshed.window="$nextTick(() => { if (followHistory) { scrollToBottom(); } updateFollowState(); })"
-                        x-on:messages-history-older-loaded.window="setTimeout(() => { restoreOlderPosition(); }, 0)"
+                        x-on:messages-history-older-loaded.window="$nextTick(() => { restoreOlderPosition(); })"
                         x-ref="history"
                         class="min-h-0 flex-1 overflow-y-auto bg-gray-50/60 px-3 py-4 dark:bg-gray-950/30 sm:px-5"
                     >

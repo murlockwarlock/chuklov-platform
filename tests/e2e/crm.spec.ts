@@ -772,7 +772,7 @@ test('staff Messages opens at the latest history and preserves intentional scrol
         (element as HTMLElement).scrollTop = 120;
     });
     const existingMessageTop = await existingMessage.evaluate((element) => element.getBoundingClientRect().top);
-    await page.getByTestId('messages-load-older').click({ force: true });
+    await page.getByTestId('messages-load-older').dispatchEvent('click');
     await expect(history.getByText(`CRM long history ${fixture.clientId} message 6`, { exact: true })).toHaveCount(1);
     const existingMessageTopAfterLoad = await existingMessage.evaluate((element) => element.getBoundingClientRect().top);
     expect(Math.abs(existingMessageTopAfterLoad - existingMessageTop)).toBeLessThan(2);
