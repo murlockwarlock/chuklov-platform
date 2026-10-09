@@ -1134,7 +1134,7 @@ test('staff can create and fully settle a gift certificate through the CRM catal
     await currency.click();
     await page.getByRole('option', { name: 'Доллар США', exact: true }).click();
     await expect(page.getByRole('switch', { name: 'Показывать клиентам*', exact: true })).toBeChecked();
-    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(/\/admin\/services$/, { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Каталог услуг', exact: true })).toBeVisible();
