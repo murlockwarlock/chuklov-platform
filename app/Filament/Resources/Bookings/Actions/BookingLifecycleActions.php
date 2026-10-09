@@ -156,6 +156,7 @@ final class BookingLifecycleActions
                         ->default(fn (Booking $record): CarbonImmutable => $record->blockingEndsAtUtc()->setTimezone(self::viewerTimezone()))
                         ->timezone(fn (): string => self::viewerTimezone())
                         ->seconds(false)
+                        ->live()
                         ->required(),
                     Hidden::make('expected_event_version')
                         ->default(fn (Booking $record): int => $record->event_version)
