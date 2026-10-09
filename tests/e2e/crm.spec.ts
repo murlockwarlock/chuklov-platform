@@ -795,6 +795,18 @@ test('staff can create a group booking with a manually extended calendar block',
     await blockingDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Время занятости в календаре обновлено', { exact: true })).toBeVisible();
     await expect(page.getByText('Время занято в календаре', { exact: true })).toBeVisible();
+
+    await page.goto(`/admin/bookings?view=list&week=${fixture.bookingStartsAt.slice(0, 10)}&specialist_id=${fixture.specialistId}`);
+    await expect(page.getByRole('heading', { name: 'Журнал записей', exact: true })).toBeVisible();
+    await searchTableFor(page, fixture.clientName);
+    const bookingRow = page.getByRole('row').filter({ hasText: fixture.clientName }).filter({ hasText: fixture.serviceName }).first();
+    await bookingRow.getByRole('button', { name: 'Действия', exact: true }).click();
+    const tableBookingActionsMenu = page.locator('.fi-dropdown-panel:visible').last();
+    await expect(tableBookingActionsMenu).toBeVisible();
+    const tableBlockingAction = tableBookingActionsMenu.getByRole('button', { name: 'Изменить время занятости', exact: true });
+    await expect(tableBlockingAction).toBeVisible();
+    await tableBlockingAction.click();
+    await expect(page.locator('.fi-modal-window:visible').last()).toBeVisible();
 });
 
 test('staff Messages opens at the latest history and preserves intentional scrolling', async ({ page }) => {
