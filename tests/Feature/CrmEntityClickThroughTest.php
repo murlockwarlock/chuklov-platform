@@ -162,7 +162,7 @@ final class CrmEntityClickThroughTest extends TestCase
         $rule = ScenarioRule::factory()->usingTemplate($version)->createdBy($actor)->create();
         $event = ScenarioEvent::factory()->forOrganization($organization)->create();
         ScenarioAction::factory()->forEvent($event)->forRule($rule)->forTemplate($version)->create([
-            'recipient_type' => 'staff',
+            'recipient_type' => 'internal',
             'recipient_user_id' => $recipient->getKey(),
         ]);
         $this->setFilamentContext($actor, $organization);

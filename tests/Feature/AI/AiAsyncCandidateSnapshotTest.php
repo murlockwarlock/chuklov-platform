@@ -389,7 +389,7 @@ final class AiAsyncCandidateSnapshotTest extends TestCase
 
     public function test_async_failover_limit_cannot_expand_after_acceptance(): void
     {
-        $this->safetyControl(['max_failover_attempts' => 1]);
+        $this->safetyControl(['max_failover_attempts' => 1, 'max_tokens_per_run' => 2048]);
         $this->candidate('openai', 'OpenAI first', 'arbitrary-primary', 1);
         $this->candidate('anthropic', 'Anthropic second', 'arbitrary-secondary', 2);
         $this->candidate('gemini', 'Gemini third', 'arbitrary-tertiary', 3);

@@ -18,6 +18,33 @@ function clean(value) {
     return value.replace(/\s+/g, ' ').trim();
 }
 
+export function sourceExpression(source, offset) {
+    let depth = 0;
+    let quote = null;
+    for (let index = offset; index < source.length; index++) {
+        const character = source[index];
+        if (quote) {
+            if (character === '\\') index++;
+            else if (character === quote) quote = null;
+            continue;
+        }
+        if (character === '"' || character === "'") quote = character;
+        else if ('([{'.includes(character)) depth++;
+        else if (')]}'.includes(character)) {
+            if (depth === 0) return source.slice(offset, index);
+            depth--;
+        } else if (depth === 0 && ',;'.includes(character)) return source.slice(offset, index);
+    }
+    return source.slice(offset);
+}
+
+function fluentCall(expression, name) {
+    const offset = expression.indexOf(`->${name}(`);
+    if (offset < 0) return null;
+    const argument = sourceExpression(expression, offset + name.length + 3);
+    return clean(argument);
+}
+
 export function scanSource(path, source) {
     const rows = [];
     const occurrences = new Map();
@@ -28,7 +55,11 @@ export function scanSource(path, source) {
         const key = `${identity}:${ordinal}`;
         const id = `${kind}-${createHash('sha256').update(key).digest('hex').slice(0, 12)}`;
         const line = source.slice(0, offset).split('\n').length;
-        rows.push({ id, kind, path, line, action: clean(action), detail: clean(detail), key });
+        const expression = sourceExpression(source, offset);
+        const visible = kind === 'CRM-ACTION' ? fluentCall(expression, 'visible') : null;
+        const hidden = kind === 'CRM-ACTION' ? fluentCall(expression, 'hidden') : null;
+        const label = kind === 'CRM-ACTION' ? fluentCall(expression, 'label') : null;
+        rows.push({ id, kind, path, line, action: clean(action), detail: clean(detail), key, visible, hidden, label });
     };
     const matches = (pattern, kind, label) => {
         for (const match of source.matchAll(pattern)) {
@@ -53,6 +84,7 @@ export function scanSource(path, source) {
         matches(/\b(InlineKeyboardButton|KeyboardButton)::make\s*\(/g, 'TELEGRAM-BUTTON', (m) => `${m[1]} ${source.slice(m.index, m.index + 250)}`);
         matches(/Artisan::command\s*\(\s*(['"])(.*?)\1/g, 'COMMAND', (m) => m[2]);
         matches(/Schedule::command\s*\(\s*(['"])(.*?)\1/g, 'SCHEDULER', (m) => m[2]);
+        matches(/\$signature\s*=\s*(['"])(.*?)\1/gs, 'COMMAND', (m) => m[2]);
         matches(/\bclass\s+(\w+)[^{;]*\bimplements\s+[^\{]*ShouldQueue\b/g, 'JOB', (m) => m[1]);
         if (/Infrastructure\/(?:Telegram|Video|Lava|Providers|Mail)|ServiceProvider\.php$/.test(path)) {
             matches(/\bclass\s+(\w+)[^{;]*\bimplements\s+([^\{]+)/g, 'ADAPTER', (m) => `${m[1]} ${m[2]}`);
@@ -63,6 +95,9 @@ export function scanSource(path, source) {
         }
         if (path.startsWith('app/Filament/Widgets/')) {
             matches(/Stat::make\s*\(\s*([^,\n]+)/g, 'METRIC', (m) => m[1]);
+        }
+        if (path === 'config/portal.php') {
+            matches(/\['key'\s*=>\s*(['"])(.*?)\1\s*,\s*'label'\s*=>\s*(['"])(.*?)\3\]/g, 'TELEGRAM-MENU', (m) => `${m[2]} ${m[4]}`);
         }
     }
     if (path.endsWith('.vue') || path.endsWith('.blade.php')) {
@@ -80,7 +115,7 @@ export function scanSource(path, source) {
 }
 
 export function inventory(root) {
-    const paths = ['app/Filament', 'app/Providers', 'app/Modules', 'app/Jobs', 'app/Console', 'routes', 'resources/js/Pages', 'resources/js/Components', 'resources/js/Layouts', 'resources/views/filament'].flatMap((directory) => files(root, directory));
+    const paths = ['app/Filament', 'app/Providers', 'app/Modules', 'app/Jobs', 'app/Console', 'routes', 'config', 'resources/js/Pages', 'resources/js/Components', 'resources/js/Layouts', 'resources/views/filament'].flatMap((directory) => files(root, directory));
     return paths.flatMap((path) => scanSource(path, readFileSync(resolve(root, path), 'utf8'))).sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line || a.id.localeCompare(b.id));
 }
 
@@ -117,6 +152,9 @@ export function renderMatrix(rows, previous = '') {
         const area = row.path.match(/Resources\/([^/]+)|Modules\/([^/]+)/)?.slice(1).find(Boolean) ?? row.path.split('/').slice(-2, -1)[0];
         const note = `IMPLEMENTED declaration; source ${row.path}:${row.line}; ${row.detail}; BLOCKER: action contract, outcome assertions and runtime evidence not yet reconciled`;
         const values = current ?? [row.id, area, actor, row.kind, row.path, row.action, 'NOT DERIVED', 'NOT DERIVED', 'NOT DERIVED', 'NOT DERIVED', 'NOT DERIVED', 'NOT DERIVED', 'NOT DERIVED', 'NOT DERIVED', 'NOT DERIVED', 'NOT DERIVED', 'NOT DERIVED', 'NOT DERIVED', 'NOT MAPPED', 'NOT MAPPED', 'NOT RUN', 'NOT VERIFIED', note];
+        if (values[7] === 'NOT DERIVED' && row.visible) values[7] = `Source predicate (not executed): ${row.visible}`;
+        if (values[8] === 'NOT DERIVED' && row.hidden) values[8] = `Source predicate (not executed): ${row.hidden}`;
+        if (row.label && !values[22].includes('Source label:')) values[22] += `; Source label: ${row.label}`;
         return `| ${values.map(cell).join(' | ')} |`;
     });
     return `# Current system proof matrix\n\nStarting SHA: \`c201b41a14d91c57c1890e62737f9e2001a231f1\`. Branch: \`codex/full-system-proof\`.\n\nDeclaration inventory, not acceptance evidence. Each source control, HTTP route, Filament action/filter, inherited CRUD submit/cancel, page/navigation declaration, Telegram handler/button, queue job, command, scheduler entry and wired adapter has its own stable ID. STATE rows are reference values, not invented transitions; METRIC rows require independent expected-value proof. Dynamic declarations and inherited vendor controls still require runtime reconciliation. A source declaration alone is never VERIFIED.\n\nRegenerate preserving reviewed rows: \`node scripts/system-proof-inventory.mjs --update\`. Validate new/unmapped/stale declarations: \`node scripts/system-proof-inventory.mjs --check\`. Changing a control contract must also invalidate its previous evidence manually.\n\n${rows.length} declaration rows. Unknown contracts are explicitly NOT DERIVED; no mock or page render is recorded as complete proof. Every NOT VERIFIED row includes its remaining evidence blocker.\n\n| ${columns.join(' | ')} |\n| ${columns.map(() => '---').join(' | ')} |\n${lines.join('\n')}\n`;

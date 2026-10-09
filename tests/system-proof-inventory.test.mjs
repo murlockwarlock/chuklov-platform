@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { diagnostics, renderMatrix, scanSource } from '../scripts/system-proof-inventory.mjs';
+import { diagnostics, renderMatrix, scanSource, sourceExpression } from '../scripts/system-proof-inventory.mjs';
 
 test('new resource action or Portal route fails proof mapping until explicitly inventoried', () => {
     const existing = scanSource('routes/web.php', "Route::get('/portal/profile', ProfileController::class);");
@@ -40,4 +40,14 @@ test('missing execution evidence cannot become VERIFIED', () => {
     const rows = scanSource('routes/web.php', "Route::post('/portal/bookings', BookingController::class);");
     const unsupported = renderMatrix(rows).replace('| NOT VERIFIED |', '| VERIFIED |');
     assert.match(diagnostics(rows, unsupported).join('\n'), /UNSUPPORTED VERIFIED/);
+});
+
+test('fluent visibility and label extraction respects nested closures and quoted delimiters', () => {
+    const code = "Action::make('confirm')->label(__('Confirm'))->visible(fn ($record) => in_array($record->status, ['requested', 'confirmed']))->action(function () { send('a,b'); }), Action::make('cancel');";
+    assert.equal(sourceExpression(code, 0), code.slice(0, code.indexOf(', Action')));
+    const rows = scanSource('app/Filament/Pages/Example.php', code);
+    assert.equal(rows[0].label, "__('Confirm')");
+    assert.equal(rows[0].visible, "fn ($record) => in_array($record->status, ['requested', 'confirmed'])");
+    assert.match(renderMatrix(rows), /Source predicate \(not executed\)/);
+    assert.equal(rows[1].visible, null);
 });

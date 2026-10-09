@@ -301,10 +301,6 @@ final class SchedulingJournalProductionPassTest extends TestCase
     public function test_crm_create_booking_starts_with_specialist_and_allows_inline_client_creation(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture('Asia/Almaty');
-        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
-            'feature_key' => OrganizationFeature::ClientRecords->value,
-            'enabled' => true,
-        ]);
         $this->resolveFilamentContext($admin, $organization);
 
         $component = Livewire::actingAs($admin)->test(CreateBooking::class);
@@ -926,17 +922,22 @@ final class SchedulingJournalProductionPassTest extends TestCase
             ->get(BookingResource::getUrl('create').'?'.http_build_query($query))
             ->assertOk();
 
-        Livewire::withQueryParams($query)
+        $component = Livewire::withQueryParams($query)
             ->actingAs($admin)
-            ->test(CreateBooking::class)
+            ->test(CreateBooking::class);
+        $component
             ->fillForm([
-                'client_id' => $client->getKey(),
                 'service_id' => $service->getKey(),
                 'specialist_id' => $specialist->getKey(),
-                'starts_at' => CarbonImmutable::create(2026, 10, 5, 10, 15, 0, 'UTC'),
+                'booking_date' => '2026-10-05',
                 'visit_format' => VisitFormat::Online->value,
                 'party_size' => 1,
             ])
+            ->fillForm([
+                'booking_time' => '2026-10-05T10:15:00+00:00',
+                'client_id' => $client->getKey(),
+            ])
+            ->assertSuccessful()
             ->call('create')
             ->assertHasNoErrors()
             ->assertRedirect(ListBookings::getUrl().'?week=2026-10-05&view=week&specialist_id='.$specialist->getKey());
@@ -968,16 +969,21 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'view' => 'week',
         ])
             ->actingAs($admin)
-            ->test(CreateBooking::class)
+            ->test(CreateBooking::class);
+        $component
             ->fillForm([
-                'client_id' => $client->getKey(),
                 'service_id' => $service->getKey(),
                 'specialist_id' => $specialist->getKey(),
-                'starts_at' => '2026-10-04 19:00',
+                'booking_date' => '2026-10-04',
                 'visit_format' => VisitFormat::Online->value,
                 'party_size' => 1,
+            ])
+            ->fillForm([
+                'booking_time' => '2026-10-05T02:00:00+00:00',
+                'client_id' => $client->getKey(),
             ]);
         $component
+            ->assertSuccessful()
             ->call('create')
             ->assertHasNoErrors()
             ->assertRedirect();
@@ -1178,6 +1184,10 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ]);
         OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
             'feature_key' => OrganizationFeature::ServiceCatalog->value,
+            'enabled' => true,
+        ]);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
             'enabled' => true,
         ]);
         config()->set('tenancy.default_organization_id', $organization->getKey());
