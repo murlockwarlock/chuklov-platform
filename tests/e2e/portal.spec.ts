@@ -538,8 +538,7 @@ async function assertRenderedViewportGeometry(
 
 async function acceptRequiredConsents(page: Page): Promise<void> {
     const checkbox = page.getByRole('checkbox', {
-        name: 'Я ознакомился(лась) и принимаю обязательные документы',
-        exact: true,
+        name: /ознакомился.*обязательными документами/i,
     });
 
     await expect(checkbox).toHaveCount(1);
