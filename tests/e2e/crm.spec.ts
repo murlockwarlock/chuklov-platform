@@ -1136,7 +1136,8 @@ test('staff can create and fully settle a gift certificate through the CRM catal
     await expect(page.getByRole('switch', { name: 'Показывать клиентам*', exact: true })).toBeChecked();
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
-    await expect(page).toHaveURL(/\/admin\/services$/, { timeout: 15_000 });
+    await expect(page).toHaveURL(/\/admin\/services\/\d+\/edit$/, { timeout: 15_000 });
+    await page.goto('/admin/services');
     await expect(page.getByRole('heading', { name: 'Каталог услуг', exact: true })).toBeVisible();
     await searchTableFor(page, fixture.giftProductName);
     const giftOfferingRow = page.getByRole('row').filter({ hasText: fixture.giftProductName }).first();
