@@ -118,8 +118,7 @@ final class GiftCertificateConcurrencyTest extends TestCase
     public function test_postgresql_concurrent_crm_sale_retry_creates_one_pending_purchase(): void
     {
         $this->requirePostgres();
-        [$organization, $client, $certificate] = $this->fixture(withObligation: false);
-        $admin = User::query()->where('organization_id', $organization->getKey())->firstOrFail();
+        [$organization, $client, $certificate, , $admin] = $this->fixture(withObligation: false);
         $productId = PurchaseItem::query()->findOrFail($certificate->purchase_item_id)->sellable_id;
 
         $results = Concurrency::driver('process')->run([
@@ -300,7 +299,7 @@ final class GiftCertificateConcurrencyTest extends TestCase
             $obligation = app(CreateFinancialObligation::class)->handle($admin, $booking);
         }
 
-        return [$organization, $client, $certificate, $obligation];
+        return [$organization, $client, $certificate, $obligation, $admin];
     }
 
     private static function redeemInProcess(int $organizationId, int $clientId, int $certificateId, int $obligationId, string $key): string
