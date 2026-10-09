@@ -773,7 +773,7 @@ test('staff can create a group booking with a manually extended calendar block',
         .first()
         .click();
 
-    const partySize = page.getByLabel('Количество человек', { exact: true });
+    const partySize = page.getByRole('spinbutton', { name: /^Количество человек/ });
     await expect(partySize).toHaveValue('1');
     await partySize.fill('3');
 
