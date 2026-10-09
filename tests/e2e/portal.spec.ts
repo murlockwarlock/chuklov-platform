@@ -1472,7 +1472,10 @@ test('booking uses a service step and selected-day calendar before confirmation'
     await expect(page.getByRole('button', { name: 'Изменить дату и время' })).toBeVisible();
 
     await acceptRequiredConsents(page);
+    const bookingResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+        && response.url().endsWith('/portal/bookings'));
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    await assertPortalResponseAccepted(bookingResponse, 'Create portal booking');
     await expect(page.getByRole('heading', { name: 'Запись создана.' })).toBeVisible();
 
     await page.getByRole('link', { name: 'Мои записи' }).last().click();
