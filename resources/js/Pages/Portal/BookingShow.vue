@@ -374,6 +374,9 @@ function rescheduleBooking(): void {
           <span aria-hidden="true"> · </span>
           <span>{{ props.booking.localTime }}–{{ props.booking.localEndsAt }} · UTC{{ props.booking.displayUtcOffset }}</span>
         </p>
+        <p class="portal-copy">
+          {{ t('booking.partySize') }}: {{ props.booking.partySize }}
+        </p>
         <section
           v-if="props.booking.locationSnapshot.address || props.booking.locationSnapshot.name || props.booking.locationArea"
           class="portal-booking-location-panel portal-stack portal-stack--tight"

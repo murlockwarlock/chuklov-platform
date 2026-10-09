@@ -37,6 +37,7 @@ class SlotCalculator
         string $displayTimezone,
         ?int $stepMinutes = null,
         array $allowedIntervals = [],
+        ?int $blockingDurationMinutes = null,
     ): array {
         if ($dayOff || $durationMinutes <= 0 || $bufferMinutes < 0 || $leadTimeMinutes < 0) {
             return [];
@@ -47,6 +48,10 @@ class SlotCalculator
         if ($stepMinutes <= 0) {
             return [];
         }
+
+        $effectiveBlockingDurationMinutes = $blockingDurationMinutes === null
+            ? $durationMinutes + $bufferMinutes
+            : max($durationMinutes + $bufferMinutes, $blockingDurationMinutes);
 
         $wallIntervals = $customIntervals !== [] ? $customIntervals : $workingIntervals;
         $allowedIntervals = $this->mergeIntervals($allowedIntervals);
@@ -69,11 +74,24 @@ class SlotCalculator
                         }
 
                         foreach ($this->localInstants($date, $scheduleTimezone, $minute) as $candidate) {
-                            if (! $this->isBookableCandidate($candidate, $segment, $minimumStart, $durationMinutes, $bufferMinutes, $allowedIntervals)) {
+                            if (! $this->isBookableCandidate(
+                                candidate: $candidate,
+                                segment: $segment,
+                                minimumStart: $minimumStart,
+                                blockingDurationMinutes: $effectiveBlockingDurationMinutes,
+                                allowedIntervals: $allowedIntervals,
+                            )) {
                                 continue;
                             }
 
-                            $slots[] = $this->slot($candidate, $durationMinutes, $bufferMinutes, $scheduleTimezone, $displayTimezone, $format);
+                            $slots[] = $this->slot(
+                                startsAt: $candidate,
+                                durationMinutes: $durationMinutes,
+                                blockingDurationMinutes: $effectiveBlockingDurationMinutes,
+                                scheduleTimezone: $scheduleTimezone,
+                                displayTimezone: $displayTimezone,
+                                format: $format,
+                            );
                         }
                     }
                 }
@@ -168,11 +186,10 @@ class SlotCalculator
         CarbonImmutable $candidate,
         InstantInterval $segment,
         CarbonImmutable $minimumStart,
-        int $durationMinutes,
-        int $bufferMinutes,
+        int $blockingDurationMinutes,
         array $allowedIntervals,
     ): bool {
-        $blockingEnd = $candidate->addMinutes($durationMinutes + $bufferMinutes);
+        $blockingEnd = $candidate->addMinutes($blockingDurationMinutes);
 
         $insideAllowedInterval = $allowedIntervals === [];
         foreach ($allowedIntervals as $allowed) {
@@ -304,7 +321,7 @@ class SlotCalculator
     private function slot(
         CarbonImmutable $startsAt,
         int $durationMinutes,
-        int $bufferMinutes,
+        int $blockingDurationMinutes,
         string $scheduleTimezone,
         string $displayTimezone,
         VisitFormat $format,
@@ -312,7 +329,7 @@ class SlotCalculator
         return new AvailabilitySlot(
             startsAt: $startsAt->utc(),
             endsAt: $startsAt->addMinutes($durationMinutes)->utc(),
-            blockingEndsAt: $startsAt->addMinutes($durationMinutes + $bufferMinutes)->utc(),
+            blockingEndsAt: $startsAt->addMinutes($blockingDurationMinutes)->utc(),
             scheduleTimezone: $scheduleTimezone,
             displayTimezone: $displayTimezone,
             format: $format,

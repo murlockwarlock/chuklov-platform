@@ -34,6 +34,7 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -311,6 +312,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         $serviceField = $component->instance()->getSchemaComponent('form.service_id');
         $clientField = $component->instance()->getSchemaComponent('form.client_id');
         $partySizeField = $component->instance()->getSchemaComponent('form.party_size', withHidden: true);
+        $blockingEndsAtField = $component->instance()->getSchemaComponent('form.blocking_ends_at', withHidden: true);
 
         self::assertInstanceOf(Select::class, $specialistField);
         self::assertSame($specialist->getKey(), (int) $component->instance()->data['specialist_id']);
@@ -340,7 +342,10 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ]);
 
         self::assertInstanceOf(TextInput::class, $partySizeField);
-        self::assertFalse($partySizeField->isVisible());
+        self::assertTrue($partySizeField->isVisible());
+        self::assertSame('Количество человек', $partySizeField->getLabel());
+        self::assertInstanceOf(DateTimePicker::class, $blockingEndsAtField);
+        self::assertSame('Занять время до', $blockingEndsAtField->getLabel());
         $component->fillForm(['visit_format' => VisitFormat::HomeVisit->value]);
         self::assertTrue($component->instance()->getSchemaComponent('form.party_size', withHidden: true)->isVisible());
     }

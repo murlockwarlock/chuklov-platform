@@ -1466,6 +1466,10 @@ test('booking uses a service step and selected-day calendar before confirmation'
     await expect(page.getByRole('heading', { name: 'Проверьте запись' })).toBeVisible();
     await expect(page.getByText(/Playwright Service/)).toBeVisible();
     await expect(page.getByText(/Playwright Specialist/)).toBeVisible();
+    const partySize = page.getByLabel('Количество человек', { exact: true });
+    await expect(partySize).toHaveValue('1');
+    await partySize.fill('3');
+    await expect(partySize).toHaveValue('3');
     await expect(page.getByRole('button', { name: 'Изменить дату и время' })).toBeVisible();
 });
 

@@ -24,6 +24,7 @@ use DateTimeInterface;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -226,7 +227,9 @@ class BookingForm
                 ->live()
                 ->afterStateUpdated(function (Get $get, Set $set, mixed $state) use ($multiple): void {
                     self::preservePrefilledTimeOrClear($get, $set, $multiple);
-                    $set('party_size', $state === VisitFormat::HomeVisit->value ? 1 : null);
+                    if (self::positiveInteger($get('party_size')) === null) {
+                        $set('party_size', 1);
+                    }
 
                     if ($state === VisitFormat::Office->value) {
                         $location = WorkingLocation::query()
@@ -281,15 +284,14 @@ class BookingForm
                 })
                 ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
             TextInput::make('party_size')
-                ->label(__('Количество участников выезда'))
+                ->label(__('Количество человек'))
+                ->default(1)
                 ->integer()
                 ->minValue(1)
                 ->maxValue(20)
-                ->nullable()
-                ->required(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value)
-                ->validationMessages(['required' => __('Укажите количество участников выезда.')])
-                ->helperText(__('Сколько человек будет на выезде. Для обычного приёма поле не нужно.'))
-                ->visible(fn (Get $get): bool => $get('visit_format') === VisitFormat::HomeVisit->value),
+                ->required()
+                ->validationMessages(['required' => __('Укажите количество человек.')])
+                ->helperText(__('Укажите, сколько человек придут на одну запись.')),
             TextInput::make('location')
                 ->label(fn (Get $get): string => $get('visit_format') === VisitFormat::Office->value ? __('Адрес приёма') : __('Адрес выезда'))
                 ->default(fn (Get $get): ?string => $get('visit_format') === VisitFormat::Office->value
@@ -330,6 +332,7 @@ class BookingForm
                     $selectedTime = is_string($state) && trim($state) !== '' ? $state : null;
                     $set('booking_time_snapshot', $selectedTime);
                     $set('starts_at', $selectedTime);
+                    $set('blocking_ends_at', null);
                     $set('confirm_backdated', false);
                     $set('booking_time_prefilled', false);
                 })
@@ -346,10 +349,18 @@ class BookingForm
                 ->dehydratedWhenHidden()
                 ->live()
                 ->afterStateUpdated(function (Set $set): void {
+                    $set('blocking_ends_at', null);
                     $set('confirm_backdated', false);
                 })
                 ->required()
                 ->validationMessages(['required' => __('Укажите дату и время записи.')]),
+            DateTimePicker::make('blocking_ends_at')
+                ->label(__('Занять время до'))
+                ->seconds(false)
+                ->timezone(fn (): string => self::viewerTimezone())
+                ->nullable()
+                ->disabled(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
+                ->helperText(__('Оставьте пустым, чтобы занять обычное время услуги.')),
             TextEntry::make('backdated_warning')
                 ->label(__('Внимание'))
                 ->state(fn (Get $get): string => self::backdatedWarning($get))
@@ -390,6 +401,7 @@ class BookingForm
         $set('booking_time', null);
         $set('booking_time_snapshot', null);
         $set('starts_at', null);
+        $set('blocking_ends_at', null);
         $set('confirm_backdated', false);
         $set('booking_time_prefilled', false);
     }

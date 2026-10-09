@@ -173,6 +173,7 @@ class CalculateAvailability
         ?int $workingLocationId = null,
         ?string $locationArea = null,
         bool $allowInactiveLocation = false,
+        ?int $blockingDurationMinutes = null,
     ): AvailabilityResult {
         $organization = $this->context->organization();
         $locationDays = $format === VisitFormat::HomeVisit
@@ -207,6 +208,7 @@ class CalculateAvailability
             now: $now,
             durationMinutes: $service->durationMinutes() ?? 0,
             bufferMinutes: $service->buffer_minutes,
+            blockingDurationMinutes: $blockingDurationMinutes,
             workingLocation: $locationSelection->workingLocation,
             locationArea: $locationArea,
             locationDays: $locationDays?->isNotEmpty() ? $locationDays : null,
@@ -248,6 +250,7 @@ class CalculateAvailability
             workingLocationId: $booking->working_location_id,
             locationArea: $booking->location_area,
             allowInactiveLocation: true,
+            blockingDurationMinutes: (int) $booking->startsAtUtc()->diffInMinutes($booking->blockingEndsAtUtc()),
         );
 
         foreach ($availability->slots as $slot) {
@@ -368,6 +371,7 @@ class CalculateAvailability
         ?CarbonImmutable $now = null,
         int $durationMinutes = 0,
         int $bufferMinutes = 0,
+        ?int $blockingDurationMinutes = null,
         ?int $maxSlots = null,
         ?WorkingLocation $workingLocation = null,
         ?string $locationArea = null,
@@ -441,6 +445,9 @@ class CalculateAvailability
         $now = $now ?? CarbonImmutable::instance(now())->utc();
         $leadTimeMinutes ??= $this->leadTime->handle();
         $effectiveBufferMinutes = $bufferMinutes + ($format === VisitFormat::HomeVisit ? $this->homeVisitBuffer->handle() : 0);
+        $effectiveBlockingDurationMinutes = $blockingDurationMinutes === null
+            ? null
+            : max($durationMinutes + $effectiveBufferMinutes, $blockingDurationMinutes);
 
         if (! $specialist->is_active
             || ($service !== null && (! $service->is_active
@@ -472,6 +479,7 @@ class CalculateAvailability
                 bookingIntervals: $bookingIntervals,
                 durationMinutes: $durationMinutes,
                 bufferMinutes: $effectiveBufferMinutes,
+                blockingDurationMinutes: $effectiveBlockingDurationMinutes,
                 leadTimeMinutes: $leadTimeMinutes,
                 now: $now,
                 displayTimezone: $resolvedDisplayTimezone,
@@ -508,6 +516,7 @@ class CalculateAvailability
                         bookingIntervals: $bookingIntervals,
                         durationMinutes: $durationMinutes,
                         bufferMinutes: $effectiveBufferMinutes,
+                        blockingDurationMinutes: $effectiveBlockingDurationMinutes,
                         leadTimeMinutes: $leadTimeMinutes,
                         now: $now,
                         format: $format,
@@ -573,6 +582,7 @@ class CalculateAvailability
         array $bookingIntervals,
         int $durationMinutes,
         int $bufferMinutes,
+        ?int $blockingDurationMinutes,
         int $leadTimeMinutes,
         CarbonImmutable $now,
         string $displayTimezone,
@@ -638,6 +648,7 @@ class CalculateAvailability
                     bookingIntervals: $bookingIntervals,
                     durationMinutes: $durationMinutes,
                     bufferMinutes: $bufferMinutes,
+                    blockingDurationMinutes: $blockingDurationMinutes,
                     leadTimeMinutes: $leadTimeMinutes,
                     now: $now,
                     format: VisitFormat::HomeVisit,

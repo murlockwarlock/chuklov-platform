@@ -11,4 +11,6 @@ enum BookingEventType: string
     case Completed = 'completed';
     case NoShow = 'no_show';
     case MeetingLinkUpdated = 'meeting_link_updated';
+    case BlockingIntervalUpdated = 'blocking_interval_updated';
+    case PartySizeUpdated = 'party_size_updated';
 }

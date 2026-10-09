@@ -145,6 +145,11 @@ class CreateBooking extends LocalizedCreateRecord
             $startsAt = $data['starts_at'] instanceof DateTimeInterface
                 ? $data['starts_at']
                 : CarbonImmutable::parse((string) $data['starts_at'], (string) config('app.timezone'));
+            $blockingEndsAt = isset($data['blocking_ends_at']) && $data['blocking_ends_at'] !== ''
+                ? ($data['blocking_ends_at'] instanceof DateTimeInterface
+                    ? $data['blocking_ends_at']
+                    : CarbonImmutable::parse((string) $data['blocking_ends_at'], $this->formTimezone()))
+                : null;
 
             return app(CreateBookingAction::class)->handle(
                 actor: $actor,
@@ -163,27 +168,39 @@ class CreateBooking extends LocalizedCreateRecord
                     : null,
                 locationArea: isset($data['location_area']) ? (string) $data['location_area'] : null,
                 confirmedBackdated: (bool) ($data['confirm_backdated'] ?? false),
+                blockingEndsAt: $blockingEndsAt,
             );
         } catch (ValidationException $exception) {
             $errors = $exception->errors();
             $startsAtMessages = $errors['startsAt'] ?? [];
+            $blockingEndsAtMessages = $errors['blockingEndsAt'] ?? [];
 
-            if ($startsAtMessages === []) {
+            if ($startsAtMessages === [] && $blockingEndsAtMessages === []) {
                 throw $exception;
             }
 
-            $humanMessages = array_map(
-                static fn (string $message): string => $message === 'The selected time is no longer available.'
-                    ? __('Это время уже недоступно. Выберите другое.')
-                    : $message,
-                $startsAtMessages,
-            );
-            $errors['data.starts_at'] = array_merge(
-                $errors['data.starts_at'] ?? [],
-                $humanMessages,
-            );
-            $errors['data.booking_time'] = array_merge($errors['data.booking_time'] ?? [], $humanMessages);
-            unset($errors['startsAt']);
+            if ($startsAtMessages !== []) {
+                $humanMessages = array_map(
+                    static fn (string $message): string => $message === 'The selected time is no longer available.'
+                        ? __('Это время уже недоступно. Выберите другое.')
+                        : $message,
+                    $startsAtMessages,
+                );
+                $errors['data.starts_at'] = array_merge(
+                    $errors['data.starts_at'] ?? [],
+                    $humanMessages,
+                );
+                $errors['data.booking_time'] = array_merge($errors['data.booking_time'] ?? [], $humanMessages);
+                unset($errors['startsAt']);
+            }
+
+            if ($blockingEndsAtMessages !== []) {
+                $errors['data.blocking_ends_at'] = array_merge(
+                    $errors['data.blocking_ends_at'] ?? [],
+                    $blockingEndsAtMessages,
+                );
+                unset($errors['blockingEndsAt']);
+            }
 
             throw ValidationException::withMessages($errors);
         } catch (Throwable $exception) {

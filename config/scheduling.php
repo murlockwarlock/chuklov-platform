@@ -3,6 +3,7 @@
 return [
     'booking_cancellation_cutoff_minutes' => 1440,
     'idempotency_retention_days' => 30,
+    'max_party_size' => 20,
     'home_visit_max_party_size' => 20,
     'home_visit_occupied_buffer_minutes' => 0,
 ];

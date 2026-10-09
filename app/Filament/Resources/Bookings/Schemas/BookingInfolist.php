@@ -50,13 +50,17 @@ class BookingInfolist
                             ->dateTime('d.m.Y H:i')
                             ->timezone(fn (): string => self::viewerTimezone()),
                         TextEntry::make('ends_at')
-                            ->label(__('Окончание'))
+                            ->label(__('Окончание приёма'))
                             ->dateTime('d.m.Y H:i')
                             ->timezone(fn (): string => self::viewerTimezone()),
+                        TextEntry::make('blocking_ends_at')
+                            ->label(__('Время занято в календаре'))
+                            ->dateTime('d.m.Y H:i')
+                            ->timezone(fn (): string => self::viewerTimezone())
+                            ->visible(fn (Booking $record): bool => $record->blockingEndsAtUtc()->greaterThan($record->endsAtUtc())),
                         TextEntry::make('schedule_timezone')->label(__('Часовой пояс записи')),
                         TextEntry::make('party_size')
-                            ->label(__('Участники выезда'))
-                            ->visible(fn (Booking $record): bool => $record->visit_format === VisitFormat::HomeVisit),
+                            ->label(__('Количество человек')),
                         TextEntry::make('requested_at')
                             ->label(__('Заявка создана'))
                             ->dateTime('d.m.Y H:i')
@@ -203,6 +207,28 @@ class BookingInfolist
             ]);
         }
 
+        if ($event->event_type === BookingEventType::BlockingIntervalUpdated) {
+            $oldBlockingEnd = self::safeValue($event->old_values, 'blocking_ends_at');
+            $newBlockingEnd = self::safeValue($event->new_values, 'blocking_ends_at');
+            if ($oldBlockingEnd !== null && $newBlockingEnd !== null) {
+                $details[] = __('До :old → до :new', [
+                    'old' => self::humanDateTime($oldBlockingEnd),
+                    'new' => self::humanDateTime($newBlockingEnd),
+                ]);
+            }
+        }
+
+        if ($event->event_type === BookingEventType::PartySizeUpdated) {
+            $oldPartySize = self::safeValue($event->old_values, 'party_size');
+            $newPartySize = self::safeValue($event->new_values, 'party_size');
+            if ($oldPartySize !== null && $newPartySize !== null) {
+                $details[] = __(':old → :new человек', [
+                    'old' => $oldPartySize,
+                    'new' => $newPartySize,
+                ]);
+            }
+        }
+
         if ($event->reason !== null) {
             $details[] = __('Причина: :reason', ['reason' => $event->reason]);
         }
@@ -230,6 +256,8 @@ class BookingInfolist
             BookingEventType::Created => __('Запись создана'),
             BookingEventType::StatusChanged => __('Статус записи обновлён'),
             BookingEventType::Rescheduled => __('Запись перенесена'),
+            BookingEventType::BlockingIntervalUpdated => __('Время занято в календаре изменено'),
+            BookingEventType::PartySizeUpdated => __('Количество человек изменено'),
             BookingEventType::Cancelled => __('Запись отменена'),
             BookingEventType::Completed => __('Визит завершён'),
             BookingEventType::NoShow => __('Отмечена неявка'),

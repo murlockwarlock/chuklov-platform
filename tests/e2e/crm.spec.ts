@@ -740,6 +740,60 @@ test('staff can create a backdated booking from the ordinary availability form',
     await expect(page.getByText('Ожидает подтверждения', { exact: true })).toBeVisible();
 });
 
+test('staff can create a group booking with a manually extended calendar block', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto('/admin/bookings/create');
+    await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
+
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
+    await page.getByText(fixture.specialistName, { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
+    await page.getByRole('option', { name: fixture.serviceName, exact: true }).click();
+    await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
+    await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
+    await page.getByLabel('Формат визита').selectOption('office');
+
+    const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
+    await workingLocation.click();
+    await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.workingLocationName }).first().click();
+
+    const dateInput = page.getByLabel('Дата');
+    await dateInput.fill(fixture.bookingStartsAt.slice(0, 10));
+    await dateInput.blur();
+    const bookingTime = page.getByRole('combobox', { name: /^Доступное время/ }).first();
+    await bookingTime.click();
+    await page.locator('.fi-select-input-option:visible')
+        .filter({ hasText: fixture.bookingStartsAt.slice(11, 16) })
+        .first()
+        .click();
+
+    const partySize = page.getByLabel('Количество человек', { exact: true });
+    await expect(partySize).toHaveValue('1');
+    await partySize.fill('3');
+
+    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
+    await expect(page.getByText('Количество человек', { exact: true })).toBeVisible();
+    await expect(page.getByText('3', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Действия', exact: true }).click();
+    await page.getByRole('button', { name: 'Изменить время занятости', exact: true }).click();
+    const blockingDialog = page.locator('.fi-modal-window:visible').last();
+    await expect(blockingDialog).toBeVisible();
+    const blockingEndsAt = blockingDialog.getByLabel('Занять время до', { exact: true });
+    await blockingEndsAt.fill(`${fixture.bookingStartsAt.slice(0, 10)}T14:00`);
+    await blockingEndsAt.blur();
+    await blockingDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Время занятости в календаре обновлено', { exact: true })).toBeVisible();
+    await expect(page.getByText('Время занято в календаре', { exact: true })).toBeVisible();
+});
+
 test('staff Messages opens at the latest history and preserves intentional scrolling', async ({ page }) => {
     test.setTimeout(90_000);
 

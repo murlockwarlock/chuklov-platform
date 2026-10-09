@@ -13,6 +13,7 @@ use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
 use App\Modules\Scheduling\Application\CreateMultipleBookings as CreateMultipleBookingsAction;
 use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
+use App\Modules\Scheduling\Application\UpdateBookingBlockingInterval;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -138,6 +139,53 @@ class MilestoneFourConcurrencyTest extends TestCase
         self::assertSame(1, AuditEvent::query()
             ->where('organization_id', $organization->getKey())
             ->where('action', 'booking.rescheduled')
+            ->count());
+    }
+
+    public function test_two_real_parallel_block_updates_from_the_same_event_version_have_one_winner(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('The race test requires PostgreSQL row locks.');
+        }
+
+        [$organization, $admin, $client, $specialist, $service] = $this->schedulingFixture();
+        $start = CarbonImmutable::create(2027, 4, 5, 9, 0, 0, 'UTC');
+        $booking = Booking::factory()
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'starts_at' => $start,
+                'ends_at' => $start->addHour(),
+                'blocking_ends_at' => $start->addMinutes(75),
+                'schedule_timezone' => 'UTC',
+                'client_timezone' => 'UTC',
+                'status' => BookingStatus::Requested,
+            ]);
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::updateBlockingInProcess(
+                $organization->getKey(),
+                $admin->getKey(),
+                $booking->getKey(),
+                $start->addHours(3)->toIso8601String(),
+                1,
+            ),
+            static fn (): string => self::updateBlockingInProcess(
+                $organization->getKey(),
+                $admin->getKey(),
+                $booking->getKey(),
+                $start->addHours(4)->toIso8601String(),
+                1,
+            ),
+        ]);
+
+        self::assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'updated')));
+        self::assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'stale')));
+        self::assertSame(2, $booking->fresh()->event_version);
+        self::assertSame(1, BookingEvent::query()
+            ->where('booking_id', $booking->getKey())
+            ->where('event_type', 'blocking_interval_updated')
             ->count());
     }
 
@@ -370,6 +418,30 @@ class MilestoneFourConcurrencyTest extends TestCase
             );
 
             return 'rescheduled';
+        } catch (ValidationException $exception) {
+            return array_key_exists('expected_event_version', $exception->errors()) ? 'stale' : 'error';
+        }
+    }
+
+    private static function updateBlockingInProcess(
+        int $organizationId,
+        int $adminId,
+        int $bookingId,
+        string $blockingEndsAt,
+        int $expectedVersion,
+    ): string {
+        $organization = Organization::query()->findOrFail($organizationId);
+        app(OrganizationContext::class)->set($organization);
+
+        try {
+            app(UpdateBookingBlockingInterval::class)->handle(
+                actor: User::query()->findOrFail($adminId),
+                booking: Booking::query()->findOrFail($bookingId),
+                blockingEndsAt: CarbonImmutable::parse($blockingEndsAt),
+                expectedEventVersion: $expectedVersion,
+            );
+
+            return 'updated';
         } catch (ValidationException $exception) {
             return array_key_exists('expected_event_version', $exception->errors()) ? 'stale' : 'error';
         }

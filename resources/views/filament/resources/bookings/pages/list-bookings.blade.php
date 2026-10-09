@@ -101,7 +101,7 @@
                                     <div class="relative z-10 pointer-events-none">
                                         <span class="block truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
                                         <span class="block truncate">{{ $booking['service'] }}</span>
-                                        <span class="block truncate opacity-80">{{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size'] > 1) · {{ __('Группа: :count', ['count' => $booking['party_size']]) }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</span>
+                                        <span class="block truncate opacity-80">{{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</span>
                                         @if ($booking['retention_warning'])
                                             <span class="block truncate font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</span>
                                         @endif
@@ -136,7 +136,7 @@
                                                 <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
                                                 <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
                                             </div>
-                                            <div class="mt-1 break-words text-xs">{{ $booking['service'] }} · {{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size'] > 1) · {{ __('Группа: :count', ['count' => $booking['party_size']]) }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</div>
+                                            <div class="mt-1 break-words text-xs">{{ $booking['service'] }} · {{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</div>
                                             @if ($booking['retention_warning'])
                                                 <div class="mt-1 break-words text-xs font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</div>
                                             @endif

@@ -472,7 +472,7 @@ class ListBookings extends LocalizedListRecords
         ];
     }
 
-    /** @return array{id: int, event_version: int, client: string, client_url: string|null, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, format: string, location_label: string, party_size: int, has_debt: bool, retention_warning: bool, retention_label: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
+    /** @return array{id: int, event_version: int, client: string, client_url: string|null, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, format: string, location_label: string, party_size: int, party_size_label: string|null, has_debt: bool, retention_warning: bool, retention_label: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
     private function bookingProjection(Booking $booking, CarbonImmutable $localStart, CarbonImmutable $localEnd, bool $canViewClients, bool $retentionWarning = false, bool $hasDebt = false): array
     {
         $startMinutes = ((int) $localStart->format('H')) * 60 + (int) $localStart->format('i');
@@ -500,6 +500,9 @@ class ListBookings extends LocalizedListRecords
             'format' => self::formatLabel($format),
             'location_label' => $locationLabel,
             'party_size' => (int) $booking->party_size,
+            'party_size_label' => (int) $booking->party_size > 1
+                ? self::partySizeLabel((int) $booking->party_size)
+                : null,
             'has_debt' => $hasDebt,
             'retention_warning' => $retentionWarning,
             'retention_label' => __('Нет следующей записи'),
@@ -513,6 +516,17 @@ class ListBookings extends LocalizedListRecords
                 'view' => $this->viewMode,
             ]),
         ];
+    }
+
+    private static function partySizeLabel(int $partySize): string
+    {
+        $lastTwo = $partySize % 100;
+        $last = $partySize % 10;
+        $word = $last >= 2 && $last <= 4 && ! in_array($lastTwo, [12, 13, 14], true)
+            ? 'человека'
+            : 'человек';
+
+        return $partySize.' '.$word;
     }
 
     private function weekDate(): CarbonImmutable

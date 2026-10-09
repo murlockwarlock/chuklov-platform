@@ -141,6 +141,30 @@ class PortalBookingRemediationTest extends TestCase
                 ->where('bookingResult.bookingId', Booking::query()->sole()->getKey()));
     }
 
+    public function test_portal_ordinary_booking_preserves_party_size(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $consents = $this->acceptedConsents($organization);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.store'), [
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => '2026-03-16T09:00:00+00:00',
+                'format' => VisitFormat::Office->value,
+                'party_size' => 3,
+                'consents' => $consents,
+            ])
+            ->assertRedirect();
+
+        $booking = Booking::query()->sole();
+        self::assertSame(3, $booking->party_size);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.bookings.show', $booking->getKey()))
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('booking.partySize', 3));
+    }
+
     public function test_cancelled_booking_is_not_replayed_as_a_new_portal_booking(): void
     {
         [$organization, $client, $specialist, $service] = $this->portalFixture();
