@@ -1122,18 +1122,18 @@ test('staff can create and fully settle a gift certificate through the CRM catal
 
     await page.goto('/admin/services/create');
     await expect(page.getByRole('heading', { name: 'Добавить услугу', exact: true })).toBeVisible();
-    await page.getByLabel('Название', { exact: true }).fill(fixture.giftProductName);
-    await page.getByLabel('Тип предложения', { exact: true }).selectOption('gift_certificate');
+    await page.getByLabel('Название*', { exact: true }).fill(fixture.giftProductName);
+    await page.getByLabel('Тип предложения*', { exact: true }).selectOption('gift_certificate');
     await expect(page.getByText('Цена сертификата одновременно является его номиналом.', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Длительность (минуты)', { exact: true })).not.toBeVisible();
     await expect(page.getByLabel('Доступные форматы визита', { exact: true })).not.toBeVisible();
-    await page.getByLabel('Краткое описание', { exact: true }).fill('Сертификат для E2E проверки CRM.');
+    await page.getByLabel('Краткое описание*', { exact: true }).fill('Сертификат для E2E проверки CRM.');
     await page.getByLabel('Цена', { exact: true }).fill('10000');
 
     const currency = page.getByRole('combobox', { name: 'Валюта', exact: true });
     await currency.click();
     await page.locator('.fi-select-input-option:visible').filter({ hasText: 'USD' }).last().click();
-    await expect(page.getByLabel('Показывать клиентам', { exact: true })).toBeChecked();
+    await expect(page.getByRole('switch', { name: 'Показывать клиентам*', exact: true })).toBeChecked();
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
 
     await expect(page).toHaveURL(/\/admin\/services$/, { timeout: 15_000 });
