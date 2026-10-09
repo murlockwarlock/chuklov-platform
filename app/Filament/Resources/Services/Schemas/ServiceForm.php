@@ -101,9 +101,9 @@ class ServiceForm
                             ->inputMode('decimal')
                             ->maxLength(32)
                             ->helperText(fn (Get $get): ?string => self::isCatalogType(
-                                $get->get('catalog_type'),
+                                $get('catalog_type'),
                                 CatalogItemType::GiftCertificate,
-                            ) ? __('Цена сертификата одновременно является его номиналом.') : null)
+                            ) ? self::giftCertificatePriceHelperText() : null)
                             ->rules(fn (Get $get): array => [
                                 new MajorUnitPrice(self::nullableString($get('price_currency'))),
                             ]),
@@ -281,6 +281,11 @@ class ServiceForm
             CatalogItemType::OnlineProduct, CatalogItemType::PhysicalProduct, CatalogItemType::GiftCertificate => __('Показывать клиентам'),
             default => __('Доступна для записи'),
         };
+    }
+
+    private static function giftCertificatePriceHelperText(): string
+    {
+        return __('Цена сертификата одновременно является его номиналом.');
     }
 
     private static function catalogType(mixed $value): ?CatalogItemType
