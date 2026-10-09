@@ -786,7 +786,7 @@ test('staff can create a group booking with a manually extended calendar block',
     await page.getByRole('button', { name: 'Изменить время занятости', exact: true }).click();
     const blockingDialog = page.locator('.fi-modal-window:visible').last();
     await expect(blockingDialog).toBeVisible();
-    const blockingEndsAt = blockingDialog.getByLabel('Занять время до', { exact: true });
+    const blockingEndsAt = blockingDialog.getByRole('textbox', { name: /^Занять время до/ });
     await blockingEndsAt.fill(`${fixture.bookingStartsAt.slice(0, 10)}T14:00`);
     await blockingEndsAt.blur();
     await blockingDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
