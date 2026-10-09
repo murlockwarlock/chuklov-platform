@@ -1471,6 +1471,18 @@ test('booking uses a service step and selected-day calendar before confirmation'
     await partySize.fill('3');
     await expect(partySize).toHaveValue('3');
     await expect(page.getByRole('button', { name: 'Изменить дату и время' })).toBeVisible();
+
+    await acceptRequiredConsents(page);
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Запись создана.' })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Мои записи' }).last().click();
+    await expect(page.getByRole('heading', { name: 'Мои записи' })).toBeVisible();
+    const createdBookings = page.locator('a.portal-card').filter({ hasText: fixture.serviceName });
+    await expect(createdBookings).toHaveCount(1);
+    await createdBookings.first().click();
+    await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
+    await expect(page.getByText('Количество человек: 3', { exact: true })).toBeVisible();
 });
 
 test('booking shell stays readable at narrow Mini App widths', async ({ page }) => {
