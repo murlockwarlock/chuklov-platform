@@ -4,6 +4,10 @@
 
 - Added the new Gift Certificate scope without rewriting v2.2 history: a fully paid Commerce purchase issues one same-currency stored-value certificate exactly once; ownership transfer uses a hashed single-use claim link; redemption is an organization-scoped, idempotent append-only Finance settlement against eligible same-currency Booking/Commerce obligations; corrections restore both Finance outstanding and certificate balance. Expiry, refunds, cash-out, cross-currency redemption, and Referral ServiceCredit coupling remain unimplemented.
 
+## 2026-10-09 — CRM gift certificate sales
+
+- Added the Finance CRM `Продать сертификат` flow: an active gift-certificate catalog offering creates the shared pending Commerce purchase and FinancialObligation without Lava, and existing manual settlement methods issue the certificate only after full payment.
+
 ## 2026-10-08 — CRM barter manual payment
 
 - Normalized Barter as an explicit manual payment method with a required description of the consideration received. Its monetary valuation reduces the existing FinancialObligation; mixed payment remains multiple ledger entries and payment status remains derived.

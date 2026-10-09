@@ -100,6 +100,10 @@ class ServiceForm
                             ->placeholder(__('15000 или 15000.50'))
                             ->inputMode('decimal')
                             ->maxLength(32)
+                            ->helperText(fn (Get $get): ?string => self::isCatalogType(
+                                $get->get('catalog_type'),
+                                CatalogItemType::GiftCertificate,
+                            ) ? __('Цена сертификата одновременно является его номиналом.') : null)
                             ->rules(fn (Get $get): array => [
                                 new MajorUnitPrice(self::nullableString($get('price_currency'))),
                             ]),

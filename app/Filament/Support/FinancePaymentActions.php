@@ -547,6 +547,8 @@ final class FinancePaymentActions
 
     private static function refreshFinanceUi(Action $action, FinancialObligation $obligation, ?Booking $booking = null): void
     {
+        $obligation->refresh();
+        $obligation->load(['client', 'booking.service', 'service', 'purchase.items.fulfillment']);
         app(FinancePresentation::class)->forget($obligation, $booking);
         $livewire = $action->getLivewire();
 

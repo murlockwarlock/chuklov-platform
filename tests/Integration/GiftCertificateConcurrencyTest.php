@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Commerce\Application\AppendGiftCertificateMovement;
 use App\Modules\Commerce\Application\ApplyGiftCertificateToObligation;
 use App\Modules\Commerce\Application\ClaimGiftCertificate;
+use App\Modules\Commerce\Application\CreateCrmGiftCertificateSale;
 use App\Modules\Commerce\Application\CreateGiftCertificateTransfer;
 use App\Modules\Commerce\Application\GiftCertificateBalanceProjection;
 use App\Modules\Commerce\Domain\Enums\CommerceFulfillmentStatus;
@@ -111,6 +112,38 @@ final class GiftCertificateConcurrencyTest extends TestCase
         self::assertLessThanOrEqual(1, GiftCertificateClaim::query()
             ->where('certificate_id', $certificate->getKey())
             ->where('status', 'pending')
+            ->count());
+    }
+
+    public function test_postgresql_concurrent_crm_sale_retry_creates_one_pending_purchase(): void
+    {
+        $this->requirePostgres();
+        [$organization, $client, $certificate] = $this->fixture(withObligation: false);
+        $admin = User::query()->where('organization_id', $organization->getKey())->firstOrFail();
+        $productId = PurchaseItem::query()->findOrFail($certificate->purchase_item_id)->sellable_id;
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::createCrmSaleInProcess(
+                $organization->getKey(),
+                $admin->getKey(),
+                $client->getKey(),
+                (int) $productId,
+                'crm-concurrent-sale',
+            ),
+            static fn (): string => self::createCrmSaleInProcess(
+                $organization->getKey(),
+                $admin->getKey(),
+                $client->getKey(),
+                (int) $productId,
+                'crm-concurrent-sale',
+            ),
+        ]);
+
+        self::assertNotContains('error', $results);
+        self::assertCount(2, array_filter($results, static fn (string $result): bool => str_starts_with($result, 'obligation:')));
+        self::assertSame(1, Purchase::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('checkout_idempotency_key', 'crm-concurrent-sale')
             ->count());
     }
 
@@ -322,6 +355,31 @@ final class GiftCertificateConcurrencyTest extends TestCase
 
             return 'replaced:'.$certificateId;
         } catch (ValidationException|AuthorizationException) {
+            return 'validation';
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception).':'.$exception->getMessage();
+        }
+    }
+
+    private static function createCrmSaleInProcess(
+        int $organizationId,
+        int $adminId,
+        int $clientId,
+        int $productId,
+        string $idempotencyKey,
+    ): string {
+        try {
+            $organization = Organization::query()->findOrFail($organizationId);
+            app(OrganizationContext::class)->set($organization);
+            $obligation = app(CreateCrmGiftCertificateSale::class)->handle(
+                actor: User::query()->findOrFail($adminId),
+                clientId: $clientId,
+                productId: $productId,
+                idempotencyKey: $idempotencyKey,
+            );
+
+            return 'obligation:'.$obligation->getKey();
+        } catch (ValidationException) {
             return 'validation';
         } catch (\Throwable $exception) {
             return 'error:'.get_class($exception).':'.$exception->getMessage();
