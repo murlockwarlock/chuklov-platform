@@ -51,3 +51,17 @@ test('fluent visibility and label extraction respects nested closures and quoted
     assert.match(renderMatrix(rows), /Source predicate \(not executed\)/);
     assert.equal(rows[1].visible, null);
 });
+
+test('new Resources, list/view screens and notification catalog events cannot evade mapping', () => {
+    const resource = scanSource('app/Filament/Resources/Example/ExampleResource.php', 'class ExampleResource extends LocalizedResource {}');
+    assert.equal(resource[0].kind, 'CRM-RESOURCE');
+    assert.match(diagnostics(resource, renderMatrix([])).join('\n'), /UNMAPPED CRM-RESOURCE/);
+    const screen = scanSource('app/Filament/Resources/Example/Pages/ViewExample.php', 'class ViewExample extends LocalizedViewRecord {}');
+    assert.equal(screen[0].kind, 'CRM-SCREEN');
+    const event = scanSource('app/Modules/Scenarios/Application/ScenarioNotificationCatalog.php', "['event' => 'booking.confirmed', 'label' => 'Confirmation', 'recipients' => 'Client', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Confirmed']");
+    assert.equal(event[0].kind, 'NOTIFICATION');
+    assert.equal(event[0].catalog.recipients, 'Client');
+    assert.equal(event[0].catalog.template, 'Confirmed');
+    assert.match(diagnostics(event, renderMatrix([])).join('\n'), /UNMAPPED NOTIFICATION/);
+    assert.match(renderMatrix(event), /not delivery evidence/);
+});

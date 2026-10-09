@@ -22,6 +22,8 @@ type CrmFixture = {
     financeBookingId: number | null;
     partnerProfileId: number | null;
     giftProductName: string | null;
+    portalCookieName?: string;
+    portalCookieValue?: string;
 };
 
 function validPdfBuffer(): Buffer {
@@ -41,7 +43,7 @@ function validPdfBuffer(): Buffer {
     ].join('\n'));
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; portalAccess?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -414,6 +416,30 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'size_bytes' => 2048,
             'sha256_checksum' => hash('sha256', $suffix),
         ]);
+        $portalCookieName = null;
+        $portalCookieValue = null;
+        if (getenv('PLAYWRIGHT_PORTAL_ACCESS') === '1') {
+            $sessionId = \\Illuminate\\Support\\Str::random(40);
+            $sessionData = json_encode([
+                '_token' => \\Illuminate\\Support\\Str::random(40),
+                'client_portal' => ['client_id' => $client->getKey()],
+            ], JSON_THROW_ON_ERROR);
+            $sessionPayload = config('session.encrypt') ? app('encrypter')->encrypt($sessionData) : $sessionData;
+            \\Illuminate\\Support\\Facades\\DB::table('sessions')->insert([
+                'id' => $sessionId,
+                'user_id' => null,
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'Playwright',
+                'payload' => base64_encode($sessionPayload),
+                'last_activity' => time(),
+            ]);
+            $portalCookieName = (string) config('session.cookie');
+            $encrypter = app('encrypter');
+            $portalCookieValue = $encrypter->encrypt(
+                \\Illuminate\\Cookie\\CookieValuePrefix::create($portalCookieName, $encrypter->getKey()).$sessionId,
+                false,
+            );
+        }
         echo json_encode([
             'email' => $email,
             'password' => $password,
@@ -434,6 +460,8 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'financeBookingId' => $financeBooking?->getKey(),
             'partnerProfileId' => $partnerProfileId,
             'giftProductName' => $giftProductName,
+            'portalCookieName' => $portalCookieName,
+            'portalCookieValue' => $portalCookieValue,
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -455,6 +483,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 PLAYWRIGHT_FINANCE_FLOW: options.financeFlow ? '1' : '0',
                 PLAYWRIGHT_PAYOUT_FLOW: options.payoutFlow ? '1' : '0',
                 PLAYWRIGHT_MESSAGES_FLOW: options.messagesFlow ? '1' : '0',
+                PLAYWRIGHT_PORTAL_ACCESS: options.portalAccess ? '1' : '0',
                 PLAYWRIGHT_GIFT_SALE_FLOW: options.giftSaleFlow ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -653,14 +682,14 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
     await expect(page.locator('input[name*="idempotency"], input[name*="timezone"], select[name*="meeting_link"]')).toHaveCount(0);
 
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
+    await page.getByRole('option').filter({ hasText: fixture.specialistName }).last().click();
     await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
     await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
     await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
     await page.getByRole('option').filter({ hasText: fixture.serviceName }).last().click();
-    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
-    await page.getByRole('option').filter({ hasText: fixture.specialistName }).last().click();
     const dateInput = page.getByLabel('Дата');
     await dateInput.fill(fixture.bookingStartsAt.slice(0, 10));
     await dateInput.blur();
@@ -993,7 +1022,7 @@ test('staff sees the Telegram limit and preview while writing to a client', asyn
     await login(page, fixture);
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Сообщения', exact: true }).click();
+    await page.getByRole('link', { name: 'Сообщения', exact: true }).last().click();
     await expect(page).toHaveURL(new RegExp(`/admin/messages\\?client=${fixture.clientId}$`));
     await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
 
@@ -1291,6 +1320,39 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
     await assertNoHorizontalOverflow(page);
 });
 
+test('CRM reply is rendered as readable rich text in the client Portal', async ({ page, browser }) => {
+    const fixture = createCrmFixture({ messagesFlow: true, portalAccess: true });
+    await login(page, fixture);
+    await page.goto(`/admin/messages?client=${fixture.clientId}`);
+    await page.getByRole('button', { name: 'Подключиться к диалогу', exact: true }).click();
+    const reply = `Ответ специалиста ${fixture.clientId}: проверка связи завершена.`;
+    await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill(reply);
+    await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Сообщение сохранено в истории', { exact: true })).toBeVisible();
+
+    const clientContext = await browser.newContext({ viewport: page.viewportSize() ?? { width: 1440, height: 1000 } });
+    try {
+        expect(fixture.portalCookieName).toBeTruthy();
+        expect(fixture.portalCookieValue).toBeTruthy();
+        await clientContext.addCookies([{
+            name: fixture.portalCookieName!,
+            value: fixture.portalCookieValue!,
+            url: new URL(page.url()).origin,
+        }]);
+        const portal = await clientContext.newPage();
+        await portal.goto(new URL('/portal/companion', page.url()).toString());
+        const renderedReply = portal.locator('.portal-companion__message--staff .portal-rich-text').filter({ hasText: reply });
+        await expect(renderedReply).toHaveText(reply);
+        await expect(renderedReply.locator('p')).toHaveText(reply);
+        await expect(renderedReply).not.toContainText('<p>');
+        await portal.reload();
+        await expect(renderedReply).toHaveText(reply);
+        await assertNoHorizontalOverflow(portal);
+    } finally {
+        await clientContext.close();
+    }
+});
+
 test('staff can use the client cockpit for medical profile and private files', async ({ page }) => {
     const fixture = createCrmFixture();
 
@@ -1368,7 +1430,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(page.locator('iframe[title="ux-a-report.pdf"]')).toBeVisible();
     expect(previewResponse.headers()['content-type']).toContain('application/pdf');
     expect(previewResponse.headers()['content-disposition']).toContain('inline');
-    await page.locator('.fi-modal-window:visible').filter({ has: page.locator('iframe[title="ux-a-report.pdf"]') }).getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await page.locator('.fi-modal-window:visible').filter({ has: page.locator('iframe[title="ux-a-report.pdf"]') }).getByRole('button', { name: 'Закрыть', exact: true }).last().click();
 
     const downloadAttachment = uploadedRow.getByRole('button', { name: 'Скачать', exact: true });
     await expect(downloadAttachment).toHaveCount(1);
