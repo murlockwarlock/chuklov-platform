@@ -43,13 +43,22 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
         $withCompanionPending = getenv('PLAYWRIGHT_WITH_COMPANION_PENDING') === '1';
         $withCompanionFailure = getenv('PLAYWRIGHT_WITH_COMPANION_FAILURE') === '1';
-        \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
-            'organization_id' => $organization->getKey(),
-            'feature_key' => 'service_catalog',
-            'enabled' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]], ['organization_id', 'feature_key'], ['enabled', 'updated_at']);
+        \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([
+            [
+                'organization_id' => $organization->getKey(),
+                'feature_key' => 'service_catalog',
+                'enabled' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'organization_id' => $organization->getKey(),
+                'feature_key' => 'client_records',
+                'enabled' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ], ['organization_id', 'feature_key'], ['enabled', 'updated_at']);
         foreach ([
             'offer' => 'offer_consent',
             'privacy' => 'privacy_consent',
@@ -538,8 +547,7 @@ async function assertRenderedViewportGeometry(
 
 async function acceptRequiredConsents(page: Page): Promise<void> {
     const checkbox = page.getByRole('checkbox', {
-        name: 'Я ознакомился(лась) и принимаю обязательные документы',
-        exact: true,
+        name: /ознакомился.*обязательными документами/i,
     });
 
     await expect(checkbox).toHaveCount(1);
@@ -1466,7 +1474,26 @@ test('booking uses a service step and selected-day calendar before confirmation'
     await expect(page.getByRole('heading', { name: 'Проверьте запись' })).toBeVisible();
     await expect(page.getByText(/Playwright Service/)).toBeVisible();
     await expect(page.getByText(/Playwright Specialist/)).toBeVisible();
+    const partySize = page.getByLabel('Количество человек', { exact: true });
+    await expect(partySize).toHaveValue('1');
+    await partySize.fill('3');
+    await expect(partySize).toHaveValue('3');
     await expect(page.getByRole('button', { name: 'Изменить дату и время' })).toBeVisible();
+
+    await acceptRequiredConsents(page);
+    const bookingResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+        && response.url().endsWith('/portal/bookings'));
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    await assertPortalResponseAccepted(bookingResponse, 'Create portal booking');
+    await expect(page.getByRole('heading', { name: 'Запись создана.' })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Мои записи' }).last().click();
+    await expect(page.getByRole('heading', { name: 'Мои записи' })).toBeVisible();
+    const createdBookings = page.locator('a.portal-card').filter({ hasText: fixture.serviceName });
+    await expect(createdBookings).toHaveCount(1);
+    await createdBookings.first().click();
+    await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
+    await expect(page.getByText('Количество человек: 3', { exact: true })).toBeVisible();
 });
 
 test('booking shell stays readable at narrow Mini App widths', async ({ page }) => {

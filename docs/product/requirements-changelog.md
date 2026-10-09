@@ -1,5 +1,9 @@
 # Requirements Changelog
 
+## 2026-10-09 — Source-backed family/group visits
+
+- Added the source-backed group-visit behavior without introducing family accounts: one Booking carries `Количество человек` (1–20), staff may extend only that Booking's calendar occupancy through `blocking_ends_at`, existing availability/conflict rules remain authoritative, and the one existing Finance lifecycle is unchanged. Detailed family/dependent access, medical-profile sharing, guardianship, and invitations remain owner/legal decisions.
+
 ## 2026-10-08 — Gift certificates
 
 - Added the new Gift Certificate scope without rewriting v2.2 history: a fully paid Commerce purchase issues one same-currency stored-value certificate exactly once; ownership transfer uses a hashed single-use claim link; redemption is an organization-scoped, idempotent append-only Finance settlement against eligible same-currency Booking/Commerce obligations; corrections restore both Finance outstanding and certificate balance. Expiry, refunds, cash-out, cross-currency redemption, and Referral ServiceCredit coupling remain unimplemented.

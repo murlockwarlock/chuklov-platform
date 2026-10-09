@@ -546,11 +546,17 @@ Do not fold this into referral ServiceCredit or invent a parallel payment engine
 
 ## 12.2 Family / group booking
 
-Status: `PARTIAL_OLD_CONCEPT + NEW_SUBSTANTIAL_SCOPE`
+### A. Source-backed Family / Group Visit
 
-v2.2 contained a brief requirement that the interactive calendar account for family/group visits.
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
-It did **not** define the detailed family architecture now proposed.
+The source requirement is implemented as one ordinary Booking with a general `Количество человек` attribute and an optional staff-controlled extended calendar occupancy interval. The service duration and Finance obligation remain unchanged; a group visit does not create additional clients, bookings, or payments. Conflicts and availability use the existing `blocking_ends_at` interval, and changes are recorded through the existing Booking event journal with optimistic event-version protection.
+
+### B. Detailed Family / Dependents account architecture
+
+Status: `NEEDS_OWNER_DECISION`
+
+The old v2.2 source did not define the detailed family architecture now proposed.
 
 The newer CR expands this into:
 
@@ -562,7 +568,7 @@ The newer CR expands this into:
 - consent/privacy semantics;
 - possible `patient_profiles` persistence and Booking/MedicalProfile references.
 
-This detailed architecture is substantial new scope.
+This detailed architecture remains substantial new scope and is not implemented in this PR.
 
 Do not pretend the one-line v2.2 calendar mention already specified all of this.
 

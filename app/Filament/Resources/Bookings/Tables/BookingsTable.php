@@ -163,12 +163,15 @@ class BookingsTable
                     ->tooltip(__('Открыть запись'))
                     ->modalHeading(__('Просмотр записи на приём'))
                     ->modalWidth('5xl'),
-                ActionGroup::make(BookingLifecycleActions::all())
+                ...BookingLifecycleActions::primary(),
+                ActionGroup::make(BookingLifecycleActions::all(false))
                     ->label(__('Действия'))
                     ->icon('heroicon-m-ellipsis-vertical')
                     ->button()
                     ->color('gray')
-                    ->size('sm'),
+                    ->size('sm')
+                    ->dropdownPlacement('bottom-end')
+                    ->dropdownMaxHeight('min(24rem, calc(100dvh - 8rem))'),
             ]);
     }
 

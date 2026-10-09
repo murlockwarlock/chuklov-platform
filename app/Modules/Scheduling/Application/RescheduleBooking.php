@@ -132,6 +132,7 @@ final class RescheduleBooking
                 ignoreBookingId: $lockedBooking->getKey(),
                 workingLocationId: $workingLocationId,
                 locationArea: $locationArea,
+                blockingDurationMinutes: (int) $lockedBooking->startsAtUtc()->diffInMinutes($lockedBooking->blockingEndsAtUtc()),
             );
             $slot = $this->matchingSlot($availability->slots, $newStartsAt);
 

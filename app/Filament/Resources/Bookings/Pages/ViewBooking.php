@@ -66,8 +66,9 @@ class ViewBooking extends LocalizedViewRecord
                 ->url(fn (): ?string => $this->clientTelegramUrl())
                 ->openUrlInNewTab()
                 ->visible(fn (): bool => $this->clientTelegramUrl() !== null),
+            ...BookingLifecycleActions::primary(),
             ActionGroup::make([
-                ...BookingLifecycleActions::all(),
+                ...BookingLifecycleActions::all(false),
                 FinancePaymentActions::openForBooking(),
                 FinancePaymentActions::referralCreditForBooking(),
                 FinancePaymentActions::giftCertificateForBooking(),
@@ -75,7 +76,8 @@ class ViewBooking extends LocalizedViewRecord
                 ->label(__('Действия'))
                 ->icon('heroicon-o-ellipsis-horizontal')
                 ->button()
-                ->dropdownAutoPlacement(),
+                ->dropdownPlacement('bottom-end')
+                ->dropdownMaxHeight('min(24rem, calc(100dvh - 8rem))'),
         ];
     }
 

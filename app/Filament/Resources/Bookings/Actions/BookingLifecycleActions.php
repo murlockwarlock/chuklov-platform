@@ -17,6 +17,8 @@ use App\Modules\Scheduling\Application\RejectHomeVisitBooking;
 use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Application\SetOnlineMeetingUrl;
+use App\Modules\Scheduling\Application\UpdateBookingBlockingInterval;
+use App\Modules\Scheduling\Application\UpdateBookingPartySize;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\PaymentRequirementType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -26,6 +28,7 @@ use Carbon\CarbonImmutable;
 use DateTimeInterface;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
+use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -38,8 +41,16 @@ use Throwable;
 
 final class BookingLifecycleActions
 {
+    private const PRIMARY_ACTION_COUNT = 3;
+
     /** @return list<Action> */
-    public static function all(): array
+    public static function primary(): array
+    {
+        return array_slice(self::all(), 0, self::PRIMARY_ACTION_COUNT);
+    }
+
+    /** @return list<Action> */
+    public static function all(bool $includePrimary = true): array
     {
         $actor = auth()->user();
         $canManageScheduling = $actor instanceof User && app(OrganizationAuthorizer::class)->allows(
@@ -48,7 +59,7 @@ final class BookingLifecycleActions
             OrganizationPermission::ManageScheduling,
         );
 
-        return [
+        $actions = [
             Action::make('confirm')
                 ->label(__('Подтвердить запись'))
                 ->color('success')
@@ -136,6 +147,86 @@ final class BookingLifecycleActions
                         app(RejectHomeVisitBooking::class)->handle($actor, $record, (string) $data['reason']);
                         $record->refresh();
                         Notification::make()->success()->title(__('Заявка на выезд отклонена'))->send();
+                    } catch (ValidationException $exception) {
+                        self::sendErrorNotification($exception);
+                    } catch (Throwable $exception) {
+                        self::sendUnexpectedErrorNotification($exception);
+                    }
+                }),
+
+            Action::make('adjustBlockingInterval')
+                ->label(__('Изменить время занятости'))
+                ->icon('heroicon-o-clock')
+                ->modalDescription(__('Укажите, до какого времени специалист должен быть занят в календаре. Длительность услуги не изменится.'))
+                ->schema([
+                    DateTimePicker::make('blocking_ends_at')
+                        ->label(__('Занять время до'))
+                        ->default(fn (Booking $record): CarbonImmutable => $record->blockingEndsAtUtc()->setTimezone(self::viewerTimezone()))
+                        ->timezone(fn (): string => self::viewerTimezone())
+                        ->seconds(false)
+                        ->live()
+                        ->required(),
+                    Hidden::make('expected_event_version')
+                        ->default(fn (Booking $record): int => $record->event_version)
+                        ->required(),
+                ])
+                ->visible(fn (Booking $record): bool => $canManageScheduling
+                    && in_array($record->status->value, BookingStatus::blockingValues(), true))
+                ->action(function (Booking $record, array $data): void {
+                    $actor = auth()->user();
+                    abort_unless($actor instanceof User, 403);
+
+                    try {
+                        $blockingEndsAt = $data['blocking_ends_at'] instanceof DateTimeInterface
+                            ? $data['blocking_ends_at']
+                            : CarbonImmutable::parse((string) $data['blocking_ends_at'], (string) config('app.timezone'));
+                        app(UpdateBookingBlockingInterval::class)->handle(
+                            actor: $actor,
+                            booking: $record,
+                            blockingEndsAt: $blockingEndsAt,
+                            expectedEventVersion: (int) $data['expected_event_version'],
+                        );
+                        $record->refresh();
+                        Notification::make()->success()->title(__('Время занятости в календаре обновлено'))->send();
+                    } catch (ValidationException $exception) {
+                        self::sendErrorNotification($exception);
+                    } catch (Throwable $exception) {
+                        self::sendUnexpectedErrorNotification($exception);
+                    }
+                }),
+
+            Action::make('adjustPartySize')
+                ->label(__('Изменить количество человек'))
+                ->icon('heroicon-o-user-group')
+                ->modalDescription(__('Количество человек относится к одной записи и не меняет стоимость услуги.'))
+                ->schema([
+                    TextInput::make('party_size')
+                        ->label(__('Количество человек'))
+                        ->numeric()
+                        ->integer()
+                        ->minValue(1)
+                        ->maxValue((int) config('scheduling.max_party_size', 20))
+                        ->default(fn (Booking $record): int => (int) $record->party_size)
+                        ->required(),
+                    Hidden::make('expected_event_version')
+                        ->default(fn (Booking $record): int => $record->event_version)
+                        ->required(),
+                ])
+                ->visible(fn (Booking $record): bool => $canManageScheduling
+                    && ! in_array($record->status->value, BookingStatus::terminalValues(), true))
+                ->action(function (Booking $record, array $data): void {
+                    $actor = auth()->user();
+                    abort_unless($actor instanceof User, 403);
+
+                    try {
+                        app(UpdateBookingPartySize::class)->handle(
+                            actor: $actor,
+                            booking: $record,
+                            partySize: (int) $data['party_size'],
+                            expectedEventVersion: (int) $data['expected_event_version'],
+                        );
+                        $record->refresh();
+                        Notification::make()->success()->title(__('Количество человек обновлено'))->send();
                     } catch (ValidationException $exception) {
                         self::sendErrorNotification($exception);
                     } catch (Throwable $exception) {
@@ -350,6 +441,8 @@ final class BookingLifecycleActions
                     }
                 }),
         ];
+
+        return $includePrimary ? $actions : array_slice($actions, self::PRIMARY_ACTION_COUNT);
     }
 
     private static function sendErrorNotification(ValidationException $exception): void

@@ -206,6 +206,8 @@ final class ListClientBookings
             return match ($event->event_type) {
                 BookingEventType::Created => 'Booking created',
                 BookingEventType::Rescheduled => 'Booking rescheduled',
+                BookingEventType::BlockingIntervalUpdated => 'Calendar occupied time updated',
+                BookingEventType::PartySizeUpdated => 'Number of people updated',
                 BookingEventType::Cancelled => 'Booking cancelled',
                 BookingEventType::Completed => 'Visit completed',
                 BookingEventType::NoShow => 'No-show recorded',
@@ -220,6 +222,8 @@ final class ListClientBookings
         return match ($event->event_type) {
             BookingEventType::Created => 'Запись создана',
             BookingEventType::Rescheduled => 'Запись перенесена',
+            BookingEventType::BlockingIntervalUpdated => 'Время занято в календаре изменено',
+            BookingEventType::PartySizeUpdated => 'Количество человек изменено',
             BookingEventType::Cancelled => 'Запись отменена',
             BookingEventType::Completed => 'Визит завершён',
             BookingEventType::NoShow => 'Неявка отмечена',

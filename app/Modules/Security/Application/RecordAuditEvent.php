@@ -96,6 +96,8 @@ class RecordAuditEvent
         'booking.confirmed' => ['source', 'status', 'visit_format'],
         'booking.cancelled' => ['source', 'status', 'inside_cutoff'],
         'booking.rescheduled' => ['source', 'status', 'visit_format'],
+        'booking.blocking_interval.updated' => ['source', 'status', 'visit_format'],
+        'booking.party_size.updated' => ['source', 'status', 'visit_format'],
         'booking.completed' => ['source', 'status', 'visit_format'],
         'booking.no_show' => ['source', 'status', 'visit_format'],
         'booking.home_visit.withdrawn' => ['source', 'status', 'inside_cutoff'],

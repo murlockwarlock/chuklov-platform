@@ -9,6 +9,8 @@ use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Filament\Resources\Bookings\Support\BookingAvailabilityOptions;
 use App\Models\User;
+use App\Modules\Finance\Application\SaveCurrencyConfiguration;
+use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
@@ -20,13 +22,21 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
+use App\Modules\Scheduling\Application\CalculateAvailability;
+use App\Modules\Scheduling\Application\ConfirmBooking;
 use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
 use App\Modules\Scheduling\Application\CreateMultipleBookings as CreateMultipleBookingsAction;
+use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Application\SetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
+use App\Modules\Scheduling\Application\UpdateBookingBlockingInterval;
+use App\Modules\Scheduling\Application\UpdateBookingPartySize;
+use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\ValueObjects\AvailabilitySlot;
+use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
@@ -484,7 +494,7 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->set('data.location', null)
             ->call('create')
             ->assertHasFormErrors(['party_size', 'location'])
-            ->assertSee('Укажите количество участников выезда.')
+            ->assertSee('Укажите количество человек.')
             ->assertSee('Укажите адрес выезда.');
 
         self::assertStringNotContainsString('validation.required', $homeVisit->html());
@@ -870,13 +880,37 @@ class MilestoneFourCrmBookingTest extends TestCase
             'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
         ]);
 
-        Livewire::actingAs($admin)
+        $component = Livewire::actingAs($admin)
             ->test(ViewBooking::class, ['record' => $booking->getKey()])
             ->assertSuccessful()
+            ->assertActionVisible('confirm')
             ->assertActionExists('confirm')
             ->assertActionExists('reschedule')
             ->assertActionExists('cancel')
             ->assertActionExists('noShow');
+
+        self::assertSame(1, substr_count($component->html(), 'Подтвердить запись'));
+    }
+
+    public function test_booking_list_exposes_confirmation_as_a_visible_primary_action(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $booking = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'status' => BookingStatus::Requested,
+            'visit_format' => VisitFormat::Office,
+            'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
+            'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(ListBookings::class)
+            ->assertTableActionExists('confirm', null, $booking)
+            ->assertTableActionVisible('confirm', $booking);
     }
 
     public function test_view_booking_renders_event_history_as_structured_entries(): void
@@ -956,7 +990,7 @@ class MilestoneFourCrmBookingTest extends TestCase
             'client_id' => $client->id,
             'specialist_id' => $specialist->id,
             'service_id' => $service->id,
-            'status' => BookingStatus::Requested,
+            'status' => BookingStatus::PendingReview,
             'visit_format' => VisitFormat::HomeVisit,
             'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
@@ -965,6 +999,10 @@ class MilestoneFourCrmBookingTest extends TestCase
 
         $component = Livewire::actingAs($admin)
             ->test(ViewBooking::class, ['record' => $booking->getKey()]);
+
+        $component
+            ->assertActionVisible('approveHomeVisit')
+            ->assertActionVisible('rejectHomeVisit');
 
         foreach (['approveHomeVisit', 'rejectHomeVisit', 'complete', 'noShow', 'cancel'] as $actionName) {
             self::assertTrue($component->instance()->getAction($actionName)->isConfirmationRequired(), $actionName);
@@ -1048,6 +1086,300 @@ class MilestoneFourCrmBookingTest extends TestCase
             ->assertNotified('Запись подтверждена')
             ->assertSee('Подтверждена')
             ->assertDontSee('Ожидает подтверждения');
+    }
+
+    public function test_crm_can_create_one_group_booking_with_an_extended_calendar_block(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $start = CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC');
+
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $start,
+            format: VisitFormat::Office,
+            partySize: 3,
+            blockingEndsAt: $start->addHours(5),
+        );
+
+        self::assertSame(1, Booking::query()->count());
+        self::assertSame(3, $booking->party_size);
+        self::assertSame($start->addHour()->toIso8601String(), $booking->endsAtUtc()->toIso8601String());
+        self::assertSame($start->addHours(5)->toIso8601String(), $booking->blockingEndsAtUtc()->toIso8601String());
+
+        $availability = app(CalculateAvailability::class)->forStaff(
+            actor: $admin,
+            specialistId: $specialist->getKey(),
+            serviceId: $service->getKey(),
+            dateFrom: $start->toDateString(),
+            dateTo: $start->toDateString(),
+            format: VisitFormat::Office,
+            displayTimezone: 'UTC',
+        );
+        self::assertFalse(collect($availability->slots)->contains(
+            static fn (AvailabilitySlot $slot): bool => $slot->startsAt->equalTo($start->addMinutes(75)),
+        ));
+    }
+
+    public function test_group_party_size_is_bounded_and_portal_cannot_reserve_an_extended_block(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $start = CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC');
+
+        foreach ([0, 21] as $partySize) {
+            try {
+                app(CreateBookingAction::class)->handle(
+                    actor: $admin,
+                    client: $client,
+                    specialist: $specialist,
+                    service: $service,
+                    startsAt: $start,
+                    format: VisitFormat::Office,
+                    partySize: $partySize,
+                );
+                self::fail('Invalid party size was accepted.');
+            } catch (ValidationException $exception) {
+                self::assertArrayHasKey('partySize', $exception->errors());
+            }
+        }
+
+        self::expectException(AuthorizationException::class);
+        app(CreateBookingAction::class)->handle(
+            actor: $client,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $start,
+            format: VisitFormat::Office,
+            partySize: 3,
+            blockingEndsAt: $start->addHours(3),
+        );
+    }
+
+    public function test_crm_form_persists_group_size_and_extended_calendar_block(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->enableClientRecords($organization);
+        $this->resolveFilamentContext($admin, $organization);
+        $start = CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC');
+
+        Livewire::actingAs($admin)
+            ->test(CreateBooking::class)
+            ->fillForm([
+                'client_id' => $client->getKey(),
+                'service_id' => $service->getKey(),
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => $start,
+                'visit_format' => VisitFormat::Office->value,
+                'party_size' => 3,
+                'blocking_ends_at' => $start->addHours(3)->addMinutes(45),
+            ])
+            ->call('create')
+            ->assertHasNoErrors()
+            ->assertRedirect();
+
+        $booking = Booking::query()->sole();
+        self::assertSame(3, $booking->party_size);
+        self::assertSame($start->addHour()->toIso8601String(), $booking->endsAtUtc()->toIso8601String());
+        self::assertSame($start->addHours(3)->addMinutes(45)->toIso8601String(), $booking->blockingEndsAtUtc()->toIso8601String());
+    }
+
+    public function test_group_party_size_does_not_multiply_the_single_booking_financial_obligation(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $service->forceFill([
+            'price_minor' => 10000,
+            'price_currency' => 'RUB',
+            'payment_requirement' => ServicePaymentRequirement::PrepayFull->value,
+        ])->save();
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'RUB',
+            'display_currency' => 'RUB',
+            'allowed_currencies' => ['RUB'],
+            'force_single_currency' => true,
+            'rounding_mode' => 'half_up',
+        ]);
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            partySize: 3,
+        );
+
+        app(ConfirmBooking::class)->handle($admin, $booking);
+
+        $obligation = FinancialObligation::query()->where('booking_id', $booking->getKey())->sole();
+        self::assertSame(10000, $obligation->amount_minor);
+    }
+
+    public function test_staff_can_update_the_reserved_block_without_changing_service_end_and_journal_records_it(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $start = CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC');
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $start,
+            format: VisitFormat::Office,
+        );
+
+        $updated = app(UpdateBookingBlockingInterval::class)->handle(
+            actor: $admin,
+            booking: $booking,
+            blockingEndsAt: $start->addHours(3),
+            expectedEventVersion: 1,
+        );
+
+        self::assertSame($start->addHour()->toIso8601String(), $updated->endsAtUtc()->toIso8601String());
+        self::assertSame($start->addHours(3)->toIso8601String(), $updated->blockingEndsAtUtc()->toIso8601String());
+        self::assertSame(2, $updated->event_version);
+        $event = $updated->events()->where('event_type', BookingEventType::BlockingIntervalUpdated->value)->sole();
+        self::assertSame($start->addMinutes(75)->toIso8601String(), $event->old_values['blocking_ends_at']);
+        self::assertSame($start->addHours(3)->toIso8601String(), $event->new_values['blocking_ends_at']);
+
+        $this->expectException(ValidationException::class);
+        app(UpdateBookingBlockingInterval::class)->handle(
+            actor: $admin,
+            booking: $updated,
+            blockingEndsAt: $start->addHours(4),
+            expectedEventVersion: 1,
+        );
+    }
+
+    public function test_crm_blocking_interval_action_keeps_the_viewer_timezone_when_submitting(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $specialist->update(['viewer_timezone' => 'Asia/Almaty']);
+        $this->resolveFilamentContext($admin, $organization);
+        $start = CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC');
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $start,
+            format: VisitFormat::Office,
+        );
+
+        Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->mountAction('adjustBlockingInterval')
+            ->setActionData([
+                'blocking_ends_at' => '2026-04-06 11:00',
+                'expected_event_version' => 1,
+            ])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotified('Время занятости в календаре обновлено');
+
+        self::assertSame(
+            '2026-04-06T11:00:00+00:00',
+            $booking->fresh()->blockingEndsAtUtc()->toIso8601String(),
+        );
+    }
+
+    public function test_staff_can_edit_group_size_on_an_existing_booking_and_journal_records_it(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $start = CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC');
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $start,
+            format: VisitFormat::Office,
+        );
+
+        $updated = app(UpdateBookingPartySize::class)->handle(
+            actor: $admin,
+            booking: $booking,
+            partySize: 3,
+            expectedEventVersion: 1,
+        );
+
+        self::assertSame(3, $updated->party_size);
+        self::assertSame(2, $updated->event_version);
+        $event = $updated->events()->where('event_type', BookingEventType::PartySizeUpdated->value)->sole();
+        self::assertSame(1, $event->old_values['party_size']);
+        self::assertSame(3, $event->new_values['party_size']);
+
+        $this->expectException(ValidationException::class);
+        app(UpdateBookingPartySize::class)->handle(
+            actor: $admin,
+            booking: $updated,
+            partySize: 4,
+            expectedEventVersion: 1,
+        );
+    }
+
+    public function test_extended_block_rejects_an_existing_overlapping_booking(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $start = CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC');
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $start,
+            format: VisitFormat::Office,
+        );
+        app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $start->addMinutes(150),
+            format: VisitFormat::Office,
+        );
+
+        $this->expectException(ValidationException::class);
+        app(UpdateBookingBlockingInterval::class)->handle(
+            actor: $admin,
+            booking: $booking,
+            blockingEndsAt: $start->addHours(5),
+            expectedEventVersion: 1,
+        );
+    }
+
+    public function test_reschedule_preserves_the_custom_occupied_span(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $start = CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC');
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $start,
+            format: VisitFormat::Office,
+            blockingEndsAt: $start->addHours(3),
+        );
+
+        $rescheduled = app(RescheduleBooking::class)->handle(
+            actor: $admin,
+            booking: $booking,
+            newStartsAt: $start->addHours(3)->addMinutes(45),
+            expectedEventVersion: 1,
+        );
+
+        self::assertSame($start->addHours(4)->addMinutes(45)->toIso8601String(), $rescheduled->endsAtUtc()->toIso8601String());
+        self::assertSame($start->addHours(6)->addMinutes(45)->toIso8601String(), $rescheduled->blockingEndsAtUtc()->toIso8601String());
     }
 
     /** @return array{Organization, User, Client, Specialist, Service} */

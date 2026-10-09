@@ -123,25 +123,26 @@ const location = computed({
       </div>
     </dl>
 
+    <div class="portal-field">
+      <label
+        for="booking-party-size"
+        class="portal-label"
+      >{{ t('booking.partySize') }}</label>
+      <input
+        id="booking-party-size"
+        v-model.number="partySize"
+        type="number"
+        min="1"
+        max="20"
+        required
+        class="portal-input"
+      >
+    </div>
+
     <div
       v-if="props.format === 'home'"
       class="portal-grid portal-grid--two"
     >
-      <div class="portal-field">
-        <label
-          for="booking-party-size"
-          class="portal-label"
-        >{{ t('booking.partySize') }}</label>
-        <input
-          id="booking-party-size"
-          v-model.number="partySize"
-          type="number"
-          min="1"
-          max="20"
-          required
-          class="portal-input"
-        >
-      </div>
       <div
         v-if="props.hasLocationDayRules"
         class="portal-field"

@@ -740,6 +740,75 @@ test('staff can create a backdated booking from the ordinary availability form',
     await expect(page.getByText('Ожидает подтверждения', { exact: true })).toBeVisible();
 });
 
+test('staff can create a group booking with a manually extended calendar block', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto('/admin/bookings/create');
+    await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
+
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
+    await page.getByText(fixture.specialistName, { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
+    await page.getByRole('option', { name: fixture.serviceName, exact: true }).click();
+    await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
+    await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
+    await page.getByLabel('Формат визита').selectOption('office');
+
+    const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
+    await workingLocation.click();
+    await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.workingLocationName }).first().click();
+
+    const dateInput = page.getByLabel('Дата');
+    await dateInput.fill(fixture.bookingStartsAt.slice(0, 10));
+    await dateInput.blur();
+    const bookingTime = page.getByRole('combobox', { name: /^Доступное время/ }).first();
+    await bookingTime.click();
+    await page.locator('.fi-select-input-option:visible')
+        .filter({ hasText: fixture.bookingStartsAt.slice(11, 16) })
+        .first()
+        .click();
+
+    const partySize = page.getByRole('spinbutton', { name: /^Количество человек/ });
+    await expect(partySize).toHaveValue('1');
+    await partySize.fill('3');
+
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
+    await expect(page.getByText('Количество человек', { exact: true })).toBeVisible();
+    await expect(page.getByText('3', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Действия', exact: true }).click();
+    await page.getByRole('button', { name: 'Изменить время занятости', exact: true }).click();
+    const blockingDialog = page.locator('.fi-modal-window:visible').last();
+    await expect(blockingDialog).toBeVisible();
+    const blockingEndsAt = blockingDialog.locator('input[type="datetime-local"]');
+    await expect(blockingEndsAt).toHaveCount(1);
+    await blockingEndsAt.fill(`${fixture.bookingStartsAt.slice(0, 10)}T14:00`);
+    await expect(blockingEndsAt).toHaveValue(`${fixture.bookingStartsAt.slice(0, 10)}T14:00`);
+    await blockingEndsAt.blur();
+    await page.waitForLoadState('networkidle');
+    await blockingDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Время занятости в календаре обновлено', { exact: true })).toBeVisible();
+    await expect(page.getByText('Время занято в календаре', { exact: true })).toBeVisible();
+
+    await page.goto(`/admin/bookings?view=list&week=${fixture.bookingStartsAt.slice(0, 10)}&specialist_id=${fixture.specialistId}`);
+    await expect(page.getByRole('heading', { name: 'Журнал записей', exact: true })).toBeVisible();
+    await searchTableFor(page, fixture.clientName);
+    const bookingRow = page.getByRole('row').filter({ hasText: fixture.clientName }).filter({ hasText: fixture.serviceName }).first();
+    await bookingRow.getByRole('button', { name: 'Действия', exact: true }).click();
+    const tableBookingActionsMenu = page.locator('.fi-dropdown-panel:visible').last();
+    await expect(tableBookingActionsMenu).toBeVisible();
+    const tableBlockingAction = tableBookingActionsMenu.getByRole('button', { name: 'Изменить время занятости', exact: true });
+    await expect(tableBlockingAction).toBeVisible();
+    await tableBlockingAction.click();
+    await expect(page.locator('.fi-modal-window:visible').last()).toBeVisible();
+});
+
 test('staff Messages opens at the latest history and preserves intentional scrolling', async ({ page }) => {
     test.setTimeout(90_000);
 
@@ -1075,7 +1144,6 @@ test('staff can complete a visit and record a manual payment through the normal 
     await page.goto(`/admin/bookings/${fixture.financeBookingId}`);
     await expect(page.getByRole('heading', { name: 'Запись на приём', exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Действия', exact: true }).click();
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     const confirmationDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Подтвердить запись' }).last();
     await expect(confirmationDialog).toBeVisible();
@@ -1083,10 +1151,13 @@ test('staff can complete a visit and record a manual payment through the normal 
     await expect(page.getByText('Запись подтверждена', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Действия', exact: true }).click();
+    const bookingActionsMenu = page.locator('.fi-dropdown-panel:visible').last();
+    await expect(bookingActionsMenu).toBeVisible();
+    await expect(bookingActionsMenu.getByRole('button', { name: 'Завершить визит', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Завершить визит', exact: true }).click();
     const completionDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Завершить визит' }).last();
     await expect(completionDialog).toBeVisible();
-    await completionDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await completionDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
     await expect(page.getByText('Визит успешно завершён', { exact: true })).toBeVisible();
 
     const recordPaymentButton = page.getByRole('button', { name: 'Записать оплату', exact: true });
