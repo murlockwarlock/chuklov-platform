@@ -1229,6 +1229,38 @@ class MilestoneFourCrmBookingTest extends TestCase
         );
     }
 
+    public function test_crm_blocking_interval_action_keeps_the_viewer_timezone_when_submitting(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $specialist->update(['viewer_timezone' => 'Asia/Almaty']);
+        $this->resolveFilamentContext($admin, $organization);
+        $start = CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC');
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $start,
+            format: VisitFormat::Office,
+        );
+
+        Livewire::actingAs($admin)
+            ->test(ViewBooking::class, ['record' => $booking->getKey()])
+            ->mountAction('adjustBlockingInterval')
+            ->setActionData([
+                'blocking_ends_at' => '2026-04-06 11:00',
+                'expected_event_version' => 1,
+            ])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertNotified('Время занятости в календаре обновлено');
+
+        self::assertSame(
+            '2026-04-06T11:00:00+00:00',
+            $booking->fresh()->blockingEndsAtUtc()->toIso8601String(),
+        );
+    }
+
     public function test_staff_can_edit_group_size_on_an_existing_booking_and_journal_records_it(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();

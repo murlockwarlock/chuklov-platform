@@ -171,7 +171,7 @@ final class BookingLifecycleActions
                     try {
                         $blockingEndsAt = $data['blocking_ends_at'] instanceof DateTimeInterface
                             ? $data['blocking_ends_at']
-                            : CarbonImmutable::parse((string) $data['blocking_ends_at'], self::viewerTimezone());
+                            : CarbonImmutable::parse((string) $data['blocking_ends_at'], (string) config('app.timezone'));
                         app(UpdateBookingBlockingInterval::class)->handle(
                             actor: $actor,
                             booking: $record,
