@@ -786,9 +786,12 @@ test('staff can create a group booking with a manually extended calendar block',
     await page.getByRole('button', { name: 'Изменить время занятости', exact: true }).click();
     const blockingDialog = page.locator('.fi-modal-window:visible').last();
     await expect(blockingDialog).toBeVisible();
-    const blockingEndsAt = blockingDialog.getByRole('textbox', { name: /^Занять время до/ });
-    await blockingEndsAt.fill(`${fixture.bookingStartsAt.slice(0, 10)}T14:00`);
-    await blockingEndsAt.blur();
+    const blockingPicker = blockingDialog.locator('.fi-fo-date-time-picker');
+    await blockingPicker.locator('button.fi-fo-date-time-picker-trigger').click();
+    const blockingHour = blockingPicker.locator('.fi-fo-date-time-picker-time-inputs input').first();
+    await blockingHour.fill('14');
+    await blockingHour.blur();
+    await expect(blockingHour).toHaveValue('14');
     await blockingDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Время занятости в календаре обновлено', { exact: true })).toBeVisible();
     await expect(page.getByText('Время занято в календаре', { exact: true })).toBeVisible();
