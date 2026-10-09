@@ -791,6 +791,7 @@ test('staff can create a group booking with a manually extended calendar block',
     await blockingEndsAt.fill(`${fixture.bookingStartsAt.slice(0, 10)}T14:00`);
     await expect(blockingEndsAt).toHaveValue(`${fixture.bookingStartsAt.slice(0, 10)}T14:00`);
     await blockingEndsAt.blur();
+    await page.waitForLoadState('networkidle');
     await blockingDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Время занятости в календаре обновлено', { exact: true })).toBeVisible();
     await expect(page.getByText('Время занято в календаре', { exact: true })).toBeVisible();
