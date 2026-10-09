@@ -169,7 +169,9 @@ class BookingsTable
                     ->icon('heroicon-m-ellipsis-vertical')
                     ->button()
                     ->color('gray')
-                    ->size('sm'),
+                    ->size('sm')
+                    ->dropdownPlacement('bottom-end')
+                    ->dropdownMaxHeight('min(24rem, calc(100dvh - 8rem))'),
             ]);
     }
 

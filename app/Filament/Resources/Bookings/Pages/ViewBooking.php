@@ -76,7 +76,8 @@ class ViewBooking extends LocalizedViewRecord
                 ->label(__('Действия'))
                 ->icon('heroicon-o-ellipsis-horizontal')
                 ->button()
-                ->dropdownAutoPlacement(),
+                ->dropdownPlacement('bottom-end')
+                ->dropdownMaxHeight('min(24rem, calc(100dvh - 8rem))'),
         ];
     }
 
