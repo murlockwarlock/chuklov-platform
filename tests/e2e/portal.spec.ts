@@ -43,13 +43,22 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
         $withCompanionPending = getenv('PLAYWRIGHT_WITH_COMPANION_PENDING') === '1';
         $withCompanionFailure = getenv('PLAYWRIGHT_WITH_COMPANION_FAILURE') === '1';
-        \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
-            'organization_id' => $organization->getKey(),
-            'feature_key' => 'service_catalog',
-            'enabled' => true,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]], ['organization_id', 'feature_key'], ['enabled', 'updated_at']);
+        \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([
+            [
+                'organization_id' => $organization->getKey(),
+                'feature_key' => 'service_catalog',
+                'enabled' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'organization_id' => $organization->getKey(),
+                'feature_key' => 'client_records',
+                'enabled' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ], ['organization_id', 'feature_key'], ['enabled', 'updated_at']);
         foreach ([
             'offer' => 'offer_consent',
             'privacy' => 'privacy_consent',
