@@ -777,7 +777,7 @@ test('staff can create a group booking with a manually extended calendar block',
     await expect(partySize).toHaveValue('1');
     await partySize.fill('3');
 
-    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
     await expect(page.getByText('Количество человек', { exact: true })).toBeVisible();
     await expect(page.getByText('3', { exact: true })).toBeVisible();
