@@ -1132,7 +1132,7 @@ test('staff can create and fully settle a gift certificate through the CRM catal
 
     const currency = page.getByRole('combobox', { name: 'Валюта', exact: true });
     await currency.click();
-    await page.locator('.fi-select-input-option:visible').filter({ hasText: 'USD' }).last().click();
+    await page.getByRole('option', { name: 'Доллар США', exact: true }).click();
     await expect(page.getByRole('switch', { name: 'Показывать клиентам*', exact: true })).toBeChecked();
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
 
