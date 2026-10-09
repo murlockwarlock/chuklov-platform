@@ -1128,7 +1128,7 @@ test('staff can create and fully settle a gift certificate through the CRM catal
     await expect(page.getByLabel('Длительность (минуты)', { exact: true })).not.toBeVisible();
     await expect(page.getByLabel('Доступные форматы визита', { exact: true })).not.toBeVisible();
     await page.getByLabel('Краткое описание*', { exact: true }).fill('Сертификат для E2E проверки CRM.');
-    await page.getByLabel('Цена', { exact: true }).fill('10000');
+    await page.getByPlaceholder('15000 или 15000.50', { exact: true }).fill('10000');
 
     const currency = page.getByRole('combobox', { name: 'Валюта', exact: true });
     await currency.click();
