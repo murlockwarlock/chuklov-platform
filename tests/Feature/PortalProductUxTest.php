@@ -149,10 +149,11 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('portal-report-metrics', $surveyReport);
         self::assertStringNotContainsString('grid grid-cols-1 gap-3 sm:grid-cols-2', $surveyReport);
         self::assertStringContainsString('active="more"', $section);
-        self::assertSame(5, substr_count($more, 'class="portal-list__row"'));
+        self::assertSame(6, substr_count($more, 'class="portal-list__row"'));
         self::assertStringContainsString("t('more.title')", $more);
         self::assertStringContainsString("t('more.profile')", $more);
         self::assertStringContainsString("t('more.finance')", $more);
+        self::assertStringContainsString("t('more.giftCertificates')", $more);
         self::assertStringContainsString("t('more.partnership')", $more);
         self::assertStringContainsString("t('more.feedback')", $more);
         self::assertStringNotContainsString("t('more.business')", $more);

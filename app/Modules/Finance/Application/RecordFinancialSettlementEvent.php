@@ -2,6 +2,8 @@
 
 namespace App\Modules\Finance\Application;
 
+use App\Models\User;
+use App\Modules\Commerce\Application\CompletePaidPurchase;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Integration\Application\RecordIntegrationEvent;
@@ -16,6 +18,7 @@ final class RecordFinancialSettlementEvent
 {
     public function __construct(
         private readonly ReconcileFinancialObligation $reconciliation,
+        private readonly CompletePaidPurchase $purchaseCompletion,
         private readonly RecordIntegrationEvent $events,
         private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
@@ -24,6 +27,7 @@ final class RecordFinancialSettlementEvent
         FinancialObligation $obligation,
         FinancialLedgerEntry $ledgerEntry,
         DateTimeInterface $occurredAt,
+        ?User $actor = null,
     ): void {
         if ((int) $obligation->organization_id !== (int) $ledgerEntry->organization_id
             || (int) $ledgerEntry->obligation_id !== (int) $obligation->getKey()) {
@@ -39,6 +43,8 @@ final class RecordFinancialSettlementEvent
         if (! $reconciliation->isSettled()) {
             throw new RuntimeException('Only a settled financial obligation can emit settlement evidence.');
         }
+
+        $this->purchaseCompletion->handleSettledObligation($obligation, $actor);
 
         $organization = $obligation->organization()->firstOrFail();
         $occurred = CarbonImmutable::instance($occurredAt)->utc();

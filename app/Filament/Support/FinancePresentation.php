@@ -4,6 +4,9 @@ namespace App\Filament\Support;
 
 use App\Filament\Resources\FinancialObligations\FinancialObligationResource;
 use App\Models\User;
+use App\Modules\Commerce\Application\GiftCertificateBalanceProjection;
+use App\Modules\Commerce\Domain\Models\GiftCertificate;
+use App\Modules\Commerce\Domain\Models\PurchaseItem;
 use App\Modules\Finance\Application\BookingFinanceSummary;
 use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinanceAuthorization;
@@ -152,6 +155,67 @@ final class FinancePresentation
 
         return $summary?->obligation instanceof FinancialObligation
             && $this->canApplyReferralCredit($summary->obligation);
+    }
+
+    public function canApplyGiftCertificate(FinancialObligation $record): bool
+    {
+        $actor = auth()->user();
+
+        return $actor instanceof User
+            && $this->authorization->allowsManage($actor)
+            && ($reconciliation = $this->reconciliation($record)) !== null
+            && $reconciliation->outstanding->isPositive()
+            && ! $this->isGiftCertificatePurchase($record)
+            && $this->giftCertificateOptions($record) !== [];
+    }
+
+    public function canApplyGiftCertificateForBooking(Booking $booking): bool
+    {
+        $summary = $this->bookingSummary($booking);
+
+        return $summary?->obligation instanceof FinancialObligation
+            && $this->canApplyGiftCertificate($summary->obligation);
+    }
+
+    /** @return array<string, string> */
+    public function giftCertificateOptions(FinancialObligation $record): array
+    {
+        $settlementCurrency = $this->settlementCurrency($record);
+        if ($settlementCurrency === null || $this->isGiftCertificatePurchase($record)) {
+            return [];
+        }
+
+        $options = [];
+        $certificates = GiftCertificate::query()
+            ->where('organization_id', $this->context->id())
+            ->where('current_holder_client_id', $record->getRawOriginal('client_id'))
+            ->with('purchaser')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($certificates as $certificate) {
+            if ($certificate->currency->value !== $settlementCurrency) {
+                continue;
+            }
+
+            try {
+                $balance = app(GiftCertificateBalanceProjection::class)->balance($certificate);
+            } catch (\Throwable) {
+                continue;
+            }
+            if (! $balance->isPositive()) {
+                continue;
+            }
+
+            $purchaser = $certificate->getRelationValue('purchaser');
+            $purchaserName = $purchaser instanceof Client && is_string($purchaser->full_name)
+                ? $purchaser->full_name
+                : __('Подарочный сертификат');
+            $options[(string) $certificate->getKey()] = $this->money($balance)
+                .' · '.$purchaserName;
+        }
+
+        return $options;
     }
 
     public function referralCreditAvailable(FinancialObligation $record): ?Money
@@ -427,6 +491,7 @@ final class FinancePresentation
                 ? __('Тестовая оплата')
                 : __('Способ оплаты недоступен'),
             'referral_credit' => __('Реферальный бонус'),
+            'gift_certificate_redemption' => __('Подарочный сертификат'),
             'manual_payment' => match ($entry->getRawOriginal('payment_method')) {
                 'cash' => __('Наличные'),
                 'bank_transfer' => __('Банковский перевод'),
@@ -438,6 +503,28 @@ final class FinancePresentation
             },
             default => __('Платёж недоступен'),
         };
+    }
+
+    private function settlementCurrency(FinancialObligation $record): ?string
+    {
+        try {
+            return $this->contract->currency($record->getRawOriginal('settlement_currency'))->value;
+        } catch (UnexpectedValueException) {
+            return null;
+        }
+    }
+
+    private function isGiftCertificatePurchase(FinancialObligation $record): bool
+    {
+        if ($record->purchase_id === null) {
+            return false;
+        }
+
+        return $record->purchase()
+            ->with('items')
+            ->first()?->items
+            ?->contains(static fn (PurchaseItem $item): bool => is_array($snapshot = $item->getAttribute('product_snapshot'))
+                && ($snapshot['kind'] ?? null) === 'gift_certificate') === true;
     }
 
     public function bookingAmount(BookingFinanceSummary $summary): string

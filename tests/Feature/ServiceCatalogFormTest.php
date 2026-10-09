@@ -120,6 +120,17 @@ final class ServiceCatalogFormTest extends TestCase
         );
     }
 
+    public function test_gift_certificate_form_renders_nominal_helper_text(): void
+    {
+        [, $admin] = $this->fixture();
+
+        Testable::actingAs($admin);
+        Testable::create(CreateService::class)
+            ->set('data.catalog_type', CatalogItemType::GiftCertificate->value)
+            ->assertFormFieldVisible('price')
+            ->assertSee('Цена сертификата одновременно является его номиналом.');
+    }
+
     public function test_physical_product_form_hides_booking_configuration_and_existing_rows_remain_editable(): void
     {
         [$organization, $admin] = $this->fixture();

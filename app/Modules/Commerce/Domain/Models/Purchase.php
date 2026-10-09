@@ -13,7 +13,18 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Support\Carbon;
 
+/**
+ * @property int $organization_id
+ * @property int $client_id
+ * @property PurchaseStatus $status
+ * @property int $total_amount_minor
+ * @property CurrencyCode $currency
+ * @property array<string, mixed> $purchase_snapshot
+ * @property Carbon|null $paid_at
+ * @property Carbon|null $refunded_at
+ */
 #[Fillable([])]
 class Purchase extends Model
 {

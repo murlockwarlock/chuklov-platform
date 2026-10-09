@@ -142,6 +142,59 @@ final class AnalyticsProjectionTest extends TestCase
         self::assertSame($firstPayment->getKey(), FinancialLedgerEntry::query()->whereKey($firstPayment->getKey())->value('id'));
     }
 
+    public function test_gift_certificate_redemption_is_not_double_counted_as_monetary_revenue(): void
+    {
+        $now = CarbonImmutable::parse('2026-08-27 12:00:00', 'UTC');
+        [$organization, $admin] = $this->organizationWithAdmin('UTC');
+        $client = $this->client($organization, '2026-08-10 10:00:00');
+        $purchaseBooking = $this->booking($client, '2026-08-10 10:00:00');
+        $serviceBooking = $this->booking($client, '2026-08-11 10:00:00');
+        $this->configureFinance($organization);
+        $purchaseObligation = $this->obligation(
+            $organization,
+            $client,
+            $purchaseBooking,
+            10000,
+            'USD',
+            '2026-08-10 10:00:00',
+            'gift-certificate-purchase',
+        );
+        $serviceObligation = $this->obligation(
+            $organization,
+            $client,
+            $serviceBooking,
+            10000,
+            'USD',
+            '2026-08-11 10:00:00',
+            'gift-certificate-service',
+        );
+        $this->ledger($purchaseObligation, 10000, 'USD', '2026-08-12 10:00:00', 'gift-certificate-cash-settlement');
+        $this->ledger(
+            $serviceObligation,
+            6000,
+            'USD',
+            '2026-08-13 10:00:00',
+            'gift-certificate-redemption',
+            baseAmountMinor: 6000,
+            entryType: 'gift_certificate_redemption',
+            source: 'gift_certificate',
+            paymentMethod: null,
+        );
+
+        app(OrganizationContext::class)->set($organization);
+        $finance = app(FinanceAnalytics::class)->handle(
+            $admin,
+            $this->customPeriod($organization, '2026-08-01', '2026-08-27', $now),
+        );
+
+        self::assertTrue($finance->available);
+        self::assertSame('10000', $finance->revenueMinor);
+        self::assertSame('10000', $finance->averageReceiptMinor);
+        self::assertSame('10000', $finance->realizedLtvMinor);
+        self::assertSame(1, $finance->receiptCount);
+        self::assertSame('4000', $finance->debtMinor);
+    }
+
     public function test_period_boundary_uses_organization_timezone_and_half_open_range(): void
     {
         $now = CarbonImmutable::parse('2026-08-27 12:00:00', 'UTC');
@@ -615,14 +668,17 @@ final class AnalyticsProjectionTest extends TestCase
         string $key,
         ?FinancialLedgerEntry $corrects = null,
         ?int $baseAmountMinor = null,
+        string $entryType = 'manual_payment',
+        string $source = 'crm',
+        ?string $paymentMethod = 'cash',
     ): FinancialLedgerEntry {
         $baseAmountMinor ??= $amountMinor;
         $entry = new FinancialLedgerEntry;
         $entry->forceFill([
             'organization_id' => $obligation->organization_id,
             'obligation_id' => $obligation->getKey(),
-            'entry_type' => $corrects === null ? 'manual_payment' : 'correction',
-            'source' => 'crm',
+            'entry_type' => $corrects === null ? $entryType : 'correction',
+            'source' => $source,
             'amount_minor' => $amountMinor,
             'currency' => $currency,
             'payment_amount_minor' => $amountMinor,
@@ -634,7 +690,7 @@ final class AnalyticsProjectionTest extends TestCase
             'settlement_amount_minor' => $amountMinor,
             'settlement_currency' => $currency,
             'conversion_snapshot' => null,
-            'payment_method' => 'cash',
+            'payment_method' => $paymentMethod,
             'occurred_at' => CarbonImmutable::parse($occurredAt, 'UTC'),
             'note' => null,
             'actor_user_id' => null,

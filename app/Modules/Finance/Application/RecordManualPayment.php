@@ -227,7 +227,7 @@ final class RecordManualPayment
 
                 $settled = $this->reconciliation->handle((int) $organization->getKey(), (int) $lockedObligation->getKey(), true);
                 if (! $current->isSettled() && $settled->isSettled()) {
-                    $this->settlementEvents->handle($lockedObligation, $entry, $occurred);
+                    $this->settlementEvents->handle($lockedObligation, $entry, $occurred, $actor);
                 }
 
                 $idempotency->forceFill([

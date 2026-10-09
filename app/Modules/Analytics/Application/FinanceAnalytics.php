@@ -52,12 +52,12 @@ final class FinanceAnalytics
                 return FinanceAnalyticsData::unavailable();
             }
 
-            $revenue = $this->baseAmountSum(
-                DB::table($ledgerTable)
-                    ->where('organization_id', $organizationId)
-                    ->where('occurred_at', '>=', $period->startUtc)
-                    ->where('occurred_at', '<', $period->endUtc),
-            );
+            $revenueQuery = DB::table($ledgerTable.' as ledger')
+                ->where('ledger.organization_id', $organizationId)
+                ->where('ledger.occurred_at', '>=', $period->startUtc)
+                ->where('ledger.occurred_at', '<', $period->endUtc);
+            $this->excludeGiftCertificateRedemptions($revenueQuery, $ledgerTable, 'ledger');
+            $revenue = $this->baseAmountSum($revenueQuery);
             $receipts = $this->receipts($organizationId, $period, $ledgerTable);
             $cohortClientCount = $this->cohortClientCount($organizationId, $period);
             $realizedLtv = $cohortClientCount === 0
@@ -136,8 +136,22 @@ final class FinanceAnalytics
             ->where('obligations.organization_id', $organizationId)
             ->whereIn('obligations.client_id', $cohort)
             ->where('ledger.occurred_at', '<=', $period->nowUtc);
+        $this->excludeGiftCertificateRedemptions($query, $ledgerTable, 'ledger');
 
         return $this->qualifiedBaseAmountSum($query);
+    }
+
+    private function excludeGiftCertificateRedemptions(Builder $query, string $ledgerTable, string $ledgerAlias): void
+    {
+        $query
+            ->where($ledgerAlias.'.entry_type', '<>', FinancialLedgerEntryType::GiftCertificateRedemption->value)
+            ->whereNotExists(function (Builder $original) use ($ledgerTable, $ledgerAlias): void {
+                $original
+                    ->selectRaw('1')
+                    ->from($ledgerTable.' as original')
+                    ->whereColumn('original.id', $ledgerAlias.'.corrects_ledger_entry_id')
+                    ->where('original.entry_type', FinancialLedgerEntryType::GiftCertificateRedemption->value);
+            });
     }
 
     private function periodEndDebt(int $organizationId, DashboardPeriod $period, string $baseCurrency, string $obligationTable, string $ledgerTable): string

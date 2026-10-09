@@ -32,7 +32,8 @@ final class FinancialLedgerPresentationContract
             FinancialLedgerEntryType::ManualPayment,
             FinancialLedgerEntryType::FakeGatewaySettlement,
             FinancialLedgerEntryType::GatewaySettlement,
-            FinancialLedgerEntryType::ReferralCredit => $amount->isPositive(),
+            FinancialLedgerEntryType::ReferralCredit,
+            FinancialLedgerEntryType::GiftCertificateRedemption => $amount->isPositive(),
             FinancialLedgerEntryType::Correction => $amount->isNegative(),
         };
 

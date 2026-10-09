@@ -100,6 +100,10 @@ class ServiceForm
                             ->placeholder(__('15000 или 15000.50'))
                             ->inputMode('decimal')
                             ->maxLength(32)
+                            ->helperText(fn (Get $get): ?string => self::isCatalogType(
+                                $get('catalog_type'),
+                                CatalogItemType::GiftCertificate,
+                            ) ? self::giftCertificatePriceHelperText() : null)
                             ->rules(fn (Get $get): array => [
                                 new MajorUnitPrice(self::nullableString($get('price_currency'))),
                             ]),
@@ -256,6 +260,7 @@ class ServiceForm
             CatalogItemType::Service->value => __('Услуга'),
             CatalogItemType::PhysicalProduct->value => __('Физический товар'),
             CatalogItemType::OnlineProduct->value => __('Онлайн-товар'),
+            CatalogItemType::GiftCertificate->value => __('Подарочный сертификат'),
         ];
 
         return $options;
@@ -273,9 +278,14 @@ class ServiceForm
     private static function activeLabel(mixed $catalogType): string
     {
         return match (self::catalogType($catalogType)) {
-            CatalogItemType::OnlineProduct, CatalogItemType::PhysicalProduct => __('Показывать клиентам'),
+            CatalogItemType::OnlineProduct, CatalogItemType::PhysicalProduct, CatalogItemType::GiftCertificate => __('Показывать клиентам'),
             default => __('Доступна для записи'),
         };
+    }
+
+    private static function giftCertificatePriceHelperText(): string
+    {
+        return __('Цена сертификата одновременно является его номиналом.');
     }
 
     private static function catalogType(mixed $value): ?CatalogItemType
@@ -291,7 +301,9 @@ class ServiceForm
     {
         $subject = self::isCatalogType($catalogType, CatalogItemType::OnlineProduct)
             ? __('этот товар')
-            : (self::isCatalogType($catalogType, CatalogItemType::Service) ? __('эту услугу') : __('это предложение'));
+            : (self::isCatalogType($catalogType, CatalogItemType::GiftCertificate)
+                ? __('этот сертификат')
+                : (self::isCatalogType($catalogType, CatalogItemType::Service) ? __('эту услугу') : __('это предложение')));
 
         return __('ID предложения из кабинета Lava. Он связывает ').$subject.__(' с предложением, созданным в Lava.');
     }

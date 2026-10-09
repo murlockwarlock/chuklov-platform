@@ -21,6 +21,7 @@ type CrmFixture = {
     pastBookingDate: string;
     financeBookingId: number | null;
     partnerProfileId: number | null;
+    giftProductName: string | null;
 };
 
 function validPdfBuffer(): Buffer {
@@ -40,7 +41,7 @@ function validPdfBuffer(): Buffer {
     ].join('\n'));
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -88,6 +89,18 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'price_minor' => getenv('PLAYWRIGHT_FINANCE_FLOW') === '1' || $payoutFlow ? 10000 : null,
             'price_currency' => getenv('PLAYWRIGHT_FINANCE_FLOW') === '1' || $payoutFlow ? 'USD' : null,
         ]);
+        $giftSaleFlow = getenv('PLAYWRIGHT_GIFT_SALE_FLOW') === '1';
+        $giftProductName = null;
+        if ($giftSaleFlow) {
+            app(\\App\\Modules\\Finance\\Application\\SaveCurrencyConfiguration::class)->handle($admin, [
+                'base_currency' => 'USD',
+                'display_currency' => 'USD',
+                'allowed_currencies' => ['USD'],
+                'force_single_currency' => true,
+                'rounding_mode' => 'half_up',
+            ]);
+            $giftProductName = 'Подарочный сертификат E2E '.$suffix;
+        }
         $workingLocation = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
             ->forOrganization($organization)
             ->create([
@@ -420,6 +433,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'pastBookingDate' => $pastBookingDate,
             'financeBookingId' => $financeBooking?->getKey(),
             'partnerProfileId' => $partnerProfileId,
+            'giftProductName' => $giftProductName,
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -441,6 +455,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 PLAYWRIGHT_FINANCE_FLOW: options.financeFlow ? '1' : '0',
                 PLAYWRIGHT_PAYOUT_FLOW: options.payoutFlow ? '1' : '0',
                 PLAYWRIGHT_MESSAGES_FLOW: options.messagesFlow ? '1' : '0',
+                PLAYWRIGHT_GIFT_SALE_FLOW: options.giftSaleFlow ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -1093,6 +1108,81 @@ test('staff can complete a visit and record a manual payment through the normal 
     await expect(page.getByRole('heading', { name: 'Оплаты', exact: true })).toBeVisible();
     await searchTableFor(page, fixture.clientName);
     await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toContainText('Оплачено частично');
+});
+
+test('staff can create and fully settle a gift certificate through the CRM catalog', async ({ page }) => {
+    test.setTimeout(90_000);
+
+    const fixture = createCrmFixture({ giftSaleFlow: true });
+    if (fixture.giftProductName === null) {
+        throw new Error('The gift certificate CRM fixture did not provide an offering name.');
+    }
+
+    await login(page, fixture);
+
+    await page.goto('/admin/services/create');
+    await expect(page.getByRole('heading', { name: 'Добавить услугу', exact: true })).toBeVisible();
+    await page.getByLabel('Название*', { exact: true }).fill(fixture.giftProductName);
+    await page.getByLabel('Тип предложения*', { exact: true }).selectOption('gift_certificate');
+    await expect(page.getByText('Цена сертификата одновременно является его номиналом.', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Длительность (минуты)', { exact: true })).not.toBeVisible();
+    await expect(page.getByLabel('Доступные форматы визита', { exact: true })).not.toBeVisible();
+    await page.getByLabel('Краткое описание*', { exact: true }).fill('Сертификат для E2E проверки CRM.');
+    await page.getByPlaceholder('15000 или 15000.50', { exact: true }).fill('10000');
+
+    const currency = page.getByRole('combobox', { name: 'Валюта', exact: true });
+    await currency.click();
+    await page.getByRole('option', { name: 'Доллар США', exact: true }).click();
+    await expect(page.getByRole('switch', { name: 'Показывать клиентам*', exact: true })).toBeChecked();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/admin\/services\/\d+\/edit$/, { timeout: 15_000 });
+    await page.goto('/admin/services');
+    await expect(page.getByRole('heading', { name: 'Каталог услуг', exact: true })).toBeVisible();
+    await searchTableFor(page, fixture.giftProductName);
+    const giftOfferingRow = page.getByRole('row').filter({ hasText: fixture.giftProductName }).first();
+    await expect(giftOfferingRow).toContainText('Подарочный сертификат');
+
+    await page.goto('/admin/gift-certificates');
+    await expect(page.getByRole('heading', { name: 'Подарочные сертификаты', exact: true })).toBeVisible();
+
+    await page.getByTestId('sell-gift-certificate').click();
+    const saleDialog = page.locator('.fi-modal-window:visible').last();
+    await expect(saleDialog).toBeVisible();
+
+    const clientSelect = saleDialog.getByRole('combobox', { name: /^Клиент/ }).first();
+    await clientSelect.click();
+    await page.getByRole('textbox', { name: 'Search' }).last().fill(fixture.clientName);
+    await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.clientName }).last().click();
+
+    const productSelect = saleDialog.getByRole('combobox', { name: /^Сертификат/ }).first();
+    await productSelect.click();
+    await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.giftProductName }).last().click();
+    await expect(saleDialog.getByText('10000.00', { exact: true })).toBeVisible();
+    await expect(saleDialog.getByText('USD', { exact: true })).toBeVisible();
+
+    await saleDialog.getByRole('button', { name: 'Создать продажу', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/financial-obligations\/\d+$/, { timeout: 15_000 });
+    await expect(page.getByText('К оплате', { exact: true })).toBeVisible();
+    await expect(page.getByText('Ожидает оплаты', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    const paymentDialog = page.locator('.fi-modal-window:visible').last();
+    await expect(paymentDialog.getByRole('textbox', { name: /^Сумма оплаты/ })).toHaveValue('10000.00');
+    await paymentDialog.getByRole('combobox', { name: /^Способ оплаты/ }).selectOption('cash');
+    await paymentDialog.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+
+    await expect(page.getByText('Оплачено', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('Сертификат выпущен', { exact: true })).toBeVisible({ timeout: 15_000 });
+    const openCertificate = page.getByRole('link', { name: 'Открыть сертификат', exact: true });
+    await expect(openCertificate).toBeVisible();
+    await openCertificate.click();
+    await expect(page).toHaveURL(/\/admin\/gift-certificates\/\d+$/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Подарочный сертификат', exact: true })).toBeVisible();
+
+    await page.goto('/admin/gift-certificates');
+    await searchTableFor(page, fixture.clientName);
+    await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toHaveCount(1);
 });
 
 test('staff can reject, approve, and mark a partner payout as paid from CRM', async ({ page }) => {

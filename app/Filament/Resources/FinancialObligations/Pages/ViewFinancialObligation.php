@@ -18,6 +18,7 @@ final class ViewFinancialObligation extends LocalizedViewRecord
     {
         return [
             FinancePaymentActions::referralCreditForObligation(),
+            FinancePaymentActions::giftCertificateForObligation(),
             FinancePaymentActions::forObligation(),
             FinanceReminderActions::forObligation(),
             CommerceFulfillmentActions::forObligation(),

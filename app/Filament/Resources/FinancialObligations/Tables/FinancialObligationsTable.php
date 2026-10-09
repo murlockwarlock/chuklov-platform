@@ -155,6 +155,7 @@ final class FinancialObligationsTable
                     ->tooltip(__('Открыть расчёт')),
                 ActionGroup::make([
                     FinancePaymentActions::referralCreditForObligation(),
+                    FinancePaymentActions::giftCertificateForObligation(),
                     FinancePaymentActions::forObligation(),
                     FinanceReminderActions::forObligation(),
                     CommerceFulfillmentActions::forObligation(),

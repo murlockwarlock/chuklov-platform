@@ -70,6 +70,7 @@ class ViewBooking extends LocalizedViewRecord
                 ...BookingLifecycleActions::all(),
                 FinancePaymentActions::openForBooking(),
                 FinancePaymentActions::referralCreditForBooking(),
+                FinancePaymentActions::giftCertificateForBooking(),
             ])
                 ->label(__('Действия'))
                 ->icon('heroicon-o-ellipsis-horizontal')

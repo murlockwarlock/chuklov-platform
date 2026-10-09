@@ -3,6 +3,10 @@
 namespace App\Filament\Support;
 
 use App\Models\User;
+use App\Modules\Commerce\Application\ApplyGiftCertificateForStaff;
+use App\Modules\Commerce\Application\CorrectGiftCertificateRedemption;
+use App\Modules\Commerce\Application\GiftCertificateBalanceProjection;
+use App\Modules\Commerce\Domain\Models\GiftCertificate;
 use App\Modules\Finance\Application\CorrectFinancialPayment;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\FinancialReconciliationContract;
@@ -57,6 +61,18 @@ final class FinancePaymentActions
             ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->canApplyReferralCreditForBooking($record));
     }
 
+    public static function giftCertificateForObligation(): Action
+    {
+        return self::giftCertificateAction('applyGiftCertificate')
+            ->visible(fn (FinancialObligation $record): bool => app(FinancePresentation::class)->canApplyGiftCertificate($record));
+    }
+
+    public static function giftCertificateForBooking(): Action
+    {
+        return self::giftCertificateAction('applyBookingGiftCertificate')
+            ->visible(fn (Booking $record): bool => app(FinancePresentation::class)->canApplyGiftCertificateForBooking($record));
+    }
+
     public static function openForBooking(): Action
     {
         return Action::make('openPayment')
@@ -95,6 +111,7 @@ final class FinancePaymentActions
                     && in_array($record->getRawOriginal('entry_type'), [
                         FinancialLedgerEntryType::ManualPayment->value,
                         FinancialLedgerEntryType::ReferralCredit->value,
+                        FinancialLedgerEntryType::GiftCertificateRedemption->value,
                     ], true)
                     && self::canCorrect($record)
                     && ! (bool) $record->getAttribute('has_correction');
@@ -104,6 +121,13 @@ final class FinancePaymentActions
                 abort_unless($actor instanceof User, 403);
                 if ($record->getRawOriginal('entry_type') === FinancialLedgerEntryType::ReferralCredit->value) {
                     app(RestoreReferralCredit::class)->handle(
+                        actor: $actor,
+                        entry: $record,
+                        reason: (string) $data['reason'],
+                        idempotencyKey: (string) $data['idempotency_key'],
+                    );
+                } elseif ($record->getRawOriginal('entry_type') === FinancialLedgerEntryType::GiftCertificateRedemption->value) {
+                    app(CorrectGiftCertificateRedemption::class)->handle(
                         actor: $actor,
                         entry: $record,
                         reason: (string) $data['reason'],
@@ -247,6 +271,60 @@ final class FinancePaymentActions
             });
     }
 
+    private static function giftCertificateAction(string $name): Action
+    {
+        return Action::make($name)
+            ->label(__('Применить сертификат'))
+            ->color('warning')
+            ->modalHeading(__('Применить подарочный сертификат'))
+            ->modalDescription(__('Сертификат уменьшит задолженность клиента в своей валюте.'))
+            ->modalSubmitActionLabel(__('Применить сертификат'))
+            ->schema([
+                TextInput::make('client_summary')
+                    ->label(__('Клиент'))
+                    ->default(fn (Model $record): string => self::obligation($record)?->client->full_name ?? '—')
+                    ->disabled()
+                    ->dehydrated(false),
+                Select::make('certificate_id')
+                    ->label(__('Сертификат'))
+                    ->options(fn (Model $record): array => self::giftCertificateOptions($record))
+                    ->required()
+                    ->searchable(),
+                TextInput::make('currency_summary')
+                    ->label(__('Валюта списания'))
+                    ->default(fn (Model $record): string => self::obligation($record) === null
+                        ? '—'
+                        : (self::settlementCurrency(self::obligation($record)) ?? '—'))
+                    ->disabled()
+                    ->dehydrated(false),
+                TextInput::make('amount')
+                    ->label(__('Сумма сертификата к списанию'))
+                    ->default(fn (Model $record): ?string => self::giftCertificateDefaultAmount($record))
+                    ->placeholder(__('Введите сумму'))
+                    ->inputMode('decimal')
+                    ->required()
+                    ->maxLength(40),
+                Hidden::make('idempotency_key')
+                    ->default(fn (): string => 'crm-gift-certificate-'.Str::uuid()->toString()),
+            ])
+            ->action(function (Action $action, Model $record, array $data): void {
+                $actor = auth()->user();
+                abort_unless($actor instanceof User, 403);
+                $obligation = self::obligation($record);
+                abort_unless($obligation instanceof FinancialObligation, 404);
+
+                app(ApplyGiftCertificateForStaff::class)->handle(
+                    actor: $actor,
+                    obligation: $obligation,
+                    certificateId: (int) $data['certificate_id'],
+                    amount: (string) ($data['amount'] ?? ''),
+                    idempotencyKey: (string) $data['idempotency_key'],
+                );
+                self::refreshFinanceUi($action, $obligation, $record instanceof Booking ? $record : null);
+                Notification::make()->success()->title(__('Сертификат применён. Остаток обновлён.'))->send();
+            });
+    }
+
     /** @return list<Component> */
     private static function paymentSchema(): array
     {
@@ -350,6 +428,49 @@ final class FinancePaymentActions
             && $baseAvailable->currency()->value === $settlementCurrency;
     }
 
+    /** @return array<string, string> */
+    private static function giftCertificateOptions(Model $record): array
+    {
+        $obligation = self::obligation($record);
+
+        return $obligation instanceof FinancialObligation
+            ? app(FinancePresentation::class)->giftCertificateOptions($obligation)
+            : [];
+    }
+
+    private static function giftCertificateDefaultAmount(Model $record): ?string
+    {
+        $obligation = self::obligation($record);
+        if (! $obligation instanceof FinancialObligation) {
+            return null;
+        }
+
+        $certificateId = array_key_first(self::giftCertificateOptions($record));
+        if ($certificateId === null) {
+            return null;
+        }
+
+        $certificate = GiftCertificate::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->whereKey((int) $certificateId)
+            ->first();
+        if (! $certificate instanceof GiftCertificate) {
+            return null;
+        }
+
+        try {
+            $available = app(GiftCertificateBalanceProjection::class)->balance($certificate);
+            $outstanding = app(FinancePresentation::class)->reconciliation($obligation)?->outstanding;
+            if ($outstanding === null || $outstanding->currency() !== $available->currency()) {
+                return null;
+            }
+
+            return ($available->compareTo($outstanding) <= 0 ? $available : $outstanding)->toDecimalString();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
     private static function obligation(Model $record): ?FinancialObligation
     {
         if ($record instanceof FinancialObligation) {
@@ -426,6 +547,8 @@ final class FinancePaymentActions
 
     private static function refreshFinanceUi(Action $action, FinancialObligation $obligation, ?Booking $booking = null): void
     {
+        $obligation->refresh();
+        $obligation->load(['client', 'booking.service', 'service', 'purchase.items.fulfillment']);
         app(FinancePresentation::class)->forget($obligation, $booking);
         $livewire = $action->getLivewire();
 

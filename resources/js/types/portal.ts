@@ -8,6 +8,7 @@ export type PortalUrls = {
     more: string;
     profile: string;
     finance: string;
+    giftCertificates: string;
     surveys: string;
     companion: string;
     tracker: string;

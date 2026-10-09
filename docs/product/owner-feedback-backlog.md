@@ -516,7 +516,7 @@ Before implementing items from them, reconcile them against:
 
 ## 12.1 Gift certificates
 
-Status: `NEW_SCOPE`
+Status: `IMPLEMENTED_PENDING_ACCEPTANCE`
 
 Gift certificates were not a Phase 1 v2.2 requirement.
 
@@ -532,11 +532,17 @@ The new CR describes a real new product subsystem:
 - redemption against eligible services/products;
 - balance/redeem history.
 
-Do not fold this into referral ServiceCredit.
+The implemented bounded semantics are:
 
-Do not implement inside Phase 1 closeout / PR #53 unless the owner explicitly reprioritizes it.
+- a fully paid Commerce purchase item issues one certificate exactly once through the existing fulfillment lifecycle;
+- the certificate keeps an immutable nominal value, one currency, an organization-scoped current holder, and append-only movement history;
+- transfer uses a cryptographically random one-time claim link backed by a token hash and survives existing Portal authentication/registration;
+- redemption uses the existing FinancialObligation and Finance ledger in one transaction, with same-currency matching, idempotency, locking, and no purchase of another certificate;
+- a Finance correction appends both the existing compensating ledger entry and a certificate credit-back movement, preserving the original redemption;
+- CRM staff can start a certificate sale from Finance using an active gift-certificate catalog offering; the shared Commerce purchase and FinancialObligation remain pending until an existing manual or gateway settlement completes, with no Lava dependency for CRM sales;
+- referral ServiceCredit, PartnerCash, ordinary manual payment methods, expiry, refunds, cash-out, and cross-currency certificate redemption remain separate or out of scope.
 
-When implemented, extend the existing Finance/FinancialObligation ledger architecture rather than inventing a parallel payment engine.
+Do not fold this into referral ServiceCredit or invent a parallel payment engine.
 
 ## 12.2 Family / group booking
 

@@ -30,6 +30,9 @@ class HandleInertiaRequests extends Middleware
             'flash' => [
                 'success' => fn (): ?string => $request->session()->get('success'),
                 'payout' => fn (): ?array => $this->payoutFeedback($request->session()->get('payout_feedback')),
+                'giftCertificateTransferUrl' => fn (): ?string => is_string($request->session()->get('gift_certificate_transfer_url'))
+                    ? $request->session()->get('gift_certificate_transfer_url')
+                    : null,
             ],
             'portal' => [
                 'authenticated' => $client !== null,
@@ -44,6 +47,7 @@ class HandleInertiaRequests extends Middleware
                     'health' => route('portal.health'),
                     'more' => route('portal.more'),
                     'finance' => route('portal.finance.index'),
+                    'giftCertificates' => route('portal.gift-certificates.index'),
                     'surveys' => route('portal.surveys.index'),
                     'companion' => route('portal.companion'),
                     'tracker' => route('portal.tracker'),

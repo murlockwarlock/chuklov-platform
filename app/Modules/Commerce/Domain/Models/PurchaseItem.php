@@ -9,6 +9,15 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
+/**
+ * @property int $organization_id
+ * @property int $purchase_id
+ * @property int $quantity
+ * @property int $amount_minor
+ * @property CurrencyCode $currency
+ * @property array<string, mixed> $product_snapshot
+ * @property string $fulfillment_provider
+ */
 #[Fillable([])]
 class PurchaseItem extends Model
 {

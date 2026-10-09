@@ -3,10 +3,14 @@
 namespace App\Filament\Resources\FinancialObligations;
 
 use App\Filament\Resources\Bookings\BookingResource;
+use App\Filament\Resources\GiftCertificates\GiftCertificateResource;
 use App\Filament\Support\CommerceFulfillmentPresentation;
 use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\FinancePresentation;
+use App\Modules\Commerce\Domain\Models\GiftCertificate;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
+use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationContext;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -21,9 +25,9 @@ final class FinancialObligationInfolist
                     TextEntry::make('client_name')
                         ->label(__('Клиент'))
                         ->state(function (FinancialObligation $record): string {
-                            $client = $record->client;
+                            $client = $record->getRelationValue('client');
 
-                            return $client === null ? '—' : ($client->full_name ?? '—');
+                            return $client instanceof Client ? ($client->full_name ?? '—') : '—';
                         })
                         ->url(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client))
                         ->color(fn (FinancialObligation $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary'),
@@ -70,6 +74,12 @@ final class FinancialObligationInfolist
                         ->state(fn (FinancialObligation $record): string => CommerceFulfillmentPresentation::status($record))
                         ->visible(fn (FinancialObligation $record): bool => $record->purchase !== null)
                         ->badge(),
+                    TextEntry::make('gift_certificate_link')
+                        ->label(__('Сертификат'))
+                        ->state(__('Открыть сертификат'))
+                        ->url(fn (FinancialObligation $record): ?string => self::giftCertificateUrl($record))
+                        ->color('primary')
+                        ->visible(fn (FinancialObligation $record): bool => self::giftCertificate($record) instanceof GiftCertificate),
                     TextEntry::make('finance_error')
                         ->label(__('Состояние расчёта'))
                         ->state(__('Расчёт недоступен. Проверьте историю оплат.'))
@@ -118,5 +128,27 @@ final class FinancialObligationInfolist
                 ])
                 ->columns(2),
         ]);
+    }
+
+    private static function giftCertificateUrl(FinancialObligation $record): ?string
+    {
+        $certificate = self::giftCertificate($record);
+
+        return $certificate instanceof GiftCertificate
+            ? GiftCertificateResource::getUrl('view', ['record' => $certificate->getKey()])
+            : null;
+    }
+
+    private static function giftCertificate(FinancialObligation $record): ?GiftCertificate
+    {
+        $purchaseId = $record->getRawOriginal('purchase_id');
+        if (! is_numeric($purchaseId) || (int) $purchaseId < 1) {
+            return null;
+        }
+
+        return GiftCertificate::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('purchase_id', (int) $purchaseId)
+            ->first();
     }
 }
