@@ -21,7 +21,6 @@ type CrmFixture = {
     pastBookingDate: string;
     financeBookingId: number | null;
     partnerProfileId: number | null;
-    giftProductId: number | null;
     giftProductName: string | null;
 };
 
@@ -91,7 +90,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'price_currency' => getenv('PLAYWRIGHT_FINANCE_FLOW') === '1' || $payoutFlow ? 'USD' : null,
         ]);
         $giftSaleFlow = getenv('PLAYWRIGHT_GIFT_SALE_FLOW') === '1';
-        $giftProduct = null;
+        $giftProductName = null;
         if ($giftSaleFlow) {
             app(\\App\\Modules\\Finance\\Application\\SaveCurrencyConfiguration::class)->handle($admin, [
                 'base_currency' => 'USD',
@@ -100,13 +99,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 'force_single_currency' => true,
                 'rounding_mode' => 'half_up',
             ]);
-            $giftProduct = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create([
-                'name' => 'Подарочный сертификат '.$suffix,
-                'catalog_type' => \\App\\Modules\\Services\\Domain\\Enums\\CatalogItemType::GiftCertificate->value,
-                'price_minor' => 10000,
-                'price_currency' => 'USD',
-                'is_active' => true,
-            ]);
+            $giftProductName = 'Подарочный сертификат E2E '.$suffix;
         }
         $workingLocation = \\App\\Modules\\Scheduling\\Domain\\Models\\WorkingLocation::factory()
             ->forOrganization($organization)
@@ -440,8 +433,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'pastBookingDate' => $pastBookingDate,
             'financeBookingId' => $financeBooking?->getKey(),
             'partnerProfileId' => $partnerProfileId,
-            'giftProductId' => $giftProduct?->getKey(),
-            'giftProductName' => $giftProduct?->name,
+            'giftProductName' => $giftProductName,
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -1118,15 +1110,38 @@ test('staff can complete a visit and record a manual payment through the normal 
     await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toContainText('Оплачено частично');
 });
 
-test('staff can sell and fully settle a gift certificate without Lava from CRM', async ({ page }) => {
+test('staff can create and fully settle a gift certificate through the CRM catalog', async ({ page }) => {
     test.setTimeout(90_000);
 
     const fixture = createCrmFixture({ giftSaleFlow: true });
-    if (fixture.giftProductId === null || fixture.giftProductName === null) {
-        throw new Error('The gift certificate CRM fixture did not create an offering.');
+    if (fixture.giftProductName === null) {
+        throw new Error('The gift certificate CRM fixture did not provide an offering name.');
     }
 
     await login(page, fixture);
+
+    await page.goto('/admin/services/create');
+    await expect(page.getByRole('heading', { name: 'Добавить услугу', exact: true })).toBeVisible();
+    await page.getByLabel('Название', { exact: true }).fill(fixture.giftProductName);
+    await page.getByLabel('Тип предложения', { exact: true }).selectOption('gift_certificate');
+    await expect(page.getByText('Цена сертификата одновременно является его номиналом.', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Длительность (минуты)', { exact: true })).not.toBeVisible();
+    await expect(page.getByLabel('Доступные форматы визита', { exact: true })).not.toBeVisible();
+    await page.getByLabel('Краткое описание', { exact: true }).fill('Сертификат для E2E проверки CRM.');
+    await page.getByLabel('Цена', { exact: true }).fill('10000');
+
+    const currency = page.getByRole('combobox', { name: 'Валюта', exact: true });
+    await currency.click();
+    await page.locator('.fi-select-input-option:visible').filter({ hasText: 'USD' }).last().click();
+    await expect(page.getByLabel('Показывать клиентам', { exact: true })).toBeChecked();
+    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/admin\/services$/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Каталог услуг', exact: true })).toBeVisible();
+    await searchTableFor(page, fixture.giftProductName);
+    const giftOfferingRow = page.getByRole('row').filter({ hasText: fixture.giftProductName }).first();
+    await expect(giftOfferingRow).toContainText('Подарочный сертификат');
+
     await page.goto('/admin/gift-certificates');
     await expect(page.getByRole('heading', { name: 'Подарочные сертификаты', exact: true })).toBeVisible();
 
@@ -1156,8 +1171,17 @@ test('staff can sell and fully settle a gift certificate without Lava from CRM',
     await paymentDialog.getByRole('combobox', { name: /^Способ оплаты/ }).selectOption('cash');
     await paymentDialog.getByRole('button', { name: 'Записать оплату', exact: true }).click();
 
+    await expect(page.getByText('Оплачено', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('Сертификат выпущен', { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText('Открыть сертификат', { exact: true })).toBeVisible();
+    const openCertificate = page.getByRole('link', { name: 'Открыть сертификат', exact: true });
+    await expect(openCertificate).toBeVisible();
+    await openCertificate.click();
+    await expect(page).toHaveURL(/\/admin\/gift-certificates\/\d+$/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Подарочный сертификат', exact: true })).toBeVisible();
+
+    await page.goto('/admin/gift-certificates');
+    await searchTableFor(page, fixture.clientName);
+    await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toHaveCount(1);
 });
 
 test('staff can reject, approve, and mark a partner payout as paid from CRM', async ({ page }) => {
