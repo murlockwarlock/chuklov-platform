@@ -1158,7 +1158,7 @@ test('staff can create and fully settle a gift certificate through the CRM catal
     const productSelect = saleDialog.getByRole('combobox', { name: /^Сертификат/ }).first();
     await productSelect.click();
     await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.giftProductName }).last().click();
-    await expect(saleDialog.getByText('100.00', { exact: true })).toBeVisible();
+    await expect(saleDialog.getByText('10000.00', { exact: true })).toBeVisible();
     await expect(saleDialog.getByText('USD', { exact: true })).toBeVisible();
 
     await saleDialog.getByRole('button', { name: 'Создать продажу', exact: true }).click();
@@ -1168,7 +1168,7 @@ test('staff can create and fully settle a gift certificate through the CRM catal
 
     await page.getByRole('button', { name: 'Записать оплату', exact: true }).click();
     const paymentDialog = page.locator('.fi-modal-window:visible').last();
-    await expect(paymentDialog.getByRole('textbox', { name: /^Сумма оплаты/ })).toHaveValue('100.00');
+    await expect(paymentDialog.getByRole('textbox', { name: /^Сумма оплаты/ })).toHaveValue('10000.00');
     await paymentDialog.getByRole('combobox', { name: /^Способ оплаты/ }).selectOption('cash');
     await paymentDialog.getByRole('button', { name: 'Записать оплату', exact: true }).click();
 
