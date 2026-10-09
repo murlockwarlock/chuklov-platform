@@ -66,8 +66,9 @@ class ViewBooking extends LocalizedViewRecord
                 ->url(fn (): ?string => $this->clientTelegramUrl())
                 ->openUrlInNewTab()
                 ->visible(fn (): bool => $this->clientTelegramUrl() !== null),
+            ...BookingLifecycleActions::primary(),
             ActionGroup::make([
-                ...BookingLifecycleActions::all(),
+                ...BookingLifecycleActions::all(false),
                 FinancePaymentActions::openForBooking(),
                 FinancePaymentActions::referralCreditForBooking(),
                 FinancePaymentActions::giftCertificateForBooking(),

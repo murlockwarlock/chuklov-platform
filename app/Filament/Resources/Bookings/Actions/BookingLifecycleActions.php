@@ -41,8 +41,16 @@ use Throwable;
 
 final class BookingLifecycleActions
 {
+    private const PRIMARY_ACTION_COUNT = 3;
+
     /** @return list<Action> */
-    public static function all(): array
+    public static function primary(): array
+    {
+        return array_slice(self::all(), 0, self::PRIMARY_ACTION_COUNT);
+    }
+
+    /** @return list<Action> */
+    public static function all(bool $includePrimary = true): array
     {
         $actor = auth()->user();
         $canManageScheduling = $actor instanceof User && app(OrganizationAuthorizer::class)->allows(
@@ -51,7 +59,7 @@ final class BookingLifecycleActions
             OrganizationPermission::ManageScheduling,
         );
 
-        return [
+        $actions = [
             Action::make('confirm')
                 ->label(__('Подтвердить запись'))
                 ->color('success')
@@ -433,6 +441,8 @@ final class BookingLifecycleActions
                     }
                 }),
         ];
+
+        return $includePrimary ? $actions : array_slice($actions, self::PRIMARY_ACTION_COUNT);
     }
 
     private static function sendErrorNotification(ValidationException $exception): void

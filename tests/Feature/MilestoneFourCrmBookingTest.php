@@ -880,13 +880,37 @@ class MilestoneFourCrmBookingTest extends TestCase
             'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
         ]);
 
-        Livewire::actingAs($admin)
+        $component = Livewire::actingAs($admin)
             ->test(ViewBooking::class, ['record' => $booking->getKey()])
             ->assertSuccessful()
+            ->assertActionVisible('confirm')
             ->assertActionExists('confirm')
             ->assertActionExists('reschedule')
             ->assertActionExists('cancel')
             ->assertActionExists('noShow');
+
+        self::assertSame(1, substr_count($component->html(), 'Подтвердить запись'));
+    }
+
+    public function test_booking_list_exposes_confirmation_as_a_visible_primary_action(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $booking = Booking::factory()->forOrganization($organization)->create([
+            'client_id' => $client->id,
+            'specialist_id' => $specialist->id,
+            'service_id' => $service->id,
+            'status' => BookingStatus::Requested,
+            'visit_format' => VisitFormat::Office,
+            'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
+            'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
+            'blocking_ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 15, 0, 'UTC'),
+        ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(ListBookings::class)
+            ->assertTableActionExists('confirm', null, $booking)
+            ->assertTableActionVisible('confirm', $booking);
     }
 
     public function test_view_booking_renders_event_history_as_structured_entries(): void
@@ -966,7 +990,7 @@ class MilestoneFourCrmBookingTest extends TestCase
             'client_id' => $client->id,
             'specialist_id' => $specialist->id,
             'service_id' => $service->id,
-            'status' => BookingStatus::Requested,
+            'status' => BookingStatus::PendingReview,
             'visit_format' => VisitFormat::HomeVisit,
             'starts_at' => CarbonImmutable::create(2026, 4, 6, 9, 0, 0, 'UTC'),
             'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
@@ -975,6 +999,10 @@ class MilestoneFourCrmBookingTest extends TestCase
 
         $component = Livewire::actingAs($admin)
             ->test(ViewBooking::class, ['record' => $booking->getKey()]);
+
+        $component
+            ->assertActionVisible('approveHomeVisit')
+            ->assertActionVisible('rejectHomeVisit');
 
         foreach (['approveHomeVisit', 'rejectHomeVisit', 'complete', 'noShow', 'cancel'] as $actionName) {
             self::assertTrue($component->instance()->getAction($actionName)->isConfirmationRequired(), $actionName);
