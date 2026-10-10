@@ -223,8 +223,8 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await login(page, fixture);
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
 
-    const editor = page.locator('.fi-fo-rich-editor-content').first();
-    await editor.click({ force: true });
+    const editor = page.locator('.fi-fo-rich-editor-content [contenteditable=true], .fi-fo-rich-editor-content[contenteditable=true]').first();
+    await editor.click();
     await editor.pressSequentially(`${communityText} 😀`);
     await expect(editor).toContainText(`${communityText} 😀`);
 
@@ -241,7 +241,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await saveContentSection(page);
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
 
-    const reloadedEditor = page.locator('.fi-fo-rich-editor-content').first();
+    const reloadedEditor = page.locator('.fi-fo-rich-editor-content [contenteditable=true], .fi-fo-rich-editor-content[contenteditable=true]').first();
     await expect(reloadedEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
     await expect(reloadedEditor.locator('a').filter({ hasText: communityText })).toHaveAttribute('href', initialUrl);
     await expect(reloadedEditor.locator('u').filter({ hasText: communityText })).toHaveCount(1);

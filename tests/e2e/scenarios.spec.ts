@@ -188,7 +188,7 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await page.goto(`/admin/scenario-actions/${fixture.actionId}`);
     await expect(page.getByText('История отправки')).toBeVisible();
     await expect(page.getByText('1 из 3', { exact: true })).toBeVisible();
-    await expect(page.getByText('Telegram — Ожидает отправки')).toBeVisible();
+    await expect(page.getByText('Telegram — Ожидает отправки', { exact: true }).first()).toBeVisible();
 });
 
 test('shared rich editor inserts emoji at the current caret as text', async ({ page }) => {

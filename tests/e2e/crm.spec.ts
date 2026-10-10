@@ -1039,6 +1039,7 @@ test('staff sees the Telegram limit and preview while writing to a client', asyn
     await expect(page).toHaveURL(new RegExp(`/admin/messages\\?client=${fixture.clientId}$`));
     await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
 
+    await page.getByRole('button', { name: 'Начать диалог как специалист', exact: true }).click();
     const message = 'фывфывфывфыв';
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill(message);
 
@@ -1232,7 +1233,7 @@ test('manual Online meeting link supports replacement and refresh without duplic
         await page.getByRole('button', { name: 'Действия', exact: true }).click();
         await page.locator('.fi-dropdown-panel:visible').getByRole('button', { name: 'Ссылка на встречу', exact: true }).click();
         const modal = page.locator('.fi-modal-window:visible').last();
-        await modal.getByRole('textbox', { name: 'Ссылка на встречу', exact: true }).fill(url);
+        await modal.getByRole('textbox', { name: /^Ссылка на встречу/ }).fill(url);
         await modal.getByRole('button', { name: 'Отправить', exact: true }).click();
         await expect(page.getByText('Ссылка на встречу обновлена', { exact: true })).toBeVisible();
         await page.reload();
@@ -1475,7 +1476,8 @@ test('staff can use the client cockpit for medical profile and private files', a
     expect(previewResponse.headers()['content-disposition']).toContain('inline');
     await page.locator('.fi-modal-window:visible').filter({ has: page.locator('iframe[title="ux-a-report.pdf"]') }).getByRole('button', { name: 'Закрыть', exact: true }).last().click();
 
-    const downloadAttachment = uploadedRow.getByRole('button', { name: 'Скачать', exact: true });
+    await uploadedRow.getByRole('button', { name: 'Действия', exact: true }).click();
+    const downloadAttachment = page.locator('.fi-dropdown-panel:visible').getByRole('button', { name: 'Скачать', exact: true });
     await expect(downloadAttachment).toHaveCount(1);
     const [download, attachmentResponse] = await Promise.all([
         page.waitForEvent('download'),

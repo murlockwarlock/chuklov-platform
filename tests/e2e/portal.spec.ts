@@ -841,7 +841,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page.getByRole('button', { name: 'English', exact: true })).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-en.jpg');
     await page.locator('nav a[href$="/portal/services"]:visible').click();
-    await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Book', exact: true })).toBeVisible();
     await expect(page.locator('.portal-service-card').first().getByRole('link', { name: 'Book an appointment' })).toHaveAttribute('href', /service_id=/);
     const profileResponse = page.waitForResponse((response) =>
         response.url().endsWith('/portal/profile') && response.request().method() === 'GET' && response.status() === 200,
@@ -913,7 +913,7 @@ test('home keeps one primary booking action and ordinary referrals remain availa
 
     await page.goto('/portal/referrals');
     await expect(page).toHaveURL(/\/portal\/referrals$/);
-    await expect(page.getByRole('heading', { name: 'Пригласить друга', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Пригласить друга', exact: true })).toBeVisible();
     await expect(page.getByTestId('ordinary-referral')).toBeVisible();
     await expect(page.getByTestId('partner-activate')).toHaveCount(0);
     await expect(page.getByTestId('partner-links')).toHaveCount(0);
@@ -1037,7 +1037,7 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     await expect(page.getByTestId('payout-feedback')).toBeVisible();
     await expect(page.getByTestId('payout-feedback')).toContainText('Заявка на выплату отправлена');
     await expect(page.getByTestId('payout-feedback')).toContainText(/2[,.]00\s*(?:\$|USD)/);
-    await expect(page.getByTestId('payout-feedback')).toContainText('Запрошена');
+    await expect(page.getByTestId('payout-feedback')).toContainText('Заявка на выплату отправлена');
 
     const payout = page.getByTestId('partner-payout-0');
     await expect(payout).toBeVisible();
@@ -1404,7 +1404,7 @@ test('booking keeps its state while reviewing grouped legal documents', async ({
     await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
 
     const requiredCheckbox = page.getByRole('checkbox', {
-        name: 'Я ознакомился(лась) и принимаю обязательные документы',
+        name: 'Я ознакомился с обязательными документами и принимаю их условия',
         exact: true,
     });
     const documentLinks = page.getByRole('button', { name: /^(Оферта|Политика конфиденциальности|Медицинский дисклеймер)$/ });
