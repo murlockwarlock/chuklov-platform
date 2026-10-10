@@ -1219,6 +1219,7 @@ test('staff can complete a visit and record a manual payment through the normal 
 
     await page.getByRole('button', { name: 'Действия', exact: true }).click();
     await page.getByRole('link', { name: 'Открыть оплату', exact: true }).click();
+    await page.locator('.fi-loading-section').scrollIntoViewIfNeeded();
     const paymentHistory = page.locator('.fi-resource-relation-manager').filter({ hasText: 'История оплат' });
     await expect(paymentHistory.getByRole('row').filter({ hasText: 'Наличные' })).toHaveCount(1);
     await page.getByRole('button', { name: 'Записать оплату', exact: true }).click();
