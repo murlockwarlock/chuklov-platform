@@ -261,7 +261,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     expect(telegramHasLinkedText(initialTelegram, initialUrl, communityText)).toBe(true);
 
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
-    const previewEditor = page.locator('.fi-fo-rich-editor-content').first();
+    const previewEditor = page.locator('.fi-fo-rich-editor-content [contenteditable=true], .fi-fo-rich-editor-content[contenteditable=true]').first();
     await expect(previewEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
     const previewButton = page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true });
     await expect(previewButton).toBeEnabled();
