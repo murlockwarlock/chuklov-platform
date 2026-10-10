@@ -28,7 +28,7 @@ Attachment quarantine was removed from the accepted current flow (ADR-021); priv
 
 ## Execution record
 
-The audit branch is a Draft PR [#59](https://github.com/murlockwarlock/chuklov-platform/pull/59) and remains unmerged. The current production-bearing fix candidate is `a24a827639db2103bd6db64f9ee1da223e05a375`; the latest repository SHA is `372ce8e5a1812f3c50d2dcaa8e03693a69dd85b3` (documentation/matrix only after the deployed candidate). The final exact-SHA staging deploy and final candidate CI remain gates before closing this report.
+The audit branch is a Draft PR [#59](https://github.com/murlockwarlock/chuklov-platform/pull/59) and remains unmerged. Historical production-bearing candidates are recorded below; the final production code tree is `e117e36fd21889338f5dd8fa6ea3d58e9a19ef18`. The report/matrix commit after that code tree is documentation-only; its exact repository SHA and staging result are stated in the final handoff. The audit remains NOT FULLY VERIFIED because the matrix and browser/provider gaps are explicit.
 
 | Evidence | Result | Scope / limit |
 | --- | --- | --- |
@@ -194,14 +194,14 @@ The following table is an explicit work ledger. Subsystem test PASS is not full 
 2. The current hosted Portal E2E [38044487385](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38044487385) is 54/54 PASS on desktop/mobile, and the current hosted gift E2E [38044066149](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38044066149) is PASS. CRM/scenario/community files are queued or require one-at-a-time reruns after the workflow concurrency cancellation; no complete all-file E2E PASS is claimed.
 3. Quality gate is failing on baseline formatting; independent later checks must execute and report their own outcome, without suppressing that failure or editing deployed migrations for cosmetics.
 4. Staff reply formatting, the Companion happy/handoff path, and the Finance UI story have hosted/browser and staging evidence, but the wider Messages/Companion/attachment/AI action inventory is not fully verified. Provider-failure injection, Portal bubble file opening and privileged AI controls remain open.
-5. Final staging revision (`372ce8e5a1812f3c50d2dcaa8e03693a69dd85b3`) still needs an exact deploy and deep smoke. Scheduler/Horizon/runtime checks on deployed `a24a827` passed, but all eight cross-system stories are not fully proved.
+5. Production code tree `e117e36fd21889338f5dd8fa6ea3d58e9a19ef18` was deployed; deep smoke passed with PostgreSQL, Redis/Horizon, scheduler, Telegram API reachability, portal/CRM routes, provider inventory, RAG and cleanup. The final report/matrix tree is docs-only after that smoke and is deployed again as the exact final handoff SHA. All eight cross-system stories are not fully proved.
 6. External gaps are the configured Groq HTTP 401, absent external email mailer, absent Lava sandbox credential, and unexecuted real Telegram incoming/Mini App auth. Adapter fakes are not real provider PASS.
 
 Conclusion remains **SYSTEM NOT FULLY VERIFIED**. Audit work continues; this report is not a final gate or an owner-acceptance assertion.
 
 ## Final candidate addendum
 
-The latest code candidate before this report-only update is `2472618d143f6a1a96ffc52f963a0ac4fea4e794`. The staging runtime was last deployed at `8fa076337ef87f101013e2549fa3d69b670f0799`; that revision is not the final SHA because the current branch contains subsequent proof-test changes and this report update. A final exact-SHA deploy and `scripts/staging-smoke.sh --deep` are required before handoff.
+The production code tree `e117e36fd21889338f5dd8fa6ea3d58e9a19ef18` was deployed exactly to staging. Deep smoke completed with `STAGING SMOKE: PASS`; it also confirmed the configured external limits (array email sink, fake payment gateway without Lava sandbox, no synthetic client Telegram chat, Groq credential HTTP 401). The temporary browser operator was revoked through the supported cleanup path after acceptance. The final docs-only handoff SHA is recorded in the final response and deployed once more before closure.
 
 The inventory matrix now has 1,427 rows: 1,410 generated source declarations plus 17 manually reviewed proof rows. Current status count is 12 VERIFIED and 1,415 NOT VERIFIED; there are no matrix rows classified NOT IMPLEMENTED or NEEDS OWNER DECISION because those classifications are scope decisions recorded below and not executable capabilities. The exact IDs and blockers are in the matrix; generated rows intentionally retain `NOT DERIVED`/`NOT MAPPED` fields until a row-specific contract is proved.
 
