@@ -198,7 +198,7 @@ final class SurveyDefinitionValidator
                         $this->fail('scoring.metrics', 'Показатель содержит недоступную ссылку на вопрос.');
                     }
                 }
-                $metricQuestionKeys[$metric['key']] = array_values($metric['question_keys']);
+                $metricQuestionKeys[$metric['key']] = $metric['question_keys'];
             }
             foreach (['attention_reason', 'observation', 'road_map'] as $textKey) {
                 if (array_key_exists($textKey, $metric) && $metric[$textKey] !== null && ! $this->localizedText($metric[$textKey])) {
@@ -429,7 +429,7 @@ final class SurveyDefinitionValidator
                 }
                 $values[] = (float) $point;
             }
-            $ruleMaximum = ($rule['operator'] ?? null) === 'selected_sum'
+            $ruleMaximum = $rule['operator'] === 'selected_sum'
                 ? array_sum(array_map(static fn (float $point): float => max(0.0, $point), $values))
                 : max($values);
             $maxValues[$metricKey] = ($maxValues[$metricKey] ?? 0.0) + $ruleMaximum;

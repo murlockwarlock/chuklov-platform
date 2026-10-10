@@ -10,6 +10,8 @@ final readonly class AiEvaluationCaseResult
      * @param  list<array<string, mixed>>  $assertions
      * @param  array<string, mixed>  $execution
      * @param  array<string, mixed>  $rag
+     * @param  array<string, mixed>  $testInputs
+     * @param  list<array<string, mixed>>  $expectedAssertions
      */
     public function __construct(
         public int $caseId,

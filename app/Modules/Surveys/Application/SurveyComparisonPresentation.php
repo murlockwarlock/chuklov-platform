@@ -7,6 +7,7 @@ use App\Modules\Surveys\Domain\Models\SurveyComparison;
 
 final readonly class SurveyComparisonPresentation
 {
+    /** @return array<string, mixed> */
     public function handle(
         SurveyComparison $comparison,
         ?SurveyAttempt $current,
@@ -44,6 +45,10 @@ final readonly class SurveyComparisonPresentation
         ];
     }
 
+    /**
+     * @param  array<string, mixed>  $metric
+     * @return array<string, mixed>|null
+     */
     private function numericMetric(
         string|int $key,
         string $label,
@@ -74,6 +79,10 @@ final readonly class SurveyComparisonPresentation
         ];
     }
 
+    /**
+     * @param  array<string, mixed>  $metric
+     * @return array<string, mixed>|null
+     */
     private function stateMetric(
         string|int $key,
         string $label,
@@ -105,6 +114,10 @@ final readonly class SurveyComparisonPresentation
         ];
     }
 
+    /**
+     * @param  array<string, mixed>  $metric
+     * @param  array<string, mixed>  $configuration
+     */
     private function direction(array $metric, array $configuration): ?string
     {
         $direction = $metric['direction'] ?? $metric['improvement_direction'] ?? $configuration['direction'] ?? null;
@@ -208,6 +221,7 @@ final readonly class SurveyComparisonPresentation
         };
     }
 
+    /** @param list<array<string, mixed>> $metrics */
     private function telegramText(array $metrics, string $locale): ?string
     {
         if ($metrics === []) {
@@ -232,11 +246,15 @@ final readonly class SurveyComparisonPresentation
         return mb_substr($intro."\n".implode("\n", $lines), 0, 3500);
     }
 
+    /**
+     * @param  array<int, array<string, mixed>>  $metrics
+     * @return array<string, array{label: string, direction: mixed, improvement_direction: mixed}>
+     */
     private function metricDefinitions(array $metrics, string $locale): array
     {
         $definitions = [];
         foreach ($metrics as $metric) {
-            if (! is_array($metric) || ! is_string($metric['key'] ?? null)) {
+            if (! is_string($metric['key'] ?? null)) {
                 continue;
             }
 

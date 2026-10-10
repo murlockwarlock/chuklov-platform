@@ -115,7 +115,7 @@ final class MessageComposer
         $messageComponents[] = $bodyEditor
             ->maxLength(100000)
             ->live(debounce: 300)
-            ->helperText($compact ? null : __($bodyHelper))
+            ->helperText($compact ? null : self::translate($bodyHelper))
             ->columnSpanFull()
             ->visible(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField))
             ->required(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField));
@@ -173,7 +173,7 @@ final class MessageComposer
             ->afterStateUpdated(function (Set $set): void {
                 $set('remove_media', false);
             })
-            ->helperText($compact ? null : __($mediaHelperText ?? 'Фото до 10 МБ; MP4 и другие файлы до 50 МБ. От 2 до 10 фото или видео одного типа отправятся альбомом Telegram.'))
+            ->helperText($compact ? null : self::translate($mediaHelperText ?? 'Фото до 10 МБ; MP4 и другие файлы до 50 МБ. От 2 до 10 фото или видео одного типа отправятся альбомом Telegram.'))
             ->columnSpanFull();
         if ($mediaAcceptedFileTypes !== null) {
             $fileUpload->acceptedFileTypes($mediaAcceptedFileTypes);
@@ -284,13 +284,13 @@ final class MessageComposer
         }
 
         return [
-            Section::make($compact ? null : __('Сообщение'))
+            Section::make(__('Сообщение'))
                 ->schema($messageComponents)
                 ->columns(1)
                 ->compact($compact)
                 ->columnSpanFull(),
-            Section::make($compact ? null : __($mediaSectionTitle))
-                ->description($compact ? null : __($mediaSectionDescription ?? 'Можно отправить только медиа, медиа с подписью или текст и медиа в выбранном порядке. Telegram ограничивает подпись 1024 символами, текст — 4096.'))
+            Section::make(__($mediaSectionTitle))
+                ->description(self::translate($mediaSectionDescription ?? 'Можно отправить только медиа, медиа с подписью или текст и медиа в выбранном порядке. Telegram ограничивает подпись 1024 символами, текст — 4096.'))
                 ->schema($mediaComponents)
                 ->compact($compact)
                 ->columnSpanFull(),
@@ -387,5 +387,12 @@ final class MessageComposer
         $bytes = max(1, (int) config('broadcast_media.max_bytes', 52_428_800));
 
         return intdiv($bytes + 1023, 1024);
+    }
+
+    private static function translate(string $value): string
+    {
+        $translated = __($value);
+
+        return is_string($translated) ? $translated : $value;
     }
 }

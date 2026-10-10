@@ -7,6 +7,7 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
+use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
 use App\Modules\Scheduling\Domain\ValueObjects\ScheduleExceptionDefinition;
 use App\Modules\Scheduling\Domain\ValueObjects\SpecialistScheduleDefinition;
@@ -64,6 +65,13 @@ final class ScheduleMutationImpactCalculator
         array $definitionsByDate,
     ): ScheduleMutationImpact {
         $dates = array_keys($definitionsByDate);
+        if ($dates === []) {
+            return $this->fromBookings([], [
+                'type' => 'schedule_exception_set',
+                'specialist_id' => $specialist->getKey(),
+                'definitions' => [],
+            ]);
+        }
         $workingHours = $this->workingHoursResolver->forRange(
             $specialist,
             LocalDate::from((string) min($dates)),
@@ -367,7 +375,10 @@ final class ScheduleMutationImpactCalculator
             || $localEnd->format('H:i') > $definition->interval->end;
     }
 
-    /** @param array<string, list<ScheduleExceptionDefinition>> $definitionsByDate */
+    /**
+     * @param  array<string, list<ScheduleExceptionDefinition>>  $definitionsByDate
+     * @param  Collection<int, SpecialistWorkingHour>  $workingHours
+     */
     private function isAffectedByExceptionSet(
         Booking $booking,
         Specialist $specialist,

@@ -234,7 +234,7 @@ class CreateBooking extends LocalizedCreateRecord
             }
             $url = ListBookings::getUrl();
 
-            return $parameters === [] ? $url : $url.'?'.http_build_query($parameters);
+            return $url.'?'.http_build_query($parameters);
         }
 
         return parent::getRedirectUrl();

@@ -13,6 +13,7 @@ use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
+use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionAttachment;
 use App\Modules\Surveys\Application\SurveyComparisonPresentation;
@@ -54,7 +55,7 @@ final readonly class ListClientHealthOverview
         ];
     }
 
-    /** @return list<array<string, mixed>> */
+    /** @return array<int, array<string, mixed>> */
     private function materials(int $organizationId, int $clientId): array
     {
         return MedicalAttachment::query()
@@ -70,7 +71,7 @@ final readonly class ListClientHealthOverview
                 'filename' => $attachment->original_filename,
                 'mimeType' => $attachment->mime_type,
                 'sizeBytes' => (int) $attachment->size_bytes,
-                'createdAt' => $attachment->created_at?->toIso8601String(),
+                'createdAt' => $attachment->created_at->toIso8601String(),
                 'downloadUrl' => $this->attachmentUrls->handle($attachment),
                 'previewUrl' => $this->previewUrl($attachment),
             ])
@@ -78,12 +79,12 @@ final readonly class ListClientHealthOverview
             ->all();
     }
 
-    private function previewUrl(MedicalAttachment $attachment): ?string
+    private function previewUrl(MedicalAttachment $attachment): string
     {
         return $this->attachmentUrls->handle($attachment, mode: 'preview');
     }
 
-    /** @return list<array<string, mixed>> */
+    /** @return array<int, array<string, mixed>> */
     private function sessions(int $organizationId, int $clientId, string $locale): array
     {
         $sessions = MedicalSession::query()
@@ -126,18 +127,18 @@ final readonly class ListClientHealthOverview
             return [
                 'id' => (int) $session->getKey(),
                 'clientId' => (int) $session->client_id,
-                'occurredAt' => $session->occurred_at?->toIso8601String(),
+                'occurredAt' => $session->occurred_at->toIso8601String(),
                 'service' => $service === null ? null : $this->localizedServiceName($service, $locale),
-                'specialist' => $session->specialist?->display_name,
+                'specialist' => $session->specialist->display_name,
                 'result' => $result,
                 'attachments' => $attachments
                     ->where('medical_session_id', $session->getKey())
-                    ->filter(fn (MedicalSessionAttachment $link): bool => $link->attachment?->attachment_type === AttachmentType::PosturePhoto)
+                    ->filter(fn (MedicalSessionAttachment $link): bool => $link->attachment->attachment_type === AttachmentType::PosturePhoto)
                     ->map(fn (MedicalSessionAttachment $link): array => [
                         'filename' => $link->attachment->original_filename,
                         'mimeType' => $link->attachment->mime_type,
                         'sizeBytes' => (int) $link->attachment->size_bytes,
-                        'createdAt' => $link->attachment->created_at?->toIso8601String(),
+                        'createdAt' => $link->attachment->created_at->toIso8601String(),
                     ])
                     ->values()
                     ->all(),
@@ -145,7 +146,7 @@ final readonly class ListClientHealthOverview
         })->values()->all();
     }
 
-    /** @return list<array<string, mixed>> */
+    /** @return array<int, array<string, mixed>> */
     private function comparisons(int $organizationId, int $clientId, string $locale): array
     {
         $comparisons = SurveyComparison::query()
@@ -281,14 +282,15 @@ final readonly class ListClientHealthOverview
         }
 
         try {
-            $decoded = json_decode(
-                $this->encryptor->decryptField(
-                    (int) $run->organization_id,
-                    $payload->encrypted_output_payload,
-                    (int) $payload->encryption_key_version,
-                ),
-                true,
+            $decrypted = $this->encryptor->decryptField(
+                (int) $run->organization_id,
+                $payload->encrypted_output_payload,
+                (int) $payload->encryption_key_version,
             );
+            if ($decrypted === null) {
+                return null;
+            }
+            $decoded = json_decode($decrypted, true);
         } catch (Throwable) {
             return null;
         }
@@ -307,7 +309,7 @@ final readonly class ListClientHealthOverview
             }
         }
 
-        return array_values(array_slice($items, 0, 12));
+        return array_slice($items, 0, 12);
     }
 
     private function localizedValue(mixed $value, string $locale): mixed
@@ -337,7 +339,7 @@ final readonly class ListClientHealthOverview
         return $value === null ? null : trim($value);
     }
 
-    private function localizedServiceName(object $service, string $locale): string
+    private function localizedServiceName(Service $service, string $locale): string
     {
         $primary = $locale === 'en' ? 'name_en' : 'name_ru';
         $secondary = $locale === 'en' ? 'name_ru' : 'name_en';

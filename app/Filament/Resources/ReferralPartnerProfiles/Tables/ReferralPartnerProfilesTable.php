@@ -70,8 +70,8 @@ final class ReferralPartnerProfilesTable
                 SelectFilter::make('status')
                     ->label(__('Статус'))
                     ->options([
-                        ReferralPartnerStatus::Active->value => CrmLabel::enum(ReferralPartnerStatus::Active),
-                        ReferralPartnerStatus::Inactive->value => CrmLabel::enum(ReferralPartnerStatus::Inactive),
+                        ReferralPartnerStatus::Active->value => CrmLabel::enum(ReferralPartnerStatus::Active) ?? ReferralPartnerStatus::Active->value,
+                        ReferralPartnerStatus::Inactive->value => CrmLabel::enum(ReferralPartnerStatus::Inactive) ?? ReferralPartnerStatus::Inactive->value,
                     ]),
             ])
             ->recordActions([

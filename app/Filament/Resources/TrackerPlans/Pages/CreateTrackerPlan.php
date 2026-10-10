@@ -38,7 +38,10 @@ final class CreateTrackerPlan extends LocalizedCreateRecord
         return $version->plan()->firstOrFail();
     }
 
-    /** @param array<string, mixed> $data @return array{enabled: bool, mappings: list<array{currency: mixed, offer_id: mixed}>} */
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{enabled: bool, mappings: list<array{currency: mixed, offer_id: mixed}>}
+     */
     private function mappingData(array $data): array
     {
         $enabled = (bool) ($data['lava_enabled'] ?? false);

@@ -42,7 +42,10 @@ class CreateService extends LocalizedCreateRecord
         return $service;
     }
 
-    /** @param array<string, mixed> $data @return array{enabled: bool, mappings: list<array{currency: mixed, offer_id: mixed}>} */
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{enabled: bool, mappings: list<array{currency: mixed, offer_id: mixed}>}
+     */
     private function mappingData(array $data): array
     {
         $enabled = (bool) ($data['lava_enabled'] ?? false);
@@ -56,7 +59,10 @@ class CreateService extends LocalizedCreateRecord
 
             foreach ((array) ($data['lava_offers'] ?? []) as $mapping) {
                 if (is_array($mapping)) {
-                    $mappings[] = $mapping;
+                    $mappings[] = [
+                        'currency' => $mapping['currency'] ?? null,
+                        'offer_id' => $mapping['offer_id'] ?? null,
+                    ];
                 }
             }
         }

@@ -199,6 +199,9 @@ final class ProcessPaymentGatewayEvent
             ->whereKey($transaction->obligation_id)
             ->lockForUpdate()
             ->firstOrFail();
+        if ($event->amount_minor === null || $event->currency === null) {
+            return $this->markReconciliationRequired($event, 'invalid_event_amount', 'The gateway event has no authoritative amount or currency.');
+        }
         $current = $this->reconciliation->handle((int) $transaction->organization_id, (int) $obligation->getKey(), true);
         $money = Money::ofMinor($event->amount_minor, $event->currency);
 
@@ -306,7 +309,7 @@ final class ProcessPaymentGatewayEvent
             && $entry->source === FinancialEntrySource::PaymentGateway
             && $entry->provider_reference === $transaction->provider_reference
             && $entry->payment_amount_minor === $money->minorUnits()
-            && $entry->payment_currency === $money->currency;
+            && $entry->payment_currency === $money->currency();
     }
 
     private function returnToPendingLink(PaymentGatewayEvent $event, CarbonImmutable $now): PaymentGatewayEvent

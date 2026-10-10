@@ -162,17 +162,20 @@ final readonly class BuildClinicalCourseReportInput
         ];
     }
 
-    /** @return list<MedicalSession> */
+    /**
+     * @param  Builder<MedicalSession>  $query
+     * @return list<MedicalSession>
+     */
     private function boundedSessions(Builder $query, int $total): array
     {
         $columns = ['id', 'organization_id', 'client_id', 'occurred_at'];
         if ($total <= self::MAX_SESSIONS) {
-            return $query
+            return array_values($query
                 ->orderBy('occurred_at')
                 ->orderBy('id')
                 ->limit(self::MAX_SESSIONS)
                 ->get($columns)
-                ->all();
+                ->all());
         }
 
         $headCount = intdiv(self::MAX_SESSIONS, 2);
@@ -187,7 +190,7 @@ final readonly class BuildClinicalCourseReportInput
             ->limit(self::MAX_SESSIONS - $headCount)
             ->get($columns);
 
-        return $head
+        return array_values($head
             ->concat($tail)
             ->unique(fn (MedicalSession $session): int => (int) $session->getKey())
             ->sort(function (MedicalSession $left, MedicalSession $right): int {
@@ -198,7 +201,7 @@ final readonly class BuildClinicalCourseReportInput
                     : ((int) $left->getKey() <=> (int) $right->getKey());
             })
             ->values()
-            ->all();
+            ->all());
     }
 
     /** @return array{0: string, 1: list<AiInputReference>} */
@@ -270,6 +273,7 @@ final readonly class BuildClinicalCourseReportInput
             ->unique(fn (AiInputReference $reference): int => $reference->id)
             ->values()
             ->all();
+        $references = array_values($references);
 
         if ($contexts === []) {
             return ['Завершённые опросы за выбранный период отсутствуют.', $references];

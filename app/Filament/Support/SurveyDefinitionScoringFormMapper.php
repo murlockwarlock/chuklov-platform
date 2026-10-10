@@ -297,7 +297,10 @@ final class SurveyDefinitionScoringFormMapper
         );
     }
 
-    /** @param array<int|string, mixed> $formRules @return list<array<string, mixed>> */
+    /**
+     * @param  array<int|string, mixed>  $formRules
+     * @return list<array<string, mixed>>
+     */
     private static function normalizeRules(array $formRules): array
     {
         $rules = [];
@@ -328,7 +331,10 @@ final class SurveyDefinitionScoringFormMapper
         return $rules;
     }
 
-    /** @param list<array<string, mixed>> $rules @return array<string, list<string>> */
+    /**
+     * @param  array<int|string, mixed>  $rules
+     * @return array<string, list<string>>
+     */
     private static function questionKeysByMetric(array $rules): array
     {
         $questionKeys = [];
@@ -348,7 +354,10 @@ final class SurveyDefinitionScoringFormMapper
         return $questionKeys;
     }
 
-    /** @param list<array<string, mixed>> $rules @return array<string, int|float> */
+    /**
+     * @param  array<int|string, mixed>  $rules
+     * @return array<string, int|float>
+     */
     private static function boundedMaxValues(array $rules): array
     {
         $maxValues = [];
@@ -379,7 +388,7 @@ final class SurveyDefinitionScoringFormMapper
                 }
                 $values[] = (float) $point;
             }
-            $ruleMaximum = ($rule['operator'] ?? null) === 'selected_sum'
+            $ruleMaximum = $rule['operator'] === 'selected_sum'
                 ? array_sum(array_map(static fn (float $point): float => max(0.0, $point), $values))
                 : max($values);
             $maxValues[$metricKey] = ($maxValues[$metricKey] ?? 0.0) + $ruleMaximum;
@@ -389,13 +398,26 @@ final class SurveyDefinitionScoringFormMapper
             if (! $isBounded || ! array_key_exists($metricKey, $maxValues)) {
                 continue;
             }
-            $maxValues[$metricKey] = self::number($maxValues[$metricKey]);
+            $normalized = self::number($maxValues[$metricKey]);
+            if ($normalized !== null) {
+                $maxValues[$metricKey] = $normalized;
+            }
         }
 
-        return array_intersect_key($maxValues, array_filter($bounded));
+        $result = [];
+        foreach ($bounded as $metricKey => $isBounded) {
+            if ($isBounded && array_key_exists($metricKey, $maxValues)) {
+                $result[$metricKey] = $maxValues[$metricKey];
+            }
+        }
+
+        return $result;
     }
 
-    /** @param list<array<string, mixed>> $rules @return array<string, int|float>|null */
+    /**
+     * @param  array<int|string, mixed>  $rules
+     * @return array<string, int|float>|null
+     */
     private static function derivedAnswerScale(array $rules): ?array
     {
         $scale = [];
@@ -415,7 +437,10 @@ final class SurveyDefinitionScoringFormMapper
                     continue;
                 }
                 if (! isset($conflicts[$value])) {
-                    $scale[$value] = self::number($points);
+                    $normalized = self::number($points);
+                    if ($normalized !== null) {
+                        $scale[$value] = $normalized;
+                    }
                 }
             }
         }
@@ -426,7 +451,10 @@ final class SurveyDefinitionScoringFormMapper
         return $scale === [] ? null : $scale;
     }
 
-    /** @return array<string, string|null> */
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, string|null>
+     */
     private static function selectedMetricContent(array $data): array
     {
         $content = [];
@@ -457,7 +485,11 @@ final class SurveyDefinitionScoringFormMapper
         return array_map(static fn (string $line): string => trim($line), preg_split('/\R/u', $value) ?: []);
     }
 
-    /** @param list<string> $ruItems  @param list<string> $enItems  @return list<string|array{ru: string, en: string}> */
+    /**
+     * @param  list<string>  $ruItems
+     * @param  list<string>  $enItems
+     * @return list<string|array{ru?: string, en?: string}>
+     */
     private static function localizedList(array $ruItems, array $enItems): array
     {
         $items = [];
@@ -468,7 +500,10 @@ final class SurveyDefinitionScoringFormMapper
             if ($ru === null && $en === null) {
                 continue;
             }
-            $items[] = self::localized($ru, $en);
+            $localized = self::localized($ru, $en);
+            if ($localized !== null) {
+                $items[] = $localized;
+            }
         }
 
         return $items;

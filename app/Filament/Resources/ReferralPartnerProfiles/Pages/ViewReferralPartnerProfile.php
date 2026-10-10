@@ -479,6 +479,7 @@ final class ViewReferralPartnerProfile extends LocalizedViewRecord
         return app(FinanceAuthorization::class)->allowsManage($this->actor());
     }
 
+    /** @param array<string, mixed> $terms */
     private static function rewardTermsLine(array $terms, string $scope): string
     {
         if (! ($terms['enabled'] ?? false)) {
@@ -582,16 +583,16 @@ final class ViewReferralPartnerProfile extends LocalizedViewRecord
             Select::make('qualification_rule')
                 ->label(__('Начислять'))
                 ->options([
-                    ReferralRewardQualificationRule::FirstSettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::FirstSettledPayment),
-                    ReferralRewardQualificationRule::EverySettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::EverySettledPayment),
+                    ReferralRewardQualificationRule::FirstSettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::FirstSettledPayment) ?? ReferralRewardQualificationRule::FirstSettledPayment->value,
+                    ReferralRewardQualificationRule::EverySettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::EverySettledPayment) ?? ReferralRewardQualificationRule::EverySettledPayment->value,
                 ])
                 ->visible(fn (Get $get): bool => (bool) $get('enabled'))
                 ->required(fn (Get $get): bool => (bool) $get('enabled')),
             Select::make('formula')
                 ->label(__('Размер бонуса'))
                 ->options([
-                    ReferralRewardFormula::FixedAmount->value => CrmLabel::enum(ReferralRewardFormula::FixedAmount),
-                    ReferralRewardFormula::PercentageOfSettlement->value => CrmLabel::enum(ReferralRewardFormula::PercentageOfSettlement),
+                    ReferralRewardFormula::FixedAmount->value => CrmLabel::enum(ReferralRewardFormula::FixedAmount) ?? ReferralRewardFormula::FixedAmount->value,
+                    ReferralRewardFormula::PercentageOfSettlement->value => CrmLabel::enum(ReferralRewardFormula::PercentageOfSettlement) ?? ReferralRewardFormula::PercentageOfSettlement->value,
                 ])
                 ->live()
                 ->visible(fn (Get $get): bool => (bool) $get('enabled'))

@@ -83,7 +83,7 @@ final class SendTelegramContentSection
                     }
 
                     try {
-                        if (Cache::has($sectionCompletedKey)) {
+                        if (Cache::get($sectionCompletedKey, false) === true) {
                             $skippedSectionCount++;
 
                             continue;
@@ -154,7 +154,7 @@ final class SendTelegramContentSection
         }
 
         try {
-            if (Cache::has($completedKey)) {
+            if (Cache::get($completedKey, false) === true) {
                 return NotificationDeliveryResult::suppressed('duplicate_callback');
             }
 

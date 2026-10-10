@@ -18,6 +18,7 @@ final class ReceiveLavaWebhook
         private readonly RecordScenarioEvent $scenarioEvents,
     ) {}
 
+    /** @param array<string, mixed> $payload */
     public function handle(int $organizationId, array $payload): PaymentGatewayEvent
     {
         $event = $this->parser->parse($payload);

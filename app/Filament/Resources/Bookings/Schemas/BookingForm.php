@@ -600,7 +600,7 @@ class BookingForm
         $format = VisitFormat::tryFrom((string) $get('visit_format'));
 
         if (! $specialist instanceof Specialist || ! $format instanceof VisitFormat) {
-            return $specialist?->timezone ?? $organization->defaultTimezone();
+            return $specialist->timezone ?? $organization->defaultTimezone();
         }
 
         try {

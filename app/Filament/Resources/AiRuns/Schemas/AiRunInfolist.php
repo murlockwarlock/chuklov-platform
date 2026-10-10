@@ -210,10 +210,25 @@ class AiRunInfolist
                                     ->markdown(),
                                 TextEntry::make('protected_trace_review')
                                     ->label(__('Проверка специалиста'))
-                                    ->state(fn (AiRun $record): string => self::traceText($record, static fn (AiRunProtectedTraceData $trace): string => implode("\n\n", array_filter([
-                                        $trace->humanReviewNotes !== null ? __('Заметки: :notes', ['notes' => $trace->humanReviewNotes]) : null,
-                                        $trace->humanEditedOutput !== null ? __('Исправленный результат: :result', ['result' => $trace->humanEditedOutput]) : null,
-                                    ])) ?: __('Дополнительных заметок нет.')))
+                                    ->state(fn (AiRun $record): string => self::traceText($record, static function (AiRunProtectedTraceData $trace): string {
+                                        $parts = [];
+                                        if ($trace->humanReviewNotes !== null) {
+                                            $label = __('Заметки: :notes', ['notes' => $trace->humanReviewNotes]);
+                                            $parts[] = is_string($label) ? $label : 'Заметки: '.$trace->humanReviewNotes;
+                                        }
+                                        if ($trace->humanEditedOutput !== null) {
+                                            $label = __('Исправленный результат: :result', ['result' => $trace->humanEditedOutput]);
+                                            $parts[] = is_string($label) ? $label : 'Исправленный результат: '.$trace->humanEditedOutput;
+                                        }
+
+                                        if ($parts === []) {
+                                            $empty = __('Дополнительных заметок нет.');
+
+                                            return is_string($empty) ? $empty : 'Дополнительных заметок нет.';
+                                        }
+
+                                        return implode("\n\n", $parts);
+                                    }))
                                     ->columnSpanFull()
                                     ->wrap()
                                     ->markdown(),

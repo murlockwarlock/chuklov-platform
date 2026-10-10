@@ -92,7 +92,7 @@ class ViewBooking extends LocalizedViewRecord
             $parameters['specialist_id'] = $this->journalSpecialistId;
         }
 
-        return ListBookings::getUrl().($parameters === [] ? '' : '?'.http_build_query($parameters));
+        return ListBookings::getUrl().'?'.http_build_query($parameters);
     }
 
     private function validSpecialistId(mixed $value): ?int

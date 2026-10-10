@@ -9,17 +9,19 @@ use OpenSpout\Common\Entity\Cell;
 use OpenSpout\Common\Entity\Row;
 use OpenSpout\Reader\CSV\Options as CsvOptions;
 use OpenSpout\Reader\CSV\Reader as CsvReader;
+use OpenSpout\Reader\CSV\Sheet as CsvSheet;
 use OpenSpout\Reader\ODS\Options as OdsOptions;
 use OpenSpout\Reader\ODS\Reader as OdsReader;
-use OpenSpout\Reader\ReaderInterface;
-use OpenSpout\Reader\SheetInterface;
+use OpenSpout\Reader\ODS\Sheet as OdsSheet;
 use OpenSpout\Reader\XLSX\Options as XlsxOptions;
 use OpenSpout\Reader\XLSX\Reader as XlsxReader;
+use OpenSpout\Reader\XLSX\Sheet as XlsxSheet;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Reader\IReadFilter;
 use PhpOffice\PhpSpreadsheet\Reader\Xls as LegacyXlsReader;
 use PhpOffice\PhpSpreadsheet\RichText\RichText;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PrinsFrank\PdfParser\PdfParser;
 use Throwable;
 use ZipArchive;
@@ -207,12 +209,12 @@ final class KnowledgeDocumentParser
         }
 
         foreach ($worksheetInfo as $info) {
-            if ((int) ($info['totalRows'] ?? 0) > $this->maximumRows()
-                || (int) ($info['totalColumns'] ?? 0) > $this->maximumColumns()) {
+            if ((int) $info['totalRows'] > $this->maximumRows()
+                || (int) $info['totalColumns'] > $this->maximumColumns()) {
                 return $this->suspicious($mimeType, $originalChecksum, 'xls', 'sheet_dimension_limit_exceeded', [
-                    'sheet' => (string) ($info['worksheetName'] ?? ''),
-                    'rows' => (int) ($info['totalRows'] ?? 0),
-                    'columns' => (int) ($info['totalColumns'] ?? 0),
+                    'sheet' => (string) $info['worksheetName'],
+                    'rows' => (int) $info['totalRows'],
+                    'columns' => (int) $info['totalColumns'],
                 ]);
             }
         }
@@ -241,18 +243,21 @@ final class KnowledgeDocumentParser
         $totalCells = 0;
         $worksheetInfoByName = [];
         foreach ($worksheetInfo as $info) {
-            $worksheetInfoByName[(string) ($info['worksheetName'] ?? '')] = $info;
+            $worksheetInfoByName[(string) $info['worksheetName']] = $info;
         }
         try {
             $sheets = [];
             foreach ($spreadsheet->getWorksheetIterator() as $worksheet) {
-                $info = $worksheetInfoByName[(string) $worksheet->getTitle()] ?? [];
+                $info = $worksheetInfoByName[(string) $worksheet->getTitle()] ?? [
+                    'totalRows' => 1,
+                    'totalColumns' => 1,
+                ];
                 $sheets[] = $this->readLegacySheet(
                     $worksheet,
                     $startedAt,
                     $totalCells,
-                    max(1, min($this->maximumRows(), (int) ($info['totalRows'] ?? 1))),
-                    max(1, min($this->maximumColumns(), (int) ($info['totalColumns'] ?? 1))),
+                    max(1, min($this->maximumRows(), (int) $info['totalRows'])),
+                    max(1, min($this->maximumColumns(), (int) $info['totalColumns'])),
                 );
             }
         } finally {
@@ -263,7 +268,7 @@ final class KnowledgeDocumentParser
         return $this->buildSpreadsheetResult($mimeType, $originalChecksum, 'xls', $sheets);
     }
 
-    private function openOpenSpoutReader(string $format): ReaderInterface
+    private function openOpenSpoutReader(string $format): CsvReader|XlsxReader|OdsReader
     {
         return match ($format) {
             'csv' => new CsvReader(new CsvOptions),
@@ -277,8 +282,10 @@ final class KnowledgeDocumentParser
         };
     }
 
-    /** @return array<string, mixed> */
-    private function readOpenSpoutSheet(SheetInterface $sheet, string $originalFilename, string $format, int $startedAt, int &$totalCells): array
+    /**
+     * @return array<string, mixed>
+     */
+    private function readOpenSpoutSheet(CsvSheet|OdsSheet|XlsxSheet $sheet, string $originalFilename, string $format, int $startedAt, int &$totalCells): array
     {
         $rows = [];
         $rowIterator = $sheet->getRowIterator();
@@ -286,9 +293,6 @@ final class KnowledgeDocumentParser
             $sourceRowNumber = (int) $sourceRowNumber;
             if ($sourceRowNumber < 1 || $sourceRowNumber > $this->maximumRows()) {
                 throw new \RuntimeException('sheet_row_limit_exceeded');
-            }
-            if (! $row instanceof Row) {
-                continue;
             }
             $cells = $this->readOpenSpoutCells($row, $startedAt, $totalCells);
             if ($cells !== []) {
@@ -328,7 +332,7 @@ final class KnowledgeDocumentParser
     }
 
     /** @return array<string, mixed> */
-    private function readLegacySheet(object $worksheet, int $startedAt, int &$totalCells, int $maximumRows, int $maximumColumns): array
+    private function readLegacySheet(Worksheet $worksheet, int $startedAt, int &$totalCells, int $maximumRows, int $maximumColumns): array
     {
         $rows = [];
         $lastColumn = Coordinate::stringFromColumnIndex($maximumColumns);
@@ -341,9 +345,6 @@ final class KnowledgeDocumentParser
                 $totalCells++;
                 if ($totalCells > (int) config('rag.uploads.parsing.maximum_spreadsheet_cells')) {
                     throw new \RuntimeException('cell_count_limit_exceeded');
-                }
-                if ($cell === null) {
-                    continue;
                 }
                 if ($cell->getDataType() === DataType::TYPE_FORMULA) {
                     $value = '[формула не вычисляется]';
@@ -379,11 +380,13 @@ final class KnowledgeDocumentParser
         foreach ($sheets as $sheet) {
             $rows = is_array($sheet['rows'] ?? null) ? $sheet['rows'] : [];
             $header = $rows[0]['cells'] ?? [];
-            $maximumColumn = max(array_keys($header ?: [1 => 1]));
+            $headerKeys = array_map(static fn (int|string $key): int => (int) $key, array_keys($header));
+            $maximumColumn = $headerKeys === [] ? 1 : max($headerKeys);
             foreach ($rows as $row) {
                 $cells = is_array($row['cells'] ?? null) ? $row['cells'] : [];
                 if ($cells !== []) {
-                    $maximumColumn = max($maximumColumn, max(array_keys($cells)));
+                    $cellKeys = array_map(static fn (int|string $key): int => (int) $key, array_keys($cells));
+                    $maximumColumn = max($maximumColumn, max($cellKeys));
                 }
             }
             $headerNames = [];
@@ -510,20 +513,20 @@ final class KnowledgeDocumentParser
                 if (! is_array($stat)) {
                     return ['code' => 'archive_entry_unreadable', 'details' => ['index' => $index]];
                 }
-                $name = str_replace('\\', '/', (string) ($stat['name'] ?? ''));
+                $name = str_replace('\\', '/', (string) $stat['name']);
                 $lowerName = strtolower($name);
                 if ($name === '' || str_starts_with($name, '/') || str_contains($name, '../') || str_contains($lowerName, 'vbaproject') || str_contains($lowerName, 'external-links') || str_contains($lowerName, 'externallinks') || str_contains($lowerName, 'embeddings/') || str_contains($lowerName, 'macros') || str_contains($lowerName, 'basic/') || str_contains($lowerName, 'scripts/') || str_contains($lowerName, 'activex') || preg_match('/\.(exe|dll|bat|cmd|ps1|jar|class)$/i', $name) === 1) {
                     return ['code' => 'archive_contains_unsafe_content', 'details' => ['entry' => basename($name)]];
                 }
-                $size = (int) ($stat['size'] ?? 0);
-                $compressedSize = (int) ($stat['comp_size'] ?? 0);
+                $size = (int) $stat['size'];
+                $compressedSize = (int) $stat['comp_size'];
                 if ($size < 0 || $size > (int) config('rag.uploads.parsing.maximum_archive_entry_bytes')) {
                     return ['code' => 'archive_entry_size_limit_exceeded', 'details' => ['entry' => basename($name), 'size' => $size]];
                 }
                 if ($compressedSize > 0 && $size > ($compressedSize * (int) config('rag.uploads.parsing.maximum_compression_ratio'))) {
                     return ['code' => 'archive_compression_ratio_exceeded', 'details' => ['entry' => basename($name)]];
                 }
-                if (isset($stat['encryption_method']) && (int) $stat['encryption_method'] !== 0) {
+                if ((int) $stat['encryption_method'] !== 0) {
                     return ['code' => 'encrypted_archive_not_supported', 'details' => ['entry' => basename($name)]];
                 }
                 $totalBytes += $size;

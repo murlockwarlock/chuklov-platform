@@ -16,6 +16,7 @@ final class LavaWebhookParser
 
     private const RECONCILIATION_EVENTS = ['refund.success', 'chargeback.initiated'];
 
+    /** @param array<string, mixed> $payload */
     public function parse(array $payload): LavaWebhookEvent
     {
         $eventType = $this->eventType($payload);
@@ -52,6 +53,7 @@ final class LavaWebhookParser
         );
     }
 
+    /** @param array<string, mixed> $payload */
     private function envelopeEvent(string $eventType, array $payload): LavaWebhookEvent
     {
         $eventId = $this->optionalUuid($payload['event_id'] ?? null);
@@ -78,6 +80,7 @@ final class LavaWebhookParser
         );
     }
 
+    /** @param array<string, mixed> $payload */
     private function eventType(array $payload): string
     {
         $eventType = $payload['eventType'] ?? $payload['event_type'] ?? null;

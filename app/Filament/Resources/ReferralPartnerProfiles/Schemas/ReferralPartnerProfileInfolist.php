@@ -30,7 +30,7 @@ final class ReferralPartnerProfileInfolist
                     TextEntry::make('status')
                         ->label(__('Статус'))
                         ->formatStateUsing(fn (ReferralPartnerStatus|string $state): string => $state instanceof ReferralPartnerStatus
-                            ? CrmLabel::enum($state)
+                            ? (CrmLabel::enum($state) ?? $state->value)
                             : (CrmLabel::enum(ReferralPartnerStatus::tryFrom($state)) ?? __('Неизвестно')))
                         ->badge(),
                     TextEntry::make('activated_at')->label(__('Подключён'))->dateTime('d.m.Y H:i'),

@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Modules\Commerce\Domain\Models\PaymentProviderOfferMapping;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\SavePaymentProviderOfferMappings;
+use App\Modules\Finance\Domain\Enums\CurrencyCode;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Services\Application\ServiceSnapshotHasher;
 use App\Modules\Services\Application\UpdateService;
@@ -112,24 +113,33 @@ class EditService extends LocalizedEditRecord
             ->where('is_active', true)
             ->orderBy('id')
             ->get();
-        $primary = $mappings->first(fn (PaymentProviderOfferMapping $mapping): bool => $mapping->currency->value === (string) $service->price_currency)
+        $primary = $mappings->first(fn (PaymentProviderOfferMapping $mapping): bool => (string) $mapping->getRawOriginal('currency') === (string) $service->price_currency)
             ?? $mappings->first();
+
+        $offers = [];
+        foreach ($mappings as $mapping) {
+            if ($primary !== null && $mapping->getKey() === $primary->getKey()) {
+                continue;
+            }
+
+            $currency = CurrencyCode::tryFrom((string) $mapping->getRawOriginal('currency'));
+            $offers[] = [
+                'currency' => $currency === null ? (string) $mapping->getRawOriginal('currency') : $currency->value,
+                'offer_id' => (string) $mapping->external_offer_id,
+            ];
+        }
 
         return [
             'enabled' => $primary !== null,
             'offer_id' => $primary?->external_offer_id,
-            'offers' => $mappings
-                ->reject(fn (PaymentProviderOfferMapping $mapping): bool => $primary !== null && $mapping->getKey() === $primary->getKey())
-                ->map(fn (PaymentProviderOfferMapping $mapping): array => [
-                    'currency' => $mapping->currency->value,
-                    'offer_id' => (string) $mapping->external_offer_id,
-                ])
-                ->values()
-                ->all(),
+            'offers' => $offers,
         ];
     }
 
-    /** @param array<string, mixed> $data @return array{enabled: bool, mappings: list<array{currency: mixed, offer_id: mixed}>} */
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{enabled: bool, mappings: list<array{currency: mixed, offer_id: mixed}>}
+     */
     private function mappingData(array $data): array
     {
         $enabled = (bool) ($data['lava_enabled'] ?? false);
@@ -143,7 +153,10 @@ class EditService extends LocalizedEditRecord
 
             foreach ((array) ($data['lava_offers'] ?? []) as $mapping) {
                 if (is_array($mapping)) {
-                    $mappings[] = $mapping;
+                    $mappings[] = [
+                        'currency' => $mapping['currency'] ?? null,
+                        'offer_id' => $mapping['offer_id'] ?? null,
+                    ];
                 }
             }
         }

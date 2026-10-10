@@ -44,16 +44,19 @@ class Organization extends Model
         return $this->hasMany(Booking::class);
     }
 
+    /** @return HasMany<TrackerPlan, $this> */
     public function trackerPlans(): HasMany
     {
         return $this->hasMany(TrackerPlan::class);
     }
 
+    /** @return HasMany<TrackerEntitlement, $this> */
     public function trackerEntitlements(): HasMany
     {
         return $this->hasMany(TrackerEntitlement::class);
     }
 
+    /** @return HasMany<TrackerCheckIn, $this> */
     public function trackerCheckIns(): HasMany
     {
         return $this->hasMany(TrackerCheckIn::class);

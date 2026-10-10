@@ -139,6 +139,6 @@ final class CreateFinancialObligation
         }
 
         return $booking->status === BookingStatus::Confirmed
-            && $booking->service?->payment_requirement === ServicePaymentRequirement::PrepayFull;
+            && $booking->service->payment_requirement === ServicePaymentRequirement::PrepayFull;
     }
 }

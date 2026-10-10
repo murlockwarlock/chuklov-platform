@@ -53,9 +53,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
         )];
     }
 
-    /** @param list<int> $userIds
-     * @return list<ScenarioRecipient>
-     */
+    /** @return list<ScenarioRecipient> */
     private function memberRecipients(ScenarioEvent $event, ScenarioRecipientStrategy $strategy): array
     {
         return array_values($this->memberships($event, $this->memberIds($strategy))

@@ -131,7 +131,7 @@ final class UpdateScenarioRule
 
         $existingStrategy = $rule->recipient_strategy;
 
-        if (is_array($existingStrategy) && array_key_exists('permission', $existingStrategy)) {
+        if (array_key_exists('permission', $existingStrategy)) {
             $strategy['permission'] = $existingStrategy['permission'];
         }
 

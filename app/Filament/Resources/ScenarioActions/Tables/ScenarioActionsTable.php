@@ -136,7 +136,7 @@ final class ScenarioActionsTable
 
     private static function reasonLabel(?string $reason): ?string
     {
-        return match ($reason) {
+        $label = match ($reason) {
             null, '' => null,
             'verified_identity_unavailable', 'no_available_channel', 'channel_unavailable' => __('Нет доступного Telegram'),
             'provider_suppressed' => __('Получатель отключил сообщения'),
@@ -149,5 +149,7 @@ final class ScenarioActionsTable
             'all_channels_failed', 'delivery_execution_error', 'delivery_outcome_unknown' => __('Не удалось отправить'),
             default => __('Не удалось отправить'),
         };
+
+        return is_string($label) ? $label : null;
     }
 }

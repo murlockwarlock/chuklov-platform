@@ -63,7 +63,7 @@ final class ActivateReferralPartner
                             'status' => ReferralPartnerStatus::Active,
                             'activated_at' => now(),
                             'activation_source' => $source,
-                            'activated_by_user_id' => $actor?->getKey(),
+                            'activated_by_user_id' => $actor->getKey(),
                         ]);
                         $profile->save();
                     } elseif ($reactivated) {
@@ -71,7 +71,7 @@ final class ActivateReferralPartner
                             'status' => ReferralPartnerStatus::Active,
                             'activated_at' => now(),
                             'activation_source' => $source,
-                            'activated_by_user_id' => $actor?->getKey(),
+                            'activated_by_user_id' => $actor->getKey(),
                             'deactivated_at' => null,
                             'deactivated_by_user_id' => null,
                             'updated_at' => now(),
@@ -139,7 +139,7 @@ final class ActivateReferralPartner
                     'channel' => ReferralCampaignChannel::Other,
                     'is_active' => true,
                     'is_default' => true,
-                    'created_by_user_id' => $actor?->getKey(),
+                    'created_by_user_id' => $actor->getKey(),
                 ]);
                 $link->save();
                 $this->audit->handle(

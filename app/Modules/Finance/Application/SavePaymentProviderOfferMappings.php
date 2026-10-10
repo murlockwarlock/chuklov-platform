@@ -101,7 +101,10 @@ final class SavePaymentProviderOfferMappings
         }
     }
 
-    /** @param array<array-key, mixed> $mappings @return list<array{currency: string, offer_id: string}> */
+    /**
+     * @param  array<array-key, mixed>  $mappings
+     * @return list<array{currency: string, offer_id: string}>
+     */
     private function normalizeMappings(Organization $organization, array $mappings): array
     {
         if (! array_is_list($mappings) || $mappings === []) {
@@ -156,6 +159,6 @@ final class SavePaymentProviderOfferMappings
             ];
         }
 
-        return array_values($normalized);
+        return $normalized;
     }
 }

@@ -108,7 +108,10 @@ final class SurveyScorer
         return $score;
     }
 
-    /** @param array<string, mixed> $scoring @return list<string> */
+    /**
+     * @param  array<string, mixed>  $scoring
+     * @return list<string>
+     */
     public function questionKeysForMetric(array $scoring, string $metricKey): array
     {
         $questionKeys = [];

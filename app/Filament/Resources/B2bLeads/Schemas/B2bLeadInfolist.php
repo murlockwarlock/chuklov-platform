@@ -31,15 +31,15 @@ final class B2bLeadInfolist
                 TextEntry::make('submitted_at')->label(__('Отправлено'))->dateTime('d.m.Y H:i')->timezone(fn (): string => app(OrganizationContext::class)->organization()->defaultTimezone()),
             ])->columns(2),
             Section::make(__('B2B-разговор'))->schema([
-                TextEntry::make('salesCall.status')->label(__('Состояние разговора'))->formatStateUsing(static fn ($state): string => $state instanceof B2bSalesCallStatus ? (CrmLabel::enum($state) ?? (string) $state) : (string) $state),
+                TextEntry::make('salesCall.status')->label(__('Состояние разговора'))->formatStateUsing(static fn ($state): string => $state instanceof B2bSalesCallStatus ? (CrmLabel::enum($state) ?? $state->value) : (string) $state),
                 TextEntry::make('salesCall.specialist.display_name')
                     ->label(__('Специалист'))
                     ->placeholder('—')
-                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist))
-                    ->color(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist) === null ? null : 'primary'),
+                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall->specialist))
+                    ->color(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall->specialist) === null ? null : 'primary'),
                 TextEntry::make('salesCall.starts_at')->label(__('Начало'))->dateTime('d.m.Y H:i')->timezone(fn (B2bLead $record): string => (string) $record->salesCall->schedule_timezone),
                 TextEntry::make('salesCall.ends_at')->label(__('Окончание'))->dateTime('d.m.Y H:i')->timezone(fn (B2bLead $record): string => (string) $record->salesCall->schedule_timezone),
-                TextEntry::make('salesCall.meeting_mode')->label(__('Режим'))->formatStateUsing(static fn ($state): string => $state instanceof VideoMeetingMode ? (CrmLabel::enum($state) ?? (string) $state) : (string) $state),
+                TextEntry::make('salesCall.meeting_mode')->label(__('Режим'))->formatStateUsing(static fn ($state): string => $state instanceof VideoMeetingMode ? (CrmLabel::enum($state) ?? $state->value) : (string) $state),
                 TextEntry::make('salesCall.provider_sync_status')->label(__('Состояние ссылки'))->state(fn (B2bLead $record): string => self::meetingStatus($record)),
                 TextEntry::make('salesCall.provider_join_url')
                     ->label(__('Ссылка клиента'))

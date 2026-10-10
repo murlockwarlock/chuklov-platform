@@ -42,6 +42,7 @@ use Throwable;
 
 final class ClientAttachmentsRelationManager extends LocalizedRelationManager
 {
+    /** @var array<int, AiRun>|null */
     private ?array $latestDocumentAnalysisRuns = null;
 
     protected static string $relationship = 'medicalAttachments';
@@ -92,8 +93,8 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                     ->label(__('Тип'))
                     ->badge()
                     ->formatStateUsing(fn (AttachmentType|string $state): string => $state instanceof AttachmentType
-                        ? CrmLabel::enum($state)
-                        : (CrmLabel::enum(AttachmentType::tryFrom($state)) ?? __('Файл'))),
+                        ? (CrmLabel::enum($state) ?? $state->value)
+                        : (CrmLabel::enum(AttachmentType::tryFrom($state)) ?? 'Файл')),
                 TextColumn::make('size_bytes')
                     ->label(__('Размер'))
                     ->formatStateUsing(fn (int|string $state): string => self::formatBytes((int) $state))
@@ -117,8 +118,8 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                         Select::make('attachment_type')
                             ->label(__('Тип файла'))
                             ->options([
-                                AttachmentType::MedicalReport->value => CrmLabel::enum(AttachmentType::MedicalReport),
-                                AttachmentType::PosturePhoto->value => CrmLabel::enum(AttachmentType::PosturePhoto),
+                                AttachmentType::MedicalReport->value => CrmLabel::enum(AttachmentType::MedicalReport) ?? AttachmentType::MedicalReport->value,
+                                AttachmentType::PosturePhoto->value => CrmLabel::enum(AttachmentType::PosturePhoto) ?? AttachmentType::PosturePhoto->value,
                             ])
                             ->required(),
                         FileUpload::make('file')
