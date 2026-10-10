@@ -124,7 +124,7 @@ The same staging browser session authenticated a synthetic recipient through the
 
 Read-only `synthetic-evidence` on PostgreSQL staging exact `a24a827639db2103bd6db64f9ee1da223e05a375` scoped certificate3 to the synthetic client: original/balance 5,000 EUR minor units, current holder synthetic recipient, claims 2–5 revoked, claim6 claimed and claim7 pending, with issued/transferred/claimed/redeemed/redemption-reversed movements. No token, contact, credential or private body was emitted. The projection is read-only and the local regression proves organization scope and unchanged row counts.
 
-Portal applied 10 EUR to obligation18: certificate balance40 / debt20. CRM corrected the redemption through the actual history action; Portal then showed certificate50 / debt30. Opening certificate history preserved Issued50, transfer history, Redeemed10 and CreditBack10. CRM/client transfer, receive, replay, self-denial and correction paths are now evidenced. Full redemption, unrelated-currency UI denial, direct foreign-ID browser probes, independent dashboard/LTV reconciliation and exact hosted gift E2E completion remain open.
+Portal applied 10 EUR to obligation18: certificate balance40 / debt20. CRM corrected the redemption through the actual history action; Portal then showed certificate50 / debt30. Opening certificate history preserved Issued50, transfer history, Redeemed10 and CreditBack10. CRM/client transfer, receive, replay, self-denial, correction, and the hosted desktop/mobile gift E2E are now evidenced. Full redemption, unrelated-currency UI denial, direct foreign-ID browser probes, and independent dashboard/LTV reconciliation remain open.
 
 ### Companion and staff reply
 
