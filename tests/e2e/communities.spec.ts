@@ -152,7 +152,7 @@ async function login(page: Page, fixture: CommunitiesFixture): Promise<void> {
 
 async function selectText(editor: Locator, value: string): Promise<void> {
     await editor.click({ force: true });
-    const selectedText = await editor.evaluate((element, textToSelect) => {
+    await editor.evaluate((element, textToSelect) => {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
         let node = walker.nextNode();
 
@@ -163,7 +163,7 @@ async function selectText(editor: Locator, value: string): Promise<void> {
             if (start !== -1) {
                 const range = document.createRange();
                 range.setStart(node, start);
-                range.setEnd(node, start + textToSelect.length);
+                range.collapse(true);
 
                 const selection = window.getSelection();
                 selection?.removeAllRanges();
@@ -171,7 +171,7 @@ async function selectText(editor: Locator, value: string): Promise<void> {
                 (element as HTMLElement).focus();
                 document.dispatchEvent(new Event('selectionchange', { bubbles: true }));
 
-                return selection?.toString() ?? '';
+                return;
             }
 
             node = walker.nextNode();
@@ -180,6 +180,11 @@ async function selectText(editor: Locator, value: string): Promise<void> {
         throw new Error(`Text not found in the rich editor: ${textToSelect}`);
     }, value);
 
+    for (let index = 0; index < value.length; index += 1) {
+        await editor.press('Shift+ArrowRight');
+    }
+
+    const selectedText = await editor.evaluate(() => window.getSelection()?.toString() ?? '');
     expect(selectedText).toBe(value);
 }
 
