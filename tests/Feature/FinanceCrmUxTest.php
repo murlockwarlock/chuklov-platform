@@ -283,6 +283,29 @@ final class FinanceCrmUxTest extends TestCase
             ->assertCountTableRecords(1);
     }
 
+    public function test_staging_finance_evidence_is_read_only_scoped_and_contains_authoritative_amounts(): void
+    {
+        require_once base_path('scripts/staging-proof-evidence.php');
+        [$organization, $admin, $client, , $obligation] = $this->financeFixture(singleCurrency: true);
+        $payment = app(RecordManualPayment::class)->handle(
+            actor: $admin, obligation: $obligation, amount: '25.00', currency: 'USD',
+            paymentMethod: 'cash', occurredAt: CarbonImmutable::now('UTC'),
+            note: 'Private note not included in evidence', receipt: null, idempotencyKey: 'scoped-evidence-payment',
+        );
+        $this->financeFixture(singleCurrency: true);
+        $before = FinancialLedgerEntry::query()->count();
+
+        $evidence = \syntheticFinanceEvidence($organization->getKey(), $client->getKey());
+
+        self::assertSame([$obligation->getKey()], array_column($evidence['obligations'], 'id'));
+        self::assertSame(10000, $evidence['obligations'][0]['amount_minor']);
+        self::assertSame([$payment->getKey()], array_column($evidence['ledger'], 'id'));
+        self::assertSame(2500, $evidence['ledger'][0]['settlement_amount_minor']);
+        self::assertSame(1, $evidence['ledger_count']);
+        self::assertArrayNotHasKey('note', $evidence['ledger'][0]);
+        self::assertSame($before, FinancialLedgerEntry::query()->count());
+    }
+
     public function test_barter_payment_form_requires_description_and_history_presents_it(): void
     {
         [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
