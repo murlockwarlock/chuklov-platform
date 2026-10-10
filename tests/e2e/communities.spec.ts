@@ -193,7 +193,8 @@ async function selectText(editor: Locator, value: string): Promise<void> {
 }
 
 async function applyLink(page: Page, editor: Locator, url: string): Promise<void> {
-    await page.locator('button[aria-label="Ссылка"]:visible').last().click({ force: true });
+    const editorContainer = editor.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " fi-fo-rich-editor ")][1]');
+    await editorContainer.locator('button[aria-label="Ссылка"]:visible').click({ force: true });
     const dialog = page.locator('[role="dialog"]:visible').filter({ hasText: 'Открывать в новой вкладке' }).first();
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeVisible();
