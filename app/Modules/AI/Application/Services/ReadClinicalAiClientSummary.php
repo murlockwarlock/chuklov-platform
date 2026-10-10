@@ -110,13 +110,13 @@ final readonly class ReadClinicalAiClientSummary
                     'label' => 'Клиническое резюме',
                     'state' => ClinicalAiPresentation::synthesisStatus($synthesisRun),
                     'color' => ClinicalAiPresentation::synthesisStatusColor($synthesisRun),
-                    'lastReadyAt' => $this->dateLabel($synthesisReviewedRun?->finished_at ?? $synthesisReviewedRun?->created_at),
+                    'lastReadyAt' => $this->dateLabel($this->reviewedRunDate($synthesisReviewedRun)),
                 ],
                 'courseReport' => [
                     'label' => 'Итоговый отчёт курса',
                     'state' => ClinicalAiPresentation::courseStatus($courseReportRun),
                     'color' => ClinicalAiPresentation::courseStatusColor($courseReportRun),
-                    'lastReadyAt' => $this->dateLabel($courseReportReviewedRun?->finished_at ?? $courseReportReviewedRun?->created_at),
+                    'lastReadyAt' => $this->dateLabel($this->reviewedRunDate($courseReportReviewedRun)),
                 ],
             ],
             'readiness' => $this->readinessFor(
@@ -129,7 +129,7 @@ final readonly class ReadClinicalAiClientSummary
                 $postureReviewedRun,
             ),
             'synthesisPreview' => $this->synthesisPreview($actor, $client, $synthesisReviewedRun),
-            'synthesisPreviewAt' => $this->dateLabel($synthesisReviewedRun?->finished_at ?? $synthesisReviewedRun?->created_at),
+            'synthesisPreviewAt' => $this->dateLabel($this->reviewedRunDate($synthesisReviewedRun)),
         ];
     }
 
@@ -285,7 +285,7 @@ final readonly class ReadClinicalAiClientSummary
     /** @return array{label: string, available: bool, availability: string} */
     private function sourceReadiness(string $label, bool $available, ?AiRun $latestRun, ?AiRun $reviewedRun): array
     {
-        $reviewedAt = $this->dateLabel($reviewedRun?->finished_at ?? $reviewedRun?->created_at);
+        $reviewedAt = $this->dateLabel($this->reviewedRunDate($reviewedRun));
         $usingPreviousReviewed = $available
             && $latestRun !== null
             && $reviewedRun !== null
@@ -327,5 +327,14 @@ final readonly class ReadClinicalAiClientSummary
     private function dateLabel(?CarbonInterface $date): ?string
     {
         return $date?->copy()->setTimezone($this->context->defaultTimezone())->format('d.m.Y H:i');
+    }
+
+    private function reviewedRunDate(?AiRun $run): ?CarbonInterface
+    {
+        if ($run === null) {
+            return null;
+        }
+
+        return $run->finished_at ?? $run->created_at;
     }
 }

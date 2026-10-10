@@ -30,7 +30,7 @@ function capability(id, area, actor, surface, state, action, proofType, testName
         'Tenant/security behavior': overrides.security ?? 'Organization context and authorization are derived server-side; foreign identifiers and protected data are denied.',
         'Test type': overrides.testType ?? proofType,
         'Test name': testName,
-        'Evidence/run': proof,
+        'Evidence/run': `${proof} ${evidenceText}`,
         Status: status,
         Notes: notes,
     };
