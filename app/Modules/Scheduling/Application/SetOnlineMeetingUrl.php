@@ -56,6 +56,10 @@ final class SetOnlineMeetingUrl
                 throw ValidationException::withMessages(['booking' => 'Only requested or confirmed manual online bookings can receive a meeting URL.']);
             }
 
+            if ($lockedBooking->meeting_url === $meetingUrl) {
+                return $lockedBooking;
+            }
+
             $oldValues = [...$this->events->snapshot($lockedBooking), 'meeting_url_set' => $lockedBooking->meeting_url !== null];
             $lockedBooking->forceFill([
                 'meeting_url' => $meetingUrl,

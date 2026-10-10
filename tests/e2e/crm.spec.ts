@@ -24,6 +24,7 @@ type CrmFixture = {
     giftProductName: string | null;
     portalCookieName?: string;
     portalCookieValue?: string;
+    manualOnlineBookingId?: number;
 };
 
 function validPdfBuffer(): Buffer {
@@ -43,7 +44,7 @@ function validPdfBuffer(): Buffer {
     ].join('\n'));
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; portalAccess?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; portalAccess?: boolean; manualOnlineFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -416,6 +417,16 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'size_bytes' => 2048,
             'sha256_checksum' => hash('sha256', $suffix),
         ]);
+        $manualOnlineBooking = null;
+        if (getenv('PLAYWRIGHT_MANUAL_ONLINE_FLOW') === '1') {
+            $manualOnlineBooking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()
+                ->forClient($client)->forSpecialist($specialist)->forService($service)->create([
+                    'visit_format' => 'online',
+                    'meeting_link_mode' => 'manual',
+                    'meeting_url' => null,
+                    'status' => 'confirmed',
+                ]);
+        }
         $portalCookieName = null;
         $portalCookieValue = null;
         if (getenv('PLAYWRIGHT_PORTAL_ACCESS') === '1') {
@@ -462,6 +473,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'giftProductName' => $giftProductName,
             'portalCookieName' => $portalCookieName,
             'portalCookieValue' => $portalCookieValue,
+            'manualOnlineBookingId' => $manualOnlineBooking?->getKey(),
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -484,6 +496,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 PLAYWRIGHT_PAYOUT_FLOW: options.payoutFlow ? '1' : '0',
                 PLAYWRIGHT_MESSAGES_FLOW: options.messagesFlow ? '1' : '0',
                 PLAYWRIGHT_PORTAL_ACCESS: options.portalAccess ? '1' : '0',
+                PLAYWRIGHT_MANUAL_ONLINE_FLOW: options.manualOnlineFlow ? '1' : '0',
                 PLAYWRIGHT_GIFT_SALE_FLOW: options.giftSaleFlow ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -1208,6 +1221,36 @@ test('staff can complete a visit and record a manual payment through the normal 
     await expect(page.getByRole('heading', { name: 'Оплаты', exact: true })).toBeVisible();
     await searchTableFor(page, fixture.clientName);
     await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toContainText('Оплачено частично');
+});
+
+test('manual Online meeting link supports replacement and refresh without duplicate history', async ({ page }) => {
+    const fixture = createCrmFixture({ manualOnlineFlow: true });
+    expect(fixture.manualOnlineBookingId).toBeTruthy();
+    await login(page, fixture);
+    await page.goto(`/admin/bookings/${fixture.manualOnlineBookingId}`);
+    const saveLink = async (url: string): Promise<void> => {
+        await page.getByRole('button', { name: 'Действия', exact: true }).click();
+        await page.locator('.fi-dropdown-panel:visible').getByRole('button', { name: 'Ссылка на встречу', exact: true }).click();
+        const modal = page.locator('.fi-modal-window:visible').last();
+        await modal.getByRole('textbox', { name: 'Ссылка на встречу', exact: true }).fill(url);
+        await modal.getByRole('button', { name: 'Отправить', exact: true }).click();
+        await expect(page.getByText('Ссылка на встречу обновлена', { exact: true })).toBeVisible();
+        await page.reload();
+        await expect(page.getByRole('link', { name: url, exact: true })).toHaveAttribute('href', url);
+    };
+    await saveLink('https://meet.example.test/original');
+    await saveLink('https://meet.example.test/original');
+    await saveLink('https://meet.example.test/replacement');
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $booking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::query()->where('organization_id', $organization->getKey())->findOrFail(${fixture.manualOnlineBookingId});
+        echo json_encode(['version' => $booking->event_version, 'events' => $booking->events()->where('event_type', 'meeting_link_updated')->count()], JSON_THROW_ON_ERROR);
+    `;
+    const proof = JSON.parse(execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim().split('\n').at(-1) ?? '');
+    expect(proof).toEqual({ version: 3, events: 2 });
+    await assertNoHorizontalOverflow(page);
 });
 
 test('staff can create and fully settle a gift certificate through the CRM catalog', async ({ page }) => {

@@ -367,6 +367,20 @@ class MilestoneFourFinalLifecycleTest extends TestCase
 
         self::assertSame('https://meet.example.test/room', $updated->meeting_url);
         self::assertSame(BookingEventType::MeetingLinkUpdated, $updated->events()->latest('id')->firstOrFail()->event_type);
+
+        $version = $updated->event_version;
+        $eventCount = $updated->events()->count();
+        $scenarioCount = ScenarioEvent::query()->count();
+        $replayed = app(SetOnlineMeetingUrl::class)->handle($admin, $booking, 'https://meet.example.test/room');
+
+        self::assertSame($version, $replayed->event_version);
+        self::assertSame($eventCount, $replayed->events()->count());
+        self::assertSame($scenarioCount, ScenarioEvent::query()->count());
+
+        $replacement = app(SetOnlineMeetingUrl::class)->handle($admin, $booking, 'https://meet.example.test/replacement');
+        self::assertSame('https://meet.example.test/replacement', $replacement->meeting_url);
+        self::assertSame($version + 1, $replacement->event_version);
+        self::assertSame($eventCount + 1, $replacement->events()->count());
     }
 
     public function test_schedule_mutations_require_acknowledgement_and_preserve_existing_booking(): void

@@ -65,3 +65,9 @@ test('new Resources, list/view screens and notification catalog events cannot ev
     assert.match(diagnostics(event, renderMatrix([])).join('\n'), /UNMAPPED NOTIFICATION/);
     assert.match(renderMatrix(event), /not delivery evidence/);
 });
+
+test('action visibility excludes predicates belonging to nested modal fields', () => {
+    const rows = scanSource('app/Filament/Pages/Example.php', "Action::make('reschedule')->label('Move')->schema([Select::make('location')->label('Location')->visible(fn ($record) => $record->format === 'office')])->visible(fn ($record) => $record->status === 'requested');");
+    assert.equal(rows[0].visible, "fn ($record) => $record->status === 'requested'");
+    assert.equal(rows[0].label, "'Move'");
+});
