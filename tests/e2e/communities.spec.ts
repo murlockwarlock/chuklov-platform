@@ -193,7 +193,9 @@ async function selectText(editor: Locator, value: string): Promise<void> {
 }
 
 async function applyLink(page: Page, editor: Locator, url: string): Promise<void> {
-    await page.locator('button[aria-label="Ссылка"]').click({ force: true });
+    const linkButton = page.locator('button[aria-label="Ссылка"]').first();
+    await linkButton.scrollIntoViewIfNeeded();
+    await linkButton.click({ force: true });
     await expect(page.locator('[role="dialog"]')).toHaveCount(1);
     const dialog = page.locator('[role="dialog"]').filter({ hasText: 'Открывать в новой вкладке' }).first();
     await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeVisible();
