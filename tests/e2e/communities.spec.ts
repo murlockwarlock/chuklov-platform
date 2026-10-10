@@ -185,6 +185,7 @@ async function selectText(editor: Locator, value: string): Promise<void> {
 
 async function applyLink(page: Page, editor: Locator, url: string): Promise<void> {
     const linkButton = page.locator('button[aria-label="Ссылка"]').first();
+    const selectionLength = await editor.evaluate(() => window.getSelection()?.toString().length ?? 0);
     await linkButton.click({ force: true });
     const dialog = page.locator('[role="dialog"] .fi-modal-window').filter({ hasText: 'Открывать в новой вкладке' }).last();
     let isVisible = false;
@@ -193,8 +194,7 @@ async function applyLink(page: Page, editor: Locator, url: string): Promise<void
         await expect(dialog).toBeVisible({ timeout: 1500 });
         isVisible = true;
     } catch {
-        const selectionLength = await editor.evaluate(() => window.getSelection()?.toString().length ?? 0);
-
+        await editor.focus();
         await editor.press('ArrowLeft');
 
         for (let index = 0; index < selectionLength; index += 1) {
