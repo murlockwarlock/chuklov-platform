@@ -32,13 +32,20 @@ final class Dashboard extends LocalizedDashboard
         return 1;
     }
 
-    public function getSubheading(): ?string
+    public function getSubheading(): string
     {
         try {
             $organization = app(OrganizationContext::class)->organization();
             $period = DashboardPeriod::fromFilters($this->filters, $organization->defaultTimezone());
-            $startDate = CarbonImmutable::createFromFormat('!Y-m-d', $period->startDate, 'UTC')->format('d.m.Y');
-            $endDate = CarbonImmutable::createFromFormat('!Y-m-d', $period->endDate, 'UTC')->format('d.m.Y');
+            $start = CarbonImmutable::createFromFormat('!Y-m-d', $period->startDate, 'UTC');
+            $end = CarbonImmutable::createFromFormat('!Y-m-d', $period->endDate, 'UTC');
+
+            if (! $start instanceof CarbonImmutable || ! $end instanceof CarbonImmutable) {
+                throw new \RuntimeException('Dashboard period dates are invalid.');
+            }
+
+            $startDate = $start->format('d.m.Y');
+            $endDate = $end->format('d.m.Y');
             $range = $startDate === $endDate ? $startDate : $startDate.' — '.$endDate;
 
             return __('Период: :range · Часовой пояс: :timezone (:zone)', [

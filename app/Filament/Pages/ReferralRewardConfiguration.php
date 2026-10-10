@@ -141,8 +141,8 @@ final class ReferralRewardConfiguration extends LocalizedPage
                                 Select::make('qualification_rule')
                                     ->label(__('Начислять'))
                                     ->options([
-                                        ReferralRewardQualificationRule::FirstSettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::FirstSettledPayment),
-                                        ReferralRewardQualificationRule::EverySettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::EverySettledPayment),
+                                        ReferralRewardQualificationRule::FirstSettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::FirstSettledPayment) ?? ReferralRewardQualificationRule::FirstSettledPayment->value,
+                                        ReferralRewardQualificationRule::EverySettledPayment->value => CrmLabel::enum(ReferralRewardQualificationRule::EverySettledPayment) ?? ReferralRewardQualificationRule::EverySettledPayment->value,
                                     ])
                                     ->visible(fn (Get $get): bool => (bool) $get('enabled'))
                                     ->required(fn (Get $get): bool => (bool) $get('enabled'))
@@ -150,8 +150,8 @@ final class ReferralRewardConfiguration extends LocalizedPage
                                 Select::make('formula')
                                     ->label(__('Размер бонуса'))
                                     ->options([
-                                        ReferralRewardFormula::FixedAmount->value => CrmLabel::enum(ReferralRewardFormula::FixedAmount),
-                                        ReferralRewardFormula::PercentageOfSettlement->value => CrmLabel::enum(ReferralRewardFormula::PercentageOfSettlement),
+                                        ReferralRewardFormula::FixedAmount->value => CrmLabel::enum(ReferralRewardFormula::FixedAmount) ?? ReferralRewardFormula::FixedAmount->value,
+                                        ReferralRewardFormula::PercentageOfSettlement->value => CrmLabel::enum(ReferralRewardFormula::PercentageOfSettlement) ?? ReferralRewardFormula::PercentageOfSettlement->value,
                                     ])
                                     ->live()
                                     ->visible(fn (Get $get): bool => (bool) $get('enabled'))
@@ -306,7 +306,7 @@ final class ReferralRewardConfiguration extends LocalizedPage
             return app(CurrencyConfigurationService::class)
                 ->configuration(app(OrganizationContext::class)->id())
                 ->display_currency
-                ?->value;
+                ->value;
         } catch (ModelNotFoundException) {
             return null;
         }

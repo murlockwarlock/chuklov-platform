@@ -676,7 +676,9 @@ class SchedulingConfiguration extends LocalizedPage
     public function specialistScheduleTimezoneLabel(): string
     {
         $specialist = $this->selectedSpecialist();
-        $timezone = $specialist?->timezone ?? app(OrganizationContext::class)->defaultTimezone();
+        $timezone = $specialist instanceof Specialist
+            ? $specialist->timezone
+            : app(OrganizationContext::class)->defaultTimezone();
         $offsetHours = now($timezone)->getOffset() / 3600;
         $offset = $offsetHours === 0.0
             ? 'UTC'
@@ -700,17 +702,21 @@ class SchedulingConfiguration extends LocalizedPage
             ->where('specialist_id', $specialistId)
             ->orderBy('weekday')
             ->orderBy('start_time')
-            ->get()
-            ->map(fn (SpecialistWorkingHour $hour): array => [
+            ->get();
+        $rows = [];
+
+        foreach ($hours as $hour) {
+            $startsOn = $hour->starts_on;
+            $endsOn = $hour->ends_on;
+            $rows[] = [
                 'weekday' => $hour->weekday,
                 'start_time' => substr((string) $hour->start_time, 0, 5),
                 'end_time' => substr((string) $hour->end_time, 0, 5),
-                'starts_on' => $hour->starts_on?->toDateString(),
-                'ends_on' => $hour->ends_on?->toDateString(),
-            ])
-            ->values()
-            ->all();
+                'starts_on' => $startsOn?->toDateString(),
+                'ends_on' => $endsOn?->toDateString(),
+            ];
+        }
 
-        return array_values($hours);
+        return $rows;
     }
 }
