@@ -162,6 +162,19 @@ async function selectText(page: Page, editor: Locator, value: string): Promise<v
     await expect.poll(() => editor.evaluate(() => window.getSelection()?.toString() ?? '')).toBe(value);
 }
 
+async function waitForEditorReady(editor: Locator): Promise<void> {
+    await expect.poll(() => editor.evaluate((element) => {
+        const root = element.closest('[x-data]');
+        const alpine = (window as typeof window & {
+            Alpine?: {
+                $data: (element: Element) => { getEditor?: () => unknown };
+            };
+        }).Alpine;
+
+        return root !== null && alpine?.$data(root)?.getEditor?.() !== undefined;
+    })).toBe(true);
+}
+
 async function applyLink(page: Page, editor: Locator, url: string): Promise<void> {
     const linkButton = page.locator('button[aria-label="Ссылка"]:visible').first();
     const selectionLength = await editor.evaluate(() => window.getSelection()?.toString().length ?? 0);
@@ -170,15 +183,7 @@ async function applyLink(page: Page, editor: Locator, url: string): Promise<void
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
         await linkButton.scrollIntoViewIfNeeded();
-        page.on('response', (response) => {
-            if (response.url().includes('/livewire-') && response.request().method() === 'POST') {
-                console.log(`rich-editor-livewire ${response.status()} ${response.url()}`);
-            }
-        });
-        console.log(`rich-editor-link attempt=${attempt} selection=${await editor.evaluate(() => window.getSelection()?.toString() ?? '')}`);
         await linkButton.click({ force: true });
-        await page.waitForTimeout(1_000);
-        console.log(`rich-editor-link dialogs=${await page.locator('[role="dialog"]').count()} modalWindows=${await page.locator('[role="dialog"] .fi-modal-window').count()}`);
 
         try {
             await expect(dialog).toBeVisible({ timeout: 5_000 });
@@ -228,6 +233,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
 
     const editor = page.locator('.fi-fo-rich-editor-content [contenteditable=true], .fi-fo-rich-editor-content[contenteditable=true]').first();
+    await waitForEditorReady(editor);
     await editor.click();
     await editor.pressSequentially(`${communityText} 😀`);
     await expect(editor).toContainText(`${communityText} 😀`);
@@ -246,6 +252,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
 
     const reloadedEditor = page.locator('.fi-fo-rich-editor-content [contenteditable=true], .fi-fo-rich-editor-content[contenteditable=true]').first();
+    await waitForEditorReady(reloadedEditor);
     await expect(reloadedEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
     await expect(reloadedEditor.locator('a').filter({ hasText: communityText })).toHaveAttribute('href', initialUrl);
     await expect(reloadedEditor.locator('u').filter({ hasText: communityText })).toHaveCount(1);
@@ -264,6 +271,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
 
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
     const previewEditor = page.locator('.fi-fo-rich-editor-content [contenteditable=true], .fi-fo-rich-editor-content[contenteditable=true]').first();
+    await waitForEditorReady(previewEditor);
     await expect(previewEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
     const previewButton = page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true });
     await expect(previewButton).toBeEnabled();
@@ -283,6 +291,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
 
     await page.reload({ waitUntil: 'domcontentloaded' });
     const replacementEditor = page.locator('.fi-fo-rich-editor-content [contenteditable=true], .fi-fo-rich-editor-content[contenteditable=true]').first();
+    await waitForEditorReady(replacementEditor);
     await expect(replacementEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
     await selectText(page, replacementEditor, communityText);
     await applyLink(page, replacementEditor, updatedUrl);
