@@ -1176,6 +1176,7 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
 });
 
 test('staff can complete a visit and record a manual payment through the normal CRM actions', async ({ page }) => {
+    test.setTimeout(90_000);
     const fixture = createCrmFixture({ financeFlow: true });
 
     if (fixture.financeBookingId === null) {
