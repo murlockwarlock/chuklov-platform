@@ -170,6 +170,11 @@ async function applyLink(page: Page, editor: Locator, url: string): Promise<void
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
         await linkButton.scrollIntoViewIfNeeded();
+        page.on('response', (response) => {
+            if (response.url().includes('/livewire-') && response.request().method() === 'POST') {
+                console.log(`rich-editor-livewire ${response.status()} ${response.url()}`);
+            }
+        });
         await linkButton.click({ force: true });
 
         try {
