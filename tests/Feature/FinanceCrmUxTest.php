@@ -302,6 +302,11 @@ final class FinanceCrmUxTest extends TestCase
             ->callMountedTableAction()
             ->assertHasTableActionErrors(['note']);
 
+        self::assertSame(
+            'Опишите, что получено взамен.',
+            $form->instance()->getErrorBag()->first('mountedActions.0.data.note'),
+        );
+
         $submitted = Livewire::actingAs($admin)
             ->test(ListFinancialObligations::class)
             ->mountTableAction('recordPayment', $obligation)

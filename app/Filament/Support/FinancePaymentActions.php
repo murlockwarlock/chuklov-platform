@@ -411,6 +411,7 @@ final class FinancePaymentActions
                     ? (string) __('Опишите, что получено взамен.')
                     : null)
                 ->required(fn (Get $get): bool => $get('payment_method') === PaymentMethod::Barter->value)
+                ->validationMessages(['required' => __('Опишите, что получено взамен.')])
                 ->maxLength(2000),
             FileUpload::make('receipt')
                 ->label(__('Квитанция'))

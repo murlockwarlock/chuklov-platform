@@ -1219,7 +1219,7 @@ test('staff can complete a visit and record a manual payment through the normal 
 
     await page.getByRole('button', { name: 'Действия', exact: true }).click();
     await page.getByRole('link', { name: 'Открыть оплату', exact: true }).click();
-    const paymentHistory = page.locator('.fi-ta').filter({ hasText: 'История оплат' });
+    const paymentHistory = page.locator('.fi-resource-relation-manager').filter({ hasText: 'История оплат' });
     await expect(paymentHistory.getByRole('row').filter({ hasText: 'Наличные' })).toHaveCount(1);
     await page.getByRole('button', { name: 'Записать оплату', exact: true }).click();
     const secondPayment = page.locator('.fi-modal-window:visible').last();
@@ -1242,6 +1242,18 @@ test('staff can complete a visit and record a manual payment through the normal 
     await expect(page.getByText('75.00 USD', { exact: true })).toBeVisible();
     await expect(paymentHistory.getByRole('row').filter({ hasText: 'Синтетическое исправление оплаты' })).toHaveCount(1);
     await expect(paymentHistory.getByRole('row').filter({ hasText: 'Банковский перевод' })).toHaveCount(1);
+
+    await page.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    const barter = page.locator('.fi-modal-window:visible').last();
+    await barter.getByRole('textbox', { name: /^Сумма оплаты/ }).fill('20.00');
+    await barter.getByRole('combobox', { name: /^Способ оплаты/ }).selectOption('barter');
+    await barter.getByRole('textbox', { name: /^Что получено по бартеру/ }).fill('');
+    await barter.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    await expect(barter.getByText('Опишите, что получено взамен.', { exact: true })).toBeVisible();
+    await barter.getByRole('textbox', { name: /^Что получено по бартеру/ }).fill('Синтетическая встречная услуга');
+    await barter.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    await expect(barter).not.toBeVisible();
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Синтетическая встречная услуга' })).toContainText('Бартер');
 
     await page.goto('/admin/financial-obligations');
     await expect(page.getByRole('heading', { name: 'Оплаты', exact: true })).toBeVisible();
