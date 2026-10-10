@@ -3,7 +3,13 @@
 namespace App\Filament\Support;
 
 use Filament\Resources\Resource as BaseResource;
+use Illuminate\Database\Eloquent\Model;
 
+/**
+ * @template TModel of Model = Model
+ *
+ * @extends BaseResource<TModel>
+ */
 abstract class LocalizedResource extends BaseResource
 {
     public static function getNavigationLabel(): string
@@ -25,14 +31,26 @@ abstract class LocalizedResource extends BaseResource
     {
         $label = parent::getLabel();
 
-        return $label === null ? null : __($label);
+        if ($label === null) {
+            return null;
+        }
+
+        $translated = __($label);
+
+        return is_string($translated) ? $translated : $label;
     }
 
     public static function getPluralLabel(): ?string
     {
         $label = parent::getPluralLabel();
 
-        return $label === null ? null : __($label);
+        if ($label === null) {
+            return null;
+        }
+
+        $translated = __($label);
+
+        return is_string($translated) ? $translated : $label;
     }
 
     public static function getBreadcrumb(): string

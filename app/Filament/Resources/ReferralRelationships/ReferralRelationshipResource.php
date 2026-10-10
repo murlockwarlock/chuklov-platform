@@ -23,7 +23,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-/** @extends resource<ReferralRelationship> */
+/** @extends LocalizedResource<ReferralRelationship> */
 final class ReferralRelationshipResource extends LocalizedResource
 {
     protected static ?string $model = ReferralRelationship::class;

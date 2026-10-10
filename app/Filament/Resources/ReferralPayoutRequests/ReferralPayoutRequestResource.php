@@ -17,7 +17,6 @@ use App\Modules\Referrals\Application\TransitionReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Enums\ReferralPartnerStatus;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
-use App\Modules\Referrals\Domain\Models\ReferralPayoutRequestEvent;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Textarea;
@@ -34,7 +33,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
-/** @extends resource<ReferralPayoutRequest> */
+/** @extends LocalizedResource<ReferralPayoutRequest> */
 final class ReferralPayoutRequestResource extends LocalizedResource
 {
     protected static ?string $model = ReferralPayoutRequest::class;
@@ -302,7 +301,7 @@ final class ReferralPayoutRequestResource extends LocalizedResource
     private static function partnerStatusLabel(mixed $state): string
     {
         if ($state instanceof ReferralPartnerStatus) {
-            return CrmLabel::enum($state);
+            return CrmLabel::enum($state) ?? __('Неизвестно');
         }
 
         return CrmLabel::enum(ReferralPartnerStatus::tryFrom((string) $state)) ?? __('Не является партнёром');
@@ -345,28 +344,38 @@ final class ReferralPayoutRequestResource extends LocalizedResource
     /** @return list<array<string, string>> */
     private static function statusHistory(ReferralPayoutRequest $record): array
     {
-        return $record->events
-            ->sortBy('occurred_at')
-            ->map(function (ReferralPayoutRequestEvent $event): array {
-                $from = self::statusLabel($event->from_status);
-                $to = self::statusLabel($event->to_status);
-                $actor = $event->actor?->name ?? ($event->actor_type === 'client' ? __('Партнёр') : __('Сотрудник удалён'));
-                $details = implode("\n", array_filter([
-                    $event->reason,
-                    $event->payment_note,
-                    $event->payment_reference === null ? null : __('Платёж: :reference', ['reference' => $event->payment_reference]),
-                ], static fn (mixed $value): bool => is_string($value) && trim($value) !== ''));
+        $history = [];
 
-                return [
-                    'transition' => $event->from_status === null
-                        ? __('Создана: :status', ['status' => $to])
-                        : __(':from → :to', ['from' => $from, 'to' => $to]),
-                    'actor' => $actor,
-                    'occurred_at' => $event->occurred_at?->format('d.m.Y H:i') ?? '—',
-                    'details' => $details === '' ? '—' : $details,
-                ];
-            })
-            ->values()
-            ->all();
+        foreach ($record->events->sortBy('occurred_at') as $event) {
+            $from = self::statusLabel($event->from_status);
+            $to = self::statusLabel($event->to_status);
+            $actor = $event->actor instanceof User
+                ? $event->actor->name
+                : ($event->actor_type === 'client' ? self::message('Партнёр') : self::message('Сотрудник удалён'));
+            $details = implode("\n", array_filter([
+                $event->reason,
+                $event->payment_note,
+                $event->payment_reference === null ? null : self::message('Платёж: :reference', ['reference' => $event->payment_reference]),
+            ], static fn (mixed $value): bool => is_string($value) && trim($value) !== ''));
+
+            $history[] = [
+                'transition' => $event->from_status === null
+                    ? self::message('Создана: :status', ['status' => $to])
+                    : self::message(':from → :to', ['from' => $from, 'to' => $to]),
+                'actor' => $actor,
+                'occurred_at' => $event->occurred_at->format('d.m.Y H:i'),
+                'details' => $details === '' ? '—' : $details,
+            ];
+        }
+
+        return $history;
+    }
+
+    /** @param array<string, scalar> $replace */
+    private static function message(string $key, array $replace = []): string
+    {
+        $message = __($key, $replace);
+
+        return is_string($message) ? $message : $key;
     }
 }

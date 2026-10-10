@@ -210,7 +210,9 @@ class EditAiPrompt extends LocalizedEditRecord
     {
         $prompt ??= $this->prompt();
 
-        return $prompt->capability->label();
+        return $prompt->capability->value === 'client_companion'
+            ? __('AI-компаньон')
+            : $prompt->capability->label();
     }
 
     public function activeVersion(): ?AiPromptVersion

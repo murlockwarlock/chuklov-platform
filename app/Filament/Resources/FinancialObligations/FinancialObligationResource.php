@@ -18,7 +18,7 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-/** @extends resource<FinancialObligation> */
+/** @extends LocalizedResource<FinancialObligation> */
 final class FinancialObligationResource extends LocalizedResource
 {
     protected static ?string $model = FinancialObligation::class;
