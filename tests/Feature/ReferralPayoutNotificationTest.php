@@ -16,6 +16,7 @@ use App\Modules\Referrals\Application\TransitionReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
+use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
@@ -124,12 +125,19 @@ final class ReferralPayoutNotificationTest extends TestCase
 
     public function test_scenario_payout_status_uses_the_english_client_template(): void
     {
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization)->create();
         $partner = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        ClientChannelIdentity::factory()->forClient($partner)->create([
+            'verification_status' => ChannelIdentityStatus::Verified->value,
+            'external_id' => 'payout-client-chat',
+        ]);
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        $channel = new RecordingNotificationChannel;
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$channel]));
         $request = $this->payout($organization, $partner, $admin, ReferralPayoutRequestStatus::Approved);
 
-        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
         $event = app(RecordScenarioEvent::class)->payoutStatusChanged(
             request: $request,
             status: ReferralPayoutRequestStatus::Approved,
@@ -146,6 +154,17 @@ final class ReferralPayoutNotificationTest extends TestCase
 
         self::assertSame('en', $action->templateVersion()->firstOrFail()->template->locale);
         self::assertSame('approved', $action->render_context['payout']['status_label']);
+
+        $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+        $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        self::assertCount(1, $channel->messages);
+        self::assertSame(
+            'https://mini.example.test/portal/telegram/launch/partner_cabinet',
+            $channel->messages[0]->actionButton->webAppUrl,
+        );
+        self::assertNull($channel->messages[0]->actionButton->url);
     }
 
     private function payout(

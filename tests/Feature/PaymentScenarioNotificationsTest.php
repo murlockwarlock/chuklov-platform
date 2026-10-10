@@ -92,6 +92,7 @@ final class PaymentScenarioNotificationsTest extends TestCase
     #[DataProvider('clientLocales')]
     public function test_payment_success_offers_an_available_generic_survey_once_without_an_official_claim(string $locale): void
     {
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
         [$organization, $client, $obligation, $ledgerEntry] = $this->paymentFixture($locale);
         ClientChannelIdentity::factory()->forClient($client)->create([
             'verification_status' => ChannelIdentityStatus::Verified->value,
@@ -137,7 +138,11 @@ final class PaymentScenarioNotificationsTest extends TestCase
         );
         self::assertNotNull($surveyMessage);
         self::assertNotNull($surveyMessage->actionButton);
-        self::assertSame(route('portal.surveys.index'), $surveyMessage->actionButton->url);
+        self::assertSame(
+            'https://mini.example.test/portal/telegram/launch/surveys',
+            $surveyMessage->actionButton->webAppUrl,
+        );
+        self::assertNull($surveyMessage->actionButton->url);
         self::assertStringNotContainsString('MSQ', $surveyMessage->body);
         self::assertStringNotContainsString('9 systems', strtolower($surveyMessage->body));
         self::assertCount(2, $telegram->messages);

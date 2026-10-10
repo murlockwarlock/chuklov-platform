@@ -49,26 +49,37 @@ The executable guard is:
     node scripts/system-proof-inventory.mjs --update
     node scripts/system-proof-inventory.mjs --check
 
-The latest run reports 1,410 source declarations, 157 canonical capabilities
+The latest run reports 1,410 source declarations, 158 canonical capabilities
 and zero mapping errors. The detailed appendix is
 docs/verification/system-source-inventory.md. The primary matrix contains only
-the 157 deduplicated canonical rows.
+the 158 deduplicated canonical rows.
 
 ### Canonical status
 
 | Status | Count |
 | --- | ---: |
-| Canonical capabilities | 157 |
-| Implemented and testable denominator | 154 |
-| VERIFIED | 149 |
+| Canonical capabilities | 158 |
+| Implemented and testable denominator | 155 |
+| VERIFIED | 150 |
 | NOT VERIFIED | 5 |
 | NOT IMPLEMENTED | 2 |
 | NEEDS OWNER DECISION | 1 |
 
-Coverage is 149 / 154 = 96.75%. It is intentionally not reported as 100%.
+Coverage is 150 / 155 = 96.77%. It is intentionally not reported as 100%.
 The five NOT VERIFIED rows are unavailable external executions; their
 application adapters, validation, authorization, errors, retries and fake
 provider paths are separately verified.
+
+## Owner acceptance correction: Telegram internal client CTAs
+
+The owner-found post-session “Открыть здоровье” defect exposed a missing
+payload-type invariant. The new canonical capability
+`TELEGRAM-CLIENT-INTERNAL-CTA` is VERIFIED by focused production-path and
+serialized Telegram payload tests: internal Portal targets use
+`web_app.url` through the allowlisted launch gateway, and protected health,
+survey and referral entries preserve the existing auth continuation. Real
+client-chat delivery remains separately classified as
+`TELEGRAM-CLIENT-EXTERNAL`.
 
 ## Quality and database gates
 

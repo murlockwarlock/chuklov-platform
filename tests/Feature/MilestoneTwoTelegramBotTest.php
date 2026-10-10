@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Modules\Channels\Application\GetTelegramMenu;
+use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Channels\Application\TelegramMessagePreview;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
@@ -11,6 +12,7 @@ use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramNotificationChannel;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PHPUnit\Framework\Attributes\DataProvider;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Types\Input\InputMediaDocument;
 use SergiX44\Nutgram\Telegram\Types\Input\InputMediaPhoto;
@@ -134,20 +136,20 @@ class MilestoneTwoTelegramBotTest extends TestCase
         self::assertArrayNotHasKey('url', $button);
     }
 
-    public function test_meeting_notification_uses_an_inline_url_button_without_putting_the_url_in_the_body(): void
+    #[DataProvider('externalClientCtaUrls')]
+    public function test_external_client_ctas_use_ordinary_url_buttons_without_putting_the_url_in_the_body(string $url): void
     {
         config()->set('nutgram.token', FakeNutgram::TOKEN);
         app()->forgetInstance(Nutgram::class);
         $bot = app(Nutgram::class);
         $channel = new TelegramNotificationChannel($bot);
-        $url = 'https://zoom.us/j/123456?pwd=test-password';
 
         $result = $channel->send(new NotificationMessage(
             recipientExternalId: 'meeting-chat',
             body: 'Запись подтверждена на 02.09.2026 в 14:57.',
             subject: null,
             locale: 'ru',
-            idempotencyKey: 'meeting-1',
+            idempotencyKey: 'meeting-'.hash('sha256', $url),
             actionButton: new NotificationActionButton('Подключиться к встрече', $url),
         ));
 
@@ -162,6 +164,91 @@ class MilestoneTwoTelegramBotTest extends TestCase
         self::assertSame('Подключиться к встрече', $button['text']);
         self::assertSame($url, $button['url']);
         self::assertArrayNotHasKey('web_app', $button);
+    }
+
+    /** @return list<array{string}> */
+    public static function externalClientCtaUrls(): array
+    {
+        return [
+            ['https://zoom.us/j/123456?pwd=test-password'],
+            ['https://zoom.us/j/b2b-ready'],
+            ['https://external.example.test/help'],
+        ];
+    }
+
+    public function test_internal_notification_action_button_uses_a_mini_app_payload_without_an_external_url(): void
+    {
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        $bot = app(Nutgram::class);
+
+        $result = (new TelegramNotificationChannel($bot))->send(new NotificationMessage(
+            recipientExternalId: 'health-chat',
+            body: 'Ваш визит завершён.',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'health-1',
+            actionButton: new NotificationActionButton(
+                text: 'Открыть здоровье',
+                webAppUrl: 'https://mini.example.test/portal/telegram/launch/health',
+            ),
+        ));
+
+        self::assertSame('delivered', $result->outcome->value);
+        $body = $this->requestBody($bot, 0);
+        $button = $body['reply_markup']['inline_keyboard'][0][0];
+
+        self::assertSame('Открыть здоровье', $button['text']);
+        self::assertSame(
+            'https://mini.example.test/portal/telegram/launch/health',
+            $button['web_app']['url'],
+        );
+        self::assertArrayNotHasKey('url', $button);
+    }
+
+    #[DataProvider('internalClientMiniAppEntries')]
+    public function test_known_internal_client_entries_always_use_mini_app_buttons(string $entry): void
+    {
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        $bot = app(Nutgram::class);
+        $launchUrl = app(ResolveTelegramMiniAppEntry::class)->launchUrl($entry);
+
+        $result = (new TelegramNotificationChannel($bot))->send(new NotificationMessage(
+            recipientExternalId: 'internal-'.$entry,
+            body: 'Внутренний раздел',
+            subject: null,
+            locale: 'ru',
+            idempotencyKey: 'internal-'.$entry,
+            actionButton: new NotificationActionButton('Открыть', webAppUrl: $launchUrl),
+        ));
+
+        self::assertSame('delivered', $result->outcome->value);
+        $button = $this->requestBody($bot, 0)['reply_markup']['inline_keyboard'][0][0];
+
+        self::assertSame($launchUrl, $button['web_app']['url']);
+        self::assertArrayNotHasKey('url', $button);
+    }
+
+    /** @return list<array{string}> */
+    public static function internalClientMiniAppEntries(): array
+    {
+        return [
+            ['portal'],
+            ['author'],
+            ['method'],
+            ['b2b'],
+            ['feedback'],
+            ['health'],
+            ['surveys'],
+            ['partner'],
+            ['partner_cabinet'],
+            ['invite_friend'],
+            ['communities'],
+            ['tracker'],
+        ];
     }
 
     public function test_invalid_web_app_url_fails_closed_before_telegram_delivery(): void

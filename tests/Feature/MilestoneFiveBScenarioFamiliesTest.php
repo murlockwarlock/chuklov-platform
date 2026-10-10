@@ -48,6 +48,7 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
         $this->channel = new RecordingNotificationChannel;
         $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$this->channel]));
     }
@@ -102,6 +103,7 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
 
     public function test_seeded_post_session_follow_ups_wait_for_due_time_and_deliver_once(): void
     {
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
         [$organization, , $client, $specialist, $service] = $this->fixture();
         $client->forceFill(['language' => 'ru'])->save();
         $this->verifiedClient($client);
@@ -158,7 +160,11 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         foreach ($this->channel->messages as $message) {
             self::assertStringContainsString($escapedClientName, $message->body);
             self::assertNotNull($message->actionButton);
-            self::assertSame(route('portal.health'), $message->actionButton->url);
+            self::assertSame(
+                'https://mini.example.test/portal/telegram/launch/health',
+                $message->actionButton->webAppUrl,
+            );
+            self::assertNull($message->actionButton->url);
         }
     }
 
