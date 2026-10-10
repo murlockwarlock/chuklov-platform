@@ -298,7 +298,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await expect(page.locator('[role="dialog"].fi-modal-open')).toHaveCount(0);
     await page.waitForTimeout(1000);
 
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.reload({ waitUntil: 'networkidle' });
     const replacementEditor = page.locator('.fi-fo-rich-editor-content [contenteditable=true], .fi-fo-rich-editor-content[contenteditable=true]').first();
     await waitForEditorReady(replacementEditor);
     await expect(replacementEditor.locator(`a[href="${initialUrl}"]`)).toHaveCount(1);
