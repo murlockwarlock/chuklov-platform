@@ -152,42 +152,32 @@ async function login(page: Page, fixture: CommunitiesFixture): Promise<void> {
 
 async function selectText(editor: Locator, value: string): Promise<void> {
     await editor.click({ force: true });
-    await editor.press('ControlOrMeta+A');
-    await editor.press('ArrowLeft');
+    await editor.evaluate((element, textToSelect) => {
+        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+        let node = walker.nextNode();
 
-    for (let index = 0; index < value.length; index++) {
-        await editor.press('Shift+ArrowRight');
-    }
+        while (node !== null) {
+            const text = node.textContent ?? '';
+            const start = text.indexOf(textToSelect);
 
-    const selectedText = await editor.evaluate(() => window.getSelection()?.toString() ?? '');
+            if (start !== -1) {
+                const range = document.createRange();
+                range.setStart(node, start);
+                range.setEnd(node, start + textToSelect.length);
 
-    if (selectedText !== value) {
-        await editor.evaluate((element, textToSelect) => {
-            const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-            let node = walker.nextNode();
+                const selection = window.getSelection();
+                selection?.removeAllRanges();
+                selection?.addRange(range);
+                (element as HTMLElement).focus();
 
-            while (node !== null) {
-                const text = node.textContent ?? '';
-                const start = text.indexOf(textToSelect);
-
-                if (start !== -1) {
-                    const range = document.createRange();
-                    range.setStart(node, start);
-                    range.setEnd(node, start + textToSelect.length);
-
-                    const selection = window.getSelection();
-                    selection?.removeAllRanges();
-                    selection?.addRange(range);
-
-                    return;
-                }
-
-                node = walker.nextNode();
+                return;
             }
 
-            throw new Error(`Text not found in the rich editor: ${textToSelect}`);
-        }, value);
-    }
+            node = walker.nextNode();
+        }
+
+        throw new Error(`Text not found in the rich editor: ${textToSelect}`);
+    }, value);
 
     await expect.poll(() => editor.evaluate(() => window.getSelection()?.toString() ?? '')).toBe(value);
 }
