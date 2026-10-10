@@ -152,7 +152,7 @@ async function login(page: Page, fixture: CommunitiesFixture): Promise<void> {
 
 async function selectText(editor: Locator, value: string): Promise<void> {
     await editor.click({ force: true });
-    await editor.evaluate((element, textToSelect) => {
+    const selectedText = await editor.evaluate((element, textToSelect) => {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
         let node = walker.nextNode();
 
@@ -170,7 +170,7 @@ async function selectText(editor: Locator, value: string): Promise<void> {
                 selection?.addRange(range);
                 (element as HTMLElement).focus();
 
-                return;
+                return selection?.toString() ?? '';
             }
 
             node = walker.nextNode();
@@ -179,7 +179,7 @@ async function selectText(editor: Locator, value: string): Promise<void> {
         throw new Error(`Text not found in the rich editor: ${textToSelect}`);
     }, value);
 
-    await expect.poll(() => editor.evaluate(() => window.getSelection()?.toString() ?? '')).toBe(value);
+    expect(selectedText).toBe(value);
 }
 
 async function applyLink(page: Page, editor: Locator, url: string): Promise<void> {
