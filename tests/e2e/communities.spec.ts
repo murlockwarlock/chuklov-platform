@@ -193,10 +193,9 @@ async function selectText(editor: Locator, value: string): Promise<void> {
 }
 
 async function applyLink(page: Page, editor: Locator, url: string): Promise<void> {
-    const editorContainer = editor.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " fi-fo-rich-editor ")][1]');
-    await editorContainer.locator('button[aria-label="Ссылка"]:visible').click({ force: true });
-    const dialog = page.locator('[role="dialog"]').filter({ hasText: 'Открывать в новой вкладке' }).last();
-    await expect(dialog).toBeVisible();
+    await page.locator('button[aria-label="Ссылка"]').click({ force: true });
+    await expect(page.locator('[role="dialog"]')).toHaveCount(1);
+    const dialog = page.locator('[role="dialog"]').filter({ hasText: 'Открывать в новой вкладке' }).first();
     await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeVisible();
     await dialog.getByRole('textbox', { name: 'URL', exact: true }).fill(url);
     await dialog.getByRole('button', { name: 'Отправить', exact: true }).click({ force: true });
@@ -276,6 +275,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await expect(previewDialog).toBeHidden();
     await expect((await closePreviewResponse).status()).toBe(200);
     await expect(page.locator('[role="dialog"].fi-modal-open')).toHaveCount(0);
+    await page.waitForTimeout(1000);
 
     await selectText(previewEditor, communityText);
     await applyLink(page, previewEditor, updatedUrl);
