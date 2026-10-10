@@ -33,9 +33,6 @@ use Laravel\Horizon\Contracts\MasterSupervisorRepository;
 use Laravel\Horizon\Contracts\SupervisorRepository;
 
 require '/app/vendor/autoload.php';
-require '/app/scripts/staging-proof-integrations.php';
-require '/app/scripts/staging-proof-client.php';
-require '/app/scripts/staging-proof-evidence.php';
 
 final class StagingSmokeFailure extends RuntimeException {}
 
@@ -699,6 +696,15 @@ $clientId = filter_var($arguments['client-id'] ?? null, FILTER_VALIDATE_INT);
 $proofOperatorId = filter_var($arguments['proof-operator-id'] ?? null, FILTER_VALIDATE_INT);
 
 try {
+    if (in_array($check, [
+        'synthetic-evidence', 'browser-code', 'browser-fixture', 'browser-cleanup',
+        'companion-acceptance', 'email-sink-acceptance', 'ai-provider-probes',
+        'telegram-staff-acceptance', 'telegram-acceptance', 'zoom-acceptance', 'provider-inventory',
+    ], true)) {
+        require '/app/scripts/staging-proof-integrations.php';
+        require '/app/scripts/staging-proof-client.php';
+        require '/app/scripts/staging-proof-evidence.php';
+    }
     if ($check === 'queue-snapshot') {
         queueSnapshotCheck();
     } elseif ($check === 'queue-contract') {

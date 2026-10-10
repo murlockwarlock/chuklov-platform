@@ -273,7 +273,7 @@ watch(messageSignature, async () => {
             <SafeRichText
               v-if="message.role === 'ai' || message.role === 'staff'"
               :content="message.content"
-              :content-html="message.contentHtml ?? null"
+              :content-html="message.contentHtml ?? undefined"
             />
             <p
               v-else
