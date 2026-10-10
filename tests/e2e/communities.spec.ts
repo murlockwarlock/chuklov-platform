@@ -175,7 +175,10 @@ async function applyLink(page: Page, editor: Locator, url: string): Promise<void
                 console.log(`rich-editor-livewire ${response.status()} ${response.url()}`);
             }
         });
+        console.log(`rich-editor-link attempt=${attempt} selection=${await editor.evaluate(() => window.getSelection()?.toString() ?? '')}`);
         await linkButton.click({ force: true });
+        await page.waitForTimeout(1_000);
+        console.log(`rich-editor-link dialogs=${await page.locator('[role="dialog"]').count()} modalWindows=${await page.locator('[role="dialog"] .fi-modal-window').count()}`);
 
         try {
             await expect(dialog).toBeVisible({ timeout: 5_000 });
