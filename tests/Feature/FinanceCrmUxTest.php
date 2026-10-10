@@ -230,6 +230,59 @@ final class FinanceCrmUxTest extends TestCase
             ->assertSee('75.00 USD');
     }
 
+    public function test_manual_overpayment_is_visible_on_the_mounted_amount_field_and_can_be_corrected(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewFinancialObligation::class, ['record' => $obligation->getRouteKey()])
+            ->mountAction('recordPayment')
+            ->setActionData([
+                'amount' => '101.00',
+                'payment_method' => 'cash',
+                'occurred_at' => '2026-08-21 12:00',
+                'idempotency_key' => 'visible-overpayment',
+            ])
+            ->callMountedAction()
+            ->assertHasActionErrors(['amount']);
+
+        self::assertSame(
+            'Сумма оплаты не может превышать текущую задолженность.',
+            $component->instance()->getErrorBag()->first('mountedActions.0.data.amount'),
+        );
+
+        self::assertSame(0, $obligation->ledgerEntries()->count());
+
+        $component->setActionData(['amount' => '25.00'])
+            ->callMountedAction()
+            ->assertHasNoActionErrors()
+            ->assertSee('75.00 USD');
+
+        self::assertSame(1, $obligation->ledgerEntries()->count());
+    }
+
+    public function test_payment_history_refresh_event_reveals_new_authoritative_ledger_entry(): void
+    {
+        [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);
+        $this->resolveFilamentContext($admin, $organization);
+        $history = Livewire::actingAs($admin)->test(FinancialPaymentsRelationManager::class, [
+            'ownerRecord' => $obligation,
+            'pageClass' => ViewFinancialObligation::class,
+        ])->loadTable()->assertCountTableRecords(0);
+
+        $payment = app(RecordManualPayment::class)->handle(
+            actor: $admin, obligation: $obligation, amount: '25.00', currency: 'USD',
+            paymentMethod: 'cash', occurredAt: CarbonImmutable::now('UTC'),
+            note: 'Новая оплата', receipt: null, idempotencyKey: 'history-refresh-event',
+        );
+
+        $history->dispatch('refresh-page')
+            ->assertCanSeeTableRecords([$payment])
+            ->assertSee('Новая оплата')
+            ->assertCountTableRecords(1);
+    }
+
     public function test_barter_payment_form_requires_description_and_history_presents_it(): void
     {
         [$organization, $admin, , , $obligation] = $this->financeFixture(singleCurrency: true);

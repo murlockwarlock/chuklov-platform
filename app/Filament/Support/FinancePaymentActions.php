@@ -33,6 +33,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Component as LivewireComponent;
 
 final class FinancePaymentActions
@@ -174,17 +175,26 @@ final class FinancePaymentActions
                     ? $settlementCurrency
                     : (string) ($data['currency'] ?? '');
 
-                app(RecordManualPayment::class)->handle(
-                    actor: $actor,
-                    obligation: $obligation,
-                    amount: (string) ($data['amount'] ?? ''),
-                    currency: $currency,
-                    paymentMethod: (string) ($data['payment_method'] ?? ''),
-                    occurredAt: $data['occurred_at'] ?? '',
-                    note: isset($data['note']) ? (string) $data['note'] : null,
-                    receipt: $receipt,
-                    idempotencyKey: (string) $data['idempotency_key'],
-                );
+                try {
+                    app(RecordManualPayment::class)->handle(
+                        actor: $actor,
+                        obligation: $obligation,
+                        amount: (string) ($data['amount'] ?? ''),
+                        currency: $currency,
+                        paymentMethod: (string) ($data['payment_method'] ?? ''),
+                        occurredAt: $data['occurred_at'] ?? '',
+                        note: isset($data['note']) ? (string) $data['note'] : null,
+                        receipt: $receipt,
+                        idempotencyKey: (string) $data['idempotency_key'],
+                    );
+                } catch (ValidationException $exception) {
+                    $errors = [];
+                    foreach ($exception->errors() as $field => $messages) {
+                        $errors['mountedActions.'.$action->getNestingIndex().'.data.'.$field] = $messages;
+                    }
+
+                    throw ValidationException::withMessages($errors);
+                }
                 self::refreshFinanceUi($action, $obligation, $record instanceof Booking ? $record : null);
                 Notification::make()->success()->title(__('Оплата записана. Остаток обновлён.'))->send();
             });

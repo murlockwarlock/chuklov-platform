@@ -1217,6 +1217,32 @@ test('staff can complete a visit and record a manual payment through the normal 
     await expect(page.getByText('25.00 USD', { exact: true })).toBeVisible();
     await expect(page.getByText('75.00 USD', { exact: true })).toBeVisible();
 
+    await page.getByRole('button', { name: 'Действия', exact: true }).click();
+    await page.getByRole('link', { name: 'Открыть оплату', exact: true }).click();
+    const paymentHistory = page.locator('.fi-ta').filter({ hasText: 'История оплат' });
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Наличные' })).toHaveCount(1);
+    await page.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    const secondPayment = page.locator('.fi-modal-window:visible').last();
+    await secondPayment.getByRole('textbox', { name: /^Сумма оплаты/ }).fill('76.00');
+    await secondPayment.getByRole('combobox', { name: /^Способ оплаты/ }).selectOption('bank_transfer');
+    await secondPayment.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    await expect(secondPayment.getByText('Сумма оплаты не может превышать текущую задолженность.', { exact: true })).toBeVisible();
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Банковский перевод' })).toHaveCount(0);
+    await secondPayment.getByRole('textbox', { name: /^Сумма оплаты/ }).fill('30.00');
+    await secondPayment.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    await expect(secondPayment).not.toBeVisible();
+    await expect(page.getByText('55.00 USD', { exact: true })).toBeVisible();
+    await expect(page.getByText('45.00 USD', { exact: true })).toBeVisible();
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Банковский перевод' })).toHaveCount(1);
+    await paymentHistory.getByRole('row').filter({ hasText: 'Банковский перевод' }).getByRole('button', { name: 'Исправить оплату', exact: true }).click();
+    const correction = page.locator('.fi-modal-window:visible').last();
+    await correction.getByRole('textbox', { name: /^Причина исправления/ }).fill('Синтетическое исправление оплаты');
+    await correction.getByRole('button', { name: 'Добавить исправление', exact: true }).click();
+    await expect(correction).not.toBeVisible();
+    await expect(page.getByText('75.00 USD', { exact: true })).toBeVisible();
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Синтетическое исправление оплаты' })).toHaveCount(1);
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Банковский перевод' })).toHaveCount(1);
+
     await page.goto('/admin/financial-obligations');
     await expect(page.getByRole('heading', { name: 'Оплаты', exact: true })).toBeVisible();
     await searchTableFor(page, fixture.clientName);

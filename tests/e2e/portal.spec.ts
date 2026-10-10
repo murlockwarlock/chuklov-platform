@@ -1064,7 +1064,7 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     const payout = page.getByTestId('partner-payout-0');
     await expect(payout).toBeVisible();
     await expect(payout).toContainText(/2[,.]00\s*(?:\$|USD)/);
-    await expect(payout).toContainText('Заявка на выплату отправлена');
+    await expect(payout).toContainText('Запрошена');
     await payout.getByRole('button', { name: 'Отменить запрос', exact: true }).click();
     await expect(payout).toContainText('Отменена');
 
