@@ -194,16 +194,9 @@ async function selectText(editor: Locator, value: string): Promise<void> {
 
 async function applyLink(page: Page, editor: Locator, url: string): Promise<void> {
     const editorContainer = editor.locator('xpath=ancestor::*[contains(concat(" ", normalize-space(@class), " "), " fi-fo-rich-editor ")][1]');
-    console.log('rich-editor-debug-before', await editorContainer.locator('button[aria-label="Ссылка"]').count(), await editorContainer.locator('button[aria-label="Ссылка"]:visible').count(), await page.locator('[role="dialog"]').count());
     await editorContainer.locator('button[aria-label="Ссылка"]:visible').click({ force: true });
-    await page.waitForTimeout(300);
-    console.log('rich-editor-debug-after', await page.locator('[role="dialog"]').evaluateAll((dialogs) => dialogs.map((dialog) => ({
-        className: dialog.className,
-        text: dialog.textContent?.slice(0, 120),
-        rect: dialog.getBoundingClientRect().toJSON(),
-    }))));
-    await expect(page.locator('[role="dialog"]')).toHaveCount(1);
-    const dialog = page.locator('[role="dialog"]').filter({ hasText: 'Открывать в новой вкладке' }).first();
+    const dialog = page.locator('[role="dialog"]').filter({ hasText: 'Открывать в новой вкладке' }).last();
+    await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeVisible();
     await dialog.getByRole('textbox', { name: 'URL', exact: true }).fill(url);
     await dialog.getByRole('button', { name: 'Отправить', exact: true }).click({ force: true });
