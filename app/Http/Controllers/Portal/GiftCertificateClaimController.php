@@ -16,6 +16,7 @@ use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
 use LogicException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 final class GiftCertificateClaimController extends Controller
 {
@@ -23,9 +24,22 @@ final class GiftCertificateClaimController extends Controller
         private readonly GiftCertificateBalanceProjection $balances,
     ) {}
 
-    public function show(ClientPortalContext $clientContext): Response
-    {
-        return $this->render(null, $this->clientOrNull($clientContext) !== null, null);
+    public function show(
+        Request $request,
+        ClientPortalContext $clientContext,
+        OrganizationContext $organizationContext,
+    ): Response {
+        $token = $request->session()->pull('gift_certificate_claim_token');
+        $claim = null;
+        if (is_string($token) && preg_match('/^[a-f0-9]{64}$/', $token) === 1) {
+            try {
+                $claim = $this->findClaim($organizationContext, $token);
+            } catch (NotFoundHttpException) {
+                $token = null;
+            }
+        }
+
+        return $this->render($token, $this->clientOrNull($clientContext) !== null, $claim);
     }
 
     public function preview(
@@ -60,7 +74,9 @@ final class GiftCertificateClaimController extends Controller
         try {
             $claim->handle($client, $token);
         } catch (ValidationException $exception) {
-            throw ValidationException::withMessages($exception->errors());
+            $request->session()->put('gift_certificate_claim_token', $token);
+
+            return to_route('gift-certificates.claim')->withErrors($exception->errors());
         }
 
         return to_route('portal.gift-certificates.index')
