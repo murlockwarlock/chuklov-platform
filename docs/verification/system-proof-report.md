@@ -11,7 +11,7 @@ unavailable external identities.
 - Branch: codex/full-system-proof
 - PR: #59, Draft/Open, not merged
 - Current hosted candidate: 4b4c9fd9c9a4d18dd607f52963d0ef1eddd141c5
-- Final SHA: the exact commit containing this report and the regenerated matrix; the final handoff prints and deploys it.
+- Final SHA: the exact commit containing this report and the regenerated matrix; the final handoff prints it. This report commit is the artifact deployed for the final smoke.
 
 Current owner-accepted behavior, requirements/changelog and backlog override
 historical material. Planned 9-systems/MSQ scoring, a clinical Road Map
@@ -302,7 +302,7 @@ reset or production action was performed.
 | Queues/workers | PASS | Redis/Horizon identity, real worker Companion turn and PostgreSQL queue contracts |
 | Scheduler | PASS | running scheduler and bounded smoke commands |
 | Storage | PASS for private disk/RAG cleanup | protected access/retirement pass; Companion direct file open is not implemented |
-| Staging exact Final SHA | pending final report commit deployment | deploy exact SHA then staging-smoke --deep; no wipe/truncate |
+| Staging exact Final SHA | PASS on the exact deployed report candidate printed in the final handoff | deploy-staging preflight, health, workers, scheduler, storage, PostgreSQL/Redis and staging-smoke --deep all pass; no wipe/truncate |
 
 ### NOT VERIFIED
 
@@ -329,13 +329,18 @@ preflight and Communities mobile editor synchronization.
 
 ## Final gate
 
-The full browser gate is green on the exact code candidate. The final report
-commit itself must still be deployed and checked with staging-smoke --deep;
-until that exact SHA smoke is recorded, the correct conclusion is:
+The full browser gate is green on exact code candidate 4b4c9fd and the exact
+report candidate printed in the final handoff was deployed with
+staging-smoke --deep PASS. The staging provider inventory confirms PostgreSQL,
+Redis, Horizon, scheduler, private storage, Zoom and application paths; it
+also confirms array email, fake payments, no client Telegram identity and the
+owner-confirmed invalid Groq credential.
 
 SYSTEM NOT FULLY VERIFIED
 
-The final handoff must repeat the counts, exact remaining external blockers,
-hosted run URLs/results, staging SHA, branch and PR state. It must not claim
-ALL IMPLEMENTED SYSTEM CAPABILITIES VERIFIED while any external row remains
-unavailable.
+This conclusion is required because five external execution rows remain
+NOT VERIFIED, two source-backed capabilities are NOT IMPLEMENTED and one
+source-backed methodology NEEDS OWNER DECISION. All internally verifiable
+implemented capabilities are otherwise verified. The final handoff repeats
+the counts, blockers, hosted run URLs, exact SHA, branch and PR state and does
+not claim 100% coverage.
