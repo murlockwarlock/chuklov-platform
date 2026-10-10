@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { diagnostics, renderMatrix, scanSource, sourceExpression } from '../scripts/system-proof-inventory.mjs';
+import { canonicalDiagnostics, diagnostics, renderMatrix, renderSourceInventory, scanSource, sourceExpression } from '../scripts/system-proof-inventory.mjs';
+import { canonicalCapabilities } from '../scripts/system-proof-capabilities.mjs';
 
 test('new resource action or Portal route fails proof mapping until explicitly inventoried', () => {
     const existing = scanSource('routes/web.php', "Route::get('/portal/profile', ProfileController::class);");
@@ -70,4 +71,16 @@ test('action visibility excludes predicates belonging to nested modal fields', (
     const rows = scanSource('app/Filament/Pages/Example.php', "Action::make('reschedule')->label('Move')->schema([Select::make('location')->label('Location')->visible(fn ($record) => $record->format === 'office')])->visible(fn ($record) => $record->status === 'requested');");
     assert.equal(rows[0].visible, "fn ($record) => $record->status === 'requested'");
     assert.equal(rows[0].label, "'Move'");
+});
+
+test('source declarations reconcile to the canonical matrix without counting duplicate surfaces', () => {
+    const rows = [
+        ...scanSource('routes/web.php', "Route::post('/portal/bookings', BookingController::class);"),
+        ...scanSource('app/Modules/Scheduling/Domain/Enums/BookingStatus.php', "enum BookingStatus: string { case Requested = 'requested'; }"),
+    ];
+    const source = renderSourceInventory(rows);
+    const matrix = `| ID | Area | Actor | Surface | Page/state | Action/button | Preconditions | Visible when | Hidden/denied when | Input variants | Expected state change | Expected DB effect | Expected notification/message | Expected UI after action | Reverse/correction path | Retry/idempotency behavior | Concurrency behavior | Tenant/security behavior | Test type | Test name | Evidence/run | Status | Notes |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n${canonicalCapabilities.map((capability) => `| ${Object.values(capability).join(' | ')} |`).join('\n')}`;
+    assert.equal(canonicalDiagnostics(rows, source, matrix).filter((error) => error.startsWith('MISSING CANONICAL')).length, 0);
+    assert.match(source, /HTTP-[a-f0-9]+ .* BOOKING-PORTAL-OFFICE .* DUPLICATE/);
+    assert.match(source, /STATE-[a-f0-9]+ .* BOOKING-STATE .* DUPLICATE/);
 });

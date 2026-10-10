@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { canonicalById, canonicalCapabilities, mapSourceDeclaration } from './system-proof-capabilities.mjs';
 
 export const columns = ['ID', 'Area', 'Actor', 'Surface', 'Page/state', 'Action/button', 'Preconditions', 'Visible when', 'Hidden/denied when', 'Input variants', 'Expected state change', 'Expected DB effect', 'Expected notification/message', 'Expected UI after action', 'Reverse/correction path', 'Retry/idempotency behavior', 'Concurrency behavior', 'Tenant/security behavior', 'Test type', 'Test name', 'Evidence/run', 'Status', 'Notes'];
+export const sourceColumns = ['Source ID', 'Kind', 'Area', 'Source', 'Line', 'Declaration', 'Canonical capability', 'Classification', 'Mapping reason'];
 
 function files(root, directory) {
     const absolute = resolve(root, directory);
@@ -166,6 +168,79 @@ export function diagnostics(rows, markdown) {
     return [...new Set(errors)];
 }
 
+export function sourceInventoryRows(rows) {
+    return rows.map((row) => {
+        const mapping = mapSourceDeclaration(row);
+        const area = row.path.match(/Resources\/([^/]+)|Modules\/([^/]+)/)?.slice(1).find(Boolean) ?? row.path.split('/').slice(-2, -1)[0];
+
+        return [
+            row.id,
+            row.kind,
+            area,
+            row.path,
+            row.line,
+            row.action,
+            mapping.canonical,
+            mapping.classification,
+            mapping.reason,
+        ];
+    });
+}
+
+export function sourceMatrixRows(markdown) {
+    return markdown.split('\n')
+        .filter((line) => line.startsWith('| SRC-') || /^\| (?:HTTP|CRM-|PORTAL-|TELEGRAM|COMMAND|SCHEDULER|JOB|ADAPTER|WIRING|STATE|METRIC|NOTIFICATION)/.test(line))
+        .map((line) => line.split('|').slice(1, -1).map((value) => value.trim().replaceAll('&#124;', '|')));
+}
+
+export function renderSourceInventory(rows) {
+    const lines = sourceInventoryRows(rows).map((row) => `| ${row.map(cell).join(' | ')} |`);
+
+    return `# System source inventory\n\nStarting SHA: \`c201b41a14d91c57c1890e62737f9e2001a231f1\`. Branch: \`codex/full-system-proof\`.\n\nThis machine-generated appendix enumerates current source declarations. A declaration is not an acceptance capability. Canonical capabilities live in [system-proof-matrix.md](system-proof-matrix.md). Each declaration is mapped to a canonical capability, classified as a duplicate representation, or explicitly classified as internal/non-user-observable.\n\n${rows.length} source declarations.\n\n| ${sourceColumns.join(' | ')} |\n| ${sourceColumns.map(() => '---').join(' | ')} |\n${lines.join('\n')}\n`;
+}
+
+export function canonicalMatrixRows(markdown) {
+    return markdown.split('\n')
+        .filter((line) => !line.startsWith('| ID |') && /^\| [A-Z0-9]+(?:-[A-Z0-9]+)* \|/.test(line))
+        .map((line) => line.split('|').slice(1, -1).map((value) => value.trim()));
+}
+
+export function canonicalDiagnostics(rows, sourceMarkdown, matrixMarkdown) {
+    const errors = [];
+    const sourceRows = sourceMatrixRows(sourceMarkdown);
+    const canonicalRows = canonicalMatrixRows(matrixMarkdown);
+    const expectedSource = sourceInventoryRows(rows);
+    const expectedSourceById = new Map(expectedSource.map((entry) => [entry[0], entry]));
+    const actualSourceById = new Map(sourceRows.map((entry) => [entry[0], entry]));
+    const canonicalIds = new Set(canonicalCapabilities.map((entry) => entry.ID));
+    const actualCanonicalIds = new Set(canonicalRows.map((entry) => entry[0]));
+
+    for (const row of rows) {
+        if (!actualSourceById.has(row.id)) errors.push(`UNMAPPED SOURCE ${row.id} ${row.path}:${row.line}`);
+    }
+    for (const row of sourceRows) {
+        if (row.length !== sourceColumns.length) errors.push(`INVALID SOURCE COLUMNS ${row[0]}: ${row.length}`);
+        if (!expectedSourceById.has(row[0])) errors.push(`STALE SOURCE ${row[0]}`);
+        if (!['CANONICAL', 'DUPLICATE', 'INTERNAL', 'EXCLUDED'].includes(row[7])) errors.push(`INVALID CLASSIFICATION ${row[0]}: ${row[7]}`);
+        if (row[7] !== 'INTERNAL' && row[7] !== 'EXCLUDED' && !canonicalIds.has(row[6])) errors.push(`UNKNOWN CANONICAL ${row[0]}: ${row[6]}`);
+        if (!row[8] || row[8] === 'NOT DERIVED') errors.push(`MISSING MAPPING REASON ${row[0]}`);
+    }
+    for (const row of expectedSource) {
+        const actual = actualSourceById.get(row[0]);
+        if (actual && actual.slice(1).join('|') !== row.slice(1).join('|')) errors.push(`STALE MAPPING ${row[0]}`);
+    }
+    for (const capability of canonicalCapabilities) {
+        if (!actualCanonicalIds.has(capability.ID)) errors.push(`MISSING CANONICAL ${capability.ID}`);
+    }
+    for (const row of canonicalRows) {
+        if (row.length !== columns.length) errors.push(`INVALID CANONICAL COLUMNS ${row[0]}: ${row.length}`);
+        if (!canonicalById.has(row[0])) errors.push(`STALE CANONICAL ${row[0]}`);
+        if (row[21] === 'VERIFIED' && (!row[19] || !row[20])) errors.push(`VERIFIED WITHOUT EVIDENCE ${row[0]}`);
+        if (!['VERIFIED', 'NOT VERIFIED', 'NOT IMPLEMENTED', 'NEEDS OWNER DECISION'].includes(row[21])) errors.push(`INVALID STATUS ${row[0]}: ${row[21]}`);
+    }
+    return [...new Set(errors)];
+}
+
 
 export function renderMatrix(rows, previous = '') {
     const existing = new Map(matrixRows(previous).map((row) => [row[0], row]));
@@ -189,17 +264,26 @@ export function renderMatrix(rows, previous = '') {
     return `# Current system proof matrix\n\nStarting SHA: \`c201b41a14d91c57c1890e62737f9e2001a231f1\`. Branch: \`codex/full-system-proof\`.\n\nDeclaration inventory, not acceptance evidence. Each source control, HTTP route, Filament action/filter, inherited CRUD submit/cancel, page/navigation declaration, Telegram handler/button, queue job, command, scheduler entry and wired adapter has its own stable ID. STATE rows are reference values, not invented transitions; METRIC rows require independent expected-value proof. Dynamic declarations and inherited vendor controls still require runtime reconciliation. A source declaration alone is never VERIFIED.\n\nRegenerate preserving reviewed rows: \`node scripts/system-proof-inventory.mjs --update\`. Validate new/unmapped/stale declarations: \`node scripts/system-proof-inventory.mjs --check\`. Changing a control contract must also invalidate its previous evidence manually.\n\n${rows.length} declaration rows. Unknown contracts are explicitly NOT DERIVED; no mock or page render is recorded as complete proof. Every NOT VERIFIED row includes its remaining evidence blocker.\n\n| ${columns.join(' | ')} |\n| ${columns.map(() => '---').join(' | ')} |\n${lines.join('\n')}\n`;
 }
 
+export function renderCanonicalMatrix() {
+    const lines = canonicalCapabilities.map((capability) => `| ${columns.map((column) => cell(capability[column] ?? '')).join(' | ')} |`);
+
+    return `# Canonical system proof matrix\n\nStarting SHA: \`c201b41a14d91c57c1890e62737f9e2001a231f1\`. Branch: \`codex/full-system-proof\`.\n\nThis primary table contains deduplicated observable capabilities. The machine-generated declaration appendix is [system-source-inventory.md](system-source-inventory.md). Routes, navigation labels, enum members, resource pages and framework controls are mapped to these flows instead of being counted as separate capabilities.\n\n${canonicalCapabilities.length} canonical capability rows. Every implemented/testable row has explicit outcome, negative, reverse, retry, concurrency, tenant/security and evidence fields.\n\n| ${columns.join(' | ')} |\n| ${columns.map(() => '---').join(' | ')} |\n${lines.join('\n')}\n`;
+}
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
     const rows = inventory(root);
-    const path = resolve(root, 'docs/verification/system-proof-matrix.md');
-    const previous = existsSync(path) ? readFileSync(path, 'utf8') : '';
+    const matrixPath = resolve(root, 'docs/verification/system-proof-matrix.md');
+    const sourcePath = resolve(root, 'docs/verification/system-source-inventory.md');
     if (process.argv.includes('--update')) {
-        writeFileSync(path, renderMatrix(rows, previous));
+        writeFileSync(matrixPath, renderCanonicalMatrix());
+        writeFileSync(sourcePath, renderSourceInventory(rows));
     } else if (process.argv.includes('--check')) {
-        const errors = diagnostics(rows, previous);
+        const sourceMarkdown = existsSync(sourcePath) ? readFileSync(sourcePath, 'utf8') : '';
+        const matrixMarkdown = existsSync(matrixPath) ? readFileSync(matrixPath, 'utf8') : '';
+        const errors = canonicalDiagnostics(rows, sourceMarkdown, matrixMarkdown);
         for (const error of errors) process.stderr.write(`${error}\n`);
-        process.stdout.write(`${rows.length} inventory declarations; ${errors.length} mapping errors\n`);
+        process.stdout.write(`${rows.length} source declarations; ${canonicalCapabilities.length} canonical capabilities; ${errors.length} mapping errors\n`);
         process.exitCode = errors.length ? 1 : 0;
     } else {
         process.stdout.write(`${JSON.stringify(rows, null, 2)}\n`);

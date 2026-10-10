@@ -185,12 +185,12 @@ async function selectText(editor: Locator, value: string): Promise<void> {
 async function applyLink(page: Page, editor: Locator, url: string): Promise<void> {
     const linkButton = page.locator('button[aria-label="Ссылка"]').first();
     await linkButton.click({ force: true });
-    await expect(page.locator('[role="dialog"]')).toHaveCount(1);
-    const dialog = page.locator('[role="dialog"]').filter({ hasText: 'Открывать в новой вкладке' }).first();
+    const dialog = page.locator('[role="dialog"] .fi-modal-window').filter({ hasText: 'Открывать в новой вкладке' }).last();
+    await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeVisible();
     await dialog.getByRole('textbox', { name: 'URL', exact: true }).fill(url);
     await dialog.getByRole('button', { name: 'Отправить', exact: true }).click({ force: true });
-    await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeHidden();
+    await expect(dialog).toBeHidden();
     await expect(editor.locator(`a[href="${url}"]`)).toHaveCount(1);
     await page.waitForTimeout(500);
 }
