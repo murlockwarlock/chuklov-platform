@@ -187,7 +187,7 @@ async function applyLink(page: Page, editor: Locator, url: string): Promise<void
     })))}`);
     const triggerLinkButton = async (): Promise<void> => {
         if ((page.viewportSize()?.width ?? 1024) < 600) {
-            await linkButton.tap({ force: true });
+            await linkButton.evaluate((element) => (element as HTMLElement).click());
 
             return;
         }
