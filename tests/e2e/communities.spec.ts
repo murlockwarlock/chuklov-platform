@@ -150,9 +150,9 @@ async function login(page: Page, fixture: CommunitiesFixture): Promise<void> {
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 }
 
-async function selectText(editor: Locator, value: string): Promise<void> {
+async function selectText(page: Page, editor: Locator, value: string): Promise<void> {
     await editor.click({ force: true });
-    const selectedText = await editor.evaluate((element, textToSelect) => {
+    const points = await editor.evaluate((element, textToSelect) => {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
         let node = walker.nextNode();
 
@@ -164,14 +164,18 @@ async function selectText(editor: Locator, value: string): Promise<void> {
                 const range = document.createRange();
                 range.setStart(node, start);
                 range.setEnd(node, start + textToSelect.length);
+                const rects = [...range.getClientRects()];
+                const first = rects[0];
+                const last = rects.at(-1) ?? first;
 
-                const selection = window.getSelection();
-                selection?.removeAllRanges();
-                selection?.addRange(range);
-                (element as HTMLElement).focus();
-                document.dispatchEvent(new Event('selectionchange', { bubbles: true }));
+                if (first === undefined || last === undefined) {
+                    throw new Error(`Text has no layout rectangle in the rich editor: ${textToSelect}`);
+                }
 
-                return selection?.toString() ?? '';
+                return {
+                    start: { x: first.left + 1, y: first.top + first.height / 2 },
+                    end: { x: last.right - 1, y: last.top + last.height / 2 },
+                };
             }
 
             node = walker.nextNode();
@@ -180,7 +184,12 @@ async function selectText(editor: Locator, value: string): Promise<void> {
         throw new Error(`Text not found in the rich editor: ${textToSelect}`);
     }, value);
 
-    expect(selectedText).toBe(value);
+    await page.mouse.move(points.start.x, points.start.y);
+    await page.mouse.down();
+    await page.mouse.move(points.end.x, points.end.y);
+    await page.mouse.up();
+
+    await expect.poll(() => editor.evaluate(() => window.getSelection()?.toString() ?? '')).toBe(value);
 }
 
 async function applyLink(page: Page, editor: Locator, url: string): Promise<void> {
@@ -240,12 +249,12 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await editor.pressSequentially(`${communityText} 😀`);
     await expect(editor).toContainText(`${communityText} 😀`);
 
-    await selectText(editor, communityText);
+    await selectText(page, editor, communityText);
     await applyLink(page, editor, initialUrl);
     await expect(editor.locator('a').filter({ hasText: communityText })).toHaveAttribute('href', initialUrl);
     await page.waitForTimeout(500);
 
-    await selectText(editor, communityText);
+    await selectText(page, editor, communityText);
     await page.locator('button[aria-label="Подчеркнутый"]').click();
     await expect(editor.locator('u').filter({ hasText: communityText })).toHaveCount(1);
     await page.waitForTimeout(500);
@@ -289,7 +298,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await expect(page.locator('[role="dialog"].fi-modal-open')).toHaveCount(0);
     await page.waitForTimeout(1000);
 
-    await selectText(previewEditor, communityText);
+    await selectText(page, previewEditor, communityText);
     await applyLink(page, previewEditor, updatedUrl);
     await saveContentSection(page);
     await page.goto(`/admin/content-sections/${fixture.contentSectionId}/edit`, { waitUntil: 'domcontentloaded' });
