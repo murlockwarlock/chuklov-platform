@@ -198,3 +198,13 @@ The following table is an explicit work ledger. Subsystem test PASS is not full 
 6. External gaps are the configured Groq HTTP 401, absent external email mailer, absent Lava sandbox credential, and unexecuted real Telegram incoming/Mini App auth. Adapter fakes are not real provider PASS.
 
 Conclusion remains **SYSTEM NOT FULLY VERIFIED**. Audit work continues; this report is not a final gate or an owner-acceptance assertion.
+
+## Final candidate addendum
+
+The latest code candidate before this report-only update is `2472618d143f6a1a96ffc52f963a0ac4fea4e794`. The staging runtime was last deployed at `8fa076337ef87f101013e2549fa3d69b670f0799`; that revision is not the final SHA because the current branch contains subsequent proof-test changes and this report update. A final exact-SHA deploy and `scripts/staging-smoke.sh --deep` are required before handoff.
+
+The inventory matrix now has 1,427 rows: 1,410 generated source declarations plus 17 manually reviewed proof rows. Current status count is 12 VERIFIED and 1,415 NOT VERIFIED; there are no matrix rows classified NOT IMPLEMENTED or NEEDS OWNER DECISION because those classifications are scope decisions recorded below and not executable capabilities. The exact IDs and blockers are in the matrix; generated rows intentionally retain `NOT DERIVED`/`NOT MAPPED` fields until a row-specific contract is proved.
+
+The targeted Communities browser workflow [38048734180](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38048734180) executed both projects: desktop passed and mobile WebKit failed in the saved-preview replacement sequence before the link modal assertion. A separate bounded staging browser probe on both Chrome and WebKit showed the visible link and Telegram preview modals and a direct second link action. This is retained as a browser-proof gap, not silently converted to PASS and not treated as a production defect without a reproducible user-visible failure.
+
+External acceptance remains bounded by the inspected staging configuration: transactional email uses an array sink rather than an external mailbox, the selected payment gateway is `fake` with no Lava sandbox credential, no safe client Telegram chat exists, and Groq returns HTTP 401. No live charge, mass broadcast, arbitrary Telegram spam, destructive database reset, or production deployment was performed.
