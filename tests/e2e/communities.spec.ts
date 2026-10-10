@@ -152,42 +152,12 @@ async function login(page: Page, fixture: CommunitiesFixture): Promise<void> {
 
 async function selectText(page: Page, editor: Locator, value: string): Promise<void> {
     await editor.click({ force: true });
-    const points = await editor.evaluate((element, textToSelect) => {
-        const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-        let node = walker.nextNode();
+    await editor.press('ControlOrMeta+A');
+    await editor.press('ArrowLeft');
 
-        while (node !== null) {
-            const text = node.textContent ?? '';
-            const start = text.indexOf(textToSelect);
-
-            if (start !== -1) {
-                const range = document.createRange();
-                range.setStart(node, start);
-                range.setEnd(node, start + textToSelect.length);
-                const rects = [...range.getClientRects()];
-                const first = rects[0];
-                const last = rects.at(-1) ?? first;
-
-                if (first === undefined || last === undefined) {
-                    throw new Error(`Text has no layout rectangle in the rich editor: ${textToSelect}`);
-                }
-
-                return {
-                    start: { x: first.left + 1, y: first.top + first.height / 2 },
-                    end: { x: last.right - 1, y: last.top + last.height / 2 },
-                };
-            }
-
-            node = walker.nextNode();
-        }
-
-        throw new Error(`Text not found in the rich editor: ${textToSelect}`);
-    }, value);
-
-    await page.mouse.move(points.start.x, points.start.y);
-    await page.mouse.down();
-    await page.mouse.move(points.end.x, points.end.y);
-    await page.mouse.up();
+    for (let index = 0; index < value.length; index += 1) {
+        await editor.press('Shift+ArrowRight');
+    }
 
     await expect.poll(() => editor.evaluate(() => window.getSelection()?.toString() ?? '')).toBe(value);
 }
