@@ -254,7 +254,7 @@ final readonly class SurveyComparisonPresentation
     {
         $definitions = [];
         foreach ($metrics as $metric) {
-            if (! is_string($metric['key'] ?? null)) {
+            if (! is_array($metric) || ! is_string($metric['key'] ?? null)) {
                 continue;
             }
 

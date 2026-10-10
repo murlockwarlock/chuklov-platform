@@ -53,6 +53,25 @@ final class PaymentGatewayReconciliationCrmTest extends TestCase
         self::assertStringNotContainsString('lava:refund:lava-refund-1', $html);
     }
 
+    public function test_unmatched_client_label_is_localized(): void
+    {
+        $previousLocale = app()->getLocale();
+        app()->setLocale('en');
+
+        try {
+            $organization = Organization::factory()->create(['timezone' => 'UTC']);
+            $admin = User::factory()->forOrganization($organization)->create();
+            $event = $this->event($organization, 'refund', 'lava-refund-en', 'lava:refund:lava-refund-en');
+            $this->resolveFilamentContext($admin, $organization);
+
+            Livewire::actingAs($admin)
+                ->test(ListPaymentGatewayReconciliation::class)
+                ->assertTableColumnStateSet('client', 'Not matched', $event);
+        } finally {
+            app()->setLocale($previousLocale);
+        }
+    }
+
     private function event(Organization $organization, string $type, string $providerEventId, string $providerEventKey): PaymentGatewayEvent
     {
         $event = new PaymentGatewayEvent;

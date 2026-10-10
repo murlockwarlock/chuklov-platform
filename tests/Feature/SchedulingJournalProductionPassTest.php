@@ -40,6 +40,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -271,6 +272,21 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'exception_date' => '2026-09-07',
             'exception_type' => ScheduleExceptionType::CustomWindow->value,
         ]);
+    }
+
+    public function test_schedule_exception_set_rejects_malformed_nested_state(): void
+    {
+        [, $admin, $specialist] = $this->fixture();
+
+        $this->expectException(InvalidArgumentException::class);
+
+        app(SetScheduleExceptionSet::class)->handle(
+            actor: $admin,
+            specialist: $specialist,
+            definitionsByDate: [
+                '2026-10-08' => ['invalid-definition'],
+            ],
+        );
     }
 
     public function test_settings_shows_a_human_validation_error_for_overlapping_intervals(): void
@@ -736,6 +752,24 @@ final class SchedulingJournalProductionPassTest extends TestCase
             ->assertHasNoErrors();
 
         self::assertSame('Добавьте хотя бы один рабочий интервал.', $component->instance()->errorMessage);
+        self::assertDatabaseCount('schedule_exceptions', 0);
+    }
+
+    public function test_work_schedule_rejects_malformed_custom_interval_without_throwing(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(WorkSchedule::class)
+            ->set('month', '2026-09')
+            ->call('toggleDate', '2026-09-07')
+            ->set('overrideType', ScheduleExceptionType::CustomWindow->value)
+            ->set('overrideIntervals', [['start_time' => '09:00']])
+            ->call('saveOverride')
+            ->assertHasNoErrors();
+
+        self::assertSame('A custom schedule exception requires a time window.', $component->instance()->errorMessage);
         self::assertDatabaseCount('schedule_exceptions', 0);
     }
 

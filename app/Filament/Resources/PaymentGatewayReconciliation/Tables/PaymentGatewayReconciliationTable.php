@@ -29,14 +29,16 @@ final class PaymentGatewayReconciliationTable
                     ->label(__('Клиент'))
                     ->state(function (PaymentGatewayEvent $record): string {
                         $client = PaymentGatewayReconciliationPresentation::client($record);
+                        $unmatchedLabel = __('Не сопоставлен');
+                        $unmatchedLabel = is_string($unmatchedLabel) ? $unmatchedLabel : 'Не сопоставлен';
 
                         if (! $client instanceof Client) {
-                            return 'Не сопоставлен';
+                            return $unmatchedLabel;
                         }
 
                         return is_string($client->full_name) && $client->full_name !== ''
                             ? $client->full_name
-                            : 'Не сопоставлен';
+                            : $unmatchedLabel;
                     })
                     ->wrap()
                     ->url(fn (PaymentGatewayEvent $record): ?string => CrmEntityLinks::clientUrl(

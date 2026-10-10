@@ -155,7 +155,7 @@ CASE
         semantic_value IN ('Не указан', 'Реферальный переход', 'Другие')
         OR semantic_value LIKE 'UTM: %'
         OR semantic_value LIKE 'Источник: %'
-        OR semantic_value IN ('По рекомендации знакомых', 'Социальные сети', 'Поиск в интернете', 'Партнёр', 'Другое', 'Telegram', 'Email', 'Портал', 'Сайт', 'Instagram', 'Yandex')
+        OR semantic_value IN ('По рекомендации знакомых', 'Социальные сети', 'Поиск в интернете', 'Партнёр', 'Другое', 'Telegram', 'Email', 'Портал', 'Сайт', 'Instagram', 'Yandex', 'Google')
     ) THEN 'Источник: ' || semantic_value
     WHEN semantic_kind = 'direct' THEN CASE
         WHEN LOWER(semantic_value) = 'friend' THEN 'По рекомендации знакомых'

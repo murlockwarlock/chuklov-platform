@@ -269,8 +269,8 @@ final class WorkSchedule extends LocalizedPage
                         fn (array $interval): array => [
                             'exception_date' => $date,
                             'exception_type' => ScheduleExceptionType::CustomWindow->value,
-                            'start_time' => $interval['start_time'],
-                            'end_time' => $interval['end_time'],
+                            'start_time' => $interval['start_time'] ?? null,
+                            'end_time' => $interval['end_time'] ?? null,
                             'reason' => $this->normalizedReason(),
                         ],
                         $this->overrideIntervals,

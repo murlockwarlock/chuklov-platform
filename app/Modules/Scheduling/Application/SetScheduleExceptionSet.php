@@ -16,6 +16,7 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 final class SetScheduleExceptionSet
 {
@@ -181,8 +182,16 @@ final class SetScheduleExceptionSet
 
         foreach ($definitionsByDate as $date => $definitions) {
             $date = LocalDate::from((string) $date)->value;
+            if (! is_array($definitions)) {
+                throw new InvalidArgumentException('The schedule exception set is invalid.');
+            }
+
             $dateDefinitions = [];
             foreach ($definitions as $definition) {
+                if (! is_array($definition)) {
+                    throw new InvalidArgumentException('The schedule exception set is invalid.');
+                }
+
                 $dateDefinitions[] = ScheduleExceptionDefinition::from([
                     ...$definition,
                     'exception_date' => $date,

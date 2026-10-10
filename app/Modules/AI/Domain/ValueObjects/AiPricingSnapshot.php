@@ -369,11 +369,11 @@ final readonly class AiPricingSnapshot
         $tier = $this->pricingTierFor($inputTokens);
 
         return [
-            'input' => $tier === null ? $this->inputRatePerMillionUnits() : $tier->inputRatePerMillionUnits,
-            'output' => $tier === null ? $this->outputRatePerMillionUnits() : $tier->outputRatePerMillionUnits,
-            'cache_read' => $tier === null ? $this->cacheReadRatePerMillionUnits() : $tier->cacheReadRatePerMillionUnits,
-            'cache_write' => $tier === null ? $this->cacheWriteRatePerMillionUnits() : $tier->cacheWriteRatePerMillionUnits,
-            'reasoning' => $tier === null ? $this->reasoningRatePerMillionUnits() : $tier->reasoningRatePerMillionUnits,
+            'input' => $tier?->inputRatePerMillionUnits ?? $this->inputRatePerMillionUnits(),
+            'output' => $tier?->outputRatePerMillionUnits ?? $this->outputRatePerMillionUnits(),
+            'cache_read' => $tier?->cacheReadRatePerMillionUnits ?? $this->cacheReadRatePerMillionUnits(),
+            'cache_write' => $tier?->cacheWriteRatePerMillionUnits ?? $this->cacheWriteRatePerMillionUnits(),
+            'reasoning' => $tier?->reasoningRatePerMillionUnits ?? $this->reasoningRatePerMillionUnits(),
         ];
     }
 
