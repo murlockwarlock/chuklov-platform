@@ -275,6 +275,7 @@ test('owner-created Communities RichEditor links survive the real CRM flow', asy
     await previewDialog.locator('button.fi-modal-close-btn').click({ force: true });
     await expect(previewDialog).toBeHidden();
     await expect((await closePreviewResponse).status()).toBe(200);
+    await expect(page.locator('[role="dialog"].fi-modal-open')).toHaveCount(0);
 
     await selectText(previewEditor, communityText);
     await applyLink(page, previewEditor, updatedUrl);
