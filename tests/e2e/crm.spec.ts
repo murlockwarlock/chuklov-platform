@@ -1029,7 +1029,7 @@ test('staff sees business labels for client and content settings', async ({ page
     await assertBusinessField(page, 'Название', fixture.contentSectionTitle);
 });
 
-test('staff sees the Telegram limit and preview while writing to a client', async ({ page }) => {
+test('client card routes to the compact Messages composer and a staff reply is saved', async ({ page }) => {
     const fixture = createCrmFixture();
 
     await login(page, fixture);
@@ -1043,13 +1043,10 @@ test('staff sees the Telegram limit and preview while writing to a client', asyn
     const message = 'фывфывфывфыв';
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill(message);
 
-    await expect(page.getByText('12 / 4096', { exact: true })).toBeVisible();
-    await expect(page.locator('.fi-in-text-item').filter({ hasText: message })).toHaveCount(1);
-
-    await page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true }).click();
-    const telegramPreview = page.locator('.fi-modal-window:visible').filter({ hasText: 'TELEGRAM' }).last();
-    await expect(telegramPreview).toBeVisible();
-    await expect(telegramPreview).toContainText(message);
+    await expect(page.getByRole('textbox', { name: 'Сообщение', exact: true })).toHaveValue(message);
+    await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Сообщение сохранено в истории', { exact: true })).toBeVisible();
+    await expect(page.locator('article').getByText(message, { exact: true })).toBeVisible();
 });
 
 test('staff can choose and send an attachment in CRM Messages', async ({ page }) => {
@@ -1070,10 +1067,12 @@ test('staff can choose and send an attachment in CRM Messages', async ({ page })
         mimeType: 'application/pdf',
         buffer: validPdfBuffer(),
     });
-    await expect(page.locator('.messages-attachment-summary')).toContainText('crm-message-attachment.pdf');
+    await expect(page.getByRole('alert').filter({ hasText: 'crm-message-attachment.pdf' })).toContainText('Загрузка завершена');
+    await expect(page.locator('#messages-composer-form').getByText('crm-message-attachment.pdf', { exact: true }).filter({ visible: true }).first()).toBeVisible();
 
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill('Сообщение с вложением');
     await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Сообщение сохранено в истории', { exact: true })).toBeVisible();
     await expect(page.locator('article').getByText('crm-message-attachment.pdf', { exact: true })).toBeVisible();
 });
 
@@ -1235,7 +1234,7 @@ test('manual Online meeting link supports replacement and refresh without duplic
         const modal = page.locator('.fi-modal-window:visible').last();
         await modal.getByRole('textbox', { name: /^Ссылка на встречу/ }).fill(url);
         await modal.getByRole('button', { name: 'Отправить', exact: true }).click();
-        await expect(page.getByText('Ссылка на встречу обновлена', { exact: true })).toBeVisible();
+        await expect(page.locator('.fi-no-notification-title').filter({ hasText: 'Ссылка на встречу обновлена' }).last()).toBeVisible();
         await page.reload();
         await expect(page.getByRole('link', { name: url, exact: true })).toHaveAttribute('href', url);
     };

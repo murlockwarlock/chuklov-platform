@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { expect, test, type Page, type Response } from '@playwright/test';
 
 type BookingFixture = {
+    clientId: number;
     cookieName: string;
     cookieValue: string;
     serviceId: number;
@@ -415,6 +416,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             false,
         );
         echo json_encode([
+            'clientId' => $client->getKey(),
             'cookieName' => $cookieName,
             'cookieValue' => $cookieValue,
             'serviceId' => $service->getKey(),
@@ -469,6 +471,27 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
 
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+function completeCompanionFixture(clientId: number): void {
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->where('organization_id', $organization->getKey())->where('full_name', 'like', 'Playwright Client %')->findOrFail(${clientId});
+        $turn = \\App\\Modules\\ClientCompanion\\Domain\\Models\\CompanionTurn::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->where('status', 'pending')->sole();
+        $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::query()->where('organization_id', $organization->getKey())->findOrFail($turn->conversation_id);
+        $message = app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+            organizationId: $organization->getKey(), client: $client, conversation: $conversation,
+            channel: 'portal', direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
+            authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
+            body: 'Новый синтетический ответ.',
+        );
+        $turn->forceFill(['status' => 'completed', 'outbound_message_id' => $message->getKey(), 'completed_at' => now()])->save();
+    `;
+    execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
+    });
 }
 
 async function assertPortalResponseAccepted(responsePromise: Promise<Response>, action: string): Promise<void> {
@@ -842,7 +865,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-en.jpg');
     await page.locator('nav a[href$="/portal/services"]:visible').click();
     await expect(page.getByRole('heading', { name: 'Book', exact: true })).toBeVisible();
-    await expect(page.locator('.portal-service-card').first().getByRole('link', { name: 'Book an appointment' })).toHaveAttribute('href', /service_id=/);
+    await expect(page.locator('a.portal-service-card').first()).toHaveAttribute('href', /service_id=/);
     const profileResponse = page.waitForResponse((response) =>
         response.url().endsWith('/portal/profile') && response.request().method() === 'GET' && response.status() === 200,
     );
@@ -1037,15 +1060,15 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     await expect(page.getByTestId('payout-feedback')).toBeVisible();
     await expect(page.getByTestId('payout-feedback')).toContainText('Заявка на выплату отправлена');
     await expect(page.getByTestId('payout-feedback')).toContainText(/2[,.]00\s*(?:\$|USD)/);
-    await expect(page.getByTestId('payout-feedback')).toContainText('Заявка на выплату отправлена');
-
+    await page.getByRole('button', { name: 'История', exact: true }).click();
     const payout = page.getByTestId('partner-payout-0');
     await expect(payout).toBeVisible();
     await expect(payout).toContainText(/2[,.]00\s*(?:\$|USD)/);
-    await expect(payout).toContainText('Запрошена');
+    await expect(payout).toContainText('Заявка на выплату отправлена');
     await payout.getByRole('button', { name: 'Отменить запрос', exact: true }).click();
     await expect(payout).toContainText('Отменена');
 
+    await page.getByRole('button', { name: 'Выплаты', exact: true }).click();
     await page.getByLabel('Сумма', { exact: true }).fill('999.00');
     await payoutSubmit.click();
     await expect(page.getByTestId('payout-error')).toBeVisible();
@@ -1225,32 +1248,7 @@ test('companion shows accessible typing feedback and respects intentional histor
     });
     await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
 
-    await page.route('**/portal/companion**', async (route) => {
-        const response = await route.fetch();
-        const payload = await response.json() as {
-            props?: { companion?: { pending?: boolean; messages?: Array<Record<string, unknown>> } };
-        };
-        const companion = payload.props?.companion;
-        if (companion !== undefined) {
-            companion.pending = false;
-            companion.messages = [
-                ...(companion.messages ?? []),
-                {
-                    type: 'message',
-                    id: 'synthetic-new-message',
-                    role: 'ai',
-                    roleLabel: 'AI-помощник',
-                    content: 'Новый синтетический ответ.',
-                    occurredAt: new Date().toISOString(),
-                    transportLabel: 'Портал',
-                    feedback: null,
-                    attachmentCount: 0,
-                    traceUrl: null,
-                },
-            ];
-        }
-        await route.fulfill({ response, body: JSON.stringify(payload) });
-    });
+    completeCompanionFixture(fixture.clientId);
 
     await expect(page.getByTestId('companion-new-messages')).toBeVisible({ timeout: 7_000 });
     await expect(page.getByText('Новый синтетический ответ.', { exact: true })).toBeVisible();

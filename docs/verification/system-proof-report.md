@@ -21,6 +21,7 @@ Attachment quarantine was removed from the accepted current flow (ADR-021); priv
 | --- | --- | --- |
 | NOT IMPLEMENTED | Source-backed 9-systems and MSQ questionnaires/scoring | Authoritative question/scoring material is missing; existing survey builder is not that methodology. |
 | NEEDS OWNER DECISION | Source-backed clinical Road Map/Tracker methodology | Current entitlement/check-in/configurable task code is implemented and is in the audit; missing clinical methodology must not be invented. |
+| NOT IMPLEMENTED | Direct file opening/downloading from the Portal Companion message bubble | The reader returns file name/type metadata, but the current bubble renders only attachment count. Signed medical-file access exists separately. The audit does not add a new chat file-download feature. |
 | OUT OF SCOPE | Family/dependent accounts | Current party size represents one booking; separate dependent identity/account architecture is not the accepted implementation. |
 | OUT OF SCOPE | MAX/Instagram | Future channel adapters. |
 | OUT OF SCOPE | Production deployment and merge | Explicitly prohibited by task and repository phase. |
@@ -65,6 +66,10 @@ These are focused subsystem signals, not complete acceptance rows. Tests exercis
 
 ## Staging targets inspected and actual effects
 
+Candidate `45caad8e9cb3b4755b3f08c594c46a5145382579` was deployed successfully after the streamed-probe repair. `staging-smoke.sh --deep` passed on that exact SHA: health, scheduler container, Telegram API reachability, matching app/Horizon Redis identity, CRM/Portal paths, private storage, RAG ingest/retrieve/provenance, revision-history rendering and supported retirement of the synthetic source. This is candidate evidence; the final audit SHA is not yet fixed.
+
+The scoped PostgreSQL evidence for synthetic client 77 confirms booking 112 has `party_size=2`, status Cancelled and event_version 4, with Created/client → StatusChanged/user → Rescheduled/client → Cancelled/client history. Required consent evidence is version `2026-09-03-default-v1`, marketing is false. Booking scenario events are processed; internal actions include delivered outcomes, and client actions include suppressed/cancelled outcomes. There is no financial obligation for this unpriced service. The two Companion turns are Completed, the human-request escalation is resolved, and message bodies are encrypted with plaintext fields null. Client suppression is not proof of successful external delivery.
+
 Initial remote revision: `66a7edc3e04c5b5028d292e4a4201b0e628cb54f`, not a final audit candidate. Repository and staging configuration, smoke identities, provider credentials/bindings, fixtures and existing scripts were inspected before target selection. No secret values are included here.
 
 | Integration | Current wiring and real evidence | Remaining gap |
@@ -90,6 +95,10 @@ Accepted group semantics are one Booking and one unchanged Finance lifecycle. Pa
 Booking detail was captured at 320, 360, 390, 768, 1024 and 1440px; document `scrollWidth <= clientWidth` held at each width. That inequality alone is not full visual acceptance. Screenshots must additionally be inspected for sticky-header scroll positioning, clipping and action accessibility. It does not verify every Portal/CRM screen.
 
 ### Companion and staff reply
+
+On deployed `45caad8`, real email request/OTP verification authenticated the synthetic client. The existing staff reply now renders readable text without literal HTML tags. Portal chat geometry passed at 320, 360, 390, 768, 1024 and 1440px; desktop and 320px screenshots were visually inspected. Initial capture before paint was blank and was excluded from visual acceptance; a settled capture showed the actual reply. This does not verify all other screens at those widths.
+
+The actual CRM attachment button opened the native chooser, selected a synthetic PDF, showed its filename, completed upload and enabled Send. Submission produced the success notification and a new staff message on the client's refreshed Portal. The current bubble labels the PDF as “Изображений: 1” and has no file-opening action. The misleading image label and metadata-only client experience are explicit limitations, not a claimed file-download PASS. The CRM was returned to AI mode through its actual Resume button.
 
 Synthetic `Привет, ты кто?` completed through Redis and real AI with conversation active, not automatic human handoff. Client UI submitted `Хочу поговорить с человеком`; timeline showed specialist requested and the accepted notice that AI continues until staff joins. CRM `Подключиться к диалогу` exposed the reply form; client timeline showed deliberate staff takeover. CRM reply was visible to the client; CRM resume restored the join action. Exact message/provider-delivery/state counts remain to be reconciled from scoped synthetic evidence.
 
