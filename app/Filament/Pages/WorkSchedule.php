@@ -57,7 +57,7 @@ final class WorkSchedule extends LocalizedPage
 
     public string $overrideType = 'working';
 
-    /** @var list<array{start_time: string, end_time: string}> */
+    /** @var list<array<string, mixed>> */
     public array $overrideIntervals = [];
 
     public string $overrideReason = '';

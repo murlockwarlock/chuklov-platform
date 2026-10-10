@@ -228,6 +228,54 @@ Do not rerun the same heavy verification when the relevant code has not changed.
 
 Classify CI failures as `CAUSED BY CURRENT CHANGE`, `PRE-EXISTING / BASELINE`, or `INFRASTRUCTURE`. Only failures caused by the current change automatically block bounded delivery. Security, tenant-isolation, protected-data, and data-loss failures remain blocking regardless of classification.
 
+# Chuklov Behavioral Proof Standard
+
+The global Behavioral Verification / Proof Standard is mandatory for every
+Chuklov change and audit. This section extends the existing FAST_PATH,
+FULL_RISK, PostgreSQL, staging, security, tenant, UX, and no-endless-review
+rules; it does not replace them.
+
+- Owner acceptance is product/UX judgment after technical behavior is proven.
+  Automation must catch HTTP 500s, broken button wiring, wrong navigation,
+  missing modals, failed imports, stale async state, incorrect notification
+  CTAs, invalid transitions, and tenant/authorization regressions wherever
+  technically feasible.
+- CRM and Client Portal/Mini App workflows require two-sided proof: Portal
+  actions must be visible in CRM, and CRM changes must be visible to the
+  client. One surface alone is insufficient for a shared workflow.
+- Every client-facing Telegram CTA must be classified as
+  `INTERNAL_MINI_APP`, `EXTERNAL_URL`, or `CALLBACK`. Internal Portal/Mini App
+  destinations must use the existing Telegram `web_app` launch/auth gateway;
+  their actual payload must contain `web_app.url` and no ordinary `url`.
+  Genuine external destinations, such as Zoom or explicitly external sites,
+  must contain ordinary `url` and no `web_app`. Textual URL equality alone is
+  not proof.
+- Notification proof covers trigger, recipient, consent/category rule,
+  rendered content, channel payload, CTA transport and destination,
+  deduplication/retry, delivery/history, and recipient-visible result.
+  Transactional booking/reminder messages must not depend on marketing
+  consent.
+- Async UI is not verified when the user must manually refresh unless that is
+  the accepted UX. Verify the existing automatic refresh or bounded polling.
+- SQLite is only a quick signal. DB-sensitive behavior is not VERIFIED until
+  PostgreSQL evidence exists; report `POSTGRESQL NOT VERIFIED` when it has not
+  been checked. Staging is the production-equivalent acceptance target and
+  must not be destructively reset.
+- Critical CRM/Portal journeys use browser tests that click the real controls
+  when the defect class can exist in rendered UI, JavaScript, routing, wiring,
+  responsive behavior, or browser navigation. HTTP 200, route existence,
+  component presence, or backend method tests are not substitutes.
+- When an owner discovers a bug after green tests, classify why the previous
+  evidence was insufficient, fix the defect, add the exact regression, add a
+  reusable invariant when the defect is systemic, inspect sibling paths, and
+  downgrade any over-broad VERIFIED claim until it is re-proven.
+
+Testing remains risk-scaled: do not run every suite after every small change.
+Within the affected workflow, however, prove the complete behavioral contract
+and distinguish PASS, VERIFIED, PARTIALLY VERIFIED, NOT VERIFIED, and NOT
+IMPLEMENTED. Detailed Chuklov examples are maintained in
+`docs/testing/behavioral-proof-standard.md`.
+
 ## Reporting
 
 For bounded work, keep the final report short and factual: what was broken, root cause, what changed, exact staging scenario result, focused checks, PostgreSQL status if relevant, final SHA, and whether owner recheck is needed. Do not produce a release-style report for a small fix or spend implementation time polishing it before user-visible behavior works.

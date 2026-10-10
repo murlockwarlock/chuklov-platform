@@ -247,7 +247,7 @@ final readonly class SurveyComparisonPresentation
     }
 
     /**
-     * @param  array<int, array<string, mixed>>  $metrics
+     * @param  array<array-key, mixed>  $metrics
      * @return array<string, array{label: string, direction: mixed, improvement_direction: mixed}>
      */
     private function metricDefinitions(array $metrics, string $locale): array

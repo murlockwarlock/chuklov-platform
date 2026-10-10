@@ -28,7 +28,7 @@ final class SetScheduleExceptionSet
         private readonly RecordAuditEvent $audit,
     ) {}
 
-    /** @param array<string, list<array<string, mixed>>> $definitionsByDate */
+    /** @param array<string, mixed> $definitionsByDate */
     public function handle(
         User $actor,
         Specialist $specialist,
@@ -173,7 +173,7 @@ final class SetScheduleExceptionSet
             ->get());
     }
 
-    /** @param array<string, list<array<string, mixed>>> $definitionsByDate
+    /** @param array<string, mixed> $definitionsByDate
      * @return array<string, list<ScheduleExceptionDefinition>>
      */
     private function normalizeDefinitions(array $definitionsByDate): array
