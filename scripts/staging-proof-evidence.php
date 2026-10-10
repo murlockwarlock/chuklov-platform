@@ -2,6 +2,10 @@
 
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
+use App\Modules\Commerce\Application\GiftCertificateBalanceProjection;
+use App\Modules\Commerce\Domain\Models\GiftCertificate;
+use App\Modules\Commerce\Domain\Models\GiftCertificateClaim;
+use App\Modules\Commerce\Domain\Models\GiftCertificateMovement;
 use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
@@ -47,6 +51,7 @@ function syntheticEvidenceCheck(int $userId, int $clientId): void
         ])->all(),
         'obligation_count' => FinancialObligation::query()->where('organization_id', $organizationId)->where('client_id', $clientId)->count(),
         'finance' => syntheticFinanceEvidence($organizationId, $clientId),
+        'gift_certificates' => syntheticGiftCertificateEvidence($organizationId, $clientId),
         'scenario_events' => $scenarioEvents->map(static fn ($event): array => [
             'id' => $event->getKey(), 'event' => $event->event_name->value, 'status' => $event->status->value,
         ])->all(),
@@ -66,6 +71,49 @@ function syntheticEvidenceCheck(int $userId, int $clientId): void
             ])->all(),
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)."\n";
     ok('SYNTHETIC EVIDENCE', 'read only; no plaintext message, contact, token, credential or private content output');
+}
+
+function syntheticGiftCertificateEvidence(int $organizationId, int $clientId): array
+{
+    $certificates = GiftCertificate::query()->where('organization_id', $organizationId)
+        ->where(static function ($query) use ($clientId): void {
+            $query->where('purchaser_client_id', $clientId)->orWhere('current_holder_client_id', $clientId);
+        })->orderBy('id')->limit(20)->get();
+    $certificateIds = $certificates->modelKeys();
+    $claims = GiftCertificateClaim::query()->where('organization_id', $organizationId)
+        ->whereIn('certificate_id', $certificateIds)->orderBy('id')->limit(100)->get();
+    $movements = GiftCertificateMovement::query()->where('organization_id', $organizationId)
+        ->whereIn('certificate_id', $certificateIds)->orderBy('id')->limit(200)->get();
+    $balances = app(GiftCertificateBalanceProjection::class);
+
+    return [
+        'certificates' => $certificates->map(fn (GiftCertificate $certificate): array => [
+            'id' => $certificate->getKey(),
+            'purchaser_client_id' => $certificate->purchaser_client_id,
+            'current_holder_client_id' => $certificate->current_holder_client_id,
+            'original_amount_minor' => $certificate->original_amount_minor,
+            'balance_minor' => $balances->balance($certificate)->minorUnits(),
+            'currency' => $certificate->currency->value,
+        ])->all(),
+        'claims' => $claims->map(static fn (GiftCertificateClaim $claim): array => [
+            'id' => $claim->getKey(),
+            'certificate_id' => $claim->certificate_id,
+            'initiated_by_client_id' => $claim->initiated_by_client_id,
+            'claimed_client_id' => $claim->claimed_client_id,
+            'status' => $claim->status,
+        ])->all(),
+        'movements' => $movements->map(static fn (GiftCertificateMovement $movement): array => [
+            'id' => $movement->getKey(),
+            'certificate_id' => $movement->certificate_id,
+            'type' => $movement->movement_type->value,
+            'amount_minor' => $movement->amount_minor,
+            'from_holder_client_id' => $movement->from_holder_client_id,
+            'to_holder_client_id' => $movement->to_holder_client_id,
+            'claim_id' => $movement->claim_id,
+            'redemption_id' => $movement->redemption_id,
+            'reverses_movement_id' => $movement->reverses_movement_id,
+        ])->all(),
+    ];
 }
 
 function syntheticFinanceEvidence(int $organizationId, int $clientId): array
