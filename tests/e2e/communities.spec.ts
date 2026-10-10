@@ -152,7 +152,7 @@ async function login(page: Page, fixture: CommunitiesFixture): Promise<void> {
 
 async function selectText(editor: Locator, value: string): Promise<void> {
     await editor.click({ force: true });
-    await editor.evaluate((element, textToSelect) => {
+    const selectedText = await editor.evaluate((element, textToSelect) => {
         const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
         let node = walker.nextNode();
 
@@ -163,7 +163,7 @@ async function selectText(editor: Locator, value: string): Promise<void> {
             if (start !== -1) {
                 const range = document.createRange();
                 range.setStart(node, start);
-                range.collapse(true);
+                range.setEnd(node, start + textToSelect.length);
 
                 const selection = window.getSelection();
                 selection?.removeAllRanges();
@@ -171,7 +171,7 @@ async function selectText(editor: Locator, value: string): Promise<void> {
                 (element as HTMLElement).focus();
                 document.dispatchEvent(new Event('selectionchange', { bubbles: true }));
 
-                return;
+                return selection?.toString() ?? '';
             }
 
             node = walker.nextNode();
@@ -180,11 +180,6 @@ async function selectText(editor: Locator, value: string): Promise<void> {
         throw new Error(`Text not found in the rich editor: ${textToSelect}`);
     }, value);
 
-    for (let index = 0; index < value.length; index += 1) {
-        await editor.press('Shift+ArrowRight');
-    }
-
-    const selectedText = await editor.evaluate(() => window.getSelection()?.toString() ?? '');
     expect(selectedText).toBe(value);
 }
 
@@ -192,7 +187,27 @@ async function applyLink(page: Page, editor: Locator, url: string): Promise<void
     const linkButton = page.locator('button[aria-label="Ссылка"]').first();
     await linkButton.click({ force: true });
     const dialog = page.locator('[role="dialog"] .fi-modal-window').filter({ hasText: 'Открывать в новой вкладке' }).last();
-    await expect(dialog).toBeVisible();
+    let isVisible = false;
+
+    try {
+        await expect(dialog).toBeVisible({ timeout: 1500 });
+        isVisible = true;
+    } catch {
+        const selectionLength = await editor.evaluate(() => window.getSelection()?.toString().length ?? 0);
+
+        await editor.press('ArrowLeft');
+
+        for (let index = 0; index < selectionLength; index += 1) {
+            await editor.press('Shift+ArrowRight');
+        }
+
+        await page.waitForTimeout(250);
+        await linkButton.click({ force: true });
+    }
+
+    if (!isVisible) {
+        await expect(dialog).toBeVisible();
+    }
     await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeVisible();
     await dialog.getByRole('textbox', { name: 'URL', exact: true }).fill(url);
     await dialog.getByRole('button', { name: 'Отправить', exact: true }).click({ force: true });
