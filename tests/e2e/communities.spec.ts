@@ -165,28 +165,32 @@ async function selectText(page: Page, editor: Locator, value: string): Promise<v
 async function applyLink(page: Page, editor: Locator, url: string): Promise<void> {
     const linkButton = page.locator('button[aria-label="Ссылка"]:visible').first();
     const selectionLength = await editor.evaluate(() => window.getSelection()?.toString().length ?? 0);
-    await linkButton.click({ force: true });
-    const dialog = page.locator('[role="dialog"] .fi-modal-window').filter({ hasText: 'Открывать в новой вкладке' }).last();
-    let isVisible = false;
+    const dialog = page.locator('[role="dialog"].fi-modal-open').last();
 
-    try {
-        await expect(dialog).toBeVisible({ timeout: 1500 });
-        isVisible = true;
-    } catch {
-        await editor.focus();
-        await editor.press('ArrowLeft');
-
-        for (let index = 0; index < selectionLength; index += 1) {
-            await editor.press('Shift+ArrowRight');
-        }
-
-        await page.waitForTimeout(250);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+        await linkButton.scrollIntoViewIfNeeded();
         await linkButton.click({ force: true });
+
+        try {
+            await expect(dialog).toBeVisible({ timeout: 5_000 });
+            break;
+        } catch (error) {
+            if (attempt === 1) {
+                throw error;
+            }
+
+            await editor.focus();
+            await editor.press('ArrowLeft');
+
+            for (let index = 0; index < selectionLength; index += 1) {
+                await editor.press('Shift+ArrowRight');
+            }
+
+            await page.waitForTimeout(500);
+        }
     }
 
-    if (!isVisible) {
-        await expect(dialog).toBeVisible();
-    }
+    await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('heading', { name: 'Ссылка', exact: true })).toBeVisible();
     await dialog.getByRole('textbox', { name: 'URL', exact: true }).fill(url);
     await dialog.getByRole('button', { name: 'Отправить', exact: true }).click({ force: true });
