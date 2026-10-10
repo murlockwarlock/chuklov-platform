@@ -169,6 +169,7 @@ async function selectText(editor: Locator, value: string): Promise<void> {
                 selection?.removeAllRanges();
                 selection?.addRange(range);
                 (element as HTMLElement).focus();
+                document.dispatchEvent(new Event('selectionchange', { bubbles: true }));
 
                 return selection?.toString() ?? '';
             }
