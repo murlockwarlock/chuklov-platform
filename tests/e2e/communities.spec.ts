@@ -180,10 +180,19 @@ async function applyLink(page: Page, editor: Locator, url: string): Promise<void
     const selectionLength = await editor.evaluate(() => window.getSelection()?.toString().length ?? 0);
     const dialog = page.locator('[role="dialog"] .fi-modal-window').filter({ hasText: 'Открывать в новой вкладке' }).last();
     await page.waitForTimeout(300);
+    const triggerLinkButton = async (): Promise<void> => {
+        if ((page.viewportSize()?.width ?? 1024) < 600) {
+            await linkButton.tap({ force: true });
+
+            return;
+        }
+
+        await linkButton.click({ force: true });
+    };
 
     for (let attempt = 0; attempt < 2; attempt += 1) {
         await linkButton.scrollIntoViewIfNeeded();
-        await linkButton.click({ force: true });
+        await triggerLinkButton();
 
         try {
             await expect(dialog).toBeVisible({ timeout: 5_000 });
