@@ -6,7 +6,6 @@ use App\Models\User;
 use App\Modules\Analytics\Application\Data\AcquisitionAnalyticsData;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\SourceBucket;
-use App\Modules\Attribution\Application\AttributionSourcePresentation;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -18,12 +17,6 @@ use Illuminate\Support\Facades\DB;
 final class AcquisitionAnalytics
 {
     private const string UnknownSourceLabel = 'Не указан';
-
-    private const string ReferralSourceLabel = 'Реферальный переход';
-
-    private const string UtmSourceLabelPrefix = 'UTM: ';
-
-    private const string DirectSourceLabelPrefix = 'Источник: ';
 
     private const string OtherSourceLabel = 'Другие';
 
@@ -85,28 +78,6 @@ final class AcquisitionAnalytics
             WHEN {$utmSourceCondition} THEN attribution.utm_source
             ELSE NULL
         END";
-        $presentedSourceLabels = array_map(
-            static fn (string $label): string => str_replace("'", "''", $label),
-            array_values(array_unique(AttributionSourcePresentation::directSourceLabels())),
-        );
-        $presentedSourceLabelsSql = "'".implode("', '", $presentedSourceLabels)."'";
-        $directSourceNeedsPrefix = "semantic_kind = '".self::SemanticKindDirect."'
-            AND (
-                semantic_value IN ('".self::UnknownSourceLabel."', '".self::ReferralSourceLabel."', '".self::OtherSourceLabel."')
-                OR semantic_value LIKE '".self::UtmSourceLabelPrefix."%'
-                OR semantic_value LIKE '".self::DirectSourceLabelPrefix."%'
-                OR semantic_value IN ({$presentedSourceLabelsSql})
-            )";
-        $knownDirectSourceLabel = $this->knownDirectSourceLabelExpression();
-        $sourceLabel = "CASE
-            WHEN semantic_kind = '".self::SemanticKindUnknown."' THEN '".self::UnknownSourceLabel."'
-            WHEN semantic_kind = '".self::SemanticKindReferral."' THEN '".self::ReferralSourceLabel."'
-            WHEN semantic_kind = '".self::SemanticKindUtm."' THEN '".self::UtmSourceLabelPrefix."' || semantic_value
-            WHEN {$directSourceNeedsPrefix} THEN '".self::DirectSourceLabelPrefix."' || semantic_value
-            WHEN semantic_kind = '".self::SemanticKindDirect."' THEN {$knownDirectSourceLabel}
-            ELSE semantic_value
-        END";
-
         $classified = DB::query()
             ->from($clientTable.' as clients')
             ->leftJoin($attributionTable.' as attribution', function (JoinClause $join): void {
@@ -117,7 +88,7 @@ final class AcquisitionAnalytics
             ->where('clients.organization_id', $organizationId)
             ->where('clients.created_at', '>=', $period->startUtc)
             ->where('clients.created_at', '<', $period->endUtc)
-            ->selectRaw($semanticKind.' as semantic_kind, '.$semanticValue.' as semantic_value');
+            ->select(DB::raw($semanticKind.' as semantic_kind, '.$semanticValue.' as semantic_value'));
 
         $grouped = DB::query()
             ->fromSub($classified, 'classified_sources')
@@ -126,8 +97,7 @@ final class AcquisitionAnalytics
 
         $presented = DB::query()
             ->fromSub($grouped, 'semantic_sources')
-            ->selectRaw("semantic_kind, semantic_value, source_count, {$sourceLabel} as source_label,
-                CASE WHEN semantic_kind = '".self::SemanticKindUnknown."' THEN 1 ELSE 0 END as is_unknown");
+            ->select(DB::raw($this->presentedSelectExpression()));
 
         $ranked = DB::query()
             ->fromSub($presented, 'presented_sources')
@@ -155,7 +125,7 @@ final class AcquisitionAnalytics
                 END as source_label,
                 source_count");
 
-        return array_values(DB::query()
+        $rows = DB::query()
             ->fromSub($bucketed, 'bucketed_sources')
             ->selectRaw('bucket_kind, bucket_value, source_label, SUM(source_count) as source_count')
             ->groupBy('bucket_kind', 'bucket_value', 'source_label')
@@ -167,20 +137,45 @@ final class AcquisitionAnalytics
                 label: (string) $row->source_label,
                 count: (int) $row->source_count,
             ))
-            ->all());
+            ->all();
+
+        return array_values($rows);
     }
 
     /** @return literal-string */
-    private function knownDirectSourceLabelExpression(): string
+    private function presentedSelectExpression(): string
     {
-        $cases = [];
-
-        foreach (AttributionSourcePresentation::directSourceLabels() as $source => $label) {
-            $source = str_replace("'", "''", strtolower($source));
-            $label = str_replace("'", "''", $label);
-            $cases[] = "WHEN LOWER(semantic_value) = '{$source}' THEN '{$label}'";
-        }
-
-        return 'CASE '.implode(' ', $cases).' ELSE semantic_value END';
+        return <<<'SQL'
+semantic_kind, semantic_value, source_count,
+CASE
+    WHEN semantic_kind = 'unknown' THEN 'Не указан'
+    WHEN semantic_kind = 'referral' THEN 'Реферальный переход'
+    WHEN semantic_kind = 'utm' THEN 'UTM: ' || semantic_value
+    WHEN semantic_kind = 'direct' AND (
+        semantic_value IN ('Не указан', 'Реферальный переход', 'Другие')
+        OR semantic_value LIKE 'UTM: %'
+        OR semantic_value LIKE 'Источник: %'
+        OR semantic_value IN ('По рекомендации знакомых', 'Социальные сети', 'Поиск в интернете', 'Партнёр', 'Другое', 'Telegram', 'Email', 'Портал', 'Сайт', 'Instagram', 'Yandex', 'Google')
+    ) THEN 'Источник: ' || semantic_value
+    WHEN semantic_kind = 'direct' THEN CASE
+        WHEN LOWER(semantic_value) = 'friend' THEN 'По рекомендации знакомых'
+        WHEN LOWER(semantic_value) = 'social' THEN 'Социальные сети'
+        WHEN LOWER(semantic_value) = 'search' THEN 'Поиск в интернете'
+        WHEN LOWER(semantic_value) = 'partner' THEN 'Партнёр'
+        WHEN LOWER(semantic_value) = 'other' THEN 'Другое'
+        WHEN LOWER(semantic_value) = 'telegram' THEN 'Telegram'
+        WHEN LOWER(semantic_value) = 'email_auth' THEN 'Email'
+        WHEN LOWER(semantic_value) = 'portal' THEN 'Портал'
+        WHEN LOWER(semantic_value) IN ('site', 'web', 'website') THEN 'Сайт'
+        WHEN LOWER(semantic_value) = 'instagram' THEN 'Instagram'
+        WHEN LOWER(semantic_value) IN ('facebook', 'vk') THEN 'Социальные сети'
+        WHEN LOWER(semantic_value) = 'yandex' THEN 'Yandex'
+        WHEN LOWER(semantic_value) = 'google' THEN 'Google'
+        ELSE semantic_value
+    END
+    ELSE semantic_value
+END as source_label,
+CASE WHEN semantic_kind = 'unknown' THEN 1 ELSE 0 END as is_unknown
+SQL;
     }
 }

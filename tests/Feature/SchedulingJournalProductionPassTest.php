@@ -40,6 +40,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -273,6 +274,21 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ]);
     }
 
+    public function test_schedule_exception_set_rejects_malformed_nested_state(): void
+    {
+        [, $admin, $specialist] = $this->fixture();
+
+        $this->expectException(InvalidArgumentException::class);
+
+        app(SetScheduleExceptionSet::class)->handle(
+            actor: $admin,
+            specialist: $specialist,
+            definitionsByDate: [
+                '2026-10-08' => ['invalid-definition'],
+            ],
+        );
+    }
+
     public function test_settings_shows_a_human_validation_error_for_overlapping_intervals(): void
     {
         [$organization, $admin, $specialist] = $this->fixture();
@@ -301,10 +317,6 @@ final class SchedulingJournalProductionPassTest extends TestCase
     public function test_crm_create_booking_starts_with_specialist_and_allows_inline_client_creation(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture('Asia/Almaty');
-        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
-            'feature_key' => OrganizationFeature::ClientRecords->value,
-            'enabled' => true,
-        ]);
         $this->resolveFilamentContext($admin, $organization);
 
         $component = Livewire::actingAs($admin)->test(CreateBooking::class);
@@ -743,6 +755,24 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertDatabaseCount('schedule_exceptions', 0);
     }
 
+    public function test_work_schedule_rejects_malformed_custom_interval_without_throwing(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(WorkSchedule::class)
+            ->set('month', '2026-09')
+            ->call('toggleDate', '2026-09-07')
+            ->set('overrideType', ScheduleExceptionType::CustomWindow->value)
+            ->set('overrideIntervals', [['start_time' => '09:00']])
+            ->call('saveOverride')
+            ->assertHasNoErrors();
+
+        self::assertSame('A custom schedule exception requires a time window.', $component->instance()->errorMessage);
+        self::assertDatabaseCount('schedule_exceptions', 0);
+    }
+
     public function test_work_schedule_selects_dates_and_applies_multi_interval_overrides_without_touching_recurring_hours(): void
     {
         [$organization, $admin, $specialist] = $this->fixture();
@@ -926,17 +956,22 @@ final class SchedulingJournalProductionPassTest extends TestCase
             ->get(BookingResource::getUrl('create').'?'.http_build_query($query))
             ->assertOk();
 
-        Livewire::withQueryParams($query)
+        $component = Livewire::withQueryParams($query)
             ->actingAs($admin)
-            ->test(CreateBooking::class)
+            ->test(CreateBooking::class);
+        $component
             ->fillForm([
-                'client_id' => $client->getKey(),
                 'service_id' => $service->getKey(),
                 'specialist_id' => $specialist->getKey(),
-                'starts_at' => CarbonImmutable::create(2026, 10, 5, 10, 15, 0, 'UTC'),
+                'booking_date' => '2026-10-05',
                 'visit_format' => VisitFormat::Online->value,
                 'party_size' => 1,
             ])
+            ->fillForm([
+                'booking_time' => '2026-10-05T10:15:00+00:00',
+                'client_id' => $client->getKey(),
+            ])
+            ->assertSuccessful()
             ->call('create')
             ->assertHasNoErrors()
             ->assertRedirect(ListBookings::getUrl().'?week=2026-10-05&view=week&specialist_id='.$specialist->getKey());
@@ -968,16 +1003,21 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'view' => 'week',
         ])
             ->actingAs($admin)
-            ->test(CreateBooking::class)
+            ->test(CreateBooking::class);
+        $component
             ->fillForm([
-                'client_id' => $client->getKey(),
                 'service_id' => $service->getKey(),
                 'specialist_id' => $specialist->getKey(),
-                'starts_at' => '2026-10-04 19:00',
+                'booking_date' => '2026-10-04',
                 'visit_format' => VisitFormat::Online->value,
                 'party_size' => 1,
+            ])
+            ->fillForm([
+                'booking_time' => '2026-10-05T02:00:00+00:00',
+                'client_id' => $client->getKey(),
             ]);
         $component
+            ->assertSuccessful()
             ->call('create')
             ->assertHasNoErrors()
             ->assertRedirect();
@@ -1178,6 +1218,10 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ]);
         OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
             'feature_key' => OrganizationFeature::ServiceCatalog->value,
+            'enabled' => true,
+        ]);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
             'enabled' => true,
         ]);
         config()->set('tenancy.default_organization_id', $organization->getKey());

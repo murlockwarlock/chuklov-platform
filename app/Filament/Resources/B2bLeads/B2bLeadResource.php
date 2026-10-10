@@ -21,7 +21,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-/** @extends resource<B2bLead> */
+/** @extends LocalizedResource<B2bLead> */
 final class B2bLeadResource extends LocalizedResource
 {
     protected static ?string $model = B2bLead::class;

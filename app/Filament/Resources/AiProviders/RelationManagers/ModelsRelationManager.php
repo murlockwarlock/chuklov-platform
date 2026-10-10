@@ -223,7 +223,7 @@ class ModelsRelationManager extends LocalizedRelationManager
                                 : implode(', ', $record->getPricingSnapshot()->unsupportedMeters)),
                         CheckboxList::make('model_modalities')
                             ->label(__('Типы входных данных ручной модели'))
-                            ->options(collect(AiModelModality::cases())->mapWithKeys(fn (AiModelModality $modality): array => [$modality->value => CrmLabel::enum($modality)])->all())
+                            ->options(collect(AiModelModality::cases())->mapWithKeys(fn (AiModelModality $modality): array => [$modality->value => CrmLabel::enum($modality) ?? $modality->value])->all())
                             ->formatStateUsing(fn (mixed $state, ?AiModelConfiguration $record): array => $record === null
                                 ? (is_array($state) ? $state : [])
                                 : array_values(array_intersect(
@@ -386,7 +386,7 @@ class ModelsRelationManager extends LocalizedRelationManager
     private static function capabilityOptions(): array
     {
         return collect(AiCapability::cases())
-            ->mapWithKeys(fn (AiCapability $capability): array => [$capability->value => CrmLabel::enum($capability)])
+            ->mapWithKeys(fn (AiCapability $capability): array => [$capability->value => CrmLabel::enum($capability) ?? $capability->value])
             ->all();
     }
 

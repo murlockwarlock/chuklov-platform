@@ -41,27 +41,27 @@ final class B2bLeadsTable
                     ->searchable()
                     ->sortable()
                     ->wrap()
-                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist, $canViewSpecialists))
-                    ->color(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist, $canViewSpecialists) === null ? null : 'primary')
-                    ->disabledClick(fn (B2bLead $record): bool => CrmEntityLinks::specialistUrl($record->salesCall?->specialist, $canViewSpecialists) === null),
+                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall->specialist, $canViewSpecialists))
+                    ->color(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall->specialist, $canViewSpecialists) === null ? null : 'primary')
+                    ->disabledClick(fn (B2bLead $record): bool => CrmEntityLinks::specialistUrl($record->salesCall->specialist, $canViewSpecialists) === null),
                 TextColumn::make('salesCall.starts_at')->label(__('Разговор'))->dateTime('d.m.Y H:i')->sortable(),
                 TextColumn::make('salesCall.provider_sync_status')->label('Zoom')->formatStateUsing(static fn ($state): string => self::provider($state))->badge(),
                 TextColumn::make('submitted_at')->label(__('Отправлено'))->dateTime('d.m.Y H:i')->sortable(),
             ])
             ->filters([
                 SelectFilter::make('status')->label(__('Статус'))->options([
-                    B2bLeadStatus::New->value => CrmLabel::enum(B2bLeadStatus::New),
-                    B2bLeadStatus::Contacted->value => CrmLabel::enum(B2bLeadStatus::Contacted),
-                    B2bLeadStatus::ZoomScheduled->value => CrmLabel::enum(B2bLeadStatus::ZoomScheduled),
-                    B2bLeadStatus::Closed->value => CrmLabel::enum(B2bLeadStatus::Closed),
+                    B2bLeadStatus::New->value => CrmLabel::enum(B2bLeadStatus::New) ?? B2bLeadStatus::New->value,
+                    B2bLeadStatus::Contacted->value => CrmLabel::enum(B2bLeadStatus::Contacted) ?? B2bLeadStatus::Contacted->value,
+                    B2bLeadStatus::ZoomScheduled->value => CrmLabel::enum(B2bLeadStatus::ZoomScheduled) ?? B2bLeadStatus::ZoomScheduled->value,
+                    B2bLeadStatus::Closed->value => CrmLabel::enum(B2bLeadStatus::Closed) ?? B2bLeadStatus::Closed->value,
                 ]),
                 SelectFilter::make('provider_sync_status')
                     ->label(__('Синхронизация Zoom'))
                     ->options([
-                        VideoMeetingSyncStatus::Pending->value => CrmLabel::enum(VideoMeetingSyncStatus::Pending),
-                        VideoMeetingSyncStatus::Ready->value => CrmLabel::enum(VideoMeetingSyncStatus::Ready),
-                        VideoMeetingSyncStatus::Failed->value => CrmLabel::enum(VideoMeetingSyncStatus::Failed),
-                        VideoMeetingSyncStatus::ReconciliationRequired->value => CrmLabel::enum(VideoMeetingSyncStatus::ReconciliationRequired),
+                        VideoMeetingSyncStatus::Pending->value => CrmLabel::enum(VideoMeetingSyncStatus::Pending) ?? VideoMeetingSyncStatus::Pending->value,
+                        VideoMeetingSyncStatus::Ready->value => CrmLabel::enum(VideoMeetingSyncStatus::Ready) ?? VideoMeetingSyncStatus::Ready->value,
+                        VideoMeetingSyncStatus::Failed->value => CrmLabel::enum(VideoMeetingSyncStatus::Failed) ?? VideoMeetingSyncStatus::Failed->value,
+                        VideoMeetingSyncStatus::ReconciliationRequired->value => CrmLabel::enum(VideoMeetingSyncStatus::ReconciliationRequired) ?? VideoMeetingSyncStatus::ReconciliationRequired->value,
                     ])
                     ->query(fn ($query, array $data) => $query->when(
                         $data['value'] ?? null,

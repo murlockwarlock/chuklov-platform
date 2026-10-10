@@ -241,7 +241,10 @@ class ContentSectionForm
         $webAppUrl = $deliveryMode === 'both'
             ? app(ResolveTelegramMiniAppEntry::class)->launchUrl((string) $get('section_key'))
             : null;
-        $webAppButtonText = $webAppUrl === null ? null : __('Открыть полностью');
+        $translatedWebAppButtonText = __('Открыть полностью');
+        $webAppButtonText = $webAppUrl === null
+            ? null
+            : (is_string($translatedWebAppButtonText) ? $translatedWebAppButtonText : 'Открыть полностью');
 
         return new NotificationMessage(
             recipientExternalId: 'preview',

@@ -123,6 +123,7 @@ final class SurveyDefinitionFormOptions
         ], $selected, __('Сохранённая основа сравнения больше недоступна.'));
     }
 
+    /** @param array<int|string, mixed> $sections */
     public static function answerScaleLabel(array $sections, mixed $value): string
     {
         return self::answerScaleOptions($sections, $value)[(string) $value] ?? __('Выбранный вариант больше недоступен.');

@@ -127,7 +127,7 @@ final class ClientWorkspaceInfolist
 
                                 return $name !== '' ? $name : ($referrer instanceof Client
                                     ? __('Клиент без имени')
-                                    : ($relationship === null ? __('Не указан') : __('Клиент недоступен')));
+                                    : ($relationship === null ? self::text('Не указан') : self::text('Клиент недоступен')));
                             })
                             ->url(function (Client $record): ?string {
                                 $relationship = $record->getRelationValue('referralRelationship');
@@ -145,15 +145,15 @@ final class ClientWorkspaceInfolist
                                 $relationship = $record->getRelationValue('referralRelationship');
 
                                 return $relationship === null ? null : match ($relationship->establishment_method?->value) {
-                                    'manual_crm' => __('Указан в CRM'),
+                                    'manual_crm' => self::text('Указан в CRM'),
                                     'automatic_referral_link' => $relationship->referral_campaign_link_id === null
-                                        ? __('Персональная ссылка')
-                                        : __('Кампания: :name', [
+                                        ? self::text('Персональная ссылка')
+                                        : self::text('Кампания: :name', [
                                             'name' => ($campaign = $relationship->getRelationValue('referralCampaignLink')) instanceof ReferralCampaignLink
-                                                ? ($campaign->name ?: __('не указана'))
-                                                : __('не указана'),
+                                                ? ($campaign->name ?: self::text('не указана'))
+                                                : self::text('не указана'),
                                         ]),
-                                    default => __('Источник зафиксирован'),
+                                    default => self::text('Источник зафиксирован'),
                                 };
                             })
                             ->wrap(),
@@ -196,7 +196,7 @@ final class ClientWorkspaceInfolist
                             ->badge()
                             ->color(fn (string $state): string => $state === 'allowed' ? 'success' : 'danger')
                             ->helperText(fn (Client $record): ?string => $record->activeBookingRestriction?->reason
-                                ? __('Причина: :reason', ['reason' => $record->activeBookingRestriction->reason])
+                                ? self::text('Причина: :reason', ['reason' => $record->activeBookingRestriction->reason])
                                 : null)
                             ->wrap(),
                         TextEntry::make('blacklist_status')
@@ -319,6 +319,14 @@ final class ClientWorkspaceInfolist
                     ->columns(1)
                     ->extraAttributes(['class' => 'h-fit']),
             ]);
+    }
+
+    /** @param array<string, scalar> $replace */
+    private static function text(string $key, array $replace = []): string
+    {
+        $translated = __($key, $replace);
+
+        return is_string($translated) ? $translated : $key;
     }
 
     private static function marketingConsentEvidenceLabel(string $evidence): string

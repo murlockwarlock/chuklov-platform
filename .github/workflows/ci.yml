@@ -95,12 +95,37 @@ jobs:
         run: cp .env.example .env && scripts/initialize-app-key.sh php artisan key:generate --no-interaction
       - name: Install frontend dependencies
         run: npm ci
+      - name: Verify system proof inventory mapping
+        run: |
+          node --test tests/system-proof-inventory.test.mjs
+          node scripts/system-proof-inventory.mjs --check
       - name: Migrate foundation schema
         run: php artisan migrate --seed --force
       - name: Verify repeatable key initialization
         run: make check-app-key
-      - name: Run quality suite
-        run: make quality
+      - name: Run unit and feature tests
+        run: make test
+      - name: Verify backend formatting
+        if: ${{ !cancelled() }}
+        run: composer lint
+      - name: Verify frontend lint
+        if: ${{ !cancelled() }}
+        run: npm run lint
+      - name: Verify backend static analysis
+        if: ${{ !cancelled() }}
+        run: composer static
+      - name: Verify frontend types
+        if: ${{ !cancelled() }}
+        run: npm run typecheck
+      - name: Build frontend
+        if: ${{ !cancelled() }}
+        run: npm run build
+      - name: Audit backend dependencies
+        if: ${{ !cancelled() }}
+        run: composer audit --locked --no-interaction
+      - name: Audit frontend dependencies
+        if: ${{ !cancelled() }}
+        run: npm audit --audit-level=high
 
   integration-foundation:
     if: ${{ inputs.scope == 'full' || inputs.scope == 'integration' || inputs.scope == 'integration-foundation' }}

@@ -17,7 +17,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Throwable;
 
-/** @extends resource<PaymentGatewayEvent> */
+/** @extends LocalizedResource<PaymentGatewayEvent> */
 final class PaymentGatewayReconciliationResource extends LocalizedResource
 {
     protected static ?string $model = PaymentGatewayEvent::class;

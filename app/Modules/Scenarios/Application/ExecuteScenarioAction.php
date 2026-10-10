@@ -3,6 +3,7 @@
 namespace App\Modules\Scenarios\Application;
 
 use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
@@ -14,6 +15,7 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
+use App\Modules\Scenarios\Domain\Exceptions\TelegramMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\AppointmentReminder;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
@@ -27,6 +29,8 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use LogicException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 
 final class ExecuteScenarioAction
@@ -42,6 +46,7 @@ final class ExecuteScenarioAction
         private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
         private readonly BookingConfirmedGuard $bookingConfirmedGuard,
         private readonly BookingChangedGuard $bookingChangedGuard,
+        private readonly ResolveTelegramMiniAppEntry $miniAppEntries,
     ) {}
 
     public function handle(int $scenarioActionId): void
@@ -235,7 +240,11 @@ final class ExecuteScenarioAction
             }
             $rendered = $this->renderer->render($template, $action->render_context, $locale);
             $mediaItems = $this->media->messages($delivery->organization_id, $rendered->media);
-            $actionButton = $this->actionButton($action, $rendered->locale);
+            try {
+                $actionButton = $this->actionButton($action, $rendered->locale);
+            } catch (TelegramMiniAppConfigurationException) {
+                return NotificationDeliveryResult::unavailable(TelegramMiniAppConfigurationException::ERROR_CODE);
+            }
             $actionButtons = $this->actionButtons($action, $rendered->locale);
 
             if (($actionButton !== null || $actionButtons !== []) && ! $channel->capabilities()->supportsInlineButtons) {
@@ -388,9 +397,9 @@ final class ExecuteScenarioAction
         if ($templateKey === 'finance-payment-succeeded-survey') {
             $surveyUrl = $action->render_context['payment']['survey_url'] ?? null;
             if (is_string($surveyUrl) && trim($surveyUrl) !== '') {
-                return new NotificationActionButton(
+                return $this->clientMiniAppButton(
                     text: $this->isRussian($locale) ? 'Открыть тест' : 'Open diagnostic check',
-                    url: $surveyUrl,
+                    entry: 'surveys',
                 );
             }
         }
@@ -400,18 +409,32 @@ final class ExecuteScenarioAction
             'post-session-follow-up-48h',
             'post-session-follow-up-72h',
         ], true)) {
-            return new NotificationActionButton(
+            return $this->clientMiniAppButton(
                 text: $this->isRussian($locale) ? 'Открыть здоровье' : 'Open health',
-                url: route('portal.health'),
+                entry: 'health',
             );
         }
 
         if (in_array($templateKey, ['survey-stagnation-client', 'survey-progress-client'], true)) {
             $surveyUrl = $action->render_context['survey']['portal_url'] ?? null;
             if (is_string($surveyUrl) && trim($surveyUrl) !== '') {
-                return new NotificationActionButton(
+                return $this->clientMiniAppButton(
                     text: $this->isRussian($locale) ? 'Открыть тесты' : 'Open tests',
-                    url: $surveyUrl,
+                    entry: 'surveys',
+                );
+            }
+        }
+
+        if (in_array($action->trigger_event->value, ['referral.payout.status_changed', 'referral.reward.earned'], true)) {
+            $portalUrl = $action->trigger_event->value === 'referral.payout.status_changed'
+                ? ($action->render_context['payout']['portal_url'] ?? null)
+                : ($action->render_context['reward']['portal_url'] ?? null);
+            if (is_string($portalUrl) && trim($portalUrl) !== '') {
+                return $this->clientMiniAppButton(
+                    text: $action->trigger_event->value === 'referral.reward.earned'
+                        ? ($this->isRussian($locale) ? 'Открыть реферальный раздел' : 'Open referral page')
+                        : ($this->isRussian($locale) ? 'Подключиться к встрече' : 'Join meeting'),
+                    entry: 'partner_cabinet',
                 );
             }
         }
@@ -420,8 +443,6 @@ final class ExecuteScenarioAction
             'b2b.sales_call.ready' => $action->render_context['sales_call']['join_url'] ?? null,
             'booking.confirmed' => $action->render_context['booking']['meeting_url'] ?? null,
             'booking.rescheduled' => $action->render_context['booking']['meeting_url'] ?? null,
-            'referral.payout.status_changed' => $action->render_context['payout']['portal_url'] ?? null,
-            'referral.reward.earned' => $action->render_context['reward']['portal_url'] ?? null,
             default => null,
         };
 
@@ -435,6 +456,18 @@ final class ExecuteScenarioAction
                 : ($this->isRussian($locale) ? 'Подключиться к встрече' : 'Join meeting'),
             url: $url,
         );
+    }
+
+    private function clientMiniAppButton(string $text, string $entry): NotificationActionButton
+    {
+        try {
+            return new NotificationActionButton(
+                text: $text,
+                webAppUrl: $this->miniAppEntries->launchUrl($entry),
+            );
+        } catch (LogicException|NotFoundHttpException $exception) {
+            throw new TelegramMiniAppConfigurationException($exception);
+        }
     }
 
     /** @return list<NotificationActionButton> */

@@ -28,7 +28,7 @@ final class SetScheduleExceptionSet
         private readonly RecordAuditEvent $audit,
     ) {}
 
-    /** @param array<string, list<array<string, mixed>>> $definitionsByDate */
+    /** @param array<string, mixed> $definitionsByDate */
     public function handle(
         User $actor,
         Specialist $specialist,
@@ -173,7 +173,7 @@ final class SetScheduleExceptionSet
             ->get());
     }
 
-    /** @param array<string, list<array<string, mixed>>> $definitionsByDate
+    /** @param array<string, mixed> $definitionsByDate
      * @return array<string, list<ScheduleExceptionDefinition>>
      */
     private function normalizeDefinitions(array $definitionsByDate): array
@@ -259,8 +259,8 @@ final class SetScheduleExceptionSet
         ]))->sort()->values()->all();
         $target = collect($desired)->map(static fn (ScheduleExceptionDefinition $definition): string => implode('|', [
             $definition->type->value,
-            $definition->interval?->start ?? '',
-            $definition->interval?->end ?? '',
+            $definition->interval === null ? '' : $definition->interval->start,
+            $definition->interval === null ? '' : $definition->interval->end,
             $definition->reason ?? '',
         ]))->sort()->values()->all();
 

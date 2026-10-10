@@ -9,27 +9,48 @@ abstract class LocalizedDashboard extends Dashboard
 {
     public static function getNavigationLabel(): string
     {
-        return __(parent::getNavigationLabel());
+        $label = parent::getNavigationLabel();
+        $translated = __($label);
+
+        return is_string($translated) ? $translated : $label;
     }
 
     public function getTitle(): string|Htmlable
     {
         $title = parent::getTitle();
 
-        return $title instanceof Htmlable ? $title : __($title);
+        if ($title instanceof Htmlable) {
+            return $title;
+        }
+
+        $translated = __($title);
+
+        return is_string($translated) ? $translated : $title;
     }
 
     public function getHeading(): string|Htmlable|null
     {
         $heading = parent::getHeading();
 
-        return $heading instanceof Htmlable || $heading === null ? $heading : __($heading);
+        if ($heading === null || $heading instanceof Htmlable) {
+            return $heading;
+        }
+
+        $translated = __($heading);
+
+        return is_string($translated) ? $translated : $heading;
     }
 
     public function getSubheading(): string|Htmlable|null
     {
         $subheading = parent::getSubheading();
 
-        return $subheading instanceof Htmlable || $subheading === null ? $subheading : __($subheading);
+        if ($subheading === null || $subheading instanceof Htmlable) {
+            return $subheading;
+        }
+
+        $translated = __($subheading);
+
+        return is_string($translated) ? $translated : $subheading;
     }
 }

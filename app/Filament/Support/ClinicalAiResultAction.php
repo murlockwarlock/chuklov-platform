@@ -23,6 +23,7 @@ use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Component as SchemaComponent;
 use Filament\Schemas\Components\Section;
 use Illuminate\Database\Eloquent\Model;
 use Livewire\Component;
@@ -100,6 +101,7 @@ final class ClinicalAiResultAction
         }
     }
 
+    /** @return list<Action> */
     private static function reviewActions(User $actor, Closure $resolveRun): array
     {
         return [
@@ -198,6 +200,7 @@ final class ClinicalAiResultAction
         }
     }
 
+    /** @return list<SchemaComponent> */
     private static function schema(bool $canViewTrace): array
     {
         $schema = [
@@ -238,6 +241,7 @@ final class ClinicalAiResultAction
         return $schema;
     }
 
+    /** @param array<int, array<string, mixed>> $provenance */
     private static function sourceText(AiRun $record, array $provenance): string
     {
         if ($record->capability === AiCapability::ClinicalSynthesizer) {

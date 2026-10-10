@@ -7,7 +7,6 @@ use App\Filament\Resources\AiPrompts\AiPromptResource;
 use App\Filament\Resources\AiPrompts\Schemas\PromptVersionForm;
 use App\Filament\Resources\AiRuns\AiRunResource;
 use App\Filament\Support\AiPlaygroundResultPresentation;
-use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\ActivatePromptVersion;
@@ -213,7 +212,7 @@ class EditAiPrompt extends LocalizedEditRecord
 
         return $prompt->capability->value === 'client_companion'
             ? __('AI-компаньон')
-            : CrmLabel::enum($prompt->capability);
+            : $prompt->capability->label();
     }
 
     public function activeVersion(): ?AiPromptVersion

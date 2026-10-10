@@ -4,11 +4,23 @@ namespace App\Modules\Referrals\Domain\Models;
 
 use App\Models\User;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 use LogicException;
 
+/**
+ * @property ReferralPayoutRequestStatus|null $from_status
+ * @property ReferralPayoutRequestStatus $to_status
+ * @property string $actor_type
+ * @property string|null $reason
+ * @property string|null $payment_note
+ * @property string|null $payment_reference
+ * @property Carbon $occurred_at
+ * @property-read User|null $actor
+ */
 #[Fillable([])]
 class ReferralPayoutRequestEvent extends Model
 {
@@ -45,6 +57,8 @@ class ReferralPayoutRequestEvent extends Model
     protected function casts(): array
     {
         return [
+            'from_status' => ReferralPayoutRequestStatus::class,
+            'to_status' => ReferralPayoutRequestStatus::class,
             'occurred_at' => 'datetime',
             'created_at' => 'datetime',
         ];

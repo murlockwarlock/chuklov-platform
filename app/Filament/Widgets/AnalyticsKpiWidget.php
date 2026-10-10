@@ -28,12 +28,12 @@ final class AnalyticsKpiWidget extends StatsOverviewWidget
 
     protected static ?int $sort = 2;
 
-    protected function getHeading(): ?string
+    protected function getHeading(): string
     {
         return __('Ключевые показатели');
     }
 
-    protected function getDescription(): ?string
+    protected function getDescription(): string
     {
         return __('Главные показатели бизнеса за выбранный период');
     }

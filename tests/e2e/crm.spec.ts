@@ -22,6 +22,9 @@ type CrmFixture = {
     financeBookingId: number | null;
     partnerProfileId: number | null;
     giftProductName: string | null;
+    portalCookieName?: string;
+    portalCookieValue?: string;
+    manualOnlineBookingId?: number;
 };
 
 function validPdfBuffer(): Buffer {
@@ -41,7 +44,7 @@ function validPdfBuffer(): Buffer {
     ].join('\n'));
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; portalAccess?: boolean; manualOnlineFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -57,7 +60,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 'viewer_timezone_source' => 'organization',
                 'viewer_timezone_suggestion' => null,
             ]);
-        \\Illuminate\\Support\\Facades\\RateLimiter::clear('livewire-rate-limiter:'.sha1('Filament\\Auth\\Pages\\Login|authenticate|127.0.0.1'));
+        \\Illuminate\\Support\\Facades\\RateLimiter::clear('livewire-rate-limiter:'.sha1(\\App\\Filament\\Auth\\Login::class.'|authenticate|127.0.0.1'));
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
             'feature_key' => 'service_catalog',
@@ -414,6 +417,40 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'size_bytes' => 2048,
             'sha256_checksum' => hash('sha256', $suffix),
         ]);
+        $manualOnlineBooking = null;
+        if (getenv('PLAYWRIGHT_MANUAL_ONLINE_FLOW') === '1') {
+            $manualOnlineBooking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()
+                ->forClient($client)->forSpecialist($specialist)->forService($service)->create([
+                    'visit_format' => 'online',
+                    'meeting_link_mode' => 'manual',
+                    'meeting_url' => null,
+                    'status' => 'confirmed',
+                ]);
+        }
+        $portalCookieName = null;
+        $portalCookieValue = null;
+        if (getenv('PLAYWRIGHT_PORTAL_ACCESS') === '1') {
+            $sessionId = \\Illuminate\\Support\\Str::random(40);
+            $sessionData = json_encode([
+                '_token' => \\Illuminate\\Support\\Str::random(40),
+                'client_portal' => ['client_id' => $client->getKey()],
+            ], JSON_THROW_ON_ERROR);
+            $sessionPayload = config('session.encrypt') ? app('encrypter')->encrypt($sessionData) : $sessionData;
+            \\Illuminate\\Support\\Facades\\DB::table('sessions')->insert([
+                'id' => $sessionId,
+                'user_id' => null,
+                'ip_address' => '127.0.0.1',
+                'user_agent' => 'Playwright',
+                'payload' => base64_encode($sessionPayload),
+                'last_activity' => time(),
+            ]);
+            $portalCookieName = (string) config('session.cookie');
+            $encrypter = app('encrypter');
+            $portalCookieValue = $encrypter->encrypt(
+                \\Illuminate\\Cookie\\CookieValuePrefix::create($portalCookieName, $encrypter->getKey()).$sessionId,
+                false,
+            );
+        }
         echo json_encode([
             'email' => $email,
             'password' => $password,
@@ -434,6 +471,9 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'financeBookingId' => $financeBooking?->getKey(),
             'partnerProfileId' => $partnerProfileId,
             'giftProductName' => $giftProductName,
+            'portalCookieName' => $portalCookieName,
+            'portalCookieValue' => $portalCookieValue,
+            'manualOnlineBookingId' => $manualOnlineBooking?->getKey(),
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -455,6 +495,8 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 PLAYWRIGHT_FINANCE_FLOW: options.financeFlow ? '1' : '0',
                 PLAYWRIGHT_PAYOUT_FLOW: options.payoutFlow ? '1' : '0',
                 PLAYWRIGHT_MESSAGES_FLOW: options.messagesFlow ? '1' : '0',
+                PLAYWRIGHT_PORTAL_ACCESS: options.portalAccess ? '1' : '0',
+                PLAYWRIGHT_MANUAL_ONLINE_FLOW: options.manualOnlineFlow ? '1' : '0',
                 PLAYWRIGHT_GIFT_SALE_FLOW: options.giftSaleFlow ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -653,14 +695,14 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
     await expect(page.locator('input[name*="idempotency"], input[name*="timezone"], select[name*="meeting_link"]')).toHaveCount(0);
 
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
+    await page.getByRole('option').filter({ hasText: fixture.specialistName }).last().click();
     await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
     await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
     await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
-    await page.getByText(fixture.serviceName, { exact: true }).click();
-    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
-    await page.getByText(fixture.specialistName, { exact: true }).click();
+    await page.getByRole('option').filter({ hasText: fixture.serviceName }).last().click();
     const dateInput = page.getByLabel('Дата');
     await dateInput.fill(fixture.bookingStartsAt.slice(0, 10));
     await dateInput.blur();
@@ -680,7 +722,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(availableTime).toBeVisible({ timeout: 15_000 });
     await availableTime.click();
     await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
-    const createButton = page.getByRole('button', { name: 'Создать', exact: true });
+    const createButton = page.getByRole('button', { name: 'Сохранить', exact: true });
     await expect(createButton).toBeEnabled({ timeout: 15_000 });
     await createButton.click();
 
@@ -933,7 +975,7 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/);
 
-    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
     await expect(page.locator('.fi-in-text-item').filter({ hasText: newClientName }).first()).toBeVisible();
@@ -987,26 +1029,24 @@ test('staff sees business labels for client and content settings', async ({ page
     await assertBusinessField(page, 'Название', fixture.contentSectionTitle);
 });
 
-test('staff sees the Telegram limit and preview while writing to a client', async ({ page }) => {
+test('client card routes to the compact Messages composer and a staff reply is saved', async ({ page }) => {
     const fixture = createCrmFixture();
 
     await login(page, fixture);
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Общение', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/companion$`));
-    await expect(page.getByRole('heading', { name: 'Общение с клиентом', exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Сообщения', exact: true }).last().click();
+    await expect(page).toHaveURL(new RegExp(`/admin/messages\\?client=${fixture.clientId}$`));
+    await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
 
+    await page.getByRole('button', { name: 'Начать диалог как специалист', exact: true }).click();
     const message = 'фывфывфывфыв';
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill(message);
 
-    await expect(page.getByText('12 / 4096', { exact: true })).toBeVisible();
-    await expect(page.locator('.fi-in-text-item').filter({ hasText: message })).toHaveCount(1);
-
-    await page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true }).click();
-    const telegramPreview = page.locator('.fi-modal-window:visible').filter({ hasText: 'TELEGRAM' }).last();
-    await expect(telegramPreview).toBeVisible();
-    await expect(telegramPreview).toContainText(message);
+    await expect(page.getByRole('textbox', { name: 'Сообщение', exact: true })).toHaveValue(message);
+    await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Сообщение сохранено в истории', { exact: true })).toBeVisible();
+    await expect(page.locator('article').getByText(message, { exact: true })).toBeVisible();
 });
 
 test('staff can choose and send an attachment in CRM Messages', async ({ page }) => {
@@ -1027,10 +1067,12 @@ test('staff can choose and send an attachment in CRM Messages', async ({ page })
         mimeType: 'application/pdf',
         buffer: validPdfBuffer(),
     });
-    await expect(page.locator('.messages-attachment-summary')).toContainText('crm-message-attachment.pdf');
+    await expect(page.getByRole('alert').filter({ hasText: 'crm-message-attachment.pdf' })).toContainText('Загрузка завершена');
+    await expect(page.locator('#messages-composer-form').getByText('crm-message-attachment.pdf', { exact: true }).filter({ visible: true }).first()).toBeVisible();
 
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill('Сообщение с вложением');
     await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Сообщение сохранено в истории', { exact: true })).toBeVisible();
     await expect(page.locator('article').getByText('crm-message-attachment.pdf', { exact: true })).toBeVisible();
 });
 
@@ -1079,11 +1121,11 @@ test('staff can activate a partner, create a campaign link, and assign a referre
     await referrerSelect.click();
     await page.getByRole('textbox', { name: 'Search', exact: true }).last().fill(fixture.partnerName);
     await page.getByRole('option').filter({ hasText: fixture.partnerName }).last().click();
-    await assignmentDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await assignmentDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByText('Пригласивший указан', { exact: true })).toBeVisible();
 
     await page.goto('/admin/referral-relationships');
-    await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Приглашения клиентов', exact: true })).toBeVisible();
     await expect(page.getByText(fixture.partnerName, { exact: true })).toBeVisible();
     await expect(page.getByText(fixture.clientName, { exact: true })).toBeVisible();
 });
@@ -1117,7 +1159,7 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
         await page.keyboard.press('Escape');
 
         await page.goto('/admin/referral-relationships');
-        await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Приглашения клиентов', exact: true })).toBeVisible();
         await assertRenderedViewportGeometry(page, ['input[type="search"]']);
         if (width >= 1024) {
             await assertNoTableHorizontalOverflow(page);
@@ -1134,6 +1176,7 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
 });
 
 test('staff can complete a visit and record a manual payment through the normal CRM actions', async ({ page }) => {
+    test.setTimeout(90_000);
     const fixture = createCrmFixture({ financeFlow: true });
 
     if (fixture.financeBookingId === null) {
@@ -1175,10 +1218,79 @@ test('staff can complete a visit and record a manual payment through the normal 
     await expect(page.getByText('25.00 USD', { exact: true })).toBeVisible();
     await expect(page.getByText('75.00 USD', { exact: true })).toBeVisible();
 
+    await page.getByRole('button', { name: 'Действия', exact: true }).click();
+    await page.getByRole('link', { name: 'Открыть оплату', exact: true }).click();
+    await page.locator('.fi-loading-section').scrollIntoViewIfNeeded();
+    const paymentHistory = page.locator('.fi-resource-relation-manager').filter({ hasText: 'История оплат' });
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Наличные' })).toHaveCount(1);
+    await page.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    const secondPayment = page.locator('.fi-modal-window:visible').last();
+    await secondPayment.getByRole('textbox', { name: /^Сумма оплаты/ }).fill('76.00');
+    await secondPayment.getByRole('combobox', { name: /^Способ оплаты/ }).selectOption('bank_transfer');
+    await secondPayment.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    await expect(secondPayment.getByText('Сумма оплаты не может превышать текущую задолженность.', { exact: true })).toBeVisible();
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Банковский перевод' })).toHaveCount(0);
+    await secondPayment.getByRole('textbox', { name: /^Сумма оплаты/ }).fill('30.00');
+    await secondPayment.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    await expect(secondPayment).not.toBeVisible();
+    await expect(page.getByText('55.00 USD', { exact: true })).toBeVisible();
+    await expect(page.getByText('45.00 USD', { exact: true })).toBeVisible();
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Банковский перевод' })).toHaveCount(1);
+    await paymentHistory.getByRole('row').filter({ hasText: 'Банковский перевод' }).getByRole('button', { name: 'Исправить оплату', exact: true }).click();
+    const correction = page.locator('.fi-modal-window:visible').last();
+    await correction.getByRole('textbox', { name: /^Причина исправления/ }).fill('Синтетическое исправление оплаты');
+    await correction.getByRole('button', { name: 'Добавить исправление', exact: true }).click();
+    await expect(correction).not.toBeVisible();
+    await expect(page.getByText('75.00 USD', { exact: true })).toBeVisible();
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Синтетическое исправление оплаты' })).toHaveCount(1);
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Банковский перевод' })).toHaveCount(1);
+
+    await page.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    const barter = page.locator('.fi-modal-window:visible').last();
+    await barter.getByRole('textbox', { name: /^Сумма оплаты/ }).fill('20.00');
+    await barter.getByRole('combobox', { name: /^Способ оплаты/ }).selectOption('barter');
+    await barter.getByRole('textbox', { name: /^Что получено по бартеру/ }).fill('');
+    await barter.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    await expect(barter.getByText('Опишите, что получено взамен.', { exact: true })).toBeVisible();
+    await barter.getByRole('textbox', { name: /^Что получено по бартеру/ }).fill('Синтетическая встречная услуга');
+    await barter.getByRole('button', { name: 'Записать оплату', exact: true }).click();
+    await expect(barter).not.toBeVisible();
+    await expect(paymentHistory.getByRole('row').filter({ hasText: 'Синтетическая встречная услуга' })).toContainText('Бартер');
+
     await page.goto('/admin/financial-obligations');
     await expect(page.getByRole('heading', { name: 'Оплаты', exact: true })).toBeVisible();
     await searchTableFor(page, fixture.clientName);
     await expect(page.getByRole('row').filter({ hasText: fixture.clientName })).toContainText('Оплачено частично');
+});
+
+test('manual Online meeting link supports replacement and refresh without duplicate history', async ({ page }) => {
+    const fixture = createCrmFixture({ manualOnlineFlow: true });
+    expect(fixture.manualOnlineBookingId).toBeTruthy();
+    await login(page, fixture);
+    await page.goto(`/admin/bookings/${fixture.manualOnlineBookingId}`);
+    const saveLink = async (url: string): Promise<void> => {
+        await page.getByRole('button', { name: 'Действия', exact: true }).click();
+        await page.locator('.fi-dropdown-panel:visible').getByRole('button', { name: 'Ссылка на встречу', exact: true }).click();
+        const modal = page.locator('.fi-modal-window:visible').last();
+        await modal.getByRole('textbox', { name: /^Ссылка на встречу/ }).fill(url);
+        await modal.getByRole('button', { name: 'Отправить', exact: true }).click();
+        await expect(page.locator('.fi-no-notification-title').filter({ hasText: 'Ссылка на встречу обновлена' }).last()).toBeVisible();
+        await page.reload();
+        await expect(page.getByRole('link', { name: url, exact: true })).toHaveAttribute('href', url);
+    };
+    await saveLink('https://meet.example.test/original');
+    await saveLink('https://meet.example.test/original');
+    await saveLink('https://meet.example.test/replacement');
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $booking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::query()->where('organization_id', $organization->getKey())->findOrFail(${fixture.manualOnlineBookingId});
+        echo json_encode(['version' => $booking->event_version, 'events' => $booking->events()->where('event_type', 'meeting_link_updated')->count()], JSON_THROW_ON_ERROR);
+    `;
+    const proof = JSON.parse(execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim().split('\n').at(-1) ?? '');
+    expect(proof).toEqual({ version: 3, events: 2 });
+    await assertNoHorizontalOverflow(page);
 });
 
 test('staff can create and fully settle a gift certificate through the CRM catalog', async ({ page }) => {
@@ -1291,6 +1403,39 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
     await assertNoHorizontalOverflow(page);
 });
 
+test('CRM reply is rendered as readable rich text in the client Portal', async ({ page, browser }) => {
+    const fixture = createCrmFixture({ messagesFlow: true, portalAccess: true });
+    await login(page, fixture);
+    await page.goto(`/admin/messages?client=${fixture.clientId}`);
+    await page.getByRole('button', { name: 'Подключиться к диалогу', exact: true }).click();
+    const reply = `Ответ специалиста ${fixture.clientId}: проверка связи завершена.`;
+    await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill(reply);
+    await page.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Сообщение сохранено в истории', { exact: true })).toBeVisible();
+
+    const clientContext = await browser.newContext({ viewport: page.viewportSize() ?? { width: 1440, height: 1000 } });
+    try {
+        expect(fixture.portalCookieName).toBeTruthy();
+        expect(fixture.portalCookieValue).toBeTruthy();
+        await clientContext.addCookies([{
+            name: fixture.portalCookieName!,
+            value: fixture.portalCookieValue!,
+            url: new URL(page.url()).origin,
+        }]);
+        const portal = await clientContext.newPage();
+        await portal.goto(new URL('/portal/companion', page.url()).toString());
+        const renderedReply = portal.locator('.portal-companion__message--staff .portal-rich-text').filter({ hasText: reply });
+        await expect(renderedReply).toHaveText(reply);
+        await expect(renderedReply.locator('p')).toHaveText(reply);
+        await expect(renderedReply).not.toContainText('<p>');
+        await portal.reload();
+        await expect(renderedReply).toHaveText(reply);
+        await assertNoHorizontalOverflow(portal);
+    } finally {
+        await clientContext.close();
+    }
+});
+
 test('staff can use the client cockpit for medical profile and private files', async ({ page }) => {
     const fixture = createCrmFixture();
 
@@ -1368,9 +1513,10 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(page.locator('iframe[title="ux-a-report.pdf"]')).toBeVisible();
     expect(previewResponse.headers()['content-type']).toContain('application/pdf');
     expect(previewResponse.headers()['content-disposition']).toContain('inline');
-    await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    await page.locator('.fi-modal-window:visible').filter({ has: page.locator('iframe[title="ux-a-report.pdf"]') }).getByRole('button', { name: 'Закрыть', exact: true }).last().click();
 
-    const downloadAttachment = uploadedRow.getByRole('button', { name: 'Скачать', exact: true });
+    await uploadedRow.getByRole('button', { name: 'Действия', exact: true }).click();
+    const downloadAttachment = page.locator('.fi-dropdown-panel:visible').getByRole('button', { name: 'Скачать', exact: true });
     await expect(downloadAttachment).toHaveCount(1);
     const [download, attachmentResponse] = await Promise.all([
         page.waitForEvent('download'),
@@ -1513,8 +1659,8 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Специалист').click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
-    await page.getByLabel('Боль').fill('Первичная запись о боли');
-    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+    await page.getByLabel('Описание боли', { exact: true }).fill('Первичная запись о боли');
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
     const sessionRow = page.getByRole('row').filter({ hasText: '18.08.2026' });
@@ -1532,7 +1678,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
-    await page.getByLabel('Боль').fill('Обновлённая запись о боли');
+    await page.getByLabel('Описание боли', { exact: true }).fill('Обновлённая запись о боли');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));

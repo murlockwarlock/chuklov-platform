@@ -16,6 +16,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property-read Organization $organization
+ * @property bool $is_active
+ * @property CatalogItemType $catalog_type
+ * @property ServicePaymentRequirement $payment_requirement
+ * @property int|null $price_minor
+ * @property string|null $price_currency
  */
 #[Fillable([
     'name',

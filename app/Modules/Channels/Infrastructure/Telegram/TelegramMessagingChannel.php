@@ -6,7 +6,6 @@ use App\Modules\Channels\Domain\Contracts\MessagingChannel;
 use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
-use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Support\RichText\RichTextDocument;
 use Illuminate\Support\Facades\Log;
 use JsonException;
@@ -110,12 +109,17 @@ final class TelegramMessagingChannel implements MessagingChannel
 
     private function sendMediaChunk(CompanionOutboundChunk $chunk, string $html, mixed $keyboard): NotificationDeliveryResult
     {
+        $bot = $this->bot;
+        if ($bot === null) {
+            return NotificationDeliveryResult::unavailable('provider_not_configured');
+        }
+
         if (count($chunk->mediaItems) !== 1) {
             return NotificationDeliveryResult::permanentFailure('companion_media_count_invalid');
         }
 
         $media = $chunk->mediaItems[0];
-        if (! $media instanceof NotificationMedia || $media->stream === null || ! is_resource($media->stream)) {
+        if ($media->stream === null || ! is_resource($media->stream)) {
             return NotificationDeliveryResult::permanentFailure('companion_media_unavailable');
         }
 
@@ -126,14 +130,14 @@ final class TelegramMessagingChannel implements MessagingChannel
         try {
             $input = InputFile::make($media->stream, $media->fileName);
             $sent = match ($media->type) {
-                'photo' => $this->bot->sendPhoto(
+                'photo' => $bot->sendPhoto(
                     $input,
                     $chunk->recipientExternalId,
                     caption: $html === '' ? null : $html,
                     parse_mode: $html === '' ? null : ParseMode::HTML,
                     reply_markup: $keyboard,
                 ),
-                'document' => $this->bot->sendDocument(
+                'document' => $bot->sendDocument(
                     $input,
                     $chunk->recipientExternalId,
                     caption: $html === '' ? null : $html,
@@ -285,7 +289,7 @@ final class TelegramMessagingChannel implements MessagingChannel
         return $exception instanceof JsonException && $exception->getCode() === JSON_ERROR_UTF8;
     }
 
-    private function localPayloadFailure(JsonException $exception): NotificationDeliveryResult
+    private function localPayloadFailure(Throwable $exception): NotificationDeliveryResult
     {
         $result = NotificationDeliveryResult::permanentFailure('telegram_payload_invalid_utf8');
         Log::warning('companion_telegram_delivery_result', [

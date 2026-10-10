@@ -72,6 +72,20 @@ final class SurveyComparisonPresentationTest extends TestCase
         self::assertNull($projection['telegramText']);
     }
 
+    public function test_malformed_metric_definitions_are_ignored(): void
+    {
+        $current = new SurveyAttempt;
+        $current->forceFill([
+            'scoring_snapshot' => ['metrics' => ['invalid-definition']],
+        ]);
+        $comparison = $this->comparison(['metrics' => []]);
+
+        $projection = app(SurveyComparisonPresentation::class)->handle($comparison, $current, null, 'ru');
+
+        self::assertFalse($projection['hasData']);
+        self::assertSame([], $projection['metrics']);
+    }
+
     /** @param list<array<string, mixed>> $metrics */
     private function attempt(array $metrics): SurveyAttempt
     {

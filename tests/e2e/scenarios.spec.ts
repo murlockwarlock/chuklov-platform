@@ -166,7 +166,7 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await saveResponse;
     await page.goto(`/admin/scenario-rules/${fixture.ruleId}`);
     await expect(page.getByText('48 ч.', { exact: true })).toBeVisible();
-    await expect(page.getByText('3 раза, каждые 12 ч.', { exact: true })).toBeVisible();
+    await expect(page.getByText('До 3 отправок, каждые 12 ч.', { exact: true })).toBeVisible();
 
     await page.goto(`/admin/notification-templates/${fixture.templateId}/edit`);
     await expect(page.getByRole('button', { name: 'Добавить данные', exact: true })).toBeVisible();
@@ -188,7 +188,7 @@ test('staff can configure a scenario timing and inspect delivery history', async
     await page.goto(`/admin/scenario-actions/${fixture.actionId}`);
     await expect(page.getByText('История отправки')).toBeVisible();
     await expect(page.getByText('1 из 3', { exact: true })).toBeVisible();
-    await expect(page.getByText('Telegram — Ожидает отправки')).toBeVisible();
+    await expect(page.getByText('Telegram — Ожидает отправки', { exact: true }).first()).toBeVisible();
 });
 
 test('shared rich editor inserts emoji at the current caret as text', async ({ page }) => {

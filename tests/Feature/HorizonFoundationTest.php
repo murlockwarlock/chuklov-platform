@@ -73,7 +73,9 @@ class HorizonFoundationTest extends TestCase
             'broadcasts',
             'ai-companion',
             'ai-companion-delivery',
+            'ai-evaluations',
             'telegram-typing',
+            'notifications',
             'referrals',
             (string) config('b2b.queue'),
         ], config('horizon.defaults.supervisor-1.queue'));
@@ -230,7 +232,9 @@ class HorizonFoundationTest extends TestCase
             'broadcasts',
             'ai-companion',
             'ai-companion-delivery',
+            'ai-evaluations',
             'telegram-typing',
+            'notifications',
             config('referrals.queue'),
             (string) config('b2b.queue'),
         ], $configuration['queue']);

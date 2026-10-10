@@ -14,7 +14,7 @@ final class CrmEntityLinks
 {
     public static function clientUrl(?Client $client, ?bool $canView = null): ?string
     {
-        if (! self::belongsToCurrentOrganization($client)) {
+        if ($client === null || ! self::belongsToCurrentOrganization($client)) {
             return null;
         }
 
@@ -27,7 +27,7 @@ final class CrmEntityLinks
 
     public static function specialistUrl(?Specialist $specialist, ?bool $canView = null): ?string
     {
-        if (! self::belongsToCurrentOrganization($specialist)) {
+        if ($specialist === null || ! self::belongsToCurrentOrganization($specialist)) {
             return null;
         }
 

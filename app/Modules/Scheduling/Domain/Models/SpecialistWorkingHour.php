@@ -7,6 +7,7 @@ use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
 use App\Modules\Scheduling\Domain\ValueObjects\WallClockInterval;
 use App\Modules\Scheduling\Domain\ValueObjects\WorkingHourInterval;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Carbon\CarbonImmutable;
 use Database\Factories\SpecialistWorkingHourFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -16,6 +17,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property-read Organization $organization
  * @property-read Specialist $specialist
+ * @property CarbonImmutable|null $starts_on
+ * @property CarbonImmutable|null $ends_on
  */
 #[Fillable(['weekday', 'start_time', 'end_time', 'starts_on', 'ends_on', 'is_active'])]
 class SpecialistWorkingHour extends Model

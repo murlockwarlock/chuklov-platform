@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\User;
+use App\Modules\B2B\Infrastructure\Video\VideoMeetingException;
 use App\Modules\B2B\Jobs\ProcessB2bProviderSyncEvent;
 use App\Modules\ClientCompanion\Application\Services\LegacyCompanionHandoffEligibility;
 use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
@@ -38,7 +39,7 @@ final class StagingSmokeFailure extends RuntimeException {}
 /** @return array<string, string> */
 function options(): array
 {
-    $values = getopt('', ['check:', 'user-id:', 'client-id:']);
+    $values = getopt('', ['check:', 'user-id:', 'client-id:', 'proof-operator-id:']);
 
     return is_array($values) ? array_filter($values, 'is_string') : [];
 }
@@ -692,8 +693,18 @@ $arguments = options();
 $check = $arguments['check'] ?? '';
 $userId = filter_var($arguments['user-id'] ?? null, FILTER_VALIDATE_INT);
 $clientId = filter_var($arguments['client-id'] ?? null, FILTER_VALIDATE_INT);
+$proofOperatorId = filter_var($arguments['proof-operator-id'] ?? null, FILTER_VALIDATE_INT);
 
 try {
+    if (in_array($check, [
+        'synthetic-evidence', 'browser-code', 'browser-fixture', 'browser-cleanup',
+        'companion-acceptance', 'email-sink-acceptance', 'ai-provider-probes',
+        'telegram-staff-acceptance', 'telegram-acceptance', 'zoom-acceptance', 'provider-inventory',
+    ], true)) {
+        require '/app/scripts/staging-proof-integrations.php';
+        require '/app/scripts/staging-proof-client.php';
+        require '/app/scripts/staging-proof-evidence.php';
+    }
     if ($check === 'queue-snapshot') {
         queueSnapshotCheck();
     } elseif ($check === 'queue-contract') {
@@ -702,6 +713,28 @@ try {
         runtimeCheck();
     } elseif ($check === 'companion-remediation-evidence') {
         companionRemediationEvidenceCheck();
+    } elseif ($userId !== false && $clientId !== false && $check === 'synthetic-evidence') {
+        syntheticEvidenceCheck($userId, $clientId);
+    } elseif ($userId !== false && $clientId !== false && $check === 'browser-code') {
+        browserCodeCheck($userId, $clientId);
+    } elseif ($userId !== false && $clientId !== false && $check === 'browser-fixture') {
+        browserFixtureCheck($userId, $clientId);
+    } elseif ($userId !== false && $clientId !== false && $check === 'companion-acceptance') {
+        companionAcceptanceCheck($userId, $clientId);
+    } elseif ($userId !== false && $clientId !== false && $check === 'email-sink-acceptance') {
+        emailSinkAcceptanceCheck($userId, $clientId);
+    } elseif ($userId !== false && $clientId !== false && $check === 'ai-provider-probes') {
+        aiProviderProbesCheck($userId, $clientId);
+    } elseif ($userId !== false && $clientId !== false && $check === 'telegram-staff-acceptance') {
+        telegramAcceptanceCheck($userId, $clientId, true);
+    } elseif ($userId !== false && $clientId !== false && $check === 'telegram-acceptance') {
+        telegramAcceptanceCheck($userId, $clientId);
+    } elseif ($userId !== false && $clientId !== false && $check === 'zoom-acceptance') {
+        zoomAcceptanceCheck($userId, $clientId);
+    } elseif ($userId !== false && $clientId !== false && $check === 'provider-inventory') {
+        providerInventoryCheck($userId, $clientId);
+    } elseif ($userId !== false && $clientId !== false && $proofOperatorId !== false && $check === 'browser-cleanup') {
+        browserCleanupCheck($userId, $clientId, $proofOperatorId);
     } elseif ($userId !== false && $clientId !== false && $check === 'deep') {
         deepCheck($userId, $clientId);
     } elseif ($userId !== false && $clientId !== false) {
@@ -712,7 +745,10 @@ try {
 } catch (StagingSmokeFailure $exception) {
     fwrite(STDERR, $exception->getMessage()."\n");
     exit(1);
-} catch (Throwable) {
-    fwrite(STDERR, "STAGING SMOKE: unexpected application error\n");
+} catch (VideoMeetingException $exception) {
+    fwrite(STDERR, 'ZOOM PROVIDER: '.$exception->safeCode.'; outcome_unknown='.($exception->outcomeUnknown ? 'true' : 'false')."\n");
+    exit(1);
+} catch (Throwable $exception) {
+    fwrite(STDERR, 'STAGING SMOKE: unexpected application error ('.get_class($exception).' at '.basename($exception->getFile()).':'.$exception->getLine().")\n");
     exit(1);
 }

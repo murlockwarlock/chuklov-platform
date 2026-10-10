@@ -23,14 +23,14 @@ final readonly class SpecialistScheduleDefinition
                 $left->weekday,
                 $left->interval->startMinutes(),
                 $left->interval->endMinutes(),
-                $left->startsOn?->value ?? '',
-                $left->endsOn?->value ?? '9999-12-31',
+                $left->startsOn === null ? '' : $left->startsOn->value,
+                $left->endsOn === null ? '9999-12-31' : $left->endsOn->value,
             ] <=> [
                 $right->weekday,
                 $right->interval->startMinutes(),
                 $right->interval->endMinutes(),
-                $right->startsOn?->value ?? '',
-                $right->endsOn?->value ?? '9999-12-31',
+                $right->startsOn === null ? '' : $right->startsOn->value,
+                $right->endsOn === null ? '9999-12-31' : $right->endsOn->value,
             ];
         });
 

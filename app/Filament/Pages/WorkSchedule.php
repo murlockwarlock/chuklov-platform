@@ -16,7 +16,6 @@ use App\Modules\Scheduling\Application\SetScheduleExceptionSet;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
-use App\Modules\Scheduling\Domain\ValueObjects\WallClockInterval;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Notifications\Notification;
@@ -58,7 +57,7 @@ final class WorkSchedule extends LocalizedPage
 
     public string $overrideType = 'working';
 
-    /** @var list<array{start_time: string, end_time: string}> */
+    /** @var list<array<string, mixed>> */
     public array $overrideIntervals = [];
 
     public string $overrideReason = '';
@@ -164,7 +163,7 @@ final class WorkSchedule extends LocalizedPage
 
         $wasEmpty = $this->selectedDates === [];
         if (in_array($date, $this->selectedDates, true)) {
-            $this->selectedDates = array_values(array_diff($this->selectedDates, [$date]));
+            $this->selectedDates = [...array_diff($this->selectedDates, [$date])];
             if ($this->selectedDates === []) {
                 $this->clearSelection();
 
@@ -235,8 +234,7 @@ final class WorkSchedule extends LocalizedPage
             return;
         }
 
-        unset($this->overrideIntervals[$index]);
-        $this->overrideIntervals = array_values($this->overrideIntervals);
+        array_splice($this->overrideIntervals, $index, 1);
     }
 
     public function saveOverride(): void
@@ -384,7 +382,9 @@ final class WorkSchedule extends LocalizedPage
     public function specialistScheduleTimezone(): string
     {
         $specialist = $this->selectedSpecialist();
-        $timezone = $specialist?->timezone ?? $this->crmTimezone();
+        $timezone = $specialist instanceof Specialist && is_string($specialist->timezone)
+            ? $specialist->timezone
+            : $this->crmTimezone();
 
         return IanaTimezone::from($timezone)->value;
     }
@@ -411,10 +411,10 @@ final class WorkSchedule extends LocalizedPage
     public function pendingPresetLabel(): ?string
     {
         return match ($this->pendingPreset) {
-            'weekdays' => __('Будни'),
-            'all' => __('Все дни'),
-            'even' => __('Чётные даты'),
-            'odd' => __('Нечётные даты'),
+            'weekdays' => (string) __('Будни'),
+            'all' => (string) __('Все дни'),
+            'even' => (string) __('Чётные даты'),
+            'odd' => (string) __('Нечётные даты'),
             default => null,
         };
     }
@@ -429,6 +429,7 @@ final class WorkSchedule extends LocalizedPage
         return $this->impactBookings !== [];
     }
 
+    /** @return list<string> */
     private function datesForPreset(string $preset): array
     {
         $dates = [];
@@ -470,7 +471,7 @@ final class WorkSchedule extends LocalizedPage
         $exceptions = $this->selectedExceptionRows($date);
         $first = $exceptions->first();
         $this->selectedExceptionId = $first?->getKey();
-        $this->overrideReason = (string) ($first?->reason ?? '');
+        $this->overrideReason = (string) ($first === null ? null : $first->reason);
 
         if ($exceptions->contains(
             static fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::DayOff,
@@ -480,14 +481,17 @@ final class WorkSchedule extends LocalizedPage
             return;
         }
 
-        $customIntervals = $exceptions
-            ->filter(static fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::CustomWindow)
-            ->map(static fn (ScheduleException $exception): array => [
+        $customIntervals = [];
+        foreach ($exceptions as $exception) {
+            if ($exception->exception_type !== ScheduleExceptionType::CustomWindow) {
+                continue;
+            }
+
+            $customIntervals[] = [
                 'start_time' => substr((string) $exception->start_time, 0, 5),
                 'end_time' => substr((string) $exception->end_time, 0, 5),
-            ])
-            ->values()
-            ->all();
+            ];
+        }
 
         if ($customIntervals !== []) {
             $this->overrideType = ScheduleExceptionType::CustomWindow->value;
@@ -507,16 +511,20 @@ final class WorkSchedule extends LocalizedPage
 
         $resolver = app(ResolveSpecialistWorkingHours::class);
 
-        return collect($resolver->intervalsForDate(
+        $intervals = $resolver->intervalsForDate(
             $resolver->forRange($specialist, $localDate, $localDate),
             $localDate,
-        ))
-            ->map(static fn (WallClockInterval $interval): array => [
+        );
+        $rows = [];
+
+        foreach ($intervals as $interval) {
+            $rows[] = [
                 'start_time' => $interval->start,
                 'end_time' => $interval->end,
-            ])
-            ->values()
-            ->all();
+            ];
+        }
+
+        return $rows;
     }
 
     /** @return Collection<int, ScheduleException> */

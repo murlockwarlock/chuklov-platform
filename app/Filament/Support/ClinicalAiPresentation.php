@@ -249,6 +249,7 @@ final class ClinicalAiPresentation
         };
     }
 
+    /** @param array<string, mixed>|null $payload */
     public static function result(AiCapability|string $capability, ?array $payload, ?string $text, ?string $workflowKey = null): string
     {
         $safeText = self::safeText($text);
@@ -271,6 +272,7 @@ final class ClinicalAiPresentation
         } ?? __('Результат получен, но не может быть отображён в текущем формате.');
     }
 
+    /** @param array<string, mixed>|null $payload */
     public static function preview(AiCapability|string $capability, ?array $payload, ?string $text, ?string $workflowKey = null): string
     {
         $result = trim(self::result($capability, $payload, $text, $workflowKey));
@@ -294,7 +296,7 @@ final class ClinicalAiPresentation
                 AiErrorCategory::OutputSchemaValidationFailed => __('Ответ AI не прошёл проверку структуры.'),
                 AiErrorCategory::ExecutionTimedOut => __('AI не успел завершить анализ. Повторите запуск.'),
                 AiErrorCategory::SafetyKillSwitchActive => __('AI отключён политикой безопасности организации.'),
-                default => CrmLabel::enum($category),
+                default => CrmLabel::enum($category) ?? __('Неизвестная ошибка AI.'),
             };
         }
 
@@ -334,6 +336,7 @@ final class ClinicalAiPresentation
         return $text;
     }
 
+    /** @param array<string, mixed> $payload */
     private static function documentResult(array $payload): ?string
     {
         return self::joinSections([
@@ -346,6 +349,7 @@ final class ClinicalAiPresentation
         ]);
     }
 
+    /** @param array<string, mixed> $payload */
     private static function postureResult(array $payload): ?string
     {
         return self::joinSections([
@@ -356,6 +360,7 @@ final class ClinicalAiPresentation
         ]);
     }
 
+    /** @param array<string, mixed> $payload */
     private static function synthesizerResult(array $payload): ?string
     {
         return self::joinSections([
@@ -370,6 +375,7 @@ final class ClinicalAiPresentation
         ]);
     }
 
+    /** @param array<string, mixed> $payload */
     private static function courseReportResult(array $payload): ?string
     {
         return self::joinSections([
@@ -502,6 +508,7 @@ final class ClinicalAiPresentation
         return $items === [] ? null : __('Гипотезы:')."\n- ".implode("\n- ", $items);
     }
 
+    /** @return list<string> */
     private static function scalarList(mixed $value): array
     {
         if (! is_array($value)) {
@@ -538,6 +545,7 @@ final class ClinicalAiPresentation
         return null;
     }
 
+    /** @param list<string|null> $sections */
     private static function joinSections(array $sections): ?string
     {
         $sections = array_values(array_filter(

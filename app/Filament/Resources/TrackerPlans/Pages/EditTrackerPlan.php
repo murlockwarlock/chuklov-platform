@@ -71,7 +71,10 @@ final class EditTrackerPlan extends LocalizedEditRecord
         return $record->refresh();
     }
 
-    /** @param array<string, mixed> $data @return array{enabled: bool, mappings: list<array{currency: mixed, offer_id: mixed}>} */
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array{enabled: bool, mappings: list<array{currency: mixed, offer_id: mixed}>}
+     */
     private function mappingData(array $data): array
     {
         $enabled = (bool) ($data['lava_enabled'] ?? false);

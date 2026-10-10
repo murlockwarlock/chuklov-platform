@@ -26,6 +26,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Support\RichText\RichTextDocument;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
@@ -201,6 +202,7 @@ final class ReadCompanionConversation
             }
             $safeActions = $this->safeActions($message, $turn, $attempt, $conversation, $latestSequence, $hasOpenHumanRequest);
             $feedbackForMessage = $feedback->get($message->getKey());
+            $content = $this->bodyReader->read($organizationId, $message);
             $timeline[] = [
                 'type' => 'message',
                 'id' => $message->getKey(),
@@ -209,7 +211,10 @@ final class ReadCompanionConversation
                 'authorName' => $message->author_type === ConversationAuthorType::Staff
                     ? $message->authorUser?->name
                     : null,
-                'content' => $this->bodyReader->read($organizationId, $message),
+                'content' => $content,
+                'contentHtml' => $message->author_type === ConversationAuthorType::Staff
+                    ? RichTextDocument::canonicalHtml($content)
+                    : null,
                 'occurredAt' => $message->occurred_at?->toIso8601String() ?? $message->created_at?->toIso8601String() ?? now()->toIso8601String(),
                 'transport' => $message->channel === 'telegram' ? 'telegram' : 'portal',
                 'transportLabel' => $message->channel === 'telegram' ? 'Telegram' : 'Портал',

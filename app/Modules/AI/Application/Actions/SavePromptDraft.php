@@ -24,6 +24,7 @@ final class SavePromptDraft
         private readonly AiPromptVersionSnapshotHasher $snapshotHasher,
     ) {}
 
+    /** @param array<string, mixed> $data */
     public function handle(User $actor, int $promptVersionId, array $data): AiPromptVersion
     {
         $organization = $this->context->organization();

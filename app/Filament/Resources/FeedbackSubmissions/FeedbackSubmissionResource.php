@@ -23,7 +23,7 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 
-/** @extends resource<FeedbackSubmission> */
+/** @extends LocalizedResource<FeedbackSubmission> */
 final class FeedbackSubmissionResource extends LocalizedResource
 {
     protected static ?string $model = FeedbackSubmission::class;

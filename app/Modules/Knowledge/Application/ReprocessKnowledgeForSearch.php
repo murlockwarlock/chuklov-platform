@@ -56,7 +56,8 @@ final class ReprocessKnowledgeForSearch
             if ($lockedRevision->status !== KnowledgeRevisionStatus::Ready) {
                 throw ValidationException::withMessages(['revision' => 'Подготовка для поиска доступна только для готового материала.']);
             }
-            if ($lockedRevision->extraction_status !== null && $lockedRevision->extraction_status !== KnowledgeExtractionStatus::Ready->value) {
+            $extractionStatus = $lockedRevision->getRawOriginal('extraction_status');
+            if (is_string($extractionStatus) && $extractionStatus !== KnowledgeExtractionStatus::Ready->value) {
                 throw ValidationException::withMessages(['revision' => 'Подготовка для поиска доступна только после безопасного извлечения.']);
             }
 

@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { expect, test, type Page, type Response } from '@playwright/test';
 
 type BookingFixture = {
+    clientId: number;
     cookieName: string;
     cookieValue: string;
     serviceId: number;
@@ -415,6 +416,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             false,
         );
         echo json_encode([
+            'clientId' => $client->getKey(),
             'cookieName' => $cookieName,
             'cookieValue' => $cookieValue,
             'serviceId' => $service->getKey(),
@@ -469,6 +471,27 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
 
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+function completeCompanionFixture(clientId: number): void {
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->where('organization_id', $organization->getKey())->where('full_name', 'like', 'Playwright Client %')->findOrFail(${clientId});
+        $turn = \\App\\Modules\\ClientCompanion\\Domain\\Models\\CompanionTurn::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->where('status', 'pending')->sole();
+        $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::query()->where('organization_id', $organization->getKey())->findOrFail($turn->conversation_id);
+        $message = app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+            organizationId: $organization->getKey(), client: $client, conversation: $conversation,
+            channel: 'portal', direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
+            authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
+            body: 'Новый синтетический ответ.',
+        );
+        $turn->forceFill(['status' => 'completed', 'outbound_message_id' => $message->getKey(), 'completed_at' => now()])->save();
+    `;
+    execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'pipe'],
+    });
 }
 
 async function assertPortalResponseAccepted(responsePromise: Promise<Response>, action: string): Promise<void> {
@@ -827,11 +850,11 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page.getByRole('menu')).toHaveCount(0);
 
     if ((page.viewportSize()?.width ?? 0) >= 768) {
-        await expect(page.getByRole('link', { name: 'Услуги' }).first()).toBeVisible();
-        await expect(page.getByRole('link', { name: 'Профиль' }).first()).toBeVisible();
+        await expect(page.locator('nav a[href$="/portal/services"]:visible')).toHaveText('Записаться');
+        await expect(page.locator('nav a[href$="/portal/more"]:visible')).toHaveText('Кабинет');
     } else {
         await expect(page.getByRole('navigation').last()).toBeVisible();
-        await expect(page.getByRole('link', { name: 'Профиль' }).last()).toBeVisible();
+        await expect(page.locator('nav a[href$="/portal/more"]:visible')).toHaveText('Кабинет');
     }
 
     await russianTrigger.click();
@@ -840,13 +863,14 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page.getByRole('heading', { name: 'Welcome, Playwright Client' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'English', exact: true })).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-en.jpg');
-    await page.getByRole('link', { name: 'Services' }).last().click();
-    await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
-    await expect(page.locator('.portal-service-card').first().getByRole('link', { name: 'Book an appointment' })).toHaveAttribute('href', /service_id=/);
+    await page.locator('nav a[href$="/portal/services"]:visible').click();
+    await expect(page.getByRole('heading', { name: 'Book', exact: true })).toBeVisible();
+    await expect(page.locator('a.portal-service-card').first()).toHaveAttribute('href', /service_id=/);
     const profileResponse = page.waitForResponse((response) =>
         response.url().endsWith('/portal/profile') && response.request().method() === 'GET' && response.status() === 200,
     );
-    await page.getByRole('link', { name: 'Profile' }).last().click();
+    await page.locator('nav a[href$="/portal/more"]:visible').click();
+    await page.locator('a[href$="/portal/profile"]:visible').click();
     await profileResponse;
     await expect(page).toHaveURL(/\/portal\/profile$/);
     await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
@@ -889,14 +913,15 @@ test('home keeps one primary booking action and ordinary referrals remain availa
         await page.goto('/');
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
         await expect(page.getByTestId('home-booking-cta')).toHaveText('Записаться');
-        await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Добро пожаловать, Playwright Client' })).toBeVisible();
+        await expect(page.locator('.portal-booking-card')).toHaveCount(0);
         await assertNoHorizontalOverflow(page);
 
         if (width < 768) {
             await expect(page.locator('.portal-bottom-nav')).toBeVisible();
 
             const navigationItems = page.locator('.portal-bottom-nav__link');
-            expect(await navigationItems.count()).toBe(6);
+            expect(await navigationItems.count()).toBe(5);
             expect(await navigationItems.evaluateAll((items) => {
                 const widths = items.map((item) => item.getBoundingClientRect().width);
                 const labels = items.map((item) => item.querySelector('.portal-bottom-nav__label'));
@@ -911,7 +936,7 @@ test('home keeps one primary booking action and ordinary referrals remain availa
 
     await page.goto('/portal/referrals');
     await expect(page).toHaveURL(/\/portal\/referrals$/);
-    await expect(page.getByRole('heading', { name: 'Пригласить друга', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Пригласить друга', exact: true })).toBeVisible();
     await expect(page.getByTestId('ordinary-referral')).toBeVisible();
     await expect(page.getByTestId('partner-activate')).toHaveCount(0);
     await expect(page.getByTestId('partner-links')).toHaveCount(0);
@@ -927,7 +952,7 @@ test('home changes the booking action when an upcoming booking is shown', async 
     }]);
 
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Ближайшая запись' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
     await expect(page.getByTestId('home-booking-cta')).toHaveText('Записаться ещё');
 });
 
@@ -943,7 +968,7 @@ test('CRM-assigned partner can manage multiple campaign links', async ({ page })
     await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
     await expect(page.getByTestId('partner-links')).toBeVisible();
     await expect(page.getByTestId('invite-friend')).toHaveCount(0);
-    await expect(page.getByText('Мои ссылки', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Ссылки', exact: true })).toBeVisible();
 
     await page.getByLabel('Название', { exact: true }).fill('Instagram — шапка профиля');
     await page.getByRole('combobox', { name: 'Канал', exact: true }).selectOption('instagram');
@@ -1007,6 +1032,7 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     await expect(page.getByTestId('invite-friend')).toHaveCount(0);
     await expect(page.getByTestId('partner-balance-USD')).toContainText(/10[,.]00.*(?:\$|USD)/);
 
+    await page.getByRole('button', { name: 'Выплаты', exact: true }).click();
     await page.getByLabel('Сумма', { exact: true }).fill('2.00');
     let requestStarted!: () => void;
     let releaseRequest!: () => void;
@@ -1034,8 +1060,7 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     await expect(page.getByTestId('payout-feedback')).toBeVisible();
     await expect(page.getByTestId('payout-feedback')).toContainText('Заявка на выплату отправлена');
     await expect(page.getByTestId('payout-feedback')).toContainText(/2[,.]00\s*(?:\$|USD)/);
-    await expect(page.getByTestId('payout-feedback')).toContainText('Запрошена');
-
+    await page.getByRole('button', { name: 'История', exact: true }).click();
     const payout = page.getByTestId('partner-payout-0');
     await expect(payout).toBeVisible();
     await expect(payout).toContainText(/2[,.]00\s*(?:\$|USD)/);
@@ -1043,6 +1068,7 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     await payout.getByRole('button', { name: 'Отменить запрос', exact: true }).click();
     await expect(payout).toContainText('Отменена');
 
+    await page.getByRole('button', { name: 'Выплаты', exact: true }).click();
     await page.getByLabel('Сумма', { exact: true }).fill('999.00');
     await payoutSubmit.click();
     await expect(page.getByTestId('payout-error')).toBeVisible();
@@ -1072,7 +1098,8 @@ test('B2B answer stays in one journey and Profile shows the same compact classif
     expect(specialistOptions).toContain('Выберите специалиста');
     expect(specialistOptions).not.toContain('specialist_id');
 
-    await page.getByRole('link', { name: 'Профиль' }).last().click();
+    await page.locator('nav a[href$="/portal/more"]:visible').click();
+    await page.locator('a[href$="/portal/profile"]:visible').click();
     await expect(page).toHaveURL(/\/portal\/profile$/);
     await expect(page.getByRole('heading', { name: 'Профессиональный профиль' })).toBeVisible();
     await expect(page.getByText('Специалист по работе с телом: Да')).toBeVisible();
@@ -1132,7 +1159,7 @@ test('companion safely renders rich long messages without viewport overflow', as
     for (const width of [1440, 1280, 1024, 768, 390, 320]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/portal/companion');
-        await expect(page.getByRole('heading', { name: 'AI-компаньон', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Чат', exact: true })).toBeVisible();
         await expect(page.locator('.portal-companion__help')).toHaveCount(0);
         await expect(page.getByRole('heading', { name: 'Безопасный ответ' })).toBeVisible();
         await expect(page.locator('.portal-rich-text strong')).toHaveText('Важная информация');
@@ -1177,7 +1204,7 @@ test('portal retries a failed Companion turn without duplicating the client mess
     for (const width of [1440, 1024, 768, 390, 360, 320]) {
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/portal/companion');
-        await expect(page.getByRole('heading', { name: 'AI-компаньон', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Чат', exact: true })).toBeVisible();
         await expect(page.getByText('Не получилось подготовить ответ.', { exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Повторить', exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Позвать специалиста', exact: true })).toBeVisible();
@@ -1213,7 +1240,7 @@ test('companion shows accessible typing feedback and respects intentional histor
     await page.goto('/portal/companion');
     await expect(page.getByRole('status').filter({ hasText: 'печатает…' })).toBeVisible();
     await expect(page.locator('.portal-companion__typing-dots i')).toHaveCount(3);
-    await expect(page.getByText('AI-компаньон печатает ответ', { exact: true })).toHaveCount(1);
+    await expect(page.getByText('Чат формирует ответ', { exact: true })).toHaveCount(1);
 
     await page.locator('[data-testid="companion-history"]').evaluate((element) => {
         element.scrollTop = 0;
@@ -1221,32 +1248,7 @@ test('companion shows accessible typing feedback and respects intentional histor
     });
     await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
 
-    await page.route('**/portal/companion**', async (route) => {
-        const response = await route.fetch();
-        const payload = await response.json() as {
-            props?: { companion?: { pending?: boolean; messages?: Array<Record<string, unknown>> } };
-        };
-        const companion = payload.props?.companion;
-        if (companion !== undefined) {
-            companion.pending = false;
-            companion.messages = [
-                ...(companion.messages ?? []),
-                {
-                    type: 'message',
-                    id: 'synthetic-new-message',
-                    role: 'ai',
-                    roleLabel: 'AI-помощник',
-                    content: 'Новый синтетический ответ.',
-                    occurredAt: new Date().toISOString(),
-                    transportLabel: 'Портал',
-                    feedback: null,
-                    attachmentCount: 0,
-                    traceUrl: null,
-                },
-            ];
-        }
-        await route.fulfill({ response, body: JSON.stringify(payload) });
-    });
+    completeCompanionFixture(fixture.clientId);
 
     await expect(page.getByTestId('companion-new-messages')).toBeVisible({ timeout: 7_000 });
     await expect(page.getByText('Новый синтетический ответ.', { exact: true })).toBeVisible();
@@ -1400,10 +1402,10 @@ test('booking keeps its state while reviewing grouped legal documents', async ({
     await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
 
     const requiredCheckbox = page.getByRole('checkbox', {
-        name: 'Я ознакомился(лась) и принимаю обязательные документы',
+        name: 'Я ознакомился с обязательными документами и принимаю их условия',
         exact: true,
     });
-    const documentLinks = page.getByRole('button', { name: /Открыть:/ });
+    const documentLinks = page.getByRole('button', { name: /^(Оферта|Политика конфиденциальности|Медицинский дисклеймер)$/ });
     const dialog = page.getByRole('dialog');
 
     await expect(documentLinks).toHaveCount(3);
@@ -1512,7 +1514,7 @@ test('booking shell stays readable at narrow Mini App widths', async ({ page }) 
         await page.setViewportSize({ width, height: 844 });
         await page.goto(`/portal/bookings/create?date_from=${fixture.date}&date_to=${dateTo}`);
         await expect(page.getByRole('heading', { name: 'Выберите услугу' }).first()).toBeVisible();
-        await expect(page.locator('.portal-booking-progress__label')).toHaveCount(3);
+        await expect(page.locator('.portal-booking-progress__label')).toHaveCount(4);
         await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
         await page.locator('.portal-booking-option').filter({ hasText: fixture.serviceName }).click();
@@ -1573,7 +1575,7 @@ test('long multi-specialist and multi-format booking stays fully readable at 320
     await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Выберите специалиста' })).toBeVisible();
-    await assertReadableProgress(page, 5);
+    await assertReadableProgress(page, 4);
     await assertFullSelectedServiceTitle(page, fixture.serviceName, 'booking-choice-service');
     await assertNoHorizontalOverflow(page);
 
@@ -1581,7 +1583,7 @@ test('long multi-specialist and multi-format booking stays fully readable at 320
     await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Выберите формат' })).toBeVisible();
-    await assertReadableProgress(page, 5);
+    await assertReadableProgress(page, 4);
     await assertFullSelectedServiceTitle(page, fixture.serviceName, 'booking-choice-service');
     await expect(page.getByTestId('booking-choice-specialist')).toHaveText(fixture.specialistName);
     await assertNoHorizontalOverflow(page);
@@ -1590,7 +1592,7 @@ test('long multi-specialist and multi-format booking stays fully readable at 320
     await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
 
     await expect(page.getByRole('heading', { name: 'Выберите дату и время' })).toBeVisible();
-    await assertReadableProgress(page, 5);
+    await assertReadableProgress(page, 4);
     await assertFullSelectedServiceTitle(page, fixture.serviceName);
     await expect(page.getByTestId('booking-selection-specialist')).toHaveText(fixture.specialistName);
     await expect(page.getByTestId('booking-selection-format')).toHaveText('В клинике');
@@ -1603,7 +1605,7 @@ test('long multi-specialist and multi-format booking stays fully readable at 320
 
     await expect(page.getByRole('heading', { name: 'Проверьте запись' })).toBeVisible();
     await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();
-    await assertReadableProgress(page, 5);
+    await assertReadableProgress(page, 4);
     await assertNoHorizontalOverflow(page);
 
     await acceptRequiredConsents(page);

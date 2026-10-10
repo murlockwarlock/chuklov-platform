@@ -46,7 +46,6 @@ final readonly class UpdateSurveyDefinitionDraft
                 ]);
             }
             if ($preserveUnsupportedScoring
-                && $previousVersion instanceof SurveyVersion
                 && ! $this->sameValue($data['definition'], $previousVersion->definition)) {
                 throw ValidationException::withMessages([
                     'definition' => ['Этот тест использует расширенные правила подсчёта. Вопросы нельзя изменять, пока эти правила не поддерживаются редактором.'],

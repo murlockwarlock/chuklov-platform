@@ -71,6 +71,7 @@ test('CRM notification sound follows the Filament database notification DOM cont
         });
     });
 
+    await page.goto('/health');
     await page.setContent(`
         <div class="fi-no-database"></div>
         <div id="database-notifications">

@@ -39,7 +39,7 @@ final class SyncSpecialistTelegramIdentity
 
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSpecialists);
 
-        DB::transaction(function () use ($actor, $organization, $specialist, $telegramId): void {
+        DB::transaction(function () use ($actor, $organization, $specialist): void {
             $staffUserId = $specialist->staff_user_id;
 
             if ($staffUserId === null) {
@@ -61,23 +61,19 @@ final class SyncSpecialistTelegramIdentity
                 ->lockForUpdate()
                 ->first();
 
-            if ($telegramId === null) {
-                if ($identity === null) {
-                    return;
-                }
-
-                $identity->delete();
-                $this->audit->handle(
-                    organization: $organization,
-                    actor: $actor,
-                    action: 'specialist.telegram_identity.removed',
-                    targetType: Specialist::class,
-                    targetId: (string) $specialist->getKey(),
-                    metadata: ['channel' => 'telegram'],
-                );
-
+            if ($identity === null) {
                 return;
             }
+
+            $identity->delete();
+            $this->audit->handle(
+                organization: $organization,
+                actor: $actor,
+                action: 'specialist.telegram_identity.removed',
+                targetType: Specialist::class,
+                targetId: (string) $specialist->getKey(),
+                metadata: ['channel' => 'telegram'],
+            );
 
         });
     }

@@ -10,6 +10,33 @@ use Tests\TestCase;
 class StagingDeploymentScriptTest extends TestCase
 {
     #[Test]
+    public function compose_service_preflight_consumes_the_complete_stream_and_rejects_missing_services(): void
+    {
+        $script = file_get_contents(base_path('scripts/deploy-staging.sh'));
+        self::assertIsString($script);
+        $start = strpos($script, "\nfor service in postgres redis app horizon scheduler telegram; do\n");
+        self::assertNotFalse($start);
+        $end = strpos($script, "\ndone\n", $start);
+        self::assertNotFalse($end);
+        $preflight = substr($script, $start, $end + strlen("\ndone\n") - $start);
+
+        foreach ([true, false] as $complete) {
+            $services = $complete ? 'postgres redis app horizon scheduler telegram' : 'postgres redis app horizon scheduler';
+            $process = new Process(['bash']);
+            $process->setInput("set -euo pipefail\n".'emit_services() { for item in '.$services.'; do printf "%s\\n" "$item"; sleep 0.01; done; }'."\ncurrent_compose=(emit_services)\n".$preflight.'printf "SERVICE_PREFLIGHT_OK"');
+            $process->run();
+
+            if ($complete) {
+                self::assertSame(0, $process->getExitCode(), $process->getErrorOutput());
+                self::assertSame('SERVICE_PREFLIGHT_OK', $process->getOutput());
+            } else {
+                self::assertNotSame(0, $process->getExitCode());
+                self::assertStringNotContainsString('SERVICE_PREFLIGHT_OK', $process->getOutput());
+            }
+        }
+    }
+
+    #[Test]
     public function staging_deployment_is_exact_revision_isolated_and_non_destructive(): void
     {
         $script = file_get_contents(base_path('scripts/deploy-staging.sh'));
@@ -511,8 +538,8 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString("fail 'TELEGRAM API' 'Bot API getMe is unreachable'", $shell);
         self::assertStringContainsString('B2B_QUEUE_PHYSICAL_FINGERPRINT=', $shell);
         self::assertStringContainsString('application and Horizon resolve different physical queue targets', $shell);
-        self::assertStringContainsString('getAppAuthenticationSecret', $php);
-        self::assertStringContainsString('must enroll privileged MFA before authenticated CRM checks', $php);
+        self::assertStringContainsString('OrganizationPermission::ViewAdmin', $php);
+        self::assertStringContainsString('configured user cannot access CRM', $php);
         self::assertStringContainsString('Queue::connection', $php);
         self::assertStringContainsString('Redis::connection($target[\'connection\'])', $php);
         self::assertStringContainsString('ConfigurationUrlParser', $php);

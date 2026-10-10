@@ -218,4 +218,17 @@ test('client can transfer, claim, and apply a gift certificate', async ({ page }
     const obligation = page.locator('section.portal-content-section').filter({ hasText: fixture.obligationServiceName }).first();
     await expect(obligation).toContainText('Оплачено');
     await expect(obligation.getByText('Осталось', { exact: true }).locator('..')).toContainText('0');
+
+    await page.goto('/portal/gift-certificates');
+    await page.getByRole('button', { name: 'Подарить сертификат', exact: true }).click();
+    const selfClaimUrl = await page.getByTestId('gift-transfer-link').getAttribute('href');
+    expect(selfClaimUrl).not.toBeNull();
+    await page.goto(selfClaimUrl as string);
+    await page.getByRole('button', { name: 'Получить сертификат', exact: true }).click();
+    await expect(page).toHaveURL(/\/gift-certificates\/claim$/);
+    await expect(page.getByRole('alert')).toContainText('Текущий владелец не может получить этот сертификат повторно.');
+
+    await page.goto('/portal/gift-certificates');
+    await page.getByRole('button', { name: 'Отменить передачу', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Подарить сертификат', exact: true })).toBeVisible();
 });

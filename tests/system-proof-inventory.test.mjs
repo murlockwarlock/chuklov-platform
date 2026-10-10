@@ -1,0 +1,86 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { canonicalDiagnostics, diagnostics, renderMatrix, renderSourceInventory, scanSource, sourceExpression } from '../scripts/system-proof-inventory.mjs';
+import { canonicalCapabilities } from '../scripts/system-proof-capabilities.mjs';
+
+test('new resource action or Portal route fails proof mapping until explicitly inventoried', () => {
+    const existing = scanSource('routes/web.php', "Route::get('/portal/profile', ProfileController::class);");
+    const matrix = renderMatrix(existing);
+    const changed = [...existing, ...scanSource('app/Filament/Resources/Bookings/Actions/Actions.php', "Action::make('cancel')->visible(fn () => true);")];
+    assert.equal(diagnostics(existing, matrix).length, 0);
+    assert.match(diagnostics(changed, matrix).join('\n'), /UNMAPPED CRM-ACTION/);
+    const routes = scanSource('routes/web.php', "Route::get('/portal/profile', ProfileController::class); Route::post('/portal/new', NewController::class);");
+    assert.match(diagnostics(routes, matrix).join('\n'), /UNMAPPED HTTP/);
+});
+
+test('inventory discovers filters, unnamed built-in actions and inherited submits', () => {
+    const rows = scanSource('app/Filament/Resources/Clients/Pages/CreateClient.php', "class CreateClient extends LocalizedCreateRecord {} Action::make('block'); EditAction::make(); SelectFilter::make('status');");
+    assert.deepEqual(rows.map((row) => row.kind).sort(), ['CRM-ACTION', 'CRM-ACTION', 'CRM-ACTION', 'CRM-FORM', 'CRM-FORM', 'CRM-SCREEN']);
+    assert.ok(rows.some((row) => row.action === 'CreateClient create'));
+    assert.ok(rows.some((row) => row.action === 'CreateClient cancel'));
+});
+
+test('Vue controls include submits and bindings containing arrow operators', () => {
+    const rows = scanSource('resources/js/Pages/Portal/Example.vue', '<template><form @submit.prevent="save"><button @click="() => cancel()">Cancel</button><Link :href="url">Open</Link></form></template>');
+    assert.equal(rows.length, 3);
+    assert.ok(rows.some((row) => row.action.includes('() => cancel()')));
+    assert.ok(rows.some((row) => row.action.includes('@submit.prevent=save')));
+});
+
+test('line shifts retain identifiers and reviewed contracts while removed actions fail', () => {
+    const path = 'app/Filament/Pages/Example.php';
+    const first = scanSource(path, "Action::make('save');");
+    const shifted = scanSource(path, "\n\nAction::make('save');");
+    assert.equal(first[0].id, shifted[0].id);
+    const reviewed = renderMatrix(first).replace('| NOT DERIVED |', '| Known precondition |');
+    assert.match(renderMatrix(shifted, reviewed), /Known precondition/);
+    assert.match(diagnostics([], reviewed).join('\n'), /STALE/);
+});
+
+test('missing execution evidence cannot become VERIFIED', () => {
+    const rows = scanSource('routes/web.php', "Route::post('/portal/bookings', BookingController::class);");
+    const unsupported = renderMatrix(rows).replace('| NOT VERIFIED |', '| VERIFIED |');
+    assert.match(diagnostics(rows, unsupported).join('\n'), /UNSUPPORTED VERIFIED/);
+});
+
+test('fluent visibility and label extraction respects nested closures and quoted delimiters', () => {
+    const code = "Action::make('confirm')->label(__('Confirm'))->visible(fn ($record) => in_array($record->status, ['requested', 'confirmed']))->action(function () { send('a,b'); }), Action::make('cancel');";
+    assert.equal(sourceExpression(code, 0), code.slice(0, code.indexOf(', Action')));
+    const rows = scanSource('app/Filament/Pages/Example.php', code);
+    assert.equal(rows[0].label, "__('Confirm')");
+    assert.equal(rows[0].visible, "fn ($record) => in_array($record->status, ['requested', 'confirmed'])");
+    assert.match(renderMatrix(rows), /Source predicate \(not executed\)/);
+    assert.equal(rows[1].visible, null);
+});
+
+test('new Resources, list/view screens and notification catalog events cannot evade mapping', () => {
+    const resource = scanSource('app/Filament/Resources/Example/ExampleResource.php', 'class ExampleResource extends LocalizedResource {}');
+    assert.equal(resource[0].kind, 'CRM-RESOURCE');
+    assert.match(diagnostics(resource, renderMatrix([])).join('\n'), /UNMAPPED CRM-RESOURCE/);
+    const screen = scanSource('app/Filament/Resources/Example/Pages/ViewExample.php', 'class ViewExample extends LocalizedViewRecord {}');
+    assert.equal(screen[0].kind, 'CRM-SCREEN');
+    const event = scanSource('app/Modules/Scenarios/Application/ScenarioNotificationCatalog.php', "['event' => 'booking.confirmed', 'label' => 'Confirmation', 'recipients' => 'Client', 'channels' => ['Telegram'], 'enabled' => true, 'template' => 'Confirmed']");
+    assert.equal(event[0].kind, 'NOTIFICATION');
+    assert.equal(event[0].catalog.recipients, 'Client');
+    assert.equal(event[0].catalog.template, 'Confirmed');
+    assert.match(diagnostics(event, renderMatrix([])).join('\n'), /UNMAPPED NOTIFICATION/);
+    assert.match(renderMatrix(event), /not delivery evidence/);
+});
+
+test('action visibility excludes predicates belonging to nested modal fields', () => {
+    const rows = scanSource('app/Filament/Pages/Example.php', "Action::make('reschedule')->label('Move')->schema([Select::make('location')->label('Location')->visible(fn ($record) => $record->format === 'office')])->visible(fn ($record) => $record->status === 'requested');");
+    assert.equal(rows[0].visible, "fn ($record) => $record->status === 'requested'");
+    assert.equal(rows[0].label, "'Move'");
+});
+
+test('source declarations reconcile to the canonical matrix without counting duplicate surfaces', () => {
+    const rows = [
+        ...scanSource('routes/web.php', "Route::post('/portal/bookings', BookingController::class);"),
+        ...scanSource('app/Modules/Scheduling/Domain/Enums/BookingStatus.php', "enum BookingStatus: string { case Requested = 'requested'; }"),
+    ];
+    const source = renderSourceInventory(rows);
+    const matrix = `| ID | Area | Actor | Surface | Page/state | Action/button | Preconditions | Visible when | Hidden/denied when | Input variants | Expected state change | Expected DB effect | Expected notification/message | Expected UI after action | Reverse/correction path | Retry/idempotency behavior | Concurrency behavior | Tenant/security behavior | Test type | Test name | Evidence/run | Status | Notes |\n| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |\n${canonicalCapabilities.map((capability) => `| ${Object.values(capability).join(' | ')} |`).join('\n')}`;
+    assert.equal(canonicalDiagnostics(rows, source, matrix).filter((error) => error.startsWith('MISSING CANONICAL')).length, 0);
+    assert.match(source, /HTTP-[a-f0-9]+ .* BOOKING-PORTAL-OFFICE .* DUPLICATE/);
+    assert.match(source, /STATE-[a-f0-9]+ .* BOOKING-STATE .* DUPLICATE/);
+});

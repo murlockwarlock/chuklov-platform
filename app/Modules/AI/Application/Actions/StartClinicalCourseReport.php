@@ -80,7 +80,7 @@ final readonly class StartClinicalCourseReport
             throw new InvalidArgumentException('Укажите корректную дату начала курса.');
         }
 
-        if ($date === false || $date->format('Y-m-d') !== $value) {
+        if (! $date instanceof CarbonImmutable || $date->format('Y-m-d') !== $value) {
             throw new InvalidArgumentException('Укажите корректную дату начала курса.');
         }
 

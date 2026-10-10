@@ -17,7 +17,7 @@ class AnalyticsAiFailuresWidget extends StatsOverviewWidget
 {
     use InteractsWithPageFilters;
 
-    protected int|string|array $columnSpan = ['default' => 'full', 'lg' => 1];
+    protected int|string|array $columnSpan = ['default' => 12, 'lg' => 1];
 
     protected static ?int $sort = 6;
 

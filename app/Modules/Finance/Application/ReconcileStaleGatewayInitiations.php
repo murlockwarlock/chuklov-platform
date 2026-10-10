@@ -37,7 +37,6 @@ final class ReconcileStaleGatewayInitiations
                     ->first();
                 if ($transaction === null
                     || $transaction->status !== PaymentGatewayStatus::Initiating
-                    || $transaction->initiated_at === null
                     || $transaction->initiated_at->isAfter($cutoff)) {
                     return 0;
                 }

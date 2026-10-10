@@ -165,7 +165,7 @@ final readonly class StartClinicalSynthesis
         foreach ($attempts as $index => $attempt) {
             $references[] = new AiInputReference('survey_attempt', (int) $attempt->getKey());
             $lines[] = 'Попытка #'.(int) $attempt->getKey().'; дата: '.$this->boundedText($attempt->completed_at?->toIso8601String() ?? '', 40);
-            $lines[] = $this->surveyContext($attempt->result_snapshot, $index === 0);
+            $lines[] = $this->surveyContext(is_array($attempt->result_snapshot) ? $attempt->result_snapshot : [], $index === 0);
         }
         $lines[] = 'Ограничение: источник 9 систем/MSQ и его оценивание не предоставлен в авторитетных материалах.';
 
@@ -359,6 +359,7 @@ final readonly class StartClinicalSynthesis
         return $this->boundedText(implode("\n", $lines), $includeAttentionAreas ? 1500 : 500);
     }
 
+    /** @return list<string> */
     private function textList(mixed $values, int $limit, int $itemLength): array
     {
         $result = [];

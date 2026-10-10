@@ -52,19 +52,24 @@ final class SimulateClientFakePayment
             throw (new ModelNotFoundException)->setModel(PaymentGatewayTransaction::class, [$transactionId]);
         }
 
+        $providerReference = $transaction->provider_reference;
+        if ($providerReference === null || $providerReference === '') {
+            throw ValidationException::withMessages(['transaction' => 'Операция ещё не получила ссылку платёжного шлюза.']);
+        }
+
         $eventId = 'client-demo-'.$outcome.'-'.$transaction->getKey();
 
         if ($outcome === 'success') {
             $this->settle->handle(new GatewaySettlementEvidence(
                 organizationId: (int) $organization->getKey(),
                 providerEventId: $eventId,
-                providerReference: $transaction->provider_reference,
+                providerReference: $providerReference,
                 amountMinor: $transaction->amount_minor,
                 currency: $transaction->currency,
                 proof: FakePaymentGateway::proof(
                     (int) $organization->getKey(),
                     $eventId,
-                    $transaction->provider_reference,
+                    $providerReference,
                     $transaction->amount_minor,
                     $transaction->currency,
                 ),
@@ -73,13 +78,13 @@ final class SimulateClientFakePayment
             $this->fail->handle(new GatewayFailureEvidence(
                 organizationId: (int) $organization->getKey(),
                 providerEventId: $eventId,
-                providerReference: $transaction->provider_reference,
+                providerReference: $providerReference,
                 amountMinor: $transaction->amount_minor,
                 currency: $transaction->currency,
                 proof: FakePaymentGateway::failureProof(
                     (int) $organization->getKey(),
                     $eventId,
-                    $transaction->provider_reference,
+                    $providerReference,
                     $transaction->amount_minor,
                     $transaction->currency,
                 ),
@@ -87,7 +92,7 @@ final class SimulateClientFakePayment
         } else {
             $result = $this->gateway->refund(new GatewayRefundRequest(
                 organizationId: (int) $organization->getKey(),
-                providerReference: $transaction->provider_reference,
+                providerReference: $providerReference,
                 amountMinor: $transaction->amount_minor,
                 currency: $transaction->currency,
                 idempotencyKey: 'client-demo-refund-'.$transaction->getKey(),

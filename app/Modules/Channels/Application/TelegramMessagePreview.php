@@ -57,7 +57,7 @@ final class TelegramMessagePreview
         }
 
         $actionButton = $message->actionButton !== null
-            ? ['text' => $message->actionButton->text, 'url' => $message->actionButton->url]
+            ? ['text' => $message->actionButton->text, 'url' => $message->actionButton->url ?? $message->actionButton->webAppUrl]
             : ($message->webAppUrl === null
                 ? null
                 : [

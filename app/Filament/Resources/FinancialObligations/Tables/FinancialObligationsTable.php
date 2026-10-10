@@ -88,7 +88,7 @@ final class FinancialObligationsTable
                 SelectFilter::make('status')
                     ->label(__('Статус'))
                     ->options(collect(FinancialStatus::cases())->mapWithKeys(
-                        static fn (FinancialStatus $status): array => [$status->value => CrmLabel::enum($status)],
+                        static fn (FinancialStatus $status): array => [$status->value => CrmLabel::enum($status) ?? $status->value],
                     )->all())
                     ->query(fn (Builder $query, array $data): Builder => app(ListFinancialObligationsForCrm::class)->applyStatusFilter(
                         $query,

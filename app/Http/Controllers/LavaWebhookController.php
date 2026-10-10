@@ -21,10 +21,6 @@ final class LavaWebhookController extends Controller
         }
 
         $payload = $request->json()->all();
-        if (! is_array($payload)) {
-            return response()->json(['message' => 'Invalid webhook payload'], 422);
-        }
-
         try {
             $receive->handle($organizationId, $payload);
         } catch (InvalidArgumentException) {

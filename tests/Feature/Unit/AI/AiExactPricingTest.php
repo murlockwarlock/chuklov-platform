@@ -102,6 +102,31 @@ final class AiExactPricingTest extends TestCase
         );
     }
 
+    public function test_catalog_pricing_tier_falls_back_to_snapshot_optional_rates(): void
+    {
+        $pricing = AiPricingSnapshot::fromArray([
+            'currency' => 'USD',
+            'input_price_per_million' => '1.00',
+            'output_price_per_million' => '2.00',
+            'cache_read_input_price_per_million' => '0.10',
+            'fixed_request_cost_applicable' => false,
+            'unsupported_meters' => [],
+            'pricing_source' => AiPricingSnapshot::SOURCE_CATALOG,
+            'pricing_tiers' => [[
+                'minimum_input_tokens' => 0,
+                'maximum_input_tokens' => null,
+                'input_price_per_million' => '1.00',
+                'output_price_per_million' => '2.00',
+            ]],
+        ]);
+
+        self::assertSame(310, $pricing->calculateCostMinorUnits(
+            promptTokens: 1_000_000,
+            completionTokens: 1_000_000,
+            cacheReadInputTokens: 1_000_000,
+        ));
+    }
+
     public function test_catalog_pricing_with_unpriced_optional_meters_can_settle_provider_usage(): void
     {
         $pricing = AiPricingSnapshot::fromArray([

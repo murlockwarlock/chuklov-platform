@@ -212,6 +212,7 @@ final class SurveyDefinitionFormCompatibility
                 && (is_string($value['ru'] ?? null) || is_string($value['en'] ?? null)));
     }
 
+    /** @param array<string, mixed> $metric */
     private static function isHumanMetricText(array $metric, string $key): bool
     {
         return ! array_key_exists($key, $metric) || $metric[$key] === null || self::isHumanLabel($metric[$key]);

@@ -98,6 +98,7 @@ final class ReferralRewardsTest extends TestCase
     #[DataProvider('clientLocales')]
     public function test_new_earned_reward_sends_one_notification_to_the_beneficiary(string $locale): void
     {
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
         [$organization, $admin, $referrer, $referred] = $this->fixture($locale);
         $this->relationship($organization, $referrer, $referred);
         $this->configureFixed($organization, $admin, '10.00', 'USD');
@@ -128,6 +129,11 @@ final class ReferralRewardsTest extends TestCase
             $locale === 'en' ? 'You received a referral bonus of 10.00 USD.' : 'Вам начислен реферальный бонус: 10.00 USD.',
             $telegram->messages[0]->body,
         );
+        self::assertSame(
+            'https://mini.example.test/portal/telegram/launch/partner_cabinet',
+            $telegram->messages[0]->actionButton->webAppUrl,
+        );
+        self::assertNull($telegram->messages[0]->actionButton->url);
         self::assertStringNotContainsString((string) $referred->getKey(), $telegram->messages[0]->body);
         self::assertSame($locale, ScenarioAction::query()->sole()->templateVersion()->firstOrFail()->template->locale);
     }

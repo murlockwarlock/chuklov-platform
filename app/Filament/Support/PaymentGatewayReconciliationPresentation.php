@@ -5,6 +5,7 @@ namespace App\Filament\Support;
 use App\Modules\Finance\Application\PaymentGatewayReconciliationReason;
 use App\Modules\Finance\Domain\Enums\PaymentGatewayEventType;
 use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
+use App\Modules\Finance\Domain\Models\PaymentGatewayTransaction;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Services\Domain\Models\Service;
 
@@ -35,8 +36,11 @@ final class PaymentGatewayReconciliationPresentation
 
     public static function product(PaymentGatewayEvent $record): string
     {
-        $obligation = $record->transaction?->obligation;
-        $service = $obligation?->booking?->service ?? $obligation?->service;
+        $transaction = $record->getRelationValue('transaction');
+        $obligation = $transaction instanceof PaymentGatewayTransaction ? $transaction->obligation : null;
+        $service = $obligation === null
+            ? null
+            : ($obligation->booking === null ? $obligation->service : $obligation->booking->service);
 
         if ($service instanceof Service) {
             return $service->name;

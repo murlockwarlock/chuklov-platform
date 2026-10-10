@@ -10,14 +10,16 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 
 final class PromptVersionForm
 {
+    /** @return list<Component> */
     public static function components(?AiPromptVersion $source): array
     {
-        $parameters = AiParameterConfig::fromArray((array) ($source?->parameter_config ?? []));
+        $parameters = AiParameterConfig::fromArray($source instanceof AiPromptVersion ? (array) $source->parameter_config : []);
 
         return [
             Hidden::make('expected_snapshot')
@@ -71,6 +73,7 @@ final class PromptVersionForm
         ];
     }
 
+    /** @return array<string, mixed> */
     public static function data(AiPromptVersion $source): array
     {
         $parameters = AiParameterConfig::fromArray((array) $source->parameter_config);
