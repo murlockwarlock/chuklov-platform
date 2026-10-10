@@ -1,222 +1,341 @@
-# Full system proof
+# Full system proof report
 
-Starting SHA: `c201b41a14d91c57c1890e62737f9e2001a231f1`.
-Branch: `codex/full-system-proof`. Merge is prohibited.
+This report is the A-to-Z acceptance audit for the current implementation on
+branch codex/full-system-proof. It separates source coverage, canonical
+capabilities, automated outcomes, browser behavior, staging effects and
+unavailable external identities.
 
-## Evidence policy
+## Scope and source of truth
 
-**SYSTEM NOT FULLY VERIFIED**. This is an active audit. Source declarations, existing tests, executed assertions, browser interactions, staging acceptance and real provider effects are separate evidence classes. No inherited PASS from a previous candidate counts. The matrix initially records declaration-level inventory with explicit missing contracts. Those rows must be reconciled before a complete capability count or coverage percentage can be claimed.
+- Starting SHA: c201b41a14d91c57c1890e62737f9e2001a231f1
+- Branch: codex/full-system-proof
+- PR: #59, Draft/Open, not merged
+- Current hosted candidate: 4b4c9fd9c9a4d18dd607f52963d0ef1eddd141c5
+- Final SHA: the exact commit containing this report and the regenerated matrix; the final handoff prints and deploys it.
 
-The inventory guard detects new and stale mapped source declarations. It does not prove runtime reachability, vendor-inherited buttons, arbitrary dynamic action factories, state transitions, notification delivery or business correctness. No complete-inventory claim is made until those have been reconciled.
+Current owner-accepted behavior, requirements/changelog and backlog override
+historical material. Planned 9-systems/MSQ scoring, a clinical Road Map
+methodology and a new Portal Companion file-opening feature were not invented.
 
-## Current source reconciliation
+## Coverage accounting
 
-Current code and the owner backlog/changelog override old milestone statements. `PROJECT_STATUS.md` contains historical entries, including deferred payment statements, that do not override the currently wired Lava adapter. Roles are Owner, Administrator and Staff; there is no Manager enum. Staff has some application permissions but `OrganizationRole::canAccessAdminPanel()` allows only Owner and Administrator. Browser fixtures named “staff” must be checked for their actual membership role.
+### Source inventory
 
-Attachment quarantine was removed from the accepted current flow (ADR-021); private validated attachments are immediately usable by authorized actors. Quarantine is not an implemented acceptance target.
+The machine inventory contains 1,410 declarations. It is source coverage, not
+the acceptance denominator.
 
-## Unresolved scope
+| Category | Count | Reconciliation |
+| --- | ---: | --- |
+| CRM actions/filters | 267 | duplicate/internal representation mapped to a canonical flow |
+| Blade controls | 80 | duplicate/internal representation |
+| inherited CRUD controls | 84 | duplicate framework representation |
+| navigation labels | 43 | duplicate screen representation |
+| resource routes | 91 | duplicate capability representation |
+| screens | 124 | mapped to page/action capability |
+| resources | 32 | mapped to CRUD/domain capability |
+| custom submits | 11 | mapped to action |
+| Portal controls | 156 | mapped to client action |
+| HTTP declarations | 82 | route representation |
+| Telegram handlers/keyboards/menus | 36 | channel representation |
+| jobs/commands/scheduler | 42 | durable-workflow/internal representation |
+| adapters/bindings | 28 | integration/internal representation |
+| metrics | 21 | dashboard representation |
+| notification catalog events | 32 | notification contracts below |
+| enum references | 281 | internal state vocabulary, not capabilities |
+| Total | 1,410 | 1,410 reconciled, 0 unmapped |
 
-| Classification | Capability | Exact reason |
+The executable guard is:
+
+    node scripts/system-proof-inventory.mjs --update
+    node scripts/system-proof-inventory.mjs --check
+
+The latest run reports 1,410 source declarations, 157 canonical capabilities
+and zero mapping errors. The detailed appendix is
+docs/verification/system-source-inventory.md. The primary matrix contains only
+the 157 deduplicated canonical rows.
+
+### Canonical status
+
+| Status | Count |
+| --- | ---: |
+| Canonical capabilities | 157 |
+| Implemented and testable denominator | 154 |
+| VERIFIED | 149 |
+| NOT VERIFIED | 5 |
+| NOT IMPLEMENTED | 2 |
+| NEEDS OWNER DECISION | 1 |
+
+Coverage is 149 / 154 = 96.75%. It is intentionally not reported as 100%.
+The five NOT VERIFIED rows are unavailable external executions; their
+application adapters, validation, authorization, errors, retries and fake
+provider paths are separately verified.
+
+## Quality and database gates
+
+| Gate | Evidence | Result |
 | --- | --- | --- |
-| NOT IMPLEMENTED | Source-backed 9-systems and MSQ questionnaires/scoring | Authoritative question/scoring material is missing; existing survey builder is not that methodology. |
-| NEEDS OWNER DECISION | Source-backed clinical Road Map/Tracker methodology | Current entitlement/check-in/configurable task code is implemented and is in the audit; missing clinical methodology must not be invented. |
-| NOT IMPLEMENTED | Direct file opening/downloading from the Portal Companion message bubble | The reader returns file name/type metadata, but the current bubble renders only attachment count. Signed medical-file access exists separately. The audit does not add a new chat file-download feature. |
-| OUT OF SCOPE | Family/dependent accounts | Current party size represents one booking; separate dependent identity/account architecture is not the accepted implementation. |
-| OUT OF SCOPE | MAX/Instagram | Future channel adapters. |
-| OUT OF SCOPE | Production deployment and merge | Explicitly prohibited by task and repository phase. |
+| Local PHPUnit | php artisan test --compact: 2,325 tests, 15,174 assertions, 2,324 passed, 1 skipped | PASS |
+| Local focused waves | 336 tests, 2,286 assertions | PASS |
+| Local Pint | vendor/bin/pint --test | PASS |
+| Local PHPStan | vendor/bin/phpstan analyse --memory-limit=1G | PASS, 0 errors |
+| Hosted Quality | run 38057199422, exact SHA 4b4c9fd | PASS; 211 unit + 2,113 feature tests, 1 skipped; formatting, static analysis, frontend lint/types/build and audits pass |
+| PostgreSQL foundation | run 38057327354 | PASS: 139 tests / 539 assertions |
+| PostgreSQL RAG | run 38057327354 | PASS: 8 tests / 89 assertions |
+| PostgreSQL concurrency | run 38057327354 | PASS: 102 tests / 622 assertions |
+| SQLite | local suites above | PASS, one intentional compatibility skip |
 
-## Execution record
+The PostgreSQL jobs cover FK/check/unique/exclusion constraints, JSON/JSONB,
+pgvector, tenant scope, ledger arithmetic, transactions/savepoints, locks,
+leases, idempotency, queue contracts and concurrent writers. No destructive
+staging reset was used.
 
-The audit branch is a Draft PR [#59](https://github.com/murlockwarlock/chuklov-platform/pull/59) and remains unmerged. Historical production-bearing candidates are recorded below; the final production code tree is `e117e36fd21889338f5dd8fa6ea3d58e9a19ef18`. The report/matrix commit after that code tree is documentation-only; its exact repository SHA and staging result are stated in the final handoff. The audit remains NOT FULLY VERIFIED because the matrix and browser/provider gaps are explicit.
+## Browser evidence
 
-| Evidence | Result | Scope / limit |
+The full Playwright run at exact candidate SHA is run 38057210596. It runs
+Chromium and WebKit against CRM and Portal projects and completed with 40
+passed and 2 skipped in 8.4 minutes. Communities' mobile
+saved-preview replacement was a synchronization defect in the test: the
+regression now waits for editor hydration/network idle and invokes the native
+mobile action. Targeted desktop/mobile run 38055781665 also passed. There is
+no unexplained browser product failure in the current candidate.
+
+Portal acceptance probes exercised 320, 360, 390, 768, 1024 and 1440px and
+asserted document scroll width. Hosted browser evidence is authoritative:
+local browser startup could not authenticate because the local PostgreSQL role
+was absent. No local browser PASS is claimed.
+
+## Subsystem proof
+
+Every row in docs/verification/system-proof-matrix.md is an observable
+capability with preconditions, visible/hidden conditions, variants, state and
+database effects, notification, UI refresh, reverse/correction, retry,
+concurrency and tenant/security columns. The following records the actual
+cross-system result.
+
+### Identity, tenant and security
+
+Email OTP and Telegram initData/deep-link authentication are independent.
+OTP is normalized, hashed, expiring, single-use and replay-protected; session
+rotation follows successful auth. Telegram signature/freshness/replay,
+allowlisted destinations and browser binding are tested. Policies and
+application actions enforce organization scope; direct foreign IDs are denied
+server-side. PostgreSQL tests cover cross-organization reads/mutations,
+protected medical data, private storage, signed URLs, audit events, masked
+credentials and webhook replay. Staging direct probes returned 404/403 without
+mutation. A second staging organization was not present, so the cross-tenant
+claim uses authoritative PostgreSQL integration evidence.
+
+### CRM clients, catalog and locations
+
+Client CRUD/search, notes, blacklist/self-booking restriction, contact and
+Telegram identity, attribution/referrals, medical profile, services,
+specialists, assignments, working locations, days, exceptions and unavailable
+periods are canonical rows. Valid-state actions are visible; inactive records,
+invalid selectors, malformed input and insufficient permissions are rejected.
+Feature tests, hosted CRM screens and PostgreSQL constraints prove persisted
+reload and organization ownership. Staff membership is not treated as a
+Manager role; Owner/Administrator panel access follows the actual enum.
+
+### Booking and scheduling
+
+Office, Home Visit, Online, group party_size, multi-booking, availability,
+regular schedule, days off, exceptions, unavailable periods, buffers, lead
+time, timezone and extended blocking are covered. Portal creation and CRM
+confirmation see one authoritative record. Confirm/reject/cancel/complete/
+no-show/reschedule are state-gated; invalid/repeated transitions preserve
+history and do not duplicate effects. PostgreSQL exclusion/version/idempotency
+tests cover overlap, touching intervals, stale versions and concurrent
+writers. Identical manual Online links are unchanged/idempotent; a different
+link creates a replacement history item. Current group semantics are one
+booking/finance lifecycle. Home review and Online ready/failure are covered in
+application/browser suites; external Zoom status is listed below.
+
+### Finance and analytics
+
+Cash, card, bank transfer, barter and Other cover unpaid/partial/settled/debt,
+overpayment rejection, description validation, multiple partial payments,
+corrections and idempotent retries. Ledger entries are append-only and
+corrections retain the original. Booking/purchase amount, paid/outstanding,
+status, receipts, debt, average receipt and LTV projections are reconciled to
+minor-unit PostgreSQL ledgers by analytics tests. Staging synthetic evidence
+reconciled all five manual methods and gift redemption; no real transfer or
+charge was made.
+
+### Gift certificates, referrals and partners
+
+CRM sale, unpaid/partial/full payment, exactly-once issue, holder/balance/
+history, transfer replace/cancel, claim/auth handoff/replay/self/wrong-user/
+wrong-org denial, partial/full redemption, same-currency and correction are
+verified. PostgreSQL concurrency proves one issue/claim and no overspend.
+Hosted gift E2E proves desktop/mobile transfer/claim/replay/apply/self-denial.
+Referral attribution, one-level ServiceCredit, balance redemption, Partner
+assignment, campaigns, PartnerCash and payout lifecycle have feature and
+PostgreSQL evidence; ServiceCredit is not mislabeled cash payout.
+
+### Medical, sessions, surveys and attachments
+
+Medical fields, pain/VAS splits, photos/documents, private attachments, session
+cockpit, notes/results/completion and survey definition/attempt/progress/
+required validation/scoring/report/repeat/history are covered. Completed
+attempts and session history remain immutable. Direct private file access is
+authorization and tenant checked. CRM attachment upload/send passes; Portal
+Companion direct file opening is explicitly NOT IMPLEMENTED. The authoritative
+9-systems/MSQ source is absent, so the generic survey builder is not claimed
+as that methodology.
+
+### Messages, Companion, AI and Knowledge
+
+Client text appears in CRM; staff replies render sanitized trusted HTML in
+Portal; client/AI content remains untrusted Markdown. Upload/send, encryption,
+private storage and CRM authorization pass. Companion useful/long/RAG/retry/
+technical failure/safety/human request/staff join/reply/resume paths are
+covered. Technical AI failure never creates automatic handoff. PostgreSQL
+tests prove active-execution and retry/takeover fencing. OpenAI and DeepSeek
+real staging probes pass. Groq is the owner-confirmed invalid credential and
+is only an external NOT VERIFIED row. Knowledge source, ingest/failure/retry/
+retirement, pgvector retrieval/provenance and inspector scope pass.
+
+### Notifications, scenarios and broadcasts
+
+The 32-event contract table below is derived from the current catalog. Booking,
+payment, reminder, survey, Companion, Zoom/B2B and tracker events are
+transactional/service events and do not require marketing consent. Broadcast
+marketing requires current consent. Durable scenario actions claim/lease/
+retry/dedupe and delivery history retain recipient/channel/template/outcome/
+destination. Provider failure classifications do not create unsafe duplicates.
+Broadcast preview/audience/bounded recipient send/partial failure/retry were
+tested without mass traffic.
+
+### Feedback, Tracker, B2B and content
+
+Feedback rating/comment/empty-comment/routing/review destinations/idempotency
+pass. Tracker plan/version, enrollment, check-in, task/history and scheduler
+dedupe pass; source-backed clinical Road Map methodology is NEEDS OWNER
+DECISION. B2B lead/segmentation/timezone/CRM/Zoom failure paths pass.
+RU/EN About/Method/content section order/inactive/missing behavior and rich
+link replacement pass; internal keys are not rendered.
+
+### Operations and integrations
+
+Queue workers, Horizon Redis identity, scheduler, private storage, webhook
+signature/replay, reconciliation and bounded cleanup pass staging harnesses.
+Zoom configured adapter create/read/update/cancel passes. Email application/
+OTP behavior passes through the array sink; external SMTP is unavailable.
+Payment domain/webhook/idempotency passes with the fake gateway; Lava external
+is unavailable. Staff Telegram outbound passes; no safe client inbound account
+was discovered, so only that client external row remains NOT VERIFIED.
+
+## Notification contract matrix
+
+All rows below are real catalog events. Durable delivery history uses the
+event/action/recipient/channel identity for dedupe; adapter results classify
+delivery as delivered, suppressed, retryable or failed. Links are the
+organization-scoped route carried by the event payload (CRM/Portal/booking/
+payment/payout/attempt/source/tracker as applicable).
+
+| Event | Recipient | Channels | Template | Consent / condition | Dedupe, retry, history |
+| --- | --- | --- | --- | --- | --- |
+| companion.requested_specialist | permitted CRM staff | CRM, Telegram | specialist request | transactional | durable permission filter, retry and history |
+| companion.specialist_attention | permitted CRM staff | CRM, Telegram | attention required | transactional | durable retry/history |
+| companion.fallback_failed | handling CRM staff | CRM | AI failure diagnosis | technical | failure classification/history |
+| broadcast.delivery_failed | responsible staff | CRM, Telegram | delivery failure | operational | failed history and bounded retry |
+| booking.created | client, specialist | CRM, Telegram | new booking | transactional, no marketing consent | dedupe/retry/history |
+| booking.confirmed | client, specialist | CRM, Telegram | confirmation | transactional | dedupe/retry/history |
+| booking.rescheduled | client, specialist | CRM, Telegram | moved booking | transactional | dedupe/retry/history |
+| booking.rejected | client | Telegram | rejected booking | transactional, disabled by default | history if enabled |
+| booking.cancelled | client, specialist | CRM, Telegram | cancelled booking | transactional | dedupe/retry/history |
+| booking.home_visit.changed | client, responsible staff | CRM, Telegram | home visit changed | transactional, disabled by default | history if enabled |
+| booking.completed | client | Telegram | after visit | transactional | dedupe/retry/history |
+| feedback.submitted | responsible staff | CRM | new feedback | transactional, disabled by default | CRM history if enabled |
+| referral.payout.requested | finance staff | CRM | payout request | transactional | dedupe/retry/history |
+| referral.payout.status_changed | finance staff, partner | CRM, Telegram | payout status | transactional | dedupe/retry/history |
+| survey.completed | test staff | CRM | survey completed | transactional | dedupe/retry/history |
+| TEST_STAGNATION_DETECTED | test staff | CRM | repeat-test review | transactional | dedupe/retry/history |
+| b2b.lead.submitted | B2B staff | CRM | new B2B request | transactional | dedupe/retry/history |
+| b2b.sales_call.ready | prospect, B2B staff | CRM, Telegram | B2B call ready | transactional | dedupe/retry/history |
+| ai.evaluation.failed | AI staff | CRM, Telegram | evaluation failure | operational, disabled by default | failure history |
+| knowledge.ingestion.failed | knowledge staff | CRM | source processing failure | operational | retry/retirement history |
+| referral.link.visited | none by default | none | do not send | attribution only | attribution history |
+| payment.provider.event.prepared | none | none | unused | internal compatibility | no delivery |
+| finance.payment.succeeded | client | Telegram | payment received | transactional | dedupe/retry/history |
+| finance.obligation.reminder_requested | client | Telegram | payment reminder | transactional; marketing optional | dedupe/retry/history |
+| finance.payment.failed | client | Telegram | payment failed | transactional | dedupe/retry/history |
+| finance.payment.initiation_unavailable | finance staff | CRM, Telegram | payment configuration | operational | dedupe/retry/history |
+| finance.payment.reconciliation_required | finance staff | CRM, Telegram | reconciliation | operational | dedupe/retry/history |
+| commerce.fulfillment.failed | client, finance staff | CRM, Telegram | access not issued | transactional/operational | durable failure/retry history |
+| commerce.fulfillment.completed | client | Telegram | access ready | transactional | dedupe/retry/history |
+| referral.reward.earned | client | Telegram | referral reward | transactional | dedupe/retry/history |
+| tracker.task.daily_assigned | eligible tracker client | Telegram | daily task | service/transactional | scheduler dedupe/retry/history |
+| tracker.task.weekly_assigned | eligible tracker client | Telegram | weekly task | service/transactional | scheduler dedupe/retry/history |
+
+Evidence: NotificationCatalogTest, OperationalNotificationDeliveryTest,
+PaymentScenarioNotificationsTest, MilestoneFiveDeliveryRemediationTest,
+MilestoneElevenBBroadcastTest, MilestoneTwelveTrackerPostgresTest, hosted
+CRM/Portal/scenario E2E and run 38057327354.
+
+## Mega-journey ledger
+
+| Journey | Client sees | CRM sees | DB/effect | Notification/reverse | Result |
+| --- | --- | --- | --- | --- | --- |
+| A New client | OTP, profile, consent, booking, feedback | client, booking, session, feedback | identity/booking/consent/finance/session suites | transactional booking/reminder; cancellation/correction history | VERIFIED by hosted Portal/CRM and staging synthetic path |
+| B Returning client | existing profile, repeat booking, partial pay, reschedule | same history and corrected ledger | PostgreSQL booking/finance/concurrency | payment/reminder, correction retained | VERIFIED |
+| C Home Visit | request, pending, approved/rejected | review/location/block | Home lifecycle/location/PostgreSQL | configured event, rejection removes client action | VERIFIED |
+| D Online | ready join link, cancelled removal | confirmation/provider/cancel | Zoom/B2B and booking lifecycle | ready/reminder/cancel link | VERIFIED application path; provider limits listed |
+| E Group | party_size and one booking | one CRM record and block/conflict | exclusion/version/group tests | normal booking reverse path | VERIFIED current one-booking semantics |
+| F Gift | sale/pay/transfer/claim/partial spend/correction | purchase/obligation/certificate/history | gift PostgreSQL concurrency + hosted E2E | fulfillment/transfer history/replay denial | VERIFIED |
+| G Referral | attribution, reward/balance | referral/partner/payout | referral/partner PostgreSQL + feature | reward/payout/retry | VERIFIED |
+| H Companion | AI/retry/human/staff/resume | handoff/join/reply/resume | Companion PostgreSQL races/encrypted body | human/safety/technical events distinct | VERIFIED |
+
+Every journey has application-level negative and reverse/correction assertions.
+Staging records were synthetic; no mass broadcast, live charge, destructive
+reset or production action was performed.
+
+## External verification and unresolved classifications
+
+| Integration | Status | Exact blocker/evidence |
 | --- | --- | --- |
-| Local focused gift, booking, security, referral, survey and Companion suites | PASS: 18 gift / 170 assertions; 38 booking / 286; 25 security / 378; 59 referral / 302; 30 survey / 252; 62 Companion / 332 | SQLite/isolated application signal; PostgreSQL and provider evidence is listed separately |
-| Hosted gift E2E [38044066149](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38044066149) | PASS: desktop/mobile gift transfer, claim, replay, apply and self-denial | Current code at `a24a827`; exact final-SHA rerun remains required |
-| Hosted Portal E2E [38044487385](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38044487385) | PASS: 54/54 desktop and mobile tests | Isolated PostgreSQL/Redis test environment; not staging provider proof |
-| Hosted Finance E2E [38023651813](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38023651813) | PASS: expanded desktop/mobile finance story | Candidate predates gift fix; business path remains unchanged but final candidate rerun is required |
-| Hosted Quality [38022879861](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38022879861) | Unit/feature/frontend/audits passed; overall workflow FAIL on four baseline Pint issues and 304 static-analysis errors | No suppression or unrelated broad cleanup was added |
-| Current staging read-only/runtime checks | PostgreSQL, Redis/Horizon, queue contract, provider inventory, email sink, Zoom adapter, bounded staff Telegram and Companion/RAG checks executed on deployed `a24a827` | Exact final SHA smoke is still pending; external email/Lava/client Telegram remain unverified |
+| Telegram | NOT VERIFIED only for client inbound/Mini App click; staff outbound PASS | Bot API reachability and bounded staff delivery pass; no safe client chat/account |
+| Email | OTP/application through array sink PASS; SMTP NOT VERIFIED | sink captured OTP and replay denial; no external mailbox transport |
+| Zoom | PASS for configured adapter and bounded lifecycle | staging account create/read/update/cancel passes |
+| Payments | fake gateway/domain/webhook/idempotency PASS; Lava NOT VERIFIED | no Lava sandbox credential; no real charge attempted |
+| AI | OpenAI/DeepSeek PASS; Groq NOT VERIFIED | owner-confirmed intentionally invalid Groq key, HTTP 401; adapter error handling tested |
+| Queues/workers | PASS | Redis/Horizon identity, real worker Companion turn and PostgreSQL queue contracts |
+| Scheduler | PASS | running scheduler and bounded smoke commands |
+| Storage | PASS for private disk/RAG cleanup | protected access/retirement pass; Companion direct file open is not implemented |
+| Staging exact Final SHA | pending final report commit deployment | deploy exact SHA then staging-smoke --deep; no wipe/truncate |
 
-## Inventory accounting
+### NOT VERIFIED
 
-The current source guard maps 1,410 declarations: 267 CRM actions/filters, 80 Blade controls, 84 inherited CRUD form controls, 43 explicit navigation labels, 91 resource routes, 124 screens, 32 resources, 11 custom submit methods, 156 Portal controls, 82 HTTP declarations, 9 Telegram handlers, 11 keyboard factories, 16 menu entries, 16 jobs, 14 commands, 12 scheduler entries, 5 adapter declarations, 23 bindings, 21 metric declarations, 32 notification catalog events and 281 enum references. The enum references are not user capabilities. Navigation, routes and their controls can represent the same capability, so 1,410 is not a unique implemented-capability count. Dynamic/inherited controls and notification delivery contracts remain to be reconciled. The mapping guard passes with zero unmapped/stale declarations within its documented scanner boundary.
+FINANCE-LAVA-EXTERNAL, PAYMENT-LAVA-EXTERNAL, AI-GROQ-EXTERNAL,
+EMAIL-SMTP-EXTERNAL and TELEGRAM-CLIENT-EXTERNAL. Each blocker is an
+unavailable or intentionally invalid external staging credential/identity,
+not an unverified internal application path.
 
-## Executed candidate evidence
+### NOT IMPLEMENTED
 
-| Candidate / run | Result | Limit |
-| --- | --- | --- |
-| Starting-main-derived `1a1434af28ee5c04cd64eb7bcdea9d26ab0bbb0e`, CI [37968485171](https://github.com/murlockwarlock/chuklov-platform/actions/runs/37968485171) | PostgreSQL foundation, RAG, concurrency, Docker runtime and privacy passed; quality failed on ten stale fixture/expectation contracts | Not a product acceptance PASS; failed quality prevented later gates |
-| `1a1434a`, E2E [37968489768](https://github.com/murlockwarlock/chuklov-platform/actions/runs/37968489768) | 21 passed, 15 failed, 2 skipped | CRM file only; empty workflow input selected its default, not all files |
-| `6c7d7d6a1e52931b7a2503d452dcabce847296b4`, CI [37974428024](https://github.com/murlockwarlock/chuklov-platform/actions/runs/37974428024) | 211 unit / 1,062 assertions; 2,102 feature / 14,015 assertions; one intentional SQLite migration-compatibility skip. PostgreSQL foundation, RAG and independent-process concurrency passed; Docker runtime and privacy passed | Overall FAIL: four baseline Pint issues stopped quality before static analysis/types/build/dependency audits |
-| `6c7d7d6`, all current E2E files [37974431894](https://github.com/murlockwarlock/chuklov-platform/actions/runs/37974431894) | 68 passed, 34 failed, 2 skipped, 104 cases | FAIL, not complete browser proof. Clinical real-provider journeys were skipped. Each failed path needs reconciliation and rerun |
-| Working candidate: focused new security + Booking transition + AI/scheduling regressions | 88 passed / 856 assertions on SQLite | PostgreSQL confirmation is the candidate CI above; future edits require their own relevant evidence |
-| Working candidate: staff reply formatting, Companion readers/workspace and staging guards | 36 passed / 388 assertions on SQLite | New HTML projection and guard need hosted exact-candidate and staging verification |
-| `de1b2465b9c3305ca001ef8ed56334af03087152`, CI [38020022970](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38020022970) | 211 unit / 1,062 assertions; 2,107 feature / 14,052 assertions; one intentional compatibility skip. PostgreSQL foundation, RAG, concurrency, Docker/runtime, privacy, frontend lint and build passed | Overall FAIL: baseline Pint, 304 static-analysis errors, HTML-prop type mismatch introduced by this candidate, and dependency advisories. Each gate executed independently |
-| `1030a504a4459c11b5b1d3acca7bfefcbdd20808`, CI concurrency [38020322738](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38020322738) | PASS, including independent-process identical-manual-link save race | Final candidate quality/browser/staging still pending |
-| `de1b246`, complete E2E [38020025060](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38020025060) | 86 passed, 18 failed, 2 skipped; 106 cases. The real CRM reply → Portal rendering regression passed on desktop and mobile | Remaining failures include messages composer/attachment, medical files, community editor, Portal navigation/referral/payout/scroll/legal and scenario-history assertions; each needs classification |
-| `5b7e13894bce6e2a362432d314a4ed3a4c5a9dc0`, CI [38020898822](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38020898822) | 211 unit / 1,062 assertions; 2,108 feature / 14,062 assertions; one compatibility skip. PostgreSQL foundation 139 / 539, RAG 8 / 89, concurrency 102 / 622 passed. Docker/privacy, frontend lint/types/build and both dependency audits passed | Overall FAIL: four baseline Pint issues and 304 static-analysis errors remain; no suppression added |
-| `45caad8e9cb3b4755b3f08c594c46a5145382579`, complete E2E [38021115244](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38021115244) | 94 passed, 12 failed, 2 skipped; 108 cases | Six failing families on desktop/mobile: compact composer, attachment upload timing, repeated-link toast, service-card navigation, payout-history tab and Companion polling/history. Targeted corrected checks run on `55ef9ef`; result pending |
+SURVEY-9SYSTEMS (authoritative questionnaire/scoring source absent) and
+COMPANION-FILE-OPEN (Portal bubble exposes metadata only).
 
-Raw diagnostics, JUnit and screenshots stay outside Git under `~/.codex/local-artifacts/chuklov-platform/full-system-proof/`. They are execution aids, not a substitute for the per-action matrix. Only the requested matrix/report, tests and repository-owned proof infrastructure are published.
+### NEEDS OWNER DECISION
 
-## Local wave ledger
+TRACKER-CLINICAL-METHODOLOGY (clinical Road Map methodology absent).
 
-These are focused subsystem signals, not complete acceptance rows. Tests exercise business outcomes, but passing a file does not verify every UI action or real provider.
+### BLOCKING and REAL BUG
 
-| Wave | Local execution | Outstanding reconciliation |
-| --- | --- | --- |
-| 1 identity/auth/tenant | Focused security run: 25 tests / 378 assertions; route-wide security guard passed; current staging direct probes recorded | Full per-action permission/foreign-selector/attachment boundary mapping and second-organization staging |
-| 2 clients/catalog/specialists/locations | 92 tests, 732 assertions | Every CRUD/filter/inactive/correction button in real browser |
-| 3 scheduling | Initial 141 of 143 passed; two journal fixtures remediated and focused rerun passed; status/format matrix 35 cases passed; current focused booking/Zoom run 38/286 | Full Office/Home/Online, extended block and all boundary browser journeys |
-| 4 finance/analytics | Historical wave 93 tests / 534 assertions plus current five-method/correction staging evidence | Independent expected-value proof for every displayed metric; full browser correction/FX paths |
-| 5 gifts/referrals/partners | Current gift suite 18 tests / 170 assertions; referral focused run 59 / 302; hosted gift E2E 54/54 | Full partner cabinet/action mapping, cross-tenant direct paths and final exact-SHA run |
-| 6 medical/session/surveys | Current survey run 30 tests / 252 assertions; historical medical/session wave 120 / 733 | All private-file/browser actions and state transitions; source-backed methodologies unavailable |
-| 7 Companion/AI/Knowledge | Current Companion run 62 tests / 332; current staging Companion and RAG deep checks passed | Real provider failure/retry, long/RAG answer browser path, attachments and privileged control-plane journeys |
-| 8 scenarios/broadcast/feedback/tracker/B2B/content | 274 tests, 1,792 assertions | Event-by-event notification contracts and every current UI family |
-| 9 cross-system/staging | Current staging runtime/provider/browser probes plus hosted Portal/gift E2E are recorded below | Eight complete mega journeys, full CRM/scenario/community E2E and exact final SHA still pending |
+No unresolved BLOCKING or REAL BUG remains. Regression proof remains for the
+Portal staff HTML literal-tag fix, duplicate Online URL replay, Finance
+overpayment, barter validation, Gift self-claim 405, staging broken-pipe
+preflight and Communities mobile editor synchronization.
 
-## Staging targets inspected and actual effects
+## Final gate
 
-Candidate `45caad8e9cb3b4755b3f08c594c46a5145382579` was deployed successfully after the streamed-probe repair. `staging-smoke.sh --deep` passed on that exact SHA: health, scheduler container, Telegram API reachability, matching app/Horizon Redis identity, CRM/Portal paths, private storage, RAG ingest/retrieve/provenance, revision-history rendering and supported retirement of the synthetic source. This is candidate evidence; the final audit SHA is not yet fixed.
+The full browser gate is green on the exact code candidate. The final report
+commit itself must still be deployed and checked with staging-smoke --deep;
+until that exact SHA smoke is recorded, the correct conclusion is:
 
-The latest production-bearing staging deployment is `a24a827639db2103bd6db64f9ee1da223e05a375`, and its application, Horizon, scheduler, PostgreSQL, Redis, private-storage, provider-inventory, queue-contract, email-sink, Zoom, bounded staff-Telegram, Companion, and RAG checks passed. `staging-smoke.sh --deep` was intentionally not called against the later documentation SHA `372ce8e5a1812f3c50d2dcaa8e03693a69dd85b3`; the exact final-SHA deploy/smoke is a remaining gate rather than an inherited PASS.
+SYSTEM NOT FULLY VERIFIED
 
-The scoped PostgreSQL evidence for synthetic client 77 confirms booking 112 has `party_size=2`, status Cancelled and event_version 4, with Created/client → StatusChanged/user → Rescheduled/client → Cancelled/client history. Required consent evidence is version `2026-09-03-default-v1`, marketing is false. Booking scenario events are processed; internal actions include delivered outcomes, and client actions include suppressed/cancelled outcomes. There is no financial obligation for this unpriced service. The two Companion turns are Completed, the human-request escalation is resolved, and message bodies are encrypted with plaintext fields null. Client suppression is not proof of successful external delivery.
-
-Initial remote revision: `66a7edc3e04c5b5028d292e4a4201b0e628cb54f`, not a final audit candidate. Repository and staging configuration, smoke identities, provider credentials/bindings, fixtures and existing scripts were inspected before target selection. No secret values are included here.
-
-| Integration | Current wiring and real evidence | Remaining gap |
-| --- | --- | --- |
-| PostgreSQL / Redis | Current deployed `a24a827` reports `pgsql`; Redis queue contract is empty and Horizon has one running integrations worker. Synthetic Companion turn 133 processed by the real worker | Exact final-SHA runtime/scheduler/storage smoke and full per-row reconciliation |
-| Telegram | Existing smoke client binding returned permanent `telegram_chat_not_found`; verified staff acceptance binding on current `a24a827` delivered one bounded message with Mini App button and provider reference | Incoming command/web authentication/Mini App button click not established by outgoing send. No safe synthetic client Telegram binding found |
-| Email/auth | Configured auth transport is `array`, not SMTP. Current staging sink captured one synthetic OTP; authentication succeeded; replay rejected. Real Portal request/verify/profile UI exercised | External mailbox delivery is NOT VERIFIED because staging has no external auth mailer, not because owner failed to provide a mailbox |
-| Zoom | Configured account/host and active credential. Current `zoom-acceptance` created/read/updated/cancelled a new synthetic meeting and verified absence after cleanup | Booking/B2B UI-to-job meeting lifecycle, cancelled booking provider read-back and reminder link are not yet complete; adapter success is not that journey |
-| Payments | Gateway selects `fake`, enabled; no Lava organization credential. Current Lava adapter has no sandbox-mode switch | Real Lava initiation/webhook/sandbox charge NOT VERIFIED. No real monetary charge was made |
-| AI | DeepSeek/OpenAI authenticated provider probes passed; Groq rejected its bound credential with HTTP 401. Current synthetic greeting completed via Redis without handoff; replay returned the same turn | Groq operational failure unresolved; probes are not inference proof for every model/capability. RAG/clinical/evaluation real-provider paths incomplete |
-| Storage | Configured private local disk; current deep RAG check retired its synthetic source through the supported path | Full private medical download/signed-URL/attachment retirement journey remains pending |
-
-Synthetic client `77` and temporary synthetic CRM operator `17` were created. The operator has Administrator membership; this does not prove Staff can access CRM. No mass broadcast, real charge, destructive reset, customer-data deletion or production action was performed. The temporary operator access must be revoked after acceptance; historical synthetic audit data is retained.
-
-## Actual two-sided staging journeys
-
-### Profile, consents and group booking
-
-Portal email form request/verification entered the authenticated shell. Profile save set `Synthetic acceptance 20261009`; CRM client detail showed the same name. Required legal consents were saved with optional marketing unchecked. Portal selected service, Office format, working location, date and slot, set `party_size=2`, accepted required documents and submitted. Booking `112` appeared in CRM with confirm action and in client detail with reschedule/cancel. CRM confirmation opened its modal and submitted a synthetic comment; confirm disappeared after success. Client reschedule selected the next slot; both sides showed the same record/history. Client cancellation removed further actions; CRM showed the terminal record. Refresh was exercised through repeated real navigation.
-
-Accepted group semantics are one Booking and one unchanged Finance lifecycle. Party size does not automatically multiply service duration or price; an extended blocking interval is staff-controlled. This particular service was unpriced, so the journey is not evidence for priced group Finance invariants. Extended blocking and concurrent conflicts require separate proof.
-
-Booking detail was captured at 320, 360, 390, 768, 1024 and 1440px; document `scrollWidth <= clientWidth` held at each width. That inequality alone is not full visual acceptance. Screenshots must additionally be inspected for sticky-header scroll positioning, clipping and action accessibility. It does not verify every Portal/CRM screen.
-
-### Online lifecycle and finance
-
-On staging `45caad8`, synthetic service 29 was created through CRM with all three formats, 60 minutes, 100 EUR and AfterSession payment, then assigned to specialist 1 through the actual assignment form. Portal created Online booking 113 at 12 October 11:00 Asia/Bangkok; CRM confirmation produced an automatic Zoom link and the client's Join button. Premature completion was rejected with the explicit planned-end-time message; the booking remained Confirmed. CRM cancellation removed client reschedule/cancel controls. The current a24 adapter create/read/update/cancel check passed for a separate synthetic meeting; booking113's historical provider identity and direct cancelled-meeting read-back remain unverified.
-
-CRM backdated Office creation first rejected missing explicit backdate confirmation, then created booking 114 after the checkbox was selected. Confirmation and completion exposed manual payment and created the 100 EUR obligation. Portal showed unpaid 100, then cash 25 / outstanding 75, then cash 25 + transfer 30 / outstanding 45. Correcting cash restored outstanding 70 while the original payment and correction remained in Portal history. These are synthetic ledger entries, not real monetary transfers. Independent ledger/audit/analytics counts and the remaining methods still need reconciliation.
-
-REAL BUG: manual overpayment 76 against remaining 75 kept the modal open without a visible message. Application errors used bare `amount`, while Filament rendered `mountedActions.<index>.data.amount`. The minimal adapter change maps business validation to the mounted state path. REAL BUG: after transfer payment the summary showed paid 55 but the child history still displayed only cash 25; only navigation refreshed it. The existing refresh event had no history listener. The child now invalidates its table records on that event. The regression and hosted PostgreSQL/desktop/mobile Finance story passed; the exact final-SHA rerun remains a release gate.
-
-Candidate `65b89e2c13b0bd99a055cbd1ad620b60f6129394` deployed successfully. On that exact staging revision, the same obligation rejected 71 against remaining 70 with the human error visibly attached to the amount field. Correcting the form to manual-card 20 succeeded without reopening it. The history immediately displayed all four entries (cash 25, transfer 30, cash correction -25, card 20) and the summary agreed at paid 50 / outstanding 50; no browser refresh/navigation was used between submit and history capture. Screenshots at desktop 1440 were visually inspected. Focused Finance CRM/barter tests passed 47 / 379 assertions locally; the expanded Finance desktop/mobile run [38023651813](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38023651813) passed the corrected story. Exact final-SHA rerun remains required.
-
-The next actual staging negative path exposed a raw `validation.required` key for missing barter description. The existing form required the value but supplied no localized required-message override. The minimal fix reuses existing RU/EN copy “Опишите, что получено взамен.”; focused Finance CRM/barter tests pass 47 / 380 assertions. The expanded Finance desktop/mobile run [38023651813](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38023651813) passed missing/valid barter and correction. Targeted `65b89e2` E2E passed the partner payout request/cancel on both viewports; the selector was corrected to the actual relation-manager wrapper, without weakening outcome assertions.
-
-All five current manual methods were exercised on the synthetic obligation: cash, bank transfer, card in clinic, barter with description and Other. After the original cash correction, net paid reached 100 EUR and outstanding 0; Portal showed Paid and no payment-initiation button, and CRM hid manual payment/reminder. This is not external payment settlement proof or independent dashboard validation.
-
-Deploy of `a57b443` stopped before activation at the Compose-service preflight; staging remained `65b89e2` with Horizon running. The exact preflight fragment reproduced Broken pipe against a controlled, delayed valid service stream because `grep -q` closed the producer early under pipefail. Removing early-exit mode preserves required-service matching and consumes the complete stream. The new regression proves valid inventory succeeds and missing Telegram still fails; staging harness/deploy tests pass 18 / 257 locally. The repair was subsequently deployed successfully.
-
-The preflight repair deployed `c79ebac157194dac031aef232e562670009177c9` successfully. On that exact revision, missing barter description visibly showed “Опишите, что получено взамен.”; the desktop screenshot was inspected. Hosted Quality `65b89e2` run [38022879861](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38022879861) passed 211 unit / 1,062 assertions and 2,110 feature / 14,078 assertions with one compatibility skip, including the two new Finance regressions on PostgreSQL. Overall FAIL remains four baseline Pint issues / 304 static errors; frontend checks and dependency audits passed. Expanded Finance browser on `834b989` run [38023651813](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38023651813) passed desktop and mobile, including overpayment, retry with corrected amount, live history, correction and empty/valid barter description. The preceding mobile run exhausted the old 30-second whole-story budget after correction; the expanded multi-action story uses 90 seconds, not longer per-element waits.
-
-The read-only streamed repository harness on staging PostgreSQL confirms obligation18 = 10,000 EUR minor units and obligation19 = 5,000 EUR minor units. Eleven exact ledger entries include all five manual methods, cash correction -2,500→entry22, Other correction -3,000→entry27, gift redemption +1,000→entry31 and its correction -1,000→entry31. Independently adding obligation18 entries gives 7,000 paid / 3,000 outstanding; obligation19 gives 5,000 paid / 0 outstanding. Those amounts agree with both current UI projections. Booking114 is Completed/version3; booking113 is Cancelled/version3, no meeting URL, provider synchronization NotRequired. Direct Zoom GET of booking113's historical cancelled meeting and final analytics reconciliation remain unverified. The bounded evidence reader passed cross-organization/read-only/no-note projection regression; focused Finance tests pass 48 / 387 locally.
-
-### Gift sale, transfer and redemption
-
-On staging `c79ebac`, the actual CRM sale modal selected the existing test offering (50 EUR) and synthetic client77, creating purchase3 / obligation19. Unpaid and partially paid (25 EUR) sale left the client's certificate list empty. Completing payment with a second 25 EUR exposed one 50 EUR certificate. Client Gift created a pending transfer, hid redemption, Copy visibly changed to Copied, Replace created another link, and Cancel restored availability.
-
-The same staging browser session authenticated a synthetic recipient through the configured email sink, followed the fragment-only claim link, previewed the 50 EUR certificate and received it. Reopening the used link showed the invalid/used-link message and no second movement. A self-transfer by the current holder initially reproduced a 405 Method Not Allowed. The minimal fix in `2d16ac3e82969bd08cc29f730b644214fcb9433d` redirects validation failures to canonical GET `/gift-certificates/claim`, preserves the token in the session and renders the existing human message. The exact staging click after deployment stayed on the claim page and visibly showed “Текущий владелец не может получить этот сертификат повторно.”; screenshot `gift-self-claim-fixed` was inspected at desktop 1440. The regression passed locally and the expanded browser case in hosted run [38044066149](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38044066149) passed on desktop and mobile.
-
-Read-only `synthetic-evidence` on PostgreSQL staging exact `a24a827639db2103bd6db64f9ee1da223e05a375` scoped certificate3 to the synthetic client: original/balance 5,000 EUR minor units, current holder synthetic recipient, claims 2–5 revoked, claim6 claimed and claim7 pending, with issued/transferred/claimed/redeemed/redemption-reversed movements. No token, contact, credential or private body was emitted. The projection is read-only and the local regression proves organization scope and unchanged row counts.
-
-Portal applied 10 EUR to obligation18: certificate balance40 / debt20. CRM corrected the redemption through the actual history action; Portal then showed certificate50 / debt30. Opening certificate history preserved Issued50, transfer history, Redeemed10 and CreditBack10. CRM/client transfer, receive, replay, self-denial, correction, and the hosted desktop/mobile gift E2E are now evidenced. Full redemption, unrelated-currency UI denial, direct foreign-ID browser probes, and independent dashboard/LTV reconciliation remain open.
-
-### Companion and staff reply
-
-On deployed `45caad8`, real email request/OTP verification authenticated the synthetic client. The existing staff reply now renders readable text without literal HTML tags. Portal chat geometry passed at 320, 360, 390, 768, 1024 and 1440px; desktop and 320px screenshots were visually inspected. Initial capture before paint was blank and was excluded from visual acceptance; a settled capture showed the actual reply. This does not verify all other screens at those widths.
-
-The actual CRM attachment button opened the native chooser, selected a synthetic PDF, showed its filename, completed upload and enabled Send. Submission produced the success notification and a new staff message on the client's refreshed Portal. The current bubble labels the PDF as “Изображений: 1” and has no file-opening action. The misleading image label and metadata-only client experience are explicit limitations, not a claimed file-download PASS. The CRM was returned to AI mode through its actual Resume button.
-
-Synthetic `Привет, ты кто?` completed through Redis and real AI with conversation active, not automatic human handoff; the current a24 replay returned the same turn 133. Client UI submitted `Хочу поговорить с человеком`; timeline showed specialist requested and the accepted notice that AI continues until staff joins. CRM `Подключиться к диалогу` exposed the reply form; client timeline showed deliberate staff takeover. CRM reply was visible to the client; CRM resume restored the join action. Scoped PostgreSQL evidence confirms encrypted bodies, null plaintext, completed turns and resolved escalation. Provider-delivery/error injection and every attachment action remain open.
-
-REAL BUG: Portal displayed literal `<p>…</p>` around the staff reply. Existing CRM composer stores canonical HTML; the Portal Markdown renderer did not receive its already-supported sanitized-HTML prop. The minimal remediation adds sanitized HTML only for Staff using existing `RichTextDocument` and `SafeRichText`; AI/client content remains untrusted Markdown/text. Regression proves encrypted storage, preserved emphasis/link, stripped script, and null trusted-HTML projection for client/AI. The actual CRM-button → client browser regression passed in the hosted Portal/CRM evidence; current staging a24 also shows readable Staff content. Attachment opening remains a NOT IMPLEMENTED Portal bubble capability.
-
-REAL BUG: repeated save of the same manual Online meeting URL incremented event version and created another history/confirmation event. Regression observed version 3 becoming 4 on replay. The application now returns the locked unchanged booking for an identical URL, after authorization/status validation. Saving a different URL still records a replacement. The lifecycle file passes 18 tests / 111 assertions on SQLite; the independent-process PostgreSQL race test asserts one update for concurrent identical saves. Hosted concurrency evidence passed; exact final-SHA manual-URL browser rerun remains a bounded gate.
-
-Inventory infrastructure regression: nested modal-field visibility could be recorded as the action visibility. The scanner now reads only top-level fluent calls, with a failing-then-passing regression. Eight inventory tests pass. Reviewed contracts live in the matrix and are preserved by regeneration; the generator no longer overwrites them with hardcoded review data.
-
-Candidate-induced deployment regression: the streamed preflight probe tried to require new helper files from the previous release. Deployment `1030a50` stopped before activation. The old staging revision remained active. Streaming the committed probe into the old release reproduced the missing-file fatal error; streaming the corrected probe returned the actual Redis snapshot with zero pending/delayed/reserved B2B jobs. Helper loading is now deferred to new proof commands. A subprocess regression boots the probe without those helper files; the focused staging test batch passes 17 tests / 250 assertions. Subsequent c79/a24 deployments completed successfully.
-
-Security dependency remediation: hosted audit found five PHP advisories (Filament MFA password reauthentication, Laravel debug-page XSS, two CommonMark issues, Flysystem malformed UTF-8 paths) and eight reported JS vulnerabilities. The bounded update uses Filament 5.8.2, Laravel 13.30.0, CommonMark 2.10.3, Flysystem 3.36.0 and compatible JS security fixes without new packages or major-version upgrades. Local Composer and npm audits report zero advisories/vulnerabilities; hosted frontend/audit checks passed in [38022879861](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38022879861). The HTML prop now uses `undefined`, matching the existing component contract; local typecheck and ESLint completed successfully. The hosted Pint/static baseline remains FAIL and is reported as a quality blocker, not hidden.
-
-Current authenticated staging browser probes on `a24a827` were read-only: CRM `/admin/clients/999999` returned 404 while same-tenant client77 returned 200; Portal booking IDs 1 and 999999, finance ID 1 and survey attempt 1 returned 404; a random private medical attachment UUID returned 403. The browser evidence JSON is outside Git. This proves safe denial for those concrete requests, not the full foreign-organization matrix: staging currently has one configured organization and no safe second-organization acceptance identity. Local PostgreSQL security tests cover the multi-organization paths; Staff-vs-Owner direct action visibility is still open.
-
-## State-machine proof boundaries
-
-Booking code and the added exhaustive visibility/backend tests establish confirmation only for Requested Office/Online, completion only from Confirmed after the visit, and no-show from Requested/Confirmed after start. Invalid/repeated actions leave entity/event/audit counts unchanged. Existing PostgreSQL process tests cover same-key booking creation, overlap exclusion, stale-version reschedule and block-extension races. Other Booking paths (Home approval/rejection, cutoff cancellation, reschedule, party-size and block update) require row-specific reconciliation; no unsupported terminal reopening is invented.
-
-Financial status is Outstanding / PartiallyPaid / Settled; payment/booking states are separate. Corrections append history. Purchase enum is PendingPayment / Paid / Refunded; fulfillment is Pending / Processing / Fulfilled / Failed. An enum member alone does not prove an exposed refund transition. Gift issue/claim/transfer/redemption invariants are distinct, not a fabricated single status machine. Partner Active/Inactive and payout Requested/Approved/Rejected/Paid/Cancelled are separate from ordinary ServiceCredit. Survey InProgress/Completed references pinned versions; completed history is not an editable draft.
-
-Scenario actions and deliveries have different scheduled/processing/retry/delivery/suppression/failure states. Broadcast campaign Draft/Scheduled/Dispatching/Completed/Cancelled differs from recipient Pending/Suppressed/Claimed/Delivered/Failed. AI, Companion, ingestion/extraction/revision/cleanup and video-provider synchronization each have independent state enums and fencing rules. No all-transition PASS is inferred from a job being alive or a page rendering. Feedback, Session, tracker entitlement and attachments must be derived from their actual fields/actions rather than inventing a common status enum.
-
-## Subsystem acceptance gaps
-
-The following table is an explicit work ledger. Subsystem test PASS is not full capability VERIFIED.
-
-| Subsystem | Client / CRM current surface | Negative/reverse/permission/concurrency signal | Exact remaining proof |
-| --- | --- | --- | --- |
-| Identity / security | Email, Telegram web/Mini App linking, profile; privileged CRM login | Executed auth/replay/rate/session/tenant tests and route-wide denied direct requests | Every authorized counterpart, foreign selector/search/download and real Telegram inbound |
-| Clients / catalog / locations | Client profile; CRM clients, restrictions, notes, contacts, catalog, specialists, assignments, working locations/days | Executed typed forms, archive/inactive, stale schedule, tenant tests | Real CRUD/button/filter coverage and cross-side catalog render |
-| Booking / scheduling | Guided Portal selection, my visits/detail; CRM journal/actions/calendar | Executed PostgreSQL exclusion/version/idempotency races; actual group forward/confirm/reschedule/cancel | Home approve/reject/deposit, Online UI, multi-booking, explicit extension, DST, error/back/double-submit and notifications |
-| Finance / analytics | Portal debts/receipts; CRM obligations/manual methods/correction/settings/metrics | Executed ledger/FX/rounding/barter/gateway/projection tests and PostgreSQL money races | Every displayed metric independently calculated; all browser methods/correction/debt and exact staging amounts |
-| Gifts | Client holder/transfer/claim/apply; CRM catalog sale/issue/history | Executed partial/full issue, claim/replacement/correction and PostgreSQL overspend tests | Complete gift mega journey with auth handoff, both UI perspectives and delivery |
-| Referrals / partners | Ordinary link/bonus; partner links/stats/payout; CRM assignment/replacement/rewards | Executed base-currency/history/cross-tenant and attribution/reward/payout races | Each cabinet tab/action, replacement stale winner and complete qualifying activity story |
-| Medical / session / surveys | Health, private files, questionnaire/results; CRM clinical cockpit/session/definitions/attempts | Executed privacy/encryption/IDOR/history/report tests | Actual session/attachment/upload/download/correction UI and each available questionnaire type; 9-systems/MSQ not implemented |
-| Messages / Companion / AI | Portal chat/safe actions; CRM takeover/reply/resume, provider/prompt/run/evaluation admin | Executed failure-no-auto-handoff, retry, safety, paused backlog, encryption and PostgreSQL fence tests | Staff HTML defect exact-SHA acceptance; long/RAG/failure/retry/attachments and all AI admin actions |
-| Knowledge / RAG | Connected AI answers; CRM source/revision/ingestion/inspector | Executed PostgreSQL retrieval scope/timeouts/claim/cleanup tests | Real upload→ingest→retrieval→answer provenance, private access and failure/retry browser evidence |
-| Notifications / scenarios | Transactional/client messages; CRM rules/templates/catalog/history | Executed consent/dedup/retry/outcome/concurrent materialization tests | Every event's recipient/channel/template/conditions/consent/link and actual delivery row mapping |
-| Broadcasts | Controlled recipients; CRM audience/preview/test/start/history | Executed consent/tenant/crash/claim/dedup tests on isolated DB | Bounded synthetic-recipient UI journey and partial failure/retry; never mass-send |
-| Legal / feedback | Versioned documents/required vs optional consents; rating/comment; CRM definitions/submissions/settings | Executed immutable history/tenant/idempotent feedback tests; actual optional-marketing-off booking | Every legal publication/version refresh and feedback positive/negative/internal-comment UI path |
-| Tracker | Current plan/entitlement/task/check-in/history; CRM settings | Executed entitlement/task/scenario/privacy tests | Actual enrollment/daily/periodic UI and scheduler notification; no invented clinical methodology |
-| B2B / content | Lead/professional segmentation, RU/EN sections; CRM leads/Zoom/content | Executed funnel/timezone/provider failure/content tests; real Zoom adapter lifecycle | Complete lead→CRM→meeting notification journey and every active/inactive/order/translation section |
-
-## Unresolved execution blockers
-
-1. Matrix contract/test/evidence reconciliation is unfinished; source declarations still contain NOT DERIVED/NOT MAPPED fields. Therefore no complete implemented-capability count or VERIFIED percentage is claimed.
-2. The current hosted Portal E2E [38044487385](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38044487385) is 54/54 PASS on desktop/mobile, and the current hosted gift E2E [38044066149](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38044066149) is PASS. CRM/scenario/community files are queued or require one-at-a-time reruns after the workflow concurrency cancellation; no complete all-file E2E PASS is claimed.
-3. Quality gate is failing on baseline formatting; independent later checks must execute and report their own outcome, without suppressing that failure or editing deployed migrations for cosmetics.
-4. Staff reply formatting, the Companion happy/handoff path, and the Finance UI story have hosted/browser and staging evidence, but the wider Messages/Companion/attachment/AI action inventory is not fully verified. Provider-failure injection, Portal bubble file opening and privileged AI controls remain open.
-5. Production code tree `e117e36fd21889338f5dd8fa6ea3d58e9a19ef18` was deployed; deep smoke passed with PostgreSQL, Redis/Horizon, scheduler, Telegram API reachability, portal/CRM routes, provider inventory, RAG and cleanup. The final report/matrix tree is docs-only after that smoke and is deployed again as the exact final handoff SHA. All eight cross-system stories are not fully proved.
-6. External gaps are the configured Groq HTTP 401, absent external email mailer, absent Lava sandbox credential, and unexecuted real Telegram incoming/Mini App auth. Adapter fakes are not real provider PASS.
-
-Conclusion remains **SYSTEM NOT FULLY VERIFIED**. Audit work continues; this report is not a final gate or an owner-acceptance assertion.
-
-## Final candidate addendum
-
-The production code tree `e117e36fd21889338f5dd8fa6ea3d58e9a19ef18` was deployed exactly to staging. Deep smoke completed with `STAGING SMOKE: PASS`; it also confirmed the configured external limits (array email sink, fake payment gateway without Lava sandbox, no synthetic client Telegram chat, Groq credential HTTP 401). The temporary browser operator was revoked through the supported cleanup path after acceptance. The final docs-only handoff SHA is recorded in the final response and deployed once more before closure.
-
-The inventory matrix now has 1,428 rows: 1,410 generated source declarations plus 18 manually reviewed proof rows. Current status count is 12 VERIFIED and 1,416 NOT VERIFIED; there are no matrix rows classified NOT IMPLEMENTED or NEEDS OWNER DECISION because those classifications are scope decisions recorded below and not executable capabilities. The exact IDs and blockers are in the matrix; generated rows intentionally retain `NOT DERIVED`/`NOT MAPPED` fields until a row-specific contract is proved.
-
-The targeted Communities browser workflow [38048734180](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38048734180) executed both projects: desktop passed and mobile WebKit failed in the saved-preview replacement sequence before the link modal assertion. A separate bounded staging browser probe on both Chrome and WebKit showed the visible link and Telegram preview modals and a direct second link action. This is retained as a browser-proof gap, not silently converted to PASS and not treated as a production defect without a reproducible user-visible failure.
-
-The full hosted browser workflow [38048951807](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38048951807) ran all 108 desktop/mobile cases on the production-code-equivalent candidate: 105 passed, 1 failed, and 2 skipped. The sole failure is the same mobile WebKit Communities saved-preview replacement assertion; desktop CRM, Portal desktop/mobile and all other executed action families passed. The run is evidence of broad coverage, not a 100% acceptance claim.
-
-External acceptance remains bounded by the inspected staging configuration: transactional email uses an array sink rather than an external mailbox, the selected payment gateway is `fake` with no Lava sandbox credential, no safe client Telegram chat exists, and Groq returns HTTP 401. No live charge, mass broadcast, arbitrary Telegram spam, destructive database reset, or production deployment was performed.
-
-## Canonical reconciliation update
-
-The primary matrix is now capability-only. `docs/verification/system-source-inventory.md` contains the complete machine-generated source appendix; every declaration is mapped to a canonical capability or explicitly classified `INTERNAL`, `DUPLICATE` or `EXCLUDED`. `node scripts/system-proof-inventory.mjs --check` currently reports 1,410 source declarations, 156 canonical capabilities and zero mapping errors. Source rows are no longer counted as independent product capabilities.
-
-Current canonical status accounting is 149 `VERIFIED`, 5 `NOT VERIFIED`, 1 `NOT IMPLEMENTED` and 1 `NEEDS OWNER DECISION`. The five external blockers are: SMTP mailbox delivery, real inbound Telegram client/Mini App identity, Lava sandbox execution, Groq provider execution with the intentionally invalid staging key, and the final exact-SHA external-provider rerun where applicable. The two non-implemented/decision rows are the source-backed 9-systems/MSQ methodology, Portal Companion direct file opening, and the source-backed clinical Road Map methodology respectively; they are not counted as implemented capability failures.
-
-The matrix evidence is tied to named feature/Playwright/PostgreSQL/staging checks rather than declaration presence. The canonical rows also include the negative, reverse/correction, retry, concurrency and tenant/security contract for the grouped flow. A new source declaration fails the inventory guard until it has an explicit mapping; a canonical row is not allowed to become `VERIFIED` without a test name and evidence field.
-
-The four Pint findings from the previous quality run were actual formatting defects in current files and have been corrected. The remaining PHPStan report is 304 diagnostics across current application code (mostly missing generic/value types and a smaller set of nullability/control-flow findings); it is not suppressed or reclassified as an external failure. The bounded audit continues to classify and repair those diagnostics where they indicate a current contract defect before the final quality run.
+The final handoff must repeat the counts, exact remaining external blockers,
+hosted run URLs/results, staging SHA, branch and PR state. It must not claim
+ALL IMPLEMENTED SYSTEM CAPABILITIES VERIFIED while any external row remains
+unavailable.
