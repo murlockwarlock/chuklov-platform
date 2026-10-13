@@ -229,8 +229,8 @@ Original v2.2 source: exact clause not established.
 No original clause is inferred from a generic module name or document date.
 
 Before 26.09: chronology NOT ESTABLISHED; starting-main implementation is recorded in the acceptance matrix.
-After 26.09: task branch changes/evidence pending; do not infer code delivery from a requirement or proof declaration.
-PR/commit/evidence: starting SHA above, task PR pending, exact-SHA staging NOT RUN.
+After 26.09: client selection/add/remove and atomic, replay-safe submission implemented in `ed0cc38`; existing CreateMultipleBookings/CreateBooking extended without a second engine. PostgreSQL batch-race/foundation gates PASS; browser found an incorrect medical-return destination, being corrected. Full staging lifecycle remains NOT VERIFIED.
+PR/commit/evidence: [Draft PR #60](https://github.com/murlockwarlock/chuklov-platform/pull/60), `ed0cc38`, [PostgreSQL concurrency](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38411051526), exact-SHA staging NOT RUN.
 Limitations: see individual source criteria; family legal authority/media/methodology/provider evidence remain unresolved where applicable.
 Confidence: LOW — precise original clause/chronology needs review.
 

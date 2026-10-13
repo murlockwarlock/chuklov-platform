@@ -525,6 +525,33 @@ class PortalBookingRemediationTest extends TestCase
         $this->get(route('portal.bookings.create', ['booking_ids' => [999999]]))->assertNotFound();
     }
 
+    public function test_medical_continuation_returns_a_batch_to_all_bookings_and_rejects_external_return_targets(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $this->withSession(['client_portal.client_id' => $client->id]);
+        $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'additional_starts_at' => ['2026-03-17T09:00:00+00:00'],
+            'idempotency_key' => 'f578ef96-74f4-4a1b-b73f-5e641b851a22',
+            'consents' => $this->acceptedConsents($organization),
+        ]))->assertSessionHasNoErrors();
+        $booking = Booking::query()->orderBy('starts_at')->firstOrFail();
+        $query = ['booking_id' => $booking->id, 'return_to' => 'bookings', 'edit' => 1];
+        $page = $this->get(route('portal.medical-profile', $query))->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('returnUrl', route('portal.bookings.index'))->where('returnLabelKey', 'bookings.title'));
+        $snapshot = $page->viewData('page')['props']['profile']['expectedSnapshot'];
+        $this->post(route('portal.medical-profile.update', $query), [
+            'expected_snapshot' => $snapshot, 'complaints' => 'Synthetic symptoms', 'goals' => 'Synthetic goals',
+            'answers' => ['symptoms' => ['neck'], 'pain_vas' => null, 'no_chronic_conditions' => true, 'had_operations' => false, 'had_injuries' => false],
+        ])->assertSessionHasNoErrors()->assertRedirect(route('portal.bookings.index'));
+        $this->get(route('portal.medical-profile', ['booking_id' => $booking->id]))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('returnUrl', route('portal.bookings.show', $booking->id))->where('returnLabelKey', 'medical.backToBooking'));
+        $this->get(route('portal.medical-profile', ['booking_id' => $booking->id, 'return_to' => 'https://example.test']))
+            ->assertSessionHasErrors('return_to');
+        self::assertSame(2, Booking::query()->count());
+    }
+
     /** @return array{Organization, Client, Specialist, Service} */
     private function portalFixture(array $formats = ['office'], string $language = 'en'): array
     {

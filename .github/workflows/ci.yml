@@ -12,12 +12,18 @@ on:
           - full
           - quality
           - static
+          - focused
           - integration
           - integration-foundation
           - integration-rag
           - integration-concurrency
           - privacy
           - docker
+      test_filter:
+        description: Required PHPUnit filter for the focused scope only
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ci-${{ github.ref }}-${{ inputs.scope || 'full' }}
@@ -28,7 +34,7 @@ permissions:
 
 jobs:
   quality:
-    if: ${{ inputs.scope == 'full' || inputs.scope == 'quality' || inputs.scope == 'static' }}
+    if: ${{ inputs.scope == 'full' || inputs.scope == 'quality' || inputs.scope == 'static' || inputs.scope == 'focused' }}
     name: Quality
     runs-on: ubuntu-latest
     services:
@@ -102,11 +108,23 @@ jobs:
       - name: Verify repeatable key initialization
         run: make check-app-key
       - name: Run unit tests
-        if: ${{ inputs.scope != 'static' }}
+        if: ${{ inputs.scope != 'static' && inputs.scope != 'focused' }}
         run: make test-unit
       - name: Run feature tests
         if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' && inputs.scope != 'static' }}
-        run: make test-feature
+        env:
+          CI_SCOPE: ${{ inputs.scope }}
+          PHPUNIT_FILTER: ${{ inputs.test_filter }}
+        run: |
+          if [ "$CI_SCOPE" = focused ]; then
+            if [ -z "$PHPUNIT_FILTER" ]; then
+              echo 'Focused checks require an explicit test filter.'
+              exit 1
+            fi
+            php artisan test tests/Feature --filter "$PHPUNIT_FILTER"
+          else
+            make test-feature
+          fi
       - name: Run PHP format checks
         if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
         run: composer lint

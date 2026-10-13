@@ -6,6 +6,7 @@ use App\Modules\ClientPortal\Application\PortalBookingErrorMessages;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class CreatePortalBookingRequest extends FormRequest
 {
@@ -21,9 +22,12 @@ class CreatePortalBookingRequest extends FormRequest
             'service_id' => ['required', 'integer', 'min:1'],
             'specialist_id' => ['required', 'integer', 'min:1'],
             'starts_at' => ['required', 'date'],
-            'additional_starts_at' => ['sometimes', 'array', 'max:19'],
+            'additional_starts_at' => ['sometimes', 'array', 'list', 'max:19'],
             'additional_starts_at.*' => ['required', 'string', 'date', 'distinct:strict'],
-            'idempotency_key' => ['required_with:additional_starts_at', 'nullable', 'string', 'uuid'],
+            'idempotency_key' => [
+                Rule::excludeIf(fn (): bool => ! is_array($this->input('additional_starts_at')) || $this->input('additional_starts_at') === []),
+                'required', 'string', 'uuid',
+            ],
             'format' => ['required', 'string', 'in:'.implode(',', array_map(
                 static fn (VisitFormat $format): string => $format->value,
                 VisitFormat::cases(),

@@ -24,6 +24,7 @@ const props = defineProps<{
     saved: boolean;
     editing: boolean;
     returnUrl: string;
+    returnLabelKey: string;
 }>();
 const { t } = usePortalLocale();
 const editing = ref(props.editing || !props.profile.available);
@@ -246,7 +247,7 @@ function save(): void {
         class="portal-button portal-button--secondary"
         @click="uploading && $event.preventDefault()"
       >
-        {{ t('bookings.title') }}
+        {{ t(returnLabelKey) }}
       </Link>
     </section>
   </AppShell>

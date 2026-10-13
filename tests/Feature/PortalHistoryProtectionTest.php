@@ -31,10 +31,22 @@ final class PortalHistoryProtectionTest extends TestCase
         $sameClientPage = $this->get(route('portal.profile'))->assertOk()->viewData('page');
         self::assertTrue($sameClientPage['encryptHistory']);
         self::assertArrayNotHasKey('clearHistory', $sameClientPage);
-        $this->withSession(['client_portal.client_id' => $second->id]);
+        $this->withSession([
+            'client_portal.client_id' => $second->id,
+            'portal_booking_result' => ['bookingId' => 999, 'startsAt' => 'Synthetic old appointment'],
+            'gift_certificate_transfer_url' => 'https://example.test/synthetic-old-transfer',
+            'telegram_link_url' => 'https://example.test/synthetic-old-link',
+            'gift_certificate_claim_token' => 'synthetic-incoming-claim',
+        ]);
         $secondPage = $this->get(route('portal.profile'))->assertOk()
+            ->assertSessionMissing('portal_booking_result')
+            ->assertSessionMissing('gift_certificate_transfer_url')
+            ->assertSessionMissing('telegram_link_url')
+            ->assertSessionHas('gift_certificate_claim_token', 'synthetic-incoming-claim')
             ->assertInertia(fn (AssertableInertia $page) => $page
-                ->where('portal.clientName', $second->full_name));
+                ->where('portal.clientName', $second->full_name)
+                ->where('flash.giftCertificateTransferUrl', null)
+                ->where('telegram.linkUrl', null));
         self::assertTrue($secondPage->viewData('page')['encryptHistory']);
         self::assertTrue($secondPage->viewData('page')['clearHistory']);
         self::assertSame($second->id, app(ClientPortalContext::class)->id());

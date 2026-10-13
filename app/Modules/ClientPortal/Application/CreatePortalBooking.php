@@ -50,7 +50,6 @@ final readonly class CreatePortalBooking
         ?string $mapUrl = null,
         ?string $attributionSource = null,
         ?string $attributionSourceDetail = null,
-        ?string $idempotencyKey = null,
     ): Booking {
         return $this->createBooking->handle(
             actor: $client,
@@ -61,7 +60,7 @@ final readonly class CreatePortalBooking
             format: $format,
             clientTimezone: $clientTimezone,
             meetingLinkMode: null,
-            idempotencyKey: $idempotencyKey,
+            idempotencyKey: null,
             partySize: $partySize,
             location: $location,
             workingLocationId: $workingLocationId,

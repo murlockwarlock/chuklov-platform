@@ -250,12 +250,17 @@ class BookingController extends Controller
                     ? (string) $validated['attribution_source']
                     : null,
                 'attributionSourceDetail' => $validated['attribution_source_detail'] ?? null,
-                'idempotencyKey' => $validated['idempotency_key'] ?? null,
             ];
-            $additionalStarts = $validated['additional_starts_at'] ?? [];
+            $additionalStarts = array_map(
+                static fn (string $value): string => $value,
+                array_values($validated['additional_starts_at'] ?? []),
+            );
             $bookings = $additionalStarts === []
                 ? [$createBooking->handle(...[...$arguments, 'startsAt' => $startsAt])]
-                : $createBooking->handleMultiple(...[...$arguments, 'startsAt' => [$startsAt->toIso8601String(), ...$additionalStarts]]);
+                : $createBooking->handleMultiple(...[
+                    ...$arguments, 'startsAt' => [$startsAt->toIso8601String(), ...$additionalStarts],
+                    'idempotencyKey' => $validated['idempotency_key'],
+                ]);
             $booking = $bookings[0];
         } catch (ValidationException $exception) {
             throw ValidationException::withMessages($this->bookingErrors->bookingErrors($exception));
@@ -292,7 +297,10 @@ class BookingController extends Controller
             'startsAt' => $booking->startsAtUtc()->toIso8601String(),
             'startsAtList' => array_values(array_map(static fn (Booking $item): string => $item->startsAtUtc()->toIso8601String(), $bookings === [] ? [$booking] : $bookings)),
             'medicalProfileUrl' => $booking->service->requires_medical_profile
-                ? route('portal.medical-profile', ['booking_id' => $booking->getKey(), 'edit' => 1])
+                ? route('portal.medical-profile', [
+                    'booking_id' => $booking->getKey(), 'edit' => 1,
+                    ...(count($bookings) > 1 ? ['return_to' => 'bookings'] : []),
+                ])
                 : null,
         ];
     }
