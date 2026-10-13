@@ -1426,7 +1426,9 @@ test('September 26 paid focus stays on home through completion and correction an
     const completed = page.getByRole('checkbox', { name: 'Выполнено', exact: true });
     const completion = page.waitForResponse((response) => response.request().method() === 'POST' && /\/portal\/tracker\/tasks\/\d+\/entry$/.test(response.url()));
     await completed.check();
-    expect((await completion).status()).toBe(303);
+    const completionResponse = await completion;
+    expect(completionResponse.status()).toBe(302);
+    expect(new URL(completionResponse.headers().location, completionResponse.url()).pathname).toBe('/');
     await expect(completed).toBeEnabled();
     await expect(completed).toBeChecked();
     await expect(page).toHaveURL(/\/$/);
@@ -1434,7 +1436,9 @@ test('September 26 paid focus stays on home through completion and correction an
     await expect(completed).toBeChecked();
     const correction = page.waitForResponse((response) => response.request().method() === 'POST' && /\/portal\/tracker\/tasks\/\d+\/entry$/.test(response.url()));
     await completed.uncheck();
-    expect((await correction).status()).toBe(303);
+    const correctionResponse = await correction;
+    expect(correctionResponse.status()).toBe(302);
+    expect(new URL(correctionResponse.headers().location, correctionResponse.url()).pathname).toBe('/');
     await expect(completed).toBeEnabled();
     await page.reload();
     await expect(completed).not.toBeChecked();
