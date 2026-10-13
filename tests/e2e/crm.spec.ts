@@ -557,7 +557,7 @@ test('enrolled CRM MFA requires a valid code before native browser login', async
     await digits.first().pressSequentially(code);
     await page.locator('button[type="submit"]:visible').click();
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
-    await expect(page.getByRole('heading', { name: 'Главная', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Аналитика', exact: true })).toBeVisible();
     await page.reload();
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 });
