@@ -210,7 +210,7 @@ final class MaterializeScenarioEvent
         $isMedicalCreation = $recipient->type === 'client' && str_starts_with($rule->rule_key, 'medical-profile-after-booking-');
         $isStandardCreation = $recipient->type === 'client' && str_starts_with($rule->rule_key, 'booking-created-client-')
             && $template->template?->template_key === 'booking-created';
-        if ($isStandardCreation && $medicalRule !== null) {
+        if ($isStandardCreation && $medicalRule !== null && $medicalRule->templateVersion instanceof NotificationTemplateVersion) {
             $medicalScheduledFor = CarbonImmutable::parse((string) $event->occurred_at)->utc()
                 ->addSeconds($medicalRule->delay_unit->toSeconds($medicalRule->delay_value));
             if ($medicalScheduledFor->equalTo($scheduledFor)) {

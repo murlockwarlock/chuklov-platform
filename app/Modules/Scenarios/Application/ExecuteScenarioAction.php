@@ -279,6 +279,9 @@ final class ExecuteScenarioAction
             }
 
             $event = $action->event()->first();
+            if ($event === null) {
+                return NotificationDeliveryResult::suppressed('event_missing');
+            }
             if (isset($action->render_context['medical_profile_after_booking'])
                 && ! $this->medicalProfile->creationIsCurrent($action, $this->contextFactory->evaluationContext($event))) {
                 return NotificationDeliveryResult::suppressed('booking_changed');
@@ -292,15 +295,14 @@ final class ExecuteScenarioAction
                     return NotificationDeliveryResult::suppressed('medical_profile_no_longer_required');
                 }
             }
-            if ($event === null
-                || ($isAppointmentReminder && ! $this->appointmentReminderIsCurrent($action, $this->appointmentReminderBooking($action)))
+            if (($isAppointmentReminder && ! $this->appointmentReminderIsCurrent($action, $this->appointmentReminderBooking($action)))
                 || (! $isAppointmentReminder && $event->event_name->value === 'b2b.sales_call.ready'
                     && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))
                 || (! $isAppointmentReminder && $event->event_name->value === 'booking.confirmed'
                     && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context, recipientType: $action->recipient_type))
                 || (! $isAppointmentReminder && in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
                     && ! $this->bookingChangedGuard->allows($event, renderContext: $action->render_context, recipientType: $action->recipient_type))) {
-                return NotificationDeliveryResult::suppressed($this->changeReason($event?->event_name->value));
+                return NotificationDeliveryResult::suppressed($this->changeReason($event->event_name->value));
             }
 
             if (! $this->presentation->handle($delivery, (int) $template->getKey())) {
@@ -707,7 +709,8 @@ final class ExecuteScenarioAction
     private function finalizeDelivery(ScenarioDelivery $claimed, NotificationDeliveryResult $result): NotificationDeliveryOutcome
     {
         return DB::transaction(function () use ($claimed, $result): NotificationDeliveryOutcome {
-            $delivery = ScenarioDelivery::query()->where('organization_id', $claimed->organization_id)->lockForUpdate()->findOrFail($claimed->getKey());
+            $delivery = ScenarioDelivery::query()->where('organization_id', $claimed->organization_id)
+                ->whereKey((int) $claimed->getKey())->lockForUpdate()->firstOrFail();
 
             if ($delivery->status !== ScenarioDeliveryStatus::Processing || $delivery->attempt_count !== $claimed->attempt_count
                 || (string) $delivery->processing_started_at !== (string) $claimed->processing_started_at) {
