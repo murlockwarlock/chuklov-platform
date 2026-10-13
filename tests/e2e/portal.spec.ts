@@ -663,12 +663,15 @@ test('portrait Story previews stay inside their frames and player navigation wor
         if (width < 768) {
             const labels = page.locator('.portal-bottom-nav__label');
             await expect(labels).toHaveCount(5);
-            expect(await labels.evaluateAll((elements) => elements.every((element) => {
+            const geometry = await labels.evaluateAll((elements) => elements.map((element) => {
                 const range = document.createRange();
                 range.selectNodeContents(element);
-                return element.scrollWidth <= element.clientWidth
-                    && range.getClientRects().length === 1;
-            }))).toBe(true);
+                return { label: element.textContent, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, lines: range.getClientRects().length };
+            }));
+            for (const label of geometry) {
+                expect(label.scrollWidth, `${label.label} at ${width}px`).toBeLessThanOrEqual(label.clientWidth);
+                expect(label.lines, `${label.label} at ${width}px`).toBe(1);
+            }
         }
     }
     await cards.first().click();
