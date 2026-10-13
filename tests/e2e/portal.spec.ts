@@ -1425,7 +1425,17 @@ test('September 26 client selects multiple sessions before the medical editor an
     await expect(page.getByText(fixture.serviceName, { exact: true })).toHaveCount(2);
     await page.reload();
     await expect(page.getByText(fixture.serviceName, { exact: true })).toHaveCount(2);
+    const detailResponse = page.waitForResponse((response) => /\/portal\/bookings\/\d+$/.test(new URL(response.url()).pathname)
+        && response.request().method() === 'GET');
     await page.getByRole('link', { name: new RegExp(fixture.serviceName) }).first().click();
+    const detail = await detailResponse;
+    expect(detail.status()).toBe(200);
+    expect(detail.request().headers()['x-inertia']).toBe('true');
+    const detailPage = await detail.json() as { component: string; props: { booking: { canCancel: boolean; startsAt: string; statusLabel: string }; portal: { locale: string } } };
+    expect(detailPage.component).toBe('Portal/BookingShow');
+    expect(detailPage.props.portal.locale).toBe('ru');
+    expect(detailPage.props.booking.canCancel, JSON.stringify({ startsAt: detailPage.props.booking.startsAt, expectedDate: fixture.date, status: detailPage.props.booking.statusLabel })).toBe(true);
+    await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Отменить', exact: true }).first().click();
     await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
     await page.reload();
