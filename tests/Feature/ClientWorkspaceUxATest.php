@@ -426,6 +426,7 @@ final class ClientWorkspaceUxATest extends TestCase
             'anamnesis',
             'complaints',
             'goals',
+            'chronic_conditions',
             'operations',
             'injuries',
             'medicines',

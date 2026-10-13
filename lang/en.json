@@ -1,4 +1,12 @@
 {
+  "Фамилия": "Last name",
+  "Отчество": "Middle name",
+  "Пол": "Gender",
+  "Мужской": "Male",
+  "Женский": "Female",
+  "Дата рождения": "Date of birth",
+  "Хронические заболевания": "Chronic conditions",
+  "Задачи по здоровью": "Health goals",
   "#Массажист_B2B": "#Masseur_B2B",
   "%d из %d клиентов": "%d of %d clients",
   "1 день, 2 часа и 30 минут до визита настраиваются отдельно: «Настройки расписания» → «Напоминания о записи».": "Reminder timings can be configured separately in Schedule Settings → Appointment reminders.",

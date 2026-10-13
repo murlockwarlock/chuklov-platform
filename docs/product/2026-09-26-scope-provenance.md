@@ -10,6 +10,8 @@ Family qualification: original v2.2 §9.2 says «Интерактивный та
 
 ## CR-01 — Сокращение главного меню бота в чате Telegram
 
+Current delivery reference for the implemented subset: [Draft PR #60](https://github.com/murlockwarlock/chuklov-platform/pull/60), first candidate `676c4da3436e30f0268aff2245db61958edb3a6f`. It adds managed entry videos/Stories, confirmed demographics/greeting, post-booking encrypted clinical editing, CRM chronic conditions, service medical flag and per-format buffers, pain visualization and the bonus header. Later fixes add client private uploads, mandatory fields, safe legacy display and overflow corrections. This dated record proves post-26.09 code delivery only for that subset, not complete implementation or staging/owner acceptance. Per-requirement delivery remains provisional until reconciled to final commit and exact-SHA evidence.
+
 26.09 source: LIST 1 §5 CR-01; exact complete criteria: [acceptance matrix](../verification/2026-09-26-requirements-acceptance.md#cr-01).
 
 Classification: **SUPERSEDED** (provisional). Original multi-button menu and welcome media; new single-button entry supersedes menu composition.

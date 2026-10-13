@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -16,6 +18,7 @@ final class MedicalProfileAuthorization
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly OrganizationFeatureGate $features,
     ) {}
 
     public function organization(): Organization
@@ -36,6 +39,7 @@ final class MedicalProfileAuthorization
     {
         $organization = $this->organization();
         if ($actor instanceof Client) {
+            $this->features->authorize($organization, OrganizationFeature::ClientRecords);
             $this->assertClientOwned($actor, $organization);
             $this->assertClientOwned($client, $organization);
             if ($actor->getKey() !== $client->getKey()) {

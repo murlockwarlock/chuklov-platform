@@ -50,7 +50,7 @@ function completeTask(event: Event): void {
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <Stories :stories="props.stories" />
       <header class="portal-stack portal-stack--tight">
-        <h1 class="portal-heading portal-heading--section">
+        <h1 class="portal-heading portal-heading--section min-w-0 [overflow-wrap:anywhere]">
           {{ props.portal.confirmedFirstName
             ? t('home.greetingWithName', { name: props.portal.confirmedFirstName })
             : t('home.greeting') }}

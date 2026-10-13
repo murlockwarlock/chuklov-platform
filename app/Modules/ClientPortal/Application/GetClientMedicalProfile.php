@@ -37,6 +37,7 @@ final readonly class GetClientMedicalProfile
                 'readFailed' => false,
                 'fields' => [],
                 'answers' => [],
+                'legacyFields' => [],
             ];
         }
 
@@ -76,6 +77,7 @@ final readonly class GetClientMedicalProfile
                 'readFailed' => true,
                 'fields' => [],
                 'answers' => [],
+                'legacyFields' => [],
             ];
         }
 
@@ -99,6 +101,10 @@ final readonly class GetClientMedicalProfile
                 'supplements' => $data->supplements,
             ],
             'answers' => $answers,
+            'legacyFields' => array_filter([
+                'complaintsGoals' => ! filled($data->complaints) && ! filled($data->goals) ? $data->complaintsGoals : null,
+                'operationsInjuries' => ! filled($data->operations) && ! filled($data->injuries) ? $data->operationsInjuries : null,
+            ], fn (?string $value): bool => filled($value)),
         ];
     }
 }

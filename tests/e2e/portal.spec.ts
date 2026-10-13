@@ -1342,11 +1342,30 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByLabel('Главные жалобы', { exact: true }).last()).toHaveValue('Synthetic symptoms');
     await page.locator('#medical-pain').focus();
     await page.locator('#medical-pain').press('Home');
-    await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
-    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
-        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `Medical editor at ${width}px`).toBe(true);
+    }
+    await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
+    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Редактировать данные', exact: true })).toBeVisible();
+    await page.locator('#medical-files').setInputFiles([
+        { name: 'synthetic-report-one.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic report one)\nendobj\n%%EOF\n') },
+        { name: 'synthetic-report-two.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic report two)\nendobj\n%%EOF\n') },
+    ]);
+    await page.getByRole('button', { name: 'Загрузить файлы', exact: true }).click();
+    await expect(page.getByRole('link', { name: 'synthetic-report-one.pdf', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true })).toBeVisible();
+    const downloadEvent = page.waitForEvent('download');
+    await page.getByRole('link', { name: 'synthetic-report-one.pdf', exact: true }).click();
+    const download = await downloadEvent;
+    expect(download.suggestedFilename()).toBe('synthetic-report-one.pdf');
+    expect(await download.failure()).toBeNull();
+    await page.reload();
+    await expect(page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true })).toBeVisible();
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `Medical profile at ${width}px`).toBe(true);
     }
 });
 

@@ -48,15 +48,15 @@ class HomeController extends Controller
             ]);
         }
 
-        $upcoming = $bookings->handle(app()->getLocale())['upcoming'];
+        $upcoming = $bookings->nextForHome(app()->getLocale());
         Inertia::encryptHistory();
         $trackerData = $tracker->handle();
         $healthAction = $homeHealth->handle($client, $trackerData);
 
         return Inertia::render('Portal/Home', [
-            'upcomingBooking' => $upcoming[0] ?? null,
+            'upcomingBooking' => $upcoming,
             'healthAction' => $healthAction,
-            'stories' => array_values(array_filter($entryMedia->handle(app()->getLocale()), static fn (array $item): bool => $item['key'] !== 'telegram_welcome')),
+            'stories' => fn (): array => array_values(array_filter($entryMedia->handle(app()->getLocale()), static fn (array $item): bool => $item['key'] !== 'telegram_welcome')),
         ]);
     }
 

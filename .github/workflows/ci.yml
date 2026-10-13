@@ -96,11 +96,30 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
       - name: Migrate foundation schema
+        id: quality-schema
         run: php artisan migrate --seed --force
       - name: Verify repeatable key initialization
         run: make check-app-key
-      - name: Run quality suite
-        run: make quality
+      - name: Run unit tests
+        run: make test-unit
+      - name: Run feature tests
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: make test-feature
+      - name: Run format and lint checks
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: make lint
+      - name: Run static and frontend type checks
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: make static
+      - name: Build frontend
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: npm run build
+      - name: Audit backend dependencies
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: composer audit --locked --no-interaction
+      - name: Audit frontend dependencies
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: npm audit --audit-level=high
 
   integration-foundation:
     if: ${{ inputs.scope == 'full' || inputs.scope == 'integration' || inputs.scope == 'integration-foundation' }}

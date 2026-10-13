@@ -76,6 +76,19 @@ class September26ClientProfileTest extends TestCase
         app(UpdateClientProfileFromCrm::class)->handle($actor, $client, ['city' => 'Астана', 'expected_snapshot' => $snapshot]);
     }
 
+    public function test_structured_profile_requires_all_mandatory_fields_and_rejects_invalid_timezone(): void
+    {
+        $client = $this->client();
+        $this->withSession(['client_portal.client_id' => $client->id]);
+        $this->post(route('portal.profile.update'), ['first_name' => 'Денис'])
+            ->assertSessionHasErrors(['last_name', 'gender', 'birth_date', 'country', 'city', 'phone']);
+        self::assertNull($client->refresh()->first_name);
+        foreach ([null, 'Not/A_Timezone'] as $timezone) {
+            $this->post(route('portal.profile.update'), ['timezone' => $timezone])->assertSessionHasErrors('timezone');
+            self::assertNotNull($client->refresh()->timezone);
+        }
+    }
+
     public function test_foreign_client_cannot_be_updated_through_application(): void
     {
         $client = $this->client();

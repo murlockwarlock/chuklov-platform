@@ -3,8 +3,10 @@
 namespace App\Modules\Content\Application;
 
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
+use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
+use Illuminate\Database\Eloquent\Builder;
 
 final readonly class GetClientEntryMedia
 {
@@ -27,7 +29,10 @@ final readonly class GetClientEntryMedia
         }
         $query = ContentSection::query()->where('organization_id', $organizationId)
             ->whereIn('section_key', ['telegram_welcome', ...array_keys(self::STORIES)])
-            ->where('is_visible', true)->whereIn('locale', ['ru', 'en']);
+            ->where('is_visible', true)->whereIn('locale', ['ru', 'en'])
+            ->where(fn (Builder $query) => $query
+                ->where(fn (Builder $query) => $query->where('section_key', 'telegram_welcome')->whereIn('delivery_mode', [ContentDeliveryMode::Telegram->value, ContentDeliveryMode::Both->value]))
+                ->orWhere(fn (Builder $query) => $query->whereIn('section_key', array_keys(self::STORIES))->whereIn('delivery_mode', [ContentDeliveryMode::MiniApp->value, ContentDeliveryMode::Both->value])));
         $sections = (clone $query)->whereIn('id', (clone $query)->selectRaw('MAX(id)')->groupBy('section_key', 'locale'))->orderByDesc('id')->get(['id', 'organization_id', 'section_key', 'locale', 'media']);
         $result = [];
         foreach (['telegram_welcome' => 'Приветствие', ...self::STORIES] as $key => $title) {

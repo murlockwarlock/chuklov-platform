@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Portal;
 
 use App\Http\Controllers\Controller;
 use App\Modules\ClientPortal\Application\GetClientMedicalProfile;
+use App\Modules\ClientPortal\Application\ListClientMedicalMaterials;
 use App\Modules\ClientPortal\Application\UpdateClientMedicalProfile;
 use App\Modules\Scheduling\Application\ListClientBookings;
 use Illuminate\Http\RedirectResponse;
@@ -13,7 +14,7 @@ use Inertia\Response;
 
 final class MedicalProfileController extends Controller
 {
-    public function show(Request $request, GetClientMedicalProfile $profile, ListClientBookings $bookings): Response
+    public function show(Request $request, GetClientMedicalProfile $profile, ListClientBookings $bookings, ListClientMedicalMaterials $materials): Response
     {
         Inertia::encryptHistory();
         $bookingId = $request->query('booking_id');
@@ -23,10 +24,11 @@ final class MedicalProfileController extends Controller
 
         return Inertia::render('Portal/MedicalProfile', [
             'profile' => $profile->handle(),
+            'materials' => fn (): array => $materials->handle(),
             'saved' => (bool) session()->pull('medical_profile_saved', false),
             'editing' => $request->boolean('edit'),
             'returnUrl' => $bookingId === null ? route('portal.more') : route('portal.bookings.show', ['bookingId' => (int) $bookingId]),
-            'urls' => ['update' => route('portal.medical-profile.update', ['booking_id' => $bookingId])],
+            'urls' => ['update' => route('portal.medical-profile.update', ['booking_id' => $bookingId]), 'upload' => route('portal.medical-attachments.upload')],
         ]);
     }
 

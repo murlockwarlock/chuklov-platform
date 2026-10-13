@@ -19,15 +19,15 @@ class UpdateClientProfileRequest extends FormRequest
         return [
             'full_name' => ['sometimes', 'nullable', 'string', 'max:160'],
             'first_name' => ['sometimes', 'required', 'string', 'max:100'],
-            'last_name' => ['required_with:first_name', 'sometimes', 'required', 'string', 'max:100'],
+            'last_name' => ['required_with:first_name', 'string', 'max:100'],
             'middle_name' => ['sometimes', 'nullable', 'string', 'max:100'],
-            'gender' => ['sometimes', 'required', 'in:MALE,FEMALE'],
-            'birth_date' => ['sometimes', 'required', 'date_format:Y-m-d', 'before_or_equal:today'],
-            'country' => ['sometimes', 'required', 'string', 'max:100'],
-            'city' => ['sometimes', 'required', 'string', 'max:100'],
+            'gender' => ['required_with:first_name', 'in:MALE,FEMALE'],
+            'birth_date' => ['required_with:first_name', 'date_format:Y-m-d', 'before_or_equal:today'],
+            'country' => ['required_with:first_name', 'string', 'max:100'],
+            'city' => ['required_with:first_name', 'string', 'max:100'],
             'email' => ['sometimes', 'nullable', 'email', 'max:320'],
-            'phone' => ['sometimes', 'nullable', 'string', 'max:32'],
-            'timezone' => ['sometimes', 'nullable', 'string', 'max:64'],
+            'phone' => ['required_with:first_name', 'nullable', 'string', 'max:32'],
+            'timezone' => ['sometimes', 'required', 'timezone', 'max:64'],
         ];
     }
 

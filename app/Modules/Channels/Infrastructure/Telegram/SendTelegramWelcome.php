@@ -16,7 +16,14 @@ final readonly class SendTelegramWelcome
 
     public function handle(Nutgram $bot, string $locale, ?string $continuationUrl = null): void
     {
-        $url = $continuationUrl ?? $this->entries->launchUrl('portal');
+        try {
+            $portalUrl = $this->entries->launchUrl('portal');
+        } catch (\LogicException) {
+            $bot->sendMessage($locale === 'ru' ? 'Приложение временно недоступно. Попробуйте открыть его позже.' : 'The app is temporarily unavailable. Try opening it later.');
+
+            return;
+        }
+        $url = $continuationUrl ?? $portalUrl;
         $label = $locale === 'ru' ? 'Открыть приложение' : 'Open app';
         $keyboard = InlineKeyboardMarkup::make()->addRow(InlineKeyboardButton::make(text: $label, web_app: WebAppInfo::make($url)));
         $media = $this->media->handle($locale)['telegram_welcome'];
@@ -24,6 +31,6 @@ final readonly class SendTelegramWelcome
             $bot->sendVideo($media['videoUrl'], supports_streaming: true);
         }
         $bot->sendMessage((string) config('portal.telegram.greeting.'.$locale), reply_markup: $keyboard);
-        $bot->setChatMenuButton(menu_button: new MenuButtonWebApp($label, WebAppInfo::make($this->entries->launchUrl('portal'))));
+        $bot->setChatMenuButton(menu_button: new MenuButtonWebApp($label, WebAppInfo::make($portalUrl)));
     }
 }

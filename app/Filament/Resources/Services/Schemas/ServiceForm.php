@@ -54,6 +54,7 @@ class ServiceForm
                             ->label(fn (Get $get): string => self::activeLabel($get('catalog_type')))
                             ->required()
                             ->default(true),
+                        Toggle::make('requires_medical_profile')->label(__('Требуется медицинская анкета'))->default(true),
                         Textarea::make('summary')
                             ->label(__('Краткое описание'))
                             ->required()
@@ -83,7 +84,6 @@ class ServiceForm
                         TextInput::make('buffer_office_minutes')->label(__('Перерыв — кабинет, минут'))->integer()->nullable()->minValue(0)->maxValue(65535),
                         TextInput::make('buffer_home_minutes')->label(__('Перерыв — выезд, минут'))->integer()->nullable()->minValue(0)->maxValue(65535),
                         TextInput::make('buffer_online_minutes')->label(__('Перерыв — онлайн, минут'))->integer()->nullable()->minValue(0)->maxValue(65535),
-                        Toggle::make('requires_medical_profile')->label(__('Требуется медицинская анкета'))->default(true),
                         CheckboxList::make('formats')
                             ->options([
                                 'office' => __('В клинике'),

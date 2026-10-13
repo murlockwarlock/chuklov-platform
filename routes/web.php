@@ -25,6 +25,7 @@ use App\Http\Controllers\Portal\HealthController as PortalHealthController;
 use App\Http\Controllers\Portal\HomeController;
 use App\Http\Controllers\Portal\LocaleController;
 use App\Http\Controllers\Portal\MedicalAttachmentController;
+use App\Http\Controllers\Portal\MedicalAttachmentUploadController;
 use App\Http\Controllers\Portal\MedicalProfileController;
 use App\Http\Controllers\Portal\MoreController;
 use App\Http\Controllers\Portal\OnboardingController;
@@ -127,6 +128,7 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::get('/portal/medical-profile', [MedicalProfileController::class, 'show'])->name('portal.medical-profile');
             Route::post('/portal/medical-profile', [MedicalProfileController::class, 'update'])->name('portal.medical-profile.update');
             Route::get('/portal/medical-attachments/{uuid}', MedicalAttachmentController::class)->name('portal.medical-attachments.download');
+            Route::post('/portal/medical-attachments', MedicalAttachmentUploadController::class)->name('portal.medical-attachments.upload');
             Route::get('/portal/more', MoreController::class)->name('portal.more');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
             Route::get('/portal/gift-certificates', [GiftCertificateController::class, 'index'])

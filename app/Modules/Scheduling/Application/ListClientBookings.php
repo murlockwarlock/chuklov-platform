@@ -47,6 +47,18 @@ final class ListClientBookings
         ];
     }
 
+    /** @return array<string, mixed>|null */
+    public function nextForHome(?string $locale = null): ?array
+    {
+        $client = $this->clientContext->client();
+        $booking = Booking::query()->where('organization_id', $client->organization_id)
+            ->where('client_id', $client->getKey())->where('starts_at', '>=', now()->utc())
+            ->whereNotIn('status', BookingStatus::terminalValues())
+            ->with(['service', 'specialist'])->orderBy('starts_at')->orderBy('id')->first();
+
+        return $booking === null ? null : $this->projection($booking, $locale);
+    }
+
     public function find(int $bookingId): ?Booking
     {
         $client = $this->clientContext->client();

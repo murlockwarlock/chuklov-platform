@@ -3,6 +3,7 @@ import { Link, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import PainScale from '../../Components/Portal/PainScale.vue';
+import MedicalAttachmentsUploader from '../../Components/Portal/MedicalAttachmentsUploader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -17,14 +18,16 @@ type Answers = {
 };
 const props = defineProps<{
     portal: PortalShell;
-    profile: { available: boolean; readFailed: boolean; expectedSnapshot: string; fields: Record<string, string | null>; answers: Partial<Answers> };
-    urls: { update: string };
+    profile: { available: boolean; readFailed: boolean; expectedSnapshot: string; fields: Record<string, string | null>; answers: Partial<Answers>; legacyFields: Record<string, string> };
+    urls: { update: string; upload: string };
+    materials: { id: number; filename: string; downloadUrl: string }[];
     saved: boolean;
     editing: boolean;
     returnUrl: string;
 }>();
 const { t } = usePortalLocale();
 const editing = ref(props.editing || !props.profile.available);
+const uploading = ref(false);
 const fields = ['complaints', 'goals', 'chronic_conditions', 'operations', 'injuries', 'medicines', 'supplements'] as const;
 const symptoms = ['headache', 'neck', 'back', 'joints', 'swelling', 'digestion', 'weakness', 'insomnia', 'stress'];
 const form = useForm({
@@ -71,6 +74,22 @@ function save(): void {
         {{ t('medical.readError') }}
       </p>
       <template v-else>
+        <dl
+          v-if="Object.keys(profile.legacyFields).length"
+          class="portal-stack"
+        >
+          <div
+            v-for="(value, key) in profile.legacyFields"
+            :key="key"
+          >
+            <dt class="portal-label">
+              {{ t('health.' + key) }}
+            </dt>
+            <dd class="portal-copy whitespace-pre-wrap break-words">
+              {{ value }}
+            </dd>
+          </div>
+        </dl>
         <p
           v-if="saved"
           role="status"
@@ -89,15 +108,15 @@ function save(): void {
           class="portal-stack"
           @submit.prevent="save"
         >
-          <fieldset class="portal-stack">
+          <fieldset class="portal-stack min-w-0">
             <legend class="portal-label">
               {{ t('medical.complaints') }}
             </legend>
-            <div class="portal-action-row">
+            <div class="flex min-w-0 flex-wrap items-center gap-3">
               <label
                 v-for="symptom in symptoms"
                 :key="symptom"
-                class="portal-copy"
+                class="inline-flex min-h-10 max-w-full items-center gap-2 rounded-full border border-stone-200 px-3 py-2 text-sm"
               >
                 <input
                   v-model="form.answers.symptoms"
@@ -179,7 +198,7 @@ function save(): void {
           </p>
           <button
             type="submit"
-            :disabled="form.processing"
+            :disabled="form.processing || uploading"
             class="portal-button portal-button--primary"
           >
             {{ t('medical.confirm') }}
@@ -215,9 +234,17 @@ function save(): void {
           </button>
         </template>
       </template>
+      <MedicalAttachmentsUploader
+        v-if="!profile.readFailed"
+        :url="urls.upload"
+        :materials="materials"
+        @uploading="uploading = $event"
+      />
       <Link
         :href="returnUrl"
+        :aria-disabled="uploading"
         class="portal-button portal-button--secondary"
+        @click="uploading && $event.preventDefault()"
       >
         {{ t('bookings.title') }}
       </Link>

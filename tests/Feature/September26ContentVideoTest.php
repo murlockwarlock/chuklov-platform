@@ -85,4 +85,20 @@ final class September26ContentVideoTest extends TestCase
         $this->expectException(AuthorizationException::class);
         app(AttachContentVideo::class)->handle($actor, $foreign, UploadedFile::fake()->createWithContent('fake.mp4', 'not video'));
     }
+
+    public function test_entry_media_respects_publication_and_the_selected_delivery_channel(): void
+    {
+        $organization = Organization::factory()->create();
+        app(OrganizationContext::class)->set($organization);
+        config(['content_media.disk' => 'content-video-test']);
+        Storage::fake('content-video-test');
+        $actor = User::factory()->forOrganization($organization)->create();
+        $section = ContentSection::factory()->forOrganization($organization)->create(['section_key' => 'story_author', 'locale' => 'ru', 'delivery_mode' => 'telegram']);
+        app(AttachContentVideo::class)->handle($actor, $section, UploadedFile::fake()->createWithContent('story.mp4', pack('N', 24).'ftypmp42'.pack('N', 0).'mp42isom'));
+        self::assertNull(app(GetClientEntryMedia::class)->handle('ru')['story_author']['videoUrl']);
+        $section->update(['delivery_mode' => 'mini_app']);
+        self::assertNotNull(app(GetClientEntryMedia::class)->handle('ru')['story_author']['videoUrl']);
+        $section->update(['is_visible' => false]);
+        self::assertNull(app(GetClientEntryMedia::class)->handle('ru')['story_author']['videoUrl']);
+    }
 }

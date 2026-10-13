@@ -9,6 +9,8 @@ use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Infrastructure\Logging\RedactSensitiveLogData;
@@ -86,11 +88,39 @@ final class September26MedicalProfileTest extends TestCase
         self::assertStringNotContainsString('Synthetic sensitive', $record->message);
     }
 
+    public function test_disabled_client_records_rejects_a_direct_self_update(): void
+    {
+        [$client] = $this->fixture();
+        $snapshot = $this->get(route('portal.medical-profile'))->viewData('page')['props']['profile']['expectedSnapshot'];
+        $client->organization->featureFlags()->where('feature_key', OrganizationFeature::ClientRecords->value)->update(['enabled' => false]);
+        OrganizationFeatureGate::invalidate();
+        $this->post(route('portal.medical-profile.update'), $this->answers($snapshot))->assertForbidden();
+        self::assertFalse(MedicalProfile::query()->where('client_id', $client->id)->exists());
+    }
+
+    public function test_legacy_combined_medical_fields_remain_readable_without_guessing_how_to_split_them(): void
+    {
+        [$client, $staff] = $this->fixture();
+        app(UpdateMedicalProfile::class)->handle($staff, $client, UpdateMedicalProfileCommand::fromArray([
+            'complaints_goals' => 'Synthetic legacy complaints and goals',
+            'operations_injuries' => 'Synthetic legacy operations and injuries',
+        ]));
+        $this->get(route('portal.medical-profile'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('profile.legacyFields.complaintsGoals', 'Synthetic legacy complaints and goals')
+            ->where('profile.legacyFields.operationsInjuries', 'Synthetic legacy operations and injuries')
+            ->where('profile.fields.complaints', null)->where('profile.fields.operations', null));
+        $snapshot = $this->get(route('portal.medical-profile'))->viewData('page')['props']['profile']['expectedSnapshot'];
+        $this->post(route('portal.medical-profile.update'), $this->answers($snapshot))->assertSessionHasNoErrors();
+        self::assertSame('Synthetic legacy complaints and goals', app(GetMedicalProfile::class)->handle($staff, $client)->complaintsGoals);
+        self::assertStringNotContainsString('Synthetic legacy complaints', MedicalProfile::query()->where('client_id', $client->id)->sole()->getRawOriginal('complaints_goals'));
+    }
+
     private function fixture(): array
     {
         $organization = Organization::factory()->create();
         app(OrganizationContext::class)->set($organization);
         config(['tenancy.default_organization_id' => $organization->id]);
+        $organization->featureFlags()->create(['feature_key' => OrganizationFeature::ClientRecords->value, 'enabled' => true]);
         $client = Client::factory()->forOrganization($organization)->create();
         $staff = User::factory()->forOrganization($organization)->create();
         $this->withSession(['client_portal.client_id' => $client->id]);

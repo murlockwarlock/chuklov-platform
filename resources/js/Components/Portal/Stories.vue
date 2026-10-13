@@ -142,7 +142,7 @@ function swipe(event: TouchEvent): void {
 .portal-stories { display: flex; gap: 12px; max-width: 100%; height: 90px; overflow-x: auto; }
 .portal-story { flex: 0 0 76px; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; line-height: 12px; }
 .portal-story:disabled { opacity: .55; }
-.portal-story__preview { display: grid; place-items: center; width: 52px; height: 52px; flex-shrink: 0; border-radius: 50%; background: #f0e5dd; border: 2px solid #b88059; }
+.portal-story__preview { display: grid; place-items: center; width: 48px; height: 48px; flex-shrink: 0; border-radius: 50%; background: #f0e5dd; border: 2px solid #b88059; }
 .portal-story__preview img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
 .portal-story__title { overflow-wrap: anywhere; }
 .portal-story-player { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 12px; border: 0; background: #171717; color: white; }
