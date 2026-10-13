@@ -57,7 +57,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 'viewer_timezone_source' => 'organization',
                 'viewer_timezone_suggestion' => null,
             ]);
-        \\Illuminate\\Support\\Facades\\RateLimiter::clear('livewire-rate-limiter:'.sha1('Filament\\Auth\\Pages\\Login|authenticate|127.0.0.1'));
+        \\Illuminate\\Support\\Facades\\RateLimiter::clear('livewire-rate-limiter:'.sha1(\\App\\Filament\\Auth\\Login::class.'|authenticate|127.0.0.1'));
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
             'feature_key' => 'service_catalog',
@@ -1513,7 +1513,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Специалист').click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
-    await page.getByLabel('Боль').fill('Первичная запись о боли');
+    await page.getByRole('textbox', { name: 'Описание боли', exact: true }).fill('Первичная запись о боли');
     await page.getByRole('button', { name: 'Создать', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
@@ -1532,7 +1532,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
-    await page.getByLabel('Боль').fill('Обновлённая запись о боли');
+    await page.getByRole('textbox', { name: 'Описание боли', exact: true }).fill('Обновлённая запись о боли');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
