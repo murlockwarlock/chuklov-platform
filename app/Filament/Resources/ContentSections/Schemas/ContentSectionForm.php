@@ -98,11 +98,11 @@ class ContentSectionForm
                         Placeholder::make('current_video')->label(__('Загруженное видео'))
                             ->content(function (?ContentSection $record): HtmlString|string {
                                 if ($record === null) {
-                                    return __('Сначала сохраните раздел.');
+                                    return (string) __('Сначала сохраните раздел.');
                                 }
                                 $url = app(ContentVideoUrlResolver::class)->resolve($record);
 
-                                return $url === null ? __('Видео не загружено') : new HtmlString('<video controls preload="metadata" style="max-width:100%;max-height:320px" src="'.e($url).'"></video>');
+                                return $url === null ? (string) __('Видео не загружено') : new HtmlString('<video controls preload="metadata" style="max-width:100%;max-height:320px" src="'.e($url).'"></video>');
                             }),
                     ])->columnSpanFull(),
                 Section::make(__('Изображение'))
@@ -262,7 +262,10 @@ class ContentSectionForm
         $webAppUrl = $deliveryMode === 'both'
             ? app(ResolveTelegramMiniAppEntry::class)->launchUrl((string) $get('section_key'))
             : null;
-        $webAppButtonText = $webAppUrl === null ? null : __('Открыть полностью');
+        $translatedWebAppButtonText = __('Открыть полностью');
+        $webAppButtonText = $webAppUrl === null
+            ? null
+            : (is_string($translatedWebAppButtonText) ? $translatedWebAppButtonText : 'Открыть полностью');
 
         return new NotificationMessage(
             recipientExternalId: 'preview',

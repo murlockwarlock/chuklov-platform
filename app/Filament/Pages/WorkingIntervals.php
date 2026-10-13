@@ -334,7 +334,7 @@ final class WorkingIntervals extends LocalizedPage
     public function specialistScheduleTimezoneLabel(): string
     {
         $specialist = $this->selectedSpecialist();
-        $timezone = $specialist?->timezone ?? app(OrganizationContext::class)->defaultTimezone();
+        $timezone = $specialist instanceof Specialist ? $specialist->timezone : app(OrganizationContext::class)->defaultTimezone();
         $offsetHours = now($timezone)->getOffset() / 3600;
         $offset = $offsetHours === 0.0
             ? 'UTC'
@@ -346,7 +346,7 @@ final class WorkingIntervals extends LocalizedPage
     private function humanScheduleError(string $message): string
     {
         return str_contains(mb_strtolower($message), 'overlap')
-            ? __('Рабочие интервалы не должны пересекаться.')
+            ? (string) __('Рабочие интервалы не должны пересекаться.')
             : $message;
     }
 
@@ -358,17 +358,18 @@ final class WorkingIntervals extends LocalizedPage
             ->where('specialist_id', $specialistId)
             ->orderBy('weekday')
             ->orderBy('start_time')
-            ->get()
-            ->map(fn (SpecialistWorkingHour $hour): array => [
+            ->get();
+        $rows = [];
+        foreach ($hours as $hour) {
+            $rows[] = [
                 'weekday' => $hour->weekday,
                 'start_time' => substr((string) $hour->start_time, 0, 5),
                 'end_time' => substr((string) $hour->end_time, 0, 5),
                 'starts_on' => $hour->starts_on?->toDateString(),
                 'ends_on' => $hour->ends_on?->toDateString(),
-            ])
-            ->values()
-            ->all();
+            ];
+        }
 
-        return array_values($hours);
+        return $rows;
     }
 }

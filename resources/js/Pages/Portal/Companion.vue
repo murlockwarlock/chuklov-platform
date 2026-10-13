@@ -14,6 +14,7 @@ type TimelineItem = {
     role: 'client' | 'ai' | 'staff' | 'system';
     roleLabel: string;
     content: string;
+    contentHtml?: string | null;
     occurredAt: string;
     transportLabel: string | null;
     feedback: 'helpful' | 'not_helpful' | null;
@@ -272,6 +273,7 @@ watch(messageSignature, async () => {
             <SafeRichText
               v-if="message.role === 'ai' || message.role === 'staff'"
               :content="message.content"
+              :content-html="message.contentHtml ?? undefined"
             />
             <p
               v-else

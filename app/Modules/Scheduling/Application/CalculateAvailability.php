@@ -16,6 +16,7 @@ use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
+use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Scheduling\Domain\Services\SlotCalculator;
@@ -416,13 +417,14 @@ class CalculateAvailability
         }
 
         $workingHours = $this->workingHoursResolver->forRange($specialist, $workingDateFrom, $workingDateTo);
-        $exceptions = ScheduleException::query()
+        $exceptions = collect(ScheduleException::query()
             ->where('organization_id', $organizationId)
             ->where('specialist_id', $specialist->getKey())
             ->whereBetween('exception_date', [$workingDateFrom->value, $workingDateTo->value])
             ->where('is_active', true)
             ->get()
-            ->groupBy(fn (ScheduleException $exception): string => $exception->dateKey());
+            ->groupBy(fn (ScheduleException $exception): string => $exception->dateKey())
+            ->all());
         $unavailableIntervals = array_values(UnavailablePeriod::query()
             ->where('organization_id', $organizationId)
             ->where('specialist_id', $specialist->getKey())
@@ -564,7 +566,8 @@ class CalculateAvailability
 
     /**
      * @param  Collection<int, LocationDay>  $locationDays
-     * @param  SupportCollection<string, SupportCollection<int, ScheduleException>>  $exceptions
+     * @param  SupportCollection<int|string, Collection<int, ScheduleException>>  $exceptions
+     * @param  Collection<int, SpecialistWorkingHour>  $workingHours
      * @param  list<InstantInterval>  $unavailableIntervals
      * @param  list<InstantInterval>  $bookingIntervals
      * @return list<AvailabilitySlot>
@@ -576,7 +579,7 @@ class CalculateAvailability
         CarbonImmutable $rangeEnd,
         CarbonImmutable $resultRangeStart,
         CarbonImmutable $resultRangeEnd,
-        SupportCollection $workingHours,
+        Collection $workingHours,
         SupportCollection $exceptions,
         array $unavailableIntervals,
         array $bookingIntervals,
@@ -696,17 +699,17 @@ class CalculateAvailability
         CarbonImmutable $rangeStart,
         CarbonImmutable $rangeEnd,
     ): array {
-        $dateFrom = null;
-        $dateTo = null;
+        $dateFrom = '';
+        $dateTo = '';
 
         foreach ($this->locations->locationDaysByTimezone($locationDays)->keys() as $timezone) {
             $timezoneDateFrom = $rangeStart->setTimezone($timezone)->toDateString();
             $timezoneDateTo = $rangeEnd->subSecond()->setTimezone($timezone)->toDateString();
-            $dateFrom = $dateFrom === null || $timezoneDateFrom < $dateFrom ? $timezoneDateFrom : $dateFrom;
-            $dateTo = $dateTo === null || $timezoneDateTo > $dateTo ? $timezoneDateTo : $dateTo;
+            $dateFrom = $dateFrom === '' || $timezoneDateFrom < $dateFrom ? $timezoneDateFrom : $dateFrom;
+            $dateTo = $dateTo === '' || $timezoneDateTo > $dateTo ? $timezoneDateTo : $dateTo;
         }
 
-        if ($dateFrom === null || $dateTo === null) {
+        if ($dateFrom === '' || $dateTo === '') {
             throw new InvalidArgumentException('The location-day date range is invalid.');
         }
 

@@ -62,6 +62,18 @@ return [
                 'route' => 'portal.feedback',
                 'parameters' => [],
             ],
+            'health' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.health',
+                'parameters' => [],
+            ],
+            'surveys' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.surveys.index',
+                'parameters' => [],
+            ],
             'partner' => [
                 'launch' => 'mini_app',
                 'requires_auth' => false,

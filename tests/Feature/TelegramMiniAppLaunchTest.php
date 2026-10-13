@@ -109,6 +109,8 @@ final class TelegramMiniAppLaunchTest extends TestCase
             'b2b' => route('portal.b2b', [], false),
             'partner' => route('portal.section', ['section' => 'partner'], false),
             'partner_cabinet' => route('portal.referrals', [], false),
+            'health' => route('portal.health', [], false),
+            'surveys' => route('portal.surveys.index', [], false),
         ] as $key => $destination) {
             $this->withSession(['client_portal.client_id' => $client->getKey()])
                 ->get(route('portal.telegram.launch', ['entry' => $key]))
@@ -120,7 +122,7 @@ final class TelegramMiniAppLaunchTest extends TestCase
     {
         $this->organizationWithClientRecords();
 
-        foreach (['portal', 'b2b', 'partner_cabinet'] as $key) {
+        foreach (['portal', 'b2b', 'partner_cabinet', 'health', 'surveys'] as $key) {
             $this->get(route('portal.telegram.launch', ['entry' => $key]))
                 ->assertRedirect(route('portal.home', ['telegram_entry' => $key], false));
 

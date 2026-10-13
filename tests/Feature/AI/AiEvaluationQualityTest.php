@@ -419,7 +419,7 @@ final class AiEvaluationQualityTest extends TestCase
         $modelLabel->setAccessible(true);
 
         self::assertSame('v1', $promptLabel->invoke(null, $run));
-        self::assertSame('openai · gpt-4o-mini · выпуск 1', $modelLabel->invoke(null, $run));
+        self::assertSame('openai · gpt-4o-mini · Выпуск 1', $modelLabel->invoke(null, $run));
     }
 
     public function test_snapshot_hash_is_stable_for_irrelevant_case_and_definition_order(): void

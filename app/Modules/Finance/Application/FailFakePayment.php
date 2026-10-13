@@ -63,6 +63,7 @@ final class FailFakePayment
                     || $event->event_type !== PaymentGatewayEventType::Failure
                     || $event->provider_reference !== $verified->providerReference
                     || $event->amount_minor !== $verified->amountMinor
+                    || $event->currency === null
                     || $event->currency->value !== $verified->currency->value
                     || $event->payload_hash !== $payloadHash
                     || $event->verification_status !== ProviderVerificationStatus::Verified

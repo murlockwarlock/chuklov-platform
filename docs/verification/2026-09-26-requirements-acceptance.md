@@ -49,6 +49,90 @@ Second candidate `43293a5131e53e3fc975a8b3b7ea406010c9f289`: [browser gate](http
 
 Read-only staging REVISION is `f3509f8ce957082045f3e140cd4a08809d1c3751`, which is not an ancestor of Starting SHA. Owner explicitly authorized selective transfer of necessary PR #59 runtime fixes/regressions, including Telegram internal client CTA buttons, without merging/closing #59 or importing its proof/audit artifacts. Staging deployment remains pending integration and affected verification; it must not silently roll back this delta.
 
+
+### Selective preservation of deployed PR #59 code
+
+Source delta is Starting main `c201b41` → deployed `f3509f8`, not PR #59's later un-deployed HEAD. No merge or blind commit cherry-pick was used. Unchanged files were checked against Starting main; overlapping files received selected hunks or functional integration.
+
+Source commits represented: `f3509f8` (internal Mini App CTA), `de1b246` (sanitized staff reply), `1030a50` (meeting-link replay), `65b89e2` / `a57b443` (visible payment/barter validation and payment-history refresh), `2d16ac3` (gift-claim error continuation), `570f2da` / `4b4c9fd` (substantive regressions and valid PostgreSQL/test contracts), `ed9f423` / `aeaa182` (compatible typed CRM/date contracts), `c79ebac` (Compose preflight drains output). This identifies source contributions, not a claim that entire commits were imported.
+
+Selected files transferred so far:
+
+- `app/Filament/Pages/WorkSchedule.php`
+- `app/Filament/Resources/Clients/Schemas/ClientWorkspaceInfolist.php`
+- `app/Filament/Resources/ContentSections/Schemas/ContentSectionForm.php`
+- `app/Filament/Resources/FinancialObligations/FinancialPaymentsRelationManager.php`
+- `app/Filament/Resources/PaymentGatewayReconciliation/Tables/PaymentGatewayReconciliationTable.php`
+- `app/Filament/Support/FinancePaymentActions.php`
+- `app/Filament/Support/LocalizedCreateRecord.php`
+- `app/Filament/Support/LocalizedDashboard.php`
+- `app/Filament/Support/LocalizedEditRecord.php`
+- `app/Filament/Support/LocalizedListRecords.php`
+- `app/Filament/Support/LocalizedManageRelatedRecords.php`
+- `app/Filament/Support/LocalizedPage.php`
+- `app/Filament/Support/LocalizedResource.php`
+- `app/Filament/Support/LocalizedViewRecord.php`
+- `app/Http/Controllers/Portal/GiftCertificateClaimController.php`
+- `app/Modules/AI/Application/Actions/StartClinicalCourseReport.php`
+- `app/Modules/AI/Application/Actions/StartClinicalSynthesis.php`
+- `app/Modules/Analytics/Application/AcquisitionAnalytics.php`
+- `app/Modules/Channels/Application/ResolveTelegramMiniAppEntry.php`
+- `app/Modules/Channels/Application/SendTelegramContentSection.php`
+- `app/Modules/Channels/Application/TelegramMessagePreview.php`
+- `app/Modules/Channels/Domain/ValueObjects/NotificationActionButton.php`
+- `app/Modules/Channels/Infrastructure/Telegram/TelegramMessagingChannel.php`
+- `app/Modules/Channels/Infrastructure/Telegram/TelegramNotificationChannel.php`
+- `app/Modules/ClientCompanion/Application/Services/ReadCompanionConversation.php`
+- `app/Modules/Finance/Application/FailFakePayment.php`
+- `app/Modules/Finance/Application/ProcessPaymentGatewayEvent.php`
+- `app/Modules/Finance/Application/ReconcileFakeGatewayTransaction.php`
+- `app/Modules/Finance/Application/RefundFakePayment.php`
+- `app/Modules/Finance/Application/SettleFakePayment.php`
+- `app/Modules/Finance/Application/SimulateClientFakePayment.php`
+- `app/Modules/Knowledge/Application/ProcessKnowledgeIngestion.php`
+- `app/Modules/Knowledge/Application/ReprocessKnowledgeForSearch.php`
+- `app/Modules/Knowledge/Application/RetryKnowledgeIngestion.php`
+- `app/Modules/Knowledge/Application/StartPendingKnowledgeIngestion.php`
+- `app/Modules/Organizations/Domain/Models/Organization.php`
+- `app/Modules/Scenarios/Application/ExecuteScenarioAction.php`
+- `app/Modules/Scenarios/Domain/Exceptions/TelegramMiniAppConfigurationException.php`
+- `app/Modules/Scheduling/Application/BookingLocationResolver.php`
+- `app/Modules/Scheduling/Application/CalculateAvailability.php`
+- `app/Modules/Scheduling/Application/ResolveSpecialistWorkingHours.php`
+- `app/Modules/Scheduling/Application/ScheduleMutationImpactCalculator.php`
+- `app/Modules/Scheduling/Application/SetOnlineMeetingUrl.php`
+- `app/Modules/Scheduling/Domain/Models/SpecialistWorkingHour.php`
+- `app/Modules/Scheduling/Domain/ValueObjects/SpecialistScheduleDefinition.php`
+- `app/Modules/Services/Domain/Models/Service.php`
+- `config/portal.php`
+- `resources/js/Pages/Portal/Companion.vue`
+- `scripts/deploy-staging.sh`
+- `tests/Feature/AI/AiAsyncCandidateSnapshotTest.php`
+- `tests/Feature/AI/AiEvaluationQualityTest.php`
+- `tests/Feature/Analytics/AnalyticsProjectionTest.php`
+- `tests/Feature/ClientCompanion/StaffReplyPortalFormattingTest.php`
+- `tests/Feature/CrmEntityClickThroughTest.php`
+- `tests/Feature/CustomizableCopySafetyTest.php`
+- `tests/Feature/FinanceCrmUxTest.php`
+- `tests/Feature/GiftCertificateTest.php`
+- `tests/Feature/MilestoneFiveBScenarioFamiliesTest.php`
+- `tests/Feature/MilestoneFourFinalLifecycleTest.php`
+- `tests/Feature/MilestoneTwoTelegramBotTest.php`
+- `tests/Feature/PaymentGatewayReconciliationCrmTest.php`
+- `tests/Feature/PaymentScenarioNotificationsTest.php`
+- `tests/Feature/PlatformHealthExperienceTest.php`
+- `tests/Feature/ReferralPayoutNotificationTest.php`
+- `tests/Feature/ReferralRewardsTest.php`
+- `tests/Feature/SchedulingJournalProductionPassTest.php`
+- `tests/Feature/TelegramMiniAppLaunchTest.php`
+- `tests/Integration/MilestoneFourConcurrencyTest.php`
+
+Conflict integration: WorkingIntervals receives date projection fixes from the old SchedulingConfiguration without restoring combined settings; WorkSchedule keeps the new heading; Service keeps requires_medical_profile and format buffers; ClientWorkspace keeps demographics/chronic conditions; managed video fields and single-button /start remain intact.
+
+Intentionally excluded: PR #59 proof/audit documents; source inventories; system-proof inventory scripts/tests; staging-proof-client/integrations/evidence helpers; the Finance test that only exercises those evidence helpers; browser diagnostic/editor-selection iteration changes; PR #59 CI inventory step. The approved security lockfile change was implemented separately as `45103f5`, not overwritten from the audit branch. Remaining static-only PR #59 hunks are not silently considered transferred or verified.
+
+Preservation focused checks PASS: Telegram/Scenario/Companion 105 tests / 677 assertions; Finance/gifts/analytics/manual-link 78 tests / 686 assertions; schema-compatible UI/schedule regressions 46 tests / 466 assertions; scheduling/payment processing 47 tests / 306 assertions. PostgreSQL race test for same meeting-link saves is transferred but NOT RUN LOCALLY; hosted candidate gate pending. Real Telegram CTA/client click and exact-SHA staging smoke are NOT VERIFIED pending deploy.
+
 ## Summary
 
 | Requirement | Before | After | Evidence |
