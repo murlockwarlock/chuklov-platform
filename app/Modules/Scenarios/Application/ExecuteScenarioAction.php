@@ -433,7 +433,7 @@ final class ExecuteScenarioAction
                 return $this->clientMiniAppButton(
                     text: $action->trigger_event->value === 'referral.reward.earned'
                         ? ($this->isRussian($locale) ? 'Открыть реферальный раздел' : 'Open referral page')
-                        : ($this->isRussian($locale) ? 'Подключиться к встрече' : 'Join meeting'),
+                        : ($this->isRussian($locale) ? 'Открыть партнёрский кабинет' : 'Open partner cabinet'),
                     entry: 'partner_cabinet',
                 );
             }

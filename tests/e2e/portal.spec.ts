@@ -1367,6 +1367,22 @@ test('September 26 confirmed profile persists and the medical editor saves then 
         await page.setViewportSize({ width, height: 900 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `Medical profile at ${width}px`).toBe(true);
     }
+    expect(await page.evaluate(() => JSON.stringify({
+        history: window.history.state,
+        local: { ...window.localStorage },
+        session: { ...window.sessionStorage },
+    }))).not.toContain('Synthetic symptoms');
+    await page.context().clearCookies({ name: fixture.cookieName });
+    const guestResponse = await page.goto('/');
+    expect(guestResponse?.headers()['cache-control']).toContain('no-store');
+    await expect(page.getByText('Synthetic symptoms', { exact: true })).toHaveCount(0);
+    const deniedMedicalResponse = page.waitForResponse((response) =>
+        response.url().endsWith('/portal/medical-profile') && response.status() === 401,
+    );
+    await page.goBack();
+    await deniedMedicalResponse;
+    await expect(page.getByText('Synthetic symptoms', { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.body.textContent)).not.toContain('Synthetic symptoms');
 });
 
 test('September 26 medical service opens the saved-profile onboarding after the slot is created', async ({ page }) => {

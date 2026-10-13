@@ -10,7 +10,7 @@ final readonly class ListClientMedicalMaterials
 {
     public function __construct(private ClientPortalContext $context, private GetClientTemporaryAttachmentUrl $urls) {}
 
-    /** @return list<array<string, mixed>> */
+    /** @return array<int, array<string, mixed>> */
     public function handle(): array
     {
         $client = $this->context->client();

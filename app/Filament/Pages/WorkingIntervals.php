@@ -88,8 +88,8 @@ final class WorkingIntervals extends LocalizedPage
             ->where('organization_id', app(OrganizationContext::class)->id())->find((int) $specialistId);
         $this->form->fill([
             'specialist_id' => $specialistId,
-            'viewer_timezone' => $viewerSpecialist?->viewer_timezone ?? $specialist?->viewer_timezone,
-            'viewer_timezone_suggestion' => $viewerSpecialist?->viewer_timezone_suggestion ?? $specialist?->viewer_timezone_suggestion,
+            'viewer_timezone' => ($viewerSpecialist === null ? null : $viewerSpecialist->viewer_timezone) ?? $specialist?->viewer_timezone,
+            'viewer_timezone_suggestion' => ($viewerSpecialist === null ? null : $viewerSpecialist->viewer_timezone_suggestion) ?? $specialist?->viewer_timezone_suggestion,
             'working_hours' => $specialist === null ? [] : $this->workingHours((int) $specialist->getKey()),
             'working_hours_digest' => $specialist === null ? null : app(SetSpecialistWorkingHours::class)->digest($specialist),
             'clear_working_hours' => false,
@@ -216,7 +216,8 @@ final class WorkingIntervals extends LocalizedPage
     {
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
-        $data = null;
+        $rawState = $this->form->getRawState();
+        $data = $rawState instanceof Arrayable ? $rawState->toArray() : $rawState;
         try {
             $data = $this->form->getState();
             $specialist = Specialist::query()->where('organization_id', app(OrganizationContext::class)->id())
@@ -239,9 +240,8 @@ final class WorkingIntervals extends LocalizedPage
             });
             $this->data['working_hours_digest'] = app(SetSpecialistWorkingHours::class)->digest($specialist);
         } catch (ValidationException $exception) {
-            $state = $this->form->getRawState();
             $this->form->fill(ScheduleImpactPreview::mergeValidationPreview(
-                $data ?? ($state instanceof Arrayable ? $state->toArray() : $state), $exception,
+                $data, $exception,
             ));
             throw $exception;
         } catch (InvalidArgumentException $exception) {

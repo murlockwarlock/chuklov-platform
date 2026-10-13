@@ -165,6 +165,7 @@ final class ReferralPayoutNotificationTest extends TestCase
             $channel->messages[0]->actionButton->webAppUrl,
         );
         self::assertNull($channel->messages[0]->actionButton->url);
+        self::assertSame('Open partner cabinet', $channel->messages[0]->actionButton->text);
     }
 
     private function payout(

@@ -14,7 +14,10 @@ final readonly class GetClientHomeHealthAction
 {
     public function __construct(private ResolveTrackerAccess $trackerAccess, private FindLatestReviewedAiRun $reports, private MedicalEncryptorInterface $encryptor) {}
 
-    /** @param array<string, mixed> $tracker @return array<string, mixed>|null */
+    /**
+     * @param  array<string, mixed>  $tracker
+     * @return array<string, mixed>|null
+     */
     public function handle(Client $client, array $tracker): ?array
     {
         $access = $this->trackerAccess->handle($client);
