@@ -15,12 +15,19 @@ use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Livewire;
 use Tests\TestCase;
 
 class PrivilegedAuthenticationTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        RateLimiter::clear('livewire-rate-limiter:'.sha1(AdminLogin::class.'|authenticate|127.0.0.1'));
+    }
 
     public function test_admin_panel_offers_optional_mfa_and_profile_management(): void
     {
