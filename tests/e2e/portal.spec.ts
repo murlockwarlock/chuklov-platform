@@ -20,6 +20,7 @@ type BookingFixture = {
 };
 
 type BookingFixtureOptions = {
+    daysAhead?: number;
     medicalService?: boolean;
     withBooking?: boolean;
     withCompanionMessages?: boolean;
@@ -380,7 +381,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     'timezone' => 'Europe/Berlin',
                 ]);
         }
-        $date = \\Carbon\\CarbonImmutable::now('UTC')->addDay()->toDateString();
+        $date = \\Carbon\\CarbonImmutable::now('UTC')->addDays((int) getenv('PLAYWRIGHT_BOOKING_DAYS_AHEAD'))->toDateString();
         $booking = null;
         if (getenv('PLAYWRIGHT_WITH_BOOKING') === '1') {
             $date = \\Carbon\\CarbonImmutable::now('UTC')->addDays(3)->toDateString();
@@ -452,6 +453,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
         PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
         PLAYWRIGHT_MEDICAL_SERVICE: normalizedOptions.medicalService ? '1' : '0',
+        PLAYWRIGHT_BOOKING_DAYS_AHEAD: String(normalizedOptions.daysAhead ?? 1),
         PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
         PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
         PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
@@ -1388,7 +1390,7 @@ test('September 26 confirmed profile persists and the medical editor saves then 
 });
 
 test('September 26 client selects multiple sessions before the medical editor and can cancel one independently', async ({ page }) => {
-    const fixture = createBookingFixture({ medicalService: true });
+    const fixture = createBookingFixture({ medicalService: true, daysAhead: 3 });
     await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
     await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
     await page.getByTestId('availability-slot').first().click();
@@ -1442,7 +1444,7 @@ test('September 26 medical service opens the saved-profile onboarding after the 
     await acceptRequiredConsents(page);
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/medical-profile\?booking_id=\d+&edit=1/);
-    await page.getByRole('link', { name: 'Мои записи', exact: true }).click();
+    await page.getByRole('link', { name: 'К записи', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/bookings\/\d+$/);
     await expect(page.getByText(fixture.serviceName, { exact: true }).first()).toBeVisible();
     await page.reload();
