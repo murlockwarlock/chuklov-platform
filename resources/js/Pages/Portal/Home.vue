@@ -105,7 +105,8 @@ function completeTask(event: Event): void {
 
       <section
         v-if="props.healthAction"
-        class="portal-content-section portal-stack rounded-2xl bg-orange-50"
+        class="portal-content-section portal-stack rounded-2xl bg-orange-50 p-5 sm:p-6"
+        data-testid="home-health-action"
       >
         <div class="portal-section-heading">
           <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-orange-100 text-orange-700"><PortalIcon name="health" /></span>

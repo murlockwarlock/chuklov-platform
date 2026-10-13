@@ -660,6 +660,16 @@ test('portrait Story previews stay inside their frames and player navigation wor
                 && element.getBoundingClientRect().bottom >= titleBounds.bottom;
         }))).toBe(true);
         await assertNoHorizontalOverflow(page);
+        if (width < 768) {
+            const labels = page.locator('.portal-bottom-nav__label');
+            await expect(labels).toHaveCount(5);
+            expect(await labels.evaluateAll((elements) => elements.every((element) => {
+                const range = document.createRange();
+                range.selectNodeContents(element);
+                return element.scrollWidth <= element.clientWidth
+                    && range.getClientRects().length === 1;
+            }))).toBe(true);
+        }
     }
     await cards.first().click();
     const dialog = page.locator('.portal-story-player');
@@ -1485,6 +1495,19 @@ test('September 26 paid focus stays on home through completion and correction an
     await page.goto('/');
     await expect(page.getByText('Фокус дня', { exact: true })).toBeVisible();
     await expect(page.getByText('Практика QA', { exact: true })).toBeVisible();
+    const healthAction = page.getByTestId('home-health-action');
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await healthAction.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            return Array.from(element.children).every((child) => {
+                const childBounds = child.getBoundingClientRect();
+                return childBounds.left >= bounds.left + 16
+                    && childBounds.right <= bounds.right - 16;
+            });
+        })).toBe(true);
+        await assertNoHorizontalOverflow(page);
+    }
     const completed = page.getByRole('checkbox', { name: 'Выполнено', exact: true });
     const completion = page.waitForResponse((response) => response.request().method() === 'POST' && /\/portal\/tracker\/tasks\/\d+\/entry$/.test(response.url()));
     await completed.check();
