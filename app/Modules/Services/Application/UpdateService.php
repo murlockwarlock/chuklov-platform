@@ -88,6 +88,11 @@ class UpdateService
             'payment_requirement' => $paymentRequirement,
         ];
         $expectedSnapshot = $attributes['expected_snapshot'] ?? null;
+        foreach (['buffer_office_minutes', 'buffer_home_minutes', 'buffer_online_minutes', 'requires_medical_profile'] as $field) {
+            if (! array_key_exists($field, $attributes)) {
+                $attributes[$field] = $service->getAttribute($field);
+            }
+        }
         unset($attributes['expected_snapshot']);
         $uploadedFile = $this->uploadedFile($attributes);
         $removeImage = (bool) ($attributes['remove_image'] ?? false);

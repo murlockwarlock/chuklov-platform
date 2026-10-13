@@ -19,6 +19,7 @@ final class HealthController extends Controller
         ListClientHealthOverview $healthOverview,
     ): Response {
         $surveyData = $surveys->handle($context->client());
+        Inertia::encryptHistory();
 
         return Inertia::render('Portal/Health', [
             'tracker' => $tracker->handle(),

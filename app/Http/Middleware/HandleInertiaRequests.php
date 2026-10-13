@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Modules\ClientPortal\Application\GetClientAvailableBonus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Support\SupportedLocale;
@@ -37,6 +38,8 @@ class HandleInertiaRequests extends Middleware
             'portal' => [
                 'authenticated' => $client !== null,
                 'clientName' => $client?->full_name,
+                'confirmedFirstName' => $client?->name_confirmed_at !== null ? $client->first_name : null,
+                'availableBonus' => fn (): ?string => $client === null ? null : app(GetClientAvailableBonus::class)->handle($client),
                 'isPartner' => $client?->referralPartnerProfile?->isActive() === true,
                 'locale' => $locale,
                 'localeUrl' => route('portal.locale.update'),
@@ -52,6 +55,8 @@ class HandleInertiaRequests extends Middleware
                     'companion' => route('portal.companion'),
                     'tracker' => route('portal.tracker'),
                     'profile' => route('portal.profile'),
+                    'medicalProfile' => route('portal.medical-profile'),
+                    'communities' => route('portal.section', ['section' => 'communities']),
                     'referrals' => route('portal.referrals'),
                     'feedback' => route('portal.feedback'),
                     'attribution' => route('portal.attribution'),

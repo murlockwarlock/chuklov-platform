@@ -94,8 +94,8 @@ return [
             ],
         ],
         'greeting' => [
-            'en' => 'Choose an entry point.',
-            'ru' => 'Выберите раздел.',
+            'en' => 'Welcome to your space for health! Open the app to choose a service and a convenient time.',
+            'ru' => 'Добро пожаловать в пространство здоровья! Откройте приложение, чтобы выбрать услугу и удобное время.',
         ],
         'menu' => [
             'en' => [

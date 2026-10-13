@@ -20,6 +20,13 @@ type LegalDocument = {
 
 type Profile = {
     fullName: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    middleName: string | null;
+    gender: 'MALE' | 'FEMALE' | null;
+    birthDate: string | null;
+    country: string | null;
+    city: string | null;
     email: string | null;
     phone: string | null;
     timezone: string;
@@ -54,12 +61,24 @@ const props = defineProps<{
 
 const { locale, t } = usePortalLocale();
 const profileForm = useForm<{
-    full_name: string;
+    first_name: string;
+    last_name: string;
+    middle_name: string;
+    gender: string;
+    birth_date: string;
+    country: string;
+    city: string;
     email: string;
     phone: string;
     timezone: string;
 }>({
-    full_name: props.profile.fullName ?? '',
+    first_name: props.profile.firstName ?? '',
+    last_name: props.profile.lastName ?? '',
+    middle_name: props.profile.middleName ?? '',
+    gender: props.profile.gender ?? '',
+    birth_date: props.profile.birthDate ?? '',
+    country: props.profile.country ?? '',
+    city: props.profile.city ?? '',
     email: props.profile.email ?? '',
     phone: props.profile.phone ?? '',
     timezone: props.profile.timezone,
@@ -82,6 +101,13 @@ const b2bAnswerForm = useForm<{ b2b_specialist_answer: 'yes' | 'no' | null }>({
     b2b_specialist_answer: props.b2bSpecialistAnswer,
 });
 const editingB2bAnswer = ref(false);
+const personalFields = [
+    { key: 'last_name', label: 'profile.lastName', autocomplete: 'family-name', required: true },
+    { key: 'first_name', label: 'profile.firstName', autocomplete: 'given-name', required: true },
+    { key: 'middle_name', label: 'profile.middleName', autocomplete: 'additional-name', required: false },
+    { key: 'country', label: 'profile.country', autocomplete: 'country-name', required: true },
+    { key: 'city', label: 'profile.city', autocomplete: 'address-level2', required: true },
+] as const;
 const hasRequiredConsentError = computed(() =>
     Object.keys(consentForm.errors).some((key) => key.startsWith('consents')),
 );
@@ -159,23 +185,75 @@ function saveB2bAnswer(): void {
           @submit.prevent="saveProfile"
         >
           <div class="portal-grid portal-grid--two">
-            <div class="portal-field">
+            <div
+              v-for="field in personalFields"
+              :key="field.key"
+              class="portal-field"
+            >
               <label
-                for="profile-full-name"
+                :for="'profile-' + field.key"
                 class="portal-label"
-              >{{ t('profile.name') }}</label>
+              >{{ t(field.label) }}</label>
               <input
-                id="profile-full-name"
-                v-model="profileForm.full_name"
+                :id="'profile-' + field.key"
+                v-model="profileForm[field.key]"
                 type="text"
-                autocomplete="name"
+                :autocomplete="field.autocomplete"
+                :required="field.required"
+                maxlength="100"
                 class="portal-input"
               >
               <p
-                v-if="profileForm.errors.full_name"
+                v-if="profileForm.errors[field.key]"
                 class="portal-error"
               >
-                {{ profileForm.errors.full_name }}
+                {{ profileForm.errors[field.key] }}
+              </p>
+            </div>
+
+            <fieldset class="portal-field">
+              <legend class="portal-label">
+                {{ t('profile.gender') }}
+              </legend>
+              <div class="portal-segmented">
+                <label
+                  v-for="gender in ['MALE', 'FEMALE']"
+                  :key="gender"
+                  class="portal-copy"
+                >
+                  <input
+                    v-model="profileForm.gender"
+                    type="radio"
+                    :value="gender"
+                    required
+                  >
+                  {{ t(gender === 'MALE' ? 'profile.male' : 'profile.female') }}
+                </label>
+              </div>
+              <p
+                v-if="profileForm.errors.gender"
+                class="portal-error"
+              >
+                {{ profileForm.errors.gender }}
+              </p>
+            </fieldset>
+            <div class="portal-field">
+              <label
+                for="profile-birth-date"
+                class="portal-label"
+              >{{ t('profile.birthDate') }}</label>
+              <input
+                id="profile-birth-date"
+                v-model="profileForm.birth_date"
+                type="date"
+                required
+                class="portal-input"
+              >
+              <p
+                v-if="profileForm.errors.birth_date"
+                class="portal-error"
+              >
+                {{ profileForm.errors.birth_date }}
               </p>
             </div>
 
@@ -188,6 +266,7 @@ function saveB2bAnswer(): void {
                 id="profile-phone"
                 v-model="profileForm.phone"
                 type="tel"
+                required
                 autocomplete="tel"
                 class="portal-input"
                 :placeholder="t('profile.notSpecified')"
@@ -214,6 +293,9 @@ function saveB2bAnswer(): void {
                 :disabled="!props.profile.emailEditable"
                 :placeholder="t('profile.notSpecified')"
               >
+              <p class="portal-copy portal-copy--small">
+                {{ t('profile.emailPurpose') }}
+              </p>
               <p
                 v-if="!props.profile.emailEditable"
                 class="portal-copy portal-copy--small"

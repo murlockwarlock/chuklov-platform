@@ -37,6 +37,13 @@ final class GetClientProfile
         return [
             'profile' => [
                 'fullName' => $client->full_name,
+                'firstName' => $client->first_name,
+                'lastName' => $client->last_name,
+                'middleName' => $client->middle_name,
+                'gender' => $client->gender,
+                'birthDate' => $client->birth_date?->toDateString(),
+                'country' => $client->country,
+                'city' => $client->city,
                 'email' => $client->email,
                 'phone' => $client->phone,
                 'timezone' => $client->timezone,

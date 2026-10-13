@@ -363,6 +363,7 @@ class BookingForm
                 ->helperText(__('Оставьте пустым, чтобы занять обычное время услуги.')),
             TextEntry::make('backdated_warning')
                 ->label(__('Внимание'))
+                ->color('danger')
                 ->state(fn (Get $get): string => self::backdatedWarning($get))
                 ->visible(fn (Get $get): bool => self::isBackdated($get))
                 ->columnSpanFull(),

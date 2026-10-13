@@ -19,6 +19,7 @@ type BookingFixture = {
 };
 
 type BookingFixtureOptions = {
+    medicalService?: boolean;
     withBooking?: boolean;
     withCompanionMessages?: boolean;
     withCompanionFailure?: boolean;
@@ -313,6 +314,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 ? 'Индивидуальная консультация по глубоким и устойчивым изменениям в жизни '.$suffix
                 : 'Playwright Service '.$suffix,
             'formats' => $homeVisit ? ['home'] : ($multipleChoices ? ['office', 'online'] : ['office']),
+            'requires_medical_profile' => getenv('PLAYWRIGHT_MEDICAL_SERVICE') === '1',
         ]);
         \\App\\Modules\\Scheduling\\Domain\\Models\\SpecialistServiceAssignment::factory()
             ->forSpecialist($specialist)
@@ -447,6 +449,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
         DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
         PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
+        PLAYWRIGHT_MEDICAL_SERVICE: normalizedOptions.medicalService ? '1' : '0',
         PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
         PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
         PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
@@ -651,7 +654,7 @@ test('Telegram Mini App submits initData automatically without a second login ac
 
     await page.goto('/');
 
-    await expect(page.getByText('Добро пожаловать, Telegram Client')).toBeVisible();
+    await expect(page.getByText('Добро пожаловать в пространство здоровья!')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toHaveCount(0);
     expect(authenticationRequests).toBe(1);
 });
@@ -821,7 +824,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     }]);
 
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Добро пожаловать, Playwright Client' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!' })).toBeVisible();
     const russianTrigger = page.getByRole('button', { name: 'Русский', exact: true });
     await expect(russianTrigger).toBeVisible();
     await expect(page.getByRole('menu')).toHaveCount(0);
@@ -888,7 +891,7 @@ test('home keeps one primary booking action and ordinary referrals remain availa
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/');
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
-        await expect(page.getByTestId('home-booking-cta')).toHaveText('Записаться');
+        await expect(page.getByTestId('home-booking-cta')).toHaveText('Выбрать удобное время');
         await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
         await assertNoHorizontalOverflow(page);
 
@@ -1289,6 +1292,78 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await expect(page.getByTestId('availability-slot')).toHaveCount(0);
     await page.getByRole('link', { name: 'Мои записи' }).last().click();
     await expect(page.getByText(/Playwright Service/)).toHaveCount(1);
+});
+
+test('September 26 confirmed profile persists and the medical editor saves then reopens', async ({ page }) => {
+    const fixture = createBookingFixture();
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!' })).toBeVisible();
+    await page.getByTestId('home-booking-cta').click();
+    await expect(page).toHaveURL(/\/portal\/services/);
+    await page.goto('/portal/more');
+    await page.getByRole('link', { name: 'Личные данные', exact: true }).click();
+    await page.getByLabel('Фамилия', { exact: true }).fill('Солдатов');
+    await page.getByLabel('Имя', { exact: true }).fill('Денис');
+    await page.getByLabel('Отчество', { exact: true }).fill('Сергеевич');
+    await page.getByLabel('Мужской', { exact: true }).check();
+    await page.getByLabel('Дата рождения', { exact: true }).fill('1990-02-28');
+    await page.getByLabel('Страна', { exact: true }).fill('Казахстан');
+    await page.getByLabel('Город', { exact: true }).fill('Алматы');
+    await page.getByLabel('Телефон', { exact: true }).fill('+77001234567');
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    }
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel('Фамилия', { exact: true })).toHaveValue('Солдатов');
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Добро пожаловать, Денис!' })).toBeVisible();
+    await page.goto('/portal/more');
+    await page.getByRole('link', { name: 'Медицинские данные', exact: true }).click();
+    await page.getByLabel('Боль в шее', { exact: true }).check();
+    await page.getByLabel('Главные жалобы', { exact: true }).last().fill('Synthetic symptoms');
+    await page.getByLabel('Задачи по здоровью', { exact: true }).fill('Synthetic goals');
+    await page.getByLabel('Хронических заболеваний нет', { exact: true }).check();
+    await page.locator('input[name="operations"][value="false"]').check();
+    await page.locator('input[name="injuries"][value="false"]').check();
+    await page.locator('#medical-pain').focus();
+    await page.locator('#medical-pain').press('Home');
+    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
+    await page.locator('#medical-pain').press('End');
+    await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
+    await expect(page.getByText('Данные сохранены', { exact: true })).toBeVisible();
+    await expect(page.getByText('10 / 10', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('Synthetic symptoms', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Редактировать данные', exact: true }).click();
+    await expect(page.getByLabel('Главные жалобы', { exact: true }).last()).toHaveValue('Synthetic symptoms');
+    await page.locator('#medical-pain').focus();
+    await page.locator('#medical-pain').press('Home');
+    await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
+    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    }
+});
+
+test('September 26 medical service opens the saved-profile onboarding after the slot is created', async ({ page }) => {
+    const fixture = createBookingFixture({ medicalService: true });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    await acceptRequiredConsents(page);
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/medical-profile\?booking_id=\d+&edit=1/);
+    await page.getByRole('link', { name: 'Мои записи', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/bookings\/\d+$/);
+    await expect(page.getByText(fixture.serviceName, { exact: true }).first()).toBeVisible();
+    await page.reload();
+    await expect(page.getByText(fixture.serviceName, { exact: true }).first()).toBeVisible();
 });
 
 test('client can change display timezone and choose a physical office', async ({ page }) => {

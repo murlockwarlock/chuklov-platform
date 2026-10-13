@@ -96,6 +96,23 @@ class MilestoneFourSchedulingTest extends TestCase
         self::assertSame('2026-03-30T12:00:00+05:00', $result->toArray()['slots'][0]['displayStartsAt']);
     }
 
+    public function test_per_format_buffers_change_authoritative_availability_and_persisted_occupancy(): void
+    {
+        [, $admin, $specialist, $service] = $this->fixture('UTC');
+        $service->update(['buffer_office_minutes' => 30, 'buffer_online_minutes' => 0]);
+        self::assertSame(15, $service->bufferMinutesForFormat('home'));
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [['weekday' => 1, 'start_time' => '09:00', 'end_time' => '12:00']]);
+        foreach ([VisitFormat::Office, VisitFormat::Online] as $format) {
+            $result = app(CalculateAvailability::class)->forStaff($admin, $specialist->id, $service->id, '2026-03-30', '2026-03-30', $format, 'UTC');
+            self::assertSame($format === VisitFormat::Office ? '2026-03-30T10:30:00+00:00' : '2026-03-30T10:00:00+00:00', $result->slots[0]->blockingEndsAt->toIso8601String());
+        }
+        $client = Client::factory()->forOrganization($specialist->organization)->create();
+        $booking = app(CreateBooking::class)->handle($admin, $client, $specialist, $service, CarbonImmutable::parse('2026-03-30T09:00:00Z'), VisitFormat::Office);
+        self::assertSame('2026-03-30T10:30:00+00:00', $booking->blockingEndsAtUtc()->toIso8601String());
+        $this->expectException(ValidationException::class);
+        app(CreateBooking::class)->handle($admin, $client, $specialist, $service, CarbonImmutable::parse('2026-03-30T10:00:00Z'), VisitFormat::Online);
+    }
+
     public function test_day_off_and_custom_window_exceptions_have_explicit_precedence(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture('UTC');

@@ -30,6 +30,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'category',
     'duration_minutes',
     'buffer_minutes',
+    'buffer_office_minutes',
+    'buffer_home_minutes',
+    'buffer_online_minutes',
+    'requires_medical_profile',
     'formats',
     'price_minor',
     'price_currency',
@@ -39,6 +43,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 ])]
 class Service extends Model
 {
+    protected $attributes = ['requires_medical_profile' => true];
+
+    public function bufferMinutesForFormat(string $format): int
+    {
+        if (! in_array($format, ['office', 'home', 'online'], true)) {
+            throw new \InvalidArgumentException('Unsupported service format.');
+        }
+
+        return (int) ($this->getAttribute('buffer_'.$format.'_minutes') ?? $this->buffer_minutes);
+    }
+
     /** @use HasFactory<ServiceFactory> */
     use HasFactory;
 
@@ -104,6 +119,10 @@ class Service extends Model
             'formats' => 'array',
             'duration_minutes' => 'integer',
             'buffer_minutes' => 'integer',
+            'buffer_office_minutes' => 'integer',
+            'buffer_home_minutes' => 'integer',
+            'buffer_online_minutes' => 'integer',
+            'requires_medical_profile' => 'boolean',
             'price_minor' => 'integer',
             'price_matrix' => 'array',
             'payment_requirement' => ServicePaymentRequirement::class,

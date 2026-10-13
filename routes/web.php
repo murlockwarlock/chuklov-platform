@@ -25,6 +25,7 @@ use App\Http\Controllers\Portal\HealthController as PortalHealthController;
 use App\Http\Controllers\Portal\HomeController;
 use App\Http\Controllers\Portal\LocaleController;
 use App\Http\Controllers\Portal\MedicalAttachmentController;
+use App\Http\Controllers\Portal\MedicalProfileController;
 use App\Http\Controllers\Portal\MoreController;
 use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\PortalCommerceController;
@@ -123,6 +124,8 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/bookings', [BookingController::class, 'store'])->name('portal.bookings.store');
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
             Route::get('/portal/health', PortalHealthController::class)->name('portal.health');
+            Route::get('/portal/medical-profile', [MedicalProfileController::class, 'show'])->name('portal.medical-profile');
+            Route::post('/portal/medical-profile', [MedicalProfileController::class, 'update'])->name('portal.medical-profile.update');
             Route::get('/portal/medical-attachments/{uuid}', MedicalAttachmentController::class)->name('portal.medical-attachments.download');
             Route::get('/portal/more', MoreController::class)->name('portal.more');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');

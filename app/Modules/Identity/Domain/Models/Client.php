@@ -36,13 +36,21 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $timezone_source
  * @property int $organization_id
  */
-#[Fillable(['full_name', 'email', 'phone', 'language', 'timezone', 'timezone_source', 'lead_source', 'referral_code'])]
+#[Fillable(['full_name', 'first_name', 'last_name', 'middle_name', 'gender', 'birth_date', 'country', 'city', 'email', 'phone', 'language', 'timezone', 'timezone_source', 'lead_source', 'referral_code'])]
 class Client extends Model
 {
     protected $hidden = ['phone_search_key'];
 
     /** @use HasFactory<ClientFactory> */
     use HasFactory;
+
+    protected function casts(): array
+    {
+        return [
+            'birth_date' => 'immutable_date',
+            'name_confirmed_at' => 'immutable_datetime',
+        ];
+    }
 
     protected static function booted(): void
     {

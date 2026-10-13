@@ -24,7 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->web(append: [HandleInertiaRequests::class]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        $exceptions->dontFlash(['source_detail', 'attribution_source_detail']);
+        $exceptions->dontFlash(['source_detail', 'attribution_source_detail', 'anamnesis', 'complaints', 'goals', 'chronic_conditions', 'operations', 'injuries', 'medicines', 'supplements', 'clinical_answers', 'answers']);
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*'),
         );

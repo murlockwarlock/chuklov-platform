@@ -20,7 +20,6 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
-use App\Support\SupportedLocale;
 use App\Modules\Scheduling\Application\BookingLocationResolver;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\CancelBooking;
@@ -36,6 +35,7 @@ use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Support\RichText\RichTextDocument;
+use App\Support\SupportedLocale;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\Log;
@@ -265,7 +265,7 @@ class BookingController extends Controller
             ->with('portal_booking_result', $this->bookingResult($booking));
     }
 
-    /** @return array{message: string, bookingId: int, startsAt: string} */
+    /** @return array{message: string, bookingId: int, startsAt: string, medicalProfileUrl: ?string} */
     private function bookingResult(Booking $booking): array
     {
         return [
@@ -274,6 +274,9 @@ class BookingController extends Controller
                 : $this->bookingErrors->message('booking_created'),
             'bookingId' => (int) $booking->getKey(),
             'startsAt' => $booking->startsAtUtc()->toIso8601String(),
+            'medicalProfileUrl' => $booking->service->requires_medical_profile
+                ? route('portal.medical-profile', ['booking_id' => $booking->getKey(), 'edit' => 1])
+                : null,
         ];
     }
 

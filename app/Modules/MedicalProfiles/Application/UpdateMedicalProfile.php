@@ -27,10 +27,18 @@ final readonly class UpdateMedicalProfile
         private MedicalProfileSnapshotHasher $snapshotHasher,
     ) {}
 
-    public function handle(User $actor, Client $client, UpdateMedicalProfileCommand $command): MedicalProfileData
+    public function handle(User|Client $actor, Client $client, UpdateMedicalProfileCommand $command): MedicalProfileData
     {
         $organization = $this->authorization->authorizeManage($actor, $client);
         $orgId = (int) $organization->getKey();
+        if ($actor instanceof Client && (
+            $command->expectedSnapshot === null || ! $command->confirmCurrentData
+            || ! $command->clinicalAnswersProvided || $command->clinicalAnswers === null
+            || $command->shouldUpdateAnamnesis() || $command->shouldUpdateComplaintsGoals() || $command->shouldUpdateOperationsInjuries()
+            || trim((string) $command->goals) === ''
+        )) {
+            throw ValidationException::withMessages(['medical_profile' => 'Откройте медицинскую анкету и подтвердите актуальные данные.']);
+        }
 
         $this->validateCommand($command);
         $keyVersion = $this->keyResolver->getCurrentKeyVersion($orgId);
@@ -77,6 +85,8 @@ final readonly class UpdateMedicalProfile
                 goals: $command->shouldUpdateGoals() ? $command->goals : $previous->goals,
                 operations: $command->shouldUpdateOperations() ? $command->operations : $previous->operations,
                 injuries: $command->shouldUpdateInjuries() ? $command->injuries : $previous->injuries,
+                chronicConditions: $command->chronicConditionsProvided ? $command->chronicConditions : $previous->chronicConditions,
+                clinicalAnswers: $command->clinicalAnswersProvided ? $command->clinicalAnswers : $previous->clinicalAnswers,
             );
             $encrypted = $this->encryptor->encryptProfile($orgId, $plainData, $keyVersion);
 
@@ -92,20 +102,25 @@ final readonly class UpdateMedicalProfile
                 'goals' => $encrypted->encryptedGoals,
                 'operations' => $encrypted->encryptedOperations,
                 'injuries' => $encrypted->encryptedInjuries,
+                'chronic_conditions' => $encrypted->encryptedChronicConditions,
+                'clinical_answers' => $encrypted->encryptedClinicalAnswers,
                 'medicines' => $encrypted->encryptedMedicines,
                 'supplements' => $encrypted->encryptedSupplements,
                 'encryption_key_version' => $keyVersion,
             ]);
+            if ($command->confirmCurrentData) {
+                $profile->client_confirmed_at = now()->utc();
+            }
             $profile->save();
 
             $this->audit->handle(
                 organization: $organization,
-                actor: $actor,
+                actor: $actor instanceof User ? $actor : null,
                 action: $isNew ? 'medical.profile.created' : 'medical.profile.updated',
                 targetType: MedicalProfile::class,
                 targetId: (string) $profile->getKey(),
                 metadata: [
-                    'source' => 'crm',
+                    'source' => $actor instanceof Client ? 'portal' : 'crm',
                     'key_version' => $keyVersion,
                     'updated_fields' => implode(',', $this->collectUpdatedFieldNames($command)),
                 ],
@@ -123,10 +138,12 @@ final readonly class UpdateMedicalProfile
                 goals: $plainData->goals,
                 operations: $plainData->operations,
                 injuries: $plainData->injuries,
+                chronicConditions: $plainData->chronicConditions,
+                clinicalAnswers: $plainData->clinicalAnswers,
             );
         });
 
-        $this->getProfile->invalidate($actor->getKey(), $orgId, $client->getKey());
+        $this->getProfile->invalidate();
 
         return $result;
     }
@@ -147,12 +164,25 @@ final readonly class UpdateMedicalProfile
                 encryptedGoals: $profile->getRawOriginal('goals'),
                 encryptedOperations: $profile->getRawOriginal('operations'),
                 encryptedInjuries: $profile->getRawOriginal('injuries'),
+                encryptedChronicConditions: $profile->getRawOriginal('chronic_conditions'),
+                encryptedClinicalAnswers: $profile->getRawOriginal('clinical_answers'),
             ),
         );
     }
 
     private function validateCommand(UpdateMedicalProfileCommand $command): void
     {
+        if ($command->clinicalAnswersProvided && $command->clinicalAnswers !== null) {
+            try {
+                $answers = json_decode($command->clinicalAnswers, true, 16, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                throw ValidationException::withMessages(['clinical_answers' => 'Проверьте ответы медицинской анкеты.']);
+            }
+            if (! is_array($answers)) {
+                throw ValidationException::withMessages(['clinical_answers' => 'Проверьте ответы медицинской анкеты.']);
+            }
+            app(ClinicalQuestionnaire::class)->validate($answers);
+        }
         $fields = [
             'anamnesis' => $command->anamnesis,
             'complaints_goals' => $command->complaintsGoals,
@@ -161,6 +191,8 @@ final readonly class UpdateMedicalProfile
             'goals' => $command->goals,
             'operations' => $command->operations,
             'injuries' => $command->injuries,
+            'chronic_conditions' => $command->chronicConditions,
+            'clinical_answers' => $command->clinicalAnswers,
             'medicines' => $command->medicines,
             'supplements' => $command->supplements,
         ];
@@ -178,6 +210,12 @@ final readonly class UpdateMedicalProfile
     private function collectUpdatedFieldNames(UpdateMedicalProfileCommand $command): array
     {
         $fields = [];
+        if ($command->chronicConditionsProvided) {
+            $fields[] = 'chronic_conditions';
+        }
+        if ($command->clinicalAnswersProvided) {
+            $fields[] = 'clinical_answers';
+        }
 
         if ($command->shouldUpdateAnamnesis()) {
             $fields[] = 'anamnesis';

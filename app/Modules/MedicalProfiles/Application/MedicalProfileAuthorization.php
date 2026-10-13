@@ -32,9 +32,18 @@ final class MedicalProfileAuthorization
         return $organization;
     }
 
-    public function authorizeManage(User $actor, Client $client): Organization
+    public function authorizeManage(User|Client $actor, Client $client): Organization
     {
         $organization = $this->organization();
+        if ($actor instanceof Client) {
+            $this->assertClientOwned($actor, $organization);
+            $this->assertClientOwned($client, $organization);
+            if ($actor->getKey() !== $client->getKey()) {
+                throw new AuthorizationException('Only the authenticated client may edit this profile.');
+            }
+
+            return $organization;
+        }
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
         $this->assertClientOwned($client, $organization);
 

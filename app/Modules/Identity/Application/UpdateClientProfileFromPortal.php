@@ -24,12 +24,14 @@ class UpdateClientProfileFromPortal
         'phone',
         'language',
         'timezone',
+        ...NormalizeClientDemographics::FIELDS,
     ];
 
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationFeatureGate $features,
         private readonly RecordAuditEvent $audit,
+        private readonly NormalizeClientDemographics $demographics,
     ) {}
 
     /**
@@ -68,7 +70,18 @@ class UpdateClientProfileFromPortal
 
         }
 
-        return DB::transaction(function () use ($client, $normalized, $organization): Client {
+        return DB::transaction(function () use ($client, $normalized, $organization, $attributes): Client {
+            $client = Client::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($client->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $normalized = [...$normalized, ...$this->demographics->handle($attributes, $client)];
+            if (array_key_exists('email', $normalized)
+                && $this->hasVerifiedEmailIdentity($client)
+                && $normalized['email'] !== $client->email) {
+                throw ValidationException::withMessages(['email' => 'A verified email can only be changed through a new verification flow.']);
+            }
             $changedFields = [];
             $attributesToSave = $normalized;
 

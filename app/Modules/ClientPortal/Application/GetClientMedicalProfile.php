@@ -2,6 +2,7 @@
 
 namespace App\Modules\ClientPortal\Application;
 
+use App\Modules\MedicalProfiles\Application\MedicalProfileSnapshotHasher;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\MedicalProfiles\Domain\ValueObjects\EncryptedMedicalPayload;
@@ -11,9 +12,10 @@ final readonly class GetClientMedicalProfile
     public function __construct(
         private ClientPortalContext $clientContext,
         private MedicalEncryptorInterface $encryptor,
+        private MedicalProfileSnapshotHasher $snapshots,
     ) {}
 
-    /** @return array{available: bool, updatedAt: string|null, anamnesis: string|null, complaintsGoals: string|null, operationsInjuries: string|null, medicines: string|null, supplements: string|null} */
+    /** @return array<string, mixed> */
     public function handle(): array
     {
         $client = $this->clientContext->client();
@@ -31,6 +33,10 @@ final readonly class GetClientMedicalProfile
                 'operationsInjuries' => null,
                 'medicines' => null,
                 'supplements' => null,
+                'expectedSnapshot' => $this->snapshots->forProfile(null),
+                'readFailed' => false,
+                'fields' => [],
+                'answers' => [],
             ];
         }
 
@@ -49,8 +55,14 @@ final readonly class GetClientMedicalProfile
                     encryptedGoals: $profile->goals,
                     encryptedOperations: $profile->operations,
                     encryptedInjuries: $profile->injuries,
+                    encryptedChronicConditions: $profile->chronic_conditions,
+                    encryptedClinicalAnswers: $profile->clinical_answers,
                 ),
             );
+            $answers = $data->clinicalAnswers === null ? [] : json_decode($data->clinicalAnswers, true, 16, JSON_THROW_ON_ERROR);
+            if (! is_array($answers)) {
+                throw new \UnexpectedValueException('Invalid clinical questionnaire shape.');
+            }
         } catch (\Throwable) {
             return [
                 'available' => false,
@@ -60,6 +72,10 @@ final readonly class GetClientMedicalProfile
                 'operationsInjuries' => null,
                 'medicines' => null,
                 'supplements' => null,
+                'expectedSnapshot' => null,
+                'readFailed' => true,
+                'fields' => [],
+                'answers' => [],
             ];
         }
 
@@ -71,6 +87,18 @@ final readonly class GetClientMedicalProfile
             'operationsInjuries' => $data->operationsInjuriesForCompatibility(),
             'medicines' => $data->medicines,
             'supplements' => $data->supplements,
+            'expectedSnapshot' => $this->snapshots->forProfile($profile),
+            'readFailed' => false,
+            'fields' => [
+                'complaints' => $data->complaints,
+                'goals' => $data->goals,
+                'operations' => $data->operations,
+                'injuries' => $data->injuries,
+                'chronic_conditions' => $data->chronicConditions,
+                'medicines' => $data->medicines,
+                'supplements' => $data->supplements,
+            ],
+            'answers' => $answers,
         ];
     }
 }

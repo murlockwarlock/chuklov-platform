@@ -24,6 +24,7 @@ class ProfileController extends Controller
         GetClientProfile $profile,
     ): Response {
         $data = $profile->handle();
+        Inertia::encryptHistory();
         $data['telegram']['linkUrl'] = session()->pull('telegram_link_url');
         $data['telegram']['linkError'] = (bool) session()->pull('telegram_link_error', false);
 

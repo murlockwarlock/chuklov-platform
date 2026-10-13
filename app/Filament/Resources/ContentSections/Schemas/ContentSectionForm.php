@@ -9,6 +9,7 @@ use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Content\Application\ContentImageUrlResolver;
+use App\Modules\Content\Application\ContentVideoUrlResolver;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Support\RichText\RichTextDocument;
@@ -27,6 +28,7 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\HtmlString;
 
 class ContentSectionForm
 {
@@ -45,6 +47,11 @@ class ContentSectionForm
                                 'partner' => __('Партнёрам'),
                                 'communities' => __('Сообщества'),
                                 'hidden' => __('Скрытый раздел'),
+                                'telegram_welcome' => __('Приветствие Telegram'),
+                                'story_author' => __('Кто такой Евгений Чуклов (видео)'),
+                                'story_history' => __('История мастера (видео)'),
+                                'story_method' => __('Авторский метод (видео)'),
+                                'story_details' => __('Подробно о методике (видео)'),
                             ])
                             ->searchable()
                             ->required(),
@@ -84,6 +91,20 @@ class ContentSectionForm
                         ])->columnSpanFull(),
                     ])
                     ->columnSpanFull(),
+                Section::make(__('Видео'))
+                    ->description(__('Сохраните раздел, затем загрузите MP4 через кнопку «Загрузить видео». Для приветствия — до 60 секунд.'))
+                    ->schema([
+                        TextInput::make('media.subtitles')->label(__('Ссылка на субтитры WebVTT'))->url()->startsWith('https://')->nullable()->maxLength(2000),
+                        Placeholder::make('current_video')->label(__('Загруженное видео'))
+                            ->content(function (?ContentSection $record): HtmlString|string {
+                                if ($record === null) {
+                                    return __('Сначала сохраните раздел.');
+                                }
+                                $url = app(ContentVideoUrlResolver::class)->resolve($record);
+
+                                return $url === null ? __('Видео не загружено') : new HtmlString('<video controls preload="metadata" style="max-width:100%;max-height:320px" src="'.e($url).'"></video>');
+                            }),
+                    ])->columnSpanFull(),
                 Section::make(__('Изображение'))
                     ->description(__('Можно загрузить изображение или указать готовую ссылку. Новая загрузка или ссылка заменит текущее изображение после сохранения.'))
                     ->schema([

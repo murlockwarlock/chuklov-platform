@@ -138,6 +138,7 @@ class ViewClient extends LocalizedViewRecord
                         'goals' => $profile?->goals,
                         'operations' => $profile?->operations,
                         'injuries' => $profile?->injuries,
+                        'chronic_conditions' => $profile?->chronicConditions,
                         'medicines' => $profile?->medicines,
                         'supplements' => $profile?->supplements,
                         'expected_snapshot' => app(MedicalProfileSnapshotHasher::class)->forProfile($profileRecord),
@@ -830,7 +831,11 @@ class ViewClient extends LocalizedViewRecord
                 ->rows(3)
                 ->maxLength(10000),
             Textarea::make('goals')
-                ->label(__('Цели'))
+                ->label(__('Задачи по здоровью'))
+                ->rows(3)
+                ->maxLength(10000),
+            Textarea::make('chronic_conditions')
+                ->label(__('Хронические заболевания'))
                 ->rows(3)
                 ->maxLength(10000),
             Textarea::make('operations')

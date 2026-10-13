@@ -79,6 +79,7 @@ type BookingResult = {
     message: string;
     bookingId: number;
     startsAt: string;
+    medicalProfileUrl: string | null;
 } | null;
 
 type LegalDocument = {
@@ -222,6 +223,10 @@ watch(
         }
 
         acknowledgedBookingId.value = bookingId;
+        if (props.bookingResult?.medicalProfileUrl) {
+            router.visit(props.bookingResult.medicalProfileUrl);
+            return;
+        }
         selectedStart.value = props.bookingResult?.startsAt ?? null;
         bookingStep.value = 'success';
     },

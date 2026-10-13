@@ -37,6 +37,18 @@ final class ClientWorkspaceInfolist
             ->components([
                 Section::make(__('Клиент'))
                     ->schema([
+                        TextEntry::make('last_name')->label(__('Фамилия'))->placeholder(__('Не указана'))->wrap(),
+                        TextEntry::make('first_name')->label(__('Имя'))->placeholder(__('Не указано'))->wrap(),
+                        TextEntry::make('middle_name')->label(__('Отчество'))->placeholder(__('Не указано'))->wrap(),
+                        TextEntry::make('gender')->label(__('Пол'))
+                            ->formatStateUsing(fn (?string $state): string => match ($state) {
+                                'MALE' => __('Мужской'),
+                                'FEMALE' => __('Женский'),
+                                default => __('Не указан'),
+                            })->placeholder(__('Не указан')),
+                        TextEntry::make('birth_date')->label(__('Дата рождения'))->date('d.m.Y')->placeholder(__('Не указана')),
+                        TextEntry::make('country')->label(__('Страна'))->placeholder(__('Не указана'))->wrap(),
+                        TextEntry::make('city')->label(__('Город'))->placeholder(__('Не указан'))->wrap(),
                         TextEntry::make('phone')
                             ->label(__('Телефон'))
                             ->placeholder(__('Не указан'))
@@ -276,8 +288,13 @@ final class ClientWorkspaceInfolist
                             ->placeholder(__('Не указаны'))
                             ->wrap(),
                         TextEntry::make('goals')
-                            ->label(__('Цели'))
+                            ->label(__('Задачи по здоровью'))
                             ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'goals'))
+                            ->placeholder(__('Не указаны'))
+                            ->wrap(),
+                        TextEntry::make('chronic_conditions')
+                            ->label(__('Хронические заболевания'))
+                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'chronicConditions'))
                             ->placeholder(__('Не указаны'))
                             ->wrap(),
                         TextEntry::make('operations')
