@@ -621,6 +621,62 @@ test('client portal shell is responsive', async ({ page }) => {
     await expect(page.getByText(/Личный кабинет|Вы вошли как|Продолжить/)).toHaveCount(0);
 });
 
+test('portrait Story previews stay inside their frames and player navigation works', async ({ page }) => {
+    const fixture = createBookingFixture();
+    execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->findOrFail(${fixture.clientId});
+        foreach (array_keys(\\App\\Modules\\Content\\Application\\GetClientEntryMedia::STORIES) as $key) {
+            \\App\\Modules\\Content\\Domain\\Models\\ContentSection::factory()->create([
+                'organization_id' => $client->organization_id,
+                'section_key' => $key, 'locale' => 'ru', 'is_visible' => true, 'delivery_mode' => 'mini_app',
+                'media' => [
+                    'image' => 'content/'.$client->organization_id.'/'.\\Illuminate\\Support\\Str::uuid().'.png',
+                    'video' => 'content/'.$client->organization_id.'/'.\\Illuminate\\Support\\Str::uuid().'.mp4',
+                ],
+            ]);
+        }
+    `], { env: { ...process.env, APP_ENV: 'e2e' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    await page.route('**/storage/content/**/*.png', (route) => route.fulfill({
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="640"><rect width="360" height="640" fill="#b88059"/></svg>',
+    }));
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/portal');
+    const cards = page.locator('.portal-story');
+    await expect(cards).toHaveCount(4);
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect.poll(() => cards.evaluateAll((elements) => elements.every((element) => {
+            const frame = element.querySelector('.portal-story__preview') as HTMLElement;
+            const image = frame.querySelector('img') as HTMLImageElement;
+            const title = element.querySelector('.portal-story__title') as HTMLElement;
+            const bounds = frame.getBoundingClientRect();
+            const imageBounds = image.getBoundingClientRect();
+            const titleBounds = title.getBoundingClientRect();
+            return image.complete && image.naturalHeight === 640
+                && imageBounds.left >= bounds.left && imageBounds.right <= bounds.right
+                && imageBounds.top >= bounds.top && imageBounds.bottom <= bounds.bottom
+                && titleBounds.top >= bounds.bottom
+                && element.getBoundingClientRect().bottom >= titleBounds.bottom;
+        }))).toBe(true);
+        await assertNoHorizontalOverflow(page);
+    }
+    await cards.first().click();
+    const dialog = page.locator('.portal-story-player');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('strong')).toHaveText('Кто такой Евгений Чуклов (видео)');
+    await dialog.getByRole('button', { name: 'Далее', exact: true }).click();
+    await expect(dialog.locator('strong')).toHaveText('История мастера (видео)');
+    await dialog.getByRole('button', { name: 'Назад', exact: true }).click();
+    await expect(dialog.locator('strong')).toHaveText('Кто такой Евгений Чуклов (видео)');
+    await page.keyboard.press('Escape');
+    await expect(dialog).not.toBeVisible();
+    await cards.last().click();
+    await expect(dialog.locator('strong')).toHaveText('Подробно о методике (видео)');
+    await dialog.getByRole('button', { name: 'Закрыть видео', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+});
+
 test('Telegram Mini App submits initData automatically without a second login action', async ({ page }) => {
     let authenticationRequests = 0;
 
@@ -1133,6 +1189,7 @@ test('assistant uses an attachment icon and portal selects keep human option lab
     }]);
 
     await page.goto('/portal/companion');
+    await expect(page.getByText('Помощник отвечает', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Прикрепить изображения' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Начать новый диалог' })).toBeVisible();
     await expect(page.getByText('Добавить изображения', { exact: true })).toHaveCount(0);

@@ -360,11 +360,15 @@ watch(messageSignature, async () => {
             {{ t('companion.newMessages') }}
           </button>
           <div
+            v-if="props.companion.mode !== 'ai_active' || props.companion.openEscalation || props.notices.retry || props.notices.specialistRequested === 'unavailable'"
             class="portal-panel"
             role="status"
           >
-            <p class="portal-copy">
-              {{ props.companion.mode === 'staff_active' ? t('companion.paused') : props.companion.mode === 'handoff_paused' ? t('companion.pausedUnconfirmed') : props.companion.mode === 'specialist_notified' ? t('companion.stateSpecialistNotified') : t('companion.stateAiActive') }}
+            <p
+              v-if="props.companion.mode !== 'ai_active'"
+              class="portal-copy"
+            >
+              {{ props.companion.mode === 'staff_active' ? t('companion.paused') : props.companion.mode === 'handoff_paused' ? t('companion.pausedUnconfirmed') : t('companion.stateSpecialistNotified') }}
             </p>
             <p
               v-if="props.companion.openEscalation"
