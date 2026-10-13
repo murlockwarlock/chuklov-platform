@@ -1329,7 +1329,12 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.getByLabel('Фамилия', { exact: true }).fill('Солдатов');
     await page.getByLabel('Имя', { exact: true }).fill('Денис');
     await page.getByLabel('Отчество', { exact: true }).fill('Сергеевич');
-    await page.getByLabel('Мужской', { exact: true }).check();
+    await page.getByText('Мужской', { exact: true }).click();
+    await expect(page.getByLabel('Мужской', { exact: true })).toBeChecked();
+    await page.getByLabel('Мужской', { exact: true }).press('ArrowRight');
+    await expect(page.getByLabel('Женский', { exact: true })).toBeChecked();
+    await page.getByText('Мужской', { exact: true }).click();
+    await expect(page.getByLabel('Мужской', { exact: true })).toBeChecked();
     await page.getByLabel('Дата рождения', { exact: true }).fill('1990-02-28');
     await page.getByLabel('Страна', { exact: true }).fill('Каз');
     await page.getByRole('option', { name: 'Казахстан', exact: true }).click();

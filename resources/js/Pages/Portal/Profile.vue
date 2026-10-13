@@ -227,17 +227,20 @@ function saveB2bAnswer(): void {
               <legend class="portal-label">
                 {{ t('profile.gender') }}
               </legend>
-              <div class="portal-segmented">
+              <div class="portal-segmented portal-profile-gender">
                 <label
                   v-for="gender in ['MALE', 'FEMALE']"
                   :key="gender"
-                  class="portal-copy"
+                  class="portal-segmented__button portal-profile-gender__option"
+                  :class="{ 'portal-segmented__button--active': profileForm.gender === gender }"
                 >
                   <input
                     v-model="profileForm.gender"
                     type="radio"
+                    name="gender"
                     :value="gender"
                     required
+                    class="sr-only"
                   >
                   {{ t(gender === 'MALE' ? 'profile.male' : 'profile.female') }}
                 </label>
@@ -524,3 +527,20 @@ function saveB2bAnswer(): void {
     </section>
   </AppShell>
 </template>
+
+<style scoped>
+.portal-profile-gender {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.portal-profile-gender__option {
+    display: grid;
+    place-items: center;
+    text-align: center;
+}
+
+.portal-profile-gender__option:focus-within {
+    outline: 2px solid var(--portal-color-ink);
+    outline-offset: 2px;
+}
+</style>
