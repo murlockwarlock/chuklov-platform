@@ -50,6 +50,16 @@ class PrivilegedAuthenticationTest extends TestCase
         $this->get('/admin')->assertOk();
     }
 
+    public function test_missing_panel_is_denied_without_calling_user_panel_authorization(): void
+    {
+        Filament::shouldReceive('getCurrentOrDefaultPanel')->once()->andReturnNull();
+        $user = $this->createMock(User::class);
+        $user->expects($this->never())->method('canAccessPanel');
+        $guard = new \ReflectionMethod(AdminLogin::class, 'isUserAllowedToAccessPanel');
+
+        self::assertFalse($guard->invoke(new AdminLogin, $user));
+    }
+
     public function test_user_with_configured_mfa_enters_crm_without_a_login_challenge(): void
     {
         $organization = Organization::factory()->create();

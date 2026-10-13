@@ -76,6 +76,10 @@ Source commits represented: `f3509f8` (internal Mini App CTA), `de1b246` (saniti
 
 Selected files transferred so far:
 
+- `app/Filament/Auth/Login.php` — source `ed9f423`; missing panel fails closed instead of passing null to user authorization. New missing-panel regression and existing privileged-auth suite PASS locally.
+- `app/Filament/Resources/B2bLeads/Schemas/B2bLeadInfolist.php` — only the two backed-enum fallback fixes from `4b4c9fd`; existing nullable sales-call guards intentionally retained.
+- `app/Modules/Finance/Domain/Models/PaymentGatewayEvent.php` — only accurate Carbon/null retry and lease property types from `4b4c9fd`; existing runtime casts and state machine unchanged.
+
 - `app/Filament/Pages/WorkSchedule.php`
 - `app/Filament/Resources/Clients/Schemas/ClientWorkspaceInfolist.php`
 - `app/Filament/Resources/ContentSections/Schemas/ContentSectionForm.php`

@@ -7,6 +7,7 @@ use Filament\Auth\Http\Responses\Contracts\LoginResponse;
 use Filament\Auth\Pages\Login as BaseLogin;
 use Filament\Facades\Filament;
 use Filament\Models\Contracts\FilamentUser;
+use Filament\Panel;
 use Illuminate\Auth\Events\Attempting;
 use Illuminate\Auth\Events\Failed;
 use Illuminate\Auth\SessionGuard;
@@ -79,7 +80,9 @@ final class Login extends BaseLogin
             return true;
         }
 
-        return $user->canAccessPanel(Filament::getCurrentOrDefaultPanel());
+        $panel = Filament::getCurrentOrDefaultPanel();
+
+        return $panel instanceof Panel && $user->canAccessPanel($panel);
     }
 
     /** @param array<string, mixed> $credentials */
