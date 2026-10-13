@@ -518,6 +518,48 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 }
 
+test('enrolled CRM MFA requires a valid code before native browser login', async ({ page }) => {
+    const fixture = createCrmFixture();
+    execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        \\Filament\\Facades\\Filament::setCurrentPanel(\\Filament\\Facades\\Filament::getPanel('admin'));
+        $admin = \\App\\Models\\User::query()->where('email', '${fixture.email}')->firstOrFail();
+        \\Filament\\Facades\\Filament::auth()->setUser($admin);
+        $provider = app(\\App\\Modules\\Security\\Infrastructure\\Filament\\AuditedAppAuthentication::class);
+        $provider->saveSecret($admin, $provider->generateSecret());
+    `], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    await page.goto('/admin/login');
+    await page.locator('input[type="email"]').fill(fixture.email);
+    await page.locator('input[type="password"]').fill(fixture.password);
+    await page.locator('button[type="submit"]').click();
+    const digits = page.locator('.fi-one-time-code-input-ctn input');
+    await expect(digits).toHaveCount(6);
+    await expect(digits.first()).toBeVisible();
+    await expect(page).toHaveURL(/\/admin\/login$/);
+    expect((await page.request.get('/admin', { maxRedirects: 0 })).status()).toBe(302);
+    await page.locator('button[type="submit"]:visible').click();
+    await expect(page).toHaveURL(/\/admin\/login$/);
+    await digits.first().pressSequentially('12345');
+    await page.locator('button[type="submit"]:visible').click();
+    await expect(page).toHaveURL(/\/admin\/login$/);
+    expect((await page.request.get('/admin', { maxRedirects: 0 })).status()).toBe(302);
+    const output = execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $admin = \\App\\Models\\User::query()->where('email', '${fixture.email}')->firstOrFail();
+        echo json_encode(['code' => app(\\App\\Modules\\Security\\Infrastructure\\Filament\\AuditedAppAuthentication::class)->getCurrentCode($admin)]);
+    `], { encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const { code } = JSON.parse(output.trim().split('\n').at(-1) ?? '') as { code: string };
+    for (let index = 0; index < 6; index += 1) {
+        await digits.nth(index).fill('');
+    }
+    await digits.first().pressSequentially(code);
+    await page.locator('button[type="submit"]:visible').click();
+    await expect(page).toHaveURL(/\/admin(?:\/)?$/);
+    await expect(page.getByRole('heading', { name: 'Главная', exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page).toHaveURL(/\/admin(?:\/)?$/);
+});
+
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }
