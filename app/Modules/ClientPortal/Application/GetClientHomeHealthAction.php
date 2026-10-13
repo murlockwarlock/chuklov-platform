@@ -22,13 +22,22 @@ final readonly class GetClientHomeHealthAction
     {
         $access = $this->trackerAccess->handle($client);
         $today = $tracker['today'][0] ?? null;
-        if ($access->allowed() && $access->entitlement?->source === TrackerEntitlementSource::PaidPurchase && is_array($today)) {
-            return [
-                'kind' => 'focus', 'titleKey' => 'home.focus', 'summary' => (string) $today['title'],
+        if ($access->allowed() && $access->entitlement?->source === TrackerEntitlementSource::PaidPurchase) {
+            $focus = [
+                'kind' => 'focus', 'titleKey' => 'home.focus',
                 'url' => route('portal.tracker'), 'actionKey' => 'home.openTracker',
-                'badgeKey' => 'home.active', 'taskStatus' => (string) $today['status'],
-                'taskEntryUrl' => route('portal.tracker.task-entry', ['taskId' => $today['id']]),
+                'badgeKey' => 'home.active',
             ];
+            if (is_array($today)) {
+                return [...$focus, 'summary' => (string) $today['title'],
+                    'taskStatus' => (string) $today['status'],
+                    'taskEntryUrl' => route('portal.tracker.task-entry', ['taskId' => $today['id']])];
+            }
+            $practice = $access->monthlyPractice();
+
+            return $practice !== null && trim($practice) !== ''
+                ? [...$focus, 'summary' => $practice]
+                : [...$focus, 'summaryKey' => 'home.focusEmpty'];
         }
         $report = $this->reports->handle($client, AiCapability::ClinicalSynthesizer, (int) $client->organization_id, ClinicalSynthesizerWorkflow::CourseReport->value);
         if ($report !== null && $report->payload !== null) {

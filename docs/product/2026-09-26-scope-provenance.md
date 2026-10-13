@@ -75,9 +75,9 @@ Original v2.2 source: §5.1.
 Original excerpt: «Функционал: Бот ежедневно/еженедельно запрашивает отчёты о выполнении пунктов «Дорожной карты» (упражнения, питьевой режим, выгрузки, приём комплексов).».
 
 Before 26.09: chronology NOT ESTABLISHED; starting-main implementation is recorded in the acceptance matrix.
-After 26.09: task branch changes/evidence pending; do not infer code delivery from a requirement or proof declaration.
-PR/commit/evidence: starting SHA above, task PR pending, exact-SHA staging NOT RUN.
-Limitations: see individual source criteria; family legal authority/media/methodology/provider evidence remain unresolved where applicable.
+After 26.09: task branch adds paid Focus/inline task entry and reviewed Road Map on Home. Follow-up handles paid empty days/monthly practice and paid renewal of previously manual access using existing Tracker commands. The latter is a concrete BUG_FIX subitem, not a second paid-access engine.
+PR/commit/evidence: [Draft PR #60](https://github.com/murlockwarlock/chuklov-platform/pull/60), focused Tracker/fulfillment 21 tests / 215 assertions PASS locally; browser and exact-SHA staging NOT RUN for this follow-up.
+Limitations: authored nine-systems screening source absent; complete three-state lifecycle is not verified. No claim that the original clause specifies these three Home states or their exact copy.
 Confidence: MEDIUM — source clause exists; detailed subcriteria may have different classification.
 
 ## CR-06 — Редизайн кнопки коммуникации (Чат)

@@ -31,6 +31,7 @@ type BookingFixtureOptions = {
     multipleLocations?: boolean;
     longServiceTitle?: boolean;
     homeVisit?: boolean;
+    tracker?: 'empty' | 'task';
 };
 
 function createBookingFixture(options: BookingFixtureOptions | boolean = false): BookingFixture {
@@ -92,6 +93,23 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'language' => 'ru',
             'timezone' => 'UTC',
         ]);
+        if (getenv('PLAYWRIGHT_TRACKER') !== '') {
+            \\Illuminate\\Support\\Facades\\Queue::fake();
+            app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+            $trackerAdmin = \\App\\Models\\User::factory()->forOrganization($organization)->create();
+            $trackerVersion = app(\\App\\Modules\\Tracker\\Application\\SaveTrackerPlan::class)->handle(
+                $trackerAdmin, null, 'Synthetic Tracker '.$suffix, true, true, '10.00', 'USD', 30, null, true, 1,
+            );
+            app(\\App\\Modules\\Tracker\\Application\\GrantPaidTrackerAccess::class)->handle($organization, $client, $trackerVersion);
+            if (getenv('PLAYWRIGHT_TRACKER') === 'task') {
+                app(\\App\\Modules\\Tracker\\Application\\AssignTrackerTask::class)->handle(
+                    $trackerAdmin, $client, 'Практика QA',
+                    \\App\\Modules\\Tracker\\Domain\\Enums\\TrackerTaskType::Practice,
+                    \\App\\Modules\\Tracker\\Domain\\Enums\\TrackerTaskFrequency::Daily,
+                    \\Carbon\\CarbonImmutable::now('UTC')->startOfDay(),
+                );
+            }
+        }
         $specialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()->forOrganization($organization)->create([
             'display_name' => 'Playwright Specialist '.$suffix,
             'timezone' => 'UTC',
@@ -454,6 +472,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
         PLAYWRIGHT_MEDICAL_SERVICE: normalizedOptions.medicalService ? '1' : '0',
         PLAYWRIGHT_BOOKING_DAYS_AHEAD: String(normalizedOptions.daysAhead ?? 1),
+        PLAYWRIGHT_TRACKER: normalizedOptions.tracker ?? '',
         PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
         PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
         PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
@@ -1396,6 +1415,43 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await deniedMedicalResponse;
     await expect(page.getByText('Synthetic symptoms', { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.body.textContent)).not.toContain('Synthetic symptoms');
+});
+
+test('September 26 paid focus stays on home through completion and correction and empty focus opens the tracker', async ({ page }) => {
+    const active = createBookingFixture({ tracker: 'task' });
+    await page.context().addCookies([{ name: active.cookieName, value: active.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/');
+    await expect(page.getByText('Фокус дня', { exact: true })).toBeVisible();
+    await expect(page.getByText('Практика QA', { exact: true })).toBeVisible();
+    const completed = page.getByRole('checkbox', { name: 'Выполнено', exact: true });
+    const completion = page.waitForResponse((response) => response.request().method() === 'POST' && /\/portal\/tracker\/tasks\/\d+\/entry$/.test(response.url()));
+    await completed.check();
+    expect((await completion).status()).toBe(303);
+    await expect(completed).toBeEnabled();
+    await expect(completed).toBeChecked();
+    await expect(page).toHaveURL(/\/$/);
+    await page.reload();
+    await expect(completed).toBeChecked();
+    const correction = page.waitForResponse((response) => response.request().method() === 'POST' && /\/portal\/tracker\/tasks\/\d+\/entry$/.test(response.url()));
+    await completed.uncheck();
+    expect((await correction).status()).toBe(303);
+    await expect(completed).toBeEnabled();
+    await page.reload();
+    await expect(completed).not.toBeChecked();
+    await page.getByRole('link', { name: 'Открыть трекер', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/tracker$/);
+    await expect(page.getByText('Практика QA', { exact: true })).toBeVisible();
+    await expect(page.getByText('Не выполнено', { exact: true })).toBeVisible();
+
+    const empty = createBookingFixture({ tracker: 'empty' });
+    await page.context().addCookies([{ name: empty.cookieName, value: empty.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/');
+    await expect(page.getByText('Фокус дня', { exact: true })).toBeVisible();
+    await expect(page.getByText('На сегодня практик нет. Откройте трекер, чтобы посмотреть свой план.', { exact: true })).toBeVisible();
+    await expect(completed).toHaveCount(0);
+    await page.getByRole('link', { name: 'Открыть трекер', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/tracker$/);
+    await expect(page.getByText('На сегодня задач нет.', { exact: true })).toBeVisible();
 });
 
 test('September 26 client selects multiple sessions before the medical editor and can cancel one independently', async ({ page }) => {

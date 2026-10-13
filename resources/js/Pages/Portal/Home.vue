@@ -36,8 +36,13 @@ usePoll(15000, { only: ['upcomingBooking', 'healthAction'] });
 const taskForm = useForm({ status: 'completed' });
 function completeTask(event: Event): void {
     if (!props.healthAction?.taskEntryUrl) return;
-    taskForm.status = (event.target as HTMLInputElement).checked ? 'completed' : 'not_completed';
-    taskForm.post(props.healthAction.taskEntryUrl, { preserveScroll: true });
+    const checkbox = event.target as HTMLInputElement;
+    taskForm.status = checkbox.checked ? 'completed' : 'not_completed';
+    taskForm.post(props.healthAction.taskEntryUrl, {
+        preserveScroll: true,
+        onError: () => { checkbox.checked = props.healthAction?.taskStatus === 'completed'; },
+        onCancel: () => { checkbox.checked = props.healthAction?.taskStatus === 'completed'; },
+    });
 }
 </script>
 
@@ -111,7 +116,7 @@ function completeTask(event: Event): void {
           {{ props.healthAction.summaryKey ? t(props.healthAction.summaryKey) : props.healthAction.summary }}
         </p>
         <label
-          v-if="props.healthAction.kind === 'focus'"
+          v-if="props.healthAction.kind === 'focus' && props.healthAction.taskEntryUrl"
           class="portal-copy"
         >
           <input
