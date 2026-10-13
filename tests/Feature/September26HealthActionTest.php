@@ -38,8 +38,9 @@ final class September26HealthActionTest extends TestCase
             ->missing('healthAction.taskEntryUrl'));
         $this->get(route('portal.tracker'))->assertOk()->assertInertia(fn (AssertableInertia $page) => $page
             ->where('tracker.access.allowed', true)->has('tracker.today', 0));
-        $entitlement->forceFill(['ends_at' => CarbonImmutable::now('UTC')->subSecond()])->save();
-        $this->get(route('portal.home'))->assertInertia(fn (AssertableInertia $page) => $page->where('healthAction', null));
+        $this->travelTo($entitlement->ends_at->addSecond(), function (): void {
+            $this->get(route('portal.home'))->assertInertia(fn (AssertableInertia $page) => $page->where('healthAction', null));
+        });
     }
 
     public function test_paid_renewal_of_manual_access_updates_its_source_without_replacing_the_entitlement(): void
