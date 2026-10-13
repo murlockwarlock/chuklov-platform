@@ -11,6 +11,7 @@ use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\MedicalProfiles\Domain\ValueObjects\EncryptedMedicalPayload;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -109,7 +110,7 @@ final readonly class UpdateMedicalProfile
                 'encryption_key_version' => $keyVersion,
             ]);
             if ($command->confirmCurrentData) {
-                $profile->client_confirmed_at = now()->utc();
+                $profile->client_confirmed_at = CarbonImmutable::now('UTC');
             }
             $profile->save();
 

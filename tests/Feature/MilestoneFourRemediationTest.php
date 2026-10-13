@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Pages\WorkingIntervals;
 use App\Models\User;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
@@ -459,7 +459,7 @@ class MilestoneFourRemediationTest extends TestCase
         ));
     }
 
-    public function test_combined_scheduling_configuration_save_rolls_back_when_working_hours_acknowledgement_fails(): void
+    public function test_working_intervals_failure_does_not_mutate_organization_configuration(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
         $this->createBooking($client, $specialist, $service, 'atomic-config');
@@ -467,7 +467,7 @@ class MilestoneFourRemediationTest extends TestCase
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
         Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm([
                 'specialist_id' => $specialist->getKey(),
                 'lead_time_minutes' => 123,

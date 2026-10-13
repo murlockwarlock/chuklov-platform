@@ -29,7 +29,7 @@ use UnitEnum;
 
 final class WorkSchedule extends LocalizedPage
 {
-    protected static ?string $title = 'График работы';
+    protected static ?string $title = 'График работы специалиста';
 
     protected static ?string $navigationLabel = 'График работы';
 

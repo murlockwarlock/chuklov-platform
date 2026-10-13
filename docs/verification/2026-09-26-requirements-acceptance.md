@@ -39,6 +39,16 @@ Owner answers: original videos unavailable; temporary QA media permitted, with m
 
 Every criterion requires visible trigger → real click/input → authorization → Application action → PostgreSQL state → CRM/client projection → relevant provider effect → reload → permitted change/cancel/correction. Negative evidence includes foreign tenant/client, unauthorized actor, invalid input/state, duplicate submit, stale UI and provider failure where applicable. Browser widths: 320, 360, 390, 768, 1024, 1440. Check full-page overflow; desktop Chromium and mobile WebKit. No destructive testing on staging, real medical data, real payments or bulk delivery. Owner acceptance is separate.
 
+### Follow-up implementation and preservation checkpoint
+
+LIST 2 №14 now separates organization-wide Scheduling Configuration from specialist-specific Working Intervals, preserving the existing SetSpecialistWorkingHours command, impact preview, explicit-clear control and viewer-timezone preference. General settings are last in Bookings; Work Schedule heading is «График работы специалиста». Missing working-hours snapshots are rejected. Focused schedule/profile/medical tests: 54 tests / 470 assertions PASS. Unified unavailable-period UI, multi-specialist Journal selection and specialist-bound travel days remain outstanding; №14 is PARTIAL, not complete.
+
+Second candidate `43293a5131e53e3fc975a8b3b7ea406010c9f289`: [browser gate](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38398585589) PASS and [Docker/runtime](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38398580325) PASS. Browser checks exercise profile/clinical correction/reload, two-file upload/download, medical/non-medical booking and overflow at 320/360/390/768/1024/1440px in Chromium/WebKit. This is isolated hosted browser evidence, not staging or a complete visual design audit.
+
+[Quality](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38398575059) remains FAIL: the same 10 feature failures as Starting SHA, existing format failures, PHPStan findings and Composer advisories. No failures are hidden or declared PASS. Owner authorized narrow dependency security updates: `45103f5` changes Laravel 13.25.0→13.30.0, Filament 5.7.6→5.8.2 with required synchronized packages, CommonMark 2.10.0→2.10.2 and Flysystem 3.35.2→3.35.3. Local locked audit PASS; hosted final-SHA audit pending.
+
+Read-only staging REVISION is `f3509f8ce957082045f3e140cd4a08809d1c3751`, which is not an ancestor of Starting SHA. Owner explicitly authorized selective transfer of necessary PR #59 runtime fixes/regressions, including Telegram internal client CTA buttons, without merging/closing #59 or importing its proof/audit artifacts. Staging deployment remains pending integration and affected verification; it must not silently roll back this delta.
+
 ## Summary
 
 | Requirement | Before | After | Evidence |

@@ -11,6 +11,7 @@ on:
         options:
           - full
           - quality
+          - static
           - integration
           - integration-foundation
           - integration-rag
@@ -27,7 +28,7 @@ permissions:
 
 jobs:
   quality:
-    if: ${{ inputs.scope == 'full' || inputs.scope == 'quality' }}
+    if: ${{ inputs.scope == 'full' || inputs.scope == 'quality' || inputs.scope == 'static' }}
     name: Quality
     runs-on: ubuntu-latest
     services:
@@ -101,16 +102,23 @@ jobs:
       - name: Verify repeatable key initialization
         run: make check-app-key
       - name: Run unit tests
+        if: ${{ inputs.scope != 'static' }}
         run: make test-unit
       - name: Run feature tests
-        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' && inputs.scope != 'static' }}
         run: make test-feature
-      - name: Run format and lint checks
+      - name: Run PHP format checks
         if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
-        run: make lint
-      - name: Run static and frontend type checks
+        run: composer lint
+      - name: Run frontend lint checks
         if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
-        run: make static
+        run: npm run lint
+      - name: Run PHP static checks
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: composer static
+      - name: Run frontend type checks
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: npm run typecheck
       - name: Build frontend
         if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
         run: npm run build

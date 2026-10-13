@@ -9,7 +9,10 @@ final class ClinicalQuestionnaire
 {
     public const SYMPTOMS = ['headache', 'neck', 'back', 'joints', 'swelling', 'digestion', 'weakness', 'insomnia', 'stress'];
 
-    /** @param array<string, mixed> $answers @return array<string, mixed> */
+    /**
+     * @param  array<string, mixed>  $answers
+     * @return array<string, mixed>
+     */
     public function validate(array $answers): array
     {
         $validated = Validator::make(['answers' => $answers], [

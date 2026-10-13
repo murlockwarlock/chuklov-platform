@@ -617,7 +617,7 @@ test.describe('specialist viewer timezone suggestion', () => {
         const fixture = createCrmFixture();
 
         await login(page, fixture);
-        await page.goto('/admin/scheduling-configuration');
+        await page.goto('/admin/working-intervals');
 
         await expect(page.getByText('Время: Asia/Almaty', { exact: true })).toBeVisible();
         await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).toBeVisible();
@@ -633,7 +633,7 @@ test.describe('specialist viewer timezone suggestion', () => {
         const fixture = createCrmFixture();
 
         await login(page, fixture);
-        await page.goto('/admin/scheduling-configuration');
+        await page.goto('/admin/working-intervals');
 
         await expect(page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true })).toBeVisible();
         await page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true }).click();

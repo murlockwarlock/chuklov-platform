@@ -24,9 +24,9 @@ final readonly class ListClientMedicalMaterials
             ->map(fn (MedicalAttachment $attachment): array => [
                 'id' => (int) $attachment->getKey(), 'type' => $attachment->attachment_type->value,
                 'filename' => $attachment->original_filename, 'mimeType' => $attachment->mime_type,
-                'sizeBytes' => (int) $attachment->size_bytes, 'createdAt' => $attachment->created_at?->toIso8601String(),
+                'sizeBytes' => (int) $attachment->size_bytes, 'createdAt' => $attachment->created_at->toIso8601String(),
                 'downloadUrl' => $this->urls->handle($attachment),
                 'previewUrl' => GetTemporaryAttachmentUrl::supportsPreview($attachment->mime_type) ? $this->urls->handle($attachment, mode: 'preview') : null,
-            ])->all();
+            ])->values()->all();
     }
 }

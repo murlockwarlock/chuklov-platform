@@ -406,7 +406,10 @@ final class ScheduleMutationImpactCalculator
         return ! $this->fitsWallClockIntervals($localStart, $localEnd, $intervals);
     }
 
-    /** @param array<string, mixed> $attributes @return array<string, mixed> */
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
     private function formatBuffers(Service $service, array $attributes): array
     {
         $buffers = [];

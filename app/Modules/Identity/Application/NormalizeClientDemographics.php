@@ -10,7 +10,10 @@ final class NormalizeClientDemographics
 {
     public const FIELDS = ['first_name', 'last_name', 'middle_name', 'gender', 'birth_date', 'country', 'city'];
 
-    /** @param array<string, mixed> $attributes @return array<string, mixed> */
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
     public function handle(array $attributes, ?Client $client = null): array
     {
         $normalized = [];
@@ -58,7 +61,7 @@ final class NormalizeClientDemographics
                     throw ValidationException::withMessages(['first_name' => 'ФИО должно содержать не более 160 символов.']);
                 }
                 $normalized['full_name'] = $fullName;
-                $normalized['name_confirmed_at'] = $client?->name_confirmed_at ?? CarbonImmutable::now('UTC');
+                $normalized['name_confirmed_at'] = ($client === null ? null : $client->name_confirmed_at) ?? CarbonImmutable::now('UTC');
             } else {
                 $normalized['name_confirmed_at'] = null;
             }

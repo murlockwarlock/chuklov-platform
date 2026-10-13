@@ -1,4 +1,7 @@
 {
+  "График работы специалиста": "Specialist work schedule",
+  "Здесь настраиваются общие параметры для всего расписания": "Configure general settings for the entire schedule here",
+  "Здесь настраиваются регулярные рабочие интервалы выбранного специалиста.": "Configure recurring working intervals for the selected specialist here.",
   "Фамилия": "Last name",
   "Отчество": "Middle name",
   "Пол": "Gender",

@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Pages\WorkingIntervals;
 use App\Filament\Pages\WorkSchedule;
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Pages\CreateBooking;
@@ -122,7 +122,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         $this->resolveFilamentContext($admin, $organization);
 
         Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm([
                 'specialist_id' => $specialist->getKey(),
                 'working_hours' => [
@@ -171,7 +171,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
             ])
             ->all());
 
-        $reloaded = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+        $reloaded = Livewire::actingAs($admin)->test(WorkingIntervals::class);
 
         self::assertSame([
             '09:00',
@@ -196,8 +196,8 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ]]);
         $this->resolveFilamentContext($admin, $organization);
 
-        $tabA = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
-        $tabB = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+        $tabA = Livewire::actingAs($admin)->test(WorkingIntervals::class);
+        $tabB = Livewire::actingAs($admin)->test(WorkingIntervals::class);
 
         $tabA
             ->fillForm([
@@ -279,7 +279,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         $this->resolveFilamentContext($admin, $organization);
 
         $component = Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm([
                 'specialist_id' => $specialist->getKey(),
                 'working_hours' => [
@@ -461,7 +461,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
     {
         [$organization, $admin, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
-        $settings = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+        $settings = Livewire::actingAs($admin)->test(WorkingIntervals::class);
 
         $settings->fillForm([
             'specialist_id' => $specialist->getKey(),

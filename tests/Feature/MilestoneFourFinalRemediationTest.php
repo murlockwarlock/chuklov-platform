@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Pages\WorkingIntervals;
 use App\Filament\Resources\ScheduleExceptions\Pages\ListScheduleExceptions;
 use App\Filament\Resources\Services\Pages\EditService;
 use App\Filament\Resources\Specialists\Pages\ListSpecialists;
@@ -106,7 +107,7 @@ class MilestoneFourFinalRemediationTest extends TestCase
         $this->resolveFilamentContext($admin, $organization);
 
         $component = Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm([
                 'specialist_id' => $specialist->getKey(),
                 'lead_time_minutes' => 0,
@@ -201,7 +202,7 @@ class MilestoneFourFinalRemediationTest extends TestCase
             'impact_digest' => null,
         ];
         $component = Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm($payload)
             ->call('save')
             ->assertHasErrors('schedule_impact');
@@ -264,7 +265,7 @@ class MilestoneFourFinalRemediationTest extends TestCase
         $this->resolveFilamentContext($admin, $organization);
 
         Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->assertSet('data.specialist_id', $specialist->getKey())
             ->assertSet('data.viewer_timezone', null)
             ->set('data.viewer_timezone', 'Asia/Bangkok')
@@ -277,7 +278,7 @@ class MilestoneFourFinalRemediationTest extends TestCase
         self::assertSame('manual', $specialist->fresh()->viewer_timezone_source);
 
         Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->assertSet('data.specialist_id', $specialist->getKey())
             ->assertSet('data.viewer_timezone', 'Asia/Bangkok');
     }
@@ -296,7 +297,7 @@ class MilestoneFourFinalRemediationTest extends TestCase
         $specialist->forceFill(['staff_user_id' => $admin->getKey()])->save();
         $this->resolveFilamentContext($admin, $organization);
 
-        $component = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+        $component = Livewire::actingAs($admin)->test(WorkingIntervals::class);
         $component->assertSet('data.specialist_id', $specialist->getKey());
         self::assertSame(1, (int) array_values($component->instance()->data['working_hours'])[0]['weekday']);
 
@@ -312,12 +313,23 @@ class MilestoneFourFinalRemediationTest extends TestCase
         self::assertSame(1, $secondSpecialist->workingHours()->count());
     }
 
+    public function test_missing_working_hours_snapshot_cannot_bypass_stale_protection(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        Livewire::actingAs($admin)->test(WorkingIntervals::class)
+            ->fillForm(['working_hours' => [['weekday' => 1, 'start_time' => '11:00', 'end_time' => '17:00']]])
+            ->set('data.working_hours_digest', null)
+            ->call('save')->assertHasErrors(['data.working_hours_digest']);
+        self::assertSame('09:00', substr((string) $specialist->workingHours()->sole()->start_time, 0, 5));
+    }
+
     public function test_explicit_clear_requires_the_clear_schedule_control(): void
     {
         [$organization, $admin, , $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
         $component = Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm([
                 'specialist_id' => $specialist->getKey(),
                 'working_hours' => [],
