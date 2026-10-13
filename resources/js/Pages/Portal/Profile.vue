@@ -3,8 +3,10 @@ import { useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import LegalConsentChecklist from '../../Components/Portal/LegalConsentChecklist.vue';
+import TextAutocomplete from '../../Components/Portal/TextAutocomplete.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
+import { countryNames } from '../../utils/countryNames';
 
 type LegalDocument = {
     id: number;
@@ -108,6 +110,7 @@ const personalFields = [
     { key: 'country', label: 'profile.country', autocomplete: 'country-name', required: true },
     { key: 'city', label: 'profile.city', autocomplete: 'address-level2', required: true },
 ] as const;
+const countries = computed(() => countryNames(locale.value));
 const hasRequiredConsentError = computed(() =>
     Object.keys(consentForm.errors).some((key) => key.startsWith('consents')),
 );
@@ -194,7 +197,16 @@ function saveB2bAnswer(): void {
                 :for="'profile-' + field.key"
                 class="portal-label"
               >{{ t(field.label) }}</label>
+              <TextAutocomplete
+                v-if="field.key === 'country'"
+                :id="'profile-' + field.key"
+                v-model="profileForm.country"
+                :suggestions="countries"
+                :empty-text="t('profile.countryNoMatch')"
+                required
+              />
               <input
+                v-else
                 :id="'profile-' + field.key"
                 v-model="profileForm[field.key]"
                 type="text"

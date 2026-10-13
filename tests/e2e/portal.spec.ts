@@ -1312,12 +1312,21 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.getByLabel('Отчество', { exact: true }).fill('Сергеевич');
     await page.getByLabel('Мужской', { exact: true }).check();
     await page.getByLabel('Дата рождения', { exact: true }).fill('1990-02-28');
-    await page.getByLabel('Страна', { exact: true }).fill('Казахстан');
+    await page.getByLabel('Страна', { exact: true }).fill('Каз');
+    await page.getByRole('option', { name: 'Казахстан', exact: true }).click();
+    await expect(page.getByLabel('Страна', { exact: true })).toHaveValue('Казахстан');
+    await page.getByLabel('Страна', { exact: true }).fill('Каз');
+    await page.getByLabel('Страна', { exact: true }).press('ArrowUp');
+    await page.getByLabel('Страна', { exact: true }).press('Enter');
+    await expect(page.getByLabel('Страна', { exact: true })).toHaveValue('Казахстан');
     await page.getByLabel('Город', { exact: true }).fill('Алматы');
     await page.getByLabel('Телефон', { exact: true }).fill('+77001234567');
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
+        await page.getByLabel('Страна', { exact: true }).focus();
+        await expect(page.getByRole('option', { name: 'Казахстан', exact: true })).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+        await page.getByLabel('Страна', { exact: true }).press('Escape');
     }
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible();
@@ -1393,6 +1402,7 @@ test('September 26 client selects multiple sessions before the medical editor an
     const fixture = createBookingFixture({ medicalService: true, daysAhead: 3 });
     await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
     await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    await page.getByRole('button', { name: fixture.date, exact: true }).click();
     await page.getByTestId('availability-slot').first().click();
     const firstSlotText = await page.getByTestId('availability-slot').first().textContent();
     await page.getByTestId('booking-add-session').click();
