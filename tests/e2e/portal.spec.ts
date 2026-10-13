@@ -641,7 +641,7 @@ test('portrait Story previews stay inside their frames and player navigation wor
         body: '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="640"><rect width="360" height="640" fill="#b88059"/></svg>',
     }));
     await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
-    await page.goto('/portal');
+    await page.goto('/');
     const cards = page.locator('.portal-story');
     await expect(cards).toHaveCount(4);
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
