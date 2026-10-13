@@ -3,6 +3,7 @@
 namespace Tests\Integration;
 
 use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Pages\WorkingIntervals;
 use App\Models\User;
 use App\Modules\Channels\Application\HandleTelegramBookingConfirmation;
 use App\Modules\Identity\Domain\Models\Client;
@@ -254,15 +255,17 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
         Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm([
-                'lead_time_minutes' => 15,
                 'viewer_timezone' => 'Asia/Bangkok',
                 'working_hours' => [],
                 'clear_working_hours' => false,
             ])
             ->call('save')
             ->assertHasNoErrors();
+
+        Livewire::actingAs($admin)->test(SchedulingConfiguration::class)
+            ->fillForm(['lead_time_minutes' => 15])->call('save')->assertHasNoErrors();
 
         self::assertSame('Asia/Bangkok', $specialist->refresh()->viewer_timezone);
         self::assertSame($before, SpecialistWorkingHour::query()
