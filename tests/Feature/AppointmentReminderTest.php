@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -14,6 +15,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
+use App\Modules\Scenarios\Application\EnsureAppointmentReminderDefaults;
 use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
@@ -23,6 +25,7 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
 use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
 use App\Modules\Scenarios\Domain\Models\AppointmentReminder;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioDeliveryAttempt;
 use App\Modules\Scheduling\Application\CancelBooking;
 use App\Modules\Scheduling\Application\ConfirmBooking;
@@ -33,6 +36,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Database\Seeders\ScenarioNotificationSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\Support\RecordingNotificationChannel;
 use Tests\TestCase;
@@ -331,6 +335,8 @@ final class AppointmentReminderTest extends TestCase
         self::assertSame('https://mini.example.test/portal/telegram/launch/medical_profile', $message->actionButton?->webAppUrl);
         self::assertNull($message->actionButton?->url);
         self::assertSame(ScenarioActionStatus::Delivered, $daily->fresh()->status);
+        $sentVersion = ScenarioDeliveryAttempt::query()->whereHas('delivery', fn ($query) => $query->where('scenario_action_id', $daily->id))->sole()->template_version_id;
+        self::assertSame($daily->render_context['medical_profile_reminder']['template_version_id'], $sentVersion);
 
         $profile = new MedicalProfile;
         $profile->forceFill(['organization_id' => $organization->id, 'client_id' => $client->id,
@@ -342,6 +348,8 @@ final class AppointmentReminderTest extends TestCase
         self::assertStringContainsString('Synthetic office', $this->channel->messages[1]->body);
         self::assertStringNotContainsString('заполнени', $this->channel->messages[1]->body);
         self::assertNull($this->channel->messages[1]->actionButton);
+        self::assertSame($hourly->template_version_id, ScenarioDeliveryAttempt::query()
+            ->whereHas('delivery', fn ($query) => $query->where('scenario_action_id', $hourly->id))->sole()->template_version_id);
     }
 
     public function test_late_reminder_does_not_send_after_the_visit_has_started(): void
@@ -440,6 +448,111 @@ final class AppointmentReminderTest extends TestCase
             app(AppointmentReminderScheduler::class)->schedule($booking, $event);
             self::assertSame(0, ScenarioAction::query()->where('organization_id', $organization->id)->count());
         }
+    }
+
+    public function test_medical_creation_is_one_delivery_regardless_of_rule_creation_order(): void
+    {
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        foreach ([false, true] as $reverse) {
+            [$organization, , $client, $specialist, $service] = $this->fixture();
+            $service->forceFill(['requires_medical_profile' => true])->save();
+            if ($reverse) {
+                app(EnsureAppointmentReminderDefaults::class)->handle($organization);
+            }
+            app(ScenarioNotificationSeeder::class)->run();
+            $booking = $this->booking($organization, $client, $specialist, $service, VisitFormat::Office,
+                CarbonImmutable::create(2026, 9, 5, 14, 0, 0, 'UTC'), 'Synthetic office', BookingStatus::Requested);
+            $booking->forceFill(['source' => 'portal'])->save();
+            $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'medical-creation-dedup', CarbonImmutable::now());
+            app(MaterializeScenarioEvent::class)->handle($event->id);
+            $actions = ScenarioAction::query()->where('scenario_event_id', $event->id)->where('recipient_type', 'client')
+                ->where('kind', 'scenario')->orderBy('id')->get();
+            self::assertCount(1, $actions);
+            foreach ($reverse ? $actions->reverse() : $actions as $action) {
+                $this->makeDue($action);
+                app(ExecuteScenarioAction::class)->handle($action->id);
+            }
+            $messages = array_values(array_filter($this->channel->messages, fn ($message) => $message->recipientExternalId === 'client-'.$client->id));
+            self::assertCount(1, $messages);
+            self::assertStringStartsWith('Запись создана!', $messages[0]->body);
+            self::assertSame('Заполнить карту здоровья', $messages[0]->actionButton?->text);
+            self::assertSame(1, ScenarioAction::query()->whereIn('id', $actions->modelKeys())->where('status', ScenarioActionStatus::Delivered)->count());
+            self::assertSame(1, ScenarioDeliveryAttempt::query()->whereHas('delivery', fn ($query) => $query->whereIn('scenario_action_id', $actions->modelKeys()))->count());
+        }
+    }
+
+    public function test_completion_before_delivery_keeps_the_standard_creation_confirmation(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        app(ScenarioNotificationSeeder::class)->run();
+        $booking = $this->booking($organization, $client, $specialist, $service, VisitFormat::Office,
+            CarbonImmutable::create(2026, 9, 5, 14, 0, 0, 'UTC'), 'Synthetic office', BookingStatus::Requested);
+        $booking->forceFill(['source' => 'portal'])->save();
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'completed-before-creation-delivery', CarbonImmutable::now());
+        app(MaterializeScenarioEvent::class)->handle($event->id);
+        $action = ScenarioAction::query()->where('scenario_event_id', $event->id)->where('recipient_type', 'client')->where('kind', 'scenario')->sole();
+        $profile = new MedicalProfile;
+        $profile->forceFill(['organization_id' => $organization->id, 'client_id' => $client->id,
+            'encryption_key_version' => 1, 'client_confirmed_at' => now()])->save();
+        $this->makeDue($action);
+        app(ExecuteScenarioAction::class)->handle($action->id);
+        app(ExecuteScenarioAction::class)->handle($action->id);
+        self::assertCount(1, $this->channel->messages);
+        self::assertStringStartsWith('Заявка на запись принята', $this->channel->messages[0]->body);
+        self::assertNull($this->channel->messages[0]->actionButton);
+        self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
+    }
+
+    public function test_a_late_provider_result_cannot_finalize_a_newer_delivery_claim(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $booking = $this->booking($organization, $client, $specialist, $service, VisitFormat::Office,
+            CarbonImmutable::create(2026, 9, 5, 14, 0, 0, 'UTC'), 'Synthetic office');
+        $event = app(RecordScenarioEvent::class)->bookingConfirmed($booking, 'late-provider-test', CarbonImmutable::now());
+        app(AppointmentReminderScheduler::class)->schedule($booking, $event);
+        $action = ScenarioAction::query()->where('booking_id', $booking->id)->where('recipient_type', 'client')->firstOrFail();
+        $this->makeDue($action);
+        $this->channel->onSend = static function () use ($action, $organization): void {
+            $current = ScenarioDelivery::query()->where('scenario_action_id', $action->id)->sole();
+            $current->forceFill(['attempt_count' => 2, 'processing_started_at' => CarbonImmutable::now('UTC')->addSecond()])->save();
+            $newAttempt = new ScenarioDeliveryAttempt;
+            $newAttempt->forceFill(['organization_id' => $organization->id, 'scenario_delivery_id' => $current->id,
+                'attempt_number' => 2, 'outcome' => NotificationDeliveryOutcome::Unknown, 'attempted_at' => now()])->save();
+        };
+        app(ExecuteScenarioAction::class)->handle($action->id);
+        self::assertCount(1, $this->channel->messages);
+        $delivery = $action->deliveries()->sole();
+        self::assertSame(ScenarioDeliveryStatus::Processing, $delivery->status);
+        self::assertSame(2, $delivery->attempt_count);
+        self::assertSame(ScenarioActionStatus::Processing, $action->fresh()->status);
+        $attempts = $delivery->attempts()->orderBy('attempt_number')->get();
+        self::assertCount(2, $attempts);
+        self::assertSame(NotificationDeliveryOutcome::Unknown, $attempts[0]->outcome);
+        self::assertSame(NotificationDeliveryOutcome::Unknown, $attempts[1]->outcome);
+        self::assertSame($action->template_version_id, $attempts[0]->template_version_id);
+        self::assertNull($attempts[1]->template_version_id);
+        app(ExecuteScenarioAction::class)->handle($action->id);
+        self::assertCount(1, $this->channel->messages);
+    }
+
+    public function test_cancellation_before_delivery_suppresses_the_entire_creation_notice(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        app(ScenarioNotificationSeeder::class)->run();
+        $booking = $this->booking($organization, $client, $specialist, $service, VisitFormat::Office,
+            CarbonImmutable::create(2026, 9, 5, 14, 0, 0, 'UTC'), 'Synthetic office', BookingStatus::Requested);
+        $booking->forceFill(['source' => 'portal'])->save();
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'cancel-creation-test', CarbonImmutable::now());
+        app(MaterializeScenarioEvent::class)->handle($event->id);
+        $notice = ScenarioAction::query()->where('scenario_event_id', $event->id)->where('recipient_type', 'client')->where('kind', 'scenario')->sole();
+        app(CancelBooking::class)->handle($admin, $booking, 'Synthetic cancellation');
+        $this->makeDue($notice);
+        app(ExecuteScenarioAction::class)->handle($notice->id);
+        self::assertCount(0, $this->channel->messages);
+        self::assertSame(ScenarioActionStatus::Suppressed, $notice->fresh()->status);
+        self::assertSame(0, $notice->deliveries()->sole()->attempts()->count());
     }
 
     /** @return array{Organization, User, Client, Specialist, Service} */

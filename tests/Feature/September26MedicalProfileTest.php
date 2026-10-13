@@ -92,6 +92,7 @@ final class September26MedicalProfileTest extends TestCase
         app(UpdateMedicalProfile::class)->handle($staff, $client, new UpdateMedicalProfileCommand(
             complaints: $data['complaints'], goals: $data['goals'], chronicConditions: $data['chronic_conditions'],
             clinicalAnswers: json_encode($data['answers'], JSON_THROW_ON_ERROR), clinicalAnswersProvided: true,
+            confirmCurrentData: true,
             anamnesisProvided: false, complaintsGoalsProvided: false, operationsInjuriesProvided: false,
             complaintsProvided: true, goalsProvided: true, chronicConditionsProvided: true,
         ));

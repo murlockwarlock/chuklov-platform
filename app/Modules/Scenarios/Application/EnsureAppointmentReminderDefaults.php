@@ -209,7 +209,7 @@ final class EnsureAppointmentReminderDefaults
                 'template_key' => $templateKey,
                 'name' => $name,
                 'locale' => $locale,
-                'purpose' => ScenarioRulePurpose::Service->value,
+                'purpose' => $templateKey === 'medical-profile-after-booking' ? ScenarioRulePurpose::Transactional->value : ScenarioRulePurpose::Service->value,
                 'is_active' => true,
             ])->save();
         }
@@ -282,7 +282,7 @@ final class EnsureAppointmentReminderDefaults
             'name' => $locale === 'ru' ? 'Заполнить карту здоровья после записи' : 'Complete health profile after booking',
             'trigger_event' => ScenarioEventType::BookingCreated->value,
             'is_enabled' => true, 'system_managed' => false,
-            'delay_value' => 0, 'delay_unit' => 'minutes', 'purpose' => ScenarioRulePurpose::Service->value,
+            'delay_value' => 0, 'delay_unit' => 'minutes', 'purpose' => ScenarioRulePurpose::Transactional->value,
             'conditions' => [
                 ['type' => 'booking.needs_medical_profile', 'operator' => 'equals', 'value' => true],
                 ['type' => 'client.language', 'operator' => 'equals', 'value' => $locale],

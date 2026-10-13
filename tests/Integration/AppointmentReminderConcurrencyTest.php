@@ -9,9 +9,11 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
+use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
@@ -22,6 +24,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Database\Seeders\ScenarioNotificationSeeder;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
@@ -94,6 +97,41 @@ final class AppointmentReminderConcurrencyTest extends TestCase
         self::assertSame(10, DB::table('scenario_deliveries')->where('organization_id', $organization->id)->count());
         app(AppointmentReminderScheduler::class)->schedule($booking, $event);
         self::assertSame(10, ScenarioAction::query()->where('organization_id', $organization->id)->count());
+    }
+
+    public function test_concurrent_medical_creation_has_one_client_notice_and_one_delivery(): void
+    {
+        $this->requirePostgres();
+        [$organization, $client, $specialist, $service] = $this->fixture();
+        $organization->featureFlags()->create(['feature_key' => OrganizationFeature::ClientRecords->value, 'enabled' => true]);
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        app(ScenarioNotificationSeeder::class)->run();
+        $start = CarbonImmutable::now()->addDays(5);
+        $booking = Booking::factory()->forOrganization($organization)->forClient($client)->forSpecialist($specialist)->forService($service)
+            ->create(['source' => 'portal', 'status' => BookingStatus::Requested,
+                'starts_at' => $start, 'ends_at' => $start->addHour(), 'blocking_ends_at' => $start->addHour()]);
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'medical-creation-concurrency', CarbonImmutable::now());
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::materializeInProcess($event->id),
+            static fn (): string => self::materializeInProcess($event->id),
+        ]);
+        self::assertSame(['ok', 'ok'], $results);
+        $notice = ScenarioAction::query()->where('scenario_event_id', $event->id)->where('recipient_type', 'client')
+            ->where('kind', 'scenario')->sole();
+        self::assertNotNull($notice->render_context['medical_profile_after_booking']['template_version_id'] ?? null);
+        self::assertSame(1, $notice->deliveries()->count());
+        self::assertSame(2, ScenarioAction::query()->where('scenario_event_id', $event->id)->where('kind', 'appointment_reminder')->count());
+    }
+
+    private static function materializeInProcess(int $eventId): string
+    {
+        try {
+            app(MaterializeScenarioEvent::class)->handle($eventId);
+
+            return 'ok';
+        } catch (\Throwable $exception) {
+            return 'error:'.get_class($exception);
+        }
     }
 
     /** @return array{Organization, Client, Specialist, Service} */

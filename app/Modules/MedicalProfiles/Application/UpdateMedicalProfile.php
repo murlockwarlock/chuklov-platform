@@ -113,7 +113,7 @@ final readonly class UpdateMedicalProfile
                 'supplements' => $encrypted->encryptedSupplements,
                 'encryption_key_version' => $keyVersion,
             ]);
-            if ($command->confirmCurrentData) {
+            if ($command->confirmCurrentData && $actor instanceof Client) {
                 $profile->client_confirmed_at = CarbonImmutable::now('UTC');
             }
             try {

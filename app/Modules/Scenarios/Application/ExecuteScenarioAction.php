@@ -48,6 +48,7 @@ final class ExecuteScenarioAction
         private readonly BookingChangedGuard $bookingChangedGuard,
         private readonly ResolveTelegramMiniAppEntry $miniAppEntries,
         private readonly MedicalProfileReminderPresentation $medicalProfile,
+        private readonly RecordScenarioDeliveryPresentation $presentation,
     ) {}
 
     public function handle(int $scenarioActionId): void
@@ -77,7 +78,7 @@ final class ExecuteScenarioAction
             }
 
             $result = $this->send($action->getKey(), $delivery);
-            $outcome = $this->finalizeDelivery($delivery->getKey(), $result);
+            $outcome = $this->finalizeDelivery($delivery, $result);
 
             if (! in_array($outcome, [NotificationDeliveryOutcome::PermanentFailure, NotificationDeliveryOutcome::Unavailable], true)) {
                 return;
@@ -103,6 +104,9 @@ final class ExecuteScenarioAction
 
         if ($action->kind === 'appointment_reminder') {
             return $this->appointmentReminderIsCurrent($action, $context->booking);
+        }
+        if (! $this->medicalProfile->creationIsCurrent($action, $context)) {
+            return false;
         }
         if ($action->templateVersion?->template?->template_key === 'medical-profile-after-booking'
             && ! $this->medicalProfile->needsPrompt($action, $context->booking)) {
@@ -167,7 +171,8 @@ final class ExecuteScenarioAction
                 if ($booking === null || ! $this->appointmentReminderIsCurrent($action, $booking)) {
                     return NotificationDeliveryResult::suppressed('booking_changed');
                 }
-                if ($booking->visit_format->value === 'online' && $booking->effectiveMeetingUrl() === null) {
+                $medicalPromptRequired = $this->medicalProfile->applies($action, $booking);
+                if (! $medicalPromptRequired && $booking->visit_format->value === 'online' && $booking->effectiveMeetingUrl() === null) {
                     return NotificationDeliveryResult::retryable('booking_meeting_pending');
                 }
                 $recipient = new ScenarioRecipient(
@@ -184,7 +189,7 @@ final class ExecuteScenarioAction
                     $renderContext['medical_profile_reminder'] = $medicalSnapshot;
                 }
                 $action->setAttribute('render_context', $renderContext);
-                if ($this->medicalProfile->applies($action, $booking)) {
+                if ($medicalPromptRequired) {
                     $action->setRelation('templateVersion', $this->medicalProfile->template($action));
                 }
             } else {
@@ -199,6 +204,10 @@ final class ExecuteScenarioAction
                 }
                 $action = $currentAction;
                 $event = $currentEvent;
+                $context = $this->contextFactory->evaluationContext($event);
+                if ($this->medicalProfile->prefersMedicalCreation($action, $context)) {
+                    $action->setRelation('templateVersion', $this->medicalProfile->creationTemplate($action));
+                }
             }
             $identity = $this->identities->resolve($action, $delivery->channel);
 
@@ -270,6 +279,10 @@ final class ExecuteScenarioAction
             }
 
             $event = $action->event()->first();
+            if (isset($action->render_context['medical_profile_after_booking'])
+                && ! $this->medicalProfile->creationIsCurrent($action, $this->contextFactory->evaluationContext($event))) {
+                return NotificationDeliveryResult::suppressed('booking_changed');
+            }
             if ($template->template->template_key === 'medical-profile-after-booking' && ! $this->isEligible($action)) {
                 return NotificationDeliveryResult::suppressed('medical_profile_no_longer_required');
             }
@@ -288,6 +301,10 @@ final class ExecuteScenarioAction
                 || (! $isAppointmentReminder && in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
                     && ! $this->bookingChangedGuard->allows($event, renderContext: $action->render_context, recipientType: $action->recipient_type))) {
                 return NotificationDeliveryResult::suppressed($this->changeReason($event?->event_name->value));
+            }
+
+            if (! $this->presentation->handle($delivery, (int) $template->getKey())) {
+                return NotificationDeliveryResult::suppressed('delivery_claim_changed');
             }
 
             return $channel->send(new NotificationMessage(
@@ -687,13 +704,14 @@ final class ExecuteScenarioAction
         });
     }
 
-    private function finalizeDelivery(int $deliveryId, NotificationDeliveryResult $result): NotificationDeliveryOutcome
+    private function finalizeDelivery(ScenarioDelivery $claimed, NotificationDeliveryResult $result): NotificationDeliveryOutcome
     {
-        return DB::transaction(function () use ($deliveryId, $result): NotificationDeliveryOutcome {
-            $delivery = ScenarioDelivery::query()->lockForUpdate()->findOrFail($deliveryId);
+        return DB::transaction(function () use ($claimed, $result): NotificationDeliveryOutcome {
+            $delivery = ScenarioDelivery::query()->where('organization_id', $claimed->organization_id)->lockForUpdate()->findOrFail($claimed->getKey());
 
-            if ($delivery->status !== ScenarioDeliveryStatus::Processing) {
-                return $result->outcome;
+            if ($delivery->status !== ScenarioDeliveryStatus::Processing || $delivery->attempt_count !== $claimed->attempt_count
+                || (string) $delivery->processing_started_at !== (string) $claimed->processing_started_at) {
+                return NotificationDeliveryOutcome::InFlight;
             }
 
             $outcome = $result->outcome === NotificationDeliveryOutcome::InFlight
