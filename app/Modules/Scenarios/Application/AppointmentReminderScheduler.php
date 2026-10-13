@@ -50,7 +50,7 @@ final class AppointmentReminderScheduler
             ->with(['client', 'service', 'specialist'])
             ->firstOrFail();
 
-        $payload = $event->payload;
+        $payload = $event->getAttribute('payload');
         if (! is_array($payload) || ! is_int($payload['booking_id'] ?? null) || ! is_int($payload['event_version'] ?? null)
             || (int) $event->organization_id !== (int) $booking->organization_id
             || $payload['booking_id'] !== (int) $booking->getKey()

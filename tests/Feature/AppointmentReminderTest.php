@@ -428,6 +428,20 @@ final class AppointmentReminderTest extends TestCase
         self::assertNull($this->channel->messages[0]->actionButton);
     }
 
+    public function test_malformed_and_stale_event_payloads_cannot_schedule_reminders(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $booking = $this->booking($organization, $client, $specialist, $service, VisitFormat::Office,
+            CarbonImmutable::create(2026, 9, 5, 14, 0, 0, 'UTC'), 'Synthetic office');
+        $event = app(RecordScenarioEvent::class)->bookingConfirmed($booking, 'invalid-payload-test', CarbonImmutable::now());
+        foreach ([null, 'invalid', [], ['booking_id' => [$booking->id], 'event_version' => 1],
+            ['booking_id' => $booking->id, 'event_version' => 0]] as $payload) {
+            $event->setAttribute('payload', $payload);
+            app(AppointmentReminderScheduler::class)->schedule($booking, $event);
+            self::assertSame(0, ScenarioAction::query()->where('organization_id', $organization->id)->count());
+        }
+    }
+
     /** @return array{Organization, User, Client, Specialist, Service} */
     private function fixture(): array
     {
