@@ -6,6 +6,8 @@ import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import BookingChoiceList from '../../Components/Portal/BookingChoiceList.vue';
 import BookingConfirmation from '../../Components/Portal/BookingConfirmation.vue';
 import BookingSuccess from '../../Components/Portal/BookingSuccess.vue';
+import BookingSessionSelection from '../../Components/Portal/BookingSessionSelection.vue';
+import { useBookingSessions } from '../../composables/useBookingSessions';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 import { formatMajorPrice } from '../../utils/formatMajorPrice';
@@ -80,6 +82,7 @@ type BookingResult = {
     bookingId: number;
     startsAt: string;
     medicalProfileUrl: string | null;
+    startsAtList?: string[];
 } | null;
 
 type LegalDocument = {
@@ -119,6 +122,11 @@ const selectedSpecialistId = ref<number | null>(props.query.specialistId);
 const selectedFormat = ref<VisitFormat | null>(props.query.formatSelected ? props.query.format : null);
 const selectedDate = ref<string | null>(props.query.dateFrom);
 const selectedStart = ref<string | null>(props.bookingResult?.startsAt ?? null);
+const { queuedStarts, startsAtList, canAdd, add: addSession, remove: removeSession, keyFor } = useBookingSessions(selectedStart);
+const selectionAvailability = computed(() => props.availability === null ? null : {
+    ...props.availability,
+    slots: props.availability.slots.filter((slot) => !queuedStarts.value.includes(slot.startsAt)),
+});
 const selectedClientTimezone = ref<string>(props.query.displayTimezone);
 const selectedWorkingLocationId = ref<number | null>(props.query.workingLocationId);
 const selectedLocationArea = ref<string | null>(props.query.locationArea);
@@ -128,6 +136,8 @@ const bookingForm = useForm<{
     service_id: number | null;
     specialist_id: number | null;
     starts_at: string | null;
+    additional_starts_at: string[];
+    idempotency_key: string | null;
     format: VisitFormat;
     party_size: number;
     location: string | null;
@@ -145,6 +155,8 @@ const bookingForm = useForm<{
     service_id: props.query.serviceId,
     specialist_id: props.query.specialistId,
     starts_at: null,
+    additional_starts_at: [],
+    idempotency_key: null,
     format: props.query.format,
     party_size: 1,
     location: null,
@@ -349,6 +361,8 @@ const bookingError = computed(() => {
         ?? errors.location_area
         ?? errors.client_timezone
         ?? errors.consents
+        ?? errors.additional_starts_at
+        ?? errors.idempotency_key
         ?? errors.marketing_consent;
 });
 
@@ -437,9 +451,9 @@ function bookingQuery(
     return query;
 }
 
-function visitBooking(query: Record<string, string | number>, preserveScroll = true): void {
+function visitBooking(query: Record<string, string | number>, preserveScroll = true, preserveSessions = false): void {
     router.get(props.urls.create, query, {
-        preserveState: false,
+        preserveState: preserveSessions,
         preserveScroll,
         replace: true,
     });
@@ -531,7 +545,7 @@ function changeSpecialist(): void {
 }
 
 function changeMonth(dateFrom: string, dateTo: string): void {
-    visitBooking(bookingQuery(dateFrom, dateTo));
+    visitBooking(bookingQuery(dateFrom, dateTo), true, true);
 }
 
 function selectDate(date: string): void {
@@ -577,7 +591,8 @@ function changeLocationArea(value: string): void {
 }
 
 function continueToConfirmation(): void {
-    if (selectedStart.value !== null) {
+    if (startsAtList.value.length > 0) {
+        selectedStart.value ??= startsAtList.value[0];
         bookingStep.value = 'confirmation';
     }
 }
@@ -587,7 +602,7 @@ function returnToTime(): void {
 }
 
 function submitBooking(): void {
-    if (selectedStart.value === null || props.query.serviceId === null || props.query.specialistId === null) {
+    if (startsAtList.value.length === 0 || props.query.serviceId === null || props.query.specialistId === null) {
         return;
     }
 
@@ -601,10 +616,12 @@ function submitBooking(): void {
     bookingForm.service_id = props.query.serviceId;
     bookingForm.specialist_id = props.query.specialistId;
     bookingForm.format = props.query.format;
-    bookingForm.starts_at = selectedStart.value;
+    bookingForm.starts_at = startsAtList.value[0];
+    bookingForm.additional_starts_at = startsAtList.value.slice(1);
     bookingForm.client_timezone = selectedClientTimezone.value;
     bookingForm.working_location_id = selectedWorkingLocationId.value;
     bookingForm.location_area = selectedLocationArea.value;
+    bookingForm.idempotency_key = keyFor({ ...bookingForm.data(), idempotency_key: undefined });
     bookingForm.post(props.urls.store, { preserveScroll: false });
 }
 </script>
@@ -673,6 +690,7 @@ function submitBooking(): void {
           :service-name="selectedService?.name ?? null"
           :specialist-name="selectedSpecialist?.displayName ?? null"
           :selected-start="selectedStart"
+          :starts-at-list="props.bookingResult.startsAtList"
           :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
           :locale="locale"
           :format-label="formatLabel(props.query.format)"
@@ -929,7 +947,7 @@ function submitBooking(): void {
           </section>
 
           <BookingCalendar
-            :availability="props.availability"
+            :availability="selectionAvailability"
             :date-from="props.query.dateFrom"
             :date-to="props.query.dateTo"
             :locale="locale"
@@ -952,10 +970,19 @@ function submitBooking(): void {
             {{ bookingError }}
           </p>
 
+          <BookingSessionSelection
+            :starts="queuedStarts"
+            :timezone="selectedClientTimezone"
+            :locale="locale"
+            :can-add="canAdd"
+            @add="addSession"
+            @remove="removeSession"
+          />
+
           <button
             type="button"
             class="portal-button portal-button--primary portal-booking-flow__cta"
-            :disabled="selectedStart === null"
+            :disabled="startsAtList.length === 0"
             @click="continueToConfirmation"
           >
             {{ t('booking.continue') }}
@@ -967,6 +994,7 @@ function submitBooking(): void {
           :service-name="selectedService?.name ?? null"
           :specialist-name="selectedSpecialist?.displayName ?? null"
           :selected-start="selectedStart"
+          :starts-at-list="startsAtList"
           :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
           :locale="locale"
           :format="props.query.format"

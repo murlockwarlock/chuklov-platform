@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { expect, test, type Page, type Response } from '@playwright/test';
 
 type BookingFixture = {
+    clientId: number;
     cookieName: string;
     cookieValue: string;
     serviceId: number;
@@ -419,6 +420,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         echo json_encode([
             'cookieName' => $cookieName,
             'cookieValue' => $cookieValue,
+            'clientId' => $client->getKey(),
             'serviceId' => $service->getKey(),
             'serviceName' => $service->name,
             'specialistId' => $specialist->getKey(),
@@ -1383,6 +1385,52 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await deniedMedicalResponse;
     await expect(page.getByText('Synthetic symptoms', { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => document.body.textContent)).not.toContain('Synthetic symptoms');
+});
+
+test('September 26 client selects multiple sessions before the medical editor and can cancel one independently', async ({ page }) => {
+    const fixture = createBookingFixture({ medicalService: true });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    await page.getByTestId('availability-slot').first().click();
+    const firstSlotText = await page.getByTestId('availability-slot').first().textContent();
+    await page.getByTestId('booking-add-session').click();
+    await expect(page.getByTestId('queued-booking-session')).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Медицинские данные', exact: true })).toHaveCount(0);
+    expect(await page.getByTestId('availability-slot').first().textContent()).not.toBe(firstSlotText);
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByTestId('booking-add-session').click();
+    await expect(page.getByTestId('queued-booking-session')).toHaveCount(2);
+    await page.getByTestId('queued-booking-session').last().getByRole('button', { name: 'Убрать сеанс' }).click();
+    await expect(page.getByTestId('queued-booking-session')).toHaveCount(1);
+    await page.getByTestId('availability-slot').first().click();
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    }
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    await expect(page.locator('.portal-booking-summary time')).toHaveCount(4);
+    await acceptRequiredConsents(page);
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/medical-profile\?booking_id=\d+&edit=1/);
+    const result = execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $bookings = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::query()->where('client_id', ${fixture.clientId})->orderBy('starts_at')->get();
+        echo json_encode($bookings->map(fn ($booking) => ['id' => $booking->getKey(), 'source' => $booking->source->value, 'client_id' => $booking->client_id])->all());
+    `], { encoding: 'utf8' }).trim();
+    const bookings = JSON.parse(result) as Array<{ id: number; source: string; client_id: number }>;
+    expect(bookings).toHaveLength(2);
+    expect(bookings.every((booking) => booking.source === 'portal' && booking.client_id === fixture.clientId)).toBe(true);
+    await page.getByRole('link', { name: 'Мои записи' }).last().click();
+    await expect(page.getByText(fixture.serviceName, { exact: true })).toHaveCount(2);
+    await page.reload();
+    await expect(page.getByText(fixture.serviceName, { exact: true })).toHaveCount(2);
+    await page.getByRole('link', { name: new RegExp(fixture.serviceName) }).first().click();
+    await page.getByRole('button', { name: 'Отменить', exact: true }).first().click();
+    await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Мои записи' }).last().click();
+    await page.getByRole('link', { name: new RegExp(fixture.serviceName) }).first().click();
+    await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toBeVisible();
 });
 
 test('September 26 medical service opens the saved-profile onboarding after the slot is created', async ({ page }) => {

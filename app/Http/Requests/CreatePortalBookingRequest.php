@@ -21,6 +21,9 @@ class CreatePortalBookingRequest extends FormRequest
             'service_id' => ['required', 'integer', 'min:1'],
             'specialist_id' => ['required', 'integer', 'min:1'],
             'starts_at' => ['required', 'date'],
+            'additional_starts_at' => ['sometimes', 'array', 'max:19'],
+            'additional_starts_at.*' => ['required', 'string', 'date', 'distinct:strict'],
+            'idempotency_key' => ['required_with:additional_starts_at', 'nullable', 'string', 'uuid'],
             'format' => ['required', 'string', 'in:'.implode(',', array_map(
                 static fn (VisitFormat $format): string => $format->value,
                 VisitFormat::cases(),

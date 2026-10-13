@@ -9,6 +9,7 @@ const props = defineProps<{
     serviceName: string | null;
     specialistName: string | null;
     selectedStart: string | null;
+    startsAtList?: string[];
     timezone: string;
     locale: PortalLocale;
     formatLabel: string;
@@ -42,18 +43,21 @@ const { t } = usePortalLocale();
         <dt>{{ t('booking.specialist') }}</dt>
         <dd>{{ props.specialistName }}</dd>
       </div>
-      <div v-if="props.selectedStart">
+      <div
+        v-for="start in (props.startsAtList?.length ? props.startsAtList : props.selectedStart ? [props.selectedStart] : [])"
+        :key="start"
+      >
         <dt>{{ t('booking.dateTime') }}</dt>
         <dd>
           <PortalDateTime
-            :value="props.selectedStart"
+            :value="start"
             :time-zone="props.timezone"
             :locale="props.locale"
             mode="date"
           />
           <span> · </span>
           <PortalDateTime
-            :value="props.selectedStart"
+            :value="start"
             :time-zone="props.timezone"
             :locale="props.locale"
             mode="time"

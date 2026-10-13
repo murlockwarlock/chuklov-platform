@@ -48,6 +48,7 @@ export type PortalIconName =
     | 'more'
     | 'arrow'
     | 'close'
+    | 'plus'
     | 'map'
     | 'pin'
     | 'compass'

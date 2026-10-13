@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
 use App\Modules\Identity\Application\PublishLegalDocument;
@@ -11,6 +12,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Scheduling\Application\ConfirmBooking;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
@@ -450,6 +452,77 @@ class PortalBookingRemediationTest extends TestCase
         $this->withSession(['client_portal.client_id' => $russianClient->getKey()])
             ->post(route('portal.bookings.store'), [])
             ->assertInvalid(['service_id' => 'Выберите услугу.']);
+    }
+
+    public function test_portal_multi_session_create_replay_receipt_and_independent_cancellation(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $service->update(['requires_medical_profile' => false]);
+        $payload = $this->bookingPayload($service, $specialist, [
+            'additional_starts_at' => ['2026-03-17T09:00:00+00:00'],
+            'idempotency_key' => 'f578ef96-74f4-4a1b-b73f-5e641b851a20',
+            'consents' => $this->acceptedConsents($organization),
+        ]);
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $response = $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors()->assertRedirect();
+        $receiptUrl = $response->headers->get('Location');
+        self::assertCount(2, Booking::query()->where('client_id', $client->id)->get());
+        self::assertSame(2, DB::table('scenario_events')->where('event_name', 'booking.created')->count());
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors();
+        self::assertSame(2, Booking::query()->count());
+        self::assertSame(2, DB::table('scenario_events')->where('event_name', 'booking.created')->count());
+        $this->get($receiptUrl)->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('bookingResult.startsAtList', ['2026-03-16T09:00:00+00:00', '2026-03-17T09:00:00+00:00'])
+            ->where('bookingResult.medicalProfileUrl', null));
+        $admin = User::factory()->forOrganization($organization)->create();
+        foreach (Booking::query()->get() as $booking) {
+            self::assertSame(BookingStatus::Requested, $booking->status);
+            app(ConfirmBooking::class)->handle($admin, $booking);
+        }
+        $first = Booking::query()->orderBy('starts_at')->firstOrFail();
+        $this->post(route('portal.bookings.cancel', $first->id))->assertSessionHasNoErrors();
+        self::assertSame(BookingStatus::Cancelled, $first->refresh()->status);
+        self::assertSame(BookingStatus::Confirmed, Booking::query()->whereKeyNot($first->id)->sole()->status);
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors();
+        self::assertSame(2, Booking::query()->count());
+        self::assertSame(BookingStatus::Cancelled, $first->refresh()->status);
+        $payload['additional_starts_at'] = ['2026-03-18T09:00:00+00:00'];
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('idempotency_key');
+        self::assertSame(2, Booking::query()->count());
+        $payload['starts_at'] = '2026-03-19T09:00:00+00:00';
+        $payload['additional_starts_at'] = ['2026-03-20T09:00:00+00:00'];
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('idempotency_key');
+        self::assertSame(2, Booking::query()->count());
+        $otherClient = Client::factory()->forOrganization($organization)->create();
+        $this->withSession(['client_portal.client_id' => $otherClient->id]);
+        $this->get($receiptUrl)->assertNotFound();
+        $foreignClient = Client::factory()->forOrganization(Organization::factory()->create())->create();
+        $this->withSession(['client_portal.client_id' => $foreignClient->id]);
+        $this->post(route('portal.bookings.store'), $payload)->assertUnauthorized();
+    }
+
+    public function test_multi_session_conflict_rolls_back_bookings_consents_intents_and_events(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $payload = $this->bookingPayload($service, $specialist, [
+            'additional_starts_at' => ['2026-03-17T11:00:00+00:00'],
+            'idempotency_key' => 'f578ef96-74f4-4a1b-b73f-5e641b851a21',
+            'consents' => $this->acceptedConsents($organization),
+        ]);
+        $this->withSession(['client_portal.client_id' => $client->id]);
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('additional_starts_at');
+        foreach (['bookings', 'client_consents', 'booking_idempotency_keys', 'scenario_events'] as $table) {
+            self::assertSame(0, DB::table($table)->count(), $table);
+        }
+        $payload['additional_starts_at'] = [$payload['starts_at']];
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('additional_starts_at');
+        self::assertSame(0, Booking::query()->count());
+        unset($payload['idempotency_key']);
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('idempotency_key');
+        $payload['idempotency_key'] = 'f578ef96-74f4-4a1b-b73f-5e641b851a21';
+        $payload['client_timezone'] = 'Not/Timezone';
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('client_timezone');
+        $this->get(route('portal.bookings.create', ['booking_ids' => [999999]]))->assertNotFound();
     }
 
     /** @return array{Organization, Client, Specialist, Service} */

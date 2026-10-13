@@ -85,6 +85,13 @@ class BookingController extends Controller
         [$dateFrom, $dateTo] = $this->dateRange($validated, $displayTimezone);
         $format = $this->selectedFormat($validated['format'] ?? null, $selectedService);
         $bookingResult = $request->session()->pull('portal_booking_result');
+        $receiptIds = $validated['booking_ids'] ?? [];
+        if ($receiptIds !== []) {
+            $receiptBookings = Booking::query()->where('organization_id', $client->organization_id)
+                ->where('client_id', $client->getKey())->whereIn('id', $receiptIds)->orderBy('starts_at')->get();
+            abort_unless($receiptBookings->count() === count($receiptIds), 404);
+            $bookingResult = $this->bookingResult($receiptBookings->firstOrFail(), $receiptBookings->all());
+        }
         if (! is_array($bookingResult)) {
             $bookingId = $this->nullableInteger($validated['booking_id'] ?? null);
             if ($bookingId !== null) {
@@ -222,29 +229,34 @@ class BookingController extends Controller
         }
 
         try {
-            $booking = $createBooking->handle(
-                client: $clientContext->client(),
-                specialist: $this->specialist($validated['specialist_id'], $organizationContext->id()),
-                service: $this->service($validated['service_id'], $organizationContext->id()),
-                startsAt: $startsAt,
-                format: $format,
-                consents: $validated['consents'] ?? [],
-                marketingConsent: (bool) ($validated['marketing_consent'] ?? false),
-                clientTimezone: isset($validated['client_timezone']) && is_string($validated['client_timezone'])
+            $arguments = [
+                'client' => $clientContext->client(),
+                'specialist' => $this->specialist($validated['specialist_id'], $organizationContext->id()),
+                'service' => $this->service($validated['service_id'], $organizationContext->id()),
+                'format' => $format,
+                'consents' => $validated['consents'] ?? [],
+                'marketingConsent' => (bool) ($validated['marketing_consent'] ?? false),
+                'clientTimezone' => isset($validated['client_timezone']) && is_string($validated['client_timezone'])
                     ? $validated['client_timezone']
                     : null,
-                partySize: (int) ($validated['party_size'] ?? 1),
-                location: isset($validated['location']) ? (string) $validated['location'] : null,
-                workingLocationId: isset($validated['working_location_id']) ? (int) $validated['working_location_id'] : null,
-                locationArea: isset($validated['location_area']) ? (string) $validated['location_area'] : null,
-                latitude: isset($validated['latitude']) ? (float) $validated['latitude'] : null,
-                longitude: isset($validated['longitude']) ? (float) $validated['longitude'] : null,
-                mapUrl: isset($validated['map_url']) ? (string) $validated['map_url'] : null,
-                attributionSource: filled($validated['attribution_source'] ?? null)
+                'partySize' => (int) ($validated['party_size'] ?? 1),
+                'location' => isset($validated['location']) ? (string) $validated['location'] : null,
+                'workingLocationId' => isset($validated['working_location_id']) ? (int) $validated['working_location_id'] : null,
+                'locationArea' => isset($validated['location_area']) ? (string) $validated['location_area'] : null,
+                'latitude' => isset($validated['latitude']) ? (float) $validated['latitude'] : null,
+                'longitude' => isset($validated['longitude']) ? (float) $validated['longitude'] : null,
+                'mapUrl' => isset($validated['map_url']) ? (string) $validated['map_url'] : null,
+                'attributionSource' => filled($validated['attribution_source'] ?? null)
                     ? (string) $validated['attribution_source']
                     : null,
-                attributionSourceDetail: $validated['attribution_source_detail'] ?? null,
-            );
+                'attributionSourceDetail' => $validated['attribution_source_detail'] ?? null,
+                'idempotencyKey' => $validated['idempotency_key'] ?? null,
+            ];
+            $additionalStarts = $validated['additional_starts_at'] ?? [];
+            $bookings = $additionalStarts === []
+                ? [$createBooking->handle(...[...$arguments, 'startsAt' => $startsAt])]
+                : $createBooking->handleMultiple(...[...$arguments, 'startsAt' => [$startsAt->toIso8601String(), ...$additionalStarts]]);
+            $booking = $bookings[0];
         } catch (ValidationException $exception) {
             throw ValidationException::withMessages($this->bookingErrors->bookingErrors($exception));
         }
@@ -255,6 +267,7 @@ class BookingController extends Controller
                 'service_id' => $booking->service_id,
                 'specialist_id' => $booking->specialist_id,
                 'booking_id' => $booking->getKey(),
+                ...count($bookings) > 1 ? ['booking_ids' => array_map(static fn (Booking $item): int => (int) $item->getKey(), $bookings)] : [],
                 'date_from' => $booking->startsAtUtc()->setTimezone($displayTimezone)->toDateString(),
                 'date_to' => $booking->startsAtUtc()->setTimezone($displayTimezone)->toDateString(),
                 'format' => $booking->visit_format->value,
@@ -262,11 +275,14 @@ class BookingController extends Controller
                 'working_location_id' => $booking->working_location_id,
                 'location_area' => $booking->location_area,
             ])
-            ->with('portal_booking_result', $this->bookingResult($booking));
+            ->with('portal_booking_result', $this->bookingResult($booking, $bookings));
     }
 
-    /** @return array{message: string, bookingId: int, startsAt: string, medicalProfileUrl: ?string} */
-    private function bookingResult(Booking $booking): array
+    /**
+     * @param  array<int, Booking>  $bookings
+     * @return array{message: string, bookingId: int, startsAt: string, startsAtList: list<string>, medicalProfileUrl: ?string}
+     */
+    private function bookingResult(Booking $booking, array $bookings = []): array
     {
         return [
             'message' => $booking->visit_format === VisitFormat::HomeVisit
@@ -274,6 +290,7 @@ class BookingController extends Controller
                 : $this->bookingErrors->message('booking_created'),
             'bookingId' => (int) $booking->getKey(),
             'startsAt' => $booking->startsAtUtc()->toIso8601String(),
+            'startsAtList' => array_values(array_map(static fn (Booking $item): string => $item->startsAtUtc()->toIso8601String(), $bookings === [] ? [$booking] : $bookings)),
             'medicalProfileUrl' => $booking->service->requires_medical_profile
                 ? route('portal.medical-profile', ['booking_id' => $booking->getKey(), 'edit' => 1])
                 : null,

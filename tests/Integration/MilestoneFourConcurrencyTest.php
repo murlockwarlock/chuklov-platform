@@ -316,6 +316,52 @@ class MilestoneFourConcurrencyTest extends TestCase
             ->count());
     }
 
+    public function test_postgresql_portal_batch_race_binds_the_entire_intent_and_replays_without_duplicates(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('The race test requires PostgreSQL batch idempotency and exclusion constraints.');
+        }
+
+        [$organization, $admin, $client, $specialist, $service] = $this->schedulingFixture();
+        $slots = [
+            ['date' => '2027-04-05', 'time' => '2027-04-05T09:00:00+00:00'],
+            ['date' => '2027-04-12', 'time' => '2027-04-12T09:00:00+00:00'],
+        ];
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::createMultipleInProcess(
+                organizationId: $organization->getKey(),
+                adminId: $admin->getKey(),
+                clientId: $client->getKey(),
+                specialistId: $specialist->getKey(),
+                serviceId: $service->getKey(),
+                slots: $slots,
+                batchIntentKey: 'same-portal-batch-race',
+                asClient: true,
+            ),
+            static fn (): string => self::createMultipleInProcess(
+                organizationId: $organization->getKey(),
+                adminId: $admin->getKey(),
+                clientId: $client->getKey(),
+                specialistId: $specialist->getKey(),
+                serviceId: $service->getKey(),
+                slots: $slots,
+                batchIntentKey: 'same-portal-batch-race',
+                asClient: true,
+            ),
+        ]);
+
+        self::assertCount(2, $results);
+        self::assertSame(2, count(array_filter($results, static fn (string $result): bool => str_starts_with($result, 'batch:'))));
+        self::assertSame(2, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(2, BookingEvent::query()->count());
+        self::assertSame(3, DB::table('booking_idempotency_keys')->where('organization_id', $organization->getKey())->count());
+        self::assertSame(2, AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'booking.created')
+            ->count());
+    }
+
     public function test_postgresql_multi_booking_conflict_rolls_back_previous_slots(): void
     {
         if (DB::getDriverName() !== 'pgsql') {
@@ -525,18 +571,20 @@ class MilestoneFourConcurrencyTest extends TestCase
         int $serviceId,
         array $slots,
         string $batchIntentKey,
+        bool $asClient = false,
     ): string {
         $organization = Organization::query()->findOrFail($organizationId);
         app(OrganizationContext::class)->set($organization);
 
         $bookings = app(CreateMultipleBookingsAction::class)->handle(
-            actor: User::query()->findOrFail($adminId),
+            actor: $asClient ? Client::query()->findOrFail($clientId) : User::query()->findOrFail($adminId),
             client: Client::query()->findOrFail($clientId),
             specialist: Specialist::query()->findOrFail($specialistId),
             service: Service::query()->findOrFail($serviceId),
             format: VisitFormat::Office,
             slots: $slots,
             batchIntentKey: $batchIntentKey,
+            clientTimezone: $asClient ? 'UTC' : null,
         );
 
         return 'batch:'.implode(',', array_map(static fn (Booking $booking): string => (string) $booking->getKey(), $bookings));
