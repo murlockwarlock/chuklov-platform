@@ -26,6 +26,7 @@ final readonly class UpdateMedicalProfile
         private RecordAuditEvent $audit,
         private GetMedicalProfile $getProfile,
         private MedicalProfileSnapshotHasher $snapshotHasher,
+        private ClinicalQuestionnaire $questionnaire,
     ) {}
 
     public function handle(User|Client $actor, Client $client, UpdateMedicalProfileCommand $command): MedicalProfileData
@@ -89,6 +90,9 @@ final readonly class UpdateMedicalProfile
                 chronicConditions: $command->chronicConditionsProvided ? $command->chronicConditions : $previous->chronicConditions,
                 clinicalAnswers: $command->clinicalAnswersProvided ? $command->clinicalAnswers : $previous->clinicalAnswers,
             );
+            if ($command->confirmCurrentData) {
+                $this->questionnaire->validateCompletedProfile($plainData);
+            }
             $encrypted = $this->encryptor->encryptProfile($orgId, $plainData, $keyVersion);
 
             $isNew = $existing === null;
@@ -182,7 +186,7 @@ final readonly class UpdateMedicalProfile
             if (! is_array($answers)) {
                 throw ValidationException::withMessages(['clinical_answers' => 'Проверьте ответы медицинской анкеты.']);
             }
-            app(ClinicalQuestionnaire::class)->validate($answers);
+            $this->questionnaire->validate($answers);
         }
         $fields = [
             'anamnesis' => $command->anamnesis,

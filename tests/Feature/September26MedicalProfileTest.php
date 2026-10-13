@@ -15,6 +15,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Infrastructure\Logging\RedactSensitiveLogData;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
 use Monolog\Level;
 use Monolog\LogRecord;
@@ -62,6 +63,41 @@ final class September26MedicalProfileTest extends TestCase
         $this->post(route('portal.medical-profile.update'), $data)->assertSessionHasErrors('medical_profile');
         $this->get(route('portal.medical-profile'))->assertInertia(fn (AssertableInertia $page) => $page
             ->where('profile.fields.complaints', 'Synthetic symptoms')->where('profile.answers.pain_vas', 10));
+    }
+
+    public function test_direct_self_commands_cannot_confirm_empty_complaints_or_missing_operation_details(): void
+    {
+        [$client] = $this->fixture();
+        $snapshot = $this->get(route('portal.medical-profile'))->viewData('page')['props']['profile']['expectedSnapshot'];
+        $data = $this->answers($snapshot);
+        foreach ([
+            ['symptoms' => [], 'had_operations' => false, 'operation_year' => null, 'field' => 'complaints'],
+            ['symptoms' => ['neck'], 'had_operations' => true, 'operation_year' => 2020, 'field' => 'operations'],
+        ] as $invalid) {
+            $answers = [...$data['answers'], 'symptoms' => $invalid['symptoms'], 'had_operations' => $invalid['had_operations'], 'operation_year' => $invalid['operation_year']];
+            try {
+                app(UpdateMedicalProfile::class)->handle($client, $client, new UpdateMedicalProfileCommand(
+                    expectedSnapshot: $snapshot,
+                    complaints: null,
+                    goals: 'Synthetic goals',
+                    operations: null,
+                    clinicalAnswers: json_encode($answers, JSON_THROW_ON_ERROR),
+                    anamnesisProvided: false,
+                    complaintsGoalsProvided: false,
+                    operationsInjuriesProvided: false,
+                    complaintsProvided: true,
+                    goalsProvided: true,
+                    operationsProvided: true,
+                    clinicalAnswersProvided: true,
+                    confirmCurrentData: true,
+                ));
+                self::fail('Incomplete medical data must not be confirmed.');
+            } catch (ValidationException $exception) {
+                self::assertArrayHasKey($invalid['field'], $exception->errors());
+            }
+            self::assertFalse(MedicalProfile::query()->where('client_id', $client->getKey())->exists());
+            self::assertSame(0, AuditEvent::query()->where('target_type', MedicalProfile::class)->count());
+        }
     }
 
     public function test_foreign_booking_return_and_unauthenticated_profile_are_rejected(): void

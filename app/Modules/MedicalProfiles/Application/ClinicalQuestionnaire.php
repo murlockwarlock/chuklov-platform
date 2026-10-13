@@ -2,12 +2,38 @@
 
 namespace App\Modules\MedicalProfiles\Application;
 
+use App\Modules\MedicalProfiles\Application\DTOs\MedicalProfileData;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 final class ClinicalQuestionnaire
 {
     public const SYMPTOMS = ['headache', 'neck', 'back', 'joints', 'swelling', 'digestion', 'weakness', 'insomnia', 'stress'];
+
+    public function validateCompletedProfile(MedicalProfileData $profile): void
+    {
+        try {
+            $answers = json_decode($profile->clinicalAnswers ?? '', true, 16, JSON_THROW_ON_ERROR);
+        } catch (\JsonException) {
+            throw ValidationException::withMessages(['answers' => 'Заполните медицинскую анкету.']);
+        }
+        if (! is_array($answers)) {
+            throw ValidationException::withMessages(['answers' => 'Заполните медицинскую анкету.']);
+        }
+        $answers = $this->validate($answers);
+        if (trim((string) $profile->goals) === '') {
+            throw ValidationException::withMessages(['goals' => 'Укажите задачи по здоровью.']);
+        }
+        if (trim((string) $profile->complaints) === '' && $answers['symptoms'] === []) {
+            throw ValidationException::withMessages(['complaints' => 'Выберите симптомы или опишите жалобы.']);
+        }
+        foreach (['operations' => $profile->operations, 'injuries' => $profile->injuries] as $field => $description) {
+            if ($answers[$field === 'operations' ? 'had_operations' : 'had_injuries'] && trim((string) $description) === '') {
+                throw ValidationException::withMessages([$field => 'Добавьте описание.']);
+            }
+        }
+    }
 
     /**
      * @param  array<string, mixed>  $answers

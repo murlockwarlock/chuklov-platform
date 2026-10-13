@@ -1445,7 +1445,7 @@ test('September 26 paid focus stays on home through completion and correction an
     await page.getByRole('link', { name: 'Открыть трекер', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/tracker$/);
     await expect(page.getByText('Практика QA', { exact: true })).toBeVisible();
-    await expect(page.getByText('Не выполнено', { exact: true })).toBeVisible();
+    await expect(page.getByRole('paragraph').filter({ hasText: /^Не выполнено$/ })).toBeVisible();
 
     const empty = createBookingFixture({ tracker: 'empty' });
     await page.context().addCookies([{ name: empty.cookieName, value: empty.cookieValue, url: 'http://127.0.0.1:8000' }]);
