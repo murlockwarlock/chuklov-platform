@@ -57,6 +57,18 @@ class PrivilegedAuthenticationTest extends TestCase
         $this->get('/admin')->assertOk();
     }
 
+    public function test_native_login_resolves_organization_before_authentication(): void
+    {
+        $organization = Organization::factory()->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        $this->app->instance(OrganizationContext::class, new OrganizationContext);
+
+        $this->get('/admin/login')->assertOk();
+
+        self::assertSame($organization->getKey(), app(OrganizationContext::class)->id());
+        self::assertGuest();
+    }
+
     public function test_missing_panel_is_denied_without_calling_user_panel_authorization(): void
     {
         Filament::shouldReceive('getCurrentOrDefaultPanel')->once()->andReturnNull();

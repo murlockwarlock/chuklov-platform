@@ -532,9 +532,10 @@ test('enrolled CRM MFA requires a valid code before native browser login', async
     await page.goto('/admin/login');
     await page.locator('input[type="email"]').fill(fixture.email);
     await page.locator('input[type="password"]').fill(fixture.password);
+    const authentication = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname));
     await page.locator('button[type="submit"]').click();
+    expect((await authentication).status()).toBe(200);
     const digits = page.locator('.fi-one-time-code-input-ctn input');
-    console.log(JSON.stringify({ mfaLogin: { path: new URL(page.url()).pathname, digitCount: await page.locator('.fi-one-time-code-input-digit').count(), challengeText: await page.getByText('Введите 6-значный код из 2FA-приложения', { exact: true }).count() } }));
     await expect(digits).toHaveCount(6);
     await expect(digits.first()).toBeVisible();
     await expect(page).toHaveURL(/\/admin\/login$/);
