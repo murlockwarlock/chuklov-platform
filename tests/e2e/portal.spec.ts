@@ -1323,7 +1323,7 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.getByLabel('Телефон', { exact: true }).fill('+77001234567');
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
-        await page.getByLabel('Страна', { exact: true }).focus();
+        await page.getByLabel('Страна', { exact: true }).click();
         await expect(page.getByRole('option', { name: 'Казахстан', exact: true })).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
         await page.getByLabel('Страна', { exact: true }).press('Escape');

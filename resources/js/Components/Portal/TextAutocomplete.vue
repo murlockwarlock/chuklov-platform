@@ -87,6 +87,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside));
       maxlength="100"
       class="portal-input"
       @focus="open = true"
+      @click="open = true"
       @input="type"
       @keydown="keydown"
     >
