@@ -238,6 +238,9 @@ final class ScenarioContextFactory
                 'id' => (int) $context->booking->getKey(),
                 'event_version' => (int) $context->booking->event_version,
                 'status' => $context->booking->status->value,
+                'confirmation_title' => $context->booking->status->value === 'confirmed'
+                    ? ($this->isRussian($recipient->locale) ? 'Бронирование подтверждено!' : 'Your booking is confirmed!')
+                    : ($this->isRussian($recipient->locale) ? 'Запись создана!' : 'Your booking has been created!'),
                 'visit_format' => $context->booking->visit_format->value,
                 'visit_format_label' => $this->visitFormatLabel($context->booking->visit_format->value, $recipient->locale),
                 'service_name' => $context->booking->service->name,

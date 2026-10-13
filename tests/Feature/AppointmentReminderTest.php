@@ -8,11 +8,14 @@ use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scenarios\Application\ExecuteScenarioAction;
+use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scenarios\Application\UpdateAppointmentReminders;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
@@ -20,6 +23,7 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioDelayUnit;
 use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
 use App\Modules\Scenarios\Domain\Models\AppointmentReminder;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\Models\ScenarioDeliveryAttempt;
 use App\Modules\Scheduling\Application\CancelBooking;
 use App\Modules\Scheduling\Application\ConfirmBooking;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -302,10 +306,133 @@ final class AppointmentReminderTest extends TestCase
         self::assertTrue(AppointmentReminder::query()->where('organization_id', $organization->getKey())->where('recipient_type', 'client')->where('offset_value', 2)->where('offset_unit', 'hours')->value('is_enabled'));
     }
 
+    public function test_medical_prompt_uses_live_completion_and_a_real_mini_app_button_without_duplicates(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        $booking = $this->booking($organization, $client, $specialist, $service, VisitFormat::Office,
+            CarbonImmutable::create(2026, 9, 5, 14, 0, 0, 'UTC'), 'Synthetic office');
+        $event = app(RecordScenarioEvent::class)->bookingConfirmed($booking, 'medical-test', CarbonImmutable::now());
+        app(AppointmentReminderScheduler::class)->schedule($booking, $event);
+        app(AppointmentReminderScheduler::class)->schedule($booking, $event);
+        $actions = ScenarioAction::query()->where('booking_id', $booking->id)->where('recipient_type', 'client')
+            ->whereHas('appointmentReminder', fn ($query) => $query->where('medical_profile_prompt', true))
+            ->with('appointmentReminder')->get();
+        self::assertCount(2, $actions);
+        $daily = $actions->first(fn ($action) => $action->appointmentReminder->offset_unit === ScenarioDelayUnit::Days);
+        $this->makeDue($daily);
+        app(ExecuteScenarioAction::class)->handle($daily->id);
+        app(ExecuteScenarioAction::class)->handle($daily->id);
+        self::assertCount(1, $this->channel->messages);
+        $message = $this->channel->messages[0];
+        self::assertStringContainsString('До вашего сеанса осталось 24 часа!', $message->body);
+        self::assertSame('Заполнить карту здоровья', $message->actionButton?->text);
+        self::assertSame('https://mini.example.test/portal/telegram/launch/medical_profile', $message->actionButton?->webAppUrl);
+        self::assertNull($message->actionButton?->url);
+        self::assertSame(ScenarioActionStatus::Delivered, $daily->fresh()->status);
+
+        $profile = new MedicalProfile;
+        $profile->forceFill(['organization_id' => $organization->id, 'client_id' => $client->id,
+            'encryption_key_version' => 1, 'client_confirmed_at' => now()])->save();
+        $hourly = $actions->first(fn ($action) => $action->appointmentReminder->offset_unit === ScenarioDelayUnit::Hours);
+        $this->makeDue($hourly);
+        app(ExecuteScenarioAction::class)->handle($hourly->id);
+        self::assertCount(2, $this->channel->messages);
+        self::assertStringContainsString('Synthetic office', $this->channel->messages[1]->body);
+        self::assertStringNotContainsString('заполнени', $this->channel->messages[1]->body);
+        self::assertNull($this->channel->messages[1]->actionButton);
+    }
+
+    public function test_late_reminder_does_not_send_after_the_visit_has_started(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $booking = $this->booking($organization, $client, $specialist, $service, VisitFormat::Office,
+            CarbonImmutable::create(2026, 9, 5, 14, 0, 0, 'UTC'), 'Synthetic office');
+        $event = app(RecordScenarioEvent::class)->bookingConfirmed($booking, 'late-test', CarbonImmutable::now());
+        app(AppointmentReminderScheduler::class)->schedule($booking, $event);
+        $action = ScenarioAction::query()->where('booking_id', $booking->id)->where('recipient_type', 'client')->firstOrFail();
+        CarbonImmutable::setTestNow($booking->startsAtUtc());
+        app(ExecuteScenarioAction::class)->handle($action->id);
+        self::assertCount(0, $this->channel->messages);
+        self::assertSame(ScenarioActionStatus::Suppressed, $action->fresh()->status);
+    }
+
+    public function test_requested_medical_booking_materializes_the_full_cascade_once_and_uses_its_actual_status(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        $booking = $this->booking($organization, $client, $specialist, $service, VisitFormat::Office,
+            CarbonImmutable::create(2026, 9, 5, 14, 0, 0, 'UTC'), 'Synthetic office', BookingStatus::Requested);
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'created-medical-test', CarbonImmutable::now());
+        app(MaterializeScenarioEvent::class)->handle($event->id);
+        app(MaterializeScenarioEvent::class)->handle($event->id);
+        $immediate = ScenarioAction::query()->where('booking_id', null)->where('scenario_event_id', $event->id)->sole();
+        $reminders = ScenarioAction::query()->where('booking_id', $booking->id)->with('appointmentReminder')->get();
+        self::assertCount(2, $reminders);
+        app(ExecuteScenarioAction::class)->handle($immediate->id);
+        app(ExecuteScenarioAction::class)->handle($immediate->id);
+        self::assertCount(1, $this->channel->messages);
+        self::assertStringStartsWith('Запись создана!', $this->channel->messages[0]->body);
+        self::assertStringNotContainsString('подтверждено', $this->channel->messages[0]->body);
+        self::assertNotNull($this->channel->messages[0]->actionButton?->webAppUrl);
+        self::assertSame(BookingStatus::Requested, $booking->fresh()->status);
+
+        $hourly = $reminders->first(fn ($action) => $action->appointmentReminder->offset_unit === ScenarioDelayUnit::Hours);
+        $this->makeDue($hourly);
+        app(ExecuteScenarioAction::class)->handle($hourly->id);
+        self::assertCount(2, $this->channel->messages);
+        self::assertStringContainsString('осталось 2 часа!', $this->channel->messages[1]->body);
+        self::assertSame(2, ScenarioDeliveryAttempt::query()->count());
+        self::assertSame(ScenarioActionStatus::Delivered, $hourly->fresh()->status);
+    }
+
+    public function test_completing_profile_after_materialization_suppresses_pending_prompts(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        $booking = $this->booking($organization, $client, $specialist, $service, VisitFormat::Office,
+            CarbonImmutable::create(2026, 9, 5, 14, 0, 0, 'UTC'), 'Synthetic office', BookingStatus::Requested);
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'created-completed-test', CarbonImmutable::now());
+        app(MaterializeScenarioEvent::class)->handle($event->id);
+        $profile = new MedicalProfile;
+        $profile->forceFill(['organization_id' => $organization->id, 'client_id' => $client->id,
+            'encryption_key_version' => 1, 'client_confirmed_at' => now()])->save();
+        foreach (ScenarioAction::query()->where('scenario_event_id', $event->id)->get() as $action) {
+            $this->makeDue($action);
+            app(ExecuteScenarioAction::class)->handle($action->id);
+            self::assertSame(ScenarioActionStatus::Suppressed, $action->fresh()->status);
+        }
+        self::assertCount(0, $this->channel->messages);
+        self::assertSame(0, ScenarioDeliveryAttempt::query()->count());
+    }
+
+    public function test_prompt_checkbox_can_be_disabled_without_disabling_standard_reminders(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        $booking = $this->booking($organization, $client, $specialist, $service, VisitFormat::Office,
+            CarbonImmutable::create(2026, 9, 5, 14, 0, 0, 'UTC'), 'Synthetic office');
+        $event = app(RecordScenarioEvent::class)->bookingConfirmed($booking, 'disable-medical-test', CarbonImmutable::now());
+        app(AppointmentReminderScheduler::class)->schedule($booking, $event);
+        app(UpdateAppointmentReminders::class)->handle($admin, [
+            'client_reminders' => [['offset_value' => 2, 'offset_unit' => 'hours', 'is_enabled' => true, 'medical_profile_prompt' => false]],
+            'specialist_reminders' => [],
+        ]);
+        $action = ScenarioAction::query()->where('booking_id', $booking->id)->where('status', ScenarioActionStatus::Scheduled)->sole();
+        $this->makeDue($action);
+        app(ExecuteScenarioAction::class)->handle($action->id);
+        self::assertCount(1, $this->channel->messages);
+        self::assertStringContainsString('Synthetic office', $this->channel->messages[0]->body);
+        self::assertNull($this->channel->messages[0]->actionButton);
+    }
+
     /** @return array{Organization, User, Client, Specialist, Service} */
     private function fixture(): array
     {
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $organization->featureFlags()->create(['feature_key' => OrganizationFeature::ClientRecords->value, 'enabled' => true]);
         $admin = User::factory()->forOrganization($organization)->create();
         $client = Client::factory()->forOrganization($organization)->create([
             'full_name' => 'Aikhana',
@@ -328,6 +455,7 @@ final class AppointmentReminderTest extends TestCase
         ]);
         $service = Service::factory()->forOrganization($organization)->create([
             'name' => 'Массаж тела',
+            'requires_medical_profile' => false,
             'formats' => ['office', 'home', 'online'],
         ]);
 

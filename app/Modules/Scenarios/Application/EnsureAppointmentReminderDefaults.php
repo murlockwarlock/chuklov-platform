@@ -11,12 +11,13 @@ use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 final class EnsureAppointmentReminderDefaults
 {
-    public function handle(Organization $organization): void
+    public function handle(Organization $organization, bool $includeReminderOffsets = true): void
     {
-        DB::transaction(function () use ($organization): void {
+        DB::transaction(function () use ($organization, $includeReminderOffsets): void {
             $organization = Organization::query()
                 ->whereKey($organization->getKey())
                 ->lockForUpdate()
@@ -38,7 +39,14 @@ final class EnsureAppointmentReminderDefaults
                 $templateId = $templates[$definition['template_key'].'|ru'];
                 $this->ensureRule($organization, $definition, $templateId);
             }
+            foreach (['ru', 'en'] as $locale) {
+                $this->ensureMedicalProfileRule($organization, $locale, $templates['medical-profile-after-booking|'.$locale]);
+            }
 
+            if (! $includeReminderOffsets) {
+                return;
+            }
+            $supportsMedicalPrompt = Schema::hasColumn('appointment_reminders', 'medical_profile_prompt');
             foreach ($this->reminderDefinitions() as $definition) {
                 $reminder = AppointmentReminder::query()
                     ->where('organization_id', $organization->getKey())
@@ -59,6 +67,10 @@ final class EnsureAppointmentReminderDefaults
                     'offset_unit' => $definition['offset_unit'],
                     'is_enabled' => true,
                 ])->save();
+                if ($supportsMedicalPrompt) {
+                    $reminder->forceFill(['medical_profile_prompt' => $definition['recipient_type'] === 'client'
+                        && in_array($definition['offset_unit'], ['days', 'hours'], true)])->save();
+                }
             }
         });
     }
@@ -67,6 +79,30 @@ final class EnsureAppointmentReminderDefaults
     private function templateDefinitions(): array
     {
         return [
+            [
+                'key' => 'medical-profile-after-booking', 'locale' => 'ru',
+                'name' => 'Карта здоровья после записи',
+                'body' => '{{ booking.confirmation_title }} Чтобы Евгений Чуклов заранее ознакомился с вашей ситуацией и подготовил индивидуальный план — заполните короткую карту здоровья:',
+                'variables' => ['booking.confirmation_title'],
+            ],
+            [
+                'key' => 'medical-profile-after-booking', 'locale' => 'en',
+                'name' => 'Health profile after booking',
+                'body' => '{{ booking.confirmation_title }} Please complete your short health profile so Evgeniy Chuklov can review your situation and prepare an individual plan:',
+                'variables' => ['booking.confirmation_title'],
+            ],
+            [
+                'key' => 'medical-profile-reminder', 'locale' => 'ru',
+                'name' => 'Напоминание заполнить карту здоровья',
+                'body' => 'До вашего сеанса осталось {{ medical_profile_reminder.offset_label }}! Пожалуйста, уделите 3 минуты на заполнение жалоб, чтобы мастер встретил вас с готовой стратегией:',
+                'variables' => ['medical_profile_reminder.offset_label'],
+            ],
+            [
+                'key' => 'medical-profile-reminder', 'locale' => 'en',
+                'name' => 'Health profile completion reminder',
+                'body' => 'Your session starts in {{ medical_profile_reminder.offset_label }}! Please take 3 minutes to complete your health profile so your practitioner can prepare for your visit:',
+                'variables' => ['medical_profile_reminder.offset_label'],
+            ],
             [
                 'key' => 'appointment-reminder-client-office',
                 'locale' => 'ru',
@@ -231,6 +267,29 @@ final class EnsureAppointmentReminderDefaults
             'repeat_interval_value' => null,
             'repeat_interval_unit' => null,
             'version' => 1,
+        ])->save();
+    }
+
+    private function ensureMedicalProfileRule(Organization $organization, string $locale, int $templateId): void
+    {
+        $key = 'medical-profile-after-booking-'.$locale;
+        if (ScenarioRule::query()->where('organization_id', $organization->getKey())->where('rule_key', $key)->exists()) {
+            return;
+        }
+        $rule = new ScenarioRule;
+        $rule->forceFill([
+            'organization_id' => $organization->getKey(), 'rule_key' => $key,
+            'name' => $locale === 'ru' ? 'Заполнить карту здоровья после записи' : 'Complete health profile after booking',
+            'trigger_event' => ScenarioEventType::BookingCreated->value,
+            'is_enabled' => true, 'system_managed' => false,
+            'delay_value' => 0, 'delay_unit' => 'minutes', 'purpose' => ScenarioRulePurpose::Service->value,
+            'conditions' => [
+                ['type' => 'booking.needs_medical_profile', 'operator' => 'equals', 'value' => true],
+                ['type' => 'client.language', 'operator' => 'equals', 'value' => $locale],
+            ],
+            'recipient_strategy' => ['type' => 'client'], 'channel_priority' => ['telegram'],
+            'template_version_id' => $templateId, 'max_occurrences' => 1,
+            'repeat_interval_value' => null, 'repeat_interval_unit' => null, 'version' => 1,
         ])->save();
     }
 }

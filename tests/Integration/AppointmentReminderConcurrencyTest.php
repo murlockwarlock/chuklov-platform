@@ -13,6 +13,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
+use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -69,6 +70,30 @@ final class AppointmentReminderConcurrencyTest extends TestCase
         self::assertNotContains('error', $results);
         self::assertSame(5, ScenarioAction::query()->where('organization_id', $organization->getKey())->where('kind', 'appointment_reminder')->count());
         self::assertSame(5, DB::table('scenario_deliveries')->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_concurrent_rebuild_keeps_cancelled_history_and_creates_only_one_replacement(): void
+    {
+        $this->requirePostgres();
+        [$organization, $client, $specialist, $service] = $this->fixture();
+        $start = CarbonImmutable::now()->addDays(5);
+        $booking = Booking::factory()->forOrganization($organization)->forClient($client)->forSpecialist($specialist)->forService($service)
+            ->create(['starts_at' => $start, 'ends_at' => $start->addHour(), 'blocking_ends_at' => $start->addHour()]);
+        $event = app(RecordScenarioEvent::class)->bookingConfirmed($booking, 'reminder-rebuild-concurrency', CarbonImmutable::now());
+        app(AppointmentReminderScheduler::class)->schedule($booking, $event);
+        app(AppointmentReminderScheduler::class)->cancelForOrganization($organization->id);
+        self::assertSame(5, ScenarioAction::query()->where('organization_id', $organization->id)->where('status', ScenarioActionStatus::Cancelled)->count());
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::scheduleInProcess($booking->id, $event->id),
+            static fn (): string => self::scheduleInProcess($booking->id, $event->id),
+        ]);
+        self::assertSame(['ok', 'ok'], $results);
+        self::assertSame(5, ScenarioAction::query()->where('organization_id', $organization->id)->where('status', ScenarioActionStatus::Scheduled)->count());
+        self::assertSame(5, ScenarioAction::query()->where('organization_id', $organization->id)->where('status', ScenarioActionStatus::Cancelled)->count());
+        self::assertSame(10, DB::table('scenario_deliveries')->where('organization_id', $organization->id)->count());
+        app(AppointmentReminderScheduler::class)->schedule($booking, $event);
+        self::assertSame(10, ScenarioAction::query()->where('organization_id', $organization->id)->count());
     }
 
     /** @return array{Organization, Client, Specialist, Service} */

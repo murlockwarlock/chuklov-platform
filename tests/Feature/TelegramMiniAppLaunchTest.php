@@ -97,6 +97,23 @@ final class TelegramMiniAppLaunchTest extends TestCase
         Queue::assertPushedOn(config('b2b.queue'), ProcessB2bProviderSyncEvent::class);
     }
 
+    public function test_health_profile_cta_authenticates_through_the_existing_mini_app_gateway(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        ClientChannelIdentity::factory()->forClient($client)->create(['external_id' => '820099']);
+        $this->useTelegramToken();
+        $this->get(route('portal.telegram.launch', ['entry' => 'medical_profile']))
+            ->assertRedirect(route('portal.home', ['telegram_entry' => 'medical_profile'], false));
+        $this->get(route('portal.medical-profile'))->assertUnauthorized();
+        $this->post(route('portal.telegram.auth'), [
+            'initData' => TelegramInitData::make(820099, now()->timestamp), 'launchEntry' => 'medical_profile',
+        ])->assertRedirect(route('portal.medical-profile', [], false));
+        $this->get(route('portal.medical-profile'))->assertOk()->assertInertia(fn (AssertableInertia $page) => $page->component('Portal/MedicalProfile'));
+        $this->get(route('portal.telegram.launch', ['entry' => 'medical_profile']))
+            ->assertRedirect(route('portal.medical-profile', [], false));
+    }
+
     public function test_authenticated_launches_redirect_directly_to_the_allowlisted_internal_destinations(): void
     {
         $organization = $this->organizationWithClientRecords();

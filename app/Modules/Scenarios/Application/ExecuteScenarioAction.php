@@ -47,6 +47,7 @@ final class ExecuteScenarioAction
         private readonly BookingConfirmedGuard $bookingConfirmedGuard,
         private readonly BookingChangedGuard $bookingChangedGuard,
         private readonly ResolveTelegramMiniAppEntry $miniAppEntries,
+        private readonly MedicalProfileReminderPresentation $medicalProfile,
     ) {}
 
     public function handle(int $scenarioActionId): void
@@ -102,6 +103,10 @@ final class ExecuteScenarioAction
 
         if ($action->kind === 'appointment_reminder') {
             return $this->appointmentReminderIsCurrent($action, $context->booking);
+        }
+        if ($action->templateVersion?->template?->template_key === 'medical-profile-after-booking'
+            && ! $this->medicalProfile->needsPrompt($action, $context->booking)) {
+            return false;
         }
 
         if (! is_array($action->condition_snapshot)) {
@@ -174,7 +179,14 @@ final class ExecuteScenarioAction
                 $context = $this->contextFactory->evaluationContext($event);
                 $renderContext = $this->contextFactory->renderContext($context, $recipient);
                 $renderContext['booking']['reminder_offset_label'] = $action->render_context['booking']['reminder_offset_label'] ?? 'некоторое время';
+                $medicalSnapshot = $action->render_context['medical_profile_reminder'] ?? null;
+                if (is_array($medicalSnapshot)) {
+                    $renderContext['medical_profile_reminder'] = $medicalSnapshot;
+                }
                 $action->setAttribute('render_context', $renderContext);
+                if ($this->medicalProfile->applies($action, $booking)) {
+                    $action->setRelation('templateVersion', $this->medicalProfile->template($action));
+                }
             } else {
                 $currentAction = ScenarioAction::query()
                     ->whereKey($action->getKey())
@@ -210,6 +222,12 @@ final class ExecuteScenarioAction
             }
 
             $locale = $template->template->locale;
+            if ($template->template->template_key === 'medical-profile-after-booking') {
+                $context = $this->contextFactory->evaluationContext($event);
+                $recipient = new ScenarioRecipient(type: $action->recipient_type, clientId: $action->client_id,
+                    userId: $action->recipient_user_id, locale: $locale);
+                $action->setAttribute('render_context', $this->contextFactory->renderContext($context, $recipient));
+            }
             if ($event->event_name === ScenarioEventType::FinancialDebtReminderRequested) {
                 $context = $this->contextFactory->evaluationContext($event);
                 if (! $this->contextFactory->financeDebtIsCurrent($context)) {
@@ -252,6 +270,15 @@ final class ExecuteScenarioAction
             }
 
             $event = $action->event()->first();
+            if ($template->template->template_key === 'medical-profile-after-booking' && ! $this->isEligible($action)) {
+                return NotificationDeliveryResult::suppressed('medical_profile_no_longer_required');
+            }
+            if ($isAppointmentReminder && $template->template->template_key === 'medical-profile-reminder') {
+                $currentBooking = $this->appointmentReminderBooking($action);
+                if ($currentBooking === null || ! $this->medicalProfile->applies($action, $currentBooking)) {
+                    return NotificationDeliveryResult::suppressed('medical_profile_no_longer_required');
+                }
+            }
             if ($event === null
                 || ($isAppointmentReminder && ! $this->appointmentReminderIsCurrent($action, $this->appointmentReminderBooking($action)))
                 || (! $isAppointmentReminder && $event->event_name->value === 'b2b.sales_call.ready'
@@ -291,6 +318,13 @@ final class ExecuteScenarioAction
     private function actionButton(ScenarioAction $action, string $locale): ?NotificationActionButton
     {
         $templateKey = $action->templateVersion?->template?->template_key;
+
+        if (in_array($templateKey, ['medical-profile-reminder', 'medical-profile-after-booking'], true) && $action->recipient_type === 'client') {
+            return $this->clientMiniAppButton(
+                text: $this->isRussian($locale) ? 'Заполнить карту здоровья' : 'Complete health profile',
+                entry: 'medical_profile',
+            );
+        }
 
         if ($action->kind === 'appointment_reminder') {
             $url = $action->render_context['booking']['meeting_url'] ?? null;
@@ -533,11 +567,16 @@ final class ExecuteScenarioAction
 
     private function appointmentReminderIsCurrent(ScenarioAction $action, ?Booking $booking): bool
     {
-        if ($booking === null || $booking->status !== BookingStatus::Confirmed || $action->booking_starts_at === null) {
+        if ($booking === null || $action->booking_starts_at === null
+            || $booking->startsAtUtc()->lessThanOrEqualTo(CarbonImmutable::now('UTC'))) {
             return false;
         }
-
-        $reminder = $action->appointmentReminder;
+        $reminder = AppointmentReminder::query()->where('organization_id', $action->organization_id)
+            ->whereKey($action->appointment_reminder_id)->first();
+        $action->setRelation('appointmentReminder', $reminder);
+        if ($booking->status !== BookingStatus::Confirmed && ! $this->medicalProfile->applies($action, $booking)) {
+            return false;
+        }
 
         return $reminder instanceof AppointmentReminder
             && $reminder->is_enabled

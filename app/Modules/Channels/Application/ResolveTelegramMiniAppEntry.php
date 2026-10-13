@@ -13,6 +13,7 @@ final class ResolveTelegramMiniAppEntry
         'portal.b2b',
         'portal.feedback',
         'portal.health',
+        'portal.medical-profile',
         'portal.referrals',
         'portal.surveys.index',
         'portal.tracker',
@@ -191,7 +192,7 @@ final class ResolveTelegramMiniAppEntry
             throw new LogicException('The Telegram Mini App route parameters are invalid.');
         }
 
-        if (in_array($routeName, ['portal.home', 'portal.b2b', 'portal.feedback', 'portal.health', 'portal.referrals', 'portal.surveys.index', 'portal.tracker'], true)) {
+        if ($routeName !== 'portal.section' && in_array($routeName, self::ALLOWED_ROUTE_NAMES, true)) {
             if ($parameters !== []) {
                 throw new LogicException('The Telegram Mini App route parameters are not allowlisted.');
             }

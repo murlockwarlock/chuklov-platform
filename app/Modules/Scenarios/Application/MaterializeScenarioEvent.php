@@ -31,6 +31,7 @@ final class MaterializeScenarioEvent
         private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
         private readonly BookingConfirmedGuard $bookingConfirmedGuard,
         private readonly BookingChangedGuard $bookingChangedGuard,
+        private readonly AppointmentReminderScheduler $reminders,
     ) {}
 
     public function handle(int $scenarioEventId): void
@@ -44,6 +45,9 @@ final class MaterializeScenarioEvent
         try {
             DB::transaction(function () use ($event): void {
                 $context = $this->contextFactory->evaluationContext($event);
+                if ($event->event_name === ScenarioEventType::BookingCreated && $context->booking !== null) {
+                    $this->reminders->schedule($context->booking, $event);
+                }
                 if ($event->event_name->value === 'b2b.sales_call.ready'
                     && ! $this->b2bReadyGuard->allows($event, $context->b2bSalesCall)) {
                     $event->forceFill([

@@ -421,6 +421,7 @@ final class ScenarioActionResource extends LocalizedResource
 
             $type = match ($condition['type'] ?? null) {
                 'booking.status' => __('статус записи'),
+                'booking.needs_medical_profile' => __('необходимость заполнить карту здоровья'),
                 'booking.has_qualifying_next_booking' => __('подходящая следующая запись'),
                 'client.language' => __('язык клиента'),
                 'client.marketing_consent' => __('согласие на маркетинговые сообщения'),

@@ -32,6 +32,12 @@ return [
         'web_auth_ttl' => (int) env('TELEGRAM_WEB_AUTH_TTL', 600),
         'portal_url' => env('CLIENT_PORTAL_URL'),
         'entries' => [
+            'medical_profile' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.medical-profile',
+                'parameters' => [],
+            ],
             'portal' => [
                 'launch' => 'mini_app',
                 'requires_auth' => true,

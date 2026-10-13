@@ -177,7 +177,7 @@ class SchedulingConfiguration extends LocalizedPage
                     ->schema([
                         Repeater::make('client_reminders')
                             ->label(__('Клиенту'))
-                            ->schema($this->reminderSchema())
+                            ->schema($this->reminderSchema(true))
                             ->columns(3)
                             ->defaultItems(0)
                             ->reorderable(false)
@@ -417,6 +417,7 @@ class SchedulingConfiguration extends LocalizedPage
                 'is_enabled' => $reminder->is_enabled,
                 'offset_value' => $reminder->offset_value,
                 'offset_unit' => $reminder->offset_unit->value,
+                'medical_profile_prompt' => $reminder->medical_profile_prompt,
             ])
             ->values()
             ->all();
@@ -425,7 +426,7 @@ class SchedulingConfiguration extends LocalizedPage
     }
 
     /** @return list<Component> */
-    private function reminderSchema(): array
+    private function reminderSchema(bool $client = false): array
     {
         return [
             Checkbox::make('is_enabled')->label(__('Включено'))->default(true),
@@ -442,6 +443,12 @@ class SchedulingConfiguration extends LocalizedPage
                     ScenarioDelayUnit::Days->value => __('дней'),
                 ])
                 ->required(),
+            Checkbox::make('medical_profile_prompt')
+                ->label(__('Предложить заполнить карту здоровья, если она нужна'))
+                ->default(false)
+                ->visible($client)
+                ->dehydrated($client)
+                ->columnSpanFull(),
         ];
     }
 }

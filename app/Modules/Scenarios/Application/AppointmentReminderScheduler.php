@@ -14,9 +14,9 @@ use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
-use App\Support\SupportedLocale;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Support\SupportedLocale;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -26,6 +26,7 @@ final class AppointmentReminderScheduler
     public function __construct(
         private readonly ScenarioContextFactory $contextFactory,
         private readonly EnsureAppointmentReminderDefaults $defaults,
+        private readonly MedicalProfileReminderPresentation $medicalProfile,
     ) {}
 
     public function schedule(Booking $booking, ScenarioEvent $event): void
@@ -49,7 +50,12 @@ final class AppointmentReminderScheduler
             ->with(['client', 'service', 'specialist'])
             ->firstOrFail();
 
-        if ($booking->status !== BookingStatus::Confirmed) {
+        $payload = $event->payload;
+        if (! is_array($payload) || ! is_int($payload['booking_id'] ?? null) || ! is_int($payload['event_version'] ?? null)
+            || (int) $event->organization_id !== (int) $booking->organization_id
+            || $payload['booking_id'] !== (int) $booking->getKey()
+            || $payload['event_version'] !== (int) $booking->event_version
+            || ($booking->status !== BookingStatus::Confirmed && ! $this->medicalProfile->bookingNeedsCompletion($booking))) {
             return;
         }
 
@@ -70,6 +76,10 @@ final class AppointmentReminderScheduler
         $now = CarbonImmutable::now()->utc();
 
         foreach ($reminders as $reminder) {
+            if ($booking->status !== BookingStatus::Confirmed
+                && ($reminder->recipient_type !== 'client' || ! $reminder->medical_profile_prompt)) {
+                continue;
+            }
             $scheduledFor = $booking->startsAtUtc()->subSeconds(
                 $reminder->offset_unit->toSeconds($reminder->offset_value),
             );
@@ -105,6 +115,10 @@ final class AppointmentReminderScheduler
                 $reminder->offset_value,
                 $reminder->offset_unit,
             );
+            $medicalProfile = $this->medicalProfile->snapshot($reminder, $recipient->locale);
+            if ($medicalProfile !== null) {
+                $renderContext['medical_profile_reminder'] = $medicalProfile;
+            }
             $channels = $recipient->type === 'internal' ? ['telegram', 'database'] : ['telegram'];
 
             foreach ($channels as $channel) {
@@ -125,6 +139,14 @@ final class AppointmentReminderScheduler
                     ->where('materialization_key', $materializationKey)
                     ->lockForUpdate()
                     ->first();
+
+                while ($action?->status === ScenarioActionStatus::Cancelled) {
+                    $materializationKey = hash('sha256', $materializationKey.'|replacement|'.$action->getKey());
+                    $action = ScenarioAction::query()
+                        ->where('organization_id', $organization->getKey())
+                        ->where('materialization_key', $materializationKey)
+                        ->lockForUpdate()->first();
+                }
 
                 if ($action !== null) {
                     continue;
@@ -281,14 +303,14 @@ final class AppointmentReminderScheduler
 
         Booking::query()
             ->where('organization_id', $organizationId)
-            ->where('status', BookingStatus::Confirmed->value)
+            ->whereIn('status', [BookingStatus::Requested->value, BookingStatus::PendingReview->value, BookingStatus::Confirmed->value])
             ->where('starts_at', '>', now())
             ->orderBy('id')
             ->chunkById(100, function (Collection $bookings) use ($organizationId): void {
                 foreach ($bookings as $booking) {
                     $event = ScenarioEvent::query()
                         ->where('organization_id', $organizationId)
-                        ->whereIn('event_name', ['booking.confirmed', 'booking.rescheduled'])
+                        ->whereIn('event_name', ['booking.created', 'booking.confirmed', 'booking.rescheduled'])
                         ->whereJsonContains('payload->booking_id', (int) $booking->getKey())
                         ->latest('id')
                         ->first();

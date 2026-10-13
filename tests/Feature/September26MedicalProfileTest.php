@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
+use App\Modules\MedicalProfiles\Application\MedicalProfileCompletion;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -63,6 +64,44 @@ final class September26MedicalProfileTest extends TestCase
         $this->post(route('portal.medical-profile.update'), $data)->assertSessionHasErrors('medical_profile');
         $this->get(route('portal.medical-profile'))->assertInertia(fn (AssertableInertia $page) => $page
             ->where('profile.fields.complaints', 'Synthetic symptoms')->where('profile.answers.pain_vas', 10));
+    }
+
+    public function test_removing_required_data_in_crm_invalidates_completion_until_client_reconfirms(): void
+    {
+        [$client, $staff] = $this->fixture();
+        $snapshot = $this->get(route('portal.medical-profile'))->viewData('page')['props']['profile']['expectedSnapshot'];
+        $this->post(route('portal.medical-profile.update'), $this->answers($snapshot))->assertSessionHasNoErrors();
+        $completion = app(MedicalProfileCompletion::class);
+        self::assertTrue($completion->isComplete($client->organization_id, $client->id));
+
+        app(UpdateMedicalProfile::class)->handle($staff, $client, UpdateMedicalProfileCommand::fromArray(['goals' => null]));
+
+        self::assertFalse($completion->isComplete($client->organization_id, $client->id));
+        self::assertNull(MedicalProfile::query()->where('client_id', $client->id)->sole()->client_confirmed_at);
+        $page = $this->get(route('portal.medical-profile'))->assertOk();
+        $snapshot = $page->viewData('page')['props']['profile']['expectedSnapshot'];
+        $this->post(route('portal.medical-profile.update'), $this->answers($snapshot))->assertSessionHasNoErrors();
+        self::assertTrue($completion->isComplete($client->organization_id, $client->id));
+        self::assertFalse($completion->isComplete(Organization::factory()->create()->id, $client->id));
+    }
+
+    public function test_complete_manual_crm_entry_stops_prompts_without_fabricating_client_confirmation(): void
+    {
+        [$client, $staff] = $this->fixture();
+        $data = $this->answers('');
+        app(UpdateMedicalProfile::class)->handle($staff, $client, new UpdateMedicalProfileCommand(
+            complaints: $data['complaints'], goals: $data['goals'], chronicConditions: $data['chronic_conditions'],
+            clinicalAnswers: json_encode($data['answers'], JSON_THROW_ON_ERROR), clinicalAnswersProvided: true,
+            anamnesisProvided: false, complaintsGoalsProvided: false, operationsInjuriesProvided: false,
+            complaintsProvided: true, goalsProvided: true, chronicConditionsProvided: true,
+        ));
+        $profile = MedicalProfile::query()->where('client_id', $client->id)->sole();
+        self::assertNotNull($profile->completed_at);
+        self::assertNull($profile->client_confirmed_at);
+        self::assertTrue(app(MedicalProfileCompletion::class)->isComplete($client->organization_id, $client->id));
+        app(UpdateMedicalProfile::class)->handle($staff, $client, UpdateMedicalProfileCommand::fromArray(['goals' => null]));
+        self::assertNull($profile->fresh()->completed_at);
+        self::assertFalse(app(MedicalProfileCompletion::class)->isComplete($client->organization_id, $client->id));
     }
 
     public function test_direct_self_commands_cannot_confirm_empty_complaints_or_missing_operation_details(): void

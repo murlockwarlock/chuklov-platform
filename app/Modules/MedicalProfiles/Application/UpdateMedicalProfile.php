@@ -116,6 +116,13 @@ final readonly class UpdateMedicalProfile
             if ($command->confirmCurrentData) {
                 $profile->client_confirmed_at = CarbonImmutable::now('UTC');
             }
+            try {
+                $this->questionnaire->validateCompletedProfile($plainData);
+                $profile->completed_at ??= CarbonImmutable::now('UTC');
+            } catch (ValidationException) {
+                $profile->completed_at = null;
+                $profile->client_confirmed_at = null;
+            }
             $profile->save();
 
             $this->audit->handle(
