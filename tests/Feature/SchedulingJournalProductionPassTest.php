@@ -1039,7 +1039,8 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'view' => 'week',
         ])->actingAs($admin)->test(ListBookings::class);
 
-        self::assertSame($specialist->getKey(), $journal->instance()->selectedSpecialistId);
+        self::assertNull($journal->instance()->selectedSpecialistId);
+        self::assertSame([], $journal->instance()->selectedSpecialistIds);
         parse_str((string) parse_url($journal->instance()->newBookingUrl(), PHP_URL_QUERY), $newBookingQuery);
         self::assertNotSame((string) $foreignSpecialist->getKey(), (string) ($newBookingQuery['specialist_id'] ?? ''));
     }

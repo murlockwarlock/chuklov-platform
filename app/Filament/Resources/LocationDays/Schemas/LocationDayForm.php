@@ -11,12 +11,17 @@ use Filament\Forms\Components\TimePicker;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Builder;
 
 class LocationDayForm
 {
     public static function configure(Schema $schema): Schema
     {
         return $schema->components([
+            Select::make('specialist_id')->label(__('Специалист'))
+                ->relationship('specialist', 'display_name', modifyQueryUsing: fn (Builder $query): Builder => $query
+                    ->where('organization_id', app(OrganizationContext::class)->id())->where('is_active', true))
+                ->required()->searchable()->preload()->optionsLimit(50)->native(false),
             TextInput::make('area_name')->label(__('Район'))->required()->maxLength(160),
             Select::make('weekday')->label(__('День недели'))->options([
                 1 => __('Понедельник'),

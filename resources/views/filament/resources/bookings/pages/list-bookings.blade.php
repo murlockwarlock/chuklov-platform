@@ -1,6 +1,7 @@
 <x-filament-panels::page>
     @php
         $days = $this->journalDays;
+        $multipleSpecialists = $this->journalUsesMultipleSpecialists();
         $grid = $this->journalGrid;
         $weekdays = [1 => __('Пн'), 2 => __('Вт'), 3 => __('Ср'), 4 => __('Чт'), 5 => __('Пт'), 6 => __('Сб'), 7 => __('Вс')];
         $rowHeight = 44;
@@ -33,14 +34,22 @@
 
             <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
                 @if (count($this->specialistOptions) > 1)
-                    <div class="w-full sm:w-64">
-                        <label for="booking-journal-specialist" class="fi-fo-field-wrp-label inline-flex text-sm font-medium text-gray-950 dark:text-white">{{ __('Специалист') }}</label>
-                        <select id="booking-journal-specialist" wire:model.live="selectedSpecialistId" class="fi-select-input mt-2 block w-full rounded-lg border-gray-300 bg-white text-sm shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                    <x-filament::dropdown placement="bottom-start" width="sm">
+                        <x-slot name="trigger">
+                            <x-filament::button id="booking-journal-specialist" aria-label="{{ __('Специалисты') }}" color="gray" icon="heroicon-o-funnel">
+                                {{ $selectedSpecialistIds === [] ? __('Все специалисты') : __('Специалисты: :count', ['count' => count($selectedSpecialistIds)]) }}
+                            </x-filament::button>
+                        </x-slot>
+                        <div class="max-h-64 space-y-1 overflow-y-auto p-2">
+                            <button type="button" wire:click="clearSpecialistFilter" class="w-full rounded-lg px-3 py-2 text-start text-sm">{{ __('Все специалисты') }}</button>
                             @foreach ($this->specialistOptions as $id => $name)
-                                <option value="{{ $id }}">{{ $name }}</option>
+                                <label class="flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm">
+                                    <x-filament::input.checkbox wire:model.live="selectedSpecialistIds" value="{{ $id }}" />
+                                    <span class="min-w-0 break-words">{{ $name }}</span>
+                                </label>
                             @endforeach
-                        </select>
-                    </div>
+                        </div>
+                    </x-filament::dropdown>
                 @endif
                 @if ($this->canCreateBooking())
                     <div class="flex min-w-0 flex-wrap gap-2">
@@ -60,7 +69,7 @@
                 {{ $this->table }}
             </div>
         @else
-            <div class="hidden min-w-0 rounded-xl border border-gray-200 bg-white shadow-sm lg:block dark:border-gray-800 dark:bg-gray-900">
+            <div class="hidden min-w-0 rounded-xl border border-gray-200 bg-white shadow-sm {{ $multipleSpecialists ? '' : 'lg:block' }} dark:border-gray-800 dark:bg-gray-900">
                 <div class="grid min-w-0 grid-cols-[4rem_repeat(7,minmax(0,1fr))] border-b border-gray-200 dark:border-gray-800">
                     <div class="border-r border-gray-200 dark:border-gray-800"></div>
                     @foreach ($days as $day)
@@ -113,7 +122,7 @@
                 </div>
             </div>
 
-            <div class="flex min-w-0 flex-col gap-3 lg:hidden">
+            <div class="flex min-w-0 flex-col gap-3 {{ $multipleSpecialists ? '' : 'lg:hidden' }}">
                 @foreach ($days as $day)
                     <section class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 {{ $day['is_today'] ? 'ring-2 ring-primary-500' : '' }}">
                         <div class="flex min-w-0 items-start justify-between gap-3">
@@ -137,6 +146,9 @@
                                                 <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
                                             </div>
                                             <div class="mt-1 break-words text-xs">{{ $booking['service'] }} · {{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</div>
+                                            @if ($multipleSpecialists)
+                                                <div class="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">{{ $booking['specialist'] }}</div>
+                                            @endif
                                             @if ($booking['retention_warning'])
                                                 <div class="mt-1 break-words text-xs font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</div>
                                             @endif

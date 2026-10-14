@@ -273,6 +273,7 @@ class PhaseOneBookingLocationsTest extends TestCase
             actor: $admin,
             locationDay: null,
             areaName: 'Bang Tao',
+            specialistId: (int) $specialist->getKey(),
             weekday: 5,
             specificDate: null,
             startTime: '10:00',
@@ -371,6 +372,7 @@ class PhaseOneBookingLocationsTest extends TestCase
             actor: $admin,
             locationDay: null,
             areaName: 'Bang Tao',
+            specialistId: (int) $specialist->getKey(),
             weekday: 5,
             specificDate: null,
             startTime: '10:00',
@@ -649,6 +651,52 @@ class PhaseOneBookingLocationsTest extends TestCase
             format: VisitFormat::HomeVisit,
             locationArea: 'Closed',
         );
+    }
+
+    public function test_travel_days_are_specialist_bound_and_preserve_legacy_rules(): void
+    {
+        [$organization, $admin, , $first, $service] = $this->fixture();
+        $second = Specialist::factory()->forOrganization($organization)->create();
+        app(AssignSpecialistToService::class)->handle($admin, $second, $service);
+        foreach ([$first, $second] as $specialist) {
+            app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [
+                ['weekday' => 5, 'start_time' => '09:00', 'end_time' => '18:00'],
+            ]);
+        }
+        $firstDay = app(SaveLocationDay::class)->handle($admin, null, 'Bang Tao', 5, null, '10:00', '12:00', 'Asia/Bangkok', true, null, (int) $first->getKey());
+        $secondDay = app(SaveLocationDay::class)->handle($admin, null, 'Bang Tao', 5, null, '14:00', '16:00', 'Europe/Berlin', true, null, (int) $second->getKey());
+        $legacy = LocationDay::factory()->forOrganization($organization)->create(['area_name' => 'Legacy', 'specialist_id' => null]);
+        $resolver = app(BookingLocationResolver::class);
+        self::assertSame([$firstDay->getKey()], $resolver->activeLocationDays('Bang Tao', (int) $first->getKey())->modelKeys());
+        self::assertSame([$secondDay->getKey()], $resolver->activeLocationDays('Bang Tao', (int) $second->getKey())->modelKeys());
+        foreach ([$first, $second] as $specialist) {
+            self::assertSame([$legacy->getKey()], $resolver->activeLocationDays('Legacy', (int) $specialist->getKey())->modelKeys());
+        }
+        $firstAvailability = app(CalculateAvailability::class)->forStaff($admin, $first->getKey(), $service->getKey(), '2026-09-04', '2026-09-04', VisitFormat::HomeVisit, locationArea: 'Bang Tao');
+        $secondAvailability = app(CalculateAvailability::class)->forStaff($admin, $second->getKey(), $service->getKey(), '2026-09-04', '2026-09-04', VisitFormat::HomeVisit, locationArea: 'Bang Tao');
+        self::assertNotEmpty($firstAvailability->slots);
+        self::assertNotEmpty($secondAvailability->slots);
+        self::assertSame('Asia/Bangkok', $firstAvailability->scheduleTimezone);
+        self::assertSame('Europe/Berlin', $secondAvailability->scheduleTimezone);
+        app(SaveLocationDay::class)->handle($admin, $firstDay, 'Bang Tao', 5, null, '10:00', '12:00', 'Asia/Bangkok', false, null, (int) $first->getKey());
+        self::assertTrue($resolver->activeLocationDays('Bang Tao', (int) $first->getKey())->isEmpty());
+        self::assertSame([$secondDay->getKey()], $resolver->activeLocationDays('Bang Tao', (int) $second->getKey())->modelKeys());
+        self::assertNull($legacy->refresh()->specialist_id);
+    }
+
+    public function test_travel_day_rejects_missing_and_foreign_specialists_without_saving(): void
+    {
+        [, $admin] = $this->fixture();
+        $foreign = Specialist::factory()->forOrganization(Organization::factory()->create())->create();
+        foreach ([null, (int) $foreign->getKey()] as $specialistId) {
+            try {
+                app(SaveLocationDay::class)->handle($admin, null, 'Invalid', 5, null, '10:00', '12:00', 'UTC', true, null, $specialistId);
+                self::fail('An available specialist is required for a new travel day.');
+            } catch (ValidationException $exception) {
+                self::assertArrayHasKey('specialist_id', $exception->errors());
+            }
+        }
+        self::assertSame(0, LocationDay::query()->count());
     }
 
     public function test_conflicting_applicable_location_day_timezones_are_rejected(): void
@@ -1085,6 +1133,7 @@ class PhaseOneBookingLocationsTest extends TestCase
             actor: $admin,
             locationDay: null,
             areaName: $areaName,
+            specialistId: (int) Specialist::query()->where('organization_id', app(OrganizationContext::class)->id())->sole()->getKey(),
             weekday: $weekday,
             specificDate: $specificDate,
             startTime: $startTime,

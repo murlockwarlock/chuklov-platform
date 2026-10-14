@@ -33,12 +33,13 @@ final readonly class BookingLocationResolver
     }
 
     /** @return Collection<int, LocationDay> */
-    public function activeLocationDays(?string $areaName = null): Collection
+    public function activeLocationDays(?string $areaName = null, ?int $specialistId = null): Collection
     {
         $normalizedArea = $areaName === null ? null : mb_strtolower(trim($areaName));
 
         return LocationDay::query()
             ->where('organization_id', $this->context->id())
+            ->when($specialistId !== null, fn ($query) => $query->where(fn ($query) => $query->whereNull('specialist_id')->orWhere('specialist_id', $specialistId)))
             ->when($normalizedArea !== null, fn ($query) => $query->whereRaw('LOWER(area_name) = ?', [$normalizedArea]))
             ->where('is_active', true)
             ->orderBy('area_name')
@@ -48,10 +49,11 @@ final readonly class BookingLocationResolver
             ->get();
     }
 
-    public function hasActiveLocationDays(): bool
+    public function hasActiveLocationDays(?int $specialistId = null): bool
     {
         return LocationDay::query()
             ->where('organization_id', $this->context->id())
+            ->when($specialistId !== null, fn ($query) => $query->where(fn ($query) => $query->whereNull('specialist_id')->orWhere('specialist_id', $specialistId)))
             ->where('is_active', true)
             ->exists();
     }
@@ -152,7 +154,7 @@ final readonly class BookingLocationResolver
         return IanaTimezone::from($timezone)->value;
     }
 
-    public function ensureTimezoneCompatibility(LocationDayDefinition $definition, ?int $ignoreLocationDayId = null): void
+    public function ensureTimezoneCompatibility(LocationDayDefinition $definition, ?int $ignoreLocationDayId = null, ?int $specialistId = null): void
     {
         if (! $definition->isActive) {
             return;
@@ -162,6 +164,7 @@ final readonly class BookingLocationResolver
         $existingRules = LocationDay::query()
             ->where('organization_id', $this->context->id())
             ->whereRaw('LOWER(area_name) = ?', [$normalizedArea])
+            ->when($specialistId !== null, fn ($query) => $query->where(fn ($query) => $query->whereNull('specialist_id')->orWhere('specialist_id', $specialistId)))
             ->where('is_active', true)
             ->when($ignoreLocationDayId !== null, fn ($query) => $query->where('id', '<>', $ignoreLocationDayId))
             ->get();
@@ -185,6 +188,7 @@ final readonly class BookingLocationResolver
         ?string $areaName,
         CarbonImmutable $startsAt,
         bool $allowInactiveLocation = false,
+        ?int $specialistId = null,
     ): BookingLocationSelection {
         if ($format === VisitFormat::Office) {
             return new BookingLocationSelection(
@@ -197,7 +201,7 @@ final readonly class BookingLocationResolver
             return new BookingLocationSelection(null, null);
         }
 
-        if (! $this->hasActiveLocationDays()) {
+        if (! $this->hasActiveLocationDays($specialistId)) {
             return new BookingLocationSelection(null, null);
         }
 
@@ -208,7 +212,7 @@ final readonly class BookingLocationResolver
             ]);
         }
 
-        $locationDays = $this->matchingLocationDays($areaName, $startsAt);
+        $locationDays = $this->matchingLocationDays($areaName, $startsAt, $this->activeLocationDays($areaName, $specialistId));
         if ($locationDays->isEmpty()) {
             throw ValidationException::withMessages([
                 'location_area' => 'Для этого района нет подходящего дня выезда.',

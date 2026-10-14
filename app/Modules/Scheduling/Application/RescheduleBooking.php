@@ -152,6 +152,7 @@ final class RescheduleBooking
                 workingLocationId: $workingLocationId,
                 areaName: $locationArea,
                 startsAt: $newStartsAt,
+                specialistId: (int) $specialist->getKey(),
             );
 
             if ($actor instanceof User && $lockedBooking->visit_format !== VisitFormat::Online && $location !== null) {

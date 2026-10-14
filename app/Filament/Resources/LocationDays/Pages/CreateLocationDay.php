@@ -30,6 +30,7 @@ class CreateLocationDay extends LocalizedCreateRecord
             timezone: (string) $data['timezone'],
             isActive: (bool) ($data['is_active'] ?? true),
             notes: isset($data['notes']) ? (string) $data['notes'] : null,
+            specialistId: $this->nullableInt($data['specialist_id'] ?? null),
         );
     }
 

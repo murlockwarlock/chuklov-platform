@@ -178,7 +178,7 @@ class CalculateAvailability
     ): AvailabilityResult {
         $organization = $this->context->organization();
         $locationDays = $format === VisitFormat::HomeVisit
-            ? $this->locations->activeLocationDays($locationArea)
+            ? $this->locations->activeLocationDays($locationArea, (int) $specialist->getKey())
             : null;
 
         $locationSelection = $this->locations->selection(
@@ -187,6 +187,7 @@ class CalculateAvailability
             areaName: $locationArea,
             startsAt: $startsAt->utc(),
             allowInactiveLocation: $allowInactiveLocation,
+            specialistId: (int) $specialist->getKey(),
         );
         $scheduleTimezone = $this->locations->scheduleTimezone($specialist, $format, $locationSelection);
         $scheduleDate = LocalDate::from($startsAt->setTimezone($scheduleTimezone)->toDateString());
@@ -306,10 +307,10 @@ class CalculateAvailability
             ? $this->locations->officeLocation($workingLocationId)
             : null;
         $locationDays = $format === VisitFormat::HomeVisit
-            ? $this->locations->activeLocationDays($locationArea)
+            ? $this->locations->activeLocationDays($locationArea, (int) $specialist->getKey())
             : null;
         if ($format === VisitFormat::HomeVisit
-            && $this->locations->hasActiveLocationDays()
+            && $this->locations->hasActiveLocationDays((int) $specialist->getKey())
             && ($locationArea === null || trim($locationArea) === '' || $locationDays?->isEmpty())) {
             throw ValidationException::withMessages([
                 'location_area' => 'Для этого района нет подходящего дня выезда.',
@@ -746,7 +747,7 @@ class CalculateAvailability
         }
 
         if ($booking->visit_format === VisitFormat::HomeVisit && $booking->location_area !== null) {
-            $locationDays = $this->locations->activeLocationDays($booking->location_area);
+            $locationDays = $this->locations->activeLocationDays($booking->location_area, (int) $specialist->getKey());
             if ($locationDays->isNotEmpty()) {
                 $matchingLocationDays = $this->locations->matchingLocationDays(
                     $booking->location_area,

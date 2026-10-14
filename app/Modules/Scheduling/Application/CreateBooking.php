@@ -286,6 +286,7 @@ class CreateBooking
                 workingLocationId: $workingLocationId,
                 areaName: $locationArea,
                 startsAt: $requestedStart,
+                specialistId: (int) $lockedSpecialist->getKey(),
             );
             $availability = $this->availability->forBooking(
                 specialist: $lockedSpecialist,

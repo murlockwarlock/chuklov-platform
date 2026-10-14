@@ -10,7 +10,7 @@ class ListLocationDays extends LocalizedListRecords
 {
     protected static string $resource = LocationDayResource::class;
 
-    protected static ?string $title = 'Дни выезда';
+    protected static ?string $title = 'Дни выезда специалистов';
 
     protected function getHeaderActions(): array
     {

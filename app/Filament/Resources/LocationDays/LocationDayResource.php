@@ -26,7 +26,7 @@ class LocationDayResource extends LocalizedResource
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedCalendarDays;
 
-    protected static ?string $navigationLabel = 'Дни выезда';
+    protected static ?string $navigationLabel = 'Дни выезда специалистов';
 
     protected static string|\UnitEnum|null $navigationGroup = 'Записи';
 
