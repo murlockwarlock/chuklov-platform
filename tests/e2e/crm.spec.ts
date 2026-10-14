@@ -697,16 +697,16 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
     await expect(page.locator('input[name*="idempotency"], input[name*="timezone"], select[name*="meeting_link"]')).toHaveCount(0);
 
-    await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
-    await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
+    await page.getByText(fixture.specialistName, { exact: true }).click();
     await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
     const serviceOption = page.getByRole('option', { name: fixture.serviceName, exact: true });
     await expect(serviceOption).toBeVisible({ timeout: 15_000 });
     await serviceOption.click();
-    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
-    await page.getByText(fixture.specialistName, { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
+    await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
     const dateInput = page.getByLabel('Дата');
     await dateInput.fill(fixture.bookingStartsAt.slice(0, 10));
     await dateInput.blur();
@@ -1039,7 +1039,7 @@ test('staff sees the Telegram limit and preview while writing to a client', asyn
     await login(page, fixture);
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Сообщения', exact: true }).click();
+    await page.locator('#fi-main-content').getByRole('link', { name: 'Сообщения', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/messages[?]client=${fixture.clientId}$`));
     await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Начать диалог как специалист', exact: true }).click();
@@ -1416,7 +1416,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(page.locator('iframe[title="ux-a-report.pdf"]')).toBeVisible();
     expect(previewResponse.headers()['content-type']).toContain('application/pdf');
     expect(previewResponse.headers()['content-disposition']).toContain('inline');
-    const previewDialog = page.getByRole('dialog').filter({ has: page.locator('iframe[title="ux-a-report.pdf"]') });
+    const previewDialog = page.locator('[role="dialog"]:visible').filter({ has: page.locator('iframe[title="ux-a-report.pdf"]') });
     await expect(previewDialog).toBeVisible();
     await previewDialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
 
