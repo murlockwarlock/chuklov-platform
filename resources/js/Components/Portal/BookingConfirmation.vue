@@ -89,6 +89,7 @@ const location = computed({
       </h2>
     </header>
 
+    <slot name="personal-data" />
     <dl class="portal-booking-summary">
       <div>
         <dt>{{ t('booking.service') }}</dt>

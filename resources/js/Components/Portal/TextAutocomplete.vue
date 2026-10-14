@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
-const props = defineProps<{ id: string; modelValue: string; suggestions: string[]; required?: boolean; emptyText: string }>();
+const props = defineProps<{ id: string; modelValue: string; suggestions: string[]; required?: boolean; emptyText: string; filterSuggestions?: boolean }>();
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 const root = ref<HTMLElement | null>(null);
 const input = ref<HTMLInputElement | null>(null);
@@ -11,7 +11,7 @@ const optionsId = computed(() => props.id + '-options');
 const matches = computed(() => {
     const query = props.modelValue.trim().toLocaleLowerCase();
 
-    return props.suggestions.filter((value) => value.toLocaleLowerCase().includes(query)).slice(0, 10);
+    return props.suggestions.filter((value) => props.filterSuggestions === false || value.toLocaleLowerCase().includes(query)).slice(0, 10);
 });
 
 function select(value: string): void {

@@ -26,6 +26,7 @@ export type PortalShell = {
     clientName: string | null;
     confirmedFirstName?: string | null;
     availableBonus?: string | null;
+    bonusCurrencyUnavailable?: boolean;
     isPartner: boolean;
     locale: PortalLocale;
     localeUrl: string;

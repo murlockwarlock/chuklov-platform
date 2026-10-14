@@ -25,6 +25,7 @@ class HandleInertiaRequests extends Middleware
         );
 
         app()->setLocale($locale);
+        $bonus = app(GetClientAvailableBonus::class);
 
         return [
             ...parent::share($request),
@@ -39,7 +40,8 @@ class HandleInertiaRequests extends Middleware
                 'authenticated' => $client !== null,
                 'clientName' => $client?->full_name,
                 'confirmedFirstName' => $client?->name_confirmed_at !== null ? $client->first_name : null,
-                'availableBonus' => fn (): ?string => $client === null ? null : app(GetClientAvailableBonus::class)->handle($client),
+                'availableBonus' => fn (): ?string => $client === null ? null : $bonus->handle($client),
+                'bonusCurrencyUnavailable' => fn (): bool => $client !== null && $bonus->currencyUnavailable($client),
                 'isPartner' => $client?->referralPartnerProfile?->isActive() === true,
                 'locale' => $locale,
                 'localeUrl' => route('portal.locale.update'),

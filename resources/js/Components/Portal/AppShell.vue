@@ -115,6 +115,19 @@ const brandLogo = computed(() => props.portal.locale === 'en'
         <p class="portal-copy">
           {{ portalText(portal.locale, 'bonus.description') }}
         </p>
+        <p
+          v-if="portal.bonusCurrencyUnavailable"
+          class="portal-copy"
+        >
+          {{ portalText(portal.locale, 'bonus.currencyUnavailable') }}
+          <Link
+            :href="portal.urls.profile"
+            class="portal-link"
+            @click="bonusDialog?.close()"
+          >
+            {{ portalText(portal.locale, 'profile.title') }}
+          </Link>
+        </p>
         <Link
           :href="portal.urls.services"
           class="portal-button portal-button--primary"

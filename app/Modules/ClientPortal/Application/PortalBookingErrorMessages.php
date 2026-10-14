@@ -293,6 +293,11 @@ final class PortalBookingErrorMessages
         $errors = [];
 
         foreach ($exception->errors() as $field => $_messages) {
+            if (str_starts_with($field, 'personal_data.')) {
+                $errors[$field] = $_messages;
+
+                continue;
+            }
             if ($field === 'slots' || $field === 'batchIntentKey') {
                 $errors[$field === 'slots' ? 'additional_starts_at' : 'idempotency_key'] = $_messages;
 

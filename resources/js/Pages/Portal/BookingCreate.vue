@@ -7,9 +7,11 @@ import BookingChoiceList from '../../Components/Portal/BookingChoiceList.vue';
 import BookingConfirmation from '../../Components/Portal/BookingConfirmation.vue';
 import BookingSuccess from '../../Components/Portal/BookingSuccess.vue';
 import BookingSessionSelection from '../../Components/Portal/BookingSessionSelection.vue';
+import PersonalDataFields from '../../Components/Portal/PersonalDataFields.vue';
 import { useBookingSessions } from '../../composables/useBookingSessions';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
+import { personalData, type PersonalData, type PersonalProfile } from '../../types/personalData';
 import { formatMajorPrice } from '../../utils/formatMajorPrice';
 
 type VisitFormat = 'office' | 'home' | 'online';
@@ -105,9 +107,10 @@ type Props = {
     query: BookingQuery;
     timezoneOptions: Array<{ value: string; label: string }>;
     bookingResult: BookingResult;
+    profile: PersonalProfile;
     legalDocuments: LegalDocument[];
     attribution: { needsManualSource: boolean; url: string; sources: string[] };
-    urls: { create: string; store: string; services: string; bookings: string };
+    urls: { create: string; store: string; services: string; bookings: string; cities: string };
 };
 
 type ProgressStep = {
@@ -132,7 +135,9 @@ const selectedWorkingLocationId = ref<number | null>(props.query.workingLocation
 const selectedLocationArea = ref<string | null>(props.query.locationArea);
 const timezoneEditorOpen = ref(false);
 const bookingStep = ref<BookingStep>('time');
+const confirmationForm = ref<HTMLFormElement | null>(null);
 const bookingForm = useForm<{
+    personal_data: PersonalData;
     service_id: number | null;
     specialist_id: number | null;
     starts_at: string | null;
@@ -152,6 +157,7 @@ const bookingForm = useForm<{
     attribution_source: string | null;
     attribution_source_detail: string;
 }>({
+    personal_data: personalData(props.profile),
     service_id: props.query.serviceId,
     specialist_id: props.query.specialistId,
     starts_at: null,
@@ -173,6 +179,8 @@ const bookingForm = useForm<{
     attribution_source: null,
     attribution_source_detail: '',
 });
+const personalErrors = computed(() => Object.fromEntries(Object.entries(bookingForm.errors)
+    .filter(([key]) => key.startsWith('personal_data.')).map(([key, message]) => [key.slice('personal_data.'.length), message])));
 
 const consentValues = ref<Record<number, boolean>>(Object.fromEntries(
     bookingForm.consents.map((consent) => [consent.legal_document_id, consent.granted]),
@@ -602,6 +610,7 @@ function returnToTime(): void {
 }
 
 function submitBooking(): void {
+    if (confirmationForm.value && !confirmationForm.value.reportValidity()) return;
     if (startsAtList.value.length === 0 || props.query.serviceId === null || props.query.specialistId === null) {
         return;
     }
@@ -622,7 +631,15 @@ function submitBooking(): void {
     bookingForm.working_location_id = selectedWorkingLocationId.value;
     bookingForm.location_area = selectedLocationArea.value;
     bookingForm.idempotency_key = keyFor({ ...bookingForm.data(), idempotency_key: undefined });
-    bookingForm.post(props.urls.store, { preserveScroll: false });
+    bookingForm.post(props.urls.store, {
+        preserveScroll: false,
+        onError: (errors) => {
+            if (Object.keys(errors).some((key) => key.startsWith('personal_data.'))) {
+                selectedStart.value = bookingForm.starts_at;
+                bookingStep.value = 'confirmation';
+            }
+        },
+    });
 }
 </script>
 
@@ -989,44 +1006,59 @@ function submitBooking(): void {
           </button>
         </template>
 
-        <BookingConfirmation
+        <form
           v-else-if="bookingStep === 'confirmation'"
-          :service-name="selectedService?.name ?? null"
-          :specialist-name="selectedSpecialist?.displayName ?? null"
-          :selected-start="selectedStart"
-          :starts-at-list="startsAtList"
-          :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
-          :locale="locale"
-          :format="props.query.format"
-          :format-label="formatLabel(props.query.format)"
-          :party-size="bookingForm.party_size"
-          :location="bookingForm.location"
-          :working-location="selectedWorkingLocation"
-          :location-area="selectedLocationArea"
-          :has-location-day-rules="hasLocationDayRules"
-          :location-area-options="locationAreaOptions"
-          :processing="bookingForm.processing"
-          :error="bookingError"
-          :legal-documents="props.legalDocuments"
-          :consent-values="consentValues"
-          :marketing-consent="bookingForm.marketing_consent"
-          :show-marketing="props.legalDocuments.some((document) => document.documentType === 'marketing')"
-          :attribution-sources="props.attribution.sources"
-          :attribution-source="bookingForm.attribution_source"
-          :attribution-source-detail="bookingForm.attribution_source_detail"
-          :attribution-detail-error="bookingForm.errors.attribution_source_detail"
-          :attribution-needs-manual-source="props.attribution.needsManualSource"
-          :required-acceptance-error="requiredConsentAttempted && hasPublishedRequiredDocuments ? t('legal.requiredError') : undefined"
-          @update:party-size="bookingForm.party_size = $event"
-          @update:location="bookingForm.location = $event"
-          @update:consent="setConsent"
-          @update:required-consent="setRequiredConsent"
-          @update:marketing-consent="setMarketingConsent"
-          @update:attribution-source="bookingForm.attribution_source = $event; bookingForm.attribution_source_detail = ''"
-          @update:attribution-source-detail="bookingForm.attribution_source_detail = $event"
-          @change="returnToTime"
-          @confirm="submitBooking"
-        />
+          ref="confirmationForm"
+          @submit.prevent="submitBooking"
+        >
+          <BookingConfirmation
+            :service-name="selectedService?.name ?? null"
+            :specialist-name="selectedSpecialist?.displayName ?? null"
+            :selected-start="selectedStart"
+            :starts-at-list="startsAtList"
+            :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
+            :locale="locale"
+            :format="props.query.format"
+            :format-label="formatLabel(props.query.format)"
+            :party-size="bookingForm.party_size"
+            :location="bookingForm.location"
+            :working-location="selectedWorkingLocation"
+            :location-area="selectedLocationArea"
+            :has-location-day-rules="hasLocationDayRules"
+            :location-area-options="locationAreaOptions"
+            :processing="bookingForm.processing"
+            :error="bookingError"
+            :legal-documents="props.legalDocuments"
+            :consent-values="consentValues"
+            :marketing-consent="bookingForm.marketing_consent"
+            :show-marketing="props.legalDocuments.some((document) => document.documentType === 'marketing')"
+            :attribution-sources="props.attribution.sources"
+            :attribution-source="bookingForm.attribution_source"
+            :attribution-source-detail="bookingForm.attribution_source_detail"
+            :attribution-detail-error="bookingForm.errors.attribution_source_detail"
+            :attribution-needs-manual-source="props.attribution.needsManualSource"
+            :required-acceptance-error="requiredConsentAttempted && hasPublishedRequiredDocuments ? t('legal.requiredError') : undefined"
+            @update:party-size="bookingForm.party_size = $event"
+            @update:location="bookingForm.location = $event"
+            @update:consent="setConsent"
+            @update:required-consent="setRequiredConsent"
+            @update:marketing-consent="setMarketingConsent"
+            @update:attribution-source="bookingForm.attribution_source = $event; bookingForm.attribution_source_detail = ''"
+            @update:attribution-source-detail="bookingForm.attribution_source_detail = $event"
+            @change="returnToTime"
+            @confirm="submitBooking"
+          >
+            <template #personal-data>
+              <PersonalDataFields
+                v-model="bookingForm.personal_data"
+                id-prefix="booking-profile"
+                :cities-url="props.urls.cities"
+                :email-editable="props.profile.emailEditable"
+                :errors="personalErrors"
+              />
+            </template>
+          </BookingConfirmation>
+        </form>
       </section>
     </section>
   </AppShell>

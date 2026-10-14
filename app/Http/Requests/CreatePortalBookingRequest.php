@@ -19,6 +19,7 @@ class CreatePortalBookingRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'personal_data' => ['sometimes', 'array:first_name,last_name,middle_name,gender,birth_date,country,city,phone,email'],
             'service_id' => ['required', 'integer', 'min:1'],
             'specialist_id' => ['required', 'integer', 'min:1'],
             'starts_at' => ['required', 'date'],

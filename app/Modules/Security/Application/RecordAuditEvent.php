@@ -37,6 +37,7 @@ class RecordAuditEvent
         'client.created' => ['source'],
         'client.staging_account.reset' => ['deleted_record_count'],
         'client.profile.updated' => ['source', 'fields'],
+        'client.display_currency.updated' => ['source', 'currency'],
         'client.channel_identity.registered' => ['channel', 'verification_status'],
         'client.channel_identity.verified' => ['channel', 'verification_method'],
         'client.consent.recorded' => ['subject', 'version', 'granted', 'evidence'],

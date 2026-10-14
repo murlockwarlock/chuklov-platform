@@ -35,6 +35,7 @@ final class GetClientProfile
         $b2bAnswer = $b2bProfile?->getRawOriginal('b2b_specialist_answer');
 
         return [
+            'currencyPreference' => app(GetClientCurrencyPreference::class)->handle($client),
             'profile' => [
                 'fullName' => $client->full_name,
                 'firstName' => $client->first_name,
@@ -86,6 +87,8 @@ final class GetClientProfile
             ],
             'timezoneOptions' => $this->timezoneOptions($client->timezone),
             'urls' => [
+                'currency' => route('portal.profile.currency'),
+                'cities' => route('portal.profile.cities'),
                 'update' => route('portal.profile.update'),
                 'consents' => route('portal.profile.consents'),
                 'telegramLink' => route('portal.telegram.link'),

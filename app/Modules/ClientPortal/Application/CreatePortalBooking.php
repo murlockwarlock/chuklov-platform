@@ -29,9 +29,13 @@ final readonly class CreatePortalBooking
         private CreateMultipleBookings $createMultipleBookings,
         private AcceptManualAttribution $acceptAttribution,
         private UpdateClientTimezonePreference $timezonePreference,
+        private SaveBookingPersonalData $personalData,
     ) {}
 
-    /** @param list<array{legal_document_id: int, granted: bool}> $consents */
+    /**
+     * @param  list<array{legal_document_id: int, granted: bool}>  $consents
+     * @param  array<string, mixed>|null  $personalData
+     */
     public function handle(
         Client $client,
         Specialist $specialist,
@@ -50,6 +54,7 @@ final readonly class CreatePortalBooking
         ?string $mapUrl = null,
         ?string $attributionSource = null,
         ?string $attributionSourceDetail = null,
+        ?array $personalData = null,
     ): Booking {
         return $this->createBooking->handle(
             actor: $client,
@@ -68,7 +73,8 @@ final readonly class CreatePortalBooking
             latitude: $latitude,
             longitude: $longitude,
             mapUrl: $mapUrl,
-            beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail): void {
+            beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail, $personalData): void {
+                $this->personalData->handle($client, $personalData);
                 if ($clientTimezone !== null) {
                     $this->timezonePreference->handle($clientTimezone, $client);
                 }
@@ -85,6 +91,7 @@ final readonly class CreatePortalBooking
     /**
      * @param  list<string>  $startsAt
      * @param  list<array{legal_document_id: int, granted: bool}>  $consents
+     * @param  array<string, mixed>|null  $personalData
      * @return list<Booking>
      */
     public function handleMultiple(
@@ -106,6 +113,7 @@ final readonly class CreatePortalBooking
         ?string $mapUrl = null,
         ?string $attributionSource = null,
         ?string $attributionSourceDetail = null,
+        ?array $personalData = null,
     ): array {
         try {
             $timezone = IanaTimezone::from($clientTimezone ?? $client->timezone ?? 'UTC')->value;
@@ -124,7 +132,8 @@ final readonly class CreatePortalBooking
             partySize: $partySize, location: $location, workingLocationId: $workingLocationId,
             locationArea: $locationArea, clientTimezone: $clientTimezone,
             latitude: $latitude, longitude: $longitude, mapUrl: $mapUrl,
-            beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail): void {
+            beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail, $personalData): void {
+                $this->personalData->handle($client, $personalData);
                 if ($clientTimezone !== null) {
                     $this->timezonePreference->handle($clientTimezone, $client);
                 }

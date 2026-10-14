@@ -77,6 +77,10 @@ class UpdateClientProfileFromPortal
                 ->lockForUpdate()
                 ->firstOrFail();
             $normalized = [...$normalized, ...$this->demographics->handle($attributes, $client)];
+            if (is_string($normalized['phone'] ?? null)) {
+                $country = $normalized['country'] ?? $client->country;
+                $normalized['phone'] = app(ProfileReferenceData::class)->phone($normalized['phone'], is_string($country) ? $country : null);
+            }
             if (array_key_exists('email', $normalized)
                 && $this->hasVerifiedEmailIdentity($client)
                 && $normalized['email'] !== $client->email) {

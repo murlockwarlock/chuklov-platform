@@ -30,6 +30,7 @@ use App\Http\Controllers\Portal\MedicalProfileController;
 use App\Http\Controllers\Portal\MoreController;
 use App\Http\Controllers\Portal\OnboardingController;
 use App\Http\Controllers\Portal\PortalCommerceController;
+use App\Http\Controllers\Portal\ProfileCitiesController;
 use App\Http\Controllers\Portal\ProfileController;
 use App\Http\Controllers\Portal\ReferralController;
 use App\Http\Controllers\Portal\ReferralPartnerController;
@@ -216,7 +217,9 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/channels/telegram/link', TelegramLinkController::class)
                 ->name('portal.telegram.link');
             Route::get('/portal/profile', [ProfileController::class, 'show'])->name('portal.profile');
+            Route::post('/portal/profile/cities', ProfileCitiesController::class)->middleware('throttle:60,1')->name('portal.profile.cities');
             Route::post('/portal/profile', [ProfileController::class, 'update'])->name('portal.profile.update');
+            Route::post('/portal/profile/currency', [ProfileController::class, 'currency'])->name('portal.profile.currency');
             Route::post('/portal/profile/consents', [ProfileController::class, 'consents'])
                 ->name('portal.profile.consents');
             Route::post('/portal/profile/b2b-answer', [ProfileController::class, 'b2bAnswer'])

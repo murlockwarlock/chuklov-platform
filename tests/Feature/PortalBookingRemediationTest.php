@@ -20,6 +20,7 @@ use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
+use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\Carbon;
@@ -45,6 +46,53 @@ class PortalBookingRemediationTest extends TestCase
         Carbon::setTestNow();
 
         parent::tearDown();
+    }
+
+    public function test_booking_personal_data_is_persisted_atomically_and_prefilled_when_reopened(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $this->withSession(['client_portal.client_id' => $client->getKey()])->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'personal_data' => ['first_name' => 'Новый', 'last_name' => 'Клиент', 'middle_name' => 'Тестовый',
+                'gender' => 'MALE', 'birth_date' => '1990-01-02', 'country' => 'Казахстан',
+                'city' => 'Алматы', 'phone' => '+7 (701) 234-56-78', 'email' => $client->email],
+            'consents' => $this->acceptedConsents($organization),
+        ]))->assertSessionHasNoErrors()->assertRedirect();
+        self::assertSame('Клиент Новый Тестовый', $client->refresh()->full_name);
+        self::assertSame('+77012345678', $client->phone);
+        self::assertSame(1, Booking::query()->where('client_id', $client->getKey())->count());
+        $this->get(route('portal.bookings.create'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('profile.firstName', 'Новый')->where('profile.city', 'Алматы')->where('profile.phone', '+77012345678'));
+        $this->get(route('portal.profile'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('profile.lastName', 'Клиент')->where('profile.middleName', 'Тестовый'));
+    }
+
+    public function test_missing_or_invalid_booking_personal_data_cannot_create_a_booking_or_mutate_identity(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $original = $client->only(['first_name', 'last_name', 'city', 'phone']);
+        foreach ([['first_name' => ''], ['birth_date' => '2999-01-01'], ['phone' => '+7 garbage'], ['gender' => 'OTHER']] as $invalid) {
+            $this->withSession(['client_portal.client_id' => $client->getKey()])->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+                'personal_data' => [...$invalid, 'city' => 'Must not be saved'], 'consents' => $this->acceptedConsents($organization),
+            ]))->assertSessionHasErrors('personal_data.'.array_key_first($invalid));
+            self::assertSame($original, $client->refresh()->only(array_keys($original)));
+            self::assertSame(0, Booking::query()->where('client_id', $client->getKey())->count());
+        }
+    }
+
+    public function test_later_booking_failure_rolls_back_personal_data_and_its_audit(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $original = $client->only(['first_name', 'last_name', 'city', 'phone']);
+        $auditCount = AuditEvent::query()->where('target_type', Client::class)
+            ->where('target_id', (string) $client->getKey())->count();
+        $this->withSession(['client_portal.client_id' => $client->getKey()])->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'personal_data' => ['first_name' => 'Should roll back', 'city' => 'Changed city'],
+            'consents' => [],
+        ]))->assertSessionHasErrors('consents');
+        self::assertSame($original, $client->refresh()->only(array_keys($original)));
+        self::assertSame(0, Booking::query()->where('client_id', $client->getKey())->count());
+        self::assertSame($auditCount, AuditEvent::query()->where('target_type', Client::class)
+            ->where('target_id', (string) $client->getKey())->count());
     }
 
     public function test_booking_create_projects_exact_major_prices_without_exposing_minor_units(): void
@@ -586,6 +634,8 @@ class PortalBookingRemediationTest extends TestCase
         $client = Client::factory()->forOrganization($organization)->create([
             'language' => $language,
             'timezone' => 'UTC',
+            'first_name' => 'QA', 'last_name' => 'Booking', 'gender' => 'MALE',
+            'birth_date' => '1990-01-02', 'country' => 'United States', 'city' => 'Washington', 'phone' => '+12025550123',
         ]);
         $specialist = Specialist::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
         $service = Service::factory()->forOrganization($organization)->create([

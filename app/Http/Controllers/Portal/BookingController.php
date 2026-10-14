@@ -109,7 +109,7 @@ class BookingController extends Controller
         $workingLocationId = $this->nullableInteger($validated['working_location_id'] ?? null);
         $locationArea = isset($validated['location_area']) ? trim((string) $validated['location_area']) : null;
         $officeLocations = $locationResolver->activeOfficeLocations();
-        $locationDays = $locationResolver->activeLocationDays();
+        $locationDays = $locationResolver->activeLocationDays(specialistId: $selectedSpecialist === null ? null : (int) $selectedSpecialist->getKey());
         if ($format === VisitFormat::Office && $workingLocationId === null && $officeLocations->count() === 1) {
             $officeLocation = $officeLocations->first();
             $workingLocationId = $officeLocation instanceof WorkingLocation ? (int) $officeLocation->getKey() : null;
@@ -120,7 +120,7 @@ class BookingController extends Controller
             && $selectedSpecialist !== null
             && in_array($format->value, $selectedService->supportedFormats(), true)
             && ($format !== VisitFormat::Office || $officeLocations->count() <= 1 || $workingLocationId !== null)
-            && ($format !== VisitFormat::HomeVisit || ! $locationResolver->hasActiveLocationDays() || filled($locationArea))) {
+            && ($format !== VisitFormat::HomeVisit || ! $locationResolver->hasActiveLocationDays((int) $selectedSpecialist->getKey()) || filled($locationArea))) {
             try {
                 $result = $availability->forClient(
                     client: $client,
@@ -182,6 +182,7 @@ class BookingController extends Controller
                 'locationArea' => $locationArea,
             ],
             'timezoneOptions' => $clientProfile->timezoneOptions($displayTimezone),
+            'profile' => $clientProfile->handle()['profile'],
             'bookingResult' => $bookingResult,
             'legalDocuments' => $legalDocuments->handle($client->language)->map(function ($document): array {
                 $subject = ConsentSubject::tryFrom($document->document_type);
@@ -207,6 +208,7 @@ class BookingController extends Controller
                 'services' => route('portal.services.index'),
                 'bookings' => route('portal.bookings.index'),
                 'referrals' => route('portal.referrals'),
+                'cities' => route('portal.profile.cities'),
             ],
         ]);
     }
@@ -230,6 +232,7 @@ class BookingController extends Controller
 
         try {
             $arguments = [
+                'personalData' => $validated['personal_data'] ?? null,
                 'client' => $clientContext->client(),
                 'specialist' => $this->specialist($validated['specialist_id'], $organizationContext->id()),
                 'service' => $this->service($validated['service_id'], $organizationContext->id()),
@@ -338,7 +341,7 @@ class BookingController extends Controller
             ? trim((string) ($validated['location_area'] ?? ''))
             : $booking->location_area;
         $locationArea = $locationArea === '' ? null : $locationArea;
-        $activeLocationDays = $locationResolver->activeLocationDays($locationArea);
+        $activeLocationDays = $locationResolver->activeLocationDays($locationArea, (int) $booking->specialist_id);
         $workingLocationId = array_key_exists('working_location_id', $validated)
             ? $this->nullableInteger($validated['working_location_id'] ?? null)
             : $booking->working_location_id;
@@ -346,7 +349,7 @@ class BookingController extends Controller
             || $activeOfficeLocations->count() <= 1
             || $workingLocationId !== null;
         if ($booking->visit_format === VisitFormat::HomeVisit
-            && $locationResolver->hasActiveLocationDays()
+            && $locationResolver->hasActiveLocationDays((int) $booking->specialist_id)
             && ($booking->location_area === null || $activeLocationDays->isEmpty())) {
             $canCalculateRescheduleAvailability = false;
         }
@@ -405,7 +408,7 @@ class BookingController extends Controller
                 'timezone' => $location->timezone,
                 'isDefault' => (bool) $location->is_default_office,
             ])->values()->all(),
-            'locationDays' => $locationResolver->activeLocationDays()->map(fn (LocationDay $locationDay): array => [
+            'locationDays' => $locationResolver->activeLocationDays(specialistId: (int) $booking->specialist_id)->map(fn (LocationDay $locationDay): array => [
                 'areaName' => $locationDay->area_name,
                 'weekday' => $locationDay->weekday,
                 'specificDate' => $locationDay->specific_date === null

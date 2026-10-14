@@ -4,9 +4,11 @@ import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import LegalConsentChecklist from '../../Components/Portal/LegalConsentChecklist.vue';
 import TextAutocomplete from '../../Components/Portal/TextAutocomplete.vue';
+import CityAutocomplete from '../../Components/Portal/CityAutocomplete.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 import { countryNames } from '../../utils/countryNames';
+import { formatPhone, phoneExample } from '../../utils/profilePhone';
 
 type LegalDocument = {
     id: number;
@@ -53,8 +55,12 @@ const props = defineProps<{
         telegramLink: string;
         b2bAnswer: string;
         referrals: string;
+        cities: string;
+        currency: string;
     };
     saved: boolean;
+    currencySaved: boolean;
+    currencyPreference: { selected: string | null; base: string | null; options: string[] };
     consentsSaved: boolean;
     b2bSpecialistAnswer: 'yes' | 'no' | null;
     marketingConsent: { documentId: number; accepted: boolean } | null;
@@ -62,6 +68,7 @@ const props = defineProps<{
 }>();
 
 const { locale, t } = usePortalLocale();
+const currencyForm = useForm({ preferred_currency: props.currencyPreference.selected ?? '' });
 const profileForm = useForm<{
     first_name: string;
     last_name: string;
@@ -176,6 +183,55 @@ function saveB2bAnswer(): void {
         </div>
       </header>
 
+      <form
+        v-if="props.currencyPreference.options.length"
+        class="portal-content-section portal-stack"
+        @submit.prevent="currencyForm.post(props.urls.currency, { preserveScroll: true })"
+      >
+        <div class="portal-field">
+          <label
+            for="profile-currency"
+            class="portal-label"
+          >{{ t('profile.currency') }}</label>
+          <select
+            id="profile-currency"
+            v-model="currencyForm.preferred_currency"
+            class="portal-input"
+          >
+            <option value="">
+              {{ t('profile.currencyDefault') }} ({{ props.currencyPreference.base }})
+            </option>
+            <option
+              v-for="currency in props.currencyPreference.options"
+              :key="currency"
+              :value="currency"
+            >
+              {{ currency }}
+            </option>
+          </select>
+          <p
+            v-if="currencyForm.errors.preferred_currency"
+            class="portal-error"
+          >
+            {{ currencyForm.errors.preferred_currency }}
+          </p>
+        </div>
+        <div class="portal-form-actions">
+          <button
+            type="submit"
+            class="portal-button portal-button--primary"
+            :disabled="currencyForm.processing"
+          >
+            {{ t('profile.save') }}
+          </button>
+          <p
+            v-if="currencySaved"
+            class="portal-copy"
+          >
+            {{ t('profile.saved') }}
+          </p>
+        </div>
+      </form>
       <section class="portal-content-section portal-stack">
         <div class="portal-section-heading">
           <span class="portal-label">{{ t('profile.language') }}</span>
@@ -206,7 +262,7 @@ function saveB2bAnswer(): void {
                 required
               />
               <input
-                v-else
+                v-else-if="field.key !== 'city'"
                 :id="'profile-' + field.key"
                 v-model="profileForm[field.key]"
                 type="text"
@@ -215,6 +271,14 @@ function saveB2bAnswer(): void {
                 maxlength="100"
                 class="portal-input"
               >
+              <CityAutocomplete
+                v-else
+                :id="'profile-' + field.key"
+                v-model="profileForm.city"
+                :country="profileForm.country"
+                :cities-url="props.urls.cities"
+                required
+              />
               <p
                 v-if="profileForm.errors[field.key]"
                 class="portal-error"
@@ -284,7 +348,9 @@ function saveB2bAnswer(): void {
                 required
                 autocomplete="tel"
                 class="portal-input"
-                :placeholder="t('profile.notSpecified')"
+                :placeholder="phoneExample(profileForm.country)"
+                maxlength="32"
+                @blur="profileForm.phone = formatPhone(profileForm.phone, profileForm.country)"
               >
               <p
                 v-if="profileForm.errors.phone"
