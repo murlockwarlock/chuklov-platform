@@ -24,6 +24,11 @@ on:
         required: false
         default: ''
         type: string
+      verification_ref:
+        description: Optional exact source SHA for a static-only baseline comparison
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ci-${{ github.ref }}-${{ inputs.scope || 'full' }}
@@ -76,6 +81,18 @@ jobs:
       DEFAULT_ORGANIZATION_ID: 1
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.verification_ref || github.sha }}
+      - name: Verify checked-out source identity
+        env:
+          VERIFICATION_REF: ${{ inputs.verification_ref }}
+          VERIFICATION_SCOPE: ${{ inputs.scope }}
+        run: |
+          if [ -n "$VERIFICATION_REF" ]; then
+            [[ "$VERIFICATION_SCOPE" == static && "$VERIFICATION_REF" =~ ^[0-9a-f]{40}$ ]]
+            test "$(git rev-parse HEAD)" = "$VERIFICATION_REF"
+          fi
+          git rev-parse HEAD
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.5'
