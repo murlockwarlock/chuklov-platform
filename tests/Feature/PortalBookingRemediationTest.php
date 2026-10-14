@@ -29,6 +29,7 @@ use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -604,9 +605,10 @@ class PortalBookingRemediationTest extends TestCase
     {
         [$organization, $client, $specialist, $service] = $this->portalFixture();
         $service->update(['requires_medical_profile' => false]);
+        $idempotencyKey = (string) Str::uuid();
         $payload = $this->bookingPayload($service, $specialist, [
             'additional_starts_at' => ['2026-03-17T09:00:00+00:00'],
-            'idempotency_key' => 'f578ef96-74f4-4a1b-b73f-5e641b851a20',
+            'idempotency_key' => $idempotencyKey,
             'consents' => $this->acceptedConsents($organization),
         ]);
         $this->withSession(['client_portal.client_id' => $client->getKey()]);
@@ -650,9 +652,10 @@ class PortalBookingRemediationTest extends TestCase
     public function test_multi_session_conflict_rolls_back_bookings_consents_intents_and_events(): void
     {
         [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $idempotencyKey = (string) Str::uuid();
         $payload = $this->bookingPayload($service, $specialist, [
             'additional_starts_at' => ['2026-03-17T11:00:00+00:00'],
-            'idempotency_key' => 'f578ef96-74f4-4a1b-b73f-5e641b851a21',
+            'idempotency_key' => $idempotencyKey,
             'consents' => $this->acceptedConsents($organization),
         ]);
         $this->withSession(['client_portal.client_id' => $client->id]);
@@ -665,7 +668,7 @@ class PortalBookingRemediationTest extends TestCase
         self::assertSame(0, Booking::query()->count());
         unset($payload['idempotency_key']);
         $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('idempotency_key');
-        $payload['idempotency_key'] = 'f578ef96-74f4-4a1b-b73f-5e641b851a21';
+        $payload['idempotency_key'] = $idempotencyKey;
         $payload['client_timezone'] = 'Not/Timezone';
         $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('client_timezone');
         $this->get(route('portal.bookings.create', ['booking_ids' => [999999]]))->assertNotFound();
@@ -674,10 +677,11 @@ class PortalBookingRemediationTest extends TestCase
     public function test_medical_continuation_returns_a_batch_to_all_bookings_and_rejects_external_return_targets(): void
     {
         [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $idempotencyKey = (string) Str::uuid();
         $this->withSession(['client_portal.client_id' => $client->id]);
         $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
             'additional_starts_at' => ['2026-03-17T09:00:00+00:00'],
-            'idempotency_key' => 'f578ef96-74f4-4a1b-b73f-5e641b851a22',
+            'idempotency_key' => $idempotencyKey,
             'consents' => $this->acceptedConsents($organization),
         ]))->assertSessionHasNoErrors();
         $booking = Booking::query()->orderBy('starts_at')->firstOrFail();
