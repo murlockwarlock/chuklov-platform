@@ -702,7 +702,9 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
     await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
-    await page.getByText(fixture.serviceName, { exact: true }).click();
+    const serviceOption = page.getByRole('option', { name: fixture.serviceName, exact: true });
+    await expect(serviceOption).toBeVisible({ timeout: 15_000 });
+    await serviceOption.click();
     await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
     await page.getByText(fixture.specialistName, { exact: true }).click();
     const dateInput = page.getByLabel('Дата');
@@ -977,7 +979,7 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/);
 
-    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
     await expect(page.locator('.fi-in-text-item').filter({ hasText: newClientName }).first()).toBeVisible();
@@ -1037,9 +1039,11 @@ test('staff sees the Telegram limit and preview while writing to a client', asyn
     await login(page, fixture);
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Общение', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/companion$`));
-    await expect(page.getByRole('heading', { name: 'Общение с клиентом', exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Сообщения', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/messages[?]client=${fixture.clientId}$`));
+    await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Начать диалог как специалист', exact: true }).click();
+    await expect(page.locator('#messages-composer-form')).toBeVisible();
 
     const message = 'фывфывфывфыв';
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill(message);
@@ -1123,11 +1127,11 @@ test('staff can activate a partner, create a campaign link, and assign a referre
     await referrerSelect.click();
     await page.getByRole('textbox', { name: 'Search', exact: true }).last().fill(fixture.partnerName);
     await page.getByRole('option').filter({ hasText: fixture.partnerName }).last().click();
-    await assignmentDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await assignmentDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByText('Пригласивший указан', { exact: true })).toBeVisible();
 
     await page.goto('/admin/referral-relationships');
-    await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Приглашения клиентов', exact: true })).toBeVisible();
     await expect(page.getByText(fixture.partnerName, { exact: true })).toBeVisible();
     await expect(page.getByText(fixture.clientName, { exact: true })).toBeVisible();
 });
@@ -1161,7 +1165,7 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
         await page.keyboard.press('Escape');
 
         await page.goto('/admin/referral-relationships');
-        await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Приглашения клиентов', exact: true })).toBeVisible();
         await assertRenderedViewportGeometry(page, ['input[type="search"]']);
         if (width >= 1024) {
             await assertNoTableHorizontalOverflow(page);
@@ -1412,7 +1416,9 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(page.locator('iframe[title="ux-a-report.pdf"]')).toBeVisible();
     expect(previewResponse.headers()['content-type']).toContain('application/pdf');
     expect(previewResponse.headers()['content-disposition']).toContain('inline');
-    await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    const previewDialog = page.getByRole('dialog').filter({ has: page.locator('iframe[title="ux-a-report.pdf"]') });
+    await expect(previewDialog).toBeVisible();
+    await previewDialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
 
     const downloadAttachment = uploadedRow.getByRole('button', { name: 'Скачать', exact: true });
     await expect(downloadAttachment).toHaveCount(1);
