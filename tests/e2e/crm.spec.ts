@@ -1075,6 +1075,7 @@ test('staff can choose and send an attachment in CRM Messages', async ({ page })
     });
     await expect(page.locator('.messages-attachment-summary')).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.messages-attachment-summary')).toContainText('crm-message-attachment.pdf');
+    await expect(page.locator('#messages-composer-form .filepond--item[data-filepond-item-state="processing-complete"]')).toHaveCount(1, { timeout: 15_000 });
 
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill('Сообщение с вложением');
     await page.getByRole('button', { name: 'Отправить', exact: true }).click();
