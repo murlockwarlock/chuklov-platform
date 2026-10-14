@@ -121,6 +121,7 @@ final class NotificationTemplateUxTest extends TestCase
         self::assertCount(1, $preview);
         self::assertStringContainsString('/admin/notification-templates/media/', $preview[0]->url);
         self::assertStringNotContainsString('notification-template/'.$organization->getKey().'/', $preview[0]->url);
+        config()->set('tenancy.default_organization_id', $organization->getKey());
         $this->get($preview[0]->url)->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
         Livewire::test(EditNotificationTemplate::class, ['record' => $template->getKey()])
             ->fillForm(['delivery_mode' => NotificationMessageMode::Text->value])->call('save')->assertHasNoFormErrors();
