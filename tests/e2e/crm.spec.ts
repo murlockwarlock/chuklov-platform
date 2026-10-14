@@ -1419,7 +1419,10 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(previewDialog).toBeVisible();
     await previewDialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
 
-    const downloadAttachment = uploadedRow.getByRole('button', { name: 'Скачать', exact: true });
+    await uploadedRow.getByRole('button', { name: 'Действия', exact: true }).click();
+    const attachmentActionsMenu = page.locator('.fi-dropdown-panel:visible').last();
+    await expect(attachmentActionsMenu).toBeVisible();
+    const downloadAttachment = attachmentActionsMenu.getByRole('button', { name: 'Скачать', exact: true });
     await expect(downloadAttachment).toHaveCount(1);
     const [download, attachmentResponse] = await Promise.all([
         page.waitForEvent('download'),
