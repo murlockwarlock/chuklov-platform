@@ -25,3 +25,7 @@ c9a8c2aca995944925d9808dbdae054e87f7f812:app/Modules/Scenarios/Application/Ensur
 7a5db0cab8924342602c5f3c8e921daec2d3a524:tests/Feature/PortalBookingRemediationTest.php:generic-api-key:534
 ed0cc38e09534cc4eb25695bf857c2b3b6de90f8:tests/Feature/PortalBookingRemediationTest.php:generic-api-key:463
 ed0cc38e09534cc4eb25695bf857c2b3b6de90f8:tests/Feature/PortalBookingRemediationTest.php:generic-api-key:509
+# The same synthetic fixtures in the repository directory scan.
+/scan/tests/Feature/PortalBookingRemediationTest.php:generic-api-key:609
+/scan/tests/Feature/PortalBookingRemediationTest.php:generic-api-key:655
+/scan/tests/Feature/PortalBookingRemediationTest.php:generic-api-key:680
