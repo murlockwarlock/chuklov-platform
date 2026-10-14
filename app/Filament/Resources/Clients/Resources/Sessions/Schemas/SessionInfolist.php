@@ -4,11 +4,13 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
+use App\Filament\Resources\Clients\Schemas\ClinicalProfileInfolist;
 use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\CrmLabel;
 use App\Models\User;
 use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\MedicalProfileAuthorization;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Sessions\Application\GetSessionDynamics;
@@ -59,6 +61,16 @@ final class SessionInfolist
                                 return $parts ? implode(' · ', $parts) : __('Дата не указана');
                             }),
                     ])->columns(3),
+                Section::make(__('Карта здоровья клиента'))
+                    ->description(__('Актуальные данные медицинского профиля'))
+                    ->schema(ClinicalProfileInfolist::profile())->columns(2)
+                    ->visible(function (MedicalSession $record): bool {
+                        $actor = auth()->user();
+                        $client = $record->client;
+
+                        return $actor instanceof User && $client instanceof Client
+                            && app(MedicalProfileAuthorization::class)->allowsView($actor, $client);
+                    }),
                 Section::make(__('Клиническое резюме'))
                     ->schema([
                         ViewEntry::make('clinicalSummary')

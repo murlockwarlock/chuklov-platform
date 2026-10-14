@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Clients\Pages;
 use App\Filament\Pages\Messages;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
+use App\Filament\Resources\Clients\Schemas\MedicalProfileForm;
 use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResource;
 use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
@@ -19,7 +20,6 @@ use App\Modules\Identity\Application\UnblockClientSelfBooking;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
-use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Application\MedicalProfileSnapshotHasher;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
@@ -49,7 +49,6 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
-use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -133,18 +132,12 @@ class ViewClient extends LocalizedViewRecord
                         ->first();
 
                     return [
-                        'anamnesis' => $profile?->anamnesis,
-                        'complaints' => $profile?->complaints,
-                        'goals' => $profile?->goals,
-                        'operations' => $profile?->operations,
-                        'injuries' => $profile?->injuries,
-                        'chronic_conditions' => $profile?->chronicConditions,
-                        'medicines' => $profile?->medicines,
-                        'supplements' => $profile?->supplements,
+                        ...MedicalProfileForm::fill($profile),
                         'expected_snapshot' => app(MedicalProfileSnapshotHasher::class)->forProfile($profileRecord),
                     ];
                 })
-                ->schema(self::medicalProfileSchema())
+                ->schema(MedicalProfileForm::components())
+                ->authorize(fn (): bool => ClientResource::canEdit($this->clientRecord()))
                 ->visible(fn (): bool => ClientResource::canEdit($this->clientRecord()))
                 ->action(function (array $data): void {
                     $actor = auth()->user();
@@ -155,7 +148,7 @@ class ViewClient extends LocalizedViewRecord
                     app(UpdateMedicalProfile::class)->handle(
                         $actor,
                         $client,
-                        UpdateMedicalProfileCommand::fromArray($data),
+                        MedicalProfileForm::command($data),
                     );
                 }),
             $this->activatePartnerAction(),
@@ -815,46 +808,6 @@ class ViewClient extends LocalizedViewRecord
                 app(UnblockClientBlacklist::class)->handle($this->actor(), $this->clientRecord());
                 $this->clientRecord()->load('activeBlacklistRestriction');
             });
-    }
-
-    /** @return array<int, Hidden|Textarea> */
-    private static function medicalProfileSchema(): array
-    {
-        return [
-            Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
-            Textarea::make('anamnesis')
-                ->label(__('Анамнез'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('complaints')
-                ->label(__('Жалобы'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('goals')
-                ->label(__('Задачи по здоровью'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('chronic_conditions')
-                ->label(__('Хронические заболевания'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('operations')
-                ->label(__('Операции'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('injuries')
-                ->label(__('Травмы'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('medicines')
-                ->label(__('Лекарственные препараты'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('supplements')
-                ->label(__('Биологически активные добавки'))
-                ->rows(3)
-                ->maxLength(10000),
-        ];
     }
 
     private function clientRecord(): Client

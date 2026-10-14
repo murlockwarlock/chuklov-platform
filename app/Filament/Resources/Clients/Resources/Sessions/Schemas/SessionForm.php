@@ -6,6 +6,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
@@ -52,17 +53,22 @@ final class SessionForm
                     ])->columns(2)->columnSpanFull(),
                 Section::make(__('Клинические заметки (опционально)'))
                     ->schema([
+                        Checkbox::make('pain_not_measured')
+                            ->label(__('Боль не измерена'))
+                            ->default(true)
+                            ->live(),
                         Slider::make('pain_vas')
                             ->label(__('Шкала боли'))
                             ->range(minValue: 0, maxValue: 10)
                             ->step(1)
                             ->nullable()
                             ->default(null)
+                            ->disabled(fn (Get $get): bool => $get('pain_not_measured') === true)
                             ->live()
                             ->helperText(__('0 — нет боли · 10 — максимальная боль')),
                         Placeholder::make('pain_vas_current')
                             ->label(__('Текущее значение'))
-                            ->content(fn (Get $get): string => self::painVasDisplay($get('pain_vas')))
+                            ->content(fn (Get $get): string => $get('pain_not_measured') === true ? __('Не указана') : self::painVasDisplay($get('pain_vas')))
                             ->columnSpanFull(),
                         Textarea::make('pain')->label(__('Описание боли'))->rows(3)->placeholder(__('Что беспокоит клиента и где')),
                         Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),

@@ -287,6 +287,23 @@ final class ClientWorkspaceInfolist
                             ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'complaints'))
                             ->placeholder(__('Не указаны'))
                             ->wrap(),
+                        TextEntry::make('profile_symptoms')
+                            ->label(__('Главные жалобы (симптомы)'))
+                            ->state(function (Client $record): ?string {
+                                $symptoms = MedicalProfileForm::answers(self::medicalProfile($record))['symptoms'] ?? null;
+
+                                return is_array($symptoms) ? implode(', ', array_map(
+                                    static fn (string $key): string => __(MedicalProfileForm::SYMPTOMS[$key]),
+                                    array_values(array_filter($symptoms, static fn (mixed $key): bool => is_string($key) && isset(MedicalProfileForm::SYMPTOMS[$key]))),
+                                )) : null;
+                            })->placeholder(__('Не указаны'))->wrap(),
+                        TextEntry::make('profile_pain_vas')->label(__('Шкала боли (ВАШ)'))
+                            ->state(function (Client $record): ?string {
+                                $value = MedicalProfileForm::answers(self::medicalProfile($record))['pain_vas'] ?? null;
+
+                                return is_int($value) && $value >= 0 && $value <= 10 ? __(':value / 10', ['value' => $value]) : null;
+                            })->placeholder(__('Не указана')),
+                        ...ClinicalProfileInfolist::answers(),
                         TextEntry::make('goals')
                             ->label(__('Задачи по здоровью'))
                             ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'goals'))
@@ -383,6 +400,7 @@ final class ClientWorkspaceInfolist
             'goals' => $profile?->goals,
             'operations' => $profile?->operations,
             'injuries' => $profile?->injuries,
+            'chronicConditions' => $profile?->chronicConditions,
             'complaintsGoals' => $profile?->complaintsGoals,
             'operationsInjuries' => $profile?->operationsInjuries,
             'medicines' => $profile?->medicines,

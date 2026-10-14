@@ -56,6 +56,8 @@ final readonly class UpdateMedicalProfileCommand
             injuriesProvided: array_key_exists('injuries', $data),
             chronicConditions: is_string($data['chronic_conditions'] ?? null) ? trim($data['chronic_conditions']) : null,
             chronicConditionsProvided: array_key_exists('chronic_conditions', $data),
+            clinicalAnswers: is_string($data['clinical_answers'] ?? null) ? $data['clinical_answers'] : null,
+            clinicalAnswersProvided: array_key_exists('clinical_answers', $data),
         );
     }
 

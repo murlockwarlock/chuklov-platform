@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
@@ -15,9 +16,11 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Infrastructure\Logging\RedactSensitiveLogData;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
+use Livewire\Livewire;
 use Monolog\Level;
 use Monolog\LogRecord;
 use Tests\TestCase;
@@ -25,6 +28,50 @@ use Tests\TestCase;
 final class September26MedicalProfileTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_crm_medical_form_saves_reopens_and_projects_all_clinical_answers(): void
+    {
+        [$client, $staff] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $data = $this->answers('');
+        unset($data['expected_snapshot']);
+        $data['answers']['had_operations'] = true;
+        $data['answers']['operation_year'] = 2020;
+        $data['operations'] = 'Synthetic operation details';
+        $data['answers']['had_injuries'] = true;
+        $data['answers']['injury_year'] = 2021;
+        $data['injuries'] = 'Synthetic injury details';
+        $data['answers']['pain_vas'] = 10;
+        $data['pain_not_measured'] = false;
+
+        Livewire::actingAs($staff)->test(ViewClient::class, ['record' => $client->getKey()])
+            ->callAction('editMedicalProfile', $data)->assertHasNoActionErrors();
+
+        $profile = MedicalProfile::query()->where('client_id', $client->getKey())->sole();
+        self::assertNotNull($profile->completed_at);
+        self::assertNull($profile->client_confirmed_at);
+        self::assertStringNotContainsString('Synthetic chronic', $profile->getRawOriginal('chronic_conditions'));
+        self::assertStringNotContainsString('pain_vas', $profile->getRawOriginal('clinical_answers'));
+        app(GetMedicalProfile::class)->invalidate();
+
+        Livewire::actingAs($staff)->test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertSee('Synthetic chronic')->assertSee('Боль в шее')->assertSee('10 / 10')
+            ->mountAction('editMedicalProfile')
+            ->assertSchemaStateSet(['answers.pain_vas' => 10, 'answers.operation_year' => 2020, 'answers.injury_year' => 2021], 'mountedActionSchema0');
+
+        $this->get(route('portal.medical-profile'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('profile.answers.pain_vas', 10)->where('profile.answers.operation_year', 2020)
+            ->where('profile.answers.injury_year', 2021)->where('profile.fields.chronic_conditions', 'Synthetic chronic'));
+
+        foreach ([0, null] as $value) {
+            $data['answers']['pain_vas'] = $value;
+            $data['pain_not_measured'] = $value === null;
+            Livewire::actingAs($staff)->test(ViewClient::class, ['record' => $client->getKey()])
+                ->callAction('editMedicalProfile', $data)->assertHasNoActionErrors();
+            $this->get(route('portal.medical-profile'))->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('profile.answers.pain_vas', $value)->where('profile.answers.operation_year', 2020));
+        }
+    }
 
     public function test_client_medical_update_is_encrypted_visible_in_crm_and_preserved_after_staff_correction(): void
     {
@@ -155,9 +202,11 @@ final class September26MedicalProfileTest extends TestCase
         $record = $processor(new LogRecord(new \DateTimeImmutable, 'test', Level::Info, 'chronic_conditions: Synthetic sensitive message', [
             'chronic_conditions' => 'Synthetic chronic', 'clinical_answers' => 'Synthetic answer',
             'answers' => ['symptoms' => ['neck'], 'pain_vas' => 10], 'goals' => 'Synthetic goal',
+            'pain_not_measured' => true,
         ]));
         self::assertSame('[REDACTED]', $record->context['chronic_conditions']);
         self::assertSame('[REDACTED]', $record->context['clinical_answers']);
+        self::assertSame('[REDACTED]', $record->context['pain_not_measured']);
         self::assertSame('[REDACTED]', $record->context['goals']);
         self::assertSame('[REDACTED]', $record->context['answers']['symptoms']);
         self::assertSame('[REDACTED]', $record->context['answers']['pain_vas']);

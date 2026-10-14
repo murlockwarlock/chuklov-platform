@@ -13,6 +13,7 @@ use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Slider;
@@ -41,17 +42,22 @@ class EditMedicalSession extends LocalizedEditRecord
                 Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
                 Section::make(__('Клинические заметки'))
                     ->schema([
+                        Checkbox::make('pain_not_measured')
+                            ->label(__('Боль не измерена'))
+                            ->default(true)
+                            ->live(),
                         Slider::make('pain_vas')
                             ->label(__('Шкала боли'))
                             ->range(minValue: 0, maxValue: 10)
                             ->step(1)
                             ->nullable()
                             ->default(null)
+                            ->disabled(fn (Get $get): bool => $get('pain_not_measured') === true)
                             ->live()
                             ->helperText(__('0 — нет боли · 10 — максимальная боль')),
                         Placeholder::make('pain_vas_current')
                             ->label(__('Текущее значение'))
-                            ->content(fn (Get $get): string => self::painVasDisplay($get('pain_vas')))
+                            ->content(fn (Get $get): string => $get('pain_not_measured') === true ? __('Не указана') : self::painVasDisplay($get('pain_vas')))
                             ->columnSpanFull(),
                         Textarea::make('pain')->label(__('Описание боли'))->rows(3)->placeholder(__('Что беспокоит клиента и где')),
                         Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
@@ -94,6 +100,7 @@ class EditMedicalSession extends LocalizedEditRecord
         return [
             'pain' => $decrypted->pain,
             'pain_vas' => $decrypted->painVas,
+            'pain_not_measured' => $decrypted->painVas === null,
             'tests' => $decrypted->tests,
             'observations' => $decrypted->observations,
             'root_cause_hypothesis' => $decrypted->rootCauseHypothesis,
@@ -172,6 +179,9 @@ class EditMedicalSession extends LocalizedEditRecord
      */
     private static function normalizeClinical(array $data): array
     {
+        if (($data['pain_not_measured'] ?? false) === true) {
+            $data['pain_vas'] = null;
+        }
         $fields = [
             'pain',
             'pain_vas',
