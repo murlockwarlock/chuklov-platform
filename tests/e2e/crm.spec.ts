@@ -726,7 +726,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(availableTime).toBeVisible({ timeout: 15_000 });
     await availableTime.click();
     await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
-    const createButton = page.getByRole('button', { name: 'Создать', exact: true });
+    const createButton = page.getByRole('button', { name: 'Сохранить', exact: true });
     await expect(createButton).toBeEnabled({ timeout: 15_000 });
     await createButton.click();
 
@@ -1037,13 +1037,10 @@ test('staff sees the Telegram limit and preview while writing to a client', asyn
     const fixture = createCrmFixture();
 
     await login(page, fixture);
-    await page.goto(`/admin/clients/${fixture.clientId}`);
-    await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
-    await page.locator('#fi-main-content').getByRole('link', { name: 'Сообщения', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/messages[?]client=${fixture.clientId}$`));
-    await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
+    await page.goto(`/admin/clients/${fixture.clientId}/companion`);
+    await expect(page.getByRole('heading', { name: 'Общение с клиентом', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Начать диалог как специалист', exact: true }).click();
-    await expect(page.locator('#messages-composer-form')).toBeVisible();
+    await expect(page.locator('#companion-composer-form')).toBeVisible();
 
     const message = 'фывфывфывфыв';
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill(message);
@@ -1065,6 +1062,7 @@ test('staff can choose and send an attachment in CRM Messages', async ({ page })
     await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Начать диалог как специалист', exact: true }).click();
     await expect(page.locator('#messages-composer-form')).toBeVisible();
+    await expect(page.locator('#messages-composer-form .filepond--browser')).toBeAttached({ timeout: 15_000 });
 
     const [fileChooser] = await Promise.all([
         page.waitForEvent('filechooser'),
@@ -1075,6 +1073,7 @@ test('staff can choose and send an attachment in CRM Messages', async ({ page })
         mimeType: 'application/pdf',
         buffer: validPdfBuffer(),
     });
+    await expect(page.locator('.messages-attachment-summary')).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.messages-attachment-summary')).toContainText('crm-message-attachment.pdf');
 
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill('Сообщение с вложением');
@@ -1416,7 +1415,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(page.locator('iframe[title="ux-a-report.pdf"]')).toBeVisible();
     expect(previewResponse.headers()['content-type']).toContain('application/pdf');
     expect(previewResponse.headers()['content-disposition']).toContain('inline');
-    const previewDialog = page.locator('[role="dialog"]:visible').filter({ has: page.locator('iframe[title="ux-a-report.pdf"]') });
+    const previewDialog = page.locator('.fi-modal-window:visible').filter({ has: page.locator('iframe[title="ux-a-report.pdf"]') });
     await expect(previewDialog).toBeVisible();
     await previewDialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
 
