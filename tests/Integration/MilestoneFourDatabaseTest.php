@@ -2,6 +2,7 @@
 
 namespace Tests\Integration;
 
+use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -290,6 +291,25 @@ class MilestoneFourDatabaseTest extends TestCase
             'ends_at' => CarbonImmutable::create(2026, 4, 6, 10, 30, 0, 'UTC'),
         ]);
         unset($period);
+    }
+
+    public function test_postgresql_unified_schedule_changes_union_aligns_active_column_types(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('Unified schedule changes union requires PostgreSQL type checks.');
+        }
+
+        $organization = Organization::factory()->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        ScheduleException::factory()->forSpecialist($specialist)->create();
+        UnavailablePeriod::factory()->forSpecialist($specialist)->create();
+        app(OrganizationContext::class)->set($organization);
+
+        $rows = ScheduleExceptionResource::getEloquentQuery()->get();
+
+        self::assertCount(2, $rows);
+        self::assertSame(['exception', 'unavailable'], $rows->pluck('change_kind')->sort()->values()->all());
+        self::assertSame([true, true], $rows->pluck('is_active')->map(static fn (mixed $value): bool => (bool) $value)->sort()->values()->all());
     }
 
     public function test_booking_event_history_is_immutable(): void

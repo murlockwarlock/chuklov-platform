@@ -71,7 +71,7 @@ class ScheduleExceptionResource extends LocalizedResource
                 'ends_at',
                 'reason',
                 DB::raw("'unavailable' as change_kind"),
-                DB::raw('1 as is_active'),
+                DB::raw('TRUE as is_active'),
             ]);
 
         return ScheduleException::query()
