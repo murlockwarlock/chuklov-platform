@@ -150,7 +150,7 @@ jobs:
         run: npm run lint
       - name: Run PHP static checks
         if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
-        run: composer static -- --error-format=json
+        run: composer static -- --error-format=raw
       - name: Run frontend type checks
         if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
         run: npm run typecheck
