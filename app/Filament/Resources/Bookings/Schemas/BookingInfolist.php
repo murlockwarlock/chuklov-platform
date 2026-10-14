@@ -9,6 +9,7 @@ use App\Filament\Support\FinancePresentation;
 use App\Models\User;
 use App\Modules\Finance\Application\BookingFinanceSummary;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
@@ -38,8 +39,8 @@ class BookingInfolist
                             ->wrap(),
                         TextEntry::make('patientProfile.clinicalClient.full_name')
                             ->label(__('Пациент'))
-                            ->state(fn (Booking $record): ?string => $record->patientProfile?->clinicalClient?->full_name ?? $record->client?->full_name)
-                            ->url(fn (Booking $record): ?string => CrmEntityLinks::clientUrl($record->patientProfile?->clinicalClient ?? $record->client))
+                            ->state(fn (Booking $record): ?string => self::patientClient($record)->full_name)
+                            ->url(fn (Booking $record): ?string => CrmEntityLinks::clientUrl(self::patientClient($record)))
                             ->wrap(),
                         TextEntry::make('specialist.display_name')
                             ->label(__('Специалист'))
@@ -253,6 +254,18 @@ class BookingInfolist
         return CarbonImmutable::parse($value, 'UTC')
             ->setTimezone(self::viewerTimezone())
             ->format('d.m.Y H:i');
+    }
+
+    private static function patientClient(Booking $booking): Client
+    {
+        if ($booking->patient_profile_id !== null) {
+            $profile = $booking->patientProfile;
+            if ($profile instanceof PatientProfile && $profile->clinicalClient instanceof Client) {
+                return $profile->clinicalClient;
+            }
+        }
+
+        return $booking->client;
     }
 
     private static function eventLabel(BookingEvent $event): string

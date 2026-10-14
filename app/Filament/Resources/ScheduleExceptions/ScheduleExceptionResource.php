@@ -35,6 +35,7 @@ class ScheduleExceptionResource extends LocalizedResource
 
     protected static ?string $breadcrumb = 'Изменения расписания';
 
+    /** @return Builder<ScheduleException> */
     public static function getEloquentQuery(): Builder
     {
         $organizationId = app(OrganizationContext::class)->id();

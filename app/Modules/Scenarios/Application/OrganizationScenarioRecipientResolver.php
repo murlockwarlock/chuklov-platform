@@ -47,9 +47,9 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
                 return [];
             }
 
-            return app(BookingPatientAccounts::class)->handle($booking)->map(fn (Client $account): ScenarioRecipient => new ScenarioRecipient(
+            return array_values(app(BookingPatientAccounts::class)->handle($booking)->map(fn (Client $account): ScenarioRecipient => new ScenarioRecipient(
                 type: 'client', clientId: (int) $account->getKey(), userId: null, locale: $this->locale($account->language),
-            ))->values()->all();
+            ))->values()->all());
         }
         $clientId = (int) ($event->payload['client_id'] ?? 0);
         $client = Client::query()
@@ -69,9 +69,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
         )];
     }
 
-    /** @param list<int> $userIds
-     * @return list<ScenarioRecipient>
-     */
+    /** @return list<ScenarioRecipient> */
     private function memberRecipients(ScenarioEvent $event, ScenarioRecipientStrategy $strategy): array
     {
         return array_values($this->memberships($event, $this->memberIds($strategy))

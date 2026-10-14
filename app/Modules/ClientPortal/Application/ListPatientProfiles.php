@@ -46,7 +46,9 @@ final readonly class ListPatientProfiles
             $profiles->push($this->query($account)->whereKey($selectedId)->firstOrFail());
         }
 
-        return ['items' => $profiles->map(fn (PatientProfile $patient): array => $this->projection->handle($patient, $account))->values()->all(), 'hasMore' => $hasMore, 'enabled' => true];
+        $items = $profiles->map(fn (PatientProfile $patient): array => $this->projection->handle($patient, $account))->values()->all();
+
+        return ['items' => array_values($items), 'hasMore' => $hasMore, 'enabled' => true];
     }
 
     /** @return Builder<PatientProfile> */

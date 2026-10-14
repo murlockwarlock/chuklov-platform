@@ -8,6 +8,7 @@ use App\Modules\Identity\Domain\Models\PatientInvitation;
 use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\ValidationException;
@@ -28,7 +29,7 @@ final readonly class IssuePatientInvitation
             $existing = PatientInvitation::query()->where('organization_id', $this->context->id())
                 ->where('owner_client_id', $patient->owner_client_id)->where('request_key', $requestKey)->first();
             if ($existing !== null) {
-                if ((int) $existing->patient_profile_id !== (int) $patient->getKey() || $existing->revoked_at !== null || $existing->expires_at->isPast()) {
+                if ((int) $existing->patient_profile_id !== (int) $patient->getKey() || $existing->revoked_at !== null || CarbonImmutable::parse((string) $existing->expires_at)->isPast()) {
                     throw ValidationException::withMessages(['invitation' => __('Создайте новое приглашение.')]);
                 }
 

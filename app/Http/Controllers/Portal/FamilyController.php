@@ -11,6 +11,7 @@ use App\Modules\Identity\Application\IssuePatientInvitation;
 use App\Modules\Identity\Application\RevokePatientRelationship;
 use App\Modules\Identity\Application\UpdatePatientProfile;
 use App\Modules\Identity\Domain\Models\PatientProfile;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -53,7 +54,7 @@ final class FamilyController extends Controller
         abort_unless(is_string($username) && preg_match('/^[A-Za-z0-9_]{5,32}$/D', $username) === 1, 503);
 
         return response()->json(['url' => 'https://t.me/'.$username.'?start=family_'.$invitation->encrypted_token,
-            'expiresAt' => $invitation->expires_at->toIso8601String()])->header('Cache-Control', 'private, no-store');
+            'expiresAt' => CarbonImmutable::parse((string) $invitation->expires_at)->toIso8601String()])->header('Cache-Control', 'private, no-store');
     }
 
     public function revoke(int $patientId, ClientPortalContext $context, RevokePatientRelationship $revoke): RedirectResponse

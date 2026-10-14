@@ -241,11 +241,17 @@ final class ScenarioContextFactory
         }
 
         if ($context->booking !== null) {
-            $bookingDateTime = $recipient->type === 'internal'
-                ? $this->bookingDateTime->forSpecialist($context->booking)
-                : ((int) $context->client?->getKey() === (int) $context->booking->client_id
+            if ($recipient->type === 'internal') {
+                $bookingDateTime = $this->bookingDateTime->forSpecialist($context->booking);
+            } else {
+                $client = $context->client;
+                if (! $client instanceof Client) {
+                    throw (new ModelNotFoundException)->setModel(Client::class);
+                }
+                $bookingDateTime = (int) $client->getKey() === (int) $context->booking->client_id
                     ? $this->bookingDateTime->forClient($context->booking)
-                    : $this->bookingDateTime->format($context->booking, (string) $context->client->timezone));
+                    : $this->bookingDateTime->format($context->booking, (string) $client->timezone);
+            }
             $locationSnapshot = $context->booking->locationSnapshot();
             $renderContext['booking'] = [
                 'id' => (int) $context->booking->getKey(),

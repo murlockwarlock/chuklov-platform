@@ -6,6 +6,9 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property CarbonImmutable|null $birth_date
+ */
 class PatientProfile extends Model
 {
     protected $hidden = ['creation_key', 'creation_hash'];

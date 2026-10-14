@@ -8,6 +8,7 @@ use App\Modules\Identity\Application\AcceptPatientInvitation;
 use App\Modules\Identity\Application\PatientProfileProjection;
 use App\Modules\Identity\Domain\Models\PatientInvitation;
 use App\Modules\Identity\Domain\Models\PatientProfile;
+use Carbon\CarbonImmutable;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
@@ -21,7 +22,7 @@ final class PatientInvitationController extends Controller
         abort_unless(is_int($id), 404);
         $invitation = PatientInvitation::query()->where('organization_id', $context->client()->organization_id)->whereKey($id)
             ->where('intended_client_id', $context->client()->getKey())->whereNull('revoked_at')->firstOrFail();
-        abort_if($invitation->accepted_at === null && $invitation->expires_at->isPast(), 410);
+        abort_if($invitation->accepted_at === null && CarbonImmutable::parse((string) $invitation->expires_at)->isPast(), 410);
         $patient = PatientProfile::query()->where('organization_id', $context->client()->organization_id)->whereKey($invitation->patient_profile_id)->with('clinicalClient')->firstOrFail();
         Inertia::encryptHistory();
 

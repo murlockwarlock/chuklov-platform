@@ -21,7 +21,7 @@ final class PatientProfileProjection
         };
 
         return [
-            'id' => (int) $patient->getKey(), 'name' => $patient->clinicalClient->full_name ?: __('Пациент'),
+            'id' => (int) $patient->getKey(), 'name' => $patient->clinicalClient?->full_name ?: __('Пациент'),
             'relationship' => $patient->relationship, 'relationshipLabel' => $relationship,
             'age' => $patient->birth_date?->age, 'birthDate' => $patient->birth_date?->toDateString(),
             'linked' => $patient->linked_account_client_id !== null, 'revoked' => $patient->owner_revoked_at !== null,

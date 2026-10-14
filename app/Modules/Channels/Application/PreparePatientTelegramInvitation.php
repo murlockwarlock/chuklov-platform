@@ -7,6 +7,7 @@ use App\Modules\Identity\Application\BindPatientInvitationToAccount;
 use App\Modules\Identity\Application\VerifiedChannelIdentity;
 use App\Modules\Identity\Domain\Models\PatientInvitation;
 use App\Modules\Organizations\Application\OrganizationContext;
+use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 
 final readonly class PreparePatientTelegramInvitation
@@ -20,7 +21,7 @@ final readonly class PreparePatientTelegramInvitation
             throw new AuthorizationException;
         }
         $invitation = PatientInvitation::query()->where('organization_id', $this->context->id())->where('token_hash', hash('sha256', $token))->whereNull('revoked_at')->first();
-        if ($invitation === null || $invitation->expires_at->isPast()) {
+        if ($invitation === null || CarbonImmutable::parse((string) $invitation->expires_at)->isPast()) {
             throw new AuthorizationException;
         }
         $account = $this->authenticate->handle($identity);

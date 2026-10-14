@@ -45,7 +45,7 @@ final readonly class ListPatientProfilesForCrm
             ->when(trim($search) !== '', fn (Builder $query) => $query->whereHas('clinicalClient', fn (Builder $clients) => $clients
                 ->where('organization_id', $this->context->id())->where('full_name', 'like', '%'.trim($search).'%')))
             ->orderBy('id')->limit(50)->get()->mapWithKeys(fn (PatientProfile $patient): array => [
-                $patient->getKey() => (string) $patient->clinicalClient->full_name,
+                $patient->getKey() => (string) ($patient->clinicalClient instanceof Client ? $patient->clinicalClient->full_name : '#'.$patient->getKey()),
             ])->all();
     }
 
@@ -54,6 +54,6 @@ final readonly class ListPatientProfilesForCrm
         $owner = Client::query()->where('organization_id', $this->context->id())->whereKey($ownerId)->firstOrFail();
         $patient = $this->query($actor, $owner)->whereKey($patientId)->whereNull('owner_revoked_at')->first();
 
-        return $patient === null ? null : (string) $patient->clinicalClient->full_name;
+        return $patient === null ? null : (string) ($patient->clinicalClient instanceof Client ? $patient->clinicalClient->full_name : '#'.$patient->getKey());
     }
 }

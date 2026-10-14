@@ -325,9 +325,9 @@ final class AppointmentReminderScheduler
     private function recipients(Booking $booking, string $recipientType): array
     {
         if ($recipientType === 'client') {
-            return app(BookingPatientAccounts::class)->handle($booking)
+            return array_values(app(BookingPatientAccounts::class)->handle($booking)
                 ->map(fn (Client $account): ScenarioRecipient => new ScenarioRecipient(type: 'client', clientId: (int) $account->getKey(),
-                    userId: null, locale: $this->locale((string) $account->language)))->values()->all();
+                    userId: null, locale: $this->locale((string) $account->language)))->values()->all());
         }
         $recipient = $this->recipient($booking, $recipientType);
 

@@ -126,7 +126,11 @@ class Booking extends Model
 
     public function clinicalClientId(): int
     {
-        return $this->patient_profile_id === null ? (int) $this->client_id : (int) $this->patientProfile->clinical_client_id;
+        $patient = $this->patientProfile;
+
+        return $this->patient_profile_id === null || ! $patient instanceof PatientProfile
+            ? (int) $this->client_id
+            : (int) $patient->clinical_client_id;
     }
 
     /** @return BelongsTo<Specialist, $this> */

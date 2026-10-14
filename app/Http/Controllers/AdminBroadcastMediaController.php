@@ -39,8 +39,8 @@ final class AdminBroadcastMediaController extends Controller
         abort_unless(is_int($size) && $size > 0, 404);
         $range = $this->range($request->header('Range'), $size);
         $status = $range === null ? 200 : 206;
-        $start = $range['start'] ?? 0;
-        $end = $range['end'] ?? ($size - 1);
+        $start = $range === null ? 0 : $range['start'];
+        $end = $range === null ? $size - 1 : $range['end'];
         $length = $end - $start + 1;
         if (fseek($stream, $start) !== 0) {
             fclose($stream);
@@ -106,7 +106,7 @@ final class AdminBroadcastMediaController extends Controller
             abort(416, 'Неверный диапазон медиа.');
         }
         if ($start === null) {
-            $length = min($end ?? 0, $size);
+            $length = min($end, $size);
             $start = $size - $length;
             $end = $size - 1;
         } else {

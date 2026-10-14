@@ -400,6 +400,7 @@ final readonly class BroadcastCampaignInput
         ];
     }
 
+    /** @param array<string, mixed>|null $media */
     private function isTemplateMedia(?array $media): bool
     {
         $existing = $media['existing'] ?? null;

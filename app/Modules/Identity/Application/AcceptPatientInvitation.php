@@ -8,6 +8,7 @@ use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -45,10 +46,11 @@ final readonly class AcceptPatientInvitation
 
                 return $patient;
             }
-            if ($invitation->expires_at->isPast()) {
+            if (CarbonImmutable::parse((string) $invitation->expires_at)->isPast()) {
                 throw ValidationException::withMessages(['invitation' => __('Приглашение устарело. Попросите прислать новое.')]);
             }
-            if ($actor->birth_date === null || $actor->birth_date->toDateString() !== $patient->birth_date->toDateString()
+            if ($actor->birth_date === null || $patient->birth_date === null
+                || $actor->birth_date->toDateString() !== $patient->birth_date->toDateString()
                 || mb_strtolower(trim((string) $actor->first_name)) !== mb_strtolower(trim((string) $patient->first_name))
                 || mb_strtolower(trim((string) $actor->last_name)) !== mb_strtolower(trim((string) $patient->last_name))) {
                 throw ValidationException::withMessages(['invitation' => __('Личные данные не совпадают с приглашением. Проверьте свой профиль и данные пациента.')]);

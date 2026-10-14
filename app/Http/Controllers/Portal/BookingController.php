@@ -17,6 +17,7 @@ use App\Modules\ClientPortal\Application\PortalBookingErrorMessages;
 use App\Modules\ClientPortal\Application\ProjectPortalService;
 use App\Modules\Identity\Application\ListPublishedLegalDocuments;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -311,7 +312,8 @@ class BookingController extends Controller
             'patientName' => $booking->patientProfile?->clinicalClient?->full_name,
             'requiresPatientMedicalProfile' => $booking->service->requires_medical_profile && $booking->clinicalClientId() !== (int) $booking->client_id,
             'medicalProfileUrl' => $booking->service->requires_medical_profile
-                && ($booking->patient_profile_id === null || (int) $booking->patientProfile->linked_account_client_id === (int) $booking->client_id)
+                && ($booking->patient_profile_id === null || ($booking->patientProfile instanceof PatientProfile
+                    && (int) $booking->patientProfile->linked_account_client_id === (int) $booking->client_id))
                 ? route('portal.medical-profile', [
                     'booking_id' => $booking->getKey(), 'edit' => 1,
                     'patient_profile_id' => $booking->patient_profile_id,

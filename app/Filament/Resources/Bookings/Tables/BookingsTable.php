@@ -11,6 +11,7 @@ use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\CrmLabel;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\BookingNeedsAttention;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
@@ -46,7 +47,16 @@ class BookingsTable
                 ->toggleable(),
             TextColumn::make('service.name')->label(__('Услуга'))->sortable()->wrap(),
             TextColumn::make('patientProfile.clinicalClient.full_name')->label(__('Пациент'))->wrap()
-                ->state(fn (Booking $record): ?string => $record->patientProfile?->clinicalClient?->full_name ?? $record->client?->full_name),
+                ->state(function (Booking $record): ?string {
+                    if ($record->patient_profile_id !== null) {
+                        $profile = $record->patientProfile;
+                        if ($profile instanceof PatientProfile && $profile->clinicalClient instanceof Client) {
+                            return $profile->clinicalClient->full_name;
+                        }
+                    }
+
+                    return $record->client->full_name;
+                }),
             TextColumn::make('starts_at')
                 ->label(fn (): string => __('Дата и время (').self::viewerTimezone().')')
                 ->dateTime('d.m.Y H:i')
