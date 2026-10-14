@@ -76,7 +76,7 @@ Original excerpt: «Функционал: Бот ежедневно/еженед
 
 Before 26.09: chronology NOT ESTABLISHED; starting-main implementation is recorded in the acceptance matrix.
 After 26.09: task branch adds paid Focus/inline task entry and reviewed Road Map on Home. Follow-up handles paid empty days/monthly practice and paid renewal of previously manual access using existing Tracker commands. The latter is a concrete BUG_FIX subitem, not a second paid-access engine.
-PR/commit/evidence: [Draft PR #60](https://github.com/murlockwarlock/chuklov-platform/pull/60), focused Tracker/fulfillment 21 tests / 215 assertions PASS locally; browser and exact-SHA staging NOT RUN for this follow-up.
+PR/commit/evidence: [Draft PR #60](https://github.com/murlockwarlock/chuklov-platform/pull/60), Focus fixes `c1cede8`; [targeted browser check on ec32044](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38427783078) and [focused PostgreSQL check](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38426895784) exercise this subset. Overall CI FAIL (Pint/PHPStan); exact-SHA staging NOT RUN.
 Limitations: authored nine-systems screening source absent; complete three-state lifecycle is not verified. No claim that the original clause specifies these three Home states or their exact copy.
 Confidence: MEDIUM — source clause exists; detailed subcriteria may have different classification.
 
@@ -103,8 +103,8 @@ Original v2.2 source: §4.2.
 Original excerpt: «Экран 1: Контакты и Источник (Имя, Фамилия, TG Ник, Телефон, Страна, Город, Дата рождения + Поле источника, если нет Deep Link).».
 
 Before 26.09: chronology NOT ESTABLISHED; starting-main implementation is recorded in the acceptance matrix.
-After 26.09: task branch changes/evidence pending; do not infer code delivery from a requirement or proof declaration.
-PR/commit/evidence: starting SHA above, task PR pending, exact-SHA staging NOT RUN.
+After 26.09: cd244fc adds booking personal-data collection, atomic identity/booking updates, country-scoped city autocomplete with manual entry and validated phone formatting/normalization. 2828d518 adds personal-data intent fencing for single/multiple booking replay. Separate identity/contact fields remain on the existing Client authority; legacy full_name is preserved.
+PR/commit/evidence: Draft PR #60; cd244fc hosted PostgreSQL feature checks in run 38560649806 PASS; replay-focused SQLite two cases / 14 assertions PASS. Follow-up hosted run 38561568097 pending; current exact-SHA staging NOT RUN. These implementation facts do not establish pre-26.09 chronology or full CR-07 acceptance.
 Limitations: see individual source criteria; family legal authority/media/methodology/provider evidence remain unresolved where applicable.
 Confidence: MEDIUM — source clause exists; detailed subcriteria may have different classification.
 
@@ -131,8 +131,8 @@ Original v2.2 source: §4.3.
 Original excerpt: «Вкладка «Анамнез»: История хронических состояний, детали прошлых операций и травм, а также список принимаемых лекарств и БАДов.».
 
 Before 26.09: chronology NOT ESTABLISHED; starting-main implementation is recorded in the acceptance matrix.
-After 26.09: task branch changes/evidence pending; do not infer code delivery from a requirement or proof declaration.
-PR/commit/evidence: starting SHA above, task PR pending, exact-SHA staging NOT RUN.
+After 26.09: 331d58c adds structured CRM symptoms/VAS/year fields and Client/Session projections over the existing encrypted MedicalProfile. It fixes previously missing chronic-condition projection and clinical-answer command mapping; session form null/zero distinction is also a regression fix. This requirement has both expansion and bug-fix slices, not a single commercial conclusion.
+PR/commit/evidence: Draft PR #60; local native Livewire save/reopen/correction and encryption assertions PASS; cd244fc hosted PostgreSQL feature checks run 38560649806 PASS. All-role exact-SHA staging/browser acceptance remains NOT VERIFIED.
 Limitations: see individual source criteria; family legal authority/media/methodology/provider evidence remain unresolved where applicable.
 Confidence: MEDIUM — source clause exists; detailed subcriteria may have different classification.
 
@@ -187,8 +187,8 @@ Original v2.2 source: exact clause not established.
 No original clause is inferred from a generic module name or document date.
 
 Before 26.09: chronology NOT ESTABLISHED; starting-main implementation is recorded in the acceptance matrix.
-After 26.09: task branch changes/evidence pending; do not infer code delivery from a requirement or proof declaration.
-PR/commit/evidence: starting SHA above, task PR pending, exact-SHA staging NOT RUN.
+After 26.09: candidate extends existing Scenarios/appointment reminders with immediate and pre-visit health-profile prompts, live completion suppression, immutable medical-template snapshots and CRM controls. Completion metadata is distinct from client attestation. Owner subsequently approved status-accurate copy rather than claiming a pending booking is confirmed. Settings rebuild and late-reminder regressions were found during implementation and corrected; these fixes are not inferred to have been in the original source.
+PR/commit/evidence: Draft PR #60; implementation commits 22a15d8/ff1a450/0c91645/8443e9c; focused regression coverage in AppointmentReminderTest, BookingMedicalProfileConditionTest, September26MedicalProfileTest and TelegramMiniAppLaunchTest. On exact 8443e9c, hosted PostgreSQL focused tests PASS (71/581), hosted concurrency PASS (106/642), staging deploy/default smoke PASS. Native QA booking 116 create/reload/cancel/reload and slot restoration were exercised; immediate medical Telegram attempt and cancellation notifications reached Delivered, while both future medical reminders were suppressed after cancellation. Full Quality FAIL; real client CTA/completion/due-time delivery and manual CRM complete entry remain NOT VERIFIED. Details and local evidence reference are in the acceptance matrix; this evidence does not establish original-scope chronology.
 Limitations: see individual source criteria; family legal authority/media/methodology/provider evidence remain unresolved where applicable.
 Confidence: LOW — precise original clause/chronology needs review.
 
@@ -271,8 +271,8 @@ Original v2.2 source: §2.3.
 Original excerpt: «Начисление бонусов: Автоматический учёт переходов и регистраций. Накопленный баланс бонусов отображается в Личном Кабинете клиента.».
 
 Before 26.09: chronology NOT ESTABLISHED; starting-main implementation is recorded in the acceptance matrix.
-After 26.09: task branch changes/evidence pending; do not infer code delivery from a requirement or proof declaration.
-PR/commit/evidence: starting SHA above, task PR pending, exact-SHA staging NOT RUN.
+After 26.09: cd244fc adds client display-currency preference and header conversion through existing Finance FX. ServiceCredit organization-base accounting and historical ledger evidence are unchanged. Current-balance presentation on other client surfaces and real spending/correction lifecycle remain pending.
+PR/commit/evidence: Draft PR #60; three focused SQLite cases / 29 assertions PASS, and hosted PostgreSQL feature checks run 38560649806 PASS. Exact-SHA client/CRM/staging lifecycle NOT VERIFIED; no price or payment conclusion is made.
 Limitations: see individual source criteria; family legal authority/media/methodology/provider evidence remain unresolved where applicable.
 Confidence: MEDIUM — source clause exists; detailed subcriteria may have different classification.
 
@@ -383,8 +383,8 @@ Original v2.2 source: exact clause not established.
 No original clause is inferred from a generic module name or document date.
 
 Before 26.09: chronology NOT ESTABLISHED; starting-main implementation is recorded in the acceptance matrix.
-After 26.09: task branch changes/evidence pending; do not infer code delivery from a requirement or proof declaration.
-PR/commit/evidence: starting SHA above, task PR pending, exact-SHA staging NOT RUN.
+After 26.09: d456006 adds all-specialist Journal default/multiselect, unavailable-time type navigation under schedule changes and specialist-bound travel rules, preserving legacy unassigned rules. The pre-existing schedule authorities and UTC occupancy are retained; complete literal reconciliation and browser lifecycle remain pending.
+PR/commit/evidence: Draft PR #60; local Journal/location regression checks PASS; cd244fc hosted PostgreSQL feature checks run 38560649806 PASS. New composite-FK integration coverage EXISTS — NOT RUN LOCALLY. Exact-SHA staging NOT RUN for this batch.
 Limitations: see individual source criteria; family legal authority/media/methodology/provider evidence remain unresolved where applicable.
 Confidence: LOW — precise original clause/chronology needs review.
 
