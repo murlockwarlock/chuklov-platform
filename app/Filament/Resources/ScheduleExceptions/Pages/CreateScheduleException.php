@@ -10,10 +10,10 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\CreateScheduleException as CreateScheduleExceptionAction;
 use App\Modules\Scheduling\Application\CreateUnavailablePeriod as CreateUnavailablePeriodAction;
 use App\Modules\Specialists\Domain\Models\Specialist;
-use Illuminate\Database\Eloquent\Model;
-use Illuminate\Validation\ValidationException;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 
 class CreateScheduleException extends LocalizedCreateRecord
 {

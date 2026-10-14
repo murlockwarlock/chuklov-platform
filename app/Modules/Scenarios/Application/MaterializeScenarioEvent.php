@@ -250,8 +250,7 @@ final class MaterializeScenarioEvent
         ScenarioRule $rule,
         ?ScenarioRule $medicalRule,
         ?ScenarioRecipient $onlyRecipient = null,
-    ): void
-    {
+    ): void {
         $template = $rule->templateVersion;
 
         if ($template === null

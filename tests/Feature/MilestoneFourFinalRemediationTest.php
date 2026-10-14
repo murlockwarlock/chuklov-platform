@@ -4,8 +4,9 @@ namespace Tests\Feature;
 
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Pages\WorkingIntervals;
-use App\Filament\Resources\ScheduleExceptions\Pages\ListScheduleExceptions;
 use App\Filament\Resources\ScheduleExceptions\Pages\CreateScheduleException as CreateScheduleExceptionPage;
+use App\Filament\Resources\ScheduleExceptions\Pages\ListScheduleExceptions;
+use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
 use App\Filament\Resources\Services\Pages\EditService;
 use App\Filament\Resources\Specialists\Pages\ListSpecialists;
 use App\Filament\Support\ScheduleImpactPreview;
@@ -19,7 +20,6 @@ use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Application\CreateScheduleException;
-use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Scheduling\Application\ScheduleMutationImpactCalculator;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -27,6 +27,7 @@ use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
+use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Scheduling\Domain\ValueObjects\SpecialistScheduleDefinition;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -443,7 +444,7 @@ class MilestoneFourFinalRemediationTest extends TestCase
 
         $period = UnavailablePeriod::query()->where('organization_id', $organization->getKey())->sole();
         self::assertSame($specialist->getKey(), $period->specialist_id);
-        $rows = \App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource::getEloquentQuery()->get();
+        $rows = ScheduleExceptionResource::getEloquentQuery()->get();
         $row = $rows->first(fn ($record): bool => $record->getAttribute('change_kind') === 'unavailable');
         self::assertNotNull($row);
         self::assertSame($period->getKey(), (int) $row->getAttribute('source_id'));

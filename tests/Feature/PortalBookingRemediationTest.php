@@ -11,6 +11,7 @@ use App\Modules\Identity\Application\RevokePatientRelationship;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\LegalDocument;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
@@ -74,7 +75,7 @@ class PortalBookingRemediationTest extends TestCase
         [$organization, $client, $specialist, $service] = $this->portalFixture();
         $service->forceFill(['requires_medical_profile' => false])->save();
         $organization->featureFlags()->where('feature_key', OrganizationFeature::ClientRecords->value)->update(['enabled' => false]);
-        \App\Modules\Organizations\Application\OrganizationFeatureGate::invalidate();
+        OrganizationFeatureGate::invalidate();
         $this->withSession(['client_portal.client_id' => $client->getKey()]);
         $this->get(route('portal.bookings.create'))->assertInertia(fn (AssertableInertia $page) => $page->where('patients.enabled', false));
         $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [

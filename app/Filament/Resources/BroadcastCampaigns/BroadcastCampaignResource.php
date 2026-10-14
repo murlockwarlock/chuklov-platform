@@ -31,6 +31,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Scenarios\Application\NotificationTemplateMedia;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
@@ -194,7 +195,7 @@ final class BroadcastCampaignResource extends LocalizedResource
                             ->label(__('Создать сообщение'))
                             ->icon(Heroicon::OutlinedPlus)
                             ->url(fn (): string => NotificationTemplateResource::getUrl('create')),
-                ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliverySupportsTemplate($get)),
+                    ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliverySupportsTemplate($get)),
                 ],
                 additionalMediaComponents: [
                     View::make('filament.resources.broadcasts.current-media')
@@ -425,7 +426,7 @@ final class BroadcastCampaignResource extends LocalizedResource
                 if ($mediaOnly) {
                     try {
                         if (! is_array($version->media)
-                            || app(\App\Modules\Scenarios\Application\NotificationTemplateMedia::class)->items($version->media) === []) {
+                            || app(NotificationTemplateMedia::class)->items($version->media) === []) {
                             return false;
                         }
                     } catch (\InvalidArgumentException) {

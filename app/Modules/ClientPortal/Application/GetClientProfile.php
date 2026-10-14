@@ -9,6 +9,8 @@ use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\Identity\Domain\Models\LegalDocument;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Support\RichText\RichTextDocument;
 use App\Support\SupportedLocale;
 use Illuminate\Support\Collection;
@@ -87,8 +89,8 @@ final class GetClientProfile
             ],
             'timezoneOptions' => $this->timezoneOptions($client->timezone),
             'urls' => [
-                'family' => app(\App\Modules\Organizations\Application\OrganizationFeatureGate::class)->isEnabled($client->organization,
-                    \App\Modules\Organizations\Domain\Enums\OrganizationFeature::ClientRecords) ? route('portal.family') : null,
+                'family' => app(OrganizationFeatureGate::class)->isEnabled($client->organization,
+                    OrganizationFeature::ClientRecords) ? route('portal.family') : null,
                 'currency' => route('portal.profile.currency'),
                 'cities' => route('portal.profile.cities'),
                 'update' => route('portal.profile.update'),
