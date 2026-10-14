@@ -71,6 +71,7 @@ class CreateBooking
         ?Closure $beforeCreate = null,
         bool $confirmedBackdated = false,
         ?DateTimeInterface $blockingEndsAt = null,
+        ?string $additionalIntentHash = null,
     ): Booking {
         $organization = $this->context->organization();
         $this->ensureOrganizationOwnership($organization->getKey(), $actor, $client, $specialist, $service);
@@ -161,6 +162,7 @@ class CreateBooking
             longitude: $longitude,
             mapUrl: $mapUrl,
             blockingEndsAt: $requestedBlockingEnd,
+            additionalIntentHash: $additionalIntentHash,
         );
         $idempotencyKey = $this->resolveIdempotencyKey(
             idempotencyKey: $idempotencyKey,
@@ -652,6 +654,7 @@ class CreateBooking
         ?float $longitude,
         ?string $mapUrl,
         ?CarbonImmutable $blockingEndsAt,
+        ?string $additionalIntentHash,
     ): string {
         return hash('sha256', json_encode([
             'client_id' => $clientId,
@@ -671,6 +674,7 @@ class CreateBooking
             'longitude' => $longitude,
             'map_url' => $mapUrl,
             'blocking_ends_at' => $blockingEndsAt?->toIso8601String(),
+            ...$additionalIntentHash === null ? [] : ['additional_intent_hash' => $additionalIntentHash],
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 

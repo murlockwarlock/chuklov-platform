@@ -73,6 +73,7 @@ final readonly class CreatePortalBooking
             latitude: $latitude,
             longitude: $longitude,
             mapUrl: $mapUrl,
+            additionalIntentHash: $this->personalData->intentHash($personalData),
             beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail, $personalData): void {
                 $this->personalData->handle($client, $personalData);
                 if ($clientTimezone !== null) {
@@ -132,6 +133,7 @@ final readonly class CreatePortalBooking
             partySize: $partySize, location: $location, workingLocationId: $workingLocationId,
             locationArea: $locationArea, clientTimezone: $clientTimezone,
             latitude: $latitude, longitude: $longitude, mapUrl: $mapUrl,
+            additionalIntentHash: $this->personalData->intentHash($personalData),
             beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail, $personalData): void {
                 $this->personalData->handle($client, $personalData);
                 if ($clientTimezone !== null) {

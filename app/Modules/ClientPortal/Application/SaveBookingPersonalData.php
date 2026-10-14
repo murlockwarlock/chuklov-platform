@@ -15,6 +15,22 @@ final readonly class SaveBookingPersonalData
     public function __construct(private UpdateClientProfileFromPortal $profiles, private ProfileReferenceData $reference) {}
 
     /** @param array<string, mixed>|null $data */
+    public function intentHash(?array $data): ?string
+    {
+        if ($data === null) {
+            return null;
+        }
+        $ordered = [];
+        foreach (self::FIELDS as $field) {
+            if (array_key_exists($field, $data)) {
+                $ordered[$field] = is_string($data[$field]) ? trim($data[$field]) : $data[$field];
+            }
+        }
+
+        return hash('sha256', json_encode($ordered, JSON_THROW_ON_ERROR));
+    }
+
+    /** @param array<string, mixed>|null $data */
     public function handle(Client $client, ?array $data): void
     {
         $current = $client->only(self::FIELDS);
@@ -47,7 +63,7 @@ final readonly class SaveBookingPersonalData
         ])->validate()['personal_data'];
         try {
             $validated['phone'] = $this->reference->phone($validated['phone'], $validated['country']);
-            $this->profiles->handle($client, $validated, array_keys($validated));
+            $this->profiles->handle($client, $validated, self::FIELDS);
         } catch (ValidationException $exception) {
             $errors = [];
             foreach ($exception->errors() as $field => $messages) {

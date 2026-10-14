@@ -15,7 +15,7 @@ final class ProfileCitiesController extends Controller
         $data = $request->validated();
 
         return response()->json([
-            'cities' => $reference->cities($data['country'], $data['query'] ?? '', $context->client()->language),
+            'cities' => $reference->cities($data['country'], $data['query'] ?? '', $context->client()->language ?? app()->getLocale()),
             'attribution' => ['source' => 'GeoNames', 'url' => 'https://www.geonames.org/', 'license' => 'https://creativecommons.org/licenses/by/4.0/'],
         ])
             ->header('Cache-Control', 'private, no-store');

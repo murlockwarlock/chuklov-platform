@@ -111,7 +111,8 @@ class ListBookings extends LocalizedListRecords
 
     public function updatedSelectedSpecialistId(): void
     {
-        $this->selectedSpecialistIds = $this->selectedSpecialist() instanceof Specialist ? [$this->selectedSpecialistId] : [];
+        $specialist = $this->selectedSpecialist();
+        $this->selectedSpecialistIds = $specialist instanceof Specialist ? [(int) $specialist->getKey()] : [];
         $this->updatedSelectedSpecialistIds();
     }
 
@@ -261,7 +262,7 @@ class ListBookings extends LocalizedListRecords
     public function getJournalGridProperty(): array
     {
         $minutes = [8 * 60, 20 * 60];
-        foreach ($this->journalDays as $day) {
+        foreach ($this->getJournalDaysProperty() as $day) {
             foreach ($day['intervals'] as $interval) {
                 $minutes[] = $interval['start_minutes'];
                 $minutes[] = $interval['end_minutes'];
@@ -533,7 +534,7 @@ class ListBookings extends LocalizedListRecords
             'client' => $clientName !== '' ? $clientName : __('Клиент'),
             'client_url' => CrmEntityLinks::clientUrl($booking->client, $canViewClients),
             'service' => $serviceName !== '' ? $serviceName : __('Услуга'),
-            'specialist' => $booking->specialist?->display_name ?? __('Специалист'),
+            'specialist' => $booking->specialist->display_name,
             'start_time' => $localStart->format('H:i'),
             'end_time' => $localEnd->format('H:i'),
             'time_range' => $localStart->format('H:i').'–'.$localEnd->format('H:i'),

@@ -37,7 +37,7 @@ final class ClinicalProfileInfolist
                 ->state(function (MedicalSession $record): ?string {
                     $value = MedicalProfileForm::answers(self::resolve($record))['pain_vas'] ?? null;
 
-                    return is_int($value) && $value >= 0 && $value <= 10 ? __(':value / 10', ['value' => $value]) : null;
+                    return is_int($value) && $value >= 0 && $value <= 10 ? (string) __(':value / 10', ['value' => $value]) : null;
                 })->placeholder(__('Не указана')),
             ...self::answers(),
         ];
@@ -58,7 +58,7 @@ final class ClinicalProfileInfolist
                 $value = MedicalProfileForm::answers(self::resolve($record))[$field] ?? null;
 
                 return match (true) {
-                    is_bool($value) => $value ? __('Да') : __('Нет'),
+                    is_bool($value) => (string) ($value ? __('Да') : __('Нет')),
                     is_int($value) => (string) $value,
                     default => null,
                 };
@@ -70,7 +70,7 @@ final class ClinicalProfileInfolist
         $client = $record instanceof Client ? $record : $record->client;
         $actor = auth()->user();
 
-        return $actor instanceof User && $client instanceof Client
+        return $actor instanceof User
             ? app(GetMedicalProfile::class)->handle($actor, $client)
             : null;
     }

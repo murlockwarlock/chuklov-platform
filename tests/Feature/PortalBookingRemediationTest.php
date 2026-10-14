@@ -28,6 +28,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Inertia\Testing\AssertableInertia;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class PortalBookingRemediationTest extends TestCase
@@ -64,6 +65,38 @@ class PortalBookingRemediationTest extends TestCase
             ->where('profile.firstName', 'Новый')->where('profile.city', 'Алматы')->where('profile.phone', '+77012345678'));
         $this->get(route('portal.profile'))->assertInertia(fn (AssertableInertia $page) => $page
             ->where('profile.lastName', 'Клиент')->where('profile.middleName', 'Тестовый'));
+    }
+
+    /** @return array<string, array{array<string, list<string>>, int}> */
+    public static function personalDataBookingModes(): array
+    {
+        return [
+            'single' => [[], 1],
+            'multiple' => [['additional_starts_at' => ['2026-03-17T09:00:00+00:00']], 2],
+        ];
+    }
+
+    /** @param array<string, list<string>> $additional */
+    #[DataProvider('personalDataBookingModes')]
+    public function test_booking_personal_data_replay_does_not_overwrite_profile_or_accept_changed_intent(array $additional, int $bookingCount): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $payload = $this->bookingPayload($service, $specialist, [
+            'personal_data' => ['first_name' => 'Original booking name'],
+            'idempotency_key' => '00000000-0000-4000-8000-000000000123',
+            'consents' => $this->acceptedConsents($organization),
+            ...$additional,
+        ]);
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors();
+        $auditCount = AuditEvent::query()->count();
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors();
+        self::assertSame($auditCount, AuditEvent::query()->count());
+        self::assertSame($bookingCount, Booking::query()->where('client_id', $client->getKey())->count());
+        $payload['personal_data']['first_name'] = 'Changed replay';
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors();
+        self::assertSame('Original booking name', $client->refresh()->first_name);
+        self::assertSame($bookingCount, Booking::query()->where('client_id', $client->getKey())->count());
     }
 
     public function test_missing_or_invalid_booking_personal_data_cannot_create_a_booking_or_mutate_identity(): void

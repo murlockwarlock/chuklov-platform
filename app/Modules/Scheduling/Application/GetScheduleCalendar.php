@@ -50,16 +50,26 @@ final class GetScheduleCalendar
             ->whereIn('specialist_id', $specialists->modelKeys())->where('is_active', true)
             ->where(fn ($query) => $query->whereNull('starts_on')->orWhere('starts_on', '<=', $to))
             ->where(fn ($query) => $query->whereNull('ends_on')->orWhere('ends_on', '>=', $from))
-            ->get()->groupBy('specialist_id');
+            ->get();
         $exceptions = ScheduleException::query()->where('organization_id', $this->context->id())
             ->whereIn('specialist_id', $specialists->modelKeys())->where('is_active', true)
-            ->whereBetween('exception_date', [$from, $to])->get()->groupBy('specialist_id');
+            ->whereBetween('exception_date', [$from, $to])->get();
+        /** @var array<int, list<SpecialistWorkingHour>> $hoursBySpecialist */
+        $hoursBySpecialist = [];
+        foreach ($hours as $hour) {
+            $hoursBySpecialist[(int) $hour->specialist_id][] = $hour;
+        }
+        /** @var array<int, list<ScheduleException>> $exceptionsBySpecialist */
+        $exceptionsBySpecialist = [];
+        foreach ($exceptions as $exception) {
+            $exceptionsBySpecialist[(int) $exception->specialist_id][] = $exception;
+        }
         $result = [];
         foreach ($specialists as $specialist) {
             $id = (int) $specialist->getKey();
             $result[$id] = $this->buildCalendar($specialist, $dateFrom, $dateTo, $timezone,
-                new EloquentCollection($hours->get($id, collect())->all()),
-                new EloquentCollection($exceptions->get($id, collect())->all()));
+                new EloquentCollection($hoursBySpecialist[$id] ?? []),
+                new EloquentCollection($exceptionsBySpecialist[$id] ?? []));
         }
 
         return $result;

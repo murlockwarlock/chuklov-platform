@@ -68,7 +68,7 @@ final class SessionInfolist
                         $actor = auth()->user();
                         $client = $record->client;
 
-                        return $actor instanceof User && $client instanceof Client
+                        return $actor instanceof User
                             && app(MedicalProfileAuthorization::class)->allowsView($actor, $client);
                     }),
                 Section::make(__('Клиническое резюме'))
