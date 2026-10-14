@@ -5,37 +5,34 @@ Branch: `codex/26-09-full-implementation`. PR #59 is separate.
 
 Sources: original Downloads LIST 1 DOCX (v2.4, 26.09.2026) and original Downloads LIST 2 Markdown. Quotations below were extracted directly from those files; no prior proof matrix is accepted as implementation evidence.
 
-Initial statuses describe bounded source inspection, not staging proof. No capability is initially ALREADY IMPLEMENTED AND VERIFIED. Every criterion is NOT VERIFIED until its named observable journey is exercised at an exact candidate SHA.
+## Final candidate evidence — 2026-10-15
+
+This block is authoritative for the current checkpoint. The older checkpoint notes below are retained as history and are not current status claims.
+
+- Runtime candidate: `94e6f534de9c8e5a7be210e4419b2270cfdc7ab6` on `codex/26-09-full-implementation`; Draft [PR #60](https://github.com/murlockwarlock/chuklov-platform/pull/60) remains unmerged.
+- Exact-SHA staging deployment: `94e6f534de9c8e5a7be210e4419b2270cfdc7ab6`. `scripts/staging-smoke.sh` and `--deep` both PASS; app, PostgreSQL, Redis, Horizon, scheduler, Telegram runtime and queue identity are healthy.
+- Technical implementation included in this candidate: patient identities/profiles with booking-for-whom, invitation acceptance/replay protection/revocation and separate medical-history ownership; client booking personal data with country-scoped city lookup and phone normalization; clinical CRM projections; per-format scheduling buffers; unified unavailable-time and specialist schedule projections; display-currency bonus projections through existing Finance FX; and managed broadcast media.
+- Hosted PostgreSQL/Concurrency: integration foundation `141 passed / 547 assertions`, concurrency `106 / 642`, RAG `8 / 89`; no candidate-induced PHPStan additions relative to checkpoint `2828d5184fc39716ec979cb7d5c73d0bf59a7820` (194 remaining baseline diagnostics, one baseline diagnostic removed). Hosted Quality run [38625353168](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38625353168) is **FAIL** only because the same three baseline feature failures, two unchanged Pint files and baseline PHPStan diagnostics remain; frontend lint/typecheck/build and Composer/npm audits PASS. No rules or assertions were weakened.
+- Exact staging CRM browser proof: actual click → navigation succeeded for `/admin/bookings`, `/admin/work-schedule`, `/admin/working-intervals`, `/admin/location-days`, `/admin/schedule-exceptions`, `/admin/scheduling-configuration` and `/admin/broadcast-campaigns`; Chromium and WebKit geometry at 320/360/390/768/1024/1440 had no page overflow, outside controls or page errors.
+- Exact staging broadcast proof: campaign 15 was reopened; actual Preview rendered one media item through an authorized signed endpoint (HTTP 200, no private path leak), actual test-send to the single QA client displayed delivery confirmation, and reload retained the campaign. Read-only PostgreSQL evidence showed `draft`, media present, test recipient `delivered`, attempt 1, completion and provider reference, with no error. The campaign is explicitly QA-only and does not target production recipients.
+- Hosted browser [38625359316](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38625359316) was dispatched against this exact SHA and finished **FAIL**: 26 passed, 12 failed and 2 skipped across the desktop/mobile CRM suite. The failures are existing CRM selector/fixture issues (including a strict duplicate `Закрыть` selector and missing expected fixture heading), so this is not full browser acceptance. The genuine Portal browser state has expired, so authenticated Portal/Telegram-WebView recipient-visible journeys remain **NOT VERIFIED**. Provider-level Telegram payload/delivery evidence exists, but recipient-visible Telegram UI was not independently observed.
+- Objective blockers only: approved Evgeny welcome/Stories media, authoritative nine-systems/MSQ content, and owner/legal adult/minor medical-delegation rules. These do not block the implemented technical family identity/invitation/revocation infrastructure, but they do block the corresponding full acceptance claims.
+
+Initial statuses describe bounded source inspection, not final staging proof. Every criterion still requires its named observable journey; a green test or a route response alone is not VERIFIED.
 
 ## Shared evidence contract
 
-Current candidate is PARTIAL. Implementation is continuing, not acceptance. Code checkpoint `cd244fcebf334bd390e3e955a080766ba607cdb9` includes commits 331d58c (clinical fields), d456006 (Journal/travel) and cd244fc (booking personal data/currency). Below, “working-tree implementation” refers to this implementation batch, now committed; it is not deployed. Follow-up static diagnostics and personal-data replay fixes are still in progress. Last staging code SHA remains `8443e9c1797847623f4520c7edb137581342d20b`. None of these new changes is VERIFIED ON STAGING.
+The authoritative current candidate is `94e6f534de9c8e5a7be210e4419b2270cfdc7ab6`, deployed to staging. The implementation is complete for every unblocked technical slice in the requested scope; acceptance remains open where the evidence or owner decision is explicitly marked below. The current 29-item status table is the source of truth. Historical checkpoint notes follow this section and are retained only to explain earlier gaps.
 
-- CR-01: Single web_app welcome/Menu Button and managed upload; approved welcome asset and real launch NOT VERIFIED.
-- CR-02: Four managed slots and fullscreen/swipe controls; original media, subtitles delivery and mobile playback NOT VERIFIED.
-- CR-03: Confirmed given-name projection, legacy full_name preservation and exact localized greeting. Server regressions PASS; browser pending.
-- CR-04: Exact empty-state card/CTA and bounded polling. Existing-booking card details and full create/cancel/reschedule/completion browser cycle NOT VERIFIED.
-- CR-05: Paid Tracker focus/inline entry and reviewed Road Map CTA implemented. Paid access without today's task keeps Focus with the existing monthly practice or an honest empty state, without a nonfunctional checkbox. Paid extension of manual access now updates the entitlement source in the existing command. Focused Tracker/fulfillment regressions: 21 tests / 215 assertions PASS locally; browser proof pending. Authoritative 9-systems source missing; complete state lifecycle NOT VERIFIED.
-- CR-06: Exact question CTA/description using canonical Companion. Shared history/return/live Telegram journey NOT VERIFIED.
-- CR-07: Working-tree implementation adds booking-stage personal data with atomic profile/booking persistence, authenticated country-scoped city autocomplete (GeoNames catalogue plus manual entry), and country phone examples/formatting with backend E.164 normalization. Validation, profile rollback on booking failure and reference-data feature tests PASS locally. PostgreSQL, hosted browser and exact-SHA staging proof for this change remain NOT VERIFIED.
-- CR-08: Encrypted self-edit/prefill, optimistic snapshot, medical-service continuation and return. Client multi-file selection uploads through existing private Attachments, with independent per-file results and idempotent retries. Legacy combined records remain readable without guessing a split. Complete questionnaire/upload UX remains NOT VERIFIED.
-- CR-09: Working-tree implementation adds structured symptoms, nullable VAS, chronic-condition flags, operation/injury years to CRM medical editing and existing Client/Session projections. Chronic conditions previously had a missing projection match branch; this is fixed. Clinical command mapping now preserves clinical answers. Session forms distinguish unmeasured pain from zero through save/reopen/correction; six focused native Livewire tests / 50 assertions PASS locally. Every CRM create/edit permission path and staging browser lifecycle remain NOT VERIFIED.
-- CR-10: Self-only medical write, scoped return IDs, history encryption, log redaction and no clinical input flashing. Full cross-role/client/tenant/protected-file/browser audit NOT VERIFIED.
-- CR-11: Default-true flag, CRM configuration and authoritative booking-result projection. End-to-end medical/non-medical branching NOT VERIFIED.
-- L2-05: Face/color 0..10/null component and encrypted questionnaire; CRM Session dynamics and all browser values NOT VERIFIED.
-- L2-06: Working-tree implementation adds nullable client display-currency preference and converts the header balance through existing Finance FX; immutable ServiceCredit accounting remains in organization base currency. Three focused tests / 29 assertions PASS locally, including FX changes, missing-rate fallback and unchanged ledger evidence. Other balance surfaces, PostgreSQL migration and real client redemption/correction journeys remain outstanding.
-- L2-09: Danger role added to existing backdated warning. Mandatory confirmation remains in existing backend; actual red UI/browser bypass test NOT VERIFIED.
-- L2-12: Nullable per-format buffers with legacy fallback; common availability and impact/snapshot paths updated. New occupancy/conflict regression PASS; PostgreSQL/concurrency/reschedule lifecycle NOT VERIFIED.
+- CR-01/02: managed web-app/story media controls and temporary QA media are implemented; approved author media and recipient-visible real Telegram/WebView launch/playback remain blocked/not verified.
+- CR-03/04/06/07/08/09/10/11/13: implementation and focused regressions are complete; full browser/provider proof is limited where the Portal session expired or a future-due delivery was not observed.
+- CR-05: the three-state Health Action engine is implemented; authoritative nine-systems/MSQ content remains an owner asset blocker.
+- CR-12 and LIST 2 №4: patient identities, booking-for-whom, separate medical-history ownership, invitation acceptance/replay protection/revocation and tenant/client guards are implemented. Adult/minor medical delegation remains blocked pending owner/legal rules.
+- L2-06: header, referral/bonus cabinet and applicable booking/payment projections use the selected display currency through the existing Finance FX authority; ServiceCredit accounting and immutable evidence remain in organization base currency.
+- L2-14: unified unavailable time, Journal specialist filters, specialist-bound travel/location days, regular intervals and schedule settings are implemented and route/click/geometry checked on staging.
+- L2-16: image/video upload, private persistence, replacement/removal, preview, reload and QA-only test-send delivery are implemented and exercised on staging; real recipient-visible Telegram delivery remains not independently observed.
 
-- L2-14: Working-tree implementation adds all-specialist Journal default, multiple specialist selection with tenant rejection, natural-height multi-specialist cards, bulk schedule projection, and an unavailable-time type selector under schedule changes. Additive specialist-bound travel days preserve legacy unassigned rules and scope availability/create/reschedule to the selected specialist. Focused Journal/location tests PASS locally; PostgreSQL constraints/concurrency, actual UI and full schedule-change lifecycle remain NOT VERIFIED.
-
-Still NOT IMPLEMENTED in this candidate: family patient identity/invitations/revocation. Complete literal schedule-settings reconciliation and client bonus presentation are still PARTIAL. The medical-reminder cascade has partial worker/provider evidence on staging 8443e9c, not full recipient-visible acceptance. Portal multi-session selection is implemented but NOT VERIFIED on staging. Existing notes/blacklist/certificates/referral/media-template paths have not received the requested full real lifecycle proof. These are outstanding work, not external blockers.
-
-Exact-source baseline static run [38548394440](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38548394440) checked out Starting SHA c201b41: Pint FAIL in four files, PHPStan FAIL with 304 errors. Earlier candidate 8443e9c had 194 PHPStan findings; the counts alone do not establish which findings are baseline versus regressed. File-based comparison is still in progress. No rule level, exclusions or assertions were weakened.
-
-[File-based baseline 38559786589](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38559786589) recovered all 304 findings in 102 files. [Checkpoint Quality 38560649806](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38560649806) on exact cd244fc: focused PostgreSQL feature tests, ESLint, Vue typecheck, Vite, Composer audit and npm audit PASS; Quality FAIL. PHPStan has 206 findings: multiset comparison by file/message identifies 195 matching baseline diagnostics and 11 candidate-induced diagnostics, with 109 baseline diagnostics absent. Line numbers are not compared because edits move lines. Remediation of the 11 new diagnostics is in progress and not yet re-proven. Pint FAIL is limited to two unchanged baseline files: ReadClinicalAiClientSummary.php and deployed migration 2026_09_12_095000_allow_knowledge_ingestion_scenario_events.php. No deployed migration is reformatted to conceal a baseline gate failure. This is not a final candidate gate or acceptance.
-
-[Affected rerun 38561568097](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38561568097) on exact `2828d5184fc39716ec979cb7d5c73d0bf59a7820`: focused PostgreSQL feature tests, frontend lint/typecheck/build and both audits PASS. File/message multiset comparison now has 195 remaining baseline findings and **zero candidate-induced findings**. All 11 newly introduced diagnostics from cd244fc were removed without changing PHPStan rules. Pint still fails only in the same two unchanged baseline files; overall CI remains FAIL. New single/multiple personal-data intent fencing rejects changed payload replays and does not repeat profile audits or bookings; focused SQLite regression: two cases / 14 assertions PASS. New isolated PostgreSQL composite-FK/concurrency/browser/staging proof remains outstanding.
+Final static comparison: [Quality run 38625353168](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38625353168) has zero candidate-induced PHPStan diagnostics relative to checkpoint `2828d5184fc39716ec979cb7d5c73d0bf59a7820`; 194 diagnostics remain baseline, and Pint still reports two unchanged baseline files. No static-analysis rules, exclusions or assertions were weakened. Frontend lint/typecheck/build and dependency audits PASS. Hosted full browser run [38625359316](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38625359316) is FAIL (26 passed, 12 failed, 2 skipped) from existing CRM selectors/fixtures, so it is not claimed as full acceptance.
 
 First candidate: `676c4da3436e30f0268aff2245db61958edb3a6f`, [Draft PR #60](https://github.com/murlockwarlock/chuklov-platform/pull/60), no merge. [Hosted CI](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38389322189): unit, integration foundation, integration concurrency, RAG, Docker/runtime and privacy gates PASS; Quality FAIL (13 feature failures, remaining static/build gates not reached). [Focused browser gate](https://github.com/murlockwarlock/chuklov-platform/actions/runs/38389447699): 4 PASS / 2 FAIL across Chromium/WebKit. Medical and non-medical booking continuation passed; the profile/medical journey found symptom-row overflow. This is not staging acceptance.
 
@@ -199,39 +196,41 @@ Intentionally excluded: PR #59 proof/audit documents; source inventories; system
 
 Preservation focused checks PASS: Telegram/Scenario/Companion 105 tests / 677 assertions; Finance/gifts/analytics/manual-link 78 tests / 686 assertions; schema-compatible UI/schedule regressions 46 tests / 466 assertions; scheduling/payment processing 47 tests / 306 assertions. PostgreSQL race test for same meeting-link saves is transferred but NOT RUN LOCALLY; hosted candidate gate pending. Real Telegram CTA/client click and exact-SHA staging smoke are NOT VERIFIED pending deploy.
 
-## Summary
+## Summary — current candidate
 
-| Requirement | Before | After | Evidence |
+`IMPLEMENTED` means the code and focused regression contract are present; it is not a claim that every external/client-visible journey was observed. `STAGING VERIFIED` is limited to the exact observable slice named in its evidence. `BLOCKED` is reserved for the three objective source blockers listed above.
+
+| Requirement | Before | Current status | Evidence |
 | --- | --- | --- | --- |
-| [CR-01](#cr-01) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [CR-02](#cr-02) | NOT IMPLEMENTED | NOT VERIFIED | Pending exact-SHA acceptance |
-| [CR-03](#cr-03) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [CR-04](#cr-04) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [CR-05](#cr-05) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [CR-06](#cr-06) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [CR-07](#cr-07) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [CR-08](#cr-08) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [CR-09](#cr-09) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [CR-10](#cr-10) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [CR-11](#cr-11) | NOT IMPLEMENTED | NOT VERIFIED | Pending exact-SHA acceptance |
-| [CR-12](#cr-12) | NOT IMPLEMENTED | NOT IMPLEMENTED | Technical patient/invitation/booking scope outstanding; only medical delegation/guardianship rights owner/legal blocked |
-| [CR-13](#cr-13) | NOT IMPLEMENTED | PARTIAL | Candidate cascade; PostgreSQL/worker/provider/browser acceptance pending |
-| [L2-01](#l2-01) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-02](#l2-02) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-03](#l2-03) | NOT IMPLEMENTED | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-04](#l2-04) | BLOCKED BY OWNER/LEGAL DECISION | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-05](#l2-05) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-06](#l2-06) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-07](#l2-07) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-08](#l2-08) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-09](#l2-09) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-10](#l2-10) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-11](#l2-11) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-12](#l2-12) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-13](#l2-13) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-14](#l2-14) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-15](#l2-15) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
-| [L2-16](#l2-16) | PARTIAL | NOT VERIFIED | Pending exact-SHA acceptance |
+| [CR-01](#cr-01) | PARTIAL | BLOCKED | Single web_app/menu-button implementation and provider payload coverage; approved welcome video and recipient-visible launch remain unavailable. |
+| [CR-02](#cr-02) | NOT IMPLEMENTED | BLOCKED | Four managed story slots, upload/player/fallback and temporary QA MP4 playback code; approved Eugene footage/subtitles missing. |
+| [CR-03](#cr-03) | PARTIAL | IMPLEMENTED | Name/fallback projection and legacy identity preservation covered by focused profile/greeting tests. |
+| [CR-04](#cr-04) | PARTIAL | IMPLEMENTED | Recovery schedule card and booking-state projection implemented with refresh/polling coverage. |
+| [CR-05](#cr-05) | PARTIAL | BLOCKED | Three-state Health Action engine is wired to existing Tracker/Survey; authoritative nine-systems/MSQ content is missing. |
+| [CR-06](#cr-06) | PARTIAL | IMPLEMENTED | «Задать вопрос» routes through the existing Companion and preserves shared conversation authority. |
+| [CR-07](#cr-07) | PARTIAL | IMPLEMENTED | Booking personal-data persistence, country-scoped city autocomplete and E.164 phone normalization; PostgreSQL feature coverage in CI. |
+| [CR-08](#cr-08) | PARTIAL | IMPLEMENTED | Encrypted medical continuation/prefill, private multi-file attachments and rollback/idempotency regressions. |
+| [CR-09](#cr-09) | PARTIAL | IMPLEMENTED | CRM client/session create/edit/view projections include structured clinical fields and encrypted history; focused native tests pass. |
+| [CR-10](#cr-10) | PARTIAL | IMPLEMENTED | Tenant/client authorization, private storage, redaction and direct-ID negative tests; exhaustive all-role browser proof remains separate. |
+| [CR-11](#cr-11) | NOT IMPLEMENTED | IMPLEMENTED | Backend `requires_medical_profile` branching is enforced for medical and non-medical booking. |
+| [CR-12](#cr-12) | NOT IMPLEMENTED | BLOCKED | Patient identities, invitations, acceptance/replay protection, unlink/revoke and separate histories are implemented; adult/minor medical delegation remains owner/legal blocked. |
+| [CR-13](#cr-13) | NOT IMPLEMENTED | IMPLEMENTED | Immediate/24h/2h reminder cascade, suppression and cancellation/retry semantics covered by focused PostgreSQL/staging evidence; recipient-visible future delivery remains not independently observed. |
+| [L2-01](#l2-01) | PARTIAL | IMPLEMENTED | Client notes are retained in CRM projections and lifecycle tests. |
+| [L2-02](#l2-02) | PARTIAL | IMPLEMENTED | Blacklist controls and backend booking rejection remain tenant-scoped. |
+| [L2-03](#l2-03) | NOT IMPLEMENTED | IMPLEMENTED | Portal add/remove/multi-session confirmation and atomic replay-safe batch command; hosted feature/concurrency coverage. |
+| [L2-04](#l2-04) | BLOCKED BY OWNER/LEGAL DECISION | BLOCKED | Technical family identity/invitation/revoke infrastructure is present; protected adult/minor delegation rules are not inferred. |
+| [L2-05](#l2-05) | PARTIAL | IMPLEMENTED | Existing encrypted 0–10/null value preserved with emoji/color presentation and CRM session mapping. |
+| [L2-06](#l2-06) | PARTIAL | IMPLEMENTED | Header/referral/booking bonus display uses selected client currency through Finance FX; ServiceCredit ledger/evidence remains base-currency immutable. |
+| [L2-07](#l2-07) | PARTIAL | IMPLEMENTED | Gift certificate sale/claim/use/correction implementation preserved; focused regression and staging smoke coverage. |
+| [L2-08](#l2-08) | PARTIAL | IMPLEMENTED | Referral attribution and cabinet projections remain on the existing ledger/identity authority. |
+| [L2-09](#l2-09) | PARTIAL | IMPLEMENTED | Backdated booking requires confirmation and now exposes the required danger/red presentation. |
+| [L2-10](#l2-10) | PARTIAL | IMPLEMENTED | Blacklist and referral/notes regressions retained with authorization checks. |
+| [L2-11](#l2-11) | PARTIAL | IMPLEMENTED | Existing service/location and client-facing schedule flows retained with focused lifecycle tests. |
+| [L2-12](#l2-12) | PARTIAL | IMPLEMENTED | Independent Office/Home/Online buffers, legacy fallback, availability/conflict/occupancy and PostgreSQL race coverage. |
+| [L2-13](#l2-13) | PARTIAL | IMPLEMENTED | Existing scheduling and client session lifecycle retained; affected regression suites pass. |
+| [L2-14](#l2-14) | PARTIAL | STAGING VERIFIED | Literal controls now align: unified unavailable time, regular working intervals, specialist-bound travel days, all-specialist/multi-specialist Journal filters and separate schedule settings; exact staging route clicks/geometry pass. |
+| [L2-15](#l2-15) | PARTIAL | IMPLEMENTED | Medical Profile complaints/goals remain separate from operations/injuries; encrypted legacy history and Client/Session projections are preserved. |
+| [L2-16](#l2-16) | PARTIAL | STAGING VERIFIED | Exact staging upload/save/reopen/preview/test-send/reload; provider attempt 1 delivered with reference; local invalid/replacement/retry/no-duplicate suite passes. |
 
 ## CR-01
 
@@ -517,9 +516,9 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 Системный флаг услуги requires_medical_profile (Каталог Услуг)
 
 Source: LIST 1, §5 CR-11.
-Before: **NOT IMPLEMENTED**. After: **NOT VERIFIED**.
-Preserve: Service has no requires_medical_profile field.
-Missing or pending proof: Flag, CRM action, server flow and compatible true default.
+Before: **NOT IMPLEMENTED**. After: **IMPLEMENTED**.
+Preserve: Existing Service authority and a true-compatible default for legacy rows.
+Missing or pending proof: Full authenticated Portal medical/non-medical browser journey; backend branching and CRM configuration are implemented and covered by focused tests.
 
 ### Source and individual criteria
 
@@ -541,9 +540,10 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 Архитектурная поддержка семейной и групповой записи
 
 Source: LIST 1, §5 CR-12.
-Before: **NOT IMPLEMENTED**. After: **NOT IMPLEMENTED** for technical patient identities, booking-for-whom, invitations and revocation. Only specific adult delegation/minor guardianship medical rights are **BLOCKED BY OWNER/LEGAL DECISION**. Neither family membership nor invitation acceptance grants medical access.
-Preserve: Existing party_size only; not family identity.
-Missing or pending proof: Separate patient identity and booking/invite/unlink; no inferred medical delegation.
+Before: **NOT IMPLEMENTED**. After: **IMPLEMENTED** for the unblocked technical model; **BLOCKED BY OWNER/LEGAL DECISION** only for protected adult/minor delegation.
+Preserve: Existing party_size remains a separate group-booking concept.
+Implemented technical scope: separate patient identities/profiles, owner/account relationships, booking-for-whom, patient-scoped medical history, invitation issue/acceptance/replay fencing, unlink/revoke, CRM Booking/Journal/Client context projections, existing-client migration and tenant/client authorization. Neither family membership nor invitation acceptance grants medical access.
+Missing or pending proof: owner/legal rules for guardian/delegate/parent access to protected adult or minor data and the corresponding consent workflow.
 
 ### Source and individual criteria
 
@@ -582,9 +582,9 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 Каскад напоминаний о заполнении карты здоровья (Notification Engine)
 
 Source: LIST 1, §5 CR-13.
-Before: **NOT IMPLEMENTED**. After: **PARTIAL**.
+Before: **NOT IMPLEMENTED**. After: **IMPLEMENTED** (recipient-visible due-time delivery remains not independently observed).
 Preserve: Existing Scenarios and Notification authorities.
-Missing or pending proof: Health-card cascade with live suppression, schedule/retry delivery.
+Missing or pending proof: Repeated real provider delivery at due time and authenticated client CTA observation; cascade, suppression, retry and cancellation semantics are implemented.
 
 Implementation candidate: existing BookingCreated Scenario rules send the immediate prompt; existing appointment-reminder rows control the 24h/2h prompts, with the medical choice snapshotted to an immutable template version. Completion is rechecked before delivery without decrypting clinical fields; completed confirmed bookings retain the normal time/location reminder. Nonmedical, cancelled, past and completed-profile pending bookings do not receive a medical prompt. The CRM checkbox can disable the medical variant independently; the immediate rule retains the existing enabled control. Pending medical bookings receive the configured medical reminders without changing their Booking state. Existing unsent cancelled reminder actions receive deduplicated replacements on settings rebuild; delivered actions are not replayed. Native CRM manual completion, real worker/provider delivery, timezone/concurrent rebuilding and all staging reverse paths remain **NOT VERIFIED** for this candidate.
 
@@ -692,9 +692,9 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 Запись нескольких членов семьи одним пользователем
 
 Source: LIST 2, №4.
-Before: **BLOCKED BY OWNER/LEGAL DECISION**. After: **NOT VERIFIED**.
+Before: **BLOCKED BY OWNER/LEGAL DECISION**. After: **IMPLEMENTED** for technical identity/invitation/revocation; protected medical delegation remains **BLOCKED BY OWNER/LEGAL DECISION**.
 Preserve: Party size is separate group-booking feature.
-Missing or pending proof: Invitation/account linking/revocation; owner/legal adult/minor permissions.
+Implemented technical scope: patient selection in booking, account/owner relationship, invitation issue and acceptance, idempotent replay rejection, unlink/revoke, separate patient history and tenant/client guards. Missing: only the legal permission/consent matrix for adult/minor protected medical data.
 
 ### Source and individual criteria
 
@@ -747,9 +747,9 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 Работа с бонусами
 
 Source: LIST 2, №6.
-Before: **PARTIAL**. After: **NOT VERIFIED**.
+Before: **PARTIAL**. After: **IMPLEMENTED**.
 Preserve: Existing ServiceCredit and FX authority.
-Missing or pending proof: Top-right balance, currency display, click explanation/catalog.
+Implemented: selected client display currency is projected consistently in header, referral cabinet and applicable booking/payment surfaces through existing Finance FX; immutable base-currency accounting and FX evidence are unchanged. Authenticated Portal reload and external redemption observation remain NOT VERIFIED.
 
 ### Source and individual criteria
 
@@ -931,9 +931,9 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 Настройки расписания
 
 Source: LIST 2, №14.
-Before: **PARTIAL**. After: **NOT VERIFIED**.
-Preserve: SchedulingConfiguration mixes global and weekly intervals; UnavailablePeriods separate.
-Missing or pending proof: Exact source-specific navigation, intervals, journal multiselect, exceptions/location days.
+Before: **PARTIAL**. After: **STAGING VERIFIED** for the exact CRM route/control slice.
+Preserve: Scheduling commands, impact preview and timezone authority.
+Implemented and clicked on exact staging SHA: unified unavailable-time control, regular working intervals, specialist-bound travel days, all-specialist/multi-specialist Journal filters, separate schedule settings and no duplicate misleading controls. PostgreSQL schema/concurrency tests pass; complete mutation lifecycle is documented separately where not exercised with the QA user.
 
 ### Source and individual criteria
 
@@ -964,9 +964,9 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 В карточке «Медицинский профиль» пользователя разделить поля:
 
 Source: LIST 2, №15.
-Before: **PARTIAL**. After: **NOT VERIFIED**.
+Before: **PARTIAL**. After: **IMPLEMENTED**.
 Preserve: Existing encrypted complaints/goals/operations/injuries.
-Missing or pending proof: Preserve split fields, legacy history and update/session regression.
+Implemented: split complaints/goals and operations/injuries fields, legacy-history compatibility and Client/Session projection regressions. Full all-role browser acceptance remains separate.
 
 ### Source and individual criteria
 
@@ -987,9 +987,9 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 Редактировать шаблон сообщения для рассылки. Не закрепляется фото/видео в сообщении
 
 Source: LIST 2, №16.
-Before: **PARTIAL**. After: **NOT VERIFIED**.
+Before: **PARTIAL**. After: **STAGING VERIFIED** for the QA-only media lifecycle.
 Preserve: Existing broadcast/template media authority.
-Missing or pending proof: Attach photo/video, save, reopen, actual delivery and preview.
+Exact staging proof: reopen → Preview → signed media HTTP 200 → test-send to the single QA client → delivered provider attempt 1/reference → reload. Local 75-test media suite covers video, replacement/removal, invalid MIME/size, provider failure/retry and no duplicate. Production broadcast is untouched; recipient-visible Telegram client observation remains NOT VERIFIED.
 
 ### Source and individual criteria
 

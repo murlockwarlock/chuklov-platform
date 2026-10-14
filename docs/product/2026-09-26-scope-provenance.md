@@ -8,6 +8,44 @@ Dated implementation evidence recovered without broad history review: [PR #57](h
 
 Family qualification: original v2.2 §9.2 says «Интерактивный таймлайн записей с перетаскиванием (drag-and-drop), цветными статусами, подсветкой долгов, учетом семейных/групповых визитов и переключением часового пояса страны нахождения Мастера». Thus general calendar consideration of family/group visits is ORIGINAL_SCOPE. Separate patient profiles, adult accounts, invitation binding, guardianship proof, medical delegation and revocation are not specified by that excerpt. CR-12 and LIST 2 №4 contain mixed ORIGINAL_SCOPE/SCOPE_EXPANSION/NEW_SCOPE subcriteria; the provisional whole-requirement NEW_SCOPE label below must not be read as denying the original calendar clause.
 
+## Final implementation/evidence reconciliation — 2026-10-15
+
+This addendum supersedes stale “pending” wording in the historical per-item notes below. It records the current runtime candidate and does not make pricing or legal conclusions. Runtime candidate: `94e6f534de9c8e5a7be210e4419b2270cfdc7ab6`; exact staging deployment and default/deep smoke passed. The evidence column names the current code/test/staging result; absence of recipient-visible browser proof is intentional.
+
+| Requirement | Classification | Implemented after 26.09 / current evidence | Limitation |
+| --- | --- | --- | --- |
+| CR-01 | SUPERSEDED | Single web_app/menu-button flow and managed media upload in Draft PR #60; Telegram payload regression evidence. | Approved welcome asset and recipient-visible launch unavailable. |
+| CR-02 | SCOPE_EXPANSION | Four managed story slots, upload/player/fallback and temporary QA media playback code. | Approved Eugene footage/subtitles missing. |
+| CR-03 | NEW_SCOPE | Confirmed-name/fallback greeting projection and legacy identity preservation. | Authenticated Portal observation not repeated after state expiry. |
+| CR-04 | NEW_SCOPE | Recovery schedule empty/booking-state projections and refresh behavior. | Full client lifecycle browser proof not independently observed. |
+| CR-05 | SCOPE_EXPANSION | Existing Tracker/Survey-backed three-state Health Action implementation. | Authoritative nine-systems/MSQ source missing. |
+| CR-06 | CLARIFICATION | “Задать вопрос” uses existing Companion authority/history. | Recipient-visible Telegram return not observed. |
+| CR-07 | SCOPE_EXPANSION | Booking personal data, country city autocomplete and E.164 phone normalization; PostgreSQL feature gate. | Full authenticated Portal browser lifecycle not observed. |
+| CR-08 | SUPERSEDED | Encrypted post-booking medical continuation, prefill, private attachments and rollback/idempotency tests. | Full client questionnaire/upload journey not observed. |
+| CR-09 | SCOPE_EXPANSION | Structured clinical CRM Client/Session projections and encrypted medical history; focused save/reopen/correction tests. | Exhaustive role matrix browser proof remains open. |
+| CR-10 | CLARIFICATION | Tenant/client authorization, private storage, redaction and direct-ID negative coverage. | Full all-role/tenant browser matrix not observed. |
+| CR-11 | NEW_SCOPE | Authoritative `requires_medical_profile` flag and server-enforced medical/non-medical branching. | Authenticated client click-through not observed. |
+| CR-12 | NEW_SCOPE | Patient profiles/identities, owner relationship, booking-for-whom, separate histories, invitation issue/accept/replay fencing, unlink/revoke, CRM projections and legacy migration. | Adult/minor guardian/delegate medical access requires owner/legal decision. |
+| CR-13 | SCOPE_EXPANSION | Immediate/24h/2h scenario cascade, live suppression, retries and cancellation replacement; PostgreSQL/concurrency and staging worker evidence. | Due-time recipient-visible Telegram journey not independently observed. |
+| L2-01 | NEEDS_REVIEW | Existing CRM notes authority and lifecycle retained; focused regressions. | Exact historical inclusion needs source reconciliation. |
+| L2-02 | NEEDS_REVIEW | Existing blacklist/reason/filter and backend denial retained. | Exact historical inclusion needs source reconciliation. |
+| L2-03 | NEW_SCOPE | Portal multi-session add/remove/atomic replay-safe batch before medical continuation; hosted feature/concurrency coverage. | Authenticated Portal session expired for final manual recheck. |
+| L2-04 | NEW_SCOPE | Technical family identity/invitation/revocation is implemented on the same patient authority. | Legal medical delegation remains blocked. |
+| L2-05 | SCOPE_EXPANSION | Existing encrypted 0–10/null VAS plus emoji/color presentation and CRM session mapping. | Full client visual-value matrix not observed. |
+| L2-06 | SCOPE_EXPANSION | Header/referral/booking bonus projections use selected display currency through Finance FX; immutable ServiceCredit ledger unchanged. | Authenticated Portal redemption/reload observation not available. |
+| L2-07 | NEW_SCOPE | Existing Gift Certificate issue/claim/use/correction implementation preserved; regression coverage. | Full two-actor recipient journey not repeated on final SHA. |
+| L2-08 | ORIGINAL_SCOPE | Existing referral attribution/statistics authority preserved; no second ledger. | Full owner-facing analytics lifecycle not repeated on final SHA. |
+| L2-09 | CLARIFICATION | Backdated booking mandatory confirmation and red danger presentation implemented. | Real CRM mutation click not repeated on final SHA. |
+| L2-10 | CLARIFICATION | Telegram nickname/id projection and safe links retained. | Full identity-update browser journey not repeated on final SHA. |
+| L2-11 | CLARIFICATION | Save / Save-and-create-more labels and behavior retained. | Exhaustive UI inventory not repeated on final SHA. |
+| L2-12 | SCOPE_EXPANSION | Per-format Office/Home/Online buffers, legacy fallback, availability/conflict/occupancy and concurrency tests. | Full CRM mutation journey not repeated on final SHA. |
+| L2-13 | CLARIFICATION | Default-address label and schedule projection retained. | Exact save/reload UI proof not repeated on final SHA. |
+| L2-14 | SCOPE_EXPANSION | Unified unavailable time, working intervals, specialist travel days, Journal filters and separated settings; exact staging route clicks/geometry. | Full data mutation/exception lifecycle not performed with QA actor. |
+| L2-15 | CLARIFICATION | Split clinical fields and encrypted history projections retained. | Full all-role CRM lifecycle not repeated on final SHA. |
+| L2-16 | BUG_FIX | Broadcast image/video upload/save/reopen/preview/test-send/worker/provider/reload; exact staging QA recipient delivered attempt 1 and local retry/failure/no-duplicate suite. | Recipient-visible Telegram media UI and production audience intentionally not exercised. |
+
+The categories above remain confidence-qualified by the original v2.2/changelog review in each section. They are provenance classifications, not a commercial assessment.
+
 ## CR-01 — Сокращение главного меню бота в чате Telegram
 
 Current delivery reference for the implemented subset: [Draft PR #60](https://github.com/murlockwarlock/chuklov-platform/pull/60), first candidate `676c4da3436e30f0268aff2245db61958edb3a6f`. It adds managed entry videos/Stories, confirmed demographics/greeting, post-booking encrypted clinical editing, CRM chronic conditions, service medical flag and per-format buffers, pain visualization and the bonus header. Later fixes add client private uploads, mandatory fields, safe legacy display and overflow corrections. This dated record proves post-26.09 code delivery only for that subset, not complete implementation or staging/owner acceptance. Per-requirement delivery remains provisional until reconciled to final commit and exact-SHA evidence.
