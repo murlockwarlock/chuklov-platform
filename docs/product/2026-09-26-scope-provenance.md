@@ -10,7 +10,7 @@ Family qualification: original v2.2 §9.2 says «Интерактивный та
 
 ## Final implementation/evidence reconciliation — 2026-10-15
 
-This addendum supersedes stale “pending” wording in the historical per-item notes below. It records the current runtime candidate and does not make pricing or legal conclusions. Runtime candidate: `94e6f534de9c8e5a7be210e4419b2270cfdc7ab6`; final docs-only SHA `5a09e6319c580bef473006058a40ee7ac0972534` was redeployed; exact code deployment and final docs-only deployment both passed default/deep smoke. The evidence column names the current code/test/staging result; absence of recipient-visible browser proof is intentional.
+This addendum supersedes stale “pending” wording in the historical per-item notes below. It records the current runtime candidate and does not make pricing or legal conclusions. Runtime candidate: `94e6f534de9c8e5a7be210e4419b2270cfdc7ab6`; final docs-only SHA `e1b4df395fb66c2d127363c60546db33cc2ac102` was redeployed; exact code deployment and final docs-only deployment both passed default/deep smoke. The evidence column names the current code/test/staging result; absence of recipient-visible browser proof is intentional.
 
 | Requirement | Classification | Implemented after 26.09 / current evidence | Limitation |
 | --- | --- | --- | --- |
