@@ -33,6 +33,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
+use App\Modules\Scheduling\Application\BookingPatientAccounts;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
@@ -95,6 +96,16 @@ final class ScenarioContextFactory
         ScenarioRecipient $recipient,
         bool $includeFeedbackUrl = false,
     ): array {
+        if ($recipient->type === 'client' && $context->booking !== null && $recipient->clientId !== null
+            && (int) $context->booking->client_id !== $recipient->clientId) {
+            $account = app(BookingPatientAccounts::class)->handle($context->booking)
+                ->firstWhere('id', $recipient->clientId);
+            if (! $account instanceof Client) {
+                throw (new ModelNotFoundException)->setModel(Client::class);
+            }
+            $context = new ScenarioEvaluationContext(event: $context->event, booking: $context->booking, client: $account,
+                evaluationEndsAt: $context->evaluationEndsAt);
+        }
         if ($context->client === null && ! $this->allowsClientlessOperationalEvent($context->event->event_name)) {
             throw (new ModelNotFoundException)->setModel(Client::class);
         }
@@ -232,7 +243,9 @@ final class ScenarioContextFactory
         if ($context->booking !== null) {
             $bookingDateTime = $recipient->type === 'internal'
                 ? $this->bookingDateTime->forSpecialist($context->booking)
-                : $this->bookingDateTime->forClient($context->booking);
+                : ((int) $context->client?->getKey() === (int) $context->booking->client_id
+                    ? $this->bookingDateTime->forClient($context->booking)
+                    : $this->bookingDateTime->format($context->booking, (string) $context->client->timezone));
             $locationSnapshot = $context->booking->locationSnapshot();
             $renderContext['booking'] = [
                 'id' => (int) $context->booking->getKey(),

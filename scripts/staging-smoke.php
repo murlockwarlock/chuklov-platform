@@ -2,11 +2,16 @@
 
 use App\Models\User;
 use App\Modules\B2B\Jobs\ProcessB2bProviderSyncEvent;
+use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
+use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
+use App\Modules\Channels\Infrastructure\Telegram\TelegramNotificationChannel;
 use App\Modules\ClientCompanion\Application\Services\LegacyCompanionHandoffEligibility;
 use App\Modules\Conversations\Domain\Enums\ConversationAutomationState;
 use App\Modules\Conversations\Domain\Enums\ConversationType;
 use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Knowledge\Application\CreateKnowledgeSource;
 use App\Modules\Knowledge\Application\Data\RetrievalQuery;
 use App\Modules\Knowledge\Application\RetireKnowledgeSource;
@@ -14,10 +19,19 @@ use App\Modules\Knowledge\Domain\Contracts\KnowledgeRetriever;
 use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceType;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
+use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
+use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Specialists\Domain\Models\Specialist;
+use GuzzleHttp\HandlerStack;
+use GuzzleHttp\Middleware;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
 use Illuminate\Contracts\Http\Kernel as HttpKernel;
 use Illuminate\Foundation\Application;
@@ -28,8 +42,12 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Schema;
 use Laravel\Horizon\Contracts\MasterSupervisorRepository;
 use Laravel\Horizon\Contracts\SupervisorRepository;
+use Psr\Http\Client\ClientInterface;
+use Psr\Http\Message\ResponseInterface;
+use SergiX44\Nutgram\Nutgram;
 
 require '/app/vendor/autoload.php';
 
@@ -98,6 +116,150 @@ function smokeIdentity(int $userId, int $clientId): array
     app(OrganizationContext::class)->set($organization);
 
     return [$organization, $actor, $client];
+}
+
+function qaContextCheck(int $userId, int $clientId): void
+{
+    bootstrapApplication(false);
+    $organizationId = (int) config('tenancy.default_organization_id');
+    $organization = Organization::query()->findOrFail($organizationId);
+    app(OrganizationContext::class)->set($organization);
+    $actor = User::query()->whereKey($userId)->whereHas('memberships', static fn ($query) => $query
+        ->where('organization_id', $organizationId)->where('is_active', true))->first();
+    $client = Client::query()->where('organization_id', $organizationId)->find($clientId);
+    $candidates = Client::query()->where('organization_id', $organizationId)
+        ->where(static fn ($query) => $query->where('full_name', 'Murlock Warlock')
+            ->orWhereHas('channelIdentities', static fn ($query) => $query->where('channel', 'telegram')
+                ->whereIn('external_username', ['murlockwarlock', 'MurlockWarlock', 'murlock_warlock', 'Murlock_Warlock'])))
+        ->limit(5)->get(['id', 'organization_id']);
+    $identities = ClientChannelIdentity::query()
+        ->where('organization_id', $organizationId)->whereIn('client_id', $candidates->modelKeys())
+        ->where('channel', 'telegram')->get(['client_id', 'verification_status', 'external_id']);
+    $qaBooking = Booking::query()
+        ->where('organization_id', $organizationId)->where('client_id', $clientId)
+        ->where('specialist_id', 20)->where('service_id', 1)->whereKey(116)->first();
+    $qaEvents = $qaBooking === null ? collect() : ScenarioEvent::query()
+        ->where('organization_id', $organizationId)
+        ->where('aggregate_type', Booking::class)
+        ->where('aggregate_id', (string) $qaBooking->getKey())->with('actions.deliveries.attempts')->get();
+    $metadata = [
+        'qa_booking' => $qaBooking === null ? null : [
+            'id' => $qaBooking->getKey(), 'status' => $qaBooking->status->value,
+            'starts_at_utc' => $qaBooking->starts_at->utc()->toIso8601String(),
+            'events' => $qaEvents->map(static fn ($event): array => [
+                'id' => $event->getKey(), 'type' => $event->event_name->value, 'status' => $event->status->value,
+                'available_at' => $event->available_at?->utc()->toIso8601String(),
+                'attempt_count' => $event->attempt_count, 'error_code' => $event->last_error_code,
+                'actions' => $event->actions->map(static fn ($action): array => [
+                    'id' => $action->getKey(), 'status' => $action->status->value,
+                    'recipient_client_id' => $action->client_id,
+                    'scheduled_at' => $action->scheduled_for?->utc()->toIso8601String(),
+                    'terminal_reason' => $action->terminal_reason,
+                    'deliveries' => $action->deliveries->map(static fn ($delivery): array => [
+                        'id' => $delivery->getKey(), 'channel' => $delivery->channel,
+                        'status' => $delivery->status->value, 'attempt_count' => $delivery->attempt_count,
+                        'provider_reference' => $delivery->provider_reference,
+                        'terminal_reason' => $delivery->terminal_reason, 'error_code' => $delivery->last_error_code,
+                        'attempts' => $delivery->attempts->map(static fn ($attempt): array => [
+                            'number' => $attempt->attempt_number, 'outcome' => $attempt->outcome->value,
+                            'template_version_id' => $attempt->template_version_id,
+                            'template_key' => NotificationTemplateVersion::query()
+                                ->where('organization_id', $organizationId)->whereKey($attempt->template_version_id)
+                                ->first()?->template?->template_key,
+                            'error_code' => $attempt->error_code,
+                        ])->all(),
+                    ])->all(),
+                ])->all(),
+            ])->all(),
+        ],
+        'crm_user_id' => $userId,
+        'crm_user_in_organization' => $actor instanceof User,
+        'crm_user_mfa_enrolled' => $actor instanceof User && filled($actor->getAppAuthenticationSecret()),
+        'configured_client_id' => $clientId,
+        'configured_client_in_organization' => $client instanceof Client,
+        'qa_booking_service_requires_medical_profile' => Service::query()
+            ->where('organization_id', $organizationId)->whereKey(1)->value('requires_medical_profile'),
+        'qa_medical_profile_exists' => MedicalProfile::query()->where('organization_id', $organizationId)->where('client_id', $clientId)->exists(),
+        'qa_medical_profile_confirmed' => MedicalProfile::query()->where('organization_id', $organizationId)->where('client_id', $clientId)->whereNotNull('client_confirmed_at')->exists(),
+        'qa_medical_profile_completed' => Schema::hasColumn('medical_profiles', 'completed_at')
+            && MedicalProfile::query()->where('organization_id', $organizationId)->where('client_id', $clientId)->whereNotNull('completed_at')->exists(),
+        'qa_staff_specialists' => Specialist::query()
+            ->where('organization_id', $organizationId)->where('staff_user_id', $userId)
+            ->get(['id', 'is_active', 'timezone', 'viewer_timezone'])
+            ->map(static fn ($specialist): array => [
+                'id' => $specialist->getKey(),
+                'active' => $specialist->is_active,
+                'timezone' => $specialist->timezone,
+                'viewer_timezone' => $specialist->viewer_timezone,
+                'working_hours' => SpecialistWorkingHour::query()
+                    ->where('organization_id', $organizationId)->where('specialist_id', $specialist->getKey())
+                    ->get(['weekday', 'start_time', 'end_time', 'starts_on', 'ends_on', 'is_active'])->toArray(),
+            ])->all(),
+        'qa_candidates' => $candidates->map(static function (Client $candidate) use ($identities): array {
+            $identity = $identities->firstWhere('client_id', $candidate->getKey());
+
+            return ['client_id' => $candidate->getKey(),
+                'verified_telegram' => $identity?->verification_status?->value === 'verified',
+                'telegram_id_suffix' => $identity === null ? null : substr((string) $identity->external_id, -4)];
+        })->all(),
+        'launch_url' => app(ResolveTelegramMiniAppEntry::class)->launchUrl('portal'),
+        'bot_username' => app(Nutgram::class)->getMe()?->username,
+    ];
+    echo json_encode($metadata, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES)."\n";
+}
+
+function telegramQaCtaCheck(int $clientId): void
+{
+    bootstrapApplication(false);
+    $organizationId = (int) config('tenancy.default_organization_id');
+    app(OrganizationContext::class)->set(Organization::query()->findOrFail($organizationId));
+    $identity = ClientChannelIdentity::query()->where('organization_id', $organizationId)
+        ->where('client_id', $clientId)->where('channel', 'telegram')->where('verification_status', 'verified')->sole();
+    $bot = app(Nutgram::class);
+    $chat = $bot->getChat((string) $identity->external_id);
+    $name = trim(($chat?->first_name ?? '').' '.($chat?->last_name ?? ''));
+    if ($chat === null || (string) $chat->id !== (string) $identity->external_id || mb_strtolower($name) !== 'murlock warlock') {
+        fail('TELEGRAM QA', 'live recipient does not match the explicitly approved QA account');
+    }
+    $http = $bot->getContainer()->get(ClientInterface::class);
+    $handler = $http instanceof GuzzleHttp\Client ? $http->getConfig('handler') : null;
+    if (! $handler instanceof HandlerStack) {
+        fail('TELEGRAM QA', 'provider response observation is unavailable');
+    }
+    $proof = [];
+    $handler->push(Middleware::mapResponse(static function (ResponseInterface $response) use (&$proof, $identity): ResponseInterface {
+        $body = $response->getBody();
+        if ($body->isSeekable()) {
+            $position = $body->tell();
+            try {
+                $payload = json_decode((string) $body, true, 32, JSON_THROW_ON_ERROR);
+                $proof = ['http_status' => $response->getStatusCode(), 'provider_ok' => ($payload['ok'] ?? null) === true,
+                    'message_id' => $payload['result']['message_id'] ?? null,
+                    'recipient_matches' => (string) ($payload['result']['chat']['id'] ?? '') === (string) $identity->external_id,
+                    'button' => $payload['result']['reply_markup']['inline_keyboard'][0][0] ?? null];
+            } catch (Throwable) {
+                $proof = [];
+            } finally {
+                $body->seek($position);
+            }
+        }
+
+        return $response;
+    }));
+    $url = app(ResolveTelegramMiniAppEntry::class)->launchUrl('portal');
+    $result = app(TelegramNotificationChannel::class)->send(new NotificationMessage(
+        recipientExternalId: (string) $identity->external_id,
+        body: 'Проверка открытия приложения. Это тестовое сообщение.',
+        subject: null, locale: 'ru', idempotencyKey: 'qa-ec32044-portal-'.$clientId,
+        requireKnownExternalOutcome: true,
+        actionButton: new NotificationActionButton(text: 'Открыть приложение', webAppUrl: $url),
+        organizationId: $organizationId,
+    ));
+    echo json_encode(['delivery' => $result->outcome->value, 'error_code' => $result->errorCode, 'provider_reference' => $result->providerReference, ...$proof], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)."\n";
+    if ($result->outcome->value !== 'delivered' || ($proof['provider_ok'] ?? false) !== true || ($proof['recipient_matches'] ?? false) !== true
+        || ($proof['button']['web_app']['url'] ?? null) !== $url || isset($proof['button']['url'])) {
+        fail('TELEGRAM QA', 'delivery or actual provider keyboard is not confirmed; do not blindly retry');
+    }
 }
 
 function horizonEnvironment(): string
@@ -705,6 +867,10 @@ try {
         runtimeCheck();
     } elseif ($check === 'companion-remediation-evidence') {
         companionRemediationEvidenceCheck();
+    } elseif ($userId !== false && $clientId !== false && $check === 'qa-context') {
+        qaContextCheck($userId, $clientId);
+    } elseif ($clientId !== false && $check === 'telegram-qa-cta') {
+        telegramQaCtaCheck($clientId);
     } elseif ($userId !== false && $clientId !== false && $check === 'deep') {
         deepCheck($userId, $clientId);
     } elseif ($userId !== false && $clientId !== false) {

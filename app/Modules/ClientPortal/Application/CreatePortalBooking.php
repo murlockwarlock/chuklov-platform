@@ -55,6 +55,7 @@ final readonly class CreatePortalBooking
         ?string $attributionSource = null,
         ?string $attributionSourceDetail = null,
         ?array $personalData = null,
+        ?int $patientProfileId = null,
     ): Booking {
         return $this->createBooking->handle(
             actor: $client,
@@ -74,6 +75,7 @@ final readonly class CreatePortalBooking
             longitude: $longitude,
             mapUrl: $mapUrl,
             additionalIntentHash: $this->personalData->intentHash($personalData),
+            patientProfileId: $patientProfileId,
             beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail, $personalData): void {
                 $this->personalData->handle($client, $personalData);
                 if ($clientTimezone !== null) {
@@ -115,6 +117,7 @@ final readonly class CreatePortalBooking
         ?string $attributionSource = null,
         ?string $attributionSourceDetail = null,
         ?array $personalData = null,
+        ?int $patientProfileId = null,
     ): array {
         try {
             $timezone = IanaTimezone::from($clientTimezone ?? $client->timezone ?? 'UTC')->value;
@@ -134,6 +137,7 @@ final readonly class CreatePortalBooking
             locationArea: $locationArea, clientTimezone: $clientTimezone,
             latitude: $latitude, longitude: $longitude, mapUrl: $mapUrl,
             additionalIntentHash: $this->personalData->intentHash($personalData),
+            patientProfileId: $patientProfileId,
             beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail, $personalData): void {
                 $this->personalData->handle($client, $personalData);
                 if ($clientTimezone !== null) {
@@ -164,7 +168,7 @@ final readonly class CreatePortalBooking
             }
         }
 
-        $this->recordConsents->handle($client, $answers);
+        $this->recordConsents->handleForBooking($client, $answers);
     }
 
     /** @param Collection<int, LegalDocument> $documents */

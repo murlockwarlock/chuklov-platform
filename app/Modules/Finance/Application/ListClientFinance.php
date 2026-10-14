@@ -29,6 +29,7 @@ final class ListClientFinance
         private readonly ResolveLavaPaymentSellable $sellable,
         private readonly ReferralRewardBalanceProjection $referralBalances,
         private readonly CurrencyConfigurationService $configuration,
+        private readonly DisplayClientMoney $displayMoney,
     ) {}
 
     /** @return array{obligations: list<array<string, mixed>>, totals: list<array<string, mixed>>, hasUnavailableObligations: bool} */
@@ -47,8 +48,9 @@ final class ListClientFinance
             ->orderByDesc('created_at')
             ->get();
         $referralBalance = $this->referralBalances->serviceCredit($client);
+        $bonusDisplay = $this->displayMoney->handle($client, $referralBalance->available());
         $projections = $obligations
-            ->map(fn (FinancialObligation $obligation): array => $this->projection($obligation, $client, $locale, $referralBalance))
+            ->map(fn (FinancialObligation $obligation): array => $this->projection($obligation, $client, $locale, $referralBalance, $bonusDisplay))
             ->values()
             ->all();
         $totals = [];
@@ -83,12 +85,16 @@ final class ListClientFinance
         ];
     }
 
-    /** @return array<string, mixed> */
+    /**
+     * @param  array{amountMinor: int, currency: string, conversionAvailable: bool}  $bonusDisplay
+     * @return array<string, mixed>
+     */
     private function projection(
         FinancialObligation $obligation,
         Client $client,
         ?string $locale,
         ReferralRewardBalance $referralBalance,
+        array $bonusDisplay,
     ): array {
         try {
             $reconciliation = $this->reconciliation->handle(
@@ -123,7 +129,7 @@ final class ListClientFinance
             'status' => $reconciliation->status->value,
             'statusLabel' => $this->statusLabel($reconciliation->status->value, $locale),
             'history' => $entries->map(fn (FinancialLedgerEntry $entry): array => $this->historyEntry($entry, $timezone, $locale))->all(),
-            'referralCredit' => $this->referralCredit($obligation, $referralBalance, $reconciliation->outstanding),
+            'referralCredit' => $this->referralCredit($obligation, $referralBalance, $reconciliation->outstanding, $bonusDisplay),
             'demoPayment' => $this->demoPayment($obligation, $reconciliation->outstanding->minorUnits() > 0, $locale),
             'lavaPayment' => $this->lavaPayment($obligation, $reconciliation->outstanding->minorUnits() > 0, $client, $locale),
         ];
@@ -156,11 +162,15 @@ final class ListClientFinance
         ];
     }
 
-    /** @return array{availableMinor: int, currency: string, baseAvailableMinor: int, baseCurrency: string, outstandingMinor: int, conversionAvailable: bool, applyUrl: string}|null */
+    /**
+     * @param  array{amountMinor: int, currency: string, conversionAvailable: bool}  $bonusDisplay
+     * @return array{availableMinor: int, currency: string, baseAvailableMinor: int, baseCurrency: string, outstandingMinor: int, conversionAvailable: bool, applyUrl: string, display: array{amountMinor: int, currency: string, conversionAvailable: bool}}|null
+     */
     private function referralCredit(
         FinancialObligation $obligation,
         ReferralRewardBalance $referralBalance,
         Money $outstanding,
+        array $bonusDisplay,
     ): ?array {
         if (! $outstanding->isPositive()) {
             return null;
@@ -184,6 +194,7 @@ final class ListClientFinance
             'currency' => $currency->value,
             'baseAvailableMinor' => $baseAvailable->minorUnits(),
             'baseCurrency' => $baseAvailable->currency()->value,
+            'display' => $bonusDisplay,
             'outstandingMinor' => $outstanding->minorUnits(),
             'conversionAvailable' => $conversionAvailable,
             'applyUrl' => route('portal.finance.referral-credit.apply', $obligation->getKey()),

@@ -74,6 +74,12 @@ class Client extends Model
         return $this->hasMany(ClientChannelIdentity::class);
     }
 
+    /** @return HasMany<PatientProfile, $this> */
+    public function patientProfiles(): HasMany
+    {
+        return $this->hasMany(PatientProfile::class, 'owner_client_id');
+    }
+
     /** @return HasOne<ClientAttribution, $this> */
     public function attribution(): HasOne
     {

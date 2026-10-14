@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PersonalData } from '../../types/personalData';
 import { countryNames } from '../../utils/countryNames';
-import { formatPhone, phoneExample } from '../../utils/profilePhone';
+import { formatPhone, formatPhoneInput, phoneExample } from '../../utils/profilePhone';
 import TextAutocomplete from './TextAutocomplete.vue';
 import CityAutocomplete from './CityAutocomplete.vue';
 
@@ -155,7 +155,7 @@ function update(key: keyof PersonalData, value: string): void {
         maxlength="32"
         class="portal-input"
         :placeholder="phoneExample(modelValue.country)"
-        @input="update('phone', ($event.target as HTMLInputElement).value)"
+        @input="update('phone', formatPhoneInput(($event.target as HTMLInputElement).value, modelValue.country))"
         @blur="update('phone', formatPhone(modelValue.phone, modelValue.country))"
       >
       <p

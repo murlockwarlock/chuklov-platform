@@ -2102,6 +2102,24 @@ select.portal-input[aria-invalid='true'] {
         padding: clamp(0.75rem, 3vw, 2rem);
     }
 
+    .portal-dialog {
+        width: min(44rem, calc(100vw - 2rem));
+        max-width: calc(100% - 2rem);
+        max-height: calc(100dvh - 2rem);
+        min-width: 0;
+        margin: auto;
+        padding: clamp(1rem, 3vw, 2rem);
+        overflow: auto;
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-lg);
+        color: var(--portal-color-ink);
+        background: var(--portal-color-surface);
+    }
+
+    .portal-dialog::backdrop {
+        background: rgb(22 36 61 / 42%);
+    }
+
     .portal-legal-modal__dialog {
         display: flex;
         width: min(100%, 44rem);

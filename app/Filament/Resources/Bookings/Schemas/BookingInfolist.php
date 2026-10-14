@@ -32,9 +32,14 @@ class BookingInfolist
                 Section::make(__('Информация о приёме'))
                     ->schema([
                         TextEntry::make('client.full_name')
-                            ->label(__('Клиент'))
+                            ->label(__('Заказчик'))
                             ->url(fn (Booking $record): ?string => CrmEntityLinks::clientUrl($record->client))
                             ->color(fn (Booking $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary')
+                            ->wrap(),
+                        TextEntry::make('patientProfile.clinicalClient.full_name')
+                            ->label(__('Пациент'))
+                            ->state(fn (Booking $record): ?string => $record->patientProfile?->clinicalClient?->full_name ?? $record->client?->full_name)
+                            ->url(fn (Booking $record): ?string => CrmEntityLinks::clientUrl($record->patientProfile?->clinicalClient ?? $record->client))
                             ->wrap(),
                         TextEntry::make('specialist.display_name')
                             ->label(__('Специалист'))

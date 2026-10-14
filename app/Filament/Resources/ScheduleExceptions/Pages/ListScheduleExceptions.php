@@ -5,7 +5,6 @@ namespace App\Filament\Resources\ScheduleExceptions\Pages;
 use App\Filament\Resources\ScheduleExceptions\ScheduleChangeTypeActions;
 use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
 use App\Filament\Support\LocalizedListRecords;
-use Filament\Actions\CreateAction;
 
 class ListScheduleExceptions extends LocalizedListRecords
 {
@@ -22,7 +21,6 @@ class ListScheduleExceptions extends LocalizedListRecords
     {
         return [
             ScheduleChangeTypeActions::make(false),
-            CreateAction::make(),
         ];
     }
 }

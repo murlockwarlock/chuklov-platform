@@ -45,6 +45,8 @@ class BookingsTable
                 ->disabledClick(fn (Booking $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null)
                 ->toggleable(),
             TextColumn::make('service.name')->label(__('Услуга'))->sortable()->wrap(),
+            TextColumn::make('patientProfile.clinicalClient.full_name')->label(__('Пациент'))->wrap()
+                ->state(fn (Booking $record): ?string => $record->patientProfile?->clinicalClient?->full_name ?? $record->client?->full_name),
             TextColumn::make('starts_at')
                 ->label(fn (): string => __('Дата и время (').self::viewerTimezone().')')
                 ->dateTime('d.m.Y H:i')

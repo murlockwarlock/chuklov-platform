@@ -3,7 +3,9 @@
 namespace App\Modules\MedicalProfiles\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Application\PatientProfileAccess;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
@@ -43,7 +45,12 @@ final class MedicalProfileAuthorization
             $this->assertClientOwned($actor, $organization);
             $this->assertClientOwned($client, $organization);
             if ($actor->getKey() !== $client->getKey()) {
-                throw new AuthorizationException('Only the authenticated client may edit this profile.');
+                $patient = PatientProfile::query()->where('organization_id', $organization->getKey())
+                    ->where('clinical_client_id', $client->getKey())->first();
+                if ($patient === null) {
+                    throw new AuthorizationException('Only the authenticated patient may edit this profile.');
+                }
+                app(PatientProfileAccess::class)->authorizeClinicalSubject($actor, $patient);
             }
 
             return $organization;

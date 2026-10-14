@@ -3,6 +3,7 @@
 namespace App\Modules\MedicalProfiles\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Application\EnsureSelfPatientProfile;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\MedicalProfileData;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
@@ -100,6 +101,7 @@ final readonly class UpdateMedicalProfile
             $profile->forceFill([
                 'organization_id' => $orgId,
                 'client_id' => $client->getKey(),
+                'patient_profile_id' => app(EnsureSelfPatientProfile::class)->handle($client)->getKey(),
                 'anamnesis' => $encrypted->encryptedAnamnesis,
                 'complaints_goals' => $encrypted->encryptedComplaintsGoals,
                 'operations_injuries' => $encrypted->encryptedOperationsInjuries,

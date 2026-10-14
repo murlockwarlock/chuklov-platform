@@ -4,8 +4,10 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
+use App\Modules\Identity\Application\CreatePatientProfile;
 use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
 use App\Modules\Identity\Application\PublishLegalDocument;
+use App\Modules\Identity\Application\RevokePatientRelationship;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\LegalDocument;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -34,6 +36,69 @@ use Tests\TestCase;
 class PortalBookingRemediationTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_family_booking_preserves_customer_patient_and_separate_medical_flow(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        $patient = app(CreatePatientProfile::class)->handle($client, [
+            'first_name' => 'Synthetic', 'last_name' => 'Child', 'gender' => 'MALE',
+            'birth_date' => '2020-01-02', 'relationship' => 'CHILD',
+        ], '00000000-0000-4000-8000-000000000321');
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->get(route('portal.bookings.create', ['patient_profile_id' => $patient->getKey()]))
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('selectedPatientId', $patient->getKey()));
+        $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'patient_profile_id' => $patient->getKey(), 'consents' => $this->acceptedConsents($organization),
+        ]))->assertSessionHasNoErrors()->assertRedirect()
+            ->assertSessionHas('portal_booking_result', fn (array $result): bool => $result['medicalProfileUrl'] === null
+                && $result['patientProfileId'] === $patient->getKey() && $result['requiresPatientMedicalProfile'] === true);
+        $booking = Booking::query()->sole();
+        self::assertSame($client->getKey(), $booking->client_id);
+        self::assertSame($patient->getKey(), $booking->patient_profile_id);
+        self::assertSame($patient->clinical_client_id, $booking->clinicalClientId());
+        $this->get(route('portal.bookings.show', ['bookingId' => $booking->getKey()]))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('booking.patientName', $patient->clinicalClient->full_name)->where('booking.isCustomer', true));
+        $this->get(route('portal.medical-profile', ['booking_id' => $booking->getKey()]))->assertForbidden();
+        app(RevokePatientRelationship::class)->handle($client, $patient);
+        $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'patient_profile_id' => $patient->getKey(), 'starts_at' => '2026-03-17T09:00:00+00:00',
+            'consents' => $this->acceptedConsents($organization),
+        ]))->assertForbidden();
+        self::assertSame(1, Booking::query()->count());
+    }
+
+    public function test_nonmedical_booking_remains_available_when_medical_records_are_disabled(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $service->forceFill(['requires_medical_profile' => false])->save();
+        $organization->featureFlags()->where('feature_key', OrganizationFeature::ClientRecords->value)->update(['enabled' => false]);
+        \App\Modules\Organizations\Application\OrganizationFeatureGate::invalidate();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->get(route('portal.bookings.create'))->assertInertia(fn (AssertableInertia $page) => $page->where('patients.enabled', false));
+        $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'consents' => $this->acceptedConsents($organization),
+        ]))->assertSessionHasNoErrors()->assertRedirect()->assertSessionHas('portal_booking_result', fn (array $result): bool => $result['medicalProfileUrl'] === null);
+        self::assertSame(1, Booking::query()->count());
+    }
+
+    public function test_foreign_patient_identifier_cannot_book_or_mutate_customer_personal_data(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $other = Client::factory()->forOrganization($organization)->create();
+        $patient = app(CreatePatientProfile::class)->handle($other, [
+            'first_name' => 'Synthetic', 'last_name' => 'Patient', 'gender' => 'FEMALE',
+            'birth_date' => '1990-01-02', 'relationship' => 'SPOUSE',
+        ], '00000000-0000-4000-8000-000000000321');
+        $before = $client->fresh()->getRawOriginal();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'patient_profile_id' => $patient->getKey(), 'personal_data' => ['first_name' => 'Forbidden mutation'],
+            'consents' => $this->acceptedConsents($organization),
+        ]))->assertForbidden();
+        self::assertSame($before, $client->fresh()->getRawOriginal());
+        self::assertSame(0, Booking::query()->count());
+    }
 
     protected function setUp(): void
     {

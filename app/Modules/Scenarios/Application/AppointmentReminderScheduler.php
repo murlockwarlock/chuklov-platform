@@ -2,6 +2,7 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
@@ -14,6 +15,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
+use App\Modules\Scheduling\Application\BookingPatientAccounts;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Support\SupportedLocale;
@@ -87,123 +89,121 @@ final class AppointmentReminderScheduler
                 continue;
             }
 
-            $recipient = $this->recipient($booking, $reminder->recipient_type);
-            if ($recipient === null) {
-                continue;
-            }
+            foreach ($this->recipients($booking, $reminder->recipient_type) as $recipient) {
 
-            $format = $booking->visit_format->value;
-            $template = $this->template(
-                (int) $organization->getKey(),
-                $reminder->recipient_type,
-                $format,
-                $recipient->locale,
-            );
-            $rule = ScenarioRule::query()
-                ->where('organization_id', $organization->getKey())
-                ->where('rule_key', $this->ruleKey($reminder->recipient_type, $format))
-                ->where('system_managed', true)
-                ->where('is_enabled', true)
-                ->first();
-            if ($template === null || $rule === null) {
-                continue;
-            }
-
-            $context = $this->contextFactory->evaluationContext($event, $scheduledFor);
-            $renderContext = $this->contextFactory->renderContext($context, $recipient);
-            $renderContext['booking']['reminder_offset_label'] = $this->offsetLabel(
-                $reminder->offset_value,
-                $reminder->offset_unit,
-            );
-            $medicalProfile = $this->medicalProfile->snapshot($reminder, $recipient->locale);
-            if ($medicalProfile !== null) {
-                $renderContext['medical_profile_reminder'] = $medicalProfile;
-            }
-            $channels = $recipient->type === 'internal' ? ['telegram', 'database'] : ['telegram'];
-
-            foreach ($channels as $channel) {
-                $materializationParts = [
-                    $organization->getKey(),
-                    'appointment-reminder',
-                    $booking->getKey(),
-                    $event->getKey(),
-                    $reminder->getKey(),
-                    $recipient->key(),
-                ];
-                if ($channel === 'database') {
-                    $materializationParts[] = $channel;
-                }
-                $materializationKey = hash('sha256', implode('|', $materializationParts));
-                $action = ScenarioAction::query()
+                $format = $booking->visit_format->value;
+                $template = $this->template(
+                    (int) $organization->getKey(),
+                    $reminder->recipient_type,
+                    $format,
+                    $recipient->locale,
+                );
+                $rule = ScenarioRule::query()
                     ->where('organization_id', $organization->getKey())
-                    ->where('materialization_key', $materializationKey)
-                    ->lockForUpdate()
+                    ->where('rule_key', $this->ruleKey($reminder->recipient_type, $format))
+                    ->where('system_managed', true)
+                    ->where('is_enabled', true)
                     ->first();
+                if ($template === null || $rule === null) {
+                    continue;
+                }
 
-                while ($action?->status === ScenarioActionStatus::Cancelled) {
-                    $materializationKey = hash('sha256', $materializationKey.'|replacement|'.$action->getKey());
+                $context = $this->contextFactory->evaluationContext($event, $scheduledFor);
+                $renderContext = $this->contextFactory->renderContext($context, $recipient);
+                $renderContext['booking']['reminder_offset_label'] = $this->offsetLabel(
+                    $reminder->offset_value,
+                    $reminder->offset_unit,
+                );
+                $medicalProfile = $this->medicalProfile->snapshot($reminder, $recipient->locale);
+                if ($medicalProfile !== null) {
+                    $renderContext['medical_profile_reminder'] = $medicalProfile;
+                }
+                $channels = $recipient->type === 'internal' ? ['telegram', 'database'] : ['telegram'];
+
+                foreach ($channels as $channel) {
+                    $materializationParts = [
+                        $organization->getKey(),
+                        'appointment-reminder',
+                        $booking->getKey(),
+                        $event->getKey(),
+                        $reminder->getKey(),
+                        $recipient->key(),
+                    ];
+                    if ($channel === 'database') {
+                        $materializationParts[] = $channel;
+                    }
+                    $materializationKey = hash('sha256', implode('|', $materializationParts));
                     $action = ScenarioAction::query()
                         ->where('organization_id', $organization->getKey())
                         ->where('materialization_key', $materializationKey)
-                        ->lockForUpdate()->first();
+                        ->lockForUpdate()
+                        ->first();
+
+                    while ($action?->status === ScenarioActionStatus::Cancelled) {
+                        $materializationKey = hash('sha256', $materializationKey.'|replacement|'.$action->getKey());
+                        $action = ScenarioAction::query()
+                            ->where('organization_id', $organization->getKey())
+                            ->where('materialization_key', $materializationKey)
+                            ->lockForUpdate()->first();
+                    }
+
+                    if ($action !== null) {
+                        continue;
+                    }
+
+                    $timestamp = now();
+                    DB::table('scenario_actions')->insertOrIgnore([
+                        'organization_id' => $organization->getKey(),
+                        'scenario_event_id' => $event->getKey(),
+                        'scenario_rule_id' => $rule->getKey(),
+                        'kind' => 'appointment_reminder',
+                        'appointment_reminder_id' => $reminder->getKey(),
+                        'booking_id' => $booking->getKey(),
+                        'booking_starts_at' => $booking->startsAtUtc(),
+                        'recipient_type' => $recipient->type,
+                        'client_id' => $recipient->clientId,
+                        'recipient_user_id' => $recipient->userId,
+                        'template_version_id' => $template->getKey(),
+                        'trigger_event' => $event->event_name->value,
+                        'rule_version' => $rule->version,
+                        'condition_snapshot' => json_encode([], JSON_THROW_ON_ERROR),
+                        'sequence_number' => 1,
+                        'max_occurrences' => 1,
+                        'repeat_interval_value' => null,
+                        'repeat_interval_unit' => null,
+                        'purpose' => $rule->purpose->value,
+                        'channel_priority' => json_encode([$channel], JSON_THROW_ON_ERROR),
+                        'render_context' => json_encode($renderContext, JSON_THROW_ON_ERROR),
+                        'materialization_key' => $materializationKey,
+                        'scheduled_for' => $scheduledFor,
+                        'status' => ScenarioActionStatus::Scheduled->value,
+                        'attempt_count' => 0,
+                        'created_at' => $timestamp,
+                        'updated_at' => $timestamp,
+                    ]);
+
+                    $actionId = DB::table('scenario_actions')
+                        ->where('organization_id', $organization->getKey())
+                        ->where('materialization_key', $materializationKey)
+                        ->value('id');
+
+                    if ($actionId === null) {
+                        continue;
+                    }
+
+                    DB::table('scenario_deliveries')->insertOrIgnore([
+                        'organization_id' => $organization->getKey(),
+                        'scenario_action_id' => $actionId,
+                        'channel' => $channel,
+                        'priority' => 1,
+                        'status' => ScenarioDeliveryStatus::Pending->value,
+                        'idempotency_key' => hash('sha256', implode('|', [$organization->getKey(), $actionId, $channel])),
+                        'attempt_count' => 0,
+                        'next_attempt_at' => $scheduledFor,
+                        'created_at' => $timestamp,
+                        'updated_at' => $timestamp,
+                    ]);
                 }
-
-                if ($action !== null) {
-                    continue;
-                }
-
-                $timestamp = now();
-                DB::table('scenario_actions')->insertOrIgnore([
-                    'organization_id' => $organization->getKey(),
-                    'scenario_event_id' => $event->getKey(),
-                    'scenario_rule_id' => $rule->getKey(),
-                    'kind' => 'appointment_reminder',
-                    'appointment_reminder_id' => $reminder->getKey(),
-                    'booking_id' => $booking->getKey(),
-                    'booking_starts_at' => $booking->startsAtUtc(),
-                    'recipient_type' => $recipient->type,
-                    'client_id' => $recipient->clientId,
-                    'recipient_user_id' => $recipient->userId,
-                    'template_version_id' => $template->getKey(),
-                    'trigger_event' => $event->event_name->value,
-                    'rule_version' => $rule->version,
-                    'condition_snapshot' => json_encode([], JSON_THROW_ON_ERROR),
-                    'sequence_number' => 1,
-                    'max_occurrences' => 1,
-                    'repeat_interval_value' => null,
-                    'repeat_interval_unit' => null,
-                    'purpose' => $rule->purpose->value,
-                    'channel_priority' => json_encode([$channel], JSON_THROW_ON_ERROR),
-                    'render_context' => json_encode($renderContext, JSON_THROW_ON_ERROR),
-                    'materialization_key' => $materializationKey,
-                    'scheduled_for' => $scheduledFor,
-                    'status' => ScenarioActionStatus::Scheduled->value,
-                    'attempt_count' => 0,
-                    'created_at' => $timestamp,
-                    'updated_at' => $timestamp,
-                ]);
-
-                $actionId = DB::table('scenario_actions')
-                    ->where('organization_id', $organization->getKey())
-                    ->where('materialization_key', $materializationKey)
-                    ->value('id');
-
-                if ($actionId === null) {
-                    continue;
-                }
-
-                DB::table('scenario_deliveries')->insertOrIgnore([
-                    'organization_id' => $organization->getKey(),
-                    'scenario_action_id' => $actionId,
-                    'channel' => $channel,
-                    'priority' => 1,
-                    'status' => ScenarioDeliveryStatus::Pending->value,
-                    'idempotency_key' => hash('sha256', implode('|', [$organization->getKey(), $actionId, $channel])),
-                    'attempt_count' => 0,
-                    'next_attempt_at' => $scheduledFor,
-                    'created_at' => $timestamp,
-                    'updated_at' => $timestamp,
-                ]);
             }
         }
     }
@@ -319,6 +319,19 @@ final class AppointmentReminderScheduler
                     }
                 }
             });
+    }
+
+    /** @return list<ScenarioRecipient> */
+    private function recipients(Booking $booking, string $recipientType): array
+    {
+        if ($recipientType === 'client') {
+            return app(BookingPatientAccounts::class)->handle($booking)
+                ->map(fn (Client $account): ScenarioRecipient => new ScenarioRecipient(type: 'client', clientId: (int) $account->getKey(),
+                    userId: null, locale: $this->locale((string) $account->language)))->values()->all();
+        }
+        $recipient = $this->recipient($booking, $recipientType);
+
+        return $recipient === null ? [] : [$recipient];
     }
 
     private function recipient(Booking $booking, string $recipientType): ?ScenarioRecipient

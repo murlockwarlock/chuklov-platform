@@ -11,6 +11,7 @@ use App\Filament\Resources\Clients\RelationManagers\ClientAttachmentsRelationMan
 use App\Filament\Resources\Clients\RelationManagers\ClientBookingsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientNotesRelationManager;
+use App\Filament\Resources\Clients\RelationManagers\ClientPatientsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientSessionsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientSurveysRelationManager;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\ManageClientSessions;
@@ -77,6 +78,7 @@ class ClientResource extends LocalizedResource
             ClientAttachmentsRelationManager::class,
             ClientClinicalAiRelationManager::class,
             ClientNotesRelationManager::class,
+            ClientPatientsRelationManager::class,
         ];
     }
 

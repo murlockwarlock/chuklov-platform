@@ -400,6 +400,30 @@ final class MilestoneElevenBBroadcastTest extends TestCase
         $this->actingAs($otherActor)->get($url)->assertNotFound();
     }
 
+    public function test_managed_video_preview_supports_bounded_http_ranges(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        Storage::fake('private');
+        $path = 'broadcast/'.$organization->getKey().'/00000000-0000-4000-8000-000000000006.mp4';
+        $contents = 'synthetic video stream for range preview';
+        Storage::disk('private')->put($path, $contents);
+        $campaign = $this->campaign($actor, []);
+        $campaign->forceFill([
+            'media' => ['items' => [['type' => 'video', 'source' => $path, 'alt' => null, 'name' => 'preview.mp4']]],
+        ])->save();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+
+        $url = app(BroadcastMediaPreviewUrl::class)->handle($campaign->refresh(), 0);
+        self::assertIsString($url);
+
+        $response = $this->withHeaders(['Range' => 'bytes=0-7'])->actingAs($actor)->get($url);
+
+        $response->assertStatus(206);
+        self::assertSame('8', $response->headers->get('Content-Length'));
+        self::assertSame('bytes 0-7/'.strlen($contents), $response->headers->get('Content-Range'));
+        self::assertSame(substr($contents, 0, 8), $response->streamedContent());
+    }
+
     public function test_existing_broadcast_media_alt_remains_available_for_preview(): void
     {
         [$organization, $actor] = $this->fixture();
@@ -736,6 +760,51 @@ final class MilestoneElevenBBroadcastTest extends TestCase
 
         self::assertCount(1, $this->channel->messages);
         self::assertTrue($this->channel->messages[0]->mediaUrl !== null || is_resource($this->channel->messages[0]->mediaStream));
+    }
+
+    public function test_saved_template_video_survives_campaign_reopen_preview_and_delivery(): void
+    {
+        [$organization, $actor] = $this->fixture();
+        $client = $this->client($organization, consent: true, verified: true, language: 'ru');
+        Storage::fake('private');
+        $path = 'notification-template/'.$organization->getKey().'/00000000-0000-4000-8000-000000000007.mp4';
+        $contents = 'saved template video media';
+        Storage::disk('private')->put($path, $contents);
+        $template = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'purpose' => ScenarioRulePurpose::Marketing->value,
+            'locale' => 'ru',
+        ]);
+        $version = NotificationTemplateVersion::factory()->forTemplate($template)->create([
+            'body' => '',
+            'variables' => [],
+            'delivery_mode' => NotificationMessageMode::Image->value,
+            'media' => ['items' => [['type' => 'video', 'source' => $path, 'name' => 'saved.mp4']]],
+        ]);
+        $data = $this->campaignData([]);
+        $data['message_mode'] = 'saved_template';
+        $data['delivery_mode'] = NotificationMessageMode::Image->value;
+        $data['message_body'] = '';
+        $data['template_version_ru_id'] = $version->getKey();
+        $data['template_version_en_id'] = null;
+        $campaign = app(CreateBroadcastCampaign::class)->handle($actor, $data);
+
+        self::assertSame($path, $campaign->media['items'][0]['source'] ?? null);
+        self::assertSame([$version->getKey()], $campaign->media['source_template_version_ids'] ?? null);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $edit = Livewire::actingAs($actor)->test(EditBroadcastCampaignPage::class, ['record' => $campaign->getKey()]);
+        self::assertSame($campaign->media, $edit->get('data.media'));
+
+        $preview = app(PreviewBroadcastCampaign::class)->message($actor, $campaign);
+        self::assertSame('video', $preview['mediaItems'][0]['type'] ?? null);
+
+        app(TestBroadcastCampaign::class)->handle($actor, $campaign, $client->getKey());
+
+        self::assertCount(1, $this->channel->messages);
+        $stream = $this->channel->messages[0]->mediaItems[0]->stream;
+        self::assertIsResource($stream);
+        self::assertSame($contents, stream_get_contents($stream));
+        fclose($stream);
+        Storage::disk('private')->assertExists($path);
     }
 
     public function test_immediate_send_materializes_once_batches_and_replay_does_not_redeliver(): void

@@ -2,6 +2,7 @@
 
 namespace App\Modules\ClientPortal\Application;
 
+use App\Modules\Identity\Application\ResolvePatientClinicalClient;
 use App\Modules\MedicalProfiles\Application\MedicalProfileSnapshotHasher;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
@@ -13,12 +14,13 @@ final readonly class GetClientMedicalProfile
         private ClientPortalContext $clientContext,
         private MedicalEncryptorInterface $encryptor,
         private MedicalProfileSnapshotHasher $snapshots,
+        private ResolvePatientClinicalClient $patients,
     ) {}
 
     /** @return array<string, mixed> */
-    public function handle(): array
+    public function handle(?int $patientId = null): array
     {
-        $client = $this->clientContext->client();
+        $client = $this->patients->handle($this->clientContext->client(), $patientId);
         $profile = MedicalProfile::query()
             ->where('organization_id', $client->organization_id)
             ->where('client_id', $client->getKey())

@@ -2,6 +2,7 @@
 
 namespace App\Modules\Scenarios\Application;
 
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scenarios\Domain\Contracts\ScenarioRecipientResolver;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
@@ -15,7 +16,10 @@ use App\Modules\Scenarios\Domain\ValueObjects\ScenarioConditionSet;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioIdempotencyKey;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
+use App\Modules\Scheduling\Application\BookingPatientAccounts;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
+use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Support\SupportedLocale;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
@@ -32,7 +36,43 @@ final class MaterializeScenarioEvent
         private readonly BookingConfirmedGuard $bookingConfirmedGuard,
         private readonly BookingChangedGuard $bookingChangedGuard,
         private readonly AppointmentReminderScheduler $reminders,
+        private readonly BookingPatientAccounts $bookingPatients,
     ) {}
+
+    public function handleForLinkedPatient(int $organizationId, int $patientProfileId, int $clientId): void
+    {
+        $client = Client::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($clientId)
+            ->first();
+
+        if (! $client instanceof Client) {
+            return;
+        }
+
+        Booking::query()
+            ->where('organization_id', $organizationId)
+            ->where('patient_profile_id', $patientProfileId)
+            ->where('starts_at', '>', now())
+            ->orderBy('id')
+            ->get()
+            ->each(function (Booking $booking) use ($organizationId, $client): void {
+                $event = ScenarioEvent::query()
+                    ->where('organization_id', $organizationId)
+                    ->whereIn('event_name', [
+                        ScenarioEventType::BookingCreated->value,
+                        ScenarioEventType::BookingConfirmed->value,
+                        ScenarioEventType::BookingRescheduled->value,
+                    ])
+                    ->whereJsonContains('payload->booking_id', (int) $booking->getKey())
+                    ->latest('id')
+                    ->first();
+
+                if ($event instanceof ScenarioEvent) {
+                    $this->materializeForRecipient($event, $client);
+                }
+            });
+    }
 
     public function handle(int $scenarioEventId): void
     {
@@ -144,7 +184,73 @@ final class MaterializeScenarioEvent
         }
     }
 
-    private function materializeRule(ScenarioEvent $event, ScenarioEvaluationContext $context, ScenarioRule $rule, ?ScenarioRule $medicalRule): void
+    private function materializeForRecipient(ScenarioEvent $event, Client $client): void
+    {
+        if (! in_array($event->event_name, [
+            ScenarioEventType::BookingCreated,
+            ScenarioEventType::BookingConfirmed,
+            ScenarioEventType::BookingRescheduled,
+        ], true)) {
+            return;
+        }
+
+        DB::transaction(function () use ($event, $client): void {
+            $context = $this->contextFactory->evaluationContext($event);
+            $booking = $context->booking;
+            if ($booking === null || (int) $booking->organization_id !== (int) $client->organization_id
+                || ! $this->bookingPatients->includes($booking, (int) $client->getKey())) {
+                return;
+            }
+
+            if (in_array($event->event_name, [
+                ScenarioEventType::BookingCreated,
+                ScenarioEventType::BookingConfirmed,
+                ScenarioEventType::BookingRescheduled,
+            ], true)) {
+                $this->reminders->schedule($booking, $event);
+            }
+            if ($event->event_name === ScenarioEventType::BookingConfirmed
+                && ! $this->bookingConfirmedGuard->allows($event, $booking)) {
+                return;
+            }
+            if ($event->event_name === ScenarioEventType::BookingRescheduled
+                && ! $this->bookingChangedGuard->allows($event, $booking)) {
+                return;
+            }
+
+            $rules = ScenarioRule::query()
+                ->where('organization_id', $event->organization_id)
+                ->where('trigger_event', $event->event_name->value)
+                ->where('is_enabled', true)
+                ->where('system_managed', false)
+                ->with(['templateVersion.template'])
+                ->orderBy('id')
+                ->get();
+            $medicalRule = $rules->first(fn (ScenarioRule $rule): bool => $rule->templateVersion?->template?->template_key === 'medical-profile-after-booking'
+                && $rule->templateVersion->status === NotificationTemplateStatus::Published
+                && $rule->templateVersion->template->is_active
+                && $rule->purpose->value === $rule->templateVersion->template->purpose
+                && $this->conditions->matches(ScenarioConditionSet::from($rule->conditions), $context));
+            $rules = $rules->sortBy(fn (ScenarioRule $rule): int => str_starts_with($rule->rule_key, 'medical-profile-after-booking-') ? 1 : 0);
+            $recipient = new ScenarioRecipient(
+                type: 'client',
+                clientId: (int) $client->getKey(),
+                userId: null,
+                locale: SupportedLocale::normalize($client->language),
+            );
+            foreach ($rules as $rule) {
+                $this->materializeRule($event, $context, $rule, $medicalRule, $recipient);
+            }
+        });
+    }
+
+    private function materializeRule(
+        ScenarioEvent $event,
+        ScenarioEvaluationContext $context,
+        ScenarioRule $rule,
+        ?ScenarioRule $medicalRule,
+        ?ScenarioRecipient $onlyRecipient = null,
+    ): void
     {
         $template = $rule->templateVersion;
 
@@ -169,7 +275,15 @@ final class MaterializeScenarioEvent
             return;
         }
 
-        foreach ($this->recipients->resolve($rule, $event) as $recipient) {
+        $recipients = $this->recipients->resolve($rule, $event);
+        if ($onlyRecipient !== null) {
+            $recipients = array_values(array_filter($recipients, static fn (ScenarioRecipient $recipient): bool => $recipient->type === $onlyRecipient->type
+                && $recipient->clientId === $onlyRecipient->clientId));
+            if ($recipients === [] && $onlyRecipient->type === 'client') {
+                $recipients = [$onlyRecipient];
+            }
+        }
+        foreach ($recipients as $recipient) {
             $this->materializeRecipient($event, $evaluationContext, $rule, $template, $recipient, $scheduledFor, $medicalRule);
         }
     }

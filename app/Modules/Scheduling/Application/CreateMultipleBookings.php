@@ -52,6 +52,7 @@ final readonly class CreateMultipleBookings
         ?string $mapUrl = null,
         ?Closure $beforeCreate = null,
         ?string $additionalIntentHash = null,
+        ?int $patientProfileId = null,
     ): array {
         $batchIntentKey = $this->normalizeBatchIntentKey($batchIntentKey);
         $normalizedSlots = $this->normalizeSlots($slots, $actor, $clientTimezone);
@@ -77,11 +78,13 @@ final readonly class CreateMultipleBookings
             $mapUrl,
             $beforeCreate,
             $additionalIntentHash,
+            $patientProfileId,
         ): array {
             $intent = $actor instanceof Client ? $this->lockClientIntent(
                 $actor, $client, $specialist, $service, $format, $normalizedSlots, $batchIntentKey,
                 $partySize, $location, $workingLocationId, $locationArea, $clientTimezone, $latitude, $longitude, $mapUrl,
                 $additionalIntentHash,
+                $patientProfileId,
             ) : null;
             $bookings = [];
 
@@ -113,6 +116,7 @@ final readonly class CreateMultipleBookings
                         beforeCreate: $index === 0 ? $beforeCreate : null,
                         confirmedBackdated: false,
                         additionalIntentHash: $additionalIntentHash,
+                        patientProfileId: $patientProfileId,
                     );
                 } catch (ValidationException $exception) {
                     if (! $this->isUnavailableSlot($exception)) {
@@ -258,6 +262,7 @@ final readonly class CreateMultipleBookings
         ?float $longitude,
         ?string $mapUrl,
         ?string $additionalIntentHash,
+        ?int $patientProfileId,
     ): BookingIdempotencyKey {
         $organizationId = $this->context->id();
         if ($actor->getKey() !== $client->getKey()
@@ -272,6 +277,7 @@ final readonly class CreateMultipleBookings
             $client->getKey(), $specialist->getKey(), $service->getKey(), $format->value, $starts,
             $partySize, $location, $workingLocationId, $locationArea, $clientTimezone, $latitude, $longitude, $mapUrl,
             ...$additionalIntentHash === null ? [] : [$additionalIntentHash],
+            ...$patientProfileId === null ? [] : [$patientProfileId],
         ], JSON_THROW_ON_ERROR));
         $key = hash('sha256', 'portal-booking-batch-intent|'.$actor->getKey().'|'.$batchIntentKey);
         DB::table('booking_idempotency_keys')->insertOrIgnore([

@@ -3,6 +3,7 @@
 namespace App\Modules\Sessions\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Application\EnsureSelfPatientProfile;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
@@ -71,6 +72,7 @@ final readonly class CreateSession
             $session->forceFill([
                 'organization_id' => $orgId,
                 'client_id' => $client->getKey(),
+                'patient_profile_id' => app(EnsureSelfPatientProfile::class)->handle($client)->getKey(),
                 'specialist_id' => $specialist->getKey(),
                 'booking_id' => $booking?->getKey(),
                 'pain' => $encrypted->encryptedPain,
@@ -139,7 +141,7 @@ final readonly class CreateSession
             ]);
         }
 
-        if ((int) $booking->client_id !== (int) $client->getKey()) {
+        if ($booking->clinicalClientId() !== (int) $client->getKey()) {
             throw ValidationException::withMessages([
                 'booking_id' => 'The referenced booking does not belong to the provided client.',
             ]);

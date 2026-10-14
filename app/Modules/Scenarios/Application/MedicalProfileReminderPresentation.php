@@ -10,6 +10,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioConditionSet;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
+use App\Modules\Scheduling\Application\BookingPatientAccounts;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Carbon\CarbonImmutable;
@@ -17,7 +18,7 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 
 final readonly class MedicalProfileReminderPresentation
 {
-    public function __construct(private BookingNeedsMedicalProfile $medicalProfile, private ConditionEvaluatorRegistry $conditions) {}
+    public function __construct(private BookingNeedsMedicalProfile $medicalProfile, private ConditionEvaluatorRegistry $conditions, private BookingPatientAccounts $accounts) {}
 
     /** @return array{template_version_id: int, offset_label: string}|null */
     public function snapshot(AppointmentReminder $reminder, string $locale): ?array
@@ -61,7 +62,7 @@ final readonly class MedicalProfileReminderPresentation
     public function needsPrompt(ScenarioAction $action, ?Booking $booking): bool
     {
         return $booking !== null && $action->recipient_type === 'client'
-            && (int) $action->client_id === (int) $booking->client_id
+            && $this->accounts->canCompleteMedicalProfile($booking, (int) $action->client_id)
             && (int) $action->organization_id === (int) $booking->organization_id
             && $this->medicalProfile->needsCompletion($booking);
     }
@@ -96,7 +97,7 @@ final readonly class MedicalProfileReminderPresentation
         $payload = $context->event->getAttribute('payload');
         if ($booking === null || ! is_array($payload)
             || (int) $booking->organization_id !== (int) $action->organization_id
-            || (int) $booking->client_id !== (int) $action->client_id
+            || ! $this->accounts->includes($booking, (int) $action->client_id)
             || ! in_array($booking->status, [BookingStatus::Requested, BookingStatus::PendingReview, BookingStatus::Confirmed], true)
             || $booking->startsAtUtc()->lessThanOrEqualTo(CarbonImmutable::now('UTC'))
             || ($payload['starts_at'] ?? null) !== $booking->startsAtUtc()->toIso8601String()

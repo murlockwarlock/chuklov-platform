@@ -22,6 +22,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioDeliveryAttempt;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioConditionSet;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
+use App\Modules\Scheduling\Application\BookingPatientAccounts;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Carbon\CarbonImmutable;
@@ -101,6 +102,11 @@ final class ExecuteScenarioAction
                 ? null
                 : CarbonImmutable::parse((string) $action->scheduled_for)->utc(),
         );
+
+        if ($action->recipient_type === 'client' && $context->booking !== null
+            && ! app(BookingPatientAccounts::class)->includes($context->booking, (int) $action->client_id)) {
+            return false;
+        }
 
         if ($action->kind === 'appointment_reminder') {
             return $this->appointmentReminderIsCurrent($action, $context->booking);

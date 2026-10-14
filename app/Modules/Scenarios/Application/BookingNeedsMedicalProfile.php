@@ -25,6 +25,6 @@ final readonly class BookingNeedsMedicalProfile
                 ->whereKey($booking->service_id)
                 ->where('requires_medical_profile', true)
                 ->exists()
-            && ! $this->completion->isComplete((int) $booking->organization_id, (int) $booking->client_id);
+            && ! $this->completion->isComplete((int) $booking->organization_id, $booking->clinicalClientId());
     }
 }

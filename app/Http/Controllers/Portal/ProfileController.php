@@ -17,6 +17,7 @@ use App\Modules\Identity\Application\RecordPortalClientConsents;
 use App\Modules\Identity\Application\UpdateClientProfileFromPortal;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -24,8 +25,13 @@ class ProfileController extends Controller
 {
     public function show(
         GetClientProfile $profile,
+        Request $request,
     ): Response {
+        $request->validate(['return_to' => ['sometimes', 'string', 'in:patient_invitation']]);
         $data = $profile->handle();
+        if ($request->query('return_to') === 'patient_invitation') {
+            $data['urls']['update'] = route('portal.profile.update', ['return_to' => 'patient_invitation']);
+        }
         Inertia::encryptHistory();
         $data['telegram']['linkUrl'] = session()->pull('telegram_link_url');
         $data['telegram']['linkError'] = (bool) session()->pull('telegram_link_error', false);
@@ -43,10 +49,11 @@ class ProfileController extends Controller
         ClientPortalContext $clientContext,
         UpdateClientProfileFromPortal $updateProfile,
     ): RedirectResponse {
+        $request->validate(['return_to' => ['sometimes', 'string', 'in:patient_invitation']]);
         $validated = $request->validated();
         $updateProfile->handle($clientContext->client(), $validated, array_keys($validated));
 
-        return to_route('portal.profile')->with('profile_saved', true);
+        return to_route($request->query('return_to') === 'patient_invitation' ? 'portal.family.invitation' : 'portal.profile')->with('profile_saved', true);
     }
 
     public function consents(

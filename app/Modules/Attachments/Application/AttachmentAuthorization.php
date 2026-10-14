@@ -5,6 +5,7 @@ namespace App\Modules\Attachments\Application;
 use App\Models\User;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
+use App\Modules\Identity\Application\PatientProfileAccess;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -35,9 +36,10 @@ final class AttachmentAuthorization
             $this->features->authorize($organization, OrganizationFeature::ClientRecords);
             $this->assertClientOwned($actor, $organization);
             $this->assertClientOwned($client, $organization);
-            if ($actor->getKey() !== $client->getKey() || $type !== AttachmentType::MedicalReport) {
+            if ($type !== AttachmentType::MedicalReport) {
                 throw new AuthorizationException('This client may only upload their own medical reports.');
             }
+            app(PatientProfileAccess::class)->authorizeClinicalClient($actor, $client);
 
             return $organization;
         }

@@ -11,8 +11,8 @@ final class MedicalAttachmentUploadController extends Controller
 {
     public function __invoke(Request $request, UploadClientMedicalAttachment $upload): RedirectResponse
     {
-        $data = $request->validate(['file' => ['required', 'file'], 'upload_key' => ['required', 'uuid']]);
-        $upload->handle($data['file'], $data['upload_key']);
+        $data = $request->validate(['file' => ['required', 'file'], 'upload_key' => ['required', 'uuid'], 'patient_profile_id' => ['sometimes', 'nullable', 'integer', 'min:1']]);
+        $upload->handle($data['file'], $data['upload_key'], isset($data['patient_profile_id']) ? (int) $data['patient_profile_id'] : null);
 
         return back();
     }

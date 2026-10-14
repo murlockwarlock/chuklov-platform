@@ -8,6 +8,7 @@ use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\DownloadClientMedicalAttachment;
 use App\Modules\ClientPortal\Application\GetClientTemporaryAttachmentUrl;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -26,7 +27,9 @@ final class MedicalAttachmentController extends Controller
         abort_unless(is_string($mode) && in_array($mode, ['download', 'preview'], true), 403);
         $attachment = MedicalAttachment::query()
             ->where('organization_id', $context->client()->organization_id)
-            ->where('client_id', $context->client()->getKey())
+            ->where(fn ($query) => $query->where('client_id', $context->client()->getKey())->orWhereIn('client_id',
+                PatientProfile::query()->select('clinical_client_id')
+                    ->where('organization_id', $context->client()->organization_id)->where('linked_account_client_id', $context->client()->getKey())))
             ->where('uuid', $uuid)
             ->firstOrFail();
         $urls->assertAccessible($attachment);

@@ -5,7 +5,6 @@ namespace App\Filament\Resources\UnavailablePeriods\Pages;
 use App\Filament\Resources\ScheduleExceptions\ScheduleChangeTypeActions;
 use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
 use App\Filament\Support\LocalizedListRecords;
-use Filament\Actions\CreateAction;
 
 class ListUnavailablePeriods extends LocalizedListRecords
 {
@@ -22,7 +21,6 @@ class ListUnavailablePeriods extends LocalizedListRecords
     {
         return [
             ScheduleChangeTypeActions::make(true),
-            CreateAction::make(),
         ];
     }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { useForm } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import LegalConsentChecklist from '../../Components/Portal/LegalConsentChecklist.vue';
@@ -8,7 +8,7 @@ import CityAutocomplete from '../../Components/Portal/CityAutocomplete.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 import { countryNames } from '../../utils/countryNames';
-import { formatPhone, phoneExample } from '../../utils/profilePhone';
+import { formatPhone, formatPhoneInput, phoneExample } from '../../utils/profilePhone';
 
 type LegalDocument = {
     id: number;
@@ -50,6 +50,7 @@ const props = defineProps<{
     telegram: Telegram;
     legalDocuments: LegalDocument[];
     urls: {
+        family: string | null;
         update: string;
         consents: string;
         telegramLink: string;
@@ -232,6 +233,14 @@ function saveB2bAnswer(): void {
           </p>
         </div>
       </form>
+
+      <Link
+        v-if="props.urls.family"
+        :href="props.urls.family"
+        class="portal-link"
+      >
+        {{ t('family.title') }}
+      </Link>
       <section class="portal-content-section portal-stack">
         <div class="portal-section-heading">
           <span class="portal-label">{{ t('profile.language') }}</span>
@@ -350,6 +359,7 @@ function saveB2bAnswer(): void {
                 class="portal-input"
                 :placeholder="phoneExample(profileForm.country)"
                 maxlength="32"
+                @input="profileForm.phone = formatPhoneInput(profileForm.phone, profileForm.country)"
                 @blur="profileForm.phone = formatPhone(profileForm.phone, profileForm.country)"
               >
               <p

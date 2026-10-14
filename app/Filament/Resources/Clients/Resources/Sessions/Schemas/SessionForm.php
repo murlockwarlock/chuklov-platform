@@ -190,7 +190,10 @@ final class SessionForm
 
         return Booking::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
-            ->where('client_id', $parent->getKey())
+            ->where(fn (Builder $query) => $query
+                ->whereHas('patientProfile', fn (Builder $patients) => $patients
+                    ->where('organization_id', app(OrganizationContext::class)->id())->where('clinical_client_id', $parent->getKey()))
+                ->orWhere(fn (Builder $legacy) => $legacy->whereNull('patient_profile_id')->where('client_id', $parent->getKey())))
             ->when($specialistId > 0, fn (Builder $query) => $query->where('specialist_id', $specialistId));
     }
 }

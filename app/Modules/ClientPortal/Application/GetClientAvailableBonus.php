@@ -2,15 +2,13 @@
 
 namespace App\Modules\ClientPortal\Application;
 
-use App\Modules\Finance\Application\CurrencyConfigurationService;
+use App\Modules\Finance\Application\DisplayClientMoney;
 use App\Modules\Finance\Domain\Models\OrganizationCurrencyConfiguration;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Application\ReferralRewardBalanceProjection;
 use Illuminate\Auth\Access\AuthorizationException;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
-use InvalidArgumentException;
 
 final class GetClientAvailableBonus
 {
@@ -19,7 +17,7 @@ final class GetClientAvailableBonus
 
     public function __construct(
         private readonly ReferralRewardBalanceProjection $balances,
-        private readonly CurrencyConfigurationService $currencies,
+        private readonly DisplayClientMoney $displayMoney,
         private readonly OrganizationContext $organizations,
     ) {}
 
@@ -52,15 +50,10 @@ final class GetClientAvailableBonus
         if (! $available->isPositive()) {
             return $this->resolved[$key] = ['value' => null, 'currencyUnavailable' => false];
         }
-        $preferred = $client->getAttribute('preferred_currency');
-        $target = ! $configuration->force_single_currency && is_string($preferred) ? $preferred : $balance->currency;
-        try {
-            $conversion = $this->currencies->convert($client->organization_id, $available, $target);
-            $display = Money::ofMinor($conversion->targetAmountMinor, $conversion->targetCurrency);
+        $projection = $this->displayMoney->handle($client, $available);
+        $display = Money::ofMinor($projection['amountMinor'], $projection['currency']);
 
-            return $this->resolved[$key] = ['value' => $display->toDecimalString().' '.$display->currency()->value, 'currencyUnavailable' => false];
-        } catch (InvalidArgumentException|ModelNotFoundException) {
-            return $this->resolved[$key] = ['value' => $available->toDecimalString().' '.$balance->currency->value, 'currencyUnavailable' => true];
-        }
+        return $this->resolved[$key] = ['value' => $display->toDecimalString().' '.$display->currency()->value,
+            'currencyUnavailable' => ! $projection['conversionAvailable']];
     }
 }

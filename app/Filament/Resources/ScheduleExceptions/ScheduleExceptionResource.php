@@ -8,12 +8,14 @@ use App\Filament\Resources\ScheduleExceptions\Schemas\ScheduleExceptionForm;
 use App\Filament\Resources\ScheduleExceptions\Tables\ScheduleExceptionsTable;
 use App\Filament\Support\LocalizedResource;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use BackedEnum;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class ScheduleExceptionResource extends LocalizedResource
 {
@@ -35,8 +37,45 @@ class ScheduleExceptionResource extends LocalizedResource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()
-            ->where('organization_id', app(OrganizationContext::class)->id())
+        $organizationId = app(OrganizationContext::class)->id();
+        $exceptions = DB::table('schedule_exceptions')
+            ->where('organization_id', $organizationId)
+            ->select([
+                DB::raw('CAST(id AS TEXT) as id'),
+                'id as source_id',
+                'organization_id',
+                'specialist_id',
+                'exception_date',
+                'exception_type',
+                'start_time',
+                'end_time',
+                DB::raw('NULL as starts_at'),
+                DB::raw('NULL as ends_at'),
+                'reason',
+                DB::raw("'exception' as change_kind"),
+                'is_active',
+            ]);
+        $unavailable = DB::table('unavailable_periods')
+            ->where('organization_id', $organizationId)
+            ->whereNull('b2b_sales_call_id')
+            ->select([
+                DB::raw('CAST(-id AS TEXT) as id'),
+                'id as source_id',
+                'organization_id',
+                'specialist_id',
+                DB::raw('NULL as exception_date'),
+                DB::raw("'".ScheduleExceptionType::DayOff->value."' as exception_type"),
+                DB::raw('NULL as start_time'),
+                DB::raw('NULL as end_time'),
+                'starts_at',
+                'ends_at',
+                'reason',
+                DB::raw("'unavailable' as change_kind"),
+                DB::raw('1 as is_active'),
+            ]);
+
+        return ScheduleException::query()
+            ->fromSub($exceptions->unionAll($unavailable), 'schedule_exceptions')
             ->with('specialist');
     }
 

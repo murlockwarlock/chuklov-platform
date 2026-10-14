@@ -2,6 +2,7 @@
 
 namespace App\Modules\ClientPortal\Application;
 
+use App\Modules\Identity\Application\ResolvePatientClinicalClient;
 use App\Modules\MedicalProfiles\Application\ClinicalQuestionnaire;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
@@ -14,10 +15,11 @@ final readonly class UpdateClientMedicalProfile
         private ClientPortalContext $context,
         private UpdateMedicalProfile $update,
         private ClinicalQuestionnaire $questionnaire,
+        private ResolvePatientClinicalClient $patients,
     ) {}
 
     /** @param array<string, mixed> $data */
-    public function handle(array $data): void
+    public function handle(array $data, ?int $patientId = null): void
     {
         $fields = Validator::make($data, [
             'expected_snapshot' => ['required', 'string', 'size:64'],
@@ -49,7 +51,8 @@ final readonly class UpdateClientMedicalProfile
         if ($answers['no_chronic_conditions']) {
             $fields['chronic_conditions'] = null;
         }
-        $this->update->handle($this->context->client(), $this->context->client(), new UpdateMedicalProfileCommand(
+        $subject = $this->patients->handle($this->context->client(), $patientId);
+        $this->update->handle($this->context->client(), $subject, new UpdateMedicalProfileCommand(
             expectedSnapshot: $fields['expected_snapshot'],
             complaints: $fields['complaints'] ?? null,
             goals: $fields['goals'],

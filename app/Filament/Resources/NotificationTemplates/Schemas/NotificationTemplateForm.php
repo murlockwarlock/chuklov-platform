@@ -3,21 +3,26 @@
 namespace App\Filament\Resources\NotificationTemplates\Schemas;
 
 use App\Filament\Support\MessageComposer;
+use App\Models\User;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
+use App\Modules\Scenarios\Application\PreviewNotificationTemplateMedia;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
+use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
@@ -82,10 +87,22 @@ final class NotificationTemplateForm
                             ->content(fn (?NotificationTemplate $record): string => self::currentMediaSummary($record))
                             ->visible(fn (?NotificationTemplate $record): bool => $record instanceof NotificationTemplate && $record->latestVersion?->media !== null)
                             ->columnSpanFull(),
+                        Actions::make([
+                            Action::make('removeSavedTemplateMedia')->label(__('Удалить медиа'))->color('danger')
+                                ->visible(fn (Get $get, ?NotificationTemplate $record): bool => $get('remove_media') !== true && $record?->latestVersion?->media !== null)
+                                ->action(function (Set $set): void {
+                                    $set('remove_media', true);
+                                    $set('media_image', []);
+                                    $set('media_url', null);
+                                    $set('delivery_mode', NotificationMessageMode::Text->value);
+                                }),
+                        ]),
                     ],
                     bodyLabel: 'Текст сообщения',
                     bodyHelper: 'Используйте форматирование, ссылки, эмодзи и данные из списка доступных переменных.',
                     requireMedia: true,
+                    hasSavedMedia: fn (Get $get, ?Model $record): bool => $get('remove_media') !== true
+                        && $record instanceof NotificationTemplate && $record->latestVersion?->media !== null,
                 ),
             ]);
     }
@@ -121,7 +138,7 @@ final class NotificationTemplateForm
             idempotencyKey: 'template-preview',
             mode: $rendered->mode,
             showCaptionAboveMedia: $rendered->showCaptionAboveMedia,
-            mediaItems: self::previewMediaItems($get),
+            mediaItems: self::previewMediaItems($get, $record instanceof NotificationTemplate ? $record : null),
         );
     }
 
@@ -136,7 +153,7 @@ final class NotificationTemplateForm
     }
 
     /** @return list<NotificationMedia> */
-    private static function previewMediaItems(Get $get): array
+    private static function previewMediaItems(Get $get, ?NotificationTemplate $record): array
     {
         $uploads = $get('media_image');
         $uploads = $uploads instanceof UploadedFile ? [$uploads] : (is_array($uploads) ? $uploads : []);
@@ -168,7 +185,10 @@ final class NotificationTemplateForm
 
         $url = is_string($get('media_url')) ? trim($get('media_url')) : '';
         if ($url === '') {
-            return [];
+            $actor = auth()->user();
+
+            return $get('remove_media') !== true && $record?->latestVersion !== null && $actor instanceof User
+                ? app(PreviewNotificationTemplateMedia::class)->handle($actor, $record->latestVersion) : [];
         }
 
         return [new NotificationMedia(

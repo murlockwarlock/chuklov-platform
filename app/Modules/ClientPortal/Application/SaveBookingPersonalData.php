@@ -63,7 +63,7 @@ final readonly class SaveBookingPersonalData
         ])->validate()['personal_data'];
         try {
             $validated['phone'] = $this->reference->phone($validated['phone'], $validated['country']);
-            $this->profiles->handle($client, $validated, self::FIELDS);
+            $this->profiles->handleForBooking($client, $validated, self::FIELDS);
         } catch (ValidationException $exception) {
             $errors = [];
             foreach ($exception->errors() as $field => $messages) {

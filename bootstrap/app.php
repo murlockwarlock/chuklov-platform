@@ -27,7 +27,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->dontFlash(['source_detail', 'attribution_source_detail', 'anamnesis', 'complaints', 'goals', 'chronic_conditions', 'operations', 'injuries', 'medicines', 'supplements', 'clinical_answers', 'answers', 'pain_not_measured']);
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('api/*')
-                || ($request->routeIs('portal.profile.cities') && $request->expectsJson()),
+                || ($request->routeIs('portal.profile.cities', 'portal.family.invite') && $request->expectsJson()),
         );
         $exceptions->report(function (Throwable $exception): void {
             if (! app()->bound('request')) {

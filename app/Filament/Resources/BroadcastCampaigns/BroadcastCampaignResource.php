@@ -175,26 +175,26 @@ final class BroadcastCampaignResource extends LocalizedResource
                 savedTemplateSchema: fn (): array => [
                     Select::make('template_version_ru_id')
                         ->label(__('Сохранённый шаблон'))
-                        ->options(fn (): array => self::templateOptions('ru'))
+                        ->options(fn (Get $get): array => self::templateOptions('ru', self::deliveryIncludesMedia($get) && ! self::deliveryIncludesText($get)))
                         ->placeholder(__('Нет опубликованных сообщений'))
                         ->searchable()
-                        ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
+                        ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliverySupportsTemplate($get)),
                     Select::make('template_version_en_id')
                         ->label(__('Шаблон для английского текста'))
-                        ->options(fn (): array => self::templateOptions('en'))
+                        ->options(fn (Get $get): array => self::templateOptions('en', self::deliveryIncludesMedia($get) && ! self::deliveryIncludesText($get)))
                         ->placeholder(__('Нет опубликованных сообщений'))
                         ->searchable()
-                        ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
+                        ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliverySupportsTemplate($get)),
                     Placeholder::make('template_empty')
                         ->label(__('Готовые сообщения'))
                         ->content(__('Нет готовых шаблонов для этого типа сообщения.'))
-                        ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get) && self::templateOptions('ru') === [] && self::templateOptions('en') === []),
+                        ->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliverySupportsTemplate($get) && self::templateOptions('ru', self::deliveryIncludesMedia($get) && ! self::deliveryIncludesText($get)) === [] && self::templateOptions('en', self::deliveryIncludesMedia($get) && ! self::deliveryIncludesText($get)) === []),
                     Actions::make([
                         Action::make('createMessage')
                             ->label(__('Создать сообщение'))
                             ->icon(Heroicon::OutlinedPlus)
                             ->url(fn (): string => NotificationTemplateResource::getUrl('create')),
-                    ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliveryIncludesText($get)),
+                ])->visible(fn (Get $get): bool => $get('message_mode') === 'saved_template' && self::deliverySupportsTemplate($get)),
                 ],
                 additionalMediaComponents: [
                     View::make('filament.resources.broadcasts.current-media')
@@ -405,7 +405,7 @@ final class BroadcastCampaignResource extends LocalizedResource
     }
 
     /** @return array<string, string> */
-    private static function templateOptions(string $locale): array
+    private static function templateOptions(string $locale, bool $mediaOnly = false): array
     {
         $organizationId = app(OrganizationContext::class)->id();
 
@@ -421,7 +421,17 @@ final class BroadcastCampaignResource extends LocalizedResource
             ->with('template')
             ->latest('id')
             ->get()
-            ->filter(static function (NotificationTemplateVersion $version): bool {
+            ->filter(static function (NotificationTemplateVersion $version) use ($mediaOnly): bool {
+                if ($mediaOnly) {
+                    try {
+                        if (! is_array($version->media)
+                            || app(\App\Modules\Scenarios\Application\NotificationTemplateMedia::class)->items($version->media) === []) {
+                            return false;
+                        }
+                    } catch (\InvalidArgumentException) {
+                        return false;
+                    }
+                }
                 if (array_diff($version->variables, ScenarioTemplateVariableCatalog::allowedForPurpose(ScenarioRulePurpose::Marketing)) !== []) {
                     return false;
                 }
@@ -630,6 +640,18 @@ final class BroadcastCampaignResource extends LocalizedResource
     private static function deliveryIncludesText(Get $get): bool
     {
         return NotificationMessageMode::tryFrom((string) $get('delivery_mode'))?->includesText() ?? true;
+    }
+
+    private static function deliverySupportsTemplate(Get $get): bool
+    {
+        $mode = NotificationMessageMode::tryFrom((string) $get('delivery_mode'));
+
+        return $mode?->includesText() === true || $mode?->includesImage() === true;
+    }
+
+    private static function deliveryIncludesMedia(Get $get): bool
+    {
+        return NotificationMessageMode::tryFrom((string) $get('delivery_mode'))?->includesImage() ?? false;
     }
 
     private static function hasMedia(?BroadcastCampaign $campaign): bool

@@ -3,6 +3,7 @@
 namespace App\Modules\Scenarios\Application;
 
 use App\Models\User;
+use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use App\Modules\Scenarios\Domain\Models\NotificationTemplateVersion;
@@ -38,7 +39,8 @@ final class UpdateNotificationTemplate
                 organizationId: $organization->getKey(),
                 uploads: $data['media_image'] ?? null,
                 url: $data['media_url'] ?? null,
-                existing: $latestVersion->media,
+                existing: NotificationMessageMode::tryFrom((string) ($data['delivery_mode'] ?? 'text'))?->includesImage() === true
+                    && ($data['remove_media'] ?? false) !== true ? $latestVersion->media : null,
                 storedPaths: $storedPaths,
             );
             $configuration = NotificationTemplateConfiguration::from($data);

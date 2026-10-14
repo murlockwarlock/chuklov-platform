@@ -205,7 +205,7 @@ class ListBookings extends LocalizedListRecords
             ->when($selectedIds !== [], fn (Builder $query): Builder => $query->whereIn('specialist_id', $selectedIds))
             ->where('starts_at', '>=', $start->startOfDay()->setTimezone('UTC'))
             ->where('starts_at', '<', $end->addDay()->startOfDay()->setTimezone('UTC'))
-            ->with(['client', 'service', 'specialist'])
+            ->with(['client', 'service', 'specialist', 'patientProfile.clinicalClient'])
             ->orderBy('starts_at')
             ->get();
         $canViewClients = ClientResource::canViewAny();
@@ -522,6 +522,9 @@ class ListBookings extends LocalizedListRecords
         $status = $booking->status;
         $format = $booking->visit_format;
         $clientName = trim((string) ($booking->client->full_name ?? ''));
+        if ($booking->clinicalClientId() !== (int) $booking->client_id) {
+            $clientName = trim((string) $booking->patientProfile?->clinicalClient?->full_name).' • '.__('Заказчик').': '.$clientName;
+        }
         $serviceName = trim((string) ($booking->service->name ?? ''));
         $locationSnapshot = $booking->locationSnapshot();
         $locationLabel = $format === VisitFormat::Online

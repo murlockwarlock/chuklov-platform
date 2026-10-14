@@ -8,6 +8,8 @@ import BookingConfirmation from '../../Components/Portal/BookingConfirmation.vue
 import BookingSuccess from '../../Components/Portal/BookingSuccess.vue';
 import BookingSessionSelection from '../../Components/Portal/BookingSessionSelection.vue';
 import PersonalDataFields from '../../Components/Portal/PersonalDataFields.vue';
+import BookingPatientSelector from '../../Components/Portal/BookingPatientSelector.vue';
+import type { PatientSummary } from '../../types/patients';
 import { useBookingSessions } from '../../composables/useBookingSessions';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
@@ -84,6 +86,9 @@ type BookingResult = {
     bookingId: number;
     startsAt: string;
     medicalProfileUrl: string | null;
+    familyUrl: string | null;
+    patientName: string | null;
+    requiresPatientMedicalProfile: boolean;
     startsAtList?: string[];
 } | null;
 
@@ -98,6 +103,8 @@ type LegalDocument = {
 };
 
 type Props = {
+    patients: { items: PatientSummary[]; hasMore: boolean; enabled: boolean };
+    selectedPatientId: number | null;
     portal: PortalShell;
     services: ServiceOption[];
     specialists: SpecialistOption[];
@@ -110,7 +117,7 @@ type Props = {
     profile: PersonalProfile;
     legalDocuments: LegalDocument[];
     attribution: { needsManualSource: boolean; url: string; sources: string[] };
-    urls: { create: string; store: string; services: string; bookings: string; cities: string };
+    urls: { create: string; store: string; services: string; bookings: string; cities: string; family: string; createPatient: string };
 };
 
 type ProgressStep = {
@@ -137,6 +144,7 @@ const timezoneEditorOpen = ref(false);
 const bookingStep = ref<BookingStep>('time');
 const confirmationForm = ref<HTMLFormElement | null>(null);
 const bookingForm = useForm<{
+    patient_profile_id: number | null;
     personal_data: PersonalData;
     service_id: number | null;
     specialist_id: number | null;
@@ -157,6 +165,7 @@ const bookingForm = useForm<{
     attribution_source: string | null;
     attribution_source_detail: string;
 }>({
+    patient_profile_id: props.selectedPatientId,
     personal_data: personalData(props.profile),
     service_id: props.query.serviceId,
     specialist_id: props.query.specialistId,
@@ -456,6 +465,10 @@ function bookingQuery(
         query.location_area = selectedLocationArea.value;
     }
 
+    if (bookingForm.patient_profile_id !== null) {
+        query.patient_profile_id = bookingForm.patient_profile_id;
+    }
+
     return query;
 }
 
@@ -673,6 +686,18 @@ function submitBooking(): void {
           </div>
         </header>
 
+        <BookingPatientSelector
+          v-if="!bookingCompleted && props.patients.enabled"
+          v-model="bookingForm.patient_profile_id"
+          :patients="props.patients.items"
+          :has-more="props.patients.hasMore"
+          :create-url="props.urls.createPatient"
+          :family-url="props.urls.family"
+          :service-id="props.query.serviceId"
+          :specialist-id="props.query.specialistId"
+          :format="props.query.format"
+        />
+
         <nav
           v-if="!bookingCompleted"
           class="portal-booking-progress"
@@ -708,6 +733,9 @@ function submitBooking(): void {
           :specialist-name="selectedSpecialist?.displayName ?? null"
           :selected-start="selectedStart"
           :starts-at-list="props.bookingResult.startsAtList"
+          :patient-name="props.bookingResult.patientName"
+          :family-url="props.bookingResult.familyUrl"
+          :requires-patient-medical-profile="props.bookingResult.requiresPatientMedicalProfile"
           :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
           :locale="locale"
           :format-label="formatLabel(props.query.format)"

@@ -7,6 +7,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\B2B\Domain\ValueObjects\ProviderAccountAffinity;
 use App\Modules\B2B\Domain\ValueObjects\VideoMeetingIdentity;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Enums\BookingSource;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -115,6 +116,17 @@ class Booking extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    /** @return BelongsTo<PatientProfile, $this> */
+    public function patientProfile(): BelongsTo
+    {
+        return $this->belongsTo(PatientProfile::class);
+    }
+
+    public function clinicalClientId(): int
+    {
+        return $this->patient_profile_id === null ? (int) $this->client_id : (int) $this->patientProfile->clinical_client_id;
     }
 
     /** @return BelongsTo<Specialist, $this> */

@@ -87,6 +87,8 @@ final class GetClientProfile
             ],
             'timezoneOptions' => $this->timezoneOptions($client->timezone),
             'urls' => [
+                'family' => app(\App\Modules\Organizations\Application\OrganizationFeatureGate::class)->isEnabled($client->organization,
+                    \App\Modules\Organizations\Domain\Enums\OrganizationFeature::ClientRecords) ? route('portal.family') : null,
                 'currency' => route('portal.profile.currency'),
                 'cities' => route('portal.profile.cities'),
                 'update' => route('portal.profile.update'),

@@ -68,6 +68,7 @@ class RedactSensitiveLogData implements ProcessorInterface
 
     private function redactMessage(string $message): string
     {
+        $message = preg_replace('/\bfamily_[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/', 'family_[REDACTED]', $message) ?? $message;
         $message = preg_replace_callback(
             self::AUTHORIZATION_MESSAGE_PATTERN,
             static fn (array $matches): string => $matches[1].'=[REDACTED]',

@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Channels\Application\HandleTelegramBookingConfirmation;
+use App\Modules\Channels\Application\PreparePatientTelegramInvitation;
 use App\Modules\Channels\Application\SendTelegramContentSection;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Infrastructure\Telegram\SendTelegramWelcome;
@@ -23,6 +24,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Application\HandleReferralTelegramStart;
 use App\Modules\Referrals\Application\SendReferralInvite;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use SergiX44\Nutgram\Nutgram;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 
@@ -87,6 +89,27 @@ $bot->onCommand('start ref_{token}', function (
     }
 })->where('token', '[A-Za-z0-9_-]{16,128}')->description('Открыть реферальное приложение');
 
+$bot->onCommand('start family_{token}', function (
+    Nutgram $bot,
+    string $token,
+    TelegramBotIdentityVerifier $identityVerifier,
+    PreparePatientTelegramInvitation $prepare,
+    OrganizationContext $context,
+): void {
+    try {
+        $organizationId = config('tenancy.default_organization_id');
+        if (! is_int($organizationId) && ! (is_string($organizationId) && ctype_digit($organizationId))) {
+            throw new AuthorizationException;
+        }
+        $context->set(Organization::query()->findOrFail((int) $organizationId));
+        $identity = $identityVerifier->handle($bot);
+        $url = $prepare->handle($token, $identity);
+        app(SendTelegramWelcome::class)->handle($bot, $identity->language, $url);
+    } catch (AuthorizationException|UnauthorizedHttpException|ModelNotFoundException) {
+        $bot->sendMessage('Приглашение недействительно, устарело или предназначено другому аккаунту.');
+    }
+})->where('token', '[A-Za-z0-9_-]{43}')->description('Открыть приглашение семьи');
+
 $bot->onCommand('start staff_{token}', function (
     Nutgram $bot,
     string $token,
@@ -122,7 +145,7 @@ $bot->onCommand('start {token}', function (
     } catch (InvalidTelegramLinkToken|AuthorizationException|UnauthorizedHttpException) {
         $bot->sendMessage('Ссылка недействительна или уже использована.');
     }
-})->where('token', '(?!(?:staff_|web_|ref_))[A-Za-z0-9_-]+')->description('Запустить приложение');
+})->where('token', '(?!(?:staff_|web_|ref_|family_))[A-Za-z0-9_-]+')->description('Запустить приложение');
 
 $bot->onCommand('invite', function (
     Nutgram $bot,

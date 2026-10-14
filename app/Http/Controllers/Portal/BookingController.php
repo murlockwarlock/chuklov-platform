@@ -12,6 +12,7 @@ use App\Modules\Attribution\Application\GetClientAttribution;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\CreatePortalBooking;
 use App\Modules\ClientPortal\Application\GetClientProfile;
+use App\Modules\ClientPortal\Application\ListPatientProfiles;
 use App\Modules\ClientPortal\Application\PortalBookingErrorMessages;
 use App\Modules\ClientPortal\Application\ProjectPortalService;
 use App\Modules\Identity\Application\ListPublishedLegalDocuments;
@@ -139,6 +140,8 @@ class BookingController extends Controller
         }
 
         return Inertia::render('Portal/BookingCreate', [
+            'patients' => app(ListPatientProfiles::class)->forBooking($client, $this->nullableInteger($validated['patient_profile_id'] ?? null)),
+            'selectedPatientId' => $this->nullableInteger($validated['patient_profile_id'] ?? null),
             'services' => $bookableServices->map(fn (Service $service): array => [
                 ...$serviceProjection->booking($service, app()->getLocale()),
                 'formats' => array_values(array_filter(
@@ -209,6 +212,8 @@ class BookingController extends Controller
                 'bookings' => route('portal.bookings.index'),
                 'referrals' => route('portal.referrals'),
                 'cities' => route('portal.profile.cities'),
+                'family' => route('portal.family'),
+                'createPatient' => route('portal.family.store'),
             ],
         ]);
     }
@@ -232,6 +237,7 @@ class BookingController extends Controller
 
         try {
             $arguments = [
+                'patientProfileId' => $validated['patient_profile_id'] ?? null,
                 'personalData' => $validated['personal_data'] ?? null,
                 'client' => $clientContext->client(),
                 'specialist' => $this->specialist($validated['specialist_id'], $organizationContext->id()),
@@ -275,6 +281,7 @@ class BookingController extends Controller
                 'service_id' => $booking->service_id,
                 'specialist_id' => $booking->specialist_id,
                 'booking_id' => $booking->getKey(),
+                'patient_profile_id' => $booking->patient_profile_id,
                 ...count($bookings) > 1 ? ['booking_ids' => array_map(static fn (Booking $item): int => (int) $item->getKey(), $bookings)] : [],
                 'date_from' => $booking->startsAtUtc()->setTimezone($displayTimezone)->toDateString(),
                 'date_to' => $booking->startsAtUtc()->setTimezone($displayTimezone)->toDateString(),
@@ -299,9 +306,15 @@ class BookingController extends Controller
             'bookingId' => (int) $booking->getKey(),
             'startsAt' => $booking->startsAtUtc()->toIso8601String(),
             'startsAtList' => array_values(array_map(static fn (Booking $item): string => $item->startsAtUtc()->toIso8601String(), $bookings === [] ? [$booking] : $bookings)),
+            'patientProfileId' => $booking->patient_profile_id,
+            'familyUrl' => $booking->clinicalClientId() !== (int) $booking->client_id ? route('portal.family') : null,
+            'patientName' => $booking->patientProfile?->clinicalClient?->full_name,
+            'requiresPatientMedicalProfile' => $booking->service->requires_medical_profile && $booking->clinicalClientId() !== (int) $booking->client_id,
             'medicalProfileUrl' => $booking->service->requires_medical_profile
+                && ($booking->patient_profile_id === null || (int) $booking->patientProfile->linked_account_client_id === (int) $booking->client_id)
                 ? route('portal.medical-profile', [
                     'booking_id' => $booking->getKey(), 'edit' => 1,
+                    'patient_profile_id' => $booking->patient_profile_id,
                     ...(count($bookings) > 1 ? ['return_to' => 'bookings'] : []),
                 ])
                 : null,

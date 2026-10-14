@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Pages\WorkingIntervals;
 use App\Filament\Resources\ScheduleExceptions\Pages\ListScheduleExceptions;
+use App\Filament\Resources\ScheduleExceptions\Pages\CreateScheduleException as CreateScheduleExceptionPage;
 use App\Filament\Resources\Services\Pages\EditService;
 use App\Filament\Resources\Specialists\Pages\ListSpecialists;
 use App\Filament\Support\ScheduleImpactPreview;
@@ -18,6 +19,7 @@ use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Application\CreateScheduleException;
+use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Scheduling\Application\ScheduleMutationImpactCalculator;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -420,6 +422,40 @@ class MilestoneFourFinalRemediationTest extends TestCase
 
         self::assertModelMissing($exception);
         self::assertModelExists($booking->fresh());
+    }
+
+    public function test_unavailable_time_is_created_and_deleted_from_the_unified_schedule_changes_surface(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateScheduleExceptionPage::class)
+            ->fillForm([
+                'change_type' => 'unavailable',
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => '2026-04-06 12:00',
+                'ends_at' => '2026-04-06 13:30',
+                'reason' => 'Unified unavailable time',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $period = UnavailablePeriod::query()->where('organization_id', $organization->getKey())->sole();
+        self::assertSame($specialist->getKey(), $period->specialist_id);
+        $rows = \App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource::getEloquentQuery()->get();
+        $row = $rows->first(fn ($record): bool => $record->getAttribute('change_kind') === 'unavailable');
+        self::assertNotNull($row);
+        self::assertSame($period->getKey(), (int) $row->getAttribute('source_id'));
+
+        Livewire::actingAs($admin)
+            ->test(ListScheduleExceptions::class)
+            ->assertTableColumnFormattedStateSet('change_kind', 'Недоступное время', (string) $row->getKey())
+            ->mountTableAction('delete', (string) $row->getKey())
+            ->callMountedTableAction()
+            ->assertHasNoErrors();
+
+        self::assertModelMissing($period);
     }
 
     public function test_display_local_availability_accepts_dates_with_midnight_transitions(): void

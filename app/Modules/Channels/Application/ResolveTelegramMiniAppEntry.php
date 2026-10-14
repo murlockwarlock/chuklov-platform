@@ -10,6 +10,7 @@ final class ResolveTelegramMiniAppEntry
 {
     private const ALLOWED_ROUTE_NAMES = [
         'portal.home',
+        'portal.family.invitation',
         'portal.b2b',
         'portal.feedback',
         'portal.health',
@@ -39,10 +40,11 @@ final class ResolveTelegramMiniAppEntry
         $path = route('portal.telegram.launch', ['entry' => $key], false);
 
         if ($query !== []) {
-            if (count($query) !== 1
+            $patientInvitation = $key === 'family' && count($query) === 1 && is_int($query['patient_invitation_id'] ?? null) && $query['patient_invitation_id'] > 0;
+            if (! $patientInvitation && (count($query) !== 1
                 || ! array_key_exists('referral_code', $query)
                 || ! is_string($query['referral_code'])
-                || preg_match('/^[A-Za-z0-9_-]{16,128}$/', $query['referral_code']) !== 1) {
+                || preg_match('/^[A-Za-z0-9_-]{16,128}$/', $query['referral_code']) !== 1)) {
                 throw new LogicException('The Telegram Mini App launch query is not allowlisted.');
             }
 

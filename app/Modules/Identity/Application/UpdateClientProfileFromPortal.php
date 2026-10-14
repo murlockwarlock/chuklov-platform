@@ -40,13 +40,31 @@ class UpdateClientProfileFromPortal
      */
     public function handle(Client $client, array $attributes, array $confirmedFields): Client
     {
+        return $this->update($client, $attributes, $confirmedFields, OrganizationFeature::ClientRecords);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $confirmedFields
+     */
+    public function handleForBooking(Client $client, array $attributes, array $confirmedFields): Client
+    {
+        return $this->update($client, $attributes, $confirmedFields, OrganizationFeature::ServiceCatalog);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $confirmedFields
+     */
+    private function update(Client $client, array $attributes, array $confirmedFields, OrganizationFeature $feature): Client
+    {
         $organization = $this->context->organization();
 
         if ((int) $client->organization_id !== $organization->getKey()) {
             throw new AuthorizationException('The client is outside the current organization.');
         }
 
-        $this->features->authorize($organization, OrganizationFeature::ClientRecords);
+        $this->features->authorize($organization, $feature);
 
         $confirmedFields = array_values(array_intersect($confirmedFields, self::FIELDS));
         $normalized = $this->normalize($attributes);
