@@ -44,7 +44,10 @@ final class UpdateAppointmentReminders
                 $key = $this->key($definition['recipient_type'], $definition['offset_value'], $definition['offset_unit']);
                 $reminder = $existing->get($key);
                 if ($reminder instanceof AppointmentReminder) {
-                    $reminder->forceFill(['is_enabled' => $definition['is_enabled']])->save();
+                    $reminder->forceFill([
+                        'is_enabled' => $definition['is_enabled'],
+                        'medical_profile_prompt' => $definition['medical_profile_prompt'] ?? $reminder->medical_profile_prompt,
+                    ])->save();
                     $existing->forget($key);
 
                     continue;
@@ -57,6 +60,7 @@ final class UpdateAppointmentReminders
                     'offset_value' => $definition['offset_value'],
                     'offset_unit' => $definition['offset_unit'],
                     'is_enabled' => $definition['is_enabled'],
+                    'medical_profile_prompt' => $definition['medical_profile_prompt'] ?? false,
                 ])->save();
             }
 
@@ -68,7 +72,7 @@ final class UpdateAppointmentReminders
         });
     }
 
-    /** @return list<array{recipient_type: string, offset_value: int, offset_unit: string, is_enabled: bool}> */
+    /** @return list<array{recipient_type: string, offset_value: int, offset_unit: string, is_enabled: bool, medical_profile_prompt: ?bool}> */
     private function normalize(mixed $value, string $recipientType): array
     {
         if (! is_array($value) || ! array_is_list($value) || count($value) > 10) {
@@ -99,11 +103,16 @@ final class UpdateAppointmentReminders
                 throw ValidationException::withMessages([$recipientType.'_reminders' => 'Время напоминания не должно повторяться.']);
             }
             $keys[$key] = true;
+            $medicalPrompt = $item['medical_profile_prompt'] ?? null;
+            if (($medicalPrompt !== null && ! is_bool($medicalPrompt)) || ($recipientType !== 'client' && $medicalPrompt === true)) {
+                throw ValidationException::withMessages([$recipientType.'_reminders' => 'Проверьте настройку карты здоровья.']);
+            }
             $result[] = [
                 'recipient_type' => $recipientType,
                 'offset_value' => $offset,
                 'offset_unit' => $unit->value,
                 'is_enabled' => (bool) ($item['is_enabled'] ?? true),
+                'medical_profile_prompt' => $medicalPrompt,
             ];
         }
 

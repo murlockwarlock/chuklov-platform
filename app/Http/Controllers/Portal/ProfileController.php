@@ -5,16 +5,19 @@ namespace App\Http\Controllers\Portal;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\RecordPortalClientConsentsRequest;
 use App\Http\Requests\UpdateClientB2bAnswerRequest;
+use App\Http\Requests\UpdateClientCurrencyPreferenceRequest;
 use App\Http\Requests\UpdateClientProfileRequest;
 use App\Modules\Broadcasts\Application\SetClientB2bSpecialistAnswer;
 use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\GetClientProfile;
+use App\Modules\ClientPortal\Application\UpdateClientCurrencyPreference;
 use App\Modules\Identity\Application\ListPublishedLegalDocuments;
 use App\Modules\Identity\Application\RecordPortalClientConsents;
 use App\Modules\Identity\Application\UpdateClientProfileFromPortal;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -22,8 +25,14 @@ class ProfileController extends Controller
 {
     public function show(
         GetClientProfile $profile,
+        Request $request,
     ): Response {
+        $request->validate(['return_to' => ['sometimes', 'string', 'in:patient_invitation']]);
         $data = $profile->handle();
+        if ($request->query('return_to') === 'patient_invitation') {
+            $data['urls']['update'] = route('portal.profile.update', ['return_to' => 'patient_invitation']);
+        }
+        Inertia::encryptHistory();
         $data['telegram']['linkUrl'] = session()->pull('telegram_link_url');
         $data['telegram']['linkError'] = (bool) session()->pull('telegram_link_error', false);
 
@@ -31,6 +40,7 @@ class ProfileController extends Controller
             ...$data,
             'saved' => (bool) session()->pull('profile_saved', false),
             'consentsSaved' => (bool) session()->pull('consents_saved', false),
+            'currencySaved' => (bool) session()->pull('currency_saved', false),
         ]);
     }
 
@@ -39,10 +49,11 @@ class ProfileController extends Controller
         ClientPortalContext $clientContext,
         UpdateClientProfileFromPortal $updateProfile,
     ): RedirectResponse {
+        $request->validate(['return_to' => ['sometimes', 'string', 'in:patient_invitation']]);
         $validated = $request->validated();
         $updateProfile->handle($clientContext->client(), $validated, array_keys($validated));
 
-        return to_route('portal.profile')->with('profile_saved', true);
+        return to_route($request->query('return_to') === 'patient_invitation' ? 'portal.family.invitation' : 'portal.profile')->with('profile_saved', true);
     }
 
     public function consents(
@@ -66,6 +77,13 @@ class ProfileController extends Controller
         $recordConsents->handle($clientContext->client(), $answers);
 
         return to_route('portal.profile')->with('consents_saved', true);
+    }
+
+    public function currency(UpdateClientCurrencyPreferenceRequest $request, UpdateClientCurrencyPreference $preference): RedirectResponse
+    {
+        $preference->handle($request->validated('preferred_currency'));
+
+        return to_route('portal.profile')->with('currency_saved', true);
     }
 
     public function b2bAnswer(

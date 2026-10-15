@@ -72,12 +72,29 @@ final class FilesystemContentMediaStorage implements ContentMediaStorageInterfac
         }
 
         $matched = preg_match(
-            '/\Acontent\/(\d+)\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(jpg|png|webp)\z/i',
+            '/\Acontent\/(\d+)\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(jpg|png|webp|mp4)\z/i',
             $path,
             $matches,
         ) === 1;
 
         return $matched && (int) $matches[1] === $organizationId;
+    }
+
+    public function storeVideo(int $organizationId, UploadedFile $file): string
+    {
+        $realPath = $file->getRealPath();
+        if (! $file->isValid() || $realPath === false || ! is_file($realPath)
+            || $file->getSize() <= 0 || $file->getSize() > (int) config('content_media.max_video_bytes', 10_485_760)
+            || $this->sniffMimeType($realPath) !== 'video/mp4') {
+            throw ValidationException::withMessages(['content_video' => 'Загрузите видео MP4 размером до 10 МБ.']);
+        }
+        $path = 'content/'.$organizationId.'/'.Str::uuid().'.mp4';
+        $stored = Storage::disk($this->disk())->putFileAs(dirname($path), $file, basename($path));
+        if (! is_string($stored)) {
+            throw ValidationException::withMessages(['content_video' => 'Не удалось сохранить видео.']);
+        }
+
+        return $stored;
     }
 
     public function readStream(int $organizationId, string $path): mixed

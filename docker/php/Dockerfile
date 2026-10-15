@@ -9,6 +9,7 @@ RUN apt-get update \
 
 COPY --from=composer /usr/bin/composer /usr/bin/composer
 COPY docker/php/opcache.ini /usr/local/etc/php/conf.d/opcache.ini
+COPY docker/php/uploads.ini /usr/local/etc/php/conf.d/uploads.ini
 COPY docker/php/nginx.conf /etc/nginx/nginx.conf
 COPY docker/php/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh

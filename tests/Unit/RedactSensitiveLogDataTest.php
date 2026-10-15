@@ -11,6 +11,20 @@ use RuntimeException;
 
 class RedactSensitiveLogDataTest extends TestCase
 {
+    public function test_patient_invitation_tokens_are_redacted_in_commands_urls_and_nested_context(): void
+    {
+        foreach (['A', '-', '_'] as $lastCharacter) {
+            $token = str_repeat('A', 42).$lastCharacter;
+            $record = new LogRecord(datetime: new DateTimeImmutable, channel: 'testing', level: Level::Info,
+                message: '/start family_'.$token,
+                context: ['url' => 'https://t.me/examplebot?start=family_'.$token, 'nested' => ['text' => 'family_'.$token]]);
+            $redacted = (new RedactSensitiveLogData)($record);
+            self::assertStringNotContainsString($token, $redacted->message);
+            self::assertStringNotContainsString($token, $redacted->context['url']);
+            self::assertStringNotContainsString($token, $redacted->context['nested']['text']);
+        }
+    }
+
     public function test_sensitive_context_and_message_values_are_redacted(): void
     {
         $record = new LogRecord(

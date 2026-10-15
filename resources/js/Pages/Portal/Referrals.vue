@@ -5,8 +5,11 @@ import AppShell from '../../Components/Portal/AppShell.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
+type DisplayMoney = { amountMinor: number; currency: string; conversionAvailable: boolean };
+
 type MoneyAmount = {
     currency: string;
+    display?: DisplayMoney;
     amountMinor: number;
 };
 
@@ -49,6 +52,7 @@ type RewardBalance = {
     paidOutMinor: number;
     redeemedMinor?: number;
     restoredMinor?: number;
+    display?: Partial<Record<'availableMinor' | 'redeemedMinor' | 'restoredMinor', DisplayMoney>>;
 };
 
 type RewardHistoryEntry = {
@@ -60,6 +64,7 @@ type RewardHistoryEntry = {
     reason: string | null;
     comment: string | null;
     occurredAt: string | null;
+    display?: DisplayMoney;
 };
 
 type Payout = {
@@ -179,7 +184,7 @@ function refreshReferralData(): void {
 
     pollingInFlight = true;
     router.reload({
-        only: ['referrals'],
+        only: ['referrals', 'portal'],
         onFinish: () => {
             pollingInFlight = false;
             scheduleRefresh();
@@ -221,7 +226,7 @@ function formatMoney(minor: number, currency: string): string {
 }
 
 function formatMoneyList(items: MoneyAmount[]): string {
-    return items.length === 0 ? '—' : items.map((item) => formatMoney(item.amountMinor, item.currency)).join(' · ');
+    return items.length === 0 ? '—' : items.map((item) => formatMoney(item.display?.amountMinor ?? item.amountMinor, item.display?.currency ?? item.currency)).join(' · ');
 }
 
 function channelLabel(channel: string): string {
@@ -408,12 +413,18 @@ function cancelPayout(payout: Payout): void {
               :key="balance.currency"
               class="portal-reward"
             >
-              <strong>{{ balance.currency }}</strong>
+              <strong>{{ balance.display?.availableMinor?.currency ?? balance.currency }}</strong>
               <dl class="portal-reward__rows">
-                <div><dt>{{ t('referrals.bonusAvailable') }}</dt><dd>{{ formatMoney(balance.availableMinor, balance.currency) }}</dd></div>
-                <div><dt>{{ t('referrals.bonusSpent') }}</dt><dd>{{ formatMoney(balance.redeemedMinor ?? 0, balance.currency) }}</dd></div>
-                <div><dt>{{ t('referrals.bonusRestored') }}</dt><dd>{{ formatMoney(balance.restoredMinor ?? 0, balance.currency) }}</dd></div>
+                <div><dt>{{ t('referrals.bonusAvailable') }}</dt><dd>{{ formatMoney(balance.display?.availableMinor?.amountMinor ?? balance.availableMinor, balance.display?.availableMinor?.currency ?? balance.currency) }}</dd></div>
+                <div><dt>{{ t('referrals.bonusSpent') }}</dt><dd>{{ formatMoney(balance.display?.redeemedMinor?.amountMinor ?? balance.redeemedMinor ?? 0, balance.display?.redeemedMinor?.currency ?? balance.currency) }}</dd></div>
+                <div><dt>{{ t('referrals.bonusRestored') }}</dt><dd>{{ formatMoney(balance.display?.restoredMinor?.amountMinor ?? balance.restoredMinor ?? 0, balance.display?.restoredMinor?.currency ?? balance.currency) }}</dd></div>
               </dl>
+              <p
+                v-if="balance.display?.availableMinor?.conversionAvailable === false"
+                class="portal-copy portal-copy--small"
+              >
+                {{ t('bonus.currencyUnavailable') }}
+              </p>
             </article>
           </div>
           <p
@@ -447,7 +458,7 @@ function cancelPayout(payout: Payout): void {
                 </p>
               </div>
               <strong :class="entry.isReversal ? 'text-[var(--portal-color-danger)]' : 'text-[var(--portal-color-ink)]'">
-                {{ entry.isReversal ? '−' : '+' }}{{ formatMoney(entry.amountMinor, entry.currency) }}
+                {{ entry.isReversal ? '−' : '+' }}{{ formatMoney(entry.display?.amountMinor ?? entry.amountMinor, entry.display?.currency ?? entry.currency) }}
               </strong>
             </li>
           </ul>

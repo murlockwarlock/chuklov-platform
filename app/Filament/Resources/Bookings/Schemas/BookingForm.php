@@ -8,6 +8,7 @@ use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Application\CreateClient as CreateClientAction;
+use App\Modules\Identity\Application\ListPatientProfilesForCrm;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -138,6 +139,7 @@ class BookingForm
                         : null;
                 })
                 ->afterStateUpdated(function (Get $get, Set $set) use ($multiple): void {
+                    $set('patient_profile_id', null);
                     if (! $multiple) {
                         $selectedTime = self::selectedBookingTime($get);
                         if ($selectedTime !== null) {
@@ -215,6 +217,18 @@ class BookingForm
                         ]);
                     }
                 }),
+            Select::make('patient_profile_id')
+                ->label(__('Кого записываем?'))
+                ->placeholder(__('Самого заказчика'))
+                ->nullable()
+                ->searchable()
+                ->options(fn (Get $get): array => auth()->user() instanceof User && (int) $get('client_id') > 0
+                    ? app(ListPatientProfilesForCrm::class)->bookingOptions(auth()->user(), (int) $get('client_id')) : [])
+                ->getSearchResultsUsing(fn (string $search, Get $get): array => auth()->user() instanceof User && (int) $get('client_id') > 0
+                    ? app(ListPatientProfilesForCrm::class)->bookingOptions(auth()->user(), (int) $get('client_id'), $search) : [])
+                ->getOptionLabelUsing(fn (mixed $value, Get $get): ?string => auth()->user() instanceof User && is_numeric($value) && (int) $get('client_id') > 0
+                    ? app(ListPatientProfilesForCrm::class)->bookingLabel(auth()->user(), (int) $get('client_id'), (int) $value) : null)
+                ->disabled(fn (Get $get): bool => (int) $get('client_id') < 1),
             Select::make('visit_format')
                 ->label(__('Формат визита'))
                 ->options([
@@ -363,6 +377,7 @@ class BookingForm
                 ->helperText(__('Оставьте пустым, чтобы занять обычное время услуги.')),
             TextEntry::make('backdated_warning')
                 ->label(__('Внимание'))
+                ->color('danger')
                 ->state(fn (Get $get): string => self::backdatedWarning($get))
                 ->visible(fn (Get $get): bool => self::isBackdated($get))
                 ->columnSpanFull(),

@@ -604,6 +604,28 @@ final class SessionCockpitTest extends TestCase
         $component->assertDontSee('Редактировать');
     }
 
+    public function test_filament_session_keeps_unmeasured_pain_distinct_from_zero_through_reopen_and_correction(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        Livewire::actingAs($admin)->test(CreateMedicalSession::class, ['parentRecord' => $client])
+            ->assertSet('data.pain_not_measured', true)
+            ->fillForm(['occurred_at' => '2026-08-16 10:00', 'specialist_id' => $specialist->getKey()])
+            ->call('create')->assertHasNoErrors();
+        $session = MedicalSession::query()->where('client_id', $client->getKey())->sole();
+        self::assertNull(app(GetSession::class)->handle($admin, $session, $client)?->painVas);
+
+        foreach ([0, 10, null] as $value) {
+            Livewire::actingAs($admin)->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+                ->fillForm(['pain_not_measured' => $value === null, 'pain_vas' => $value])
+                ->call('save')->assertHasNoErrors();
+            self::assertSame($value, app(GetSession::class)->handle($admin, $session->fresh(), $client)?->painVas);
+            Livewire::actingAs($admin)->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+                ->assertSet('data.pain_not_measured', $value === null)
+                ->assertSet('data.pain_vas', $value);
+        }
+    }
+
     public function test_filament_create_session_over_livewire_creates_for_fixed_parent_client_and_encrypts_clinical_fields(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
@@ -615,12 +637,14 @@ final class SessionCockpitTest extends TestCase
         self::assertFalse($component->instance()->getSchemaComponent('form.pain_vas')->isRequired());
         $component->assertSet('data.pain_vas', null);
         $component
+            ->set('data.pain_not_measured', false)
             ->set('data.pain_vas', 4)
             ->assertSee('4 / 10')
             ->fillForm([
                 'occurred_at' => '2026-08-16 10:00',
                 'specialist_id' => $specialist->getKey(),
                 'pain_vas' => 4,
+                'pain_not_measured' => false,
                 'pain' => 'Сильная боль в шее',
                 'tests' => 'МРТ шейного отдела',
                 'observations' => 'Сглаженный лордоз',

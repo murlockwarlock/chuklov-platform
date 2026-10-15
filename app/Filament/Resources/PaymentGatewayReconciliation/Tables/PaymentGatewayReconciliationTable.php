@@ -7,6 +7,7 @@ use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\FinancePresentation;
 use App\Filament\Support\PaymentGatewayReconciliationPresentation;
 use App\Modules\Finance\Domain\Models\PaymentGatewayEvent;
+use App\Modules\Identity\Domain\Models\Client;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 
@@ -26,7 +27,19 @@ final class PaymentGatewayReconciliationTable
                     ->color('warning'),
                 TextColumn::make('client')
                     ->label(__('Клиент'))
-                    ->state(fn (PaymentGatewayEvent $record): string => PaymentGatewayReconciliationPresentation::client($record)?->full_name ?? __('Не сопоставлен'))
+                    ->state(function (PaymentGatewayEvent $record): string {
+                        $client = PaymentGatewayReconciliationPresentation::client($record);
+                        $unmatchedLabel = __('Не сопоставлен');
+                        $unmatchedLabel = is_string($unmatchedLabel) ? $unmatchedLabel : 'Не сопоставлен';
+
+                        if (! $client instanceof Client) {
+                            return $unmatchedLabel;
+                        }
+
+                        return is_string($client->full_name) && $client->full_name !== ''
+                            ? $client->full_name
+                            : $unmatchedLabel;
+                    })
                     ->wrap()
                     ->url(fn (PaymentGatewayEvent $record): ?string => CrmEntityLinks::clientUrl(
                         PaymentGatewayReconciliationPresentation::client($record),

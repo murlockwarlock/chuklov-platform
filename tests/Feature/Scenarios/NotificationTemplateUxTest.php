@@ -15,6 +15,7 @@ use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\NotificationTemplateMedia;
+use App\Modules\Scenarios\Application\PreviewNotificationTemplateMedia;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
@@ -24,6 +25,8 @@ use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -93,6 +96,40 @@ final class NotificationTemplateUxTest extends TestCase
         self::assertCount(1, $media);
         self::assertSame('photo', $media[0]->type);
         self::assertSame('https://cdn.example.test/photo.jpg', $media[0]->url);
+    }
+
+    public function test_uploaded_template_media_survives_reopen_edit_preview_and_text_only_removal(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        Storage::fake('private');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($admin);
+        Livewire::test(CreateNotificationTemplate::class)->fillForm([
+            'name' => 'Synthetic uploaded media', 'locale' => 'ru', 'purpose' => ScenarioRulePurpose::Marketing->value,
+            'is_active' => true, 'delivery_mode' => NotificationMessageMode::ImageWithCaption->value,
+            'body' => '<p>Synthetic caption</p>', 'media_image' => [UploadedFile::fake()->image('qa.png')],
+        ])->call('create')->assertHasNoFormErrors();
+        $template = NotificationTemplate::query()->where('name', 'Synthetic uploaded media')->sole();
+        $original = $template->versions()->latest('version')->firstOrFail();
+        $path = $original->media['items'][0]['source'];
+        Storage::disk('private')->assertExists($path);
+        $editor = Livewire::test(EditNotificationTemplate::class, ['record' => $template->getKey()]);
+        $editor->fillForm(['body' => '<p>Updated synthetic caption</p>'])->call('save')->assertHasNoFormErrors();
+        $latest = $template->versions()->latest('version')->firstOrFail();
+        self::assertSame($original->media, $latest->media);
+        $preview = app(PreviewNotificationTemplateMedia::class)->handle($admin, $latest);
+        self::assertCount(1, $preview);
+        self::assertStringContainsString('/admin/notification-templates/media/', $preview[0]->url);
+        self::assertStringNotContainsString('notification-template/'.$organization->getKey().'/', $preview[0]->url);
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        $this->get($preview[0]->url)->assertOk()->assertHeader('X-Content-Type-Options', 'nosniff');
+        Livewire::test(EditNotificationTemplate::class, ['record' => $template->getKey()])
+            ->fillForm(['delivery_mode' => NotificationMessageMode::Text->value])->call('save')->assertHasNoFormErrors();
+        $text = $template->versions()->latest('version')->firstOrFail();
+        self::assertNull($text->media);
+        self::assertSame(NotificationMessageMode::Text, $text->delivery_mode);
+        self::assertSame($original->media, $original->fresh()->media);
+        Storage::disk('private')->assertExists($path);
     }
 
     public function test_template_with_unsupported_variable_is_rejected_on_create(): void

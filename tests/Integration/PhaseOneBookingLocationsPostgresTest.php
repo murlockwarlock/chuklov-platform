@@ -3,6 +3,7 @@
 namespace Tests\Integration;
 
 use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Pages\WorkingIntervals;
 use App\Models\User;
 use App\Modules\Channels\Application\HandleTelegramBookingConfirmation;
 use App\Modules\Identity\Domain\Models\Client;
@@ -67,6 +68,23 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
         }
 
         parent::tearDown();
+    }
+
+    public function test_postgresql_travel_days_enforce_specialist_tenant_ownership_and_keep_legacy_nulls(): void
+    {
+        $this->requirePostgres();
+        $organization = Organization::factory()->create();
+        $otherOrganization = Organization::factory()->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $foreign = Specialist::factory()->forOrganization($otherOrganization)->create();
+        $legacy = LocationDay::factory()->forOrganization($organization)->create();
+        self::assertNull($legacy->specialist_id);
+        $assigned = LocationDay::factory()->forOrganization($organization)->create(['specialist_id' => $specialist->getKey()]);
+        self::assertSame($specialist->getKey(), $assigned->specialist_id);
+        $this->assertQueryException(function () use ($organization, $foreign): void {
+            LocationDay::factory()->forOrganization($organization)->create(['specialist_id' => $foreign->getKey()]);
+        }, 'A travel day referenced a specialist of another organization.');
+        self::assertNull($legacy->refresh()->specialist_id);
     }
 
     public function test_postgresql_location_schema_enforces_tenant_safe_defaults_and_booking_shape(): void
@@ -254,15 +272,17 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
         Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm([
-                'lead_time_minutes' => 15,
                 'viewer_timezone' => 'Asia/Bangkok',
                 'working_hours' => [],
                 'clear_working_hours' => false,
             ])
             ->call('save')
             ->assertHasNoErrors();
+
+        Livewire::actingAs($admin)->test(SchedulingConfiguration::class)
+            ->fillForm(['lead_time_minutes' => 15])->call('save')->assertHasNoErrors();
 
         self::assertSame('Asia/Bangkok', $specialist->refresh()->viewer_timezone);
         self::assertSame($before, SpecialistWorkingHour::query()
@@ -638,6 +658,7 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
             actor: $admin,
             locationDay: null,
             areaName: 'Midnight',
+            specialistId: (int) $specialist->getKey(),
             weekday: 2,
             specificDate: null,
             startTime: '12:00',
@@ -650,6 +671,7 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
             actor: $admin,
             locationDay: null,
             areaName: 'Midnight',
+            specialistId: (int) $specialist->getKey(),
             weekday: null,
             specificDate: '2026-09-20',
             startTime: '23:00',

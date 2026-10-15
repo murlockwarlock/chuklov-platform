@@ -3,6 +3,7 @@ import { mkdirSync } from 'node:fs';
 import { expect, test, type Page, type Response } from '@playwright/test';
 
 type BookingFixture = {
+    clientId: number;
     cookieName: string;
     cookieValue: string;
     serviceId: number;
@@ -19,6 +20,8 @@ type BookingFixture = {
 };
 
 type BookingFixtureOptions = {
+    daysAhead?: number;
+    medicalService?: boolean;
     withBooking?: boolean;
     withCompanionMessages?: boolean;
     withCompanionFailure?: boolean;
@@ -28,6 +31,7 @@ type BookingFixtureOptions = {
     multipleLocations?: boolean;
     longServiceTitle?: boolean;
     homeVisit?: boolean;
+    tracker?: 'empty' | 'task';
 };
 
 function createBookingFixture(options: BookingFixtureOptions | boolean = false): BookingFixture {
@@ -89,6 +93,23 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'language' => 'ru',
             'timezone' => 'UTC',
         ]);
+        if (getenv('PLAYWRIGHT_TRACKER') !== '') {
+            \\Illuminate\\Support\\Facades\\Queue::fake();
+            app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+            $trackerAdmin = \\App\\Models\\User::factory()->forOrganization($organization)->create();
+            $trackerVersion = app(\\App\\Modules\\Tracker\\Application\\SaveTrackerPlan::class)->handle(
+                $trackerAdmin, null, 'Synthetic Tracker '.$suffix, true, true, '10.00', 'USD', 30, null, true, 1,
+            );
+            app(\\App\\Modules\\Tracker\\Application\\GrantPaidTrackerAccess::class)->handle($organization, $client, $trackerVersion);
+            if (getenv('PLAYWRIGHT_TRACKER') === 'task') {
+                app(\\App\\Modules\\Tracker\\Application\\AssignTrackerTask::class)->handle(
+                    $trackerAdmin, $client, 'Практика QA',
+                    \\App\\Modules\\Tracker\\Domain\\Enums\\TrackerTaskType::Practice,
+                    \\App\\Modules\\Tracker\\Domain\\Enums\\TrackerTaskFrequency::Daily,
+                    \\Carbon\\CarbonImmutable::now('UTC')->startOfDay(),
+                );
+            }
+        }
         $specialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()->forOrganization($organization)->create([
             'display_name' => 'Playwright Specialist '.$suffix,
             'timezone' => 'UTC',
@@ -313,6 +334,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 ? 'Индивидуальная консультация по глубоким и устойчивым изменениям в жизни '.$suffix
                 : 'Playwright Service '.$suffix,
             'formats' => $homeVisit ? ['home'] : ($multipleChoices ? ['office', 'online'] : ['office']),
+            'requires_medical_profile' => getenv('PLAYWRIGHT_MEDICAL_SERVICE') === '1',
         ]);
         \\App\\Modules\\Scheduling\\Domain\\Models\\SpecialistServiceAssignment::factory()
             ->forSpecialist($specialist)
@@ -377,7 +399,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     'timezone' => 'Europe/Berlin',
                 ]);
         }
-        $date = \\Carbon\\CarbonImmutable::now('UTC')->addDay()->toDateString();
+        $date = \\Carbon\\CarbonImmutable::now('UTC')->addDays((int) getenv('PLAYWRIGHT_BOOKING_DAYS_AHEAD'))->toDateString();
         $booking = null;
         if (getenv('PLAYWRIGHT_WITH_BOOKING') === '1') {
             $date = \\Carbon\\CarbonImmutable::now('UTC')->addDays(3)->toDateString();
@@ -417,6 +439,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         echo json_encode([
             'cookieName' => $cookieName,
             'cookieValue' => $cookieValue,
+            'clientId' => $client->getKey(),
             'serviceId' => $service->getKey(),
             'serviceName' => $service->name,
             'specialistId' => $specialist->getKey(),
@@ -447,6 +470,9 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
         DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
         PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
+        PLAYWRIGHT_MEDICAL_SERVICE: normalizedOptions.medicalService ? '1' : '0',
+        PLAYWRIGHT_BOOKING_DAYS_AHEAD: String(normalizedOptions.daysAhead ?? 1),
+        PLAYWRIGHT_TRACKER: normalizedOptions.tracker ?? '',
         PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
         PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
         PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
@@ -595,6 +621,75 @@ test('client portal shell is responsive', async ({ page }) => {
     await expect(page.getByText(/Личный кабинет|Вы вошли как|Продолжить/)).toHaveCount(0);
 });
 
+test('portrait Story previews stay inside their frames and player navigation works', async ({ page }) => {
+    const fixture = createBookingFixture();
+    execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->findOrFail(${fixture.clientId});
+        foreach (array_keys(\\App\\Modules\\Content\\Application\\GetClientEntryMedia::STORIES) as $key) {
+            \\App\\Modules\\Content\\Domain\\Models\\ContentSection::factory()->create([
+                'organization_id' => $client->organization_id,
+                'section_key' => $key, 'locale' => 'ru', 'is_visible' => true, 'delivery_mode' => 'mini_app',
+                'media' => [
+                    'image' => 'content/'.$client->organization_id.'/'.\\Illuminate\\Support\\Str::uuid().'.png',
+                    'video' => 'content/'.$client->organization_id.'/'.\\Illuminate\\Support\\Str::uuid().'.mp4',
+                ],
+            ]);
+        }
+    `], { env: { ...process.env, APP_ENV: 'e2e' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    await page.route('**/storage/content/**/*.png', (route) => route.fulfill({
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="640"><rect width="360" height="640" fill="#b88059"/></svg>',
+    }));
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/');
+    const cards = page.locator('.portal-story');
+    await expect(cards).toHaveCount(4);
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect.poll(() => cards.evaluateAll((elements) => elements.every((element) => {
+            const frame = element.querySelector('.portal-story__preview') as HTMLElement;
+            const image = frame.querySelector('img') as HTMLImageElement;
+            const title = element.querySelector('.portal-story__title') as HTMLElement;
+            const bounds = frame.getBoundingClientRect();
+            const imageBounds = image.getBoundingClientRect();
+            const titleBounds = title.getBoundingClientRect();
+            return image.complete && image.naturalHeight === 640
+                && imageBounds.left >= bounds.left && imageBounds.right <= bounds.right
+                && imageBounds.top >= bounds.top && imageBounds.bottom <= bounds.bottom
+                && titleBounds.top >= bounds.bottom
+                && element.getBoundingClientRect().bottom >= titleBounds.bottom;
+        }))).toBe(true);
+        await assertNoHorizontalOverflow(page);
+        if (width < 768) {
+            const labels = page.locator('.portal-bottom-nav__label');
+            await expect(labels).toHaveCount(5);
+            const geometry = await labels.evaluateAll((elements) => elements.map((element) => {
+                const range = document.createRange();
+                range.selectNodeContents(element);
+                return { label: element.textContent, scrollWidth: element.scrollWidth, clientWidth: element.clientWidth, lines: range.getClientRects().length };
+            }));
+            for (const label of geometry) {
+                expect(label.scrollWidth, `${label.label} at ${width}px`).toBeLessThanOrEqual(label.clientWidth);
+                expect(label.lines, `${label.label} at ${width}px`).toBe(1);
+            }
+        }
+    }
+    await cards.first().click();
+    const dialog = page.locator('.portal-story-player');
+    await expect(dialog).toBeVisible();
+    await expect(dialog.locator('strong')).toHaveText('Кто такой Евгений Чуклов (видео)');
+    await dialog.getByRole('button', { name: 'Далее', exact: true }).click();
+    await expect(dialog.locator('strong')).toHaveText('История мастера (видео)');
+    await dialog.getByRole('button', { name: 'Назад', exact: true }).click();
+    await expect(dialog.locator('strong')).toHaveText('Кто такой Евгений Чуклов (видео)');
+    await page.keyboard.press('Escape');
+    await expect(dialog).not.toBeVisible();
+    await cards.last().click();
+    await expect(dialog.locator('strong')).toHaveText('Подробно о методике (видео)');
+    await dialog.getByRole('button', { name: 'Закрыть видео', exact: true }).click();
+    await expect(dialog).not.toBeVisible();
+});
+
 test('Telegram Mini App submits initData automatically without a second login action', async ({ page }) => {
     let authenticationRequests = 0;
 
@@ -651,7 +746,7 @@ test('Telegram Mini App submits initData automatically without a second login ac
 
     await page.goto('/');
 
-    await expect(page.getByText('Добро пожаловать, Telegram Client')).toBeVisible();
+    await expect(page.getByText('Добро пожаловать в пространство здоровья!')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toHaveCount(0);
     expect(authenticationRequests).toBe(1);
 });
@@ -821,7 +916,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     }]);
 
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Добро пожаловать, Playwright Client' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!' })).toBeVisible();
     const russianTrigger = page.getByRole('button', { name: 'Русский', exact: true });
     await expect(russianTrigger).toBeVisible();
     await expect(page.getByRole('menu')).toHaveCount(0);
@@ -888,7 +983,7 @@ test('home keeps one primary booking action and ordinary referrals remain availa
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/');
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
-        await expect(page.getByTestId('home-booking-cta')).toHaveText('Записаться');
+        await expect(page.getByTestId('home-booking-cta')).toHaveText('Выбрать удобное время');
         await expect(page.getByRole('heading', { name: 'Пока нет предстоящих записей' })).toBeVisible();
         await assertNoHorizontalOverflow(page);
 
@@ -1107,6 +1202,7 @@ test('assistant uses an attachment icon and portal selects keep human option lab
     }]);
 
     await page.goto('/portal/companion');
+    await expect(page.getByText('Помощник отвечает', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Прикрепить изображения' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Начать новый диалог' })).toBeVisible();
     await expect(page.getByText('Добавить изображения', { exact: true })).toHaveCount(0);
@@ -1289,6 +1385,238 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await expect(page.getByTestId('availability-slot')).toHaveCount(0);
     await page.getByRole('link', { name: 'Мои записи' }).last().click();
     await expect(page.getByText(/Playwright Service/)).toHaveCount(1);
+});
+
+test('September 26 confirmed profile persists and the medical editor saves then reopens', async ({ page }) => {
+    const fixture = createBookingFixture();
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!' })).toBeVisible();
+    await page.getByTestId('home-booking-cta').click();
+    await expect(page).toHaveURL(/\/portal\/services/);
+    await page.goto('/portal/more');
+    await page.getByRole('link', { name: 'Личные данные', exact: true }).click();
+    await page.getByLabel('Фамилия', { exact: true }).fill('Солдатов');
+    await page.getByLabel('Имя', { exact: true }).fill('Денис');
+    await page.getByLabel('Отчество', { exact: true }).fill('Сергеевич');
+    await page.getByText('Мужской', { exact: true }).click();
+    await expect(page.getByLabel('Мужской', { exact: true })).toBeChecked();
+    await page.getByLabel('Мужской', { exact: true }).press('ArrowRight');
+    await expect(page.getByLabel('Женский', { exact: true })).toBeChecked();
+    await page.getByText('Мужской', { exact: true }).click();
+    await expect(page.getByLabel('Мужской', { exact: true })).toBeChecked();
+    await page.getByLabel('Дата рождения', { exact: true }).fill('1990-02-28');
+    await page.getByLabel('Страна', { exact: true }).fill('Каз');
+    await page.getByRole('option', { name: 'Казахстан', exact: true }).click();
+    await expect(page.getByLabel('Страна', { exact: true })).toHaveValue('Казахстан');
+    await page.getByLabel('Страна', { exact: true }).fill('Каз');
+    await page.getByLabel('Страна', { exact: true }).press('ArrowUp');
+    await page.getByLabel('Страна', { exact: true }).press('Enter');
+    await expect(page.getByLabel('Страна', { exact: true })).toHaveValue('Казахстан');
+    await page.getByLabel('Город', { exact: true }).fill('Алматы');
+    await page.getByLabel('Телефон', { exact: true }).fill('+77001234567');
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.getByLabel('Страна', { exact: true }).click();
+        await expect(page.getByRole('option', { name: 'Казахстан', exact: true })).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+        await page.getByLabel('Страна', { exact: true }).press('Escape');
+    }
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByLabel('Фамилия', { exact: true })).toHaveValue('Солдатов');
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Добро пожаловать, Денис!' })).toBeVisible();
+    await page.goto('/portal/more');
+    await page.getByRole('link', { name: 'Медицинские данные', exact: true }).click();
+    await page.getByLabel('Боль в шее', { exact: true }).check();
+    await page.getByLabel('Главные жалобы', { exact: true }).last().fill('Synthetic symptoms');
+    await page.getByLabel('Задачи по здоровью', { exact: true }).fill('Synthetic goals');
+    await page.getByLabel('Хронических заболеваний нет', { exact: true }).check();
+    await page.locator('input[name="operations"][value="false"]').check();
+    await page.locator('input[name="injuries"][value="false"]').check();
+    await page.locator('#medical-pain').focus();
+    await page.locator('#medical-pain').press('Home');
+    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
+    await page.locator('#medical-pain').press('End');
+    await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
+    await expect(page.getByText('Данные сохранены', { exact: true })).toBeVisible();
+    await expect(page.getByText('10 / 10', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('Synthetic symptoms', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Редактировать данные', exact: true }).click();
+    await expect(page.getByLabel('Главные жалобы', { exact: true }).last()).toHaveValue('Synthetic symptoms');
+    await page.locator('#medical-pain').focus();
+    await page.locator('#medical-pain').press('Home');
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `Medical editor at ${width}px`).toBe(true);
+    }
+    await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
+    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Редактировать данные', exact: true })).toBeVisible();
+    await page.locator('#medical-files').setInputFiles([
+        { name: 'synthetic-report-one.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic report one)\nendobj\n%%EOF\n') },
+        { name: 'synthetic-report-two.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic report two)\nendobj\n%%EOF\n') },
+    ]);
+    await page.getByRole('button', { name: 'Загрузить файлы', exact: true }).click();
+    await expect(page.getByRole('link', { name: 'synthetic-report-one.pdf', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true })).toBeVisible();
+    const downloadEvent = page.waitForEvent('download');
+    await page.getByRole('link', { name: 'synthetic-report-one.pdf', exact: true }).click();
+    const download = await downloadEvent;
+    expect(download.suggestedFilename()).toBe('synthetic-report-one.pdf');
+    expect(await download.failure()).toBeNull();
+    await page.reload();
+    await expect(page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true })).toBeVisible();
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `Medical profile at ${width}px`).toBe(true);
+    }
+    expect(await page.evaluate(() => JSON.stringify({
+        history: window.history.state,
+        local: { ...window.localStorage },
+        session: { ...window.sessionStorage },
+    }))).not.toContain('Synthetic symptoms');
+    await page.context().clearCookies({ name: fixture.cookieName });
+    const guestResponse = await page.goto('/');
+    expect(guestResponse?.headers()['cache-control']).toContain('no-store');
+    await expect(page.getByText('Synthetic symptoms', { exact: true })).toHaveCount(0);
+    const deniedMedicalResponse = page.waitForResponse((response) =>
+        response.url().endsWith('/portal/medical-profile') && response.status() === 401,
+    );
+    await page.goBack();
+    await deniedMedicalResponse;
+    await expect(page.getByText('Synthetic symptoms', { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.body.textContent)).not.toContain('Synthetic symptoms');
+});
+
+test('September 26 paid focus stays on home through completion and correction and empty focus opens the tracker', async ({ page }) => {
+    const active = createBookingFixture({ tracker: 'task' });
+    await page.context().addCookies([{ name: active.cookieName, value: active.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/');
+    await expect(page.getByText('Фокус дня', { exact: true })).toBeVisible();
+    await expect(page.getByText('Практика QA', { exact: true })).toBeVisible();
+    const healthAction = page.getByTestId('home-health-action');
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await healthAction.evaluate((element) => {
+            const bounds = element.getBoundingClientRect();
+            return Array.from(element.children).every((child) => {
+                const childBounds = child.getBoundingClientRect();
+                return childBounds.left >= bounds.left + 16
+                    && childBounds.right <= bounds.right - 16;
+            });
+        })).toBe(true);
+        await assertNoHorizontalOverflow(page);
+    }
+    const completed = page.getByRole('checkbox', { name: 'Выполнено', exact: true });
+    const completion = page.waitForResponse((response) => response.request().method() === 'POST' && /\/portal\/tracker\/tasks\/\d+\/entry$/.test(response.url()));
+    await completed.check();
+    const completionResponse = await completion;
+    expect(completionResponse.status()).toBe(302);
+    expect(new URL(completionResponse.headers().location, completionResponse.url()).pathname).toBe('/');
+    await expect(completed).toBeEnabled();
+    await expect(completed).toBeChecked();
+    await expect(page).toHaveURL(/\/$/);
+    await page.reload();
+    await expect(completed).toBeChecked();
+    const correction = page.waitForResponse((response) => response.request().method() === 'POST' && /\/portal\/tracker\/tasks\/\d+\/entry$/.test(response.url()));
+    await completed.uncheck();
+    const correctionResponse = await correction;
+    expect(correctionResponse.status()).toBe(302);
+    expect(new URL(correctionResponse.headers().location, correctionResponse.url()).pathname).toBe('/');
+    await expect(completed).toBeEnabled();
+    await page.reload();
+    await expect(completed).not.toBeChecked();
+    await page.getByRole('link', { name: 'Открыть трекер', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/tracker$/);
+    await expect(page.getByText('Практика QA', { exact: true })).toBeVisible();
+    await expect(page.getByRole('paragraph').filter({ hasText: /^Не выполнено$/ })).toBeVisible();
+
+    const empty = createBookingFixture({ tracker: 'empty' });
+    await page.context().addCookies([{ name: empty.cookieName, value: empty.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/');
+    await expect(page.getByText('Фокус дня', { exact: true })).toBeVisible();
+    await expect(page.getByText('На сегодня практик нет. Откройте трекер, чтобы посмотреть свой план.', { exact: true })).toBeVisible();
+    await expect(completed).toHaveCount(0);
+    await page.getByRole('link', { name: 'Открыть трекер', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/tracker$/);
+    await expect(page.getByText('На сегодня задач нет.', { exact: true })).toBeVisible();
+});
+
+test('September 26 client selects multiple sessions before the medical editor and can cancel one independently', async ({ page }) => {
+    const fixture = createBookingFixture({ medicalService: true, daysAhead: 3 });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    await page.getByRole('button', { name: fixture.date, exact: true }).click();
+    await page.getByTestId('availability-slot').first().click();
+    const firstSlotText = await page.getByTestId('availability-slot').first().textContent();
+    await page.getByTestId('booking-add-session').click();
+    await expect(page.getByTestId('queued-booking-session')).toHaveCount(1);
+    await expect(page.getByRole('heading', { name: 'Медицинские данные', exact: true })).toHaveCount(0);
+    expect(await page.getByTestId('availability-slot').first().textContent()).not.toBe(firstSlotText);
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByTestId('booking-add-session').click();
+    await expect(page.getByTestId('queued-booking-session')).toHaveCount(2);
+    await page.getByTestId('queued-booking-session').last().getByRole('button', { name: 'Убрать сеанс' }).click();
+    await expect(page.getByTestId('queued-booking-session')).toHaveCount(1);
+    await page.getByTestId('availability-slot').first().click();
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    }
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    await expect(page.locator('.portal-booking-summary time')).toHaveCount(4);
+    await acceptRequiredConsents(page);
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/medical-profile\?booking_id=\d+&edit=1/);
+    const result = execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $bookings = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::query()->where('client_id', ${fixture.clientId})->orderBy('starts_at')->get();
+        echo json_encode($bookings->map(fn ($booking) => ['id' => $booking->getKey(), 'source' => $booking->source->value, 'client_id' => $booking->client_id])->all());
+    `], { encoding: 'utf8' }).trim();
+    const bookings = JSON.parse(result) as Array<{ id: number; source: string; client_id: number }>;
+    expect(bookings).toHaveLength(2);
+    expect(bookings.every((booking) => booking.source === 'portal' && booking.client_id === fixture.clientId)).toBe(true);
+    await page.getByRole('link', { name: 'Мои записи' }).last().click();
+    await expect(page.getByText(fixture.serviceName, { exact: true })).toHaveCount(2);
+    await page.reload();
+    await expect(page.getByText(fixture.serviceName, { exact: true })).toHaveCount(2);
+    const detailResponse = page.waitForResponse((response) => /\/portal\/bookings\/\d+$/.test(new URL(response.url()).pathname)
+        && response.request().method() === 'GET');
+    await page.getByRole('link', { name: new RegExp(fixture.serviceName) }).first().click();
+    const detail = await detailResponse;
+    expect(detail.status()).toBe(200);
+    expect(detail.request().headers()['x-inertia']).toBe('true');
+    const detailPage = await detail.json() as { component: string; props: { booking: { canCancel: boolean; startsAt: string; statusLabel: string }; portal: { locale: string } } };
+    expect(detailPage.component).toBe('Portal/BookingShow');
+    expect(detailPage.props.portal.locale).toBe('ru');
+    expect(detailPage.props.booking.canCancel, JSON.stringify({ startsAt: detailPage.props.booking.startsAt, expectedDate: fixture.date, status: detailPage.props.booking.statusLabel })).toBe(true);
+    await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Отменить', exact: true }).first().click();
+    await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toHaveCount(0);
+    await page.getByRole('link', { name: 'Мои записи' }).last().click();
+    await page.getByRole('link', { name: new RegExp(fixture.serviceName) }).first().click();
+    await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toBeVisible();
+});
+
+test('September 26 medical service opens the saved-profile onboarding after the slot is created', async ({ page }) => {
+    const fixture = createBookingFixture({ medicalService: true });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    await acceptRequiredConsents(page);
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/medical-profile\?booking_id=\d+&edit=1/);
+    await page.getByRole('link', { name: 'К записи', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/bookings\/\d+$/);
+    await expect(page.getByText(fixture.serviceName, { exact: true }).first()).toBeVisible();
+    await page.reload();
+    await expect(page.getByText(fixture.serviceName, { exact: true }).first()).toBeVisible();
 });
 
 test('client can change display timezone and choose a physical office', async ({ page }) => {

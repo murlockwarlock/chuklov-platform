@@ -205,7 +205,7 @@ final class PlatformHealthExperienceTest extends TestCase
             'description_en' => 'My description.',
             'definition' => ['sections' => []],
             'scoring' => ['metrics' => []],
-            'source' => 'admin_custom',
+            'source' => 'chuklov_approved',
             'approval_status' => 'draft',
             'methodology' => 'admin_custom',
         ]);

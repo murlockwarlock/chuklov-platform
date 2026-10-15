@@ -57,7 +57,8 @@ final class StartPendingKnowledgeIngestion
             if ($lockedRevision->status !== KnowledgeRevisionStatus::Pending) {
                 throw ValidationException::withMessages(['revision' => 'Материал уже принят в обработку или завершён.']);
             }
-            if ($lockedRevision->extraction_status !== null && $lockedRevision->extraction_status !== KnowledgeExtractionStatus::Ready->value) {
+            $extractionStatus = $lockedRevision->getRawOriginal('extraction_status');
+            if (is_string($extractionStatus) && $extractionStatus !== KnowledgeExtractionStatus::Ready->value) {
                 throw ValidationException::withMessages(['revision' => 'Сначала подтвердите безопасное извлечение материала.']);
             }
 

@@ -96,6 +96,23 @@ class MilestoneFourSchedulingTest extends TestCase
         self::assertSame('2026-03-30T12:00:00+05:00', $result->toArray()['slots'][0]['displayStartsAt']);
     }
 
+    public function test_per_format_buffers_change_authoritative_availability_and_persisted_occupancy(): void
+    {
+        [, $admin, $specialist, $service] = $this->fixture('UTC');
+        $service->update(['buffer_office_minutes' => 30, 'buffer_online_minutes' => 0]);
+        self::assertSame(15, $service->bufferMinutesForFormat('home'));
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [['weekday' => 1, 'start_time' => '09:00', 'end_time' => '12:00']]);
+        foreach ([VisitFormat::Office, VisitFormat::Online] as $format) {
+            $result = app(CalculateAvailability::class)->forStaff($admin, $specialist->id, $service->id, '2026-03-30', '2026-03-30', $format, 'UTC');
+            self::assertSame($format === VisitFormat::Office ? '2026-03-30T10:30:00+00:00' : '2026-03-30T10:00:00+00:00', $result->slots[0]->blockingEndsAt->toIso8601String());
+        }
+        $client = Client::factory()->forOrganization($specialist->organization)->create();
+        $booking = app(CreateBooking::class)->handle($admin, $client, $specialist, $service, CarbonImmutable::parse('2026-03-30T09:00:00Z'), VisitFormat::Office);
+        self::assertSame('2026-03-30T10:30:00+00:00', $booking->blockingEndsAtUtc()->toIso8601String());
+        $this->expectException(ValidationException::class);
+        app(CreateBooking::class)->handle($admin, $client, $specialist, $service, CarbonImmutable::parse('2026-03-30T10:00:00Z'), VisitFormat::Online);
+    }
+
     public function test_day_off_and_custom_window_exceptions_have_explicit_precedence(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture('UTC');
@@ -447,7 +464,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'start_time' => '09:00',
             'end_time' => '12:00',
         ]]);
-        $client = Client::factory()->forOrganization($organization)->create(['timezone' => 'Europe/Berlin']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'timezone' => 'Europe/Berlin']);
         $documents = $this->publishPortalLegalDocuments($organization);
 
         $this->withSession(['client_portal.client_id' => $client->id])
@@ -524,7 +541,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'start_time' => '09:00',
             'end_time' => '12:00',
         ]]);
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
         $documents = [];
 
         foreach (['offer', 'privacy', 'medical_disclaimer', 'marketing'] as $documentType) {
@@ -599,7 +616,7 @@ class MilestoneFourSchedulingTest extends TestCase
                 isRequired: false,
             ),
         );
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
 
         $this->withSession(['client_portal.client_id' => $client->id])
             ->post(route('portal.bookings.store'), [
@@ -630,7 +647,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'end_time' => '12:00',
         ]]);
         $documents = $this->publishPortalLegalDocuments($organization);
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
         $attributes = [
             'client' => $client,
             'specialist' => $specialist,
@@ -676,7 +693,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'start_time' => '09:00',
             'end_time' => '12:00',
         ]]);
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
 
         $response = $this->withSession(['client_portal.client_id' => $client->id])
             ->post(route('portal.bookings.store'), [
@@ -705,7 +722,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'start_time' => '09:00',
             'end_time' => '12:00',
         ]]);
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
         $documents = $this->publishPortalLegalDocuments($organization, ['offer', 'privacy']);
 
         $response = $this->withSession(['client_portal.client_id' => $client->id])
@@ -736,7 +753,7 @@ class MilestoneFourSchedulingTest extends TestCase
         ]]);
         $documents = $this->publishPortalLegalDocuments($organization);
         $consents = $this->portalConsentPayload($documents);
-        $manualClient = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $manualClient = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
 
         $this->withSession(['client_portal.client_id' => $manualClient->id])
             ->post(route('portal.bookings.store'), [
@@ -753,7 +770,7 @@ class MilestoneFourSchedulingTest extends TestCase
         self::assertSame('manual', $manualAttribution->source_type);
         self::assertSame('social', $manualAttribution->source);
 
-        $automaticClient = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $automaticClient = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
         ClientAttribution::query()->forceCreate([
             'organization_id' => $organization->id,
             'client_id' => $automaticClient->id,
@@ -791,7 +808,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'end_time' => '12:00',
         ]]);
         $documents = $this->publishPortalLegalDocuments($organization);
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
 
         try {
             app(CreatePortalBooking::class)->handle(
@@ -1080,6 +1097,20 @@ class MilestoneFourSchedulingTest extends TestCase
     private function idempotencyKey(int $number): string
     {
         return 'test-key-'.$number;
+    }
+
+    /** @return array<string, string> */
+    private function completeClientAttributes(): array
+    {
+        return [
+            'first_name' => 'Test',
+            'last_name' => 'Client',
+            'gender' => 'FEMALE',
+            'birth_date' => '1990-01-01',
+            'country' => 'Kazakhstan',
+            'city' => 'Almaty',
+            'phone' => '+77001234567',
+        ];
     }
 
     private function enableFeature(Organization $organization, OrganizationFeature $feature): void

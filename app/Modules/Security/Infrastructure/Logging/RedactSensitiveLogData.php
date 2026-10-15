@@ -9,7 +9,7 @@ use Throwable;
 
 class RedactSensitiveLogData implements ProcessorInterface
 {
-    private const SENSITIVE_KEY_PATTERN = '/secret|token|password|credential|authorization|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|bearer|prompt|retrieved_content|rag_chunk|tool_payload/i';
+    private const SENSITIVE_KEY_PATTERN = '/secret|token|password|credential|authorization|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury|clinical|chronic|symptom|pain[_-]?(vas|not_measured)|goal|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|bearer|prompt|retrieved_content|rag_chunk|tool_payload/i';
 
     private const SESSION_CLINICAL_KEY_PATTERN = '/^(pain|tests|observations|root_cause_hypothesis|protocol|result)$/i';
 
@@ -17,7 +17,7 @@ class RedactSensitiveLogData implements ProcessorInterface
 
     private const AUTHORIZATION_MESSAGE_PATTERN = '/\b(authorization|proxy-authorization)\b(?:\s*[:=]\s*["\']?|\s+)[^\r\n}\]]+/i';
 
-    private const SENSITIVE_MESSAGE_PATTERN = '/\b(x-api-key|api[_-]?key|access[_-]?key|client[_-]?secret|refresh[_-]?token|password|token|secret|credential|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury)\b(?:\s*[:=]\s*["\']?|\s+)[^\r\n}\]]+/i';
+    private const SENSITIVE_MESSAGE_PATTERN = '/\b(x-api-key|api[_-]?key|access[_-]?key|client[_-]?secret|refresh[_-]?token|password|token|secret|credential|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury|chronic_conditions|clinical_answers|symptoms|pain_vas|pain_not_measured|goals)\b(?:\s*[:=]\s*["\']?|\s+)[^\r\n}\]]+/i';
 
     private const AUTH_SCHEME_PATTERN = '/\b(Bearer|Basic)\s+[^\r\n}\]]+/i';
 
@@ -68,6 +68,7 @@ class RedactSensitiveLogData implements ProcessorInterface
 
     private function redactMessage(string $message): string
     {
+        $message = preg_replace('/\bfamily_[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/', 'family_[REDACTED]', $message) ?? $message;
         $message = preg_replace_callback(
             self::AUTHORIZATION_MESSAGE_PATTERN,
             static fn (array $matches): string => $matches[1].'=[REDACTED]',

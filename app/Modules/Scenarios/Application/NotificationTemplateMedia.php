@@ -121,7 +121,7 @@ final readonly class NotificationTemplateMedia
     /** @param array<string, mixed> $media
      * @return list<array{type: string, source: string, name: string|null}>
      */
-    private function items(array $media): array
+    public function items(array $media): array
     {
         if (! is_array($media['items'] ?? null) || ! array_is_list($media['items']) || $media['items'] === [] || count($media['items']) > 10) {
             throw new InvalidArgumentException('The notification template media is invalid.');

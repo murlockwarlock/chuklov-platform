@@ -28,6 +28,7 @@ use Carbon\CarbonImmutable;
 use Filament\Schemas\Components\Tabs\Tab;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Locked;
 use Livewire\Attributes\Url;
 
 class ListBookings extends LocalizedListRecords
@@ -47,14 +48,19 @@ class ListBookings extends LocalizedListRecords
     #[Url(as: 'specialist_id', history: true, nullable: true)]
     public ?int $selectedSpecialistId = null;
 
+    /** @var list<int|string> */
+    #[Url(as: 'specialist_ids', history: true)]
+    public array $selectedSpecialistIds = [];
+
+    /** @var list<int> */
+    #[Locked]
+    public array $validatedSpecialistIds = [];
+
     /** @return Builder<Booking> */
     protected function getTableQuery(): Builder
     {
         return BookingResource::getEloquentQuery()
-            ->when($this->selectedSpecialistId !== null, fn (Builder $query): Builder => $query->where(
-                'specialist_id',
-                $this->selectedSpecialistId,
-            ))
+            ->when($this->specialistFilterIds() !== [], fn (Builder $query): Builder => $query->whereIn('specialist_id', $this->specialistFilterIds()))
             ->when($this->viewMode === 'list', fn (Builder $query): Builder => BookingLocalDateRange::apply(
                 $query,
                 $this->weekStart,
@@ -72,17 +78,11 @@ class ListBookings extends LocalizedListRecords
             ?? CarbonImmutable::now($timezone)->startOfWeek(CarbonImmutable::MONDAY);
         $this->weekStart = $week->toDateString();
         $this->viewMode = in_array($this->viewMode, ['week', 'list'], true) ? $this->viewMode : 'week';
-        $this->selectedSpecialistId = $this->selectedSpecialistFromUrl()?->getKey()
-            ?? $this->currentViewerSpecialist()?->getKey()
-            ?? Specialist::query()
-                ->where('organization_id', app(OrganizationContext::class)->id())
-                ->where('is_active', true)
-                ->orderBy('display_name')
-                ->value('id')
-            ?? Specialist::query()
-                ->where('organization_id', app(OrganizationContext::class)->id())
-                ->orderBy('display_name')
-                ->value('id');
+        $legacy = $this->selectedSpecialistFromUrl();
+        if ($this->selectedSpecialistIds === [] && $legacy instanceof Specialist) {
+            $this->selectedSpecialistIds = [(int) $legacy->getKey()];
+        }
+        $this->updatedSelectedSpecialistIds();
     }
 
     public function previousWeek(): void
@@ -111,22 +111,58 @@ class ListBookings extends LocalizedListRecords
 
     public function updatedSelectedSpecialistId(): void
     {
-        if ($this->selectedSpecialist() instanceof Specialist) {
-            $this->flushCachedTableRecords();
+        $specialist = $this->selectedSpecialist();
+        $this->selectedSpecialistIds = $specialist instanceof Specialist ? [(int) $specialist->getKey()] : [];
+        $this->updatedSelectedSpecialistIds();
+    }
 
-            return;
+    public function updatedSelectedSpecialistIds(): void
+    {
+        try {
+            $ids = $this->specialistFilterIds();
+        } catch (ValidationException $exception) {
+            $this->selectedSpecialistIds = $this->validatedSpecialistIds;
+            throw $exception;
+        }
+        $this->selectedSpecialistIds = $ids;
+        $this->validatedSpecialistIds = $ids;
+        $this->selectedSpecialistId = count($ids) === 1 ? $ids[0] : null;
+        $this->flushCachedTableRecords();
+    }
+
+    public function clearSpecialistFilter(): void
+    {
+        $this->selectedSpecialistIds = [];
+        $this->validatedSpecialistIds = [];
+        $this->selectedSpecialistId = null;
+        $this->flushCachedTableRecords();
+    }
+
+    /** @return list<int> */
+    private function specialistFilterIds(): array
+    {
+        return $this->validateSpecialistFilterIds($this->selectedSpecialistIds);
+    }
+
+    /** @return list<int> */
+    private function validateSpecialistFilterIds(mixed $values): array
+    {
+        if (! is_array($values) || ! array_is_list($values) || count($values) > 500) {
+            throw ValidationException::withMessages(['selectedSpecialistIds' => __('Выберите доступных специалистов.')]);
+        }
+        $ids = [];
+        foreach ($values as $value) {
+            if ((! is_int($value) && ! is_string($value)) || filter_var($value, FILTER_VALIDATE_INT) === false || (int) $value < 1) {
+                throw ValidationException::withMessages(['selectedSpecialistIds' => __('Выберите доступных специалистов.')]);
+            }
+            $ids[] = (int) $value;
+        }
+        $ids = array_values(array_unique($ids));
+        if ($ids !== [] && Specialist::query()->where('organization_id', app(OrganizationContext::class)->id())->whereIn('id', $ids)->count() !== count($ids)) {
+            throw ValidationException::withMessages(['selectedSpecialistIds' => __('Выберите доступных специалистов.')]);
         }
 
-        $this->selectedSpecialistId = Specialist::query()
-            ->where('organization_id', app(OrganizationContext::class)->id())
-            ->where('is_active', true)
-            ->orderBy('display_name')
-            ->value('id')
-            ?? Specialist::query()
-                ->where('organization_id', app(OrganizationContext::class)->id())
-                ->orderBy('display_name')
-                ->value('id');
-        $this->flushCachedTableRecords();
+        return $ids;
     }
 
     /** @return array<string, array{date: string, day_number: int, weekday: string, is_today: bool, is_working: bool, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>, bookings: list<array<string, mixed>>}> */
@@ -151,28 +187,25 @@ class ListBookings extends LocalizedListRecords
             ];
         }
 
-        $specialist = $this->selectedSpecialist();
-        if ($specialist instanceof Specialist) {
-            $schedule = app(GetScheduleCalendar::class)->forSpecialist(
-                specialist: $specialist,
-                dateFrom: $start->toDateString(),
-                dateTo: $end->toDateString(),
-                displayTimezone: $timezone,
-            );
+        $selectedIds = $this->specialistFilterIds();
+        $specialists = Specialist::query()->where('organization_id', app(OrganizationContext::class)->id())
+            ->when($selectedIds !== [], fn (Builder $query): Builder => $query->whereIn('id', $selectedIds))->get();
+        $schedules = app(GetScheduleCalendar::class)->forSpecialists($specialists, $start->toDateString(), $end->toDateString(), $timezone);
+        foreach ($schedules as $schedule) {
             foreach ($schedule as $date => $day) {
                 if (isset($calendar[$date])) {
-                    $calendar[$date]['is_working'] = $day['is_working'];
-                    $calendar[$date]['intervals'] = $day['intervals'];
+                    $calendar[$date]['is_working'] = $calendar[$date]['is_working'] || $day['is_working'];
+                    $calendar[$date]['intervals'] = [...$calendar[$date]['intervals'], ...$day['intervals']];
                 }
             }
         }
 
         $bookings = Booking::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
-            ->when($this->selectedSpecialistId !== null, fn (Builder $query): Builder => $query->where('specialist_id', $this->selectedSpecialistId))
+            ->when($selectedIds !== [], fn (Builder $query): Builder => $query->whereIn('specialist_id', $selectedIds))
             ->where('starts_at', '>=', $start->startOfDay()->setTimezone('UTC'))
             ->where('starts_at', '<', $end->addDay()->startOfDay()->setTimezone('UTC'))
-            ->with(['client', 'service', 'specialist'])
+            ->with(['client', 'service', 'specialist', 'patientProfile.clinicalClient'])
             ->orderBy('starts_at')
             ->get();
         $canViewClients = ClientResource::canViewAny();
@@ -303,7 +336,16 @@ class ListBookings extends LocalizedListRecords
     {
         $specialist = $this->selectedSpecialist();
 
-        return $specialist instanceof Specialist && $specialist->is_active;
+        return BookingResource::canCreate() && ($specialist instanceof Specialist ? $specialist->is_active
+            : Specialist::query()->where('organization_id', app(OrganizationContext::class)->id())->where('is_active', true)
+                ->when($this->specialistFilterIds() !== [], fn (Builder $query): Builder => $query->whereIn('id', $this->specialistFilterIds()))->exists());
+    }
+
+    public function journalUsesMultipleSpecialists(): bool
+    {
+        $ids = $this->specialistFilterIds();
+
+        return count($ids) > 1 || ($ids === [] && Specialist::query()->where('organization_id', app(OrganizationContext::class)->id())->count() > 1);
     }
 
     private function retentionWindowMinutes(): int
@@ -480,6 +522,9 @@ class ListBookings extends LocalizedListRecords
         $status = $booking->status;
         $format = $booking->visit_format;
         $clientName = trim((string) ($booking->client->full_name ?? ''));
+        if ($booking->clinicalClientId() !== (int) $booking->client_id) {
+            $clientName = trim((string) $booking->patientProfile?->clinicalClient?->full_name).' • '.__('Заказчик').': '.$clientName;
+        }
         $serviceName = trim((string) ($booking->service->name ?? ''));
         $locationSnapshot = $booking->locationSnapshot();
         $locationLabel = $format === VisitFormat::Online
@@ -492,6 +537,7 @@ class ListBookings extends LocalizedListRecords
             'client' => $clientName !== '' ? $clientName : __('Клиент'),
             'client_url' => CrmEntityLinks::clientUrl($booking->client, $canViewClients),
             'service' => $serviceName !== '' ? $serviceName : __('Услуга'),
+            'specialist' => $booking->specialist->display_name,
             'start_time' => $localStart->format('H:i'),
             'end_time' => $localEnd->format('H:i'),
             'time_range' => $localStart->format('H:i').'–'.$localEnd->format('H:i'),
@@ -546,21 +592,6 @@ class ListBookings extends LocalizedListRecords
                 ->where('organization_id', app(OrganizationContext::class)->id())
                 ->whereKey($this->selectedSpecialistId)
                 ->first();
-    }
-
-    private function currentViewerSpecialist(): ?Specialist
-    {
-        $actor = auth()->user();
-
-        return $actor instanceof User
-            ? Specialist::query()
-                ->where('organization_id', app(OrganizationContext::class)->id())
-                ->where('staff_user_id', $actor->getKey())
-                ->where('is_active', true)
-                ->orderBy('display_name')
-                ->orderBy('id')
-                ->first()
-            : null;
     }
 
     private function selectedSpecialistFromUrl(): ?Specialist

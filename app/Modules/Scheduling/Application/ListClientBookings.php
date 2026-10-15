@@ -13,6 +13,8 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Services\Domain\Models\Service;
 use Carbon\CarbonImmutable;
+use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\Builder;
 
 final class ListClientBookings
 {
@@ -27,8 +29,9 @@ final class ListClientBookings
         $client = $this->clientContext->client();
         $bookings = Booking::query()
             ->where('organization_id', $client->organization_id)
-            ->where('client_id', $client->getKey())
-            ->with(['service', 'specialist'])
+            ->where(fn (Builder $query) => $query->where('client_id', $client->getKey())
+                ->orWhereHas('patientProfile', fn (Builder $query) => $query->where('organization_id', $client->organization_id)->where('linked_account_client_id', $client->getKey())))
+            ->with(['service', 'specialist', 'patientProfile.clinicalClient'])
             ->orderBy('starts_at')
             ->get();
         $now = CarbonImmutable::instance(now())->utc();
@@ -47,15 +50,30 @@ final class ListClientBookings
         ];
     }
 
+    /** @return array<string, mixed>|null */
+    public function nextForHome(?string $locale = null): ?array
+    {
+        $client = $this->clientContext->client();
+        $booking = Booking::query()->where('organization_id', $client->organization_id)
+            ->where(fn (Builder $query) => $query->where('client_id', $client->getKey())
+                ->orWhereHas('patientProfile', fn (Builder $query) => $query->where('organization_id', $client->organization_id)->where('linked_account_client_id', $client->getKey())))
+            ->where('starts_at', '>=', now()->utc())
+            ->whereNotIn('status', BookingStatus::terminalValues())
+            ->with(['service', 'specialist', 'patientProfile.clinicalClient'])->orderBy('starts_at')->orderBy('id')->first();
+
+        return $booking === null ? null : $this->projection($booking, $locale);
+    }
+
     public function find(int $bookingId): ?Booking
     {
         $client = $this->clientContext->client();
 
         return Booking::query()
             ->where('organization_id', $client->organization_id)
-            ->where('client_id', $client->getKey())
+            ->where(fn (Builder $query) => $query->where('client_id', $client->getKey())
+                ->orWhereHas('patientProfile', fn (Builder $query) => $query->where('organization_id', $client->organization_id)->where('linked_account_client_id', $client->getKey())))
             ->whereKey($bookingId)
-            ->with(['service', 'specialist', 'events'])
+            ->with(['service', 'specialist', 'events', 'patientProfile.clinicalClient'])
             ->first();
     }
 
@@ -63,6 +81,11 @@ final class ListClientBookings
     public function projection(Booking $booking, ?string $locale = null, ?string $displayTimezone = null): array
     {
         $client = $this->clientContext->client();
+        if ((int) $booking->organization_id !== (int) $client->organization_id
+            || ((int) $booking->client_id !== (int) $client->getKey()
+                && (int) $booking->patientProfile?->linked_account_client_id !== (int) $client->getKey())) {
+            throw new AuthorizationException;
+        }
         $timezone = $displayTimezone ?? $client->timezone;
         $localStart = $booking->startsAtUtc()->setTimezone($timezone);
         $localEnd = $booking->endsAtUtc()->setTimezone($timezone);
@@ -72,9 +95,13 @@ final class ListClientBookings
         $outsideCutoff = $booking->startsAtUtc()->greaterThanOrEqualTo(
             CarbonImmutable::instance(now())->utc()->addMinutes($this->cutoff->handle()),
         );
+        $ownsBooking = (int) $booking->client_id === (int) $client->getKey();
 
         return [
             'id' => $booking->getKey(),
+            'patientName' => $booking->patientProfile?->clinicalClient?->full_name,
+            'patientProfileId' => $booking->patient_profile_id,
+            'isCustomer' => $ownsBooking,
             'service' => ['name' => $this->localizedServiceName($booking->service, $locale)],
             'specialist' => ['displayName' => $booking->specialist->display_name],
             'startsAt' => $booking->startsAtUtc()->toIso8601String(),
@@ -102,8 +129,8 @@ final class ListClientBookings
                 && $booking->provider_sync_status === VideoMeetingSyncStatus::Pending,
             'partySize' => $booking->party_size,
             'eventVersion' => $booking->event_version,
-            'canCancel' => ! $terminal && ($pendingHomeVisit || $outsideCutoff),
-            'canReschedule' => ! $terminal && ($pendingHomeVisit || $outsideCutoff),
+            'canCancel' => $ownsBooking && ! $terminal && ($pendingHomeVisit || $outsideCutoff),
+            'canReschedule' => $ownsBooking && ! $terminal && ($pendingHomeVisit || $outsideCutoff),
             'pendingReview' => $pendingHomeVisit,
             'history' => $this->safeHistory($booking, $locale),
         ];

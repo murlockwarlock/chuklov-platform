@@ -21,8 +21,10 @@ class CreateClient
         private readonly OrganizationAuthorizer $authorizer,
         private readonly OrganizationFeatureGate $features,
         private readonly RecordAuditEvent $audit,
+        private readonly NormalizeClientDemographics $demographics,
     ) {}
 
+    /** @param array<string, mixed> $demographics */
     public function handle(
         User $actor,
         string $fullName,
@@ -32,6 +34,7 @@ class CreateClient
         string $timezone = 'UTC',
         ?string $leadSource = null,
         ?string $referralCode = null,
+        array $demographics = [],
     ): Client {
         $organization = $this->context->organization();
         $this->features->authorize($organization, OrganizationFeature::ClientRecords);
@@ -58,6 +61,7 @@ class CreateClient
         }
 
         $timezone = IanaTimezone::from($timezone)->value;
+        $demographics = $this->demographics->handle($demographics);
 
         return DB::transaction(function () use (
             $organization,
@@ -69,6 +73,7 @@ class CreateClient
             $timezone,
             $leadSource,
             $referralCode,
+            $demographics,
         ): Client {
             $client = new Client;
             $client->forceFill([
@@ -81,6 +86,7 @@ class CreateClient
                 'timezone_source' => 'manual',
                 'lead_source' => $leadSource,
                 'referral_code' => $referralCode,
+                ...$demographics,
             ]);
             $client->save();
 

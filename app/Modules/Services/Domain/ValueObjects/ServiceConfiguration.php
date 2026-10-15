@@ -32,6 +32,10 @@ final readonly class ServiceConfiguration
         public array $priceMatrix,
         public ?string $paymentPolicy,
         public ServicePaymentRequirement $paymentRequirement,
+        public ?int $bufferOfficeMinutes,
+        public ?int $bufferHomeMinutes,
+        public ?int $bufferOnlineMinutes,
+        public bool $requiresMedicalProfile,
     ) {}
 
     /** @param array<string, mixed> $attributes */
@@ -107,6 +111,10 @@ final readonly class ServiceConfiguration
             64,
         );
         $paymentRequirement = self::paymentRequirement($attributes['payment_requirement'] ?? null);
+        $requiresMedicalProfile = $attributes['requires_medical_profile'] ?? true;
+        if (! is_bool($requiresMedicalProfile)) {
+            throw new InvalidArgumentException('The medical-profile requirement must be a boolean.');
+        }
 
         return new self(
             name: $name,
@@ -128,6 +136,10 @@ final readonly class ServiceConfiguration
             priceMatrix: $priceMatrix,
             paymentPolicy: $paymentPolicy,
             paymentRequirement: $paymentRequirement,
+            bufferOfficeMinutes: self::optionalNonNegativeInteger($attributes['buffer_office_minutes'] ?? null, 'Invalid office buffer.', 65535, true),
+            bufferHomeMinutes: self::optionalNonNegativeInteger($attributes['buffer_home_minutes'] ?? null, 'Invalid home buffer.', 65535, true),
+            bufferOnlineMinutes: self::optionalNonNegativeInteger($attributes['buffer_online_minutes'] ?? null, 'Invalid online buffer.', 65535, true),
+            requiresMedicalProfile: $requiresMedicalProfile,
         );
     }
 
@@ -148,6 +160,10 @@ final readonly class ServiceConfiguration
             'category' => $this->category,
             'duration_minutes' => $this->durationMinutes,
             'buffer_minutes' => $this->bufferMinutes,
+            'buffer_office_minutes' => $this->bufferOfficeMinutes,
+            'buffer_home_minutes' => $this->bufferHomeMinutes,
+            'buffer_online_minutes' => $this->bufferOnlineMinutes,
+            'requires_medical_profile' => $this->requiresMedicalProfile,
             'formats' => $this->formats,
             'price_minor' => $this->priceMinor,
             'price_currency' => $this->priceCurrency,

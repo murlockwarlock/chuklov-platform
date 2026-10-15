@@ -518,7 +518,7 @@ if [[ "$actual_binding" != "$expected_host_port" ]]; then
 fi
 
 for service in postgres redis app horizon scheduler telegram; do
-    "${current_compose[@]}" config --services | grep -Fxq "$service"
+    "${current_compose[@]}" config --services | grep -Fx "$service" > /dev/null
 done
 echo "Isolated Compose project and app binding verified."
 

@@ -238,6 +238,23 @@ final class AnalyticsProjectionTest extends TestCase
         self::assertNotContains('legacy-only', collect($result->sources)->pluck('label')->all());
     }
 
+    public function test_known_google_source_keeps_the_direct_source_prefix(): void
+    {
+        $now = CarbonImmutable::parse('2026-08-27 12:00:00', 'UTC');
+        [$organization, $admin] = $this->organizationWithAdmin('UTC');
+        $client = $this->client($organization, '2026-08-10 10:00:00');
+        $this->attribution($client, 'source', source: 'Google');
+
+        app(OrganizationContext::class)->set($organization);
+        $result = app(AcquisitionAnalytics::class)->handle(
+            $admin,
+            $this->customPeriod($organization, '2026-08-01', '2026-08-27', $now),
+        );
+
+        self::assertCount(1, $result->sources);
+        self::assertSame('Источник: Google', $result->sources[0]->label);
+    }
+
     public function test_source_buckets_present_known_channel_sources_with_human_labels(): void
     {
         $now = CarbonImmutable::parse('2026-08-27 12:00:00', 'UTC');

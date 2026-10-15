@@ -47,6 +47,7 @@ final class GrantPaidTrackerAccess
                 $base = $currentEndsAt !== null && $currentEndsAt->greaterThan($now) ? $currentEndsAt : $now;
                 $active->forceFill([
                     'ends_at' => $base->addDays($version->duration_days),
+                    'source' => TrackerEntitlementSource::PaidPurchase->value,
                     'reason' => 'Оплаченная покупка',
                     'applied_plan_name' => $version->plan()->value('name'),
                     'applied_price_minor' => $version->price_minor,

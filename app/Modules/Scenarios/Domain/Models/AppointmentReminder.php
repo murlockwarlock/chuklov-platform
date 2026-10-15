@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $offset_value
  * @property ScenarioDelayUnit $offset_unit
  * @property bool $is_enabled
+ * @property bool $medical_profile_prompt
  */
 #[Fillable(['recipient_type', 'offset_value', 'offset_unit', 'is_enabled'])]
 class AppointmentReminder extends Model
@@ -35,6 +36,7 @@ class AppointmentReminder extends Model
             'offset_value' => 'integer',
             'offset_unit' => ScenarioDelayUnit::class,
             'is_enabled' => 'boolean',
+            'medical_profile_prompt' => 'boolean',
         ];
     }
 }

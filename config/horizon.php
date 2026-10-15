@@ -209,7 +209,7 @@ return [
                 'ai-evaluations',
                 'telegram-typing',
                 'notifications',
-                'referrals',
+                (string) config('referrals.queue', env('REFERRALS_QUEUE', 'referrals')),
                 (string) config('b2b.queue'),
             ])),
             'balance' => 'auto',

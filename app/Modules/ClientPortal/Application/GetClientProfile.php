@@ -9,6 +9,8 @@ use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\Identity\Domain\Models\LegalDocument;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Support\RichText\RichTextDocument;
 use App\Support\SupportedLocale;
 use Illuminate\Support\Collection;
@@ -35,8 +37,16 @@ final class GetClientProfile
         $b2bAnswer = $b2bProfile?->getRawOriginal('b2b_specialist_answer');
 
         return [
+            'currencyPreference' => app(GetClientCurrencyPreference::class)->handle($client),
             'profile' => [
                 'fullName' => $client->full_name,
+                'firstName' => $client->first_name,
+                'lastName' => $client->last_name,
+                'middleName' => $client->middle_name,
+                'gender' => $client->gender,
+                'birthDate' => $client->birth_date?->toDateString(),
+                'country' => $client->country,
+                'city' => $client->city,
                 'email' => $client->email,
                 'phone' => $client->phone,
                 'timezone' => $client->timezone,
@@ -79,6 +89,10 @@ final class GetClientProfile
             ],
             'timezoneOptions' => $this->timezoneOptions($client->timezone),
             'urls' => [
+                'family' => app(OrganizationFeatureGate::class)->isEnabled($client->organization,
+                    OrganizationFeature::ClientRecords) ? route('portal.family') : null,
+                'currency' => route('portal.profile.currency'),
+                'cities' => route('portal.profile.cities'),
                 'update' => route('portal.profile.update'),
                 'consents' => route('portal.profile.consents'),
                 'telegramLink' => route('portal.telegram.link'),

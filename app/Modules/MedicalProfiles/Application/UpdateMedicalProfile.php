@@ -3,6 +3,7 @@
 namespace App\Modules\MedicalProfiles\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Application\EnsureSelfPatientProfile;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\MedicalProfileData;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
@@ -11,6 +12,7 @@ use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\MedicalProfiles\Domain\ValueObjects\EncryptedMedicalPayload;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -25,12 +27,21 @@ final readonly class UpdateMedicalProfile
         private RecordAuditEvent $audit,
         private GetMedicalProfile $getProfile,
         private MedicalProfileSnapshotHasher $snapshotHasher,
+        private ClinicalQuestionnaire $questionnaire,
     ) {}
 
-    public function handle(User $actor, Client $client, UpdateMedicalProfileCommand $command): MedicalProfileData
+    public function handle(User|Client $actor, Client $client, UpdateMedicalProfileCommand $command): MedicalProfileData
     {
         $organization = $this->authorization->authorizeManage($actor, $client);
         $orgId = (int) $organization->getKey();
+        if ($actor instanceof Client && (
+            $command->expectedSnapshot === null || ! $command->confirmCurrentData
+            || ! $command->clinicalAnswersProvided || $command->clinicalAnswers === null
+            || $command->shouldUpdateAnamnesis() || $command->shouldUpdateComplaintsGoals() || $command->shouldUpdateOperationsInjuries()
+            || trim((string) $command->goals) === ''
+        )) {
+            throw ValidationException::withMessages(['medical_profile' => 'Откройте медицинскую анкету и подтвердите актуальные данные.']);
+        }
 
         $this->validateCommand($command);
         $keyVersion = $this->keyResolver->getCurrentKeyVersion($orgId);
@@ -77,7 +88,12 @@ final readonly class UpdateMedicalProfile
                 goals: $command->shouldUpdateGoals() ? $command->goals : $previous->goals,
                 operations: $command->shouldUpdateOperations() ? $command->operations : $previous->operations,
                 injuries: $command->shouldUpdateInjuries() ? $command->injuries : $previous->injuries,
+                chronicConditions: $command->chronicConditionsProvided ? $command->chronicConditions : $previous->chronicConditions,
+                clinicalAnswers: $command->clinicalAnswersProvided ? $command->clinicalAnswers : $previous->clinicalAnswers,
             );
+            if ($command->confirmCurrentData) {
+                $this->questionnaire->validateCompletedProfile($plainData);
+            }
             $encrypted = $this->encryptor->encryptProfile($orgId, $plainData, $keyVersion);
 
             $isNew = $existing === null;
@@ -85,6 +101,7 @@ final readonly class UpdateMedicalProfile
             $profile->forceFill([
                 'organization_id' => $orgId,
                 'client_id' => $client->getKey(),
+                'patient_profile_id' => app(EnsureSelfPatientProfile::class)->handle($client)->getKey(),
                 'anamnesis' => $encrypted->encryptedAnamnesis,
                 'complaints_goals' => $encrypted->encryptedComplaintsGoals,
                 'operations_injuries' => $encrypted->encryptedOperationsInjuries,
@@ -92,20 +109,32 @@ final readonly class UpdateMedicalProfile
                 'goals' => $encrypted->encryptedGoals,
                 'operations' => $encrypted->encryptedOperations,
                 'injuries' => $encrypted->encryptedInjuries,
+                'chronic_conditions' => $encrypted->encryptedChronicConditions,
+                'clinical_answers' => $encrypted->encryptedClinicalAnswers,
                 'medicines' => $encrypted->encryptedMedicines,
                 'supplements' => $encrypted->encryptedSupplements,
                 'encryption_key_version' => $keyVersion,
             ]);
+            if ($command->confirmCurrentData && $actor instanceof Client) {
+                $profile->client_confirmed_at = CarbonImmutable::now('UTC');
+            }
+            try {
+                $this->questionnaire->validateCompletedProfile($plainData);
+                $profile->completed_at ??= CarbonImmutable::now('UTC');
+            } catch (ValidationException) {
+                $profile->completed_at = null;
+                $profile->client_confirmed_at = null;
+            }
             $profile->save();
 
             $this->audit->handle(
                 organization: $organization,
-                actor: $actor,
+                actor: $actor instanceof User ? $actor : null,
                 action: $isNew ? 'medical.profile.created' : 'medical.profile.updated',
                 targetType: MedicalProfile::class,
                 targetId: (string) $profile->getKey(),
                 metadata: [
-                    'source' => 'crm',
+                    'source' => $actor instanceof Client ? 'portal' : 'crm',
                     'key_version' => $keyVersion,
                     'updated_fields' => implode(',', $this->collectUpdatedFieldNames($command)),
                 ],
@@ -123,10 +152,12 @@ final readonly class UpdateMedicalProfile
                 goals: $plainData->goals,
                 operations: $plainData->operations,
                 injuries: $plainData->injuries,
+                chronicConditions: $plainData->chronicConditions,
+                clinicalAnswers: $plainData->clinicalAnswers,
             );
         });
 
-        $this->getProfile->invalidate($actor->getKey(), $orgId, $client->getKey());
+        $this->getProfile->invalidate();
 
         return $result;
     }
@@ -147,12 +178,25 @@ final readonly class UpdateMedicalProfile
                 encryptedGoals: $profile->getRawOriginal('goals'),
                 encryptedOperations: $profile->getRawOriginal('operations'),
                 encryptedInjuries: $profile->getRawOriginal('injuries'),
+                encryptedChronicConditions: $profile->getRawOriginal('chronic_conditions'),
+                encryptedClinicalAnswers: $profile->getRawOriginal('clinical_answers'),
             ),
         );
     }
 
     private function validateCommand(UpdateMedicalProfileCommand $command): void
     {
+        if ($command->clinicalAnswersProvided && $command->clinicalAnswers !== null) {
+            try {
+                $answers = json_decode($command->clinicalAnswers, true, 16, JSON_THROW_ON_ERROR);
+            } catch (\JsonException) {
+                throw ValidationException::withMessages(['clinical_answers' => 'Проверьте ответы медицинской анкеты.']);
+            }
+            if (! is_array($answers)) {
+                throw ValidationException::withMessages(['clinical_answers' => 'Проверьте ответы медицинской анкеты.']);
+            }
+            $this->questionnaire->validate($answers);
+        }
         $fields = [
             'anamnesis' => $command->anamnesis,
             'complaints_goals' => $command->complaintsGoals,
@@ -161,6 +205,8 @@ final readonly class UpdateMedicalProfile
             'goals' => $command->goals,
             'operations' => $command->operations,
             'injuries' => $command->injuries,
+            'chronic_conditions' => $command->chronicConditions,
+            'clinical_answers' => $command->clinicalAnswers,
             'medicines' => $command->medicines,
             'supplements' => $command->supplements,
         ];
@@ -178,6 +224,12 @@ final readonly class UpdateMedicalProfile
     private function collectUpdatedFieldNames(UpdateMedicalProfileCommand $command): array
     {
         $fields = [];
+        if ($command->chronicConditionsProvided) {
+            $fields[] = 'chronic_conditions';
+        }
+        if ($command->clinicalAnswersProvided) {
+            $fields[] = 'clinical_answers';
+        }
 
         if ($command->shouldUpdateAnamnesis()) {
             $fields[] = 'anamnesis';

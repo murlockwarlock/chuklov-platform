@@ -5,6 +5,8 @@ return [
 
     'default_locale' => env('CLIENT_PORTAL_LOCALE', 'ru'),
 
+    'patient_invitation_ttl_minutes' => (int) env('PATIENT_INVITATION_TTL_MINUTES', 10080),
+
     'email_auth' => [
         'code_ttl' => (int) env('CLIENT_EMAIL_AUTH_CODE_TTL', 600),
         'max_attempts' => (int) env('CLIENT_EMAIL_AUTH_MAX_ATTEMPTS', 5),
@@ -32,6 +34,18 @@ return [
         'web_auth_ttl' => (int) env('TELEGRAM_WEB_AUTH_TTL', 600),
         'portal_url' => env('CLIENT_PORTAL_URL'),
         'entries' => [
+            'family' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.family.invitation',
+                'parameters' => [],
+            ],
+            'medical_profile' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.medical-profile',
+                'parameters' => [],
+            ],
             'portal' => [
                 'launch' => 'mini_app',
                 'requires_auth' => true,
@@ -60,6 +74,18 @@ return [
                 'launch' => 'mini_app',
                 'requires_auth' => true,
                 'route' => 'portal.feedback',
+                'parameters' => [],
+            ],
+            'health' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.health',
+                'parameters' => [],
+            ],
+            'surveys' => [
+                'launch' => 'mini_app',
+                'requires_auth' => true,
+                'route' => 'portal.surveys.index',
                 'parameters' => [],
             ],
             'partner' => [
@@ -94,8 +120,8 @@ return [
             ],
         ],
         'greeting' => [
-            'en' => 'Choose an entry point.',
-            'ru' => 'Выберите раздел.',
+            'en' => 'Welcome to your space for health! Open the app to choose a service and a convenient time.',
+            'ru' => 'Добро пожаловать в пространство здоровья! Откройте приложение, чтобы выбрать услугу и удобное время.',
         ],
         'menu' => [
             'en' => [

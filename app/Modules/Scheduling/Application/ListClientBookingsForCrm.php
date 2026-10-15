@@ -21,11 +21,15 @@ final readonly class ListClientBookingsForCrm
 
         return $query
             ->where('organization_id', $client->organization_id)
-            ->where('client_id', $client->getKey())
+            ->where(fn (Builder $query) => $query->where('client_id', $client->getKey())
+                ->orWhereHas('patientProfile', fn (Builder $patients) => $patients->where('organization_id', $client->organization_id)
+                    ->where(fn (Builder $identities) => $identities->where('clinical_client_id', $client->getKey())
+                        ->orWhere('linked_account_client_id', $client->getKey()))))
             ->select([
                 'id',
                 'organization_id',
                 'client_id',
+                'patient_profile_id',
                 'specialist_id',
                 'service_id',
                 'visit_format',
@@ -46,8 +50,10 @@ final readonly class ListClientBookingsForCrm
                 'requested_at',
             ])
             ->with([
+                'client:id,organization_id,full_name',
                 'specialist:id,organization_id,display_name',
                 'service:id,organization_id,name',
+                'patientProfile.clinicalClient:id,organization_id,full_name',
             ])
             ->orderByDesc('starts_at')
             ->orderByDesc('id');
@@ -56,6 +62,6 @@ final readonly class ListClientBookingsForCrm
     /** @return Builder<Booking> */
     public function query(User $actor, Client $client): Builder
     {
-        return $this->apply($actor, $client, $client->bookings()->getQuery());
+        return $this->apply($actor, $client, Booking::query());
     }
 }

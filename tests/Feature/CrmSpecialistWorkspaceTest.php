@@ -35,6 +35,7 @@ use App\Support\SupportedLocale;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\Hidden;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -587,7 +588,9 @@ final class CrmSpecialistWorkspaceTest extends TestCase
 
         $client = Livewire::actingAs($admin)->test(CreateClient::class);
 
-        self::assertSame('First and last name', $client->instance()->getSchemaComponent('form.full_name')->getLabel());
+        self::assertSame('Name', $client->instance()->getSchemaComponent('form.first_name')->getLabel());
+        self::assertSame('Last name', $client->instance()->getSchemaComponent('form.last_name')->getLabel());
+        self::assertInstanceOf(Hidden::class, $client->instance()->getSchemaComponent('form.full_name'));
         self::assertSame('Language', $client->instance()->getSchemaComponent('form.language')->getLabel());
     }
 

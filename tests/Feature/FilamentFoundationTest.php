@@ -32,6 +32,7 @@ use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
 use App\Modules\Broadcasts\Domain\Enums\BroadcastCampaignState;
 use App\Modules\Commerce\Domain\Enums\CommerceFulfillmentStatus;
 use App\Modules\Finance\Domain\Enums\FinancialStatus;
+use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Domain\Enums\ReferralPartnerStatus;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -63,6 +64,8 @@ class FilamentFoundationTest extends TestCase
 
     public function test_admin_panel_boots_and_requires_authentication(): void
     {
+        $organization = Organization::factory()->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
         $this->get('/admin')->assertRedirect('/admin/login');
         $this->get('/admin/login')->assertOk();
     }

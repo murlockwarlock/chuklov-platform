@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\Bookings\Pages\ViewBooking;
 use App\Filament\Resources\FinancialObligations\Pages\ListFinancialObligations;
 use App\Models\User;
+use App\Modules\ClientPortal\Application\GetClientAvailableBonus;
 use App\Modules\Commerce\Domain\Models\Purchase;
 use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\ReconcileFinancialObligation;
@@ -55,6 +56,104 @@ final class ReferralCreditRedemptionTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_preferred_bonus_currency_converts_display_without_rewriting_accounting(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->configureMultiCurrency($organization, $admin, '100');
+        $earned = $this->earnServiceCredit($organization, $admin, $client, 'preferred-display', '10.00');
+        $original = $earned->getRawOriginal();
+        $ledgerCount = FinancialLedgerEntry::query()->count();
+        $rewardCount = ReferralRewardLedgerEntry::query()->count();
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.profile.currency'), ['preferred_currency' => 'RUB'])->assertSessionHasNoErrors()->assertRedirect();
+        self::assertSame('RUB', $client->refresh()->getAttribute('preferred_currency'));
+        self::assertSame('1000.00 RUB', app(GetClientAvailableBonus::class)->handle($client));
+        self::assertSame(1000, app(ReferralRewardBalanceProjection::class)->serviceCredit($client)->available()->minorUnits());
+        self::assertSame('USD', app(ReferralRewardBalanceProjection::class)->serviceCredit($client)->currency->value);
+        self::assertSame($original, $earned->fresh()->getRawOriginal());
+        self::assertSame($ledgerCount, FinancialLedgerEntry::query()->count());
+        self::assertSame($rewardCount, ReferralRewardLedgerEntry::query()->count());
+
+        $this->configureMultiCurrency($organization, $admin, '90');
+        self::assertSame('900.00 RUB', app(GetClientAvailableBonus::class)->handle($client));
+        self::assertSame($original, $earned->fresh()->getRawOriginal());
+        $this->post(route('portal.profile.currency'), ['preferred_currency' => null])->assertSessionHasNoErrors();
+        self::assertNull($client->refresh()->getAttribute('preferred_currency'));
+        self::assertSame('10.00 USD', app(GetClientAvailableBonus::class)->handle($client));
+    }
+
+    public function test_referral_cabinet_payment_and_header_share_display_currency_through_reload_and_rate_change(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->configureMultiCurrency($organization, $admin, '100');
+        $earned = $this->earnServiceCredit($organization, $admin, $client, 'all-display-surfaces', '10.00');
+        $original = $earned->getRawOriginal();
+        $this->bookingObligation($organization, $client, 'all-display-surfaces-obligation', 2000);
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.profile.currency'), ['preferred_currency' => 'RUB'])->assertSessionHasNoErrors();
+        foreach ([100, 90] as $rate) {
+            $this->configureMultiCurrency($organization, $admin, (string) $rate);
+            for ($reload = 0; $reload < 2; $reload++) {
+                $this->get(route('portal.referrals'))->assertInertia(fn (AssertableInertia $page) => $page
+                    ->where('portal.availableBonus', ($rate * 10).'.00 RUB')
+                    ->where('referrals.rewards.balances.0.currency', 'USD')
+                    ->where('referrals.rewards.balances.0.availableMinor', 1000)
+                    ->where('referrals.rewards.balances.0.display.availableMinor.amountMinor', $rate * 1000)
+                    ->where('referrals.rewards.balances.0.display.availableMinor.currency', 'RUB')
+                    ->where('referrals.rewards.balances.0.display.availableMinor.conversionAvailable', true));
+                $this->get(route('portal.finance.index'))->assertInertia(fn (AssertableInertia $page) => $page
+                    ->where('portal.availableBonus', ($rate * 10).'.00 RUB')
+                    ->where('obligations.0.referralCredit.baseAvailableMinor', 1000)
+                    ->where('obligations.0.referralCredit.baseCurrency', 'USD')
+                    ->where('obligations.0.referralCredit.display.amountMinor', $rate * 1000)
+                    ->where('obligations.0.referralCredit.display.currency', 'RUB'));
+            }
+            self::assertSame($original, $earned->fresh()->getRawOriginal());
+        }
+    }
+
+    public function test_unavailable_preference_and_forged_identifiers_do_not_change_another_client(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->configureMultiCurrency($organization, $admin, '100');
+        $foreign = Client::factory()->forOrganization(Organization::factory()->create())->create();
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.profile.currency'), ['preferred_currency' => 'EUR'])->assertSessionHasErrors('preferred_currency');
+        self::assertNull($client->refresh()->getAttribute('preferred_currency'));
+        $this->post(route('portal.profile.currency'), ['preferred_currency' => 'RUB', 'client_id' => $foreign->getKey(), 'organization_id' => $foreign->organization_id])
+            ->assertSessionHasNoErrors();
+        self::assertSame('RUB', $client->refresh()->getAttribute('preferred_currency'));
+        self::assertNull($foreign->refresh()->getAttribute('preferred_currency'));
+        $auditCount = DB::table('audit_events')->where('action', 'client.display_currency.updated')->count();
+        $this->post(route('portal.profile.currency'), ['preferred_currency' => 'RUB'])->assertSessionHasNoErrors();
+        self::assertSame($auditCount, DB::table('audit_events')->where('action', 'client.display_currency.updated')->count());
+        $this->expectException(AuthorizationException::class);
+        app(GetClientAvailableBonus::class)->handle($foreign);
+    }
+
+    public function test_missing_live_display_rate_falls_back_honestly_without_changing_credit(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->configureMultiCurrency($organization, $admin, '100');
+        $this->earnServiceCredit($organization, $admin, $client, 'display-rate-failure', '10.00');
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.profile.currency'), ['preferred_currency' => 'RUB'])->assertSessionHasNoErrors();
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'USD', 'display_currency' => 'USD', 'allowed_currencies' => ['USD', 'RUB'],
+            'force_single_currency' => false, 'rounding_mode' => 'half_up',
+            'rates' => [['source_currency' => 'RUB', 'target_currency' => 'USD', 'rate' => '0.01']],
+        ]);
+        $display = app(GetClientAvailableBonus::class);
+        self::assertSame('10.00 USD', $display->handle($client->refresh()));
+        self::assertTrue($display->currencyUnavailable($client));
+        $this->get(route('portal.referrals'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('referrals.rewards.balances.0.display.availableMinor.currency', 'USD')
+            ->where('referrals.rewards.balances.0.display.availableMinor.amountMinor', 1000)
+            ->where('referrals.rewards.balances.0.display.availableMinor.conversionAvailable', false));
+        $this->post(route('portal.profile.currency'), ['preferred_currency' => 'RUB'])->assertSessionHasErrors('preferred_currency');
+        self::assertSame(1000, app(ReferralRewardBalanceProjection::class)->serviceCredit($client)->available()->minorUnits());
+    }
+
     public function test_ordinary_client_can_fully_pay_a_booking_with_service_credit(): void
     {
         [$organization, $admin, $client] = $this->fixture();
@@ -102,6 +201,31 @@ final class ReferralCreditRedemptionTest extends TestCase
             'aggregate_id' => $obligation->getKey(),
             'event_type' => IntegrationEventType::FinanceObligationSettled->value,
         ]);
+    }
+
+    public function test_display_updates_after_redemption_and_correction_without_rewriting_currency_evidence(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->configureMultiCurrency($organization, $admin, '100');
+        $earned = $this->earnServiceCredit($organization, $admin, $client, 'display-redeem-correct', '10.00');
+        $originalEarned = $earned->getRawOriginal();
+        $obligation = $this->bookingObligation($organization, $client, 'display-redeem-correct-obligation', 2000);
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.profile.currency'), ['preferred_currency' => 'RUB'])->assertSessionHasNoErrors();
+        $payment = app(ApplyReferralCreditToObligation::class)->handle($client, $obligation->getKey(), '4.00', 'USD', 'display-redeem-correct-payment');
+        $paymentEvidence = $payment->getRawOriginal();
+        $this->get(route('portal.referrals'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('portal.availableBonus', '600.00 RUB')
+            ->where('referrals.rewards.balances.0.display.availableMinor.amountMinor', 60000)
+            ->where('referrals.rewards.balances.0.display.redeemedMinor.amountMinor', 40000));
+        $this->configureMultiCurrency($organization, $admin, '90');
+        app(RestoreReferralCredit::class)->handle($admin, $payment, 'Synthetic correction', 'display-redeem-correct-restoration');
+        $this->get(route('portal.referrals'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('portal.availableBonus', '900.00 RUB')
+            ->where('referrals.rewards.balances.0.display.availableMinor.amountMinor', 90000)
+            ->where('referrals.rewards.balances.0.display.restoredMinor.amountMinor', 36000));
+        self::assertSame($originalEarned, $earned->fresh()->getRawOriginal());
+        self::assertSame($paymentEvidence, $payment->fresh()->getRawOriginal());
     }
 
     public function test_partial_referral_credit_can_be_combined_with_regular_payment(): void

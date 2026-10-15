@@ -10,6 +10,8 @@ use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
+use App\Modules\Scheduling\Application\GetScheduleCalendar;
+use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -20,6 +22,7 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Tables\Filters\SelectFilter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -250,7 +253,7 @@ final class BookingOperationalFiltersTest extends TestCase
         $component = Livewire::actingAs($admin)
             ->test(ListBookings::class)
             ->filterTable('status', BookingStatus::Requested)
-            ->filterTable('specialist', $specialist->getKey())
+            ->filterTable('specialist', [$specialist->getKey()])
             ->filterTable('service', $service->getKey())
             ->filterTable('visit_format', VisitFormat::Online)
             ->filterTable('client', $client->getKey())
@@ -263,7 +266,7 @@ final class BookingOperationalFiltersTest extends TestCase
             self::assertSame(50, $filter->getOptionsLimit());
             self::assertTrue($filter->isPreloaded());
             $component->instance()->getTableFiltersForm();
-            $field = $filter->getSchema()->getFlatFields()['value'];
+            $field = $filter->getSchema()->getFlatFields()[$filterName === 'specialist' ? 'values' : 'value'];
             self::assertInstanceOf(Select::class, $field);
             $options = $filter->getOptionsFromRelationship($field);
             self::assertSame(
@@ -317,7 +320,7 @@ final class BookingOperationalFiltersTest extends TestCase
             self::assertInstanceOf(SelectFilter::class, $filter);
 
             $component->instance()->getTableFiltersForm();
-            $field = $filter->getSchema()->getFlatFields()['value'];
+            $field = $filter->getSchema()->getFlatFields()[$filterName === 'specialist' ? 'values' : 'value'];
             self::assertInstanceOf(Select::class, $field);
             self::assertTrue($filter->isPreloaded());
             self::assertSame(50, $filter->getOptionsLimit());
@@ -331,6 +334,68 @@ final class BookingOperationalFiltersTest extends TestCase
             self::assertArrayHasKey($target->getKey(), $searchResults);
             self::assertArrayNotHasKey($foreign->getKey(), $searchResults);
         }
+    }
+
+    public function test_multi_specialist_calendar_uses_bounded_queries_and_the_existing_calendar_contract(): void
+    {
+        [$organization, $admin, , $first] = $this->fixture();
+        $second = Specialist::factory()->forOrganization($organization)->create(['timezone' => 'Pacific/Kiritimati']);
+        foreach ([$first, $second] as $specialist) {
+            app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [
+                ['weekday' => 3, 'start_time' => '08:00', 'end_time' => '12:00'],
+            ]);
+        }
+        $calendar = app(GetScheduleCalendar::class);
+        $expected = [];
+        foreach ([$first, $second] as $specialist) {
+            $expected[$specialist->getKey()] = $calendar->forSpecialist($specialist, '2026-08-17', '2026-08-23', 'UTC');
+        }
+        $specialists = Specialist::query()->where('organization_id', $organization->getKey())->get();
+        app(OrganizationContext::class)->defaultTimezone();
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        $actual = $calendar->forSpecialists($specialists, '2026-08-17', '2026-08-23', 'UTC');
+        self::assertSame($expected, $actual);
+        self::assertCount(2, DB::getQueryLog());
+        DB::disableQueryLog();
+        Specialist::factory()->forOrganization($organization)->count(8)->create();
+        $specialists = Specialist::query()->where('organization_id', $organization->getKey())->get();
+        DB::enableQueryLog();
+        DB::flushQueryLog();
+        self::assertCount(10, $calendar->forSpecialists($specialists, '2026-08-17', '2026-08-23', 'UTC'));
+        self::assertCount(2, DB::getQueryLog());
+        DB::disableQueryLog();
+    }
+
+    public function test_journal_defaults_to_all_specialists_and_retains_multiple_selection(): void
+    {
+        [$organization, $admin, $client, $first, $service] = $this->fixture();
+        $second = Specialist::factory()->forOrganization($organization)->create();
+        $third = Specialist::factory()->forOrganization($organization)->create();
+        $foreign = Specialist::factory()->forOrganization(Organization::factory()->create())->create();
+        $startsAt = CarbonImmutable::now('UTC')->addHour();
+        $firstBooking = $this->createBooking($organization, $client, $first, $service, $startsAt);
+        $secondBooking = $this->createBooking($organization, $client, $second, $service, $startsAt);
+        $thirdBooking = $this->createBooking($organization, $client, $third, $service, $startsAt);
+
+        $component = Livewire::actingAs($admin)->test(ListBookings::class)
+            ->assertSet('selectedSpecialistIds', [])
+            ->assertCanSeeTableRecords([$firstBooking, $secondBooking, $thirdBooking])
+            ->set('selectedSpecialistIds', [(string) $first->getKey(), (string) $second->getKey()])
+            ->assertSet('selectedSpecialistId', null)
+            ->assertCanSeeTableRecords([$firstBooking, $secondBooking])
+            ->assertCanNotSeeTableRecords([$thirdBooking]);
+        $days = $component->instance()->getJournalDaysProperty();
+        self::assertSame([$firstBooking->getKey(), $secondBooking->getKey()], array_column($days[$startsAt->toDateString()]['bookings'], 'id'));
+
+        Livewire::withQueryParams(['specialist_ids' => [$first->getKey(), $second->getKey()]])
+            ->test(ListBookings::class)
+            ->assertCanSeeTableRecords([$firstBooking, $secondBooking])
+            ->assertCanNotSeeTableRecords([$thirdBooking]);
+        $component->call('clearSpecialistFilter')
+            ->assertCanSeeTableRecords([$firstBooking, $secondBooking, $thirdBooking])
+            ->set('selectedSpecialistIds', [$foreign->getKey()])
+            ->assertHasErrors('selectedSpecialistIds');
     }
 
     public function test_booking_client_filter_uses_a_safe_label_for_clients_without_a_name(): void

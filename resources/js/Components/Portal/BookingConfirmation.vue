@@ -27,6 +27,7 @@ const props = defineProps<{
     serviceName: string | null;
     specialistName: string | null;
     selectedStart: string | null;
+    startsAtList?: string[];
     timezone: string;
     locale: PortalLocale;
     format: VisitFormat;
@@ -88,6 +89,7 @@ const location = computed({
       </h2>
     </header>
 
+    <slot name="personal-data" />
     <dl class="portal-booking-summary">
       <div>
         <dt>{{ t('booking.service') }}</dt>
@@ -97,20 +99,21 @@ const location = computed({
         <dt>{{ t('booking.specialist') }}</dt>
         <dd>{{ props.specialistName }}</dd>
       </div>
-      <div>
+      <div
+        v-for="start in (props.startsAtList?.length ? props.startsAtList : props.selectedStart ? [props.selectedStart] : [])"
+        :key="start"
+      >
         <dt>{{ t('booking.dateTime') }}</dt>
         <dd>
           <PortalDateTime
-            v-if="props.selectedStart"
-            :value="props.selectedStart"
+            :value="start"
             :time-zone="props.timezone"
             :locale="props.locale"
             mode="date"
           />
-          <span v-if="props.selectedStart"> · </span>
+          <span> · </span>
           <PortalDateTime
-            v-if="props.selectedStart"
-            :value="props.selectedStart"
+            :value="start"
             :time-zone="props.timezone"
             :locale="props.locale"
             mode="time"

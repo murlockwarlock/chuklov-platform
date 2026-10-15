@@ -108,6 +108,10 @@ defineProps<{
       v-if="name === 'close'"
       d="m6 6 12 12M18 6 6 18"
     />
+    <path
+      v-if="name === 'plus'"
+      d="M12 5v14M5 12h14"
+    />
     <template v-if="name === 'map'">
       <path d="m3.5 5.5 5.67-2 5.66 2 5.67-2v15l-5.67 2-5.66-2-5.67 2v-15Z" />
       <path d="M9.17 3.5v15M14.83 5.5v15" />

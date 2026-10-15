@@ -25,6 +25,7 @@ type WorkingLocation = {
 
 type Booking = {
     id: number;
+    patientName: string | null;
     service: { name: string };
     specialist: { displayName: string };
     startsAt: string;
@@ -348,6 +349,12 @@ function rescheduleBooking(): void {
           <h1 class="portal-heading portal-heading--page">
             {{ props.booking.service.name }}
           </h1>
+          <p
+            v-if="props.booking.patientName"
+            class="portal-copy"
+          >
+            {{ t('family.forWhom') }}: {{ props.booking.patientName }}
+          </p>
           <p class="portal-lede">
             {{ props.booking.specialist.displayName }} · {{ props.booking.formatLabel }}
           </p>

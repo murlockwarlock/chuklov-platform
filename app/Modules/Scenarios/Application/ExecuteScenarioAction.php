@@ -3,6 +3,7 @@
 namespace App\Modules\Scenarios\Application;
 
 use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
 use App\Modules\Channels\Domain\ValueObjects\NotificationActionButton;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
@@ -14,12 +15,14 @@ use App\Modules\Scenarios\Domain\Enums\ScenarioDeliveryStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
 use App\Modules\Scenarios\Domain\Exceptions\FeedbackMiniAppConfigurationException;
+use App\Modules\Scenarios\Domain\Exceptions\TelegramMiniAppConfigurationException;
 use App\Modules\Scenarios\Domain\Models\AppointmentReminder;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioDeliveryAttempt;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioConditionSet;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
+use App\Modules\Scheduling\Application\BookingPatientAccounts;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use Carbon\CarbonImmutable;
@@ -27,6 +30,8 @@ use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
+use LogicException;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Throwable;
 
 final class ExecuteScenarioAction
@@ -42,6 +47,9 @@ final class ExecuteScenarioAction
         private readonly B2bSalesCallReadyGuard $b2bReadyGuard,
         private readonly BookingConfirmedGuard $bookingConfirmedGuard,
         private readonly BookingChangedGuard $bookingChangedGuard,
+        private readonly ResolveTelegramMiniAppEntry $miniAppEntries,
+        private readonly MedicalProfileReminderPresentation $medicalProfile,
+        private readonly RecordScenarioDeliveryPresentation $presentation,
     ) {}
 
     public function handle(int $scenarioActionId): void
@@ -71,7 +79,7 @@ final class ExecuteScenarioAction
             }
 
             $result = $this->send($action->getKey(), $delivery);
-            $outcome = $this->finalizeDelivery($delivery->getKey(), $result);
+            $outcome = $this->finalizeDelivery($delivery, $result);
 
             if (! in_array($outcome, [NotificationDeliveryOutcome::PermanentFailure, NotificationDeliveryOutcome::Unavailable], true)) {
                 return;
@@ -95,8 +103,20 @@ final class ExecuteScenarioAction
                 : CarbonImmutable::parse((string) $action->scheduled_for)->utc(),
         );
 
+        if ($action->recipient_type === 'client' && $context->booking !== null
+            && ! app(BookingPatientAccounts::class)->includes($context->booking, (int) $action->client_id)) {
+            return false;
+        }
+
         if ($action->kind === 'appointment_reminder') {
             return $this->appointmentReminderIsCurrent($action, $context->booking);
+        }
+        if (! $this->medicalProfile->creationIsCurrent($action, $context)) {
+            return false;
+        }
+        if ($action->templateVersion?->template?->template_key === 'medical-profile-after-booking'
+            && ! $this->medicalProfile->needsPrompt($action, $context->booking)) {
+            return false;
         }
 
         if (! is_array($action->condition_snapshot)) {
@@ -157,7 +177,8 @@ final class ExecuteScenarioAction
                 if ($booking === null || ! $this->appointmentReminderIsCurrent($action, $booking)) {
                     return NotificationDeliveryResult::suppressed('booking_changed');
                 }
-                if ($booking->visit_format->value === 'online' && $booking->effectiveMeetingUrl() === null) {
+                $medicalPromptRequired = $this->medicalProfile->applies($action, $booking);
+                if (! $medicalPromptRequired && $booking->visit_format->value === 'online' && $booking->effectiveMeetingUrl() === null) {
                     return NotificationDeliveryResult::retryable('booking_meeting_pending');
                 }
                 $recipient = new ScenarioRecipient(
@@ -169,7 +190,14 @@ final class ExecuteScenarioAction
                 $context = $this->contextFactory->evaluationContext($event);
                 $renderContext = $this->contextFactory->renderContext($context, $recipient);
                 $renderContext['booking']['reminder_offset_label'] = $action->render_context['booking']['reminder_offset_label'] ?? 'некоторое время';
+                $medicalSnapshot = $action->render_context['medical_profile_reminder'] ?? null;
+                if (is_array($medicalSnapshot)) {
+                    $renderContext['medical_profile_reminder'] = $medicalSnapshot;
+                }
                 $action->setAttribute('render_context', $renderContext);
+                if ($medicalPromptRequired) {
+                    $action->setRelation('templateVersion', $this->medicalProfile->template($action));
+                }
             } else {
                 $currentAction = ScenarioAction::query()
                     ->whereKey($action->getKey())
@@ -182,6 +210,10 @@ final class ExecuteScenarioAction
                 }
                 $action = $currentAction;
                 $event = $currentEvent;
+                $context = $this->contextFactory->evaluationContext($event);
+                if ($this->medicalProfile->prefersMedicalCreation($action, $context)) {
+                    $action->setRelation('templateVersion', $this->medicalProfile->creationTemplate($action));
+                }
             }
             $identity = $this->identities->resolve($action, $delivery->channel);
 
@@ -205,6 +237,12 @@ final class ExecuteScenarioAction
             }
 
             $locale = $template->template->locale;
+            if ($template->template->template_key === 'medical-profile-after-booking') {
+                $context = $this->contextFactory->evaluationContext($event);
+                $recipient = new ScenarioRecipient(type: $action->recipient_type, clientId: $action->client_id,
+                    userId: $action->recipient_user_id, locale: $locale);
+                $action->setAttribute('render_context', $this->contextFactory->renderContext($context, $recipient));
+            }
             if ($event->event_name === ScenarioEventType::FinancialDebtReminderRequested) {
                 $context = $this->contextFactory->evaluationContext($event);
                 if (! $this->contextFactory->financeDebtIsCurrent($context)) {
@@ -235,7 +273,11 @@ final class ExecuteScenarioAction
             }
             $rendered = $this->renderer->render($template, $action->render_context, $locale);
             $mediaItems = $this->media->messages($delivery->organization_id, $rendered->media);
-            $actionButton = $this->actionButton($action, $rendered->locale);
+            try {
+                $actionButton = $this->actionButton($action, $rendered->locale);
+            } catch (TelegramMiniAppConfigurationException) {
+                return NotificationDeliveryResult::unavailable(TelegramMiniAppConfigurationException::ERROR_CODE);
+            }
             $actionButtons = $this->actionButtons($action, $rendered->locale);
 
             if (($actionButton !== null || $actionButtons !== []) && ! $channel->capabilities()->supportsInlineButtons) {
@@ -243,15 +285,34 @@ final class ExecuteScenarioAction
             }
 
             $event = $action->event()->first();
-            if ($event === null
-                || ($isAppointmentReminder && ! $this->appointmentReminderIsCurrent($action, $this->appointmentReminderBooking($action)))
+            if ($event === null) {
+                return NotificationDeliveryResult::suppressed('event_missing');
+            }
+            if (isset($action->render_context['medical_profile_after_booking'])
+                && ! $this->medicalProfile->creationIsCurrent($action, $this->contextFactory->evaluationContext($event))) {
+                return NotificationDeliveryResult::suppressed('booking_changed');
+            }
+            if ($template->template->template_key === 'medical-profile-after-booking' && ! $this->isEligible($action)) {
+                return NotificationDeliveryResult::suppressed('medical_profile_no_longer_required');
+            }
+            if ($isAppointmentReminder && $template->template->template_key === 'medical-profile-reminder') {
+                $currentBooking = $this->appointmentReminderBooking($action);
+                if ($currentBooking === null || ! $this->medicalProfile->applies($action, $currentBooking)) {
+                    return NotificationDeliveryResult::suppressed('medical_profile_no_longer_required');
+                }
+            }
+            if (($isAppointmentReminder && ! $this->appointmentReminderIsCurrent($action, $this->appointmentReminderBooking($action)))
                 || (! $isAppointmentReminder && $event->event_name->value === 'b2b.sales_call.ready'
                     && ! $this->b2bReadyGuard->allows($event, renderContext: $action->render_context))
                 || (! $isAppointmentReminder && $event->event_name->value === 'booking.confirmed'
                     && ! $this->bookingConfirmedGuard->allows($event, renderContext: $action->render_context, recipientType: $action->recipient_type))
                 || (! $isAppointmentReminder && in_array($event->event_name, [ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled], true)
                     && ! $this->bookingChangedGuard->allows($event, renderContext: $action->render_context, recipientType: $action->recipient_type))) {
-                return NotificationDeliveryResult::suppressed($this->changeReason($event?->event_name->value));
+                return NotificationDeliveryResult::suppressed($this->changeReason($event->event_name->value));
+            }
+
+            if (! $this->presentation->handle($delivery, (int) $template->getKey())) {
+                return NotificationDeliveryResult::suppressed('delivery_claim_changed');
             }
 
             return $channel->send(new NotificationMessage(
@@ -282,6 +343,13 @@ final class ExecuteScenarioAction
     private function actionButton(ScenarioAction $action, string $locale): ?NotificationActionButton
     {
         $templateKey = $action->templateVersion?->template?->template_key;
+
+        if (in_array($templateKey, ['medical-profile-reminder', 'medical-profile-after-booking'], true) && $action->recipient_type === 'client') {
+            return $this->clientMiniAppButton(
+                text: $this->isRussian($locale) ? 'Заполнить карту здоровья' : 'Complete health profile',
+                entry: 'medical_profile',
+            );
+        }
 
         if ($action->kind === 'appointment_reminder') {
             $url = $action->render_context['booking']['meeting_url'] ?? null;
@@ -388,9 +456,9 @@ final class ExecuteScenarioAction
         if ($templateKey === 'finance-payment-succeeded-survey') {
             $surveyUrl = $action->render_context['payment']['survey_url'] ?? null;
             if (is_string($surveyUrl) && trim($surveyUrl) !== '') {
-                return new NotificationActionButton(
+                return $this->clientMiniAppButton(
                     text: $this->isRussian($locale) ? 'Открыть тест' : 'Open diagnostic check',
-                    url: $surveyUrl,
+                    entry: 'surveys',
                 );
             }
         }
@@ -400,18 +468,32 @@ final class ExecuteScenarioAction
             'post-session-follow-up-48h',
             'post-session-follow-up-72h',
         ], true)) {
-            return new NotificationActionButton(
+            return $this->clientMiniAppButton(
                 text: $this->isRussian($locale) ? 'Открыть здоровье' : 'Open health',
-                url: route('portal.health'),
+                entry: 'health',
             );
         }
 
         if (in_array($templateKey, ['survey-stagnation-client', 'survey-progress-client'], true)) {
             $surveyUrl = $action->render_context['survey']['portal_url'] ?? null;
             if (is_string($surveyUrl) && trim($surveyUrl) !== '') {
-                return new NotificationActionButton(
+                return $this->clientMiniAppButton(
                     text: $this->isRussian($locale) ? 'Открыть тесты' : 'Open tests',
-                    url: $surveyUrl,
+                    entry: 'surveys',
+                );
+            }
+        }
+
+        if (in_array($action->trigger_event->value, ['referral.payout.status_changed', 'referral.reward.earned'], true)) {
+            $portalUrl = $action->trigger_event->value === 'referral.payout.status_changed'
+                ? ($action->render_context['payout']['portal_url'] ?? null)
+                : ($action->render_context['reward']['portal_url'] ?? null);
+            if (is_string($portalUrl) && trim($portalUrl) !== '') {
+                return $this->clientMiniAppButton(
+                    text: $action->trigger_event->value === 'referral.reward.earned'
+                        ? ($this->isRussian($locale) ? 'Открыть реферальный раздел' : 'Open referral page')
+                        : ($this->isRussian($locale) ? 'Открыть партнёрский кабинет' : 'Open partner cabinet'),
+                    entry: 'partner_cabinet',
                 );
             }
         }
@@ -420,8 +502,6 @@ final class ExecuteScenarioAction
             'b2b.sales_call.ready' => $action->render_context['sales_call']['join_url'] ?? null,
             'booking.confirmed' => $action->render_context['booking']['meeting_url'] ?? null,
             'booking.rescheduled' => $action->render_context['booking']['meeting_url'] ?? null,
-            'referral.payout.status_changed' => $action->render_context['payout']['portal_url'] ?? null,
-            'referral.reward.earned' => $action->render_context['reward']['portal_url'] ?? null,
             default => null,
         };
 
@@ -435,6 +515,18 @@ final class ExecuteScenarioAction
                 : ($this->isRussian($locale) ? 'Подключиться к встрече' : 'Join meeting'),
             url: $url,
         );
+    }
+
+    private function clientMiniAppButton(string $text, string $entry): NotificationActionButton
+    {
+        try {
+            return new NotificationActionButton(
+                text: $text,
+                webAppUrl: $this->miniAppEntries->launchUrl($entry),
+            );
+        } catch (LogicException|NotFoundHttpException $exception) {
+            throw new TelegramMiniAppConfigurationException($exception);
+        }
     }
 
     /** @return list<NotificationActionButton> */
@@ -500,11 +592,16 @@ final class ExecuteScenarioAction
 
     private function appointmentReminderIsCurrent(ScenarioAction $action, ?Booking $booking): bool
     {
-        if ($booking === null || $booking->status !== BookingStatus::Confirmed || $action->booking_starts_at === null) {
+        if ($booking === null || $action->booking_starts_at === null
+            || $booking->startsAtUtc()->lessThanOrEqualTo(CarbonImmutable::now('UTC'))) {
             return false;
         }
-
-        $reminder = $action->appointmentReminder;
+        $reminder = AppointmentReminder::query()->where('organization_id', $action->organization_id)
+            ->whereKey($action->appointment_reminder_id)->first();
+        $action->setRelation('appointmentReminder', $reminder);
+        if ($booking->status !== BookingStatus::Confirmed && ! $this->medicalProfile->applies($action, $booking)) {
+            return false;
+        }
 
         return $reminder instanceof AppointmentReminder
             && $reminder->is_enabled
@@ -615,13 +712,15 @@ final class ExecuteScenarioAction
         });
     }
 
-    private function finalizeDelivery(int $deliveryId, NotificationDeliveryResult $result): NotificationDeliveryOutcome
+    private function finalizeDelivery(ScenarioDelivery $claimed, NotificationDeliveryResult $result): NotificationDeliveryOutcome
     {
-        return DB::transaction(function () use ($deliveryId, $result): NotificationDeliveryOutcome {
-            $delivery = ScenarioDelivery::query()->lockForUpdate()->findOrFail($deliveryId);
+        return DB::transaction(function () use ($claimed, $result): NotificationDeliveryOutcome {
+            $delivery = ScenarioDelivery::query()->where('organization_id', $claimed->organization_id)
+                ->whereKey((int) $claimed->getKey())->lockForUpdate()->firstOrFail();
 
-            if ($delivery->status !== ScenarioDeliveryStatus::Processing) {
-                return $result->outcome;
+            if ($delivery->status !== ScenarioDeliveryStatus::Processing || $delivery->attempt_count !== $claimed->attempt_count
+                || (string) $delivery->processing_started_at !== (string) $claimed->processing_started_at) {
+                return NotificationDeliveryOutcome::InFlight;
             }
 
             $outcome = $result->outcome === NotificationDeliveryOutcome::InFlight

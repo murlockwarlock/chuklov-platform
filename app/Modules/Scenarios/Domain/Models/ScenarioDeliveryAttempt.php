@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property NotificationDeliveryOutcome $outcome
+ * @property int|null $template_version_id
  */
 #[Fillable(['attempt_number', 'outcome', 'error_code', 'provider_reference', 'attempted_at'])]
 class ScenarioDeliveryAttempt extends Model
@@ -43,6 +44,7 @@ class ScenarioDeliveryAttempt extends Model
         return [
             'outcome' => NotificationDeliveryOutcome::class,
             'attempt_number' => 'integer',
+            'template_version_id' => 'integer',
             'attempted_at' => 'datetime',
         ];
     }

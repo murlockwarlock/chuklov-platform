@@ -15,5 +15,7 @@ final readonly class EncryptedMedicalPayload
         public ?string $encryptedGoals = null,
         public ?string $encryptedOperations = null,
         public ?string $encryptedInjuries = null,
+        public ?string $encryptedChronicConditions = null,
+        public ?string $encryptedClinicalAnswers = null,
     ) {}
 }

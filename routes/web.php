@@ -6,6 +6,7 @@ use App\Http\Controllers\AdminCompanionController;
 use App\Http\Controllers\AdminFinanceReceiptController;
 use App\Http\Controllers\AdminKnowledgeRevisionDownloadController;
 use App\Http\Controllers\AdminMedicalAttachmentController;
+use App\Http\Controllers\AdminNotificationTemplateMediaController;
 use App\Http\Controllers\AiRunExportController;
 use App\Http\Controllers\CompanionExportController;
 use App\Http\Controllers\HealthController;
@@ -16,6 +17,7 @@ use App\Http\Controllers\Portal\B2bController;
 use App\Http\Controllers\Portal\BookingController;
 use App\Http\Controllers\Portal\CompanionController;
 use App\Http\Controllers\Portal\EmailAuthenticationController;
+use App\Http\Controllers\Portal\FamilyController;
 use App\Http\Controllers\Portal\FeedbackController;
 use App\Http\Controllers\Portal\FinanceController;
 use App\Http\Controllers\Portal\FinanceReceiptController;
@@ -25,9 +27,13 @@ use App\Http\Controllers\Portal\HealthController as PortalHealthController;
 use App\Http\Controllers\Portal\HomeController;
 use App\Http\Controllers\Portal\LocaleController;
 use App\Http\Controllers\Portal\MedicalAttachmentController;
+use App\Http\Controllers\Portal\MedicalAttachmentUploadController;
+use App\Http\Controllers\Portal\MedicalProfileController;
 use App\Http\Controllers\Portal\MoreController;
 use App\Http\Controllers\Portal\OnboardingController;
+use App\Http\Controllers\Portal\PatientInvitationController;
 use App\Http\Controllers\Portal\PortalCommerceController;
+use App\Http\Controllers\Portal\ProfileCitiesController;
 use App\Http\Controllers\Portal\ProfileController;
 use App\Http\Controllers\Portal\ReferralController;
 use App\Http\Controllers\Portal\ReferralPartnerController;
@@ -66,6 +72,10 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         ->middleware([Authenticate::class, EnsurePrivilegedSessionIsCurrent::class])
         ->whereNumber(['campaignId', 'mediaIndex'])
         ->name('admin.broadcasts.media');
+    Route::get('/admin/notification-templates/media/{versionId}/{mediaIndex}', AdminNotificationTemplateMediaController::class)
+        ->middleware([Authenticate::class, EnsurePrivilegedSessionIsCurrent::class])
+        ->whereNumber(['versionId', 'mediaIndex'])
+        ->name('admin.notification-templates.media');
     Route::get('/knowledge/revisions/{knowledgeSourceId}/{knowledgeRevisionId}/download', AdminKnowledgeRevisionDownloadController::class)
         ->middleware([Authenticate::class, EnsurePrivilegedSessionIsCurrent::class])
         ->whereNumber(['knowledgeSourceId', 'knowledgeRevisionId'])
@@ -123,7 +133,10 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/bookings', [BookingController::class, 'store'])->name('portal.bookings.store');
             Route::get('/portal/bookings', [BookingController::class, 'index'])->name('portal.bookings.index');
             Route::get('/portal/health', PortalHealthController::class)->name('portal.health');
+            Route::get('/portal/medical-profile', [MedicalProfileController::class, 'show'])->name('portal.medical-profile');
+            Route::post('/portal/medical-profile', [MedicalProfileController::class, 'update'])->name('portal.medical-profile.update');
             Route::get('/portal/medical-attachments/{uuid}', MedicalAttachmentController::class)->name('portal.medical-attachments.download');
+            Route::post('/portal/medical-attachments', MedicalAttachmentUploadController::class)->name('portal.medical-attachments.upload');
             Route::get('/portal/more', MoreController::class)->name('portal.more');
             Route::get('/portal/finance', [FinanceController::class, 'index'])->name('portal.finance.index');
             Route::get('/portal/gift-certificates', [GiftCertificateController::class, 'index'])
@@ -211,7 +224,16 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
             Route::post('/portal/channels/telegram/link', TelegramLinkController::class)
                 ->name('portal.telegram.link');
             Route::get('/portal/profile', [ProfileController::class, 'show'])->name('portal.profile');
+            Route::get('/portal/family', [FamilyController::class, 'index'])->name('portal.family');
+            Route::post('/portal/family', [FamilyController::class, 'store'])->middleware('throttle:30,1')->name('portal.family.store');
+            Route::post('/portal/family/{patientId}/invite', [FamilyController::class, 'invite'])->whereNumber('patientId')->middleware('throttle:20,1')->name('portal.family.invite');
+            Route::post('/portal/family/{patientId}/revoke', [FamilyController::class, 'revoke'])->whereNumber('patientId')->name('portal.family.revoke');
+            Route::post('/portal/family/{patientId}', [FamilyController::class, 'update'])->whereNumber('patientId')->middleware('throttle:30,1')->name('portal.family.update');
+            Route::get('/portal/family/invitation', [PatientInvitationController::class, 'show'])->name('portal.family.invitation');
+            Route::post('/portal/family/invitation/accept', [PatientInvitationController::class, 'accept'])->middleware('throttle:20,1')->name('portal.family.invitation.accept');
+            Route::post('/portal/profile/cities', ProfileCitiesController::class)->middleware('throttle:60,1')->name('portal.profile.cities');
             Route::post('/portal/profile', [ProfileController::class, 'update'])->name('portal.profile.update');
+            Route::post('/portal/profile/currency', [ProfileController::class, 'currency'])->name('portal.profile.currency');
             Route::post('/portal/profile/consents', [ProfileController::class, 'consents'])
                 ->name('portal.profile.consents');
             Route::post('/portal/profile/b2b-answer', [ProfileController::class, 'b2bAnswer'])

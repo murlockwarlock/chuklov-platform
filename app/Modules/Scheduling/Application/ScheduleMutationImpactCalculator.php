@@ -7,6 +7,7 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
+use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
 use App\Modules\Scheduling\Domain\ValueObjects\ScheduleExceptionDefinition;
 use App\Modules\Scheduling\Domain\ValueObjects\SpecialistScheduleDefinition;
@@ -64,6 +65,13 @@ final class ScheduleMutationImpactCalculator
         array $definitionsByDate,
     ): ScheduleMutationImpact {
         $dates = array_keys($definitionsByDate);
+        if ($dates === []) {
+            return $this->fromBookings([], [
+                'type' => 'schedule_exception_set',
+                'specialist_id' => $specialist->getKey(),
+                'definitions' => [],
+            ]);
+        }
         $workingHours = $this->workingHoursResolver->forRange(
             $specialist,
             LocalDate::from((string) min($dates)),
@@ -144,6 +152,7 @@ final class ScheduleMutationImpactCalculator
     {
         $timingChanged = (int) ($attributes['duration_minutes'] ?? $service->duration_minutes) !== (int) $service->duration_minutes
             || (int) ($attributes['buffer_minutes'] ?? $service->buffer_minutes) !== (int) $service->buffer_minutes
+            || $this->formatBuffers($service, $attributes) !== $this->formatBuffers($service, [])
             || ($attributes['formats'] ?? $service->formats) !== $service->formats
             || (bool) ($attributes['is_active'] ?? $service->is_active) !== (bool) $service->is_active
             || ($attributes['catalog_type'] ?? $service->catalogItemType()->value) !== $service->catalogItemType()->value;
@@ -256,7 +265,7 @@ final class ScheduleMutationImpactCalculator
     }
 
     /** @param array<string, mixed> $attributes
-     * @return array{duration_minutes: int|null, buffer_minutes: int, formats: list<mixed>, is_active: bool, catalog_type: string}
+     * @return array{duration_minutes: int|null, buffer_minutes: int, format_buffers: array<string, mixed>, formats: list<mixed>, is_active: bool, catalog_type: string}
      */
     private function serviceSchedulingIntent(Service $service, array $attributes): array
     {
@@ -267,6 +276,7 @@ final class ScheduleMutationImpactCalculator
         return [
             'duration_minutes' => $durationMinutes === null ? null : (int) $durationMinutes,
             'buffer_minutes' => (int) ($attributes['buffer_minutes'] ?? $service->buffer_minutes),
+            'format_buffers' => $this->formatBuffers($service, $attributes),
             'formats' => is_array($formats) ? array_values($formats) : [],
             'is_active' => (bool) ($attributes['is_active'] ?? $service->is_active),
             'catalog_type' => $catalogType instanceof CatalogItemType
@@ -367,7 +377,10 @@ final class ScheduleMutationImpactCalculator
             || $localEnd->format('H:i') > $definition->interval->end;
     }
 
-    /** @param array<string, list<ScheduleExceptionDefinition>> $definitionsByDate */
+    /**
+     * @param  array<string, list<ScheduleExceptionDefinition>>  $definitionsByDate
+     * @param  Collection<int, SpecialistWorkingHour>  $workingHours
+     */
     private function isAffectedByExceptionSet(
         Booking $booking,
         Specialist $specialist,
@@ -402,6 +415,21 @@ final class ScheduleMutationImpactCalculator
         }
 
         return ! $this->fitsWallClockIntervals($localStart, $localEnd, $intervals);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @return array<string, mixed>
+     */
+    private function formatBuffers(Service $service, array $attributes): array
+    {
+        $buffers = [];
+        foreach (['office', 'home', 'online'] as $format) {
+            $field = 'buffer_'.$format.'_minutes';
+            $buffers[$format] = array_key_exists($field, $attributes) ? $attributes[$field] : $service->getAttribute($field);
+        }
+
+        return $buffers;
     }
 
     /** @param list<WallClockInterval> $intervals */

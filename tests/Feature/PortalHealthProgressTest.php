@@ -12,7 +12,9 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -119,6 +121,10 @@ final class PortalHealthProgressTest extends TestCase
     private function fixture(): array
     {
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
         $staff = User::factory()->forOrganization($organization)->create();
         $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
         config()->set('tenancy.default_organization_id', $organization->getKey());

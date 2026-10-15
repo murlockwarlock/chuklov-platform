@@ -33,12 +33,13 @@ final readonly class BookingLocationResolver
     }
 
     /** @return Collection<int, LocationDay> */
-    public function activeLocationDays(?string $areaName = null): Collection
+    public function activeLocationDays(?string $areaName = null, ?int $specialistId = null): Collection
     {
         $normalizedArea = $areaName === null ? null : mb_strtolower(trim($areaName));
 
         return LocationDay::query()
             ->where('organization_id', $this->context->id())
+            ->when($specialistId !== null, fn ($query) => $query->where(fn ($query) => $query->whereNull('specialist_id')->orWhere('specialist_id', $specialistId)))
             ->when($normalizedArea !== null, fn ($query) => $query->whereRaw('LOWER(area_name) = ?', [$normalizedArea]))
             ->where('is_active', true)
             ->orderBy('area_name')
@@ -48,10 +49,11 @@ final readonly class BookingLocationResolver
             ->get();
     }
 
-    public function hasActiveLocationDays(): bool
+    public function hasActiveLocationDays(?int $specialistId = null): bool
     {
         return LocationDay::query()
             ->where('organization_id', $this->context->id())
+            ->when($specialistId !== null, fn ($query) => $query->where(fn ($query) => $query->whereNull('specialist_id')->orWhere('specialist_id', $specialistId)))
             ->where('is_active', true)
             ->exists();
     }
@@ -123,9 +125,12 @@ final readonly class BookingLocationResolver
             ->values();
         $this->ensureDefinitionTimezoneCompatibility($activeLocationDays);
 
-        return $activeLocationDays
-            ->groupBy(fn (LocationDay $locationDay): string => $this->validatedTimezone($locationDay))
-            ->map(fn (Collection $rules): Collection => $rules->values());
+        $grouped = new SupportCollection;
+        foreach ($activeLocationDays->groupBy(fn (LocationDay $locationDay): string => $this->validatedTimezone($locationDay)) as $timezone => $rules) {
+            $grouped->put((string) $timezone, new Collection($rules->values()->all()));
+        }
+
+        return $grouped;
     }
 
     /**
@@ -149,7 +154,7 @@ final readonly class BookingLocationResolver
         return IanaTimezone::from($timezone)->value;
     }
 
-    public function ensureTimezoneCompatibility(LocationDayDefinition $definition, ?int $ignoreLocationDayId = null): void
+    public function ensureTimezoneCompatibility(LocationDayDefinition $definition, ?int $ignoreLocationDayId = null, ?int $specialistId = null): void
     {
         if (! $definition->isActive) {
             return;
@@ -159,6 +164,7 @@ final readonly class BookingLocationResolver
         $existingRules = LocationDay::query()
             ->where('organization_id', $this->context->id())
             ->whereRaw('LOWER(area_name) = ?', [$normalizedArea])
+            ->when($specialistId !== null, fn ($query) => $query->where(fn ($query) => $query->whereNull('specialist_id')->orWhere('specialist_id', $specialistId)))
             ->where('is_active', true)
             ->when($ignoreLocationDayId !== null, fn ($query) => $query->where('id', '<>', $ignoreLocationDayId))
             ->get();
@@ -182,6 +188,7 @@ final readonly class BookingLocationResolver
         ?string $areaName,
         CarbonImmutable $startsAt,
         bool $allowInactiveLocation = false,
+        ?int $specialistId = null,
     ): BookingLocationSelection {
         if ($format === VisitFormat::Office) {
             return new BookingLocationSelection(
@@ -194,7 +201,7 @@ final readonly class BookingLocationResolver
             return new BookingLocationSelection(null, null);
         }
 
-        if (! $this->hasActiveLocationDays()) {
+        if (! $this->hasActiveLocationDays($specialistId)) {
             return new BookingLocationSelection(null, null);
         }
 
@@ -205,7 +212,7 @@ final readonly class BookingLocationResolver
             ]);
         }
 
-        $locationDays = $this->matchingLocationDays($areaName, $startsAt);
+        $locationDays = $this->matchingLocationDays($areaName, $startsAt, $this->activeLocationDays($areaName, $specialistId));
         if ($locationDays->isEmpty()) {
             throw ValidationException::withMessages([
                 'location_area' => 'Для этого района нет подходящего дня выезда.',
@@ -323,7 +330,10 @@ final readonly class BookingLocationResolver
         return $locations->first();
     }
 
-    /** @param Collection<int, LocationDay> $locationDays */
+    /**
+     * @param  Collection<int, LocationDay>  $locationDays
+     * @return Collection<int, LocationDay>
+     */
     private function areaRules(string $areaName, Collection $locationDays): Collection
     {
         $normalizedArea = mb_strtolower(trim($areaName));
@@ -337,7 +347,10 @@ final readonly class BookingLocationResolver
         )->values();
     }
 
-    /** @param Collection<int, LocationDay> $locationDays */
+    /**
+     * @param  Collection<int, LocationDay>  $locationDays
+     * @return Collection<int, LocationDay>
+     */
     private function matchingLocationDaysInTimezone(Collection $locationDays, LocalDate $date): Collection
     {
         $specificRules = $locationDays->filter(
@@ -357,7 +370,10 @@ final readonly class BookingLocationResolver
         return $applicableRules->values();
     }
 
-    /** @param Collection<int, LocationDay> $locationDays */
+    /**
+     * @param  Collection<int, LocationDay>  $locationDays
+     * @return Collection<int, LocationDay>
+     */
     private function applySpecificDatePrecedence(Collection $locationDays): Collection
     {
         if ($locationDays->contains(fn (LocationDay $locationDay): bool => $this->specificDateKey($locationDay) !== null)) {
@@ -397,7 +413,10 @@ final readonly class BookingLocationResolver
         }
     }
 
-    /** @param Collection<int, LocationDay> $locationDays */
+    /**
+     * @param  Collection<int, LocationDay>  $locationDays
+     * @return Collection<int, LocationDay>
+     */
     private function sortLocationDays(Collection $locationDays): Collection
     {
         return $locationDays

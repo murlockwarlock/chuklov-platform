@@ -15,12 +15,19 @@ use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Livewire;
 use Tests\TestCase;
 
 class PrivilegedAuthenticationTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        RateLimiter::clear('livewire-rate-limiter:'.sha1(AdminLogin::class.'|authenticate|127.0.0.1'));
+    }
 
     public function test_admin_panel_offers_optional_mfa_and_profile_management(): void
     {
@@ -50,7 +57,29 @@ class PrivilegedAuthenticationTest extends TestCase
         $this->get('/admin')->assertOk();
     }
 
-    public function test_user_with_configured_mfa_enters_crm_without_a_login_challenge(): void
+    public function test_native_login_resolves_organization_before_authentication(): void
+    {
+        $organization = Organization::factory()->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        $this->app->instance(OrganizationContext::class, new OrganizationContext);
+
+        $this->get('/admin/login')->assertOk();
+
+        self::assertSame($organization->getKey(), app(OrganizationContext::class)->id());
+        self::assertGuest();
+    }
+
+    public function test_missing_panel_is_denied_without_calling_user_panel_authorization(): void
+    {
+        Filament::shouldReceive('getCurrentOrDefaultPanel')->once()->andReturnNull();
+        $user = $this->createMock(User::class);
+        $user->expects($this->never())->method('canAccessPanel');
+        $guard = new \ReflectionMethod(AdminLogin::class, 'isUserAllowedToAccessPanel');
+
+        self::assertFalse($guard->invoke(new AdminLogin, $user));
+    }
+
+    public function test_user_with_configured_mfa_must_complete_the_challenge_before_entering_crm(): void
     {
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
@@ -66,9 +95,92 @@ class PrivilegedAuthenticationTest extends TestCase
             ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
             ->call('authenticate');
 
-        self::assertNull($login->get('userUndertakingMultiFactorAuthentication'));
+        self::assertNotEmpty($login->get('userUndertakingMultiFactorAuthentication'));
+        self::assertGuest();
+        $this->get('/admin')->assertRedirect(route('filament.admin.auth.login'));
+
+        $login->call('authenticate')->assertHasFormErrors(['app.code' => 'required'], form: 'multiFactorChallengeForm');
+        self::assertGuest();
+        $login->fillForm(['app' => ['code' => 'invalid']], 'multiFactorChallengeForm')
+            ->call('authenticate')
+            ->assertHasFormErrors(['app.code'], form: 'multiFactorChallengeForm');
+        self::assertGuest();
+        $login->fillForm(['app' => ['code' => app(AuditedAppAuthentication::class)->getCurrentCode($admin)]], 'multiFactorChallengeForm')
+            ->call('authenticate')
+            ->assertHasNoFormErrors();
         self::assertAuthenticatedAs($admin);
         $this->get('/admin')->assertOk();
+    }
+
+    public function test_membership_revocation_during_mfa_challenge_prevents_login(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($admin);
+        $provider = app(AuditedAppAuthentication::class);
+        $provider->saveSecret($admin, $provider->generateSecret());
+        Filament::auth()->logout();
+
+        $login = Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
+            ->call('authenticate');
+        self::assertGuest();
+        OrganizationMembership::query()->where('organization_id', $organization->getKey())->where('user_id', $admin->getKey())->update(['is_active' => false]);
+        $login->fillForm(['app' => ['code' => $provider->getCurrentCode($admin)]], 'multiFactorChallengeForm')
+            ->call('authenticate')
+            ->assertHasFormErrors(['email'], form: 'form');
+        self::assertGuest();
+        $this->get('/admin')->assertRedirect(route('filament.admin.auth.login'));
+    }
+
+    public function test_foreign_organization_administrator_cannot_start_a_login_challenge(): void
+    {
+        $organization = Organization::factory()->create();
+        $foreign = User::factory()->forOrganization(Organization::factory()->create(), OrganizationRole::Administrator)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => $foreign->email, 'password' => 'password', 'remember' => false])
+            ->call('authenticate')
+            ->assertHasFormErrors(['email'])
+            ->assertSet('userUndertakingMultiFactorAuthentication', null);
+        self::assertGuest();
+    }
+
+    public function test_used_totp_cannot_authenticate_a_second_login(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($admin);
+        $provider = app(AuditedAppAuthentication::class);
+        $provider->saveSecret($admin, $provider->generateSecret());
+        $code = $provider->getCurrentCode($admin);
+        Filament::auth()->logout();
+
+        Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
+            ->call('authenticate')
+            ->fillForm(['app' => ['code' => $code]], 'multiFactorChallengeForm')
+            ->call('authenticate')
+            ->assertHasNoFormErrors();
+        self::assertAuthenticatedAs($admin);
+        Filament::auth()->logout();
+
+        Livewire::test(AdminLogin::class)
+            ->fillForm(['email' => $admin->email, 'password' => 'password', 'remember' => false])
+            ->call('authenticate')
+            ->fillForm(['app' => ['code' => $code]], 'multiFactorChallengeForm')
+            ->call('authenticate')
+            ->assertHasFormErrors(['app.code'], form: 'multiFactorChallengeForm');
+        self::assertGuest();
     }
 
     public function test_existing_profile_route_remains_available_for_mfa_management(): void

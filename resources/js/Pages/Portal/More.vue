@@ -47,6 +47,16 @@ const { t } = usePortalLocale();
           />
         </Link>
         <Link
+          :href="props.portal.urls.medicalProfile"
+          class="portal-list__row"
+        >
+          <strong class="portal-list__title">{{ t('medical.title') }}</strong>
+          <PortalIcon
+            name="arrow"
+            class="portal-list__chevron"
+          />
+        </Link>
+        <Link
           :href="props.portal.urls.finance"
           class="portal-list__row"
         >
@@ -72,6 +82,26 @@ const { t } = usePortalLocale();
           data-testid="more-partnership-link"
         >
           <strong class="portal-list__title">{{ props.portal.isPartner ? t('referrals.partnerTitle') : t('more.partnership') }}</strong>
+          <PortalIcon
+            name="arrow"
+            class="portal-list__chevron"
+          />
+        </Link>
+        <Link
+          :href="props.portal.urls.b2b"
+          class="portal-list__row"
+        >
+          <strong class="portal-list__title">{{ t('more.business') }}</strong>
+          <PortalIcon
+            name="arrow"
+            class="portal-list__chevron"
+          />
+        </Link>
+        <Link
+          :href="props.portal.urls.communities"
+          class="portal-list__row"
+        >
+          <strong class="portal-list__title">{{ t('more.communities') }}</strong>
           <PortalIcon
             name="arrow"
             class="portal-list__chevron"

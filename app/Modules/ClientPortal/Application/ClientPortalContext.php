@@ -30,4 +30,9 @@ class ClientPortalContext
     {
         return $this->client()->getKey();
     }
+
+    public function clear(): void
+    {
+        $this->client = null;
+    }
 }

@@ -20,6 +20,7 @@ use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
 use App\Modules\Tracker\Domain\Models\TrackerEntitlement;
 use App\Modules\Tracker\Domain\Models\TrackerTask;
 use App\Modules\Tracker\Domain\Models\TrackerTaskEntry;
+use Carbon\CarbonImmutable;
 use Database\Factories\ClientFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -35,14 +36,24 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string|null $language
  * @property string|null $timezone_source
  * @property int $organization_id
+ * @property CarbonImmutable|null $birth_date
+ * @property CarbonImmutable|null $name_confirmed_at
  */
-#[Fillable(['full_name', 'email', 'phone', 'language', 'timezone', 'timezone_source', 'lead_source', 'referral_code'])]
+#[Fillable(['full_name', 'first_name', 'last_name', 'middle_name', 'gender', 'birth_date', 'country', 'city', 'email', 'phone', 'language', 'timezone', 'timezone_source', 'lead_source', 'referral_code'])]
 class Client extends Model
 {
     protected $hidden = ['phone_search_key'];
 
     /** @use HasFactory<ClientFactory> */
     use HasFactory;
+
+    protected function casts(): array
+    {
+        return [
+            'birth_date' => 'immutable_date',
+            'name_confirmed_at' => 'immutable_datetime',
+        ];
+    }
 
     protected static function booted(): void
     {
@@ -61,6 +72,12 @@ class Client extends Model
     public function channelIdentities(): HasMany
     {
         return $this->hasMany(ClientChannelIdentity::class);
+    }
+
+    /** @return HasMany<PatientProfile, $this> */
+    public function patientProfiles(): HasMany
+    {
+        return $this->hasMany(PatientProfile::class, 'owner_client_id');
     }
 
     /** @return HasOne<ClientAttribution, $this> */

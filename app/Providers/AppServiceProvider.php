@@ -69,6 +69,7 @@ use App\Modules\MedicalProfiles\Infrastructure\Encryption\MedicalDataEncryptor;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
+use App\Modules\Scenarios\Application\BookingMedicalProfileConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingNextBookingConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingSourceConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingStatusConditionEvaluator;
@@ -180,6 +181,7 @@ class AppServiceProvider extends ServiceProvider
             fn (): ConditionEvaluatorRegistry => new ConditionEvaluatorRegistry([
                 new BookingSourceConditionEvaluator,
                 new BookingStatusConditionEvaluator,
+                app(BookingMedicalProfileConditionEvaluator::class),
                 app(BookingNextBookingConditionEvaluator::class),
                 new ClientLanguageConditionEvaluator,
                 new ClientMarketingConsentConditionEvaluator,

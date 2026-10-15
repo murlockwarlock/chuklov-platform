@@ -57,7 +57,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 'viewer_timezone_source' => 'organization',
                 'viewer_timezone_suggestion' => null,
             ]);
-        \\Illuminate\\Support\\Facades\\RateLimiter::clear('livewire-rate-limiter:'.sha1('Filament\\Auth\\Pages\\Login|authenticate|127.0.0.1'));
+        \\Illuminate\\Support\\Facades\\RateLimiter::clear('livewire-rate-limiter:'.sha1(\\App\\Filament\\Auth\\Login::class.'|authenticate|127.0.0.1'));
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([[
             'organization_id' => $organization->getKey(),
             'feature_key' => 'service_catalog',
@@ -518,6 +518,50 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 }
 
+test('enrolled CRM MFA requires a valid code before native browser login', async ({ page }) => {
+    const fixture = createCrmFixture();
+    execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        \\Filament\\Facades\\Filament::setCurrentPanel(\\Filament\\Facades\\Filament::getPanel('admin'));
+        $admin = \\App\\Models\\User::query()->where('email', '${fixture.email}')->firstOrFail();
+        \\Filament\\Facades\\Filament::auth()->setUser($admin);
+        $provider = app(\\App\\Modules\\Security\\Infrastructure\\Filament\\AuditedAppAuthentication::class);
+        $provider->saveSecret($admin, $provider->generateSecret());
+    `], { env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    await page.goto('/admin/login');
+    await page.locator('input[type="email"]').fill(fixture.email);
+    await page.locator('input[type="password"]').fill(fixture.password);
+    const authentication = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname));
+    await page.locator('button[type="submit"]').click();
+    expect((await authentication).status()).toBe(200);
+    const digits = page.locator('.fi-one-time-code-input-ctn input');
+    await expect(digits).toHaveCount(6);
+    await expect(digits.first()).toBeVisible();
+    await expect(page).toHaveURL(/\/admin\/login$/);
+    expect((await page.request.get('/admin', { maxRedirects: 0 })).status()).toBe(302);
+    await page.locator('button[type="submit"]:visible').click();
+    await expect(page).toHaveURL(/\/admin\/login$/);
+    await digits.first().pressSequentially('12345');
+    await page.locator('button[type="submit"]:visible').click();
+    await expect(page).toHaveURL(/\/admin\/login$/);
+    expect((await page.request.get('/admin', { maxRedirects: 0 })).status()).toBe(302);
+    const output = execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $admin = \\App\\Models\\User::query()->where('email', '${fixture.email}')->firstOrFail();
+        echo json_encode(['code' => app(\\App\\Modules\\Security\\Infrastructure\\Filament\\AuditedAppAuthentication::class)->getCurrentCode($admin)]);
+    `], { encoding: 'utf8', env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const { code } = JSON.parse(output.trim().split('\n').at(-1) ?? '') as { code: string };
+    for (let index = 0; index < 6; index += 1) {
+        await digits.nth(index).fill('');
+    }
+    await digits.first().pressSequentially(code);
+    await page.locator('button[type="submit"]:visible').click();
+    await expect(page).toHaveURL(/\/admin(?:\/)?$/);
+    await expect(page.getByRole('heading', { level: 1, name: 'Аналитика', exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page).toHaveURL(/\/admin(?:\/)?$/);
+});
+
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 }
@@ -617,7 +661,7 @@ test.describe('specialist viewer timezone suggestion', () => {
         const fixture = createCrmFixture();
 
         await login(page, fixture);
-        await page.goto('/admin/scheduling-configuration');
+        await page.goto('/admin/working-intervals');
 
         await expect(page.getByText('Время: Asia/Almaty', { exact: true })).toBeVisible();
         await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).toBeVisible();
@@ -633,7 +677,7 @@ test.describe('specialist viewer timezone suggestion', () => {
         const fixture = createCrmFixture();
 
         await login(page, fixture);
-        await page.goto('/admin/scheduling-configuration');
+        await page.goto('/admin/working-intervals');
 
         await expect(page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true })).toBeVisible();
         await page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true }).click();
@@ -653,14 +697,16 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
     await expect(page.locator('input[name*="idempotency"], input[name*="timezone"], select[name*="meeting_link"]')).toHaveCount(0);
 
+    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
+    await page.getByText(fixture.specialistName, { exact: true }).click();
+    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
+    const serviceOption = page.getByRole('option', { name: fixture.serviceName, exact: true });
+    await expect(serviceOption).toBeVisible({ timeout: 15_000 });
+    await serviceOption.click();
     await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
     await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
-    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
-    await page.getByText(fixture.serviceName, { exact: true }).click();
-    await page.getByRole('combobox', { name: 'Специалист*', exact: true }).click();
-    await page.getByText(fixture.specialistName, { exact: true }).click();
     const dateInput = page.getByLabel('Дата');
     await dateInput.fill(fixture.bookingStartsAt.slice(0, 10));
     await dateInput.blur();
@@ -680,7 +726,7 @@ test('staff can create a booking without technical inputs', async ({ page }) => 
     await expect(availableTime).toBeVisible({ timeout: 15_000 });
     await availableTime.click();
     await expect(bookingTime).toContainText(fixture.bookingStartsAt.slice(11, 16));
-    const createButton = page.getByRole('button', { name: 'Создать', exact: true });
+    const createButton = page.getByRole('button', { name: 'Сохранить', exact: true });
     await expect(createButton).toBeEnabled({ timeout: 15_000 });
     await createButton.click();
 
@@ -933,7 +979,7 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await expect(page.getByLabel('Формат визита')).toHaveValue('office');
     await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/);
 
-    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
     await expect(page.locator('.fi-in-text-item').filter({ hasText: newClientName }).first()).toBeVisible();
@@ -991,11 +1037,10 @@ test('staff sees the Telegram limit and preview while writing to a client', asyn
     const fixture = createCrmFixture();
 
     await login(page, fixture);
-    await page.goto(`/admin/clients/${fixture.clientId}`);
-    await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
-    await page.getByRole('link', { name: 'Общение', exact: true }).click();
-    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/companion$`));
+    await page.goto(`/admin/clients/${fixture.clientId}/companion`);
     await expect(page.getByRole('heading', { name: 'Общение с клиентом', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Начать диалог как специалист', exact: true }).click();
+    await expect(page.locator('#companion-composer-form')).toBeVisible();
 
     const message = 'фывфывфывфыв';
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill(message);
@@ -1017,6 +1062,7 @@ test('staff can choose and send an attachment in CRM Messages', async ({ page })
     await expect(page.getByRole('heading', { level: 1, name: 'Сообщения', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Начать диалог как специалист', exact: true }).click();
     await expect(page.locator('#messages-composer-form')).toBeVisible();
+    await expect(page.locator('#messages-composer-form .filepond--browser')).toBeAttached({ timeout: 15_000 });
 
     const [fileChooser] = await Promise.all([
         page.waitForEvent('filechooser'),
@@ -1027,7 +1073,9 @@ test('staff can choose and send an attachment in CRM Messages', async ({ page })
         mimeType: 'application/pdf',
         buffer: validPdfBuffer(),
     });
+    await expect(page.locator('.messages-attachment-summary')).toBeVisible({ timeout: 15_000 });
     await expect(page.locator('.messages-attachment-summary')).toContainText('crm-message-attachment.pdf');
+    await expect(page.locator('#messages-composer-form .filepond--item[data-filepond-item-state="processing-complete"]')).toHaveCount(1, { timeout: 15_000 });
 
     await page.getByRole('textbox', { name: 'Сообщение', exact: true }).fill('Сообщение с вложением');
     await page.getByRole('button', { name: 'Отправить', exact: true }).click();
@@ -1079,11 +1127,11 @@ test('staff can activate a partner, create a campaign link, and assign a referre
     await referrerSelect.click();
     await page.getByRole('textbox', { name: 'Search', exact: true }).last().fill(fixture.partnerName);
     await page.getByRole('option').filter({ hasText: fixture.partnerName }).last().click();
-    await assignmentDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await assignmentDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByText('Пригласивший указан', { exact: true })).toBeVisible();
 
     await page.goto('/admin/referral-relationships');
-    await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Приглашения клиентов', exact: true })).toBeVisible();
     await expect(page.getByText(fixture.partnerName, { exact: true })).toBeVisible();
     await expect(page.getByText(fixture.clientName, { exact: true })).toBeVisible();
 });
@@ -1117,7 +1165,7 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
         await page.keyboard.press('Escape');
 
         await page.goto('/admin/referral-relationships');
-        await expect(page.getByRole('heading', { name: 'Рекомендации', exact: true })).toBeVisible();
+        await expect(page.getByRole('heading', { name: 'Приглашения клиентов', exact: true })).toBeVisible();
         await assertRenderedViewportGeometry(page, ['input[type="search"]']);
         if (width >= 1024) {
             await assertNoTableHorizontalOverflow(page);
@@ -1368,9 +1416,14 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(page.locator('iframe[title="ux-a-report.pdf"]')).toBeVisible();
     expect(previewResponse.headers()['content-type']).toContain('application/pdf');
     expect(previewResponse.headers()['content-disposition']).toContain('inline');
-    await page.getByRole('button', { name: 'Закрыть', exact: true }).click();
+    const previewDialog = page.locator('.fi-modal-window:visible').filter({ has: page.locator('iframe[title="ux-a-report.pdf"]') });
+    await expect(previewDialog).toBeVisible();
+    await previewDialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
 
-    const downloadAttachment = uploadedRow.getByRole('button', { name: 'Скачать', exact: true });
+    await uploadedRow.getByRole('button', { name: 'Действия', exact: true }).click();
+    const attachmentActionsMenu = page.locator('.fi-dropdown-panel:visible').last();
+    await expect(attachmentActionsMenu).toBeVisible();
+    const downloadAttachment = attachmentActionsMenu.getByRole('button', { name: 'Скачать', exact: true });
     await expect(downloadAttachment).toHaveCount(1);
     const [download, attachmentResponse] = await Promise.all([
         page.waitForEvent('download'),
@@ -1513,8 +1566,8 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Специалист').click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
-    await page.getByLabel('Боль').fill('Первичная запись о боли');
-    await page.getByRole('button', { name: 'Создать', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Описание боли', exact: true }).fill('Первичная запись о боли');
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
     const sessionRow = page.getByRole('row').filter({ hasText: '18.08.2026' });
@@ -1532,7 +1585,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
-    await page.getByLabel('Боль').fill('Обновлённая запись о боли');
+    await page.getByRole('textbox', { name: 'Описание боли', exact: true }).fill('Обновлённая запись о боли');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));

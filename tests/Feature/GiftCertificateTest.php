@@ -190,6 +190,32 @@ final class GiftCertificateTest extends TestCase
         self::assertSame($recipient->getKey(), $certificate->refresh()->current_holder_client_id);
     }
 
+    public function test_self_claim_returns_a_human_validation_error_instead_of_a_method_error(): void
+    {
+        [$organization, , $client, $giftService] = $this->fixture();
+        $checkout = $this->checkout($organization, $client, $giftService, 'gift-self-claim');
+        $this->settle($organization, $checkout->transaction->provider_reference, 1000.00, 'gift-self-claim');
+        $certificate = GiftCertificate::query()->sole();
+        $transfer = app(CreateGiftCertificateTransfer::class)->handle($client, $certificate);
+
+        $this->from(route('gift-certificates.claim.preview'))
+            ->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('gift-certificates.claim.submit'), ['token' => $transfer->rawToken])
+            ->assertRedirect(route('gift-certificates.claim'))
+            ->assertSessionHasErrors(['token' => 'Текущий владелец не может получить этот сертификат повторно.']);
+
+        $this->withSession([
+            'client_portal.client_id' => $client->getKey(),
+            'gift_certificate_claim_token' => $transfer->rawToken,
+        ])->get(route('gift-certificates.claim'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/GiftCertificateClaim')
+                ->where('certificate.originalAmountMinor', 100000));
+
+        self::assertSame($client->getKey(), $certificate->refresh()->current_holder_client_id);
+    }
+
     public function test_pending_transfer_reserves_value_until_cancel_and_replacement_invalidates_old_link(): void
     {
         [$organization, $admin, $client, $giftService] = $this->fixture();

@@ -7,6 +7,8 @@ export type PortalUrls = {
     health: string;
     more: string;
     profile: string;
+    medicalProfile: string;
+    communities: string;
     finance: string;
     giftCertificates: string;
     surveys: string;
@@ -22,6 +24,9 @@ export type PortalUrls = {
 export type PortalShell = {
     authenticated: boolean;
     clientName: string | null;
+    confirmedFirstName?: string | null;
+    availableBonus?: string | null;
+    bonusCurrencyUnavailable?: boolean;
     isPartner: boolean;
     locale: PortalLocale;
     localeUrl: string;
@@ -44,6 +49,7 @@ export type PortalIconName =
     | 'more'
     | 'arrow'
     | 'close'
+    | 'plus'
     | 'map'
     | 'pin'
     | 'compass'

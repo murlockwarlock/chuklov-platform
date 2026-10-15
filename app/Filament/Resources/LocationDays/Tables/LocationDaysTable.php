@@ -13,6 +13,7 @@ class LocationDaysTable
     {
         return $table
             ->columns([
+                TextColumn::make('specialist.display_name')->label(__('Специалист'))->placeholder(__('Все специалисты'))->searchable()->sortable(),
                 TextColumn::make('area_name')->label(__('Район'))->searchable()->sortable(),
                 TextColumn::make('weekday')->label(__('День'))->formatStateUsing(fn (?int $state): string => self::weekdayLabel($state)),
                 TextColumn::make('specific_date')->label(__('Дата'))->date('d.m.Y'),

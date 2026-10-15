@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
+import { Link, useForm, usePoll } from '@inertiajs/vue3';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCard from '../../Components/Portal/BookingCard.vue';
+import PortalIcon from '../../Components/Portal/PortalIcon.vue';
+import Stories from '../../Components/Portal/Stories.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -20,15 +22,28 @@ type Booking = {
     canReschedule: boolean;
 };
 
-type HealthAction = { title: string; titleKey?: string; summary?: string; summaryKey?: string; url: string };
+type HealthAction = { title?: string; titleKey?: string; summary?: string; summaryKey?: string; url: string; kind: string; actionKey: string; badgeKey: string; taskEntryUrl?: string; taskStatus?: string };
 
 const props = defineProps<{
     portal: PortalShell;
     upcomingBooking: Booking | null;
     healthAction: HealthAction | null;
+    stories: Array<{ key: string; title: string; videoUrl: string | null; previewUrl: string | null; subtitlesUrl: string | null }>;
 }>();
 
 const { locale, t } = usePortalLocale();
+usePoll(15000, { only: ['upcomingBooking', 'healthAction'] });
+const taskForm = useForm({ status: 'completed' });
+function completeTask(event: Event): void {
+    if (!props.healthAction?.taskEntryUrl) return;
+    const checkbox = event.target as HTMLInputElement;
+    taskForm.status = checkbox.checked ? 'completed' : 'not_completed';
+    taskForm.post(props.healthAction.taskEntryUrl, {
+        preserveScroll: true,
+        onError: () => { checkbox.checked = props.healthAction?.taskStatus === 'completed'; },
+        onCancel: () => { checkbox.checked = props.healthAction?.taskStatus === 'completed'; },
+    });
+}
 </script>
 
 <template>
@@ -38,10 +53,11 @@ const { locale, t } = usePortalLocale();
     active="home"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
+      <Stories :stories="props.stories" />
       <header class="portal-stack portal-stack--tight">
-        <h1 class="portal-heading portal-heading--section">
-          {{ props.portal.clientName
-            ? t('home.greetingWithName', { name: props.portal.clientName })
+        <h1 class="portal-heading portal-heading--section min-w-0 [overflow-wrap:anywhere]">
+          {{ props.portal.confirmedFirstName
+            ? t('home.greetingWithName', { name: props.portal.confirmedFirstName })
             : t('home.greeting') }}
         </h1>
       </header>
@@ -52,7 +68,32 @@ const { locale, t } = usePortalLocale();
         :locale="locale"
         :details-url="props.portal.urls.bookings + '/' + props.upcomingBooking.id"
       />
-      <div class="portal-action-row">
+      <section
+        v-else
+        class="portal-content-section portal-stack"
+        data-testid="home-empty-schedule"
+      >
+        <div class="portal-section-heading">
+          <PortalIcon name="calendar" />
+          <h2 class="portal-heading portal-heading--section">
+            {{ t('home.schedule') }}
+          </h2>
+        </div>
+        <p class="portal-copy">
+          {{ t('home.noUpcomingDescription') }}
+        </p>
+        <Link
+          :href="props.portal.urls.services"
+          class="portal-button portal-button--primary self-start"
+          data-testid="home-booking-cta"
+        >
+          {{ t('home.chooseTime') }}
+        </Link>
+      </section>
+      <div
+        v-if="props.upcomingBooking"
+        class="portal-action-row"
+      >
         <Link
           :href="props.portal.urls.services"
           class="portal-button portal-button--primary self-start"
@@ -62,18 +103,45 @@ const { locale, t } = usePortalLocale();
         </Link>
       </div>
 
-      <Link
+      <section
         v-if="props.healthAction"
-        :href="props.healthAction.url"
-        class="portal-list__row portal-list__row--standalone"
+        class="portal-content-section portal-stack rounded-2xl bg-orange-50 p-5 sm:p-6"
+        data-testid="home-health-action"
       >
-        <span>
-          <span class="portal-kicker">{{ t('home.healthAction') }}</span>
+        <div class="portal-section-heading">
+          <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-orange-100 text-orange-700"><PortalIcon name="health" /></span>
           <strong class="portal-list__title">{{ props.healthAction.titleKey ? t(props.healthAction.titleKey) : props.healthAction.title }}</strong>
-          <span class="portal-list__summary">{{ props.healthAction.summaryKey ? t(props.healthAction.summaryKey) : props.healthAction.summary }}</span>
-        </span>
-        <span aria-hidden="true">→</span>
-      </Link>
+          <span class="portal-count">{{ t(props.healthAction.badgeKey) }}</span>
+        </div>
+        <p class="portal-copy">
+          {{ props.healthAction.summaryKey ? t(props.healthAction.summaryKey) : props.healthAction.summary }}
+        </p>
+        <label
+          v-if="props.healthAction.kind === 'focus' && props.healthAction.taskEntryUrl"
+          class="portal-copy"
+        >
+          <input
+            type="checkbox"
+            :checked="props.healthAction.taskStatus === 'completed'"
+            :disabled="taskForm.processing"
+            @change="completeTask"
+          >
+          {{ t('home.completed') }}
+        </label>
+        <p
+          v-for="(error, key) in taskForm.errors"
+          :key="key"
+          class="portal-error"
+        >
+          {{ error }}
+        </p>
+        <Link
+          :href="props.healthAction.url"
+          class="portal-button portal-button--secondary"
+        >
+          {{ t(props.healthAction.actionKey) }}
+        </Link>
+      </section>
 
       <Link
         :href="props.portal.urls.companion"
@@ -81,8 +149,12 @@ const { locale, t } = usePortalLocale();
       >
         <span>
           <strong class="portal-list__title">{{ t('home.ai') }}</strong>
+          <span class="portal-list__summary">{{ t('home.aiDescription') }}</span>
         </span>
-        <span aria-hidden="true">→</span>
+        <PortalIcon
+          name="arrow"
+          class="portal-list__chevron"
+        />
       </Link>
     </section>
   </AppShell>

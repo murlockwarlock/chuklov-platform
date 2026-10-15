@@ -9,8 +9,10 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
 use App\Modules\Scheduling\Domain\ValueObjects\LocationDayDefinition;
 use App\Modules\Security\Application\RecordAuditEvent;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 final readonly class SaveLocationDay
 {
@@ -32,6 +34,7 @@ final readonly class SaveLocationDay
         string $timezone,
         bool $isActive,
         ?string $notes,
+        ?int $specialistId = null,
     ): LocationDay {
         $organization = $this->context->organization();
         if ($locationDay !== null && (int) $locationDay->organization_id !== $organization->getKey()) {
@@ -40,15 +43,25 @@ final readonly class SaveLocationDay
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageScheduling);
         $definition = LocationDayDefinition::from($areaName, $weekday, $specificDate, $startTime, $endTime, $timezone, $isActive, $notes);
 
-        return DB::transaction(function () use ($actor, $organization, $locationDay, $definition): LocationDay {
+        return DB::transaction(function () use ($actor, $organization, $locationDay, $definition, $specialistId): LocationDay {
+            $organization->newQuery()->whereKey($organization->getKey())->lockForUpdate()->firstOrFail();
             $record = $locationDay === null ? new LocationDay : LocationDay::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($locationDay->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
-            $this->locations->ensureTimezoneCompatibility($definition, $locationDay?->getKey());
+            $specialistId ??= $record->specialist_id;
+            if ($specialistId === null && $locationDay === null) {
+                throw ValidationException::withMessages(['specialist_id' => __('Выберите специалиста.')]);
+            }
+            if ($specialistId !== null && ! Specialist::query()->where('organization_id', $organization->getKey())
+                ->whereKey($specialistId)->where('is_active', true)->exists()) {
+                throw ValidationException::withMessages(['specialist_id' => __('Выберите доступного специалиста.')]);
+            }
+            $this->locations->ensureTimezoneCompatibility($definition, $locationDay?->getKey(), $specialistId);
             $record->forceFill([
                 'organization_id' => $organization->getKey(),
+                'specialist_id' => $specialistId,
                 ...$definition->attributes(),
             ])->save();
             $this->audit->handle(

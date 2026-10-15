@@ -33,6 +33,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
+use App\Modules\Scheduling\Application\BookingPatientAccounts;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
@@ -95,6 +96,16 @@ final class ScenarioContextFactory
         ScenarioRecipient $recipient,
         bool $includeFeedbackUrl = false,
     ): array {
+        if ($recipient->type === 'client' && $context->booking !== null && $recipient->clientId !== null
+            && (int) $context->booking->client_id !== $recipient->clientId) {
+            $account = app(BookingPatientAccounts::class)->handle($context->booking)
+                ->firstWhere('id', $recipient->clientId);
+            if (! $account instanceof Client) {
+                throw (new ModelNotFoundException)->setModel(Client::class);
+            }
+            $context = new ScenarioEvaluationContext(event: $context->event, booking: $context->booking, client: $account,
+                evaluationEndsAt: $context->evaluationEndsAt);
+        }
         if ($context->client === null && ! $this->allowsClientlessOperationalEvent($context->event->event_name)) {
             throw (new ModelNotFoundException)->setModel(Client::class);
         }
@@ -230,14 +241,25 @@ final class ScenarioContextFactory
         }
 
         if ($context->booking !== null) {
-            $bookingDateTime = $recipient->type === 'internal'
-                ? $this->bookingDateTime->forSpecialist($context->booking)
-                : $this->bookingDateTime->forClient($context->booking);
+            if ($recipient->type === 'internal') {
+                $bookingDateTime = $this->bookingDateTime->forSpecialist($context->booking);
+            } else {
+                $client = $context->client;
+                if (! $client instanceof Client) {
+                    throw (new ModelNotFoundException)->setModel(Client::class);
+                }
+                $bookingDateTime = (int) $client->getKey() === (int) $context->booking->client_id
+                    ? $this->bookingDateTime->forClient($context->booking)
+                    : $this->bookingDateTime->format($context->booking, (string) $client->timezone);
+            }
             $locationSnapshot = $context->booking->locationSnapshot();
             $renderContext['booking'] = [
                 'id' => (int) $context->booking->getKey(),
                 'event_version' => (int) $context->booking->event_version,
                 'status' => $context->booking->status->value,
+                'confirmation_title' => $context->booking->status->value === 'confirmed'
+                    ? ($this->isRussian($recipient->locale) ? 'Бронирование подтверждено!' : 'Your booking is confirmed!')
+                    : ($this->isRussian($recipient->locale) ? 'Запись создана!' : 'Your booking has been created!'),
                 'visit_format' => $context->booking->visit_format->value,
                 'visit_format_label' => $this->visitFormatLabel($context->booking->visit_format->value, $recipient->locale),
                 'service_name' => $context->booking->service->name,
