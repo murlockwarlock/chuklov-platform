@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -25,11 +26,18 @@ class ResolveOrganization
 
         $organization = Organization::query()->findOrFail((int) $organizationId);
 
-        if ($user instanceof User && $user->membershipFor($organization) === null) {
+        $membership = $user instanceof User
+            ? $user->memberships()->where('organization_id', $organization->getKey())->first()
+            : null;
+
+        $hasMembership = $membership instanceof OrganizationMembership;
+        $hasInactiveMembership = $hasMembership && ! $membership->is_active;
+
+        if ($user instanceof User && (! $hasMembership || $hasInactiveMembership)) {
             $sessionKey = 'privileged_session_version.'.(string) $user->getAuthIdentifier();
             if ($request->is('admin', 'admin/*')
                 && $request->hasSession()
-                && $request->session()->has($sessionKey)) {
+                && ($hasInactiveMembership || $request->session()->has($sessionKey))) {
                 auth('web')->logout();
                 $request->session()->invalidate();
                 $request->session()->regenerateToken();

@@ -616,8 +616,8 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
     });
     expect(layout.desktopGridVisible).toBe(true);
     expect(layout.mobileCardsVisible).toBe(false);
-    await expect(page.getByText(fixture.specialistName, { exact: true })).toBeVisible();
-    await expect(page.getByText(secondSpecialist.name, { exact: true })).toBeVisible();
+    await expect(page.locator(`[title="${fixture.specialistName}"]`).first()).toBeVisible();
+    await expect(page.locator(`[title="${secondSpecialist.name}"]`).first()).toBeVisible();
 
     await filter.click();
     panel = page.locator('.fi-dropdown-panel:visible').last();
