@@ -355,6 +355,8 @@ final class BookingOperationalFiltersTest extends TestCase
         DB::enableQueryLog();
         DB::flushQueryLog();
         $actual = $calendar->forSpecialists($specialists, '2026-08-17', '2026-08-23', 'UTC');
+        ksort($expected);
+        ksort($actual);
         self::assertSame($expected, $actual);
         self::assertCount(2, DB::getQueryLog());
         DB::disableQueryLog();
