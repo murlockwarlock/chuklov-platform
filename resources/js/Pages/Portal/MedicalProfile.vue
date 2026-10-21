@@ -255,12 +255,16 @@ function save(): void {
                 >
                   {{ clientErrors[field === 'operations' ? 'had_operations' : 'had_injuries'] }}
                 </p>
-                <label
+                <div
                   v-if="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
-                  :for="field === 'operations' ? 'medical-operation-year' : 'medical-injury-year'"
                   class="portal-field"
                 >
-                  <span class="portal-label">{{ t(field === 'operations' ? 'medical.operationYear' : 'medical.injuryYear') }}</span>
+                  <label
+                    :for="field === 'operations' ? 'medical-operation-year' : 'medical-injury-year'"
+                    class="portal-label"
+                  >
+                    {{ t(field === 'operations' ? 'medical.operationYear' : 'medical.injuryYear') }}
+                  </label>
                   <input
                     :id="field === 'operations' ? 'medical-operation-year' : 'medical-injury-year'"
                     v-model.number="form.answers[field === 'operations' ? 'operation_year' : 'injury_year']"
@@ -281,13 +285,17 @@ function save(): void {
                   >
                     {{ clientErrors[field === 'operations' ? 'operation_year' : 'injury_year'] }}
                   </span>
-                </label>
-                <label
+                </div>
+                <div
                   v-if="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
-                  :for="'medical-' + field"
                   class="portal-field"
                 >
-                  <span class="portal-label">{{ t(field === 'operations' ? 'medical.operationDetails' : 'medical.injuryDetails') }}</span>
+                  <label
+                    :for="'medical-' + field"
+                    class="portal-label"
+                  >
+                    {{ t(field === 'operations' ? 'medical.operationDetails' : 'medical.injuryDetails') }}
+                  </label>
                   <textarea
                     :id="'medical-' + field"
                     v-model="form[field]"
@@ -307,7 +315,7 @@ function save(): void {
                   >
                     {{ clientErrors[field] }}
                   </span>
-                </label>
+                </div>
               </fieldset>
             </template>
             <template v-else>

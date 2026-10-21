@@ -1,13 +1,15 @@
 import { defineConfig, devices } from '@playwright/test';
+import { resolve } from 'node:path';
 
 export default defineConfig({
     testDir: 'tests/e2e',
     workers: 1,
     reporter: process.env.CI ? [['line'], ['html', { open: 'never' }]] : 'list',
     webServer: {
-        command: 'php artisan serve --host=127.0.0.1 --port=8000',
+        command: 'php artisan serve --no-reload --host=127.0.0.1 --port=8000',
         env: {
             ...process.env,
+            PHPRC: resolve('tests/e2e/php.ini'),
             APP_ENV: 'e2e',
             ...(process.env.CLINICAL_AI_E2E_ENABLED === '1' ? { QUEUE_CONNECTION: 'sync' } : {}),
             MEDICAL_ENCRYPTION_KEY_V1:

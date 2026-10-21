@@ -1468,6 +1468,8 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.getByLabel('Характер травмы', { exact: true }).fill('Synthetic injury description');
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
     await expect(page.getByText(new RegExp(`Укажите год с 1900 по ${new Date().getFullYear()}\\.`))).toBeVisible();
+    await expect(page.getByLabel('Год операции', { exact: true })).toHaveValue('1899');
+    await expect(page.getByLabel('Описание операции или рубца (где находится шрам)', { exact: true })).toHaveValue('Synthetic scar location');
     await page.getByLabel('Год операции', { exact: true }).fill(String(new Date().getFullYear()));
     await page.getByLabel('Год травмы', { exact: true }).fill('2021');
     await page.locator('#medical-pain').focus();
