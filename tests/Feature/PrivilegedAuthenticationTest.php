@@ -69,6 +69,23 @@ class PrivilegedAuthenticationTest extends TestCase
         self::assertGuest();
     }
 
+    public function test_login_form_keeps_browser_autofill_values_available_to_livewire_on_submit(): void
+    {
+        $organization = Organization::factory()->create();
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $html = Livewire::test(AdminLogin::class)->html();
+
+        self::assertStringContainsString('name="email"', $html);
+        self::assertStringContainsString('autocomplete="username"', $html);
+        self::assertStringContainsString('name="password"', $html);
+        self::assertStringContainsString('x-on:submit.capture', $html);
+        self::assertStringContainsString('$wire.data.email', $html);
+        self::assertStringContainsString('$wire.data.password', $html);
+    }
+
     public function test_missing_panel_is_denied_without_calling_user_panel_authorization(): void
     {
         Filament::shouldReceive('getCurrentOrDefaultPanel')->once()->andReturnNull();
