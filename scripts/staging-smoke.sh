@@ -83,7 +83,22 @@ ok 'APP'
 ok 'SCHEDULER'
 ok 'TELEGRAM'
 
-if ! ssh "${ssh_options[@]}" "$remote" "${compose_arguments[@]}" exec -T app php -r '$socket = @fsockopen("127.0.0.1", 1025, $errorCode, $errorMessage, 5); if (!is_resource($socket)) { exit(1); } $banner = fgets($socket); fclose($socket); exit(is_string($banner) && str_starts_with($banner, "220 ") ? 0 : 1);' > /dev/null 2>&1; then
+if ! ssh "${ssh_options[@]}" "$remote" bash -s -- "$STAGING_PROJECT" "$STAGING_ROOT" <<'REMOTE_QA_MAIL_SMTP' > /dev/null 2>&1
+project="$1"
+root="$2"
+compose=(docker compose --project-name "$project" --env-file "$root/shared/.env" -f "$root/compose.yml" -f "$root/current/docker-compose.staging-qa.yml")
+
+for attempt in $(seq 1 10); do
+    if "${compose[@]}" exec -T app php -r '$socket = @fsockopen("127.0.0.1", 1025, $errorCode, $errorMessage, 2); if (!is_resource($socket)) { exit(1); } stream_set_timeout($socket, 1); $banner = fgets($socket); fclose($socket); exit(is_string($banner) && str_starts_with($banner, "220 ") ? 0 : 1);' > /dev/null 2>&1; then
+        exit 0
+    fi
+
+    sleep 1
+done
+
+exit 1
+REMOTE_QA_MAIL_SMTP
+then
     fail 'QA MAIL SMTP' 'application cannot reach the private staging QA mail sink'
 fi
 ok 'QA MAIL SMTP'

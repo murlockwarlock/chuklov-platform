@@ -120,6 +120,8 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('.services.mailpit.environment.MP_SMTP_ALLOWED_RECIPIENTS == "@qa\\\\.invalid$$"', $script);
         self::assertStringContainsString('-f "$STAGING_ROOT/current/docker-compose.staging-qa.yml"', file_get_contents(base_path('scripts/staging-smoke.sh')));
         self::assertStringContainsString('fsockopen("127.0.0.1", 1025', file_get_contents(base_path('scripts/staging-smoke.sh')));
+        self::assertStringContainsString("ssh \"\${ssh_options[@]}\" \"\$remote\" bash -s -- \"\$STAGING_PROJECT\" \"\$STAGING_ROOT\" <<'REMOTE_QA_MAIL_SMTP'", file_get_contents(base_path('scripts/staging-smoke.sh')));
+        self::assertStringContainsString('for attempt in $(seq 1 10); do', file_get_contents(base_path('scripts/staging-smoke.sh')));
         self::assertStringContainsString('QA MAIL SMTP', file_get_contents(base_path('scripts/staging-smoke.sh')));
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);
