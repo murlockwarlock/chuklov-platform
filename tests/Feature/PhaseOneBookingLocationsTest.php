@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Pages\SchedulingConfiguration;
 use App\Models\User;
 use App\Modules\Channels\Application\HandleTelegramBookingConfirmation;
 use App\Modules\Identity\Domain\Models\Client;
@@ -41,10 +42,12 @@ use App\Modules\Scheduling\Domain\ValueObjects\WallClockInterval;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Types\User\User as TelegramUser;
 use SergiX44\Nutgram\Testing\FakeNutgram;
@@ -242,6 +245,62 @@ class PhaseOneBookingLocationsTest extends TestCase
             idempotencyKey: 'phase-one-cross-tenant-location',
             workingLocationId: $otherLocation->getKey(),
         );
+    }
+
+    public function test_default_address_setting_updates_future_office_bookings_and_preserves_existing_snapshot(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $location = app(CreateWorkingLocation::class)->handle(
+            actor: $admin,
+            name: 'Основной кабинет',
+            address: 'Старый адрес 5',
+            timezone: 'Asia/Almaty',
+            isDefaultOffice: true,
+        );
+        $existingBooking = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 9, 7, 4, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            clientTimezone: 'Asia/Almaty',
+            idempotencyKey: 'default-address-before-change',
+            workingLocationId: $location->getKey(),
+        );
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($admin)
+            ->test(SchedulingConfiguration::class)
+            ->fillForm(['office_location' => 'Новый адрес 12'])
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertNotified('Расписание сохранено');
+
+        self::assertSame('Новый адрес 12', $organization->settings()
+            ->where('setting_key', OrganizationSettingKey::OfficeLocation->value)
+            ->value('string_value'));
+        self::assertSame('Новый адрес 12', $location->refresh()->address);
+
+        $futureBooking = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 9, 14, 4, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            clientTimezone: 'Asia/Almaty',
+            idempotencyKey: 'default-address-after-change',
+            workingLocationId: $location->getKey(),
+        );
+
+        self::assertSame('Старый адрес 5', $existingBooking->refresh()->locationSnapshot()['address']);
+        self::assertSame('Новый адрес 12', $futureBooking->locationSnapshot()['address']);
     }
 
     public function test_legacy_office_address_backfill_is_idempotent(): void

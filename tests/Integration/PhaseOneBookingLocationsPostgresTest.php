@@ -24,6 +24,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\CreateBooking;
+use App\Modules\Scheduling\Application\CreateWorkingLocation;
 use App\Modules\Scheduling\Application\SaveLocationDay;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Application\UpdateWorkingLocation;
@@ -329,6 +330,64 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
 
         self::assertSame($firstReplacement->getKey(), $rule->template_version_id);
         self::assertSame(2, NotificationTemplateVersion::query()->where('template_id', $template->getKey())->count());
+    }
+
+    public function test_postgresql_default_address_edit_updates_future_booking_projection_and_preserves_history(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, $client, $specialist, $service] = $this->availabilityFixture();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $location = app(CreateWorkingLocation::class)->handle(
+            actor: $admin,
+            name: 'Primary office',
+            address: 'Old address 5',
+            timezone: 'Asia/Almaty',
+            isDefaultOffice: true,
+        );
+        $existingBooking = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 9, 7, 4, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            clientTimezone: 'Asia/Almaty',
+            idempotencyKey: 'postgres-default-address-before',
+            workingLocationId: $location->getKey(),
+        );
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        Livewire::actingAs($admin)
+            ->test(SchedulingConfiguration::class)
+            ->fillForm(['office_location' => 'New address 12'])
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertNotified('Расписание сохранено');
+
+        self::assertSame('New address 12', $location->refresh()->address);
+        self::assertSame('New address 12', DB::table('organization_settings')
+            ->where('organization_id', $organization->getKey())
+            ->where('setting_key', 'office_location')
+            ->value('string_value'));
+
+        $futureBooking = app(CreateBooking::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 9, 14, 4, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            clientTimezone: 'Asia/Almaty',
+            idempotencyKey: 'postgres-default-address-after',
+            workingLocationId: $location->getKey(),
+        );
+
+        self::assertSame('Old address 5', $existingBooking->refresh()->locationSnapshot()['address']);
+        self::assertSame('New address 12', $futureBooking->locationSnapshot()['address']);
     }
 
     public function test_postgresql_legacy_address_backfill_is_idempotent_and_does_not_rewrite_booking_history(): void

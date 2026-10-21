@@ -26,6 +26,8 @@ use App\Modules\Scheduling\Application\GetHomeVisitOccupiedBuffer;
 use App\Modules\Scheduling\Application\SetBookingCancellationCutoff;
 use App\Modules\Scheduling\Application\SetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetOnlineConsultationService;
+use App\Modules\Scheduling\Application\UpdateWorkingLocation;
+use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use App\Modules\Services\Domain\Models\Service;
@@ -314,11 +316,34 @@ class SchedulingConfiguration extends LocalizedPage
                     );
                 }
                 if (isset($data['office_location']) && trim((string) $data['office_location']) !== '') {
+                    $officeAddress = trim((string) $data['office_location']);
                     app(SetOrganizationSetting::class)->handle(
                         $actor,
                         OrganizationSettingKey::OfficeLocation,
-                        trim((string) $data['office_location']),
+                        $officeAddress,
                     );
+
+                    $defaultLocation = WorkingLocation::query()
+                        ->where('organization_id', app(OrganizationContext::class)->id())
+                        ->where('is_active', true)
+                        ->orderByDesc('is_default_office')
+                        ->orderBy('name')
+                        ->first();
+
+                    if ($defaultLocation instanceof WorkingLocation) {
+                        app(UpdateWorkingLocation::class)->handle(
+                            actor: $actor,
+                            location: $defaultLocation,
+                            name: $defaultLocation->name,
+                            address: $officeAddress,
+                            timezone: $defaultLocation->timezone,
+                            latitude: $defaultLocation->latitude === null ? null : (float) $defaultLocation->latitude,
+                            longitude: $defaultLocation->longitude === null ? null : (float) $defaultLocation->longitude,
+                            mapUrl: $defaultLocation->map_url,
+                            isActive: true,
+                            isDefaultOffice: true,
+                        );
+                    }
                 } else {
                     app(ClearOrganizationSetting::class)->handle(
                         $actor,
