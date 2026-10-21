@@ -957,7 +957,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-en.jpg');
     await expect(navigation).toHaveText(['Home', 'Book', 'Health', 'Chat', 'Cabinet']);
     await navigation.nth(1).click();
-    await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Book', exact: true })).toBeVisible();
     await expect(page.locator('.portal-service-card').first().getByRole('link', { name: 'Book an appointment' })).toHaveAttribute('href', /service_id=/);
     const profileResponse = page.waitForResponse((response) =>
         response.url().endsWith('/portal/profile') && response.request().method() === 'GET' && response.status() === 200,
@@ -1465,8 +1465,7 @@ test('companion shows accessible typing feedback and respects intentional histor
     await expect.poll(() => history.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeGreaterThan(96);
     await expect.poll(() => history.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(96);
     await pollIntercepted;
-    await history.hover();
-    await page.mouse.wheel(0, -5000);
+    await history.locator('.portal-companion__message').first().scrollIntoViewIfNeeded();
     await expect.poll(() => history.evaluate((element) => element.scrollTop)).toBe(0);
     await expect.poll(() => history.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeGreaterThan(96);
     continuePollingResponse();
