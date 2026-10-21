@@ -51,6 +51,8 @@ class RecordAuditEvent
         'client.blacklist.added' => ['source', 'client_id', 'old_blacklist_state', 'new_blacklist_state', 'reason_present'],
         'client.blacklist.removed' => ['source', 'client_id', 'old_blacklist_state', 'new_blacklist_state', 'reason_present'],
         'client.note.created' => ['client_id', 'body_present'],
+        'client.note.updated' => ['client_id', 'body_present'],
+        'client.note.update_conflicted' => ['client_id', 'safe_error_code'],
         'attribution.accepted' => ['source_type', 'capture_channel', 'has_referral', 'has_utm'],
         'attribution.manual_source.accepted' => ['source_type'],
         'attribution.source_detail.updated' => [],

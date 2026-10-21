@@ -1,0 +1,19 @@
+services:
+  app:
+    environment:
+      MAIL_QA_AUTH_ENABLED: "true"
+      MAIL_QA_AUTH_DOMAIN: qa.invalid
+      MAIL_QA_AUTH_HOST: mailpit
+      MAIL_QA_AUTH_PORT: "1025"
+  mailpit:
+    image: ghcr.io/axllent/mailpit:v1.31.3
+    restart: unless-stopped
+    environment:
+      MP_MAX_MESSAGES: "50"
+      MP_MAX_AGE: 24h
+      MP_SMTP_ALLOWED_RECIPIENTS: '@qa\.invalid$'
+    networks:
+      - chuklov-staging
+    mem_limit: 128m
+    cpus: 0.10
+    pids_limit: 64

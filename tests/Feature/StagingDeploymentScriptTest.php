@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
+use Symfony\Component\Yaml\Yaml;
 use Tests\TestCase;
 
 class StagingDeploymentScriptTest extends TestCase
@@ -106,12 +107,36 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('chown -R 33:33', $script);
         self::assertStringContainsString('prepare_release_permissions', $script);
         self::assertStringContainsString('chown -R root:33', $script);
+        self::assertStringContainsString('candidate_qa_overlay="$root/releases/$revision/$qa_overlay_name"', $script);
+        self::assertStringContainsString('Candidate release is missing the staging QA mail overlay.', $script);
+        self::assertStringContainsString('MP_SMTP_ALLOWED_RECIPIENTS', $script);
+        self::assertStringContainsString('-f "$STAGING_ROOT/current/docker-compose.staging-qa.yml"', file_get_contents(base_path('scripts/staging-smoke.sh')));
+        self::assertStringContainsString('QA MAIL SMTP', file_get_contents(base_path('scripts/staging-smoke.sh')));
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);
         self::assertStringNotContainsString('docker volume prune', $script);
         self::assertStringNotContainsString('docker volume rm', $script);
         self::assertStringNotContainsString('redis-cli flush', $script);
         self::assertStringNotContainsString('FLUSHALL', $script);
+    }
+
+    #[Test]
+    public function staging_qa_mail_sink_is_private_domain_limited_and_ephemeral(): void
+    {
+        $overlay = Yaml::parseFile(base_path('docker-compose.staging-qa.yml'));
+        $app = $overlay['services']['app'];
+        $mailpit = $overlay['services']['mailpit'];
+
+        self::assertSame('true', $app['environment']['MAIL_QA_AUTH_ENABLED']);
+        self::assertSame('qa.invalid', $app['environment']['MAIL_QA_AUTH_DOMAIN']);
+        self::assertSame('mailpit', $app['environment']['MAIL_QA_AUTH_HOST']);
+        self::assertSame('ghcr.io/axllent/mailpit:v1.31.3', $mailpit['image']);
+        self::assertArrayNotHasKey('ports', $mailpit);
+        self::assertArrayNotHasKey('volumes', $mailpit);
+        self::assertSame(['chuklov-staging'], $mailpit['networks']);
+        self::assertSame('50', $mailpit['environment']['MP_MAX_MESSAGES']);
+        self::assertSame('24h', $mailpit['environment']['MP_MAX_AGE']);
+        self::assertSame('@qa\\.invalid$', $mailpit['environment']['MP_SMTP_ALLOWED_RECIPIENTS']);
     }
 
     #[Test]

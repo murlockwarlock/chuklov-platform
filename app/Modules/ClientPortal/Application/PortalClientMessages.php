@@ -25,6 +25,14 @@ final class PortalClientMessages
             'ru' => 'Код неверный или уже истёк.',
             'en' => 'The code is incorrect or has expired.',
         ],
+        'email_code_delivery_failed' => [
+            'ru' => 'Не удалось отправить код. Попробуйте позже или войдите через Telegram.',
+            'en' => 'We could not send the code. Try again later or sign in with Telegram.',
+        ],
+        'email_code_rate_limited' => [
+            'ru' => 'Вы запрашивали код слишком часто. Подождите немного и попробуйте снова.',
+            'en' => 'Too many code requests. Wait a little and try again.',
+        ],
         'feedback_review' => [
             'ru' => 'Оставить отзыв',
             'en' => 'Leave a review',

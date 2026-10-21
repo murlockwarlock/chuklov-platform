@@ -151,8 +151,8 @@ function requestEmailCode(): void {
         onSuccess: () => {
             emailVerifyForm.email = emailRequestForm.email;
         },
-        onError: () => {
-            authError.value = t('entry.emailError');
+        onError: (errors) => {
+            authError.value = errors.email ?? t('entry.emailError');
         },
     });
 }

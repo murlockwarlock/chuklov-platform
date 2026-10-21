@@ -49,6 +49,7 @@ compose_arguments=(
     --project-name "$STAGING_PROJECT"
     --env-file "$STAGING_ROOT/shared/.env"
     -f "$STAGING_ROOT/compose.yml"
+    -f "$STAGING_ROOT/current/docker-compose.staging-qa.yml"
 )
 
 ok() {
@@ -73,7 +74,7 @@ fi
 ok 'HEALTH'
 
 running_services="$(ssh "${ssh_options[@]}" "$remote" "${compose_arguments[@]}" ps --status running --services)"
-for service in app horizon scheduler postgres redis telegram; do
+for service in app horizon scheduler postgres redis telegram mailpit; do
     if ! grep -Fxq "$service" <<< "$running_services"; then
         fail "${service^^}" 'container is not running'
     fi
@@ -81,6 +82,11 @@ done
 ok 'APP'
 ok 'SCHEDULER'
 ok 'TELEGRAM'
+
+if ! ssh "${ssh_options[@]}" "$remote" "${compose_arguments[@]}" exec -T app php -r '$socket = @fsockopen("mailpit", 1025, $errorCode, $errorMessage, 5); if (!is_resource($socket)) { exit(1); } $banner = fgets($socket); fclose($socket); exit(is_string($banner) && str_starts_with($banner, "220 ") ? 0 : 1);' > /dev/null 2>&1; then
+    fail 'QA MAIL SMTP' 'application cannot reach the private staging QA mail sink'
+fi
+ok 'QA MAIL SMTP'
 
 run_telegram_api_check() {
     ssh "${ssh_options[@]}" "$remote" bash -s -- "$STAGING_PROJECT" "$STAGING_ROOT" <<'REMOTE_TELEGRAM_API'

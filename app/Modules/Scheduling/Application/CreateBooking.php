@@ -35,6 +35,7 @@ use DateTimeInterface;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
@@ -267,15 +268,47 @@ class CreateBooking
                 ]);
             }
 
-            if ($actor instanceof Client && ClientBookingRestriction::query()
-                ->where('organization_id', $organization->getKey())
-                ->whereIn('client_id', [$lockedClient->getKey(), $patient->clinical_client_id])
-                ->where('restriction_type', ClientRestrictionType::SelfBooking->value)
-                ->whereNull('unblocked_at')
-                ->exists()) {
-                throw ValidationException::withMessages([
-                    'client' => 'This client is restricted from self-service booking.',
-                ]);
+            if ($actor instanceof Client) {
+                $affectedClientIds = array_values(array_unique([
+                    (int) $lockedClient->getKey(),
+                    (int) $patient->clinical_client_id,
+                ]));
+
+                if (ClientBookingRestriction::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->whereIn('client_id', $affectedClientIds)
+                    ->where('restriction_type', ClientRestrictionType::Blacklist->value)
+                    ->whereNull('unblocked_at')
+                    ->exists()) {
+                    $this->logClientBookingRestrictionDenied(
+                        (int) $organization->getKey(),
+                        (int) $actor->getKey(),
+                        (int) $lockedClient->getKey(),
+                        ClientRestrictionType::Blacklist->value,
+                    );
+
+                    throw ValidationException::withMessages([
+                        'blacklist' => 'Самостоятельная запись для этого профиля недоступна.',
+                    ]);
+                }
+
+                if (ClientBookingRestriction::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->whereIn('client_id', $affectedClientIds)
+                    ->where('restriction_type', ClientRestrictionType::SelfBooking->value)
+                    ->whereNull('unblocked_at')
+                    ->exists()) {
+                    $this->logClientBookingRestrictionDenied(
+                        (int) $organization->getKey(),
+                        (int) $actor->getKey(),
+                        (int) $lockedClient->getKey(),
+                        ClientRestrictionType::SelfBooking->value,
+                    );
+
+                    throw ValidationException::withMessages([
+                        'client' => 'Этот профиль не может записаться самостоятельно.',
+                    ]);
+                }
             }
 
             $this->ensureBookableService($lockedService, $format);
@@ -428,6 +461,24 @@ class CreateBooking
 
             return $booking->refresh();
         });
+    }
+
+    private function logClientBookingRestrictionDenied(
+        int $organizationId,
+        int $actorId,
+        int $clientId,
+        string $reasonCode,
+    ): void {
+        Log::warning('portal.booking.denied', [
+            'operation' => 'booking.create',
+            'organization_id' => $organizationId,
+            'actor_type' => 'client',
+            'actor_id' => $actorId,
+            'client_id' => $clientId,
+            'reason_code' => $reasonCode,
+            'outcome' => 'denied',
+            'occurred_at' => now()->utc()->toIso8601String(),
+        ]);
     }
 
     private function ensureOrganizationOwnership(

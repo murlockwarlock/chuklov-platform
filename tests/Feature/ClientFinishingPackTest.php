@@ -12,6 +12,7 @@ use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Application\CreateClientNote;
 use App\Modules\Identity\Application\ListClientNotesForCrm;
 use App\Modules\Identity\Application\UnblockClientBlacklist;
+use App\Modules\Identity\Application\UpdateClientNote;
 use App\Modules\Identity\Domain\Enums\ClientRestrictionType;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientNote;
@@ -75,7 +76,27 @@ final class ClientFinishingPackTest extends TestCase
         $component
             ->mountTableAction('add')
             ->setTableActionData(['body' => 'Заметка из страницы клиента'])
-            ->callMountedTableAction();
+            ->callMountedTableAction()
+            ->assertNotified('Заметка добавлена');
+
+        $editableNote = ClientNote::query()
+            ->where('client_id', $client->getKey())
+            ->orderByDesc('id')
+            ->firstOrFail();
+        $expectedBodyHash = hash('sha256', $editableNote->body);
+
+        $component
+            ->mountTableAction('edit', (string) $editableNote->getKey())
+            ->assertTableActionDataSet([
+                'body' => 'Заметка из страницы клиента',
+                'expected_body_hash' => $expectedBodyHash,
+            ])
+            ->setTableActionData([
+                'body' => 'Заметка после редактирования и повторного открытия.',
+                'expected_body_hash' => $expectedBodyHash,
+            ])
+            ->callMountedTableAction()
+            ->assertNotified('Заметка сохранена');
 
         self::assertDatabaseHas('client_notes', [
             'organization_id' => $organization->getKey(),
@@ -83,6 +104,31 @@ final class ClientFinishingPackTest extends TestCase
             'author_user_id' => $admin->getKey(),
         ]);
         self::assertCount(2, ClientNote::query()->where('client_id', $client->getKey())->get());
+
+        Livewire::actingAs($admin)
+            ->test(ClientNotesRelationManager::class, [
+                'ownerRecord' => $client->refresh(),
+                'pageClass' => ViewClient::class,
+            ])
+            ->assertSuccessful()
+            ->assertSee('Заметка после редактирования и повторного открытия.')
+            ->assertDontSee('Заметка из страницы клиента');
+
+        self::assertSame('Заметка после редактирования и повторного открытия.', $editableNote->fresh()->body);
+        self::assertNotSame(
+            'Заметка после редактирования и повторного открытия.',
+            (string) DB::table('client_notes')->where('id', $editableNote->getKey())->value('body'),
+        );
+
+        $updateAudit = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'client.note.updated')
+            ->sole();
+        self::assertTrue($updateAudit->metadata['body_present'] ?? false);
+        self::assertStringNotContainsString(
+            'Заметка после редактирования и повторного открытия.',
+            json_encode($updateAudit->metadata, JSON_UNESCAPED_UNICODE),
+        );
     }
 
     public function test_client_notes_respect_permission_and_tenant_boundaries(): void
@@ -91,6 +137,7 @@ final class ClientFinishingPackTest extends TestCase
         $body = 'Организационно изолированная заметка.';
 
         app(CreateClientNote::class)->handle($admin, $client, $body);
+        $note = ClientNote::query()->where('client_id', $client->getKey())->sole();
 
         $unauthorized = User::factory()->create();
         try {
@@ -98,6 +145,13 @@ final class ClientFinishingPackTest extends TestCase
             self::fail('A user without organization membership should not create client notes.');
         } catch (AuthorizationException) {
             self::assertTrue(true);
+        }
+
+        try {
+            app(UpdateClientNote::class)->handle($unauthorized, $client, $note, 'Недоступное изменение', hash('sha256', $body));
+            self::fail('A user without organization membership should not update client notes.');
+        } catch (AuthorizationException) {
+            self::assertSame($body, $note->fresh()->body);
         }
 
         $otherOrganization = Organization::factory()->create();
@@ -108,8 +162,52 @@ final class ClientFinishingPackTest extends TestCase
         $otherAdmin = User::factory()->forOrganization($otherOrganization)->create();
         app(OrganizationContext::class)->set($otherOrganization);
 
+        try {
+            app(CreateClientNote::class)->handle($otherAdmin, $client, 'Чужой tenant');
+            self::fail('A different tenant should not create client notes.');
+        } catch (AuthorizationException) {
+            self::assertSame($body, $note->fresh()->body);
+        }
+
         $this->expectException(AuthorizationException::class);
-        app(CreateClientNote::class)->handle($otherAdmin, $client, 'Чужой tenant');
+        app(UpdateClientNote::class)->handle($otherAdmin, $client, $note, 'Чужое изменение', hash('sha256', $body));
+    }
+
+    public function test_client_note_edit_replay_is_idempotent_and_stale_edits_are_audited_without_plaintext(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $originalBody = 'Исходная заметка.';
+        $updatedBody = 'Актуальная заметка после первой правки.';
+        $note = app(CreateClientNote::class)->handle($admin, $client, $originalBody);
+        $staleHash = hash('sha256', $originalBody);
+
+        app(UpdateClientNote::class)->handle($admin, $client, $note, $updatedBody, $staleHash);
+        app(UpdateClientNote::class)->handle($admin, $client, $note, $updatedBody, $staleHash);
+
+        self::assertSame($updatedBody, $note->fresh()->body);
+        self::assertSame(1, AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'client.note.updated')
+            ->count());
+
+        try {
+            app(UpdateClientNote::class)->handle($admin, $client, $note, 'Устаревшая правка', $staleHash);
+            self::fail('A stale note edit should be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertSame(
+                'Заметка уже изменилась. Закройте форму, снова откройте заметку и повторите правку.',
+                $exception->errors()['body'][0],
+            );
+        }
+
+        self::assertSame($updatedBody, $note->fresh()->body);
+        $conflict = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'client.note.update_conflicted')
+            ->sole();
+        self::assertSame('stale_note_version', $conflict->metadata['safe_error_code']);
+        self::assertStringNotContainsString('Устаревшая правка', json_encode($conflict->metadata, JSON_UNESCAPED_UNICODE));
+        self::assertStringNotContainsString($updatedBody, json_encode($conflict->metadata, JSON_UNESCAPED_UNICODE));
     }
 
     public function test_blacklist_requires_reason_is_filterable_visible_and_does_not_remove_booking_search_result(): void

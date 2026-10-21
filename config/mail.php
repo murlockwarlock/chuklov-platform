@@ -18,6 +18,11 @@ return [
 
     'auth_mailer' => env('MAIL_AUTH_MAILER', env('MAIL_MAILER', 'smtp')),
 
+    'qa_auth' => [
+        'enabled' => env('MAIL_QA_AUTH_ENABLED', false),
+        'domain' => env('MAIL_QA_AUTH_DOMAIN', ''),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Mailer Configurations
@@ -48,6 +53,18 @@ return [
             'username' => env('MAIL_USERNAME'),
             'password' => env('MAIL_PASSWORD'),
             'timeout' => null,
+            'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+        ],
+
+        'qa_auth' => [
+            'transport' => 'smtp',
+            'scheme' => env('MAIL_QA_AUTH_SCHEME'),
+            'url' => env('MAIL_QA_AUTH_URL'),
+            'host' => env('MAIL_QA_AUTH_HOST', '127.0.0.1'),
+            'port' => env('MAIL_QA_AUTH_PORT', 1025),
+            'username' => env('MAIL_QA_AUTH_USERNAME'),
+            'password' => env('MAIL_QA_AUTH_PASSWORD'),
+            'timeout' => 5,
             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
         ],
 

@@ -4,10 +4,12 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
+use App\Modules\Identity\Application\BlockClientBlacklist;
 use App\Modules\Identity\Application\CreatePatientProfile;
 use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
 use App\Modules\Identity\Application\PublishLegalDocument;
 use App\Modules\Identity\Application\RevokePatientRelationship;
+use App\Modules\Identity\Application\UnblockClientBlacklist;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\LegalDocument;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -30,8 +32,10 @@ use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
+use Mockery;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -82,6 +86,51 @@ class PortalBookingRemediationTest extends TestCase
             'consents' => $this->acceptedConsents($organization),
         ]))->assertSessionHasNoErrors()->assertRedirect()->assertSessionHas('portal_booking_result', fn (array $result): bool => $result['medicalProfileUrl'] === null);
         self::assertSame(1, Booking::query()->count());
+    }
+
+    public function test_blacklist_denies_portal_booking_with_a_specific_error_then_allows_an_idempotent_retry_after_unblock(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(BlockClientBlacklist::class)->handle($admin, $client, 'Синтетическая проверка booking denial.');
+        Log::spy();
+
+        $payload = $this->bookingPayload($service, $specialist, [
+            'consents' => $this->acceptedConsents($organization),
+        ]);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.store'), $payload)
+            ->assertSessionHasErrors([
+                'starts_at' => 'Online booking is unavailable for this profile. Contact us and we will help you find an option.',
+            ]);
+
+        self::assertSame(0, Booking::query()->where('client_id', $client->getKey())->count());
+        self::assertSame(0, DB::table('booking_idempotency_keys')->where('actor_scope', 'client:'.$client->getKey())->count());
+
+        Log::shouldHaveReceived('warning')
+            ->with('portal.booking.denied', Mockery::on(function (array $context) use ($organization, $client): bool {
+                return $context['operation'] === 'booking.create'
+                    && $context['organization_id'] === $organization->getKey()
+                    && $context['actor_type'] === 'client'
+                    && $context['actor_id'] === $client->getKey()
+                    && $context['client_id'] === $client->getKey()
+                    && $context['reason_code'] === 'blacklist'
+                    && $context['outcome'] === 'denied'
+                    && isset($context['occurred_at'])
+                    && ! array_key_exists('reason', $context);
+            }))
+            ->once();
+
+        app(UnblockClientBlacklist::class)->handle($admin, $client);
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors()->assertRedirect();
+        $booking = Booking::query()->where('client_id', $client->getKey())->sole();
+        self::assertSame($client->getKey(), $booking->client_id);
+
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors();
+        self::assertSame(1, Booking::query()->where('client_id', $client->getKey())->count());
+        self::assertSame(1, AuditEvent::query()->where('organization_id', $organization->getKey())
+            ->where('action', 'booking.created')->count());
     }
 
     public function test_foreign_patient_identifier_cannot_book_or_mutate_customer_personal_data(): void

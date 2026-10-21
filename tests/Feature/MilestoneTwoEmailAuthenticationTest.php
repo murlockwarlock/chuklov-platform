@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Modules\Attribution\Application\CapturePreAuthAttribution;
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Identity\Application\AuthenticateClientWithEmailVerificationCode;
 use App\Modules\Identity\Domain\Contracts\EmailVerificationCodeSender;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
@@ -20,12 +21,15 @@ use App\Modules\Referrals\Application\FinalizeClientAcquisition;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use Carbon\Carbon;
+use Illuminate\Contracts\Mail\Factory as MailFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\ViewErrorBag;
 use Illuminate\Testing\TestResponse;
 use LogicException;
+use Symfony\Component\Mailer\Exception\TransportException;
 use Tests\Support\RecordingEmailVerificationCodeSender;
 use Tests\TestCase;
 
@@ -174,7 +178,10 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
 
         self::assertSame(2, ClientEmailAuthChallenge::query()->sole()->attempts);
         $this->post(route('portal.email.request'), ['email' => 'bounded@example.test'])
-            ->assertTooManyRequests();
+            ->assertRedirect(route('portal.home'))
+            ->assertSessionHasErrors([
+                'email' => app(PortalClientMessages::class)->message('email_code_rate_limited'),
+            ]);
     }
 
     public function test_email_auth_does_not_merge_an_unverified_profile_or_persist_secrets(): void
@@ -248,6 +255,99 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
             self::assertStringNotContainsString('654321', $logContents);
             unlink($logPath);
         }
+    }
+
+    public function test_delivery_failure_is_reported_safely_and_invalidates_the_unsent_code(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $sender = new class implements EmailVerificationCodeSender
+        {
+            public ?string $email = null;
+
+            public ?string $code = null;
+
+            public function send(string $email, string $code): void
+            {
+                $this->email = $email;
+                $this->code = $code;
+
+                throw new TransportException('private provider details '.$email.' '.$code);
+            }
+        };
+        $this->app->instance(EmailVerificationCodeSender::class, $sender);
+        Log::spy();
+
+        $this->post(route('portal.email.request'), ['email' => 'qa-mail-failure@example.test'])
+            ->assertRedirect(route('portal.home'))
+            ->assertSessionHasErrors([
+                'email' => app(PortalClientMessages::class)->message('email_code_delivery_failed'),
+            ])
+            ->assertSessionMissing('email_code_sent');
+
+        $challenge = ClientEmailAuthChallenge::query()->sole();
+        self::assertSame($organization->id, $challenge->organization_id);
+        self::assertNotNull($challenge->consumed_at);
+        self::assertIsString($sender->email);
+        self::assertIsString($sender->code);
+        self::assertTrue(Hash::check($sender->code, $challenge->code_hash));
+
+        $this->post(route('portal.email.verify'), [
+            'email' => $sender->email,
+            'code' => $sender->code,
+        ])->assertSessionHasErrors('code');
+
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->with('client.email_auth.code_delivery_failed', \Mockery::on(function (array $context) use ($organization, $sender): bool {
+                $encoded = json_encode($context, JSON_THROW_ON_ERROR);
+
+                self::assertSame($organization->id, $context['organization_id']);
+                self::assertSame('anonymous', $context['actor_type']);
+                self::assertSame('client_email_auth_challenge', $context['entity_type']);
+                self::assertSame('email_auth', $context['integration']);
+                self::assertSame('mail_provider_unavailable', $context['error_code']);
+                self::assertSame('failed', $context['outcome']);
+                self::assertArrayHasKey('occurred_at_utc', $context);
+                self::assertStringNotContainsString((string) $sender->email, $encoded);
+                self::assertStringNotContainsString((string) $sender->code, $encoded);
+
+                return true;
+            }));
+    }
+
+    public function test_reserved_qa_domain_uses_the_dedicated_mailer_only_when_enabled(): void
+    {
+        config()->set('mail.qa_auth.enabled', true);
+        config()->set('mail.qa_auth.domain', 'qa.invalid');
+        config()->set('mail.mailers.qa_auth.transport', 'array');
+        config()->set('mail.mailers.ordinary_auth.transport', 'array');
+        config()->set('mail.auth_mailer', 'ordinary_auth');
+        Mail::forgetMailers();
+        $mailer = Mail::mailer('qa_auth');
+        $factory = \Mockery::mock(MailFactory::class);
+        $factory->shouldReceive('mailer')->once()->with('qa_auth')->andReturn($mailer);
+
+        (new LaravelEmailVerificationCodeSender($factory))->send('Portal-QA@QA.INVALID', '123456');
+    }
+
+    public function test_normal_addresses_and_disabled_qa_addresses_use_the_configured_auth_mailer(): void
+    {
+        config()->set('mail.qa_auth.enabled', false);
+        config()->set('mail.qa_auth.domain', 'qa.invalid');
+        config()->set('mail.mailers.ordinary_auth.transport', 'array');
+        config()->set('mail.auth_mailer', 'ordinary_auth');
+        Mail::forgetMailers();
+        $mailer = Mail::mailer('ordinary_auth');
+        $factory = \Mockery::mock(MailFactory::class);
+        $factory->shouldReceive('mailer')->times(3)->with('ordinary_auth')->andReturn($mailer);
+        $sender = new LaravelEmailVerificationCodeSender($factory);
+
+        $sender->send('client@example.test', '123456');
+        $sender->send('portal-qa@qa.invalid', '234567');
+
+        config()->set('mail.qa_auth.enabled', true);
+        config()->set('mail.qa_auth.domain', 'example.test');
+        $sender->send('portal-qa@example.test', '345678');
     }
 
     private function fakeSender(): RecordingEmailVerificationCodeSender

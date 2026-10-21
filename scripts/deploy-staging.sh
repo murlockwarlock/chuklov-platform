@@ -155,6 +155,13 @@ backups="$root/shared/backups"
 composer_cache="$root/shared/composer-cache"
 current_revision="$(cat "$root/REVISION")"
 previous_target="$(readlink -f "$root/current")"
+qa_overlay_name='docker-compose.staging-qa.yml'
+previous_qa_overlay="$previous_target/$qa_overlay_name"
+if [[ ! -f "$previous_qa_overlay" ]]; then
+    previous_qa_overlay=''
+fi
+current_qa_overlay="$previous_qa_overlay"
+candidate_qa_overlay="$root/releases/$revision/$qa_overlay_name"
 snapshot="$backups/predeploy-$revision"
 database_backup="$backups/postgresql-before-$revision.dump"
 compose_backup="$backups/compose-before-$revision.yml"
@@ -172,13 +179,13 @@ assert_redis_queue_environment() {
 compose_service_environment_file() {
     local compose_file="$1"
     local service="$2"
-    local volume_override="${3:-}"
+    local compose_fragment
     local output
     local -a compose_arguments=(docker compose --project-name "$project" --env-file "$environment" -f "$compose_file")
 
-    if [[ -n "$volume_override" ]]; then
-        compose_arguments+=(-f "$volume_override")
-    fi
+    for compose_fragment in "${@:3}"; do
+        [[ -n "$compose_fragment" ]] && compose_arguments+=(-f "$compose_fragment")
+    done
 
     output="$(mktemp)"
     chmod 0600 "$output"
@@ -409,8 +416,13 @@ write_normalized_nftables() {
     local output="$1" nftables_dump loopback_guard_count
     local service container service_ip escaped_service_ip
     local -a service_ips=()
+    local -a services=(postgres redis app horizon scheduler telegram)
 
-    for service in postgres redis app horizon scheduler telegram; do
+    if [[ -f "$current_qa_overlay" ]]; then
+        services+=(mailpit)
+    fi
+
+    for service in "${services[@]}"; do
         container="$("${current_compose[@]}" ps -aq "$service")"
         if [[ -z "$container" ]]; then
             echo "Could not resolve the isolated staging $service container." >&2
@@ -462,6 +474,9 @@ fi
 
 cd "$root"
 current_compose_base=(docker compose --project-name "$project" --env-file "$environment" -f "$compose")
+if [[ -f "$current_qa_overlay" ]]; then
+    current_compose_base+=(-f "$current_qa_overlay")
+fi
 resolve_current_redis_volume
 write_redis_volume_override
 current_compose=("${current_compose_base[@]}" -f "$redis_volume_override")
@@ -471,7 +486,7 @@ resolve_staging_network
 
 current_image="$("${current_compose[@]}" config --format json \
     | jq -er '.services.app.image // empty')"
-current_probe_environment="$(compose_service_environment_file "$compose" app "$redis_volume_override")"
+current_probe_environment="$(compose_service_environment_file "$compose" app "$current_qa_overlay" "$redis_volume_override")"
 queue_probe_script="$(mktemp)"
 if ! tar -xOf "$archive" scripts/staging-smoke.php > "$queue_probe_script"; then
     echo "Candidate queue preflight script is missing from the release archive." >&2
@@ -655,7 +670,12 @@ normalized_compose="$compose.next.runtime-user"
 normalize_staging_runtime_user "$compose.next" "$normalized_compose"
 mv "$normalized_compose" "$compose.next"
 
-candidate_compose_base=(docker compose --project-name "$project" --env-file "$environment" -f "$compose.next")
+if [[ ! -f "$candidate_qa_overlay" ]]; then
+    echo "Candidate release is missing the staging QA mail overlay." >&2
+    exit 1
+fi
+
+candidate_compose_base=(docker compose --project-name "$project" --env-file "$environment" -f "$compose.next" -f "$candidate_qa_overlay")
 candidate_compose=("${candidate_compose_base[@]}" -f "$redis_volume_override")
 resolve_candidate_redis_volume_key
 write_redis_volume_override "$candidate_redis_volume_key"
@@ -665,7 +685,18 @@ chmod 0640 "$compose.next"
 "${candidate_compose[@]}" config --format json \
     | jq -e --arg image "chuklov-staging-app:$revision" \
         '[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == $image and .user == "33:33")' > /dev/null
-candidate_probe_environment="$(compose_service_environment_file "$compose.next" app "$redis_volume_override")"
+"${candidate_compose[@]}" config --format json \
+    | jq -e '
+        .services.app.environment.MAIL_QA_AUTH_ENABLED == "true"
+        and .services.app.environment.MAIL_QA_AUTH_DOMAIN == "qa.invalid"
+        and .services.app.environment.MAIL_QA_AUTH_HOST == "mailpit"
+        and .services.mailpit.image == "ghcr.io/axllent/mailpit:v1.31.3"
+        and ((.services.mailpit.ports // []) | length == 0)
+        and ((.services.mailpit.networks // {}) | has("chuklov-staging"))
+        and .services.mailpit.environment.MP_SMTP_ALLOWED_RECIPIENTS == "@qa\\.invalid$"
+        and .services.mailpit.environment.MP_MAX_AGE == "24h"
+    ' > /dev/null
+candidate_probe_environment="$(compose_service_environment_file "$compose.next" app "$candidate_qa_overlay" "$redis_volume_override")"
 
 current_queue_probe="$(run_queue_contract_probe "queue-snapshot" "$previous_target" "$current_image" "$root/shared/bootstrap-cache" "$current_probe_environment")"
 current_queue_fingerprint="$(jq -er '.fingerprint | select(type == "string" and test("^[0-9a-f]{64}$"))' <<< "$current_queue_probe")"
@@ -720,6 +751,9 @@ rollback() {
     local failed_status="${2:-1}"
     local -a rollback_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose")
 
+    if [[ -n "$previous_qa_overlay" ]]; then
+        rollback_compose+=(-f "$previous_qa_overlay")
+    fi
     if [[ -n "$redis_volume_override" ]]; then
         rollback_compose+=(-f "$redis_volume_override")
     fi
@@ -729,6 +763,10 @@ rollback() {
     mv -Tf "$root/current.rollback" "$root/current"
     cp "$compose_backup" "$compose"
     cd "$root"
+    if [[ -z "$previous_qa_overlay" ]]; then
+        local -a candidate_mailpit_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose" -f "$candidate_qa_overlay")
+        "${candidate_mailpit_compose[@]}" rm --stop --force mailpit < /dev/null || true
+    fi
     "${rollback_compose[@]}" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null || true
     rm -f -- "$remote_normalizer" || true
 }
@@ -737,7 +775,9 @@ trap 'rollback "$LINENO" "$?"' ERR
 mv "$compose.next" "$compose"
 ln -s "$release" "$root/current.next"
 mv -Tf "$root/current.next" "$root/current"
-runtime_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose" -f "$redis_volume_override")
+current_qa_overlay="$root/current/$qa_overlay_name"
+current_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose" -f "$current_qa_overlay" -f "$redis_volume_override")
+runtime_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose" -f "$root/current/$qa_overlay_name" -f "$redis_volume_override")
 
 "${runtime_compose[@]}" run --rm --no-deps app php artisan migrate --force < /dev/null
 "${runtime_compose[@]}" run --rm --no-deps app php artisan portal:validate-configuration < /dev/null
@@ -795,7 +835,7 @@ for attempt in $(seq 1 15); do
 
     sleep 2
 done
-for service in app horizon scheduler telegram; do
+for service in app horizon scheduler telegram mailpit; do
     if ! "${runtime_compose[@]}" ps --status running --services | grep -Fxq "$service"; then
         echo "Required runtime service is not running: $service" >&2
         false
