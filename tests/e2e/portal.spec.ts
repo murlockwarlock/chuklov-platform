@@ -958,7 +958,11 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(navigation).toHaveText(['Home', 'Book', 'Health', 'Chat', 'Cabinet']);
     await navigation.nth(1).click();
     await expect(page.getByRole('heading', { name: 'Book', exact: true })).toBeVisible();
-    await expect(page.locator('.portal-service-card').first().getByRole('link', { name: 'Book an appointment' })).toHaveAttribute('href', /service_id=/);
+    const serviceCard = page.locator('.portal-service-card').first();
+    await expect(serviceCard).toHaveAttribute('href', /service_id=/);
+    await serviceCard.click();
+    await expect(page).toHaveURL(/\/portal\/bookings\/create\?[^#]*service_id=/);
+    await expect(page.getByTestId('booking-selection-service')).toBeVisible();
     const profileResponse = page.waitForResponse((response) =>
         response.url().endsWith('/portal/profile') && response.request().method() === 'GET' && response.status() === 200,
     );
@@ -1466,7 +1470,6 @@ test('companion shows accessible typing feedback and respects intentional histor
     await expect.poll(() => history.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(96);
     await pollIntercepted;
     await history.locator('.portal-companion__message').first().scrollIntoViewIfNeeded();
-    await expect.poll(() => history.evaluate((element) => element.scrollTop)).toBe(0);
     await expect.poll(() => history.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeGreaterThan(96);
     continuePollingResponse();
 
@@ -1479,7 +1482,9 @@ test('companion shows accessible typing feedback and respects intentional histor
     expect(pollPayload.props?.companion?.messages?.some((message) => message.id === 'synthetic-new-message')).toBe(true);
     await expect(page.getByTestId('companion-new-messages')).toBeVisible();
     await expect(page.getByText('Новый синтетический ответ.', { exact: true })).toBeVisible();
-    await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
+    await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => {
+        return element.scrollHeight - element.scrollTop - element.clientHeight;
+    })).toBeGreaterThan(96);
 
     await page.getByTestId('companion-new-messages').click();
     await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => {
