@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
-const props = defineProps<{ id: string; modelValue: string; suggestions: string[]; required?: boolean; emptyText: string; filterSuggestions?: boolean }>();
+const props = withDefaults(defineProps<{ id: string; modelValue: string; suggestions: string[]; required?: boolean; emptyText: string; filterSuggestions?: boolean }>(), {
+    filterSuggestions: true,
+});
 const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
 const root = ref<HTMLElement | null>(null);
 const input = ref<HTMLInputElement | null>(null);

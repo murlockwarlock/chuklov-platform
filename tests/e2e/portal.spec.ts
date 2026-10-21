@@ -1407,6 +1407,8 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByLabel('Мужской', { exact: true })).toBeChecked();
     await page.getByLabel('Дата рождения', { exact: true }).fill('1990-02-28');
     await page.getByLabel('Страна', { exact: true }).fill('Каз');
+    await expect(page.locator('#profile-country-options [role="option"]')).toHaveCount(1);
+    await expect(page.locator('#profile-country-options [role="option"]')).toHaveText('Казахстан');
     await page.getByRole('option', { name: 'Казахстан', exact: true }).click();
     await expect(page.getByLabel('Страна', { exact: true })).toHaveValue('Казахстан');
     await page.getByLabel('Страна', { exact: true }).fill('Каз');
