@@ -6,6 +6,8 @@ use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Pages\WorkingIntervals;
 use App\Models\User;
 use App\Modules\Channels\Application\HandleTelegramBookingConfirmation;
+use App\Modules\Identity\Application\BlockClientBlacklist;
+use App\Modules\Identity\Application\UnblockClientBlacklist;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -388,6 +390,72 @@ final class PhaseOneBookingLocationsPostgresTest extends TestCase
 
         self::assertSame('Old address 5', $existingBooking->refresh()->locationSnapshot()['address']);
         self::assertSame('New address 12', $futureBooking->locationSnapshot()['address']);
+    }
+
+    public function test_postgresql_blacklist_denial_rolls_back_booking_claim_and_unblock_allows_same_key_retry(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin, $client, $specialist, $service] = $this->availabilityFixture();
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
+        $service->forceFill(['formats' => ['online']])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        app(BlockClientBlacklist::class)->handle($admin, $client, 'Synthetic PostgreSQL blacklist check.');
+
+        try {
+            app(CreateBooking::class)->handle(
+                actor: $client,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: CarbonImmutable::create(2026, 9, 7, 4, 0, 0, 'UTC'),
+                format: VisitFormat::Online,
+                clientTimezone: 'Asia/Almaty',
+                idempotencyKey: 'postgres-blacklist-retry',
+            );
+            self::fail('A blacklisted client created a booking.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Самостоятельная запись для этого профиля недоступна.', $exception->errors()['blacklist'][0]);
+        }
+
+        self::assertSame(0, Booking::query()->where('client_id', $client->getKey())->count());
+        self::assertSame(0, DB::table('booking_idempotency_keys')->where('actor_scope', 'client:'.$client->getKey())->count());
+
+        app(UnblockClientBlacklist::class)->handle($admin, $client);
+        $booking = app(CreateBooking::class)->handle(
+            actor: $client,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 9, 7, 4, 0, 0, 'UTC'),
+            format: VisitFormat::Online,
+            clientTimezone: 'Asia/Almaty',
+            idempotencyKey: 'postgres-blacklist-retry',
+        );
+        $replayedBooking = app(CreateBooking::class)->handle(
+            actor: $client,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 9, 7, 4, 0, 0, 'UTC'),
+            format: VisitFormat::Online,
+            clientTimezone: 'Asia/Almaty',
+            idempotencyKey: 'postgres-blacklist-retry',
+        );
+
+        self::assertSame($client->getKey(), $booking->client_id);
+        self::assertSame($booking->getKey(), $replayedBooking->getKey());
+        self::assertSame(1, Booking::query()->where('client_id', $client->getKey())->count());
+        self::assertSame(1, DB::table('scenario_events')
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', 'booking.created')
+            ->count());
     }
 
     public function test_postgresql_legacy_address_backfill_is_idempotent_and_does_not_rewrite_booking_history(): void
