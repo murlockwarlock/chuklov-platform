@@ -182,12 +182,16 @@ final class PortalClientMessages
             'en' => 'Choose a channel from the list.',
         ],
         'payout_retry' => [
-            'ru' => 'Повторите отправку операции.',
-            'en' => 'Submit the operation again.',
+            'ru' => 'Не удалось проверить заявку. Обновите страницу и отправьте её ещё раз.',
+            'en' => 'We could not verify the request. Refresh the page and submit it again.',
+        ],
+        'payout_idempotency_conflict' => [
+            'ru' => 'Этот ключ уже использован для другой суммы или валюты. Обновите страницу и отправьте запрос ещё раз.',
+            'en' => 'This key was already used for a different amount or currency. Refresh the page and submit the request again.',
         ],
         'payout_form_retry' => [
-            'ru' => 'Повторите отправку формы.',
-            'en' => 'Submit the form again.',
+            'ru' => 'Форма устарела. Обновите страницу и отправьте заявку ещё раз.',
+            'en' => 'This form has expired. Refresh the page and submit the request again.',
         ],
         'payout_amount_required' => [
             'ru' => 'Укажите сумму выплаты.',
@@ -347,6 +351,7 @@ final class PortalClientMessages
                 default => $this->message('request_invalid'),
             },
             'payout' => match ($field) {
+                'idempotency_conflict' => $this->message('payout_idempotency_conflict'),
                 'idempotency_key' => $this->message('payout_retry'),
                 'partner' => $this->message('payout_partner_required'),
                 'amount' => array_key_exists('currency', $exception->errors())

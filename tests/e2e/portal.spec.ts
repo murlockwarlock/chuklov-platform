@@ -21,6 +21,7 @@ type BookingFixture = {
 
 type BookingFixtureOptions = {
     daysAhead?: number;
+    confirmedName?: boolean;
     medicalService?: boolean;
     withBooking?: boolean;
     withCompanionMessages?: boolean;
@@ -47,6 +48,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
         $withCompanionPending = getenv('PLAYWRIGHT_WITH_COMPANION_PENDING') === '1';
         $withCompanionFailure = getenv('PLAYWRIGHT_WITH_COMPANION_FAILURE') === '1';
+        $confirmedName = getenv('PLAYWRIGHT_CONFIRMED_NAME') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([
             [
                 'organization_id' => $organization->getKey(),
@@ -92,6 +94,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'email' => 'playwright-'.$suffix.'@example.test',
             'first_name' => 'Playwright',
             'last_name' => 'Client '.$suffix,
+            'name_confirmed_at' => $confirmedName ? now() : null,
             'gender' => 'MALE',
             'birth_date' => '1990-02-28',
             'country' => 'Казахстан',
@@ -308,6 +311,17 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 );
             }
             if ($withCompanionPending) {
+                foreach (range(1, 8) as $historyIndex) {
+                    app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+                        organizationId: $organization->getKey(),
+                        client: $client,
+                        conversation: $conversation,
+                        channel: 'portal',
+                        direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
+                        authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
+                        body: str_repeat('Synthetic history message '.$historyIndex.' remains visible while scrolling. ', 12),
+                    );
+                }
                 $pendingInbound = app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
                     organizationId: $organization->getKey(),
                     client: $client,
@@ -475,6 +489,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
         DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        PLAYWRIGHT_CONFIRMED_NAME: normalizedOptions.confirmedName ? '1' : '0',
         PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
         PLAYWRIGHT_MEDICAL_SERVICE: normalizedOptions.medicalService ? '1' : '0',
         PLAYWRIGHT_BOOKING_DAYS_AHEAD: String(normalizedOptions.daysAhead ?? 1),
@@ -935,7 +950,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await russianTrigger.click();
     await expect(page.getByRole('menuitemradio', { name: 'Русский', exact: true })).toHaveAttribute('aria-checked', 'true');
     await page.getByRole('menuitemradio', { name: 'English', exact: true }).click();
-    await expect(page.locator('h1')).toContainText('Welcome, Playwright Client');
+    await expect(page.locator('h1')).toHaveText('Welcome to your space for health!');
     await expect(page.getByRole('button', { name: 'English', exact: true })).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-en.jpg');
     await expect(navigation).toHaveText(['Home', 'Book', 'Health', 'Chat', 'Cabinet']);
@@ -952,6 +967,25 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page).toHaveURL(/\/portal\/profile$/);
     await expect(page.getByRole('heading', { name: 'Profile', exact: true })).toBeVisible();
     await expect(page.getByText('Manage your contact details and preferences when you need to.')).toHaveCount(0);
+});
+
+test('confirmed client greeting follows the saved locale after reload', async ({ page }) => {
+    const fixture = createBookingFixture({ confirmedName: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/');
+    await expect(page.getByRole('heading', { name: 'Добро пожаловать, Playwright!', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Русский', exact: true }).click();
+    await page.getByRole('menuitemradio', { name: 'English', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Welcome, Playwright!', exact: true })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Welcome, Playwright!', exact: true })).toBeVisible();
 });
 
 test('feedback keeps the selected score visible and the portal within mobile bounds', async ({ page }) => {
@@ -1002,8 +1036,13 @@ test('home keeps one primary booking action and ordinary referrals remain availa
             expect(await navigationItems.evaluateAll((items) => {
                 const widths = items.map((item) => item.getBoundingClientRect().width);
                 const labels = items.map((item) => item.querySelector('.portal-bottom-nav__label'));
+                const widthsMatchLayout = window.innerWidth <= 360
+                    ? Math.abs(widths[1] / widths[0] - 1.15) <= 0.04
+                        && Math.max(widths[0], widths[2], widths[3], widths[4])
+                            - Math.min(widths[0], widths[2], widths[3], widths[4]) <= 1
+                    : Math.max(...widths) - Math.min(...widths) <= 1;
 
-                return Math.max(...widths) - Math.min(...widths) <= 1
+                return widthsMatchLayout
                     && labels.every((label) => label !== null && label.getBoundingClientRect().height >= 24);
             })).toBe(true);
         }
@@ -1194,6 +1233,13 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     await expect(page.getByTestId('partner-payout-0')).toContainText('Отменена');
 
     await page.getByRole('button', { name: 'Выплаты', exact: true }).click();
+    await page.getByLabel('Сумма', { exact: true }).fill('3.00');
+    await payoutSubmit.click();
+    await expect(page.getByTestId('payout-error')).toContainText('Этот ключ уже использован для другой суммы или валюты.');
+    await page.unroute('**/portal/referrals/payouts');
+    await page.reload();
+
+    await page.getByRole('button', { name: 'Выплаты', exact: true }).click();
     await page.getByLabel('Сумма', { exact: true }).fill('999.00');
     await payoutSubmit.click();
     await expect(page.getByTestId('payout-error')).toBeVisible();
@@ -1364,6 +1410,10 @@ test('companion shows accessible typing feedback and respects intentional histor
     }]);
 
     await page.setViewportSize({ width: 390, height: 844 });
+    let continuePollingResponse: () => void = () => {};
+    const userScrolledAway = new Promise<void>((resolve) => {
+        continuePollingResponse = resolve;
+    });
     await page.route('**/portal/companion**', async (route) => {
         if (route.request().headers()['x-inertia'] !== 'true') {
             await route.continue();
@@ -1393,20 +1443,35 @@ test('companion shows accessible typing feedback and respects intentional histor
                 },
             ];
         }
+        await userScrolledAway;
         await route.fulfill({ response, body: JSON.stringify(payload) });
     });
+    const pollResponsePromise = page.waitForResponse((response) => response.url().includes('/portal/companion')
+        && response.request().method() === 'GET'
+        && response.request().headers()['x-inertia'] === 'true');
     await page.goto('/portal/companion');
     await expect(page.getByRole('status').filter({ hasText: 'печатает…' })).toBeVisible();
     await expect(page.locator('.portal-companion__typing-dots i')).toHaveCount(3);
     await expect(page.getByText('Чат формирует ответ', { exact: true })).toHaveCount(1);
 
+    const history = page.locator('[data-testid="companion-history"]');
+    await expect.poll(() => history.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeGreaterThan(96);
     await page.locator('[data-testid="companion-history"]').evaluate((element) => {
         element.scrollTop = 0;
         element.dispatchEvent(new Event('scroll'));
     });
-    await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
+    await expect.poll(() => history.evaluate((element) => element.scrollTop)).toBe(0);
+    await expect.poll(() => history.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeGreaterThan(96);
+    continuePollingResponse();
 
-    await expect(page.getByTestId('companion-new-messages')).toBeVisible({ timeout: 7_000 });
+    const pollResponse = await pollResponsePromise;
+    expect(pollResponse.status()).toBe(200);
+    const pollPayload = await pollResponse.json() as {
+        props?: { companion?: { pending?: boolean; messages?: Array<{ id?: string }> } };
+    };
+    expect(pollPayload.props?.companion?.pending).toBe(false);
+    expect(pollPayload.props?.companion?.messages?.some((message) => message.id === 'synthetic-new-message')).toBe(true);
+    await expect(page.getByTestId('companion-new-messages')).toBeVisible();
     await expect(page.getByText('Новый синтетический ответ.', { exact: true })).toBeVisible();
     await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
 

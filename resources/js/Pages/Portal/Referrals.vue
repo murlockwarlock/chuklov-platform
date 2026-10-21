@@ -134,6 +134,7 @@ const payoutError = computed(() => {
     const errors = payoutForm.errors as Record<string, string | undefined>;
 
     return errors.payout
+        ?? errors.idempotency_conflict
         ?? errors.amount
         ?? errors.currency
         ?? errors.idempotency_key

@@ -16,9 +16,12 @@ use App\Modules\Referrals\Application\TransitionReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
 use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
+use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia;
+use Mockery;
 use Tests\TestCase;
 
 class PortalProductUxTest extends TestCase
@@ -349,6 +352,33 @@ class PortalProductUxTest extends TestCase
             'idempotency_key' => 'cancelled-payout-replay',
             'status' => ReferralPayoutRequestStatus::Cancelled->value,
         ]);
+
+        Log::spy();
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->from(route('portal.referrals'))
+            ->post(route('portal.referrals.payouts.store'), [
+                'amount' => '3.00',
+                'currency' => 'USD',
+                'idempotency_key' => 'cancelled-payout-replay',
+            ])
+            ->assertRedirect(route('portal.referrals'))
+            ->assertSessionHasErrors([
+                'idempotency_conflict' => 'Этот ключ уже использован для другой суммы или валюты. Обновите страницу и отправьте запрос ещё раз.',
+            ]);
+
+        self::assertSame(1, ReferralPayoutRequest::query()->count());
+        Log::shouldHaveReceived('warning')
+            ->with('referral.payout.idempotency_conflict', Mockery::on(function (array $context) use ($organization, $client, $request): bool {
+                return $context['operation'] === 'request_referral_payout'
+                    && $context['organization_id'] === $organization->getKey()
+                    && $context['actor_client_id'] === $client->getKey()
+                    && $context['entity_type'] === $request::class
+                    && $context['entity_id'] === (string) $request->getKey()
+                    && $context['error_code'] === 'idempotency_payload_mismatch'
+                    && preg_match('/^\d{4}-\d{2}-\d{2}T.*\+00:00$/', $context['occurred_at']) === 1
+                    && $context['outcome'] === 'rejected'
+                    && ! array_key_exists('idempotency_key', $context);
+            }));
     }
 
     public function test_incomplete_optional_profile_does_not_block_home_or_profile_updates(): void
