@@ -1573,10 +1573,12 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByRole('link', { name: 'synthetic-report-three.pdf', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'synthetic-report-photo.jpg', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'synthetic-report-scan.png', exact: true })).toBeVisible();
+    const attachmentUrl = await page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true }).getAttribute('href');
+    if (!attachmentUrl) throw new Error('Medical attachment download link is missing its URL');
     const downloadEvent = page.waitForEvent('download');
-    await page.getByRole('link', { name: 'synthetic-report-one.pdf', exact: true }).click();
+    await page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true }).click();
     const download = await downloadEvent;
-    expect(download.suggestedFilename()).toBe('synthetic-report-one.pdf');
+    expect(download.suggestedFilename()).toBe('synthetic-report-two.pdf');
     expect(await download.failure()).toBeNull();
     await page.unroute('**/portal/medical-attachments*');
     await page.reload();
@@ -1591,6 +1593,9 @@ test('September 26 confirmed profile persists and the medical editor saves then 
         session: { ...window.sessionStorage },
     }))).not.toContain('Synthetic symptoms');
     await page.context().clearCookies({ name: fixture.cookieName });
+    const unauthorizedAttachmentResponse = await page.request.get(attachmentUrl, { headers: { Accept: 'application/json' } });
+    expect(unauthorizedAttachmentResponse.status()).toBe(401);
+    expect(await unauthorizedAttachmentResponse.text()).not.toContain('Synthetic report two');
     const guestResponse = await page.goto('/');
     expect(guestResponse?.headers()['cache-control']).toContain('no-store');
     await expect(page.getByText('Synthetic symptoms', { exact: true })).toHaveCount(0);
