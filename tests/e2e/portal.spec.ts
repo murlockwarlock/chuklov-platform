@@ -1136,8 +1136,10 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     const payoutRequestRelease = new Promise<void>((resolve) => {
         releaseRequest = resolve;
     });
+    let payoutIdempotencyKey = '';
     await page.route('**/portal/referrals/payouts', async (route) => {
         if (route.request().method() === 'POST') {
+            payoutIdempotencyKey = route.request().postDataJSON().idempotency_key;
             requestStarted();
             await payoutRequestRelease;
         }
@@ -1155,6 +1157,7 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     await expect(page.getByTestId('payout-feedback')).toContainText('Заявка на выплату отправлена');
     await expect(page.getByTestId('payout-feedback')).toContainText(/2[,.]00\s*(?:\$|USD)/);
     await expect(page.getByTestId('payout-feedback')).toContainText('Запрошена');
+    expect(payoutIdempotencyKey).toMatch(/^referral-payout-/);
 
     await page.getByRole('button', { name: 'История', exact: true }).click();
     const payout = page.getByTestId('partner-payout-0');
@@ -1167,6 +1170,28 @@ test('partner can request and cancel a payout from the cabinet', async ({ page }
     await page.getByRole('button', { name: 'История', exact: true }).click();
     await expect(page.getByTestId('partner-payout-0')).toContainText('Отменена');
     await expect(page.getByTestId('partner-balance-USD')).toContainText(/10[,.]00.*(?:\$|USD)/);
+
+    await page.getByRole('button', { name: 'Выплаты', exact: true }).click();
+    await page.getByLabel('Сумма', { exact: true }).fill('2.00');
+    await page.unroute('**/portal/referrals/payouts');
+    await page.route('**/portal/referrals/payouts', async (route) => {
+        if (route.request().method() === 'POST') {
+            const payload = route.request().postDataJSON();
+            await route.continue({
+                postData: JSON.stringify({ ...payload, idempotency_key: payoutIdempotencyKey }),
+            });
+
+            return;
+        }
+
+        await route.continue();
+    });
+    await payoutSubmit.click();
+    await expect(page.getByTestId('payout-feedback')).toContainText('Эта заявка уже существует. Проверьте её статус в истории выплат.');
+    await expect(page.getByTestId('payout-feedback')).toContainText('Отменена');
+    await page.getByRole('button', { name: 'История', exact: true }).click();
+    await expect(page.locator('[data-testid^="partner-payout-"]')).toHaveCount(1);
+    await expect(page.getByTestId('partner-payout-0')).toContainText('Отменена');
 
     await page.getByRole('button', { name: 'Выплаты', exact: true }).click();
     await page.getByLabel('Сумма', { exact: true }).fill('999.00');
