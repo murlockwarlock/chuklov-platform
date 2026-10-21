@@ -693,7 +693,7 @@ chmod 0640 "$compose.next"
         and .services.mailpit.image == "ghcr.io/axllent/mailpit:v1.31.3"
         and ((.services.mailpit.ports // []) | length == 0)
         and ((.services.mailpit.networks // {}) | has("chuklov-staging"))
-        and .services.mailpit.environment.MP_SMTP_ALLOWED_RECIPIENTS == "@qa\\.invalid$"
+        and .services.mailpit.environment.MP_SMTP_ALLOWED_RECIPIENTS == "@qa\\.invalid$$"
         and .services.mailpit.environment.MP_MAX_AGE == "24h"
     ' > /dev/null
 candidate_probe_environment="$(compose_service_environment_file "$compose.next" app "$candidate_qa_overlay" "$redis_volume_override")"

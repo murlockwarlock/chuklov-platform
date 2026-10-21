@@ -110,6 +110,7 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('candidate_qa_overlay="$root/releases/$revision/$qa_overlay_name"', $script);
         self::assertStringContainsString('Candidate release is missing the staging QA mail overlay.', $script);
         self::assertStringContainsString('MP_SMTP_ALLOWED_RECIPIENTS', $script);
+        self::assertStringContainsString('.services.mailpit.environment.MP_SMTP_ALLOWED_RECIPIENTS == "@qa\\\\.invalid$$"', $script);
         self::assertStringContainsString('-f "$STAGING_ROOT/current/docker-compose.staging-qa.yml"', file_get_contents(base_path('scripts/staging-smoke.sh')));
         self::assertStringContainsString('QA MAIL SMTP', file_get_contents(base_path('scripts/staging-smoke.sh')));
         self::assertStringNotContainsString('down -v', $script);
