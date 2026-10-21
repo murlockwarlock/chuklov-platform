@@ -11,7 +11,6 @@ use App\Modules\Identity\Application\BlockClientSelfBooking;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Application\CreateClientNote;
 use App\Modules\Identity\Application\ListClientNotesForCrm;
-use App\Modules\Identity\Application\UnblockClientBlacklist;
 use App\Modules\Identity\Application\UpdateClientNote;
 use App\Modules\Identity\Domain\Enums\ClientRestrictionType;
 use App\Modules\Identity\Domain\Models\Client;
@@ -230,11 +229,31 @@ final class ClientFinishingPackTest extends TestCase
 
         $reason = 'Повторные нарушения правил общения.';
         app(BlockClientSelfBooking::class)->handle($admin, $client, 'Проверка самостоятельной записи.');
-        $restriction = app(BlockClientBlacklist::class)->handle($admin, $client, $reason);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $component = Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertSuccessful()
+            ->mountAction('blockBlacklist');
 
+        self::assertSame('Добавить в чёрный список', $component->instance()->getMountedAction()?->getModalSubmitActionLabel());
+        $component
+            ->setActionData(['reason' => '  '])
+            ->callMountedAction()
+            ->assertHasActionErrors(['reason']);
+        self::assertNull($client->refresh()->activeBlacklistRestriction);
+
+        $component
+            ->setActionData(['reason' => $reason])
+            ->callMountedAction()
+            ->assertNotified('Клиент добавлен в чёрный список')
+            ->assertSee('В чёрном списке')
+            ->assertSee($reason)
+            ->assertSee('Запись сотрудником CRM доступна');
+
+        $restriction = $client->refresh()->activeBlacklistRestriction;
+        self::assertNotNull($restriction);
         self::assertSame(ClientRestrictionType::Blacklist, $restriction->restriction_type);
         self::assertSame($reason, $restriction->reason);
-        self::assertTrue($client->refresh()->activeBlacklistRestriction !== null);
         self::assertSame(ClientRestrictionType::SelfBooking, $client->activeBookingRestriction->restriction_type);
         self::assertSame($reason, $client->activeBlacklistRestriction->reason);
 
@@ -244,19 +263,10 @@ final class ClientFinishingPackTest extends TestCase
             ->pluck('id')
             ->all();
         self::assertSame([$client->getKey()], $filtered);
-
         self::assertSame(
             [$client->getKey()],
             app(ClientSearch::class)->query($admin, 'Чёрный')->pluck('id')->all(),
         );
-
-        Filament::setCurrentPanel(Filament::getPanel('admin'));
-        Livewire::actingAs($admin)
-            ->test(ViewClient::class, ['record' => $client->getKey()])
-            ->assertSuccessful()
-            ->assertSee('В чёрном списке')
-            ->assertSee($reason)
-            ->assertSee('Запись сотрудником CRM доступна');
 
         Livewire::actingAs($admin)
             ->test(ListClients::class)
@@ -264,7 +274,14 @@ final class ClientFinishingPackTest extends TestCase
             ->assertCanSeeTableRecords([$client])
             ->assertCanNotSeeTableRecords([$otherClient]);
 
-        app(UnblockClientBlacklist::class)->handle($admin, $client);
+        $component
+            ->mountAction('unblockBlacklist');
+        self::assertSame('Убрать из чёрного списка', $component->instance()->getMountedAction()?->getModalSubmitActionLabel());
+        $component
+            ->callMountedAction()
+            ->assertNotified('Клиент убран из чёрного списка')
+            ->assertSee('Не в чёрном списке')
+            ->assertDontSee($reason);
 
         self::assertNull($client->refresh()->activeBlacklistRestriction);
         self::assertSame(
@@ -272,13 +289,20 @@ final class ClientFinishingPackTest extends TestCase
             app(ClientSearch::class)->query($admin, 'Чёрный')->pluck('id')->all(),
         );
 
-        $auditActions = AuditEvent::query()
+        $auditEvents = AuditEvent::query()
             ->where('organization_id', $organization->getKey())
             ->whereIn('action', ['client.blacklist.added', 'client.blacklist.removed'])
             ->orderBy('id')
-            ->pluck('action')
-            ->all();
-        self::assertSame(['client.blacklist.added', 'client.blacklist.removed'], $auditActions);
+            ->get();
+        self::assertSame(['client.blacklist.added', 'client.blacklist.removed'], $auditEvents->pluck('action')->all());
+        self::assertSame($admin->getKey(), $auditEvents->first()->actor_user_id);
+        self::assertSame((string) $restriction->getKey(), $auditEvents->first()->target_id);
+        self::assertSame($client->getKey(), $auditEvents->first()->metadata['client_id']);
+        self::assertTrue($auditEvents->first()->metadata['reason_present']);
+        self::assertStringNotContainsString($reason, json_encode($auditEvents->first()->metadata, JSON_UNESCAPED_UNICODE));
+        self::assertSame($admin->getKey(), $auditEvents->last()->actor_user_id);
+        self::assertSame($client->getKey(), $auditEvents->last()->metadata['client_id']);
+        self::assertStringNotContainsString($reason, json_encode($auditEvents->last()->metadata, JSON_UNESCAPED_UNICODE));
     }
 
     public function test_blacklist_is_tenant_scoped_and_does_not_block_self_booking_rules_for_crm(): void
@@ -294,6 +318,29 @@ final class ClientFinishingPackTest extends TestCase
 
         $this->expectException(AuthorizationException::class);
         app(BlockClientBlacklist::class)->handle($otherAdmin, $client, 'Чужой tenant');
+    }
+
+    public function test_blacklist_action_shows_clear_english_copy_and_validation(): void
+    {
+        [, $admin, $client] = $this->fixture();
+        app()->setLocale('en');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->mountAction('blockBlacklist');
+        $action = $component->instance()->getMountedAction();
+
+        self::assertSame('Add client to blacklist', $action?->getModalHeading());
+        self::assertSame('Provide a reason. After this restriction is added, the client cannot book independently.', $action?->getModalDescription());
+        self::assertSame('Add to blacklist', $action?->getModalSubmitActionLabel());
+
+        $component
+            ->setActionData(['reason' => '  '])
+            ->callMountedAction()
+            ->assertHasActionErrors(['reason']);
+
+        self::assertNull($client->refresh()->activeBlacklistRestriction);
     }
 
     /** @return array{Organization, User, Client} */

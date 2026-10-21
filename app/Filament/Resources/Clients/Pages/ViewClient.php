@@ -778,6 +778,9 @@ class ViewClient extends LocalizedViewRecord
         return Action::make('blockBlacklist')
             ->label(__('Добавить в чёрный список'))
             ->color('danger')
+            ->modalHeading(__('Добавить клиента в чёрный список'))
+            ->modalDescription(__('Укажите причину. После добавления клиент не сможет записаться самостоятельно.'))
+            ->modalSubmitActionLabel(__('Добавить в чёрный список'))
             ->schema([
                 Textarea::make('reason')
                     ->label(__('Причина'))
@@ -793,6 +796,10 @@ class ViewClient extends LocalizedViewRecord
                     (string) $data['reason'],
                 );
                 $this->clientRecord()->load('activeBlacklistRestriction');
+                Notification::make()
+                    ->success()
+                    ->title(__('Клиент добавлен в чёрный список'))
+                    ->send();
             });
     }
 
@@ -802,11 +809,18 @@ class ViewClient extends LocalizedViewRecord
             ->label(__('Убрать из чёрного списка'))
             ->color('success')
             ->requiresConfirmation()
+            ->modalHeading(__('Убрать клиента из чёрного списка?'))
+            ->modalDescription(__('После снятия ограничения клиент снова сможет записаться самостоятельно.'))
+            ->modalSubmitActionLabel(__('Убрать из чёрного списка'))
             ->visible(fn (): bool => $this->clientRecord()->activeBlacklistRestriction !== null
                 && ClientResource::canEdit($this->clientRecord()))
             ->action(function (): void {
                 app(UnblockClientBlacklist::class)->handle($this->actor(), $this->clientRecord());
                 $this->clientRecord()->load('activeBlacklistRestriction');
+                Notification::make()
+                    ->success()
+                    ->title(__('Клиент убран из чёрного списка'))
+                    ->send();
             });
     }
 

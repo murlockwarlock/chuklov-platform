@@ -2922,5 +2922,13 @@
   "Предпросмотр этого файла недоступен. Скачайте файл или откройте медицинские данные снова.": "Preview is unavailable for this file. Download it or reopen your medical data.",
   "Не удалось открыть файл. Повторите попытку. Если ошибка повторится, снова откройте медицинские данные.": "The file could not be opened. Try again. If the problem continues, reopen your medical data.",
   "Файл не прошёл проверку. Выберите JPG, PNG или PDF размером до 20 МБ.": "The file could not be validated. Choose a JPG, PNG, or PDF up to 20 MB.",
-  "Не удалось загрузить файл. Повторите загрузку. Если ошибка повторится, снова откройте медицинские данные.": "The file could not be uploaded. Retry. If the problem continues, reopen your medical data."
+  "Не удалось загрузить файл. Повторите загрузку. Если ошибка повторится, снова откройте медицинские данные.": "The file could not be uploaded. Retry. If the problem continues, reopen your medical data.",
+  "Добавить в чёрный список": "Add to blacklist",
+  "Добавить клиента в чёрный список": "Add client to blacklist",
+  "Укажите причину. После добавления клиент не сможет записаться самостоятельно.": "Provide a reason. After this restriction is added, the client cannot book independently.",
+  "Клиент добавлен в чёрный список": "Client added to blacklist",
+  "Убрать из чёрного списка": "Remove from blacklist",
+  "Убрать клиента из чёрного списка?": "Remove client from blacklist?",
+  "После снятия ограничения клиент снова сможет записаться самостоятельно.": "The client will be able to book independently again after this restriction is removed.",
+  "Клиент убран из чёрного списка": "Client removed from blacklist"
 }
