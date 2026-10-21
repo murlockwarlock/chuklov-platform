@@ -418,10 +418,6 @@ write_normalized_nftables() {
     local -a service_ips=()
     local -a services=(postgres redis app horizon scheduler telegram)
 
-    if [[ -f "$current_qa_overlay" ]]; then
-        services+=(mailpit)
-    fi
-
     for service in "${services[@]}"; do
         container="$("${current_compose[@]}" ps -aq "$service")"
         if [[ -z "$container" ]]; then
@@ -689,10 +685,15 @@ chmod 0640 "$compose.next"
     | jq -e '
         .services.app.environment.MAIL_QA_AUTH_ENABLED == "true"
         and .services.app.environment.MAIL_QA_AUTH_DOMAIN == "qa.invalid"
-        and .services.app.environment.MAIL_QA_AUTH_HOST == "mailpit"
+        and .services.app.environment.MAIL_QA_AUTH_HOST == "127.0.0.1"
         and .services.mailpit.image == "ghcr.io/axllent/mailpit:v1.31.3"
         and ((.services.mailpit.ports // []) | length == 0)
-        and ((.services.mailpit.networks // {}) | has("chuklov-staging"))
+        and .services.mailpit.network_mode == "service:app"
+        and (.services.mailpit.depends_on | has("app"))
+        and ((.services.mailpit.networks // {}) | length == 0)
+        and ((.services.mailpit.volumes // []) | length == 0)
+        and .services.mailpit.environment.MP_UI_BIND_ADDR == "127.0.0.1:8025"
+        and .services.mailpit.environment.MP_SMTP_BIND_ADDR == "127.0.0.1:1025"
         and .services.mailpit.environment.MP_SMTP_ALLOWED_RECIPIENTS == "@qa\\.invalid$$"
         and .services.mailpit.environment.MP_MAX_AGE == "24h"
     ' > /dev/null
@@ -750,9 +751,11 @@ rollback() {
     local failed_line="${1:-unknown}"
     local failed_status="${2:-1}"
     local -a rollback_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose")
+    local -a rollback_services=(app horizon scheduler telegram)
 
     if [[ -n "$previous_qa_overlay" ]]; then
         rollback_compose+=(-f "$previous_qa_overlay")
+        rollback_services+=(mailpit)
     fi
     if [[ -n "$redis_volume_override" ]]; then
         rollback_compose+=(-f "$redis_volume_override")
@@ -767,7 +770,7 @@ rollback() {
         local -a candidate_mailpit_compose=(docker compose --project-name "$project" --env-file "$environment" -f "$compose" -f "$candidate_qa_overlay")
         "${candidate_mailpit_compose[@]}" rm --stop --force mailpit < /dev/null || true
     fi
-    "${rollback_compose[@]}" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null || true
+    "${rollback_compose[@]}" up -d --no-deps --force-recreate "${rollback_services[@]}" < /dev/null || true
     rm -f -- "$remote_normalizer" || true
 }
 trap 'rollback "$LINENO" "$?"' ERR
@@ -814,7 +817,7 @@ prepare_runtime_ownership() {
 
 prepare_runtime_ownership
 "${runtime_compose[@]}" up -d postgres redis < /dev/null
-"${runtime_compose[@]}" up -d --no-deps --force-recreate app horizon scheduler telegram < /dev/null
+"${runtime_compose[@]}" up -d --no-deps --force-recreate app horizon scheduler telegram mailpit < /dev/null
 "${runtime_compose[@]}" up -d --wait < /dev/null
 
 echo "Runtime containers refreshed; verifying application health."

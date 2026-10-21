@@ -83,7 +83,7 @@ ok 'APP'
 ok 'SCHEDULER'
 ok 'TELEGRAM'
 
-if ! ssh "${ssh_options[@]}" "$remote" "${compose_arguments[@]}" exec -T app php -r '$socket = @fsockopen("mailpit", 1025, $errorCode, $errorMessage, 5); if (!is_resource($socket)) { exit(1); } $banner = fgets($socket); fclose($socket); exit(is_string($banner) && str_starts_with($banner, "220 ") ? 0 : 1);' > /dev/null 2>&1; then
+if ! ssh "${ssh_options[@]}" "$remote" "${compose_arguments[@]}" exec -T app php -r '$socket = @fsockopen("127.0.0.1", 1025, $errorCode, $errorMessage, 5); if (!is_resource($socket)) { exit(1); } $banner = fgets($socket); fclose($socket); exit(is_string($banner) && str_starts_with($banner, "220 ") ? 0 : 1);' > /dev/null 2>&1; then
     fail 'QA MAIL SMTP' 'application cannot reach the private staging QA mail sink'
 fi
 ok 'QA MAIL SMTP'
