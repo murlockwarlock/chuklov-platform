@@ -369,10 +369,15 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'staff_user_id' => $admin->getKey(),
             'viewer_timezone' => 'Asia/Bangkok',
         ])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
         $this->resolveFilamentContext($admin, $organization);
 
         $component = Livewire::withQueryParams([
-            'starts_at' => '2026-10-05 14:00',
+            'starts_at' => '2026-10-05 14:15',
             'specialist_id' => $specialist->getKey(),
             'return_to_journal' => '1',
             'week' => '2026-10-05',
@@ -380,9 +385,9 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ])->actingAs($admin)->test(CreateBooking::class);
 
         $startsAt = $component->instance()->data['starts_at'];
-        self::assertSame('2026-10-05 14:00', CarbonImmutable::parse((string) $startsAt)->format('Y-m-d H:i'));
+        self::assertSame('2026-10-05 14:15', CarbonImmutable::parse((string) $startsAt)->format('Y-m-d H:i'));
         self::assertSame('2026-10-05', $component->instance()->data['booking_date']);
-        self::assertSame('2026-10-05T07:00:00+00:00', $component->instance()->data['booking_time']);
+        self::assertSame('2026-10-05T07:15:00+00:00', $component->instance()->data['booking_time']);
         $startsAtField = $component->instance()->getSchemaComponent('form.starts_at', withHidden: true);
         self::assertInstanceOf(Hidden::class, $startsAtField);
 
@@ -391,8 +396,35 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'visit_format' => VisitFormat::Online->value,
         ]);
 
-        self::assertSame('2026-10-05T07:00:00+00:00', $component->instance()->data['booking_time']);
-        self::assertSame('2026-10-05 14:00', CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->format('Y-m-d H:i'));
+        self::assertSame('2026-10-05T07:15:00+00:00', $component->instance()->data['booking_time']);
+        self::assertSame('2026-10-05 14:15', CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->format('Y-m-d H:i'));
+    }
+
+    public function test_journal_create_prefill_clears_a_time_that_is_not_available_for_the_selected_service(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC', 'UTC');
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::withQueryParams([
+            'starts_at' => '2026-10-05 10:00',
+            'specialist_id' => $specialist->getKey(),
+            'return_to_journal' => '1',
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(CreateBooking::class);
+
+        $component->fillForm([
+            'service_id' => $service->getKey(),
+            'visit_format' => VisitFormat::Online->value,
+        ]);
+
+        self::assertNull($component->instance()->data['booking_time']);
+        self::assertNull($component->instance()->data['starts_at']);
     }
 
     public function test_journal_drag_drop_uses_authoritative_reschedule_and_rejects_stale_or_unavailable_drops(): void
@@ -1261,6 +1293,42 @@ final class SchedulingJournalProductionPassTest extends TestCase
             startsAt: CarbonImmutable::create(2026, 10, 12, 10, 0, 0, 'UTC'),
             format: VisitFormat::Online,
         );
+    }
+
+    public function test_cancelled_booking_remains_visible_without_blocking_its_journal_slot(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Cancelled->value,
+                'starts_at' => '2026-10-05 10:00:00',
+                'ends_at' => '2026-10-05 11:00:00',
+                'blocking_ends_at' => '2026-10-05 11:15:00',
+            ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $journal = Livewire::withQueryParams([
+            'specialist_id' => $specialist->getKey(),
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class)->assertSuccessful();
+
+        $projection = collect($journal->instance()->journalDays['2026-10-05']['bookings'])
+            ->firstWhere('id', $booking->getKey());
+
+        self::assertIsArray($projection);
+        self::assertFalse($projection['blocks_availability']);
+        self::assertStringContainsString('Добавить запись на 10:00', $journal->html());
     }
 
     public function test_journal_retention_warning_waits_for_completion_window_and_rechecks_next_booking(): void

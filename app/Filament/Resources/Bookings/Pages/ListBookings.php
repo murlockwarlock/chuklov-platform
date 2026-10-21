@@ -539,7 +539,7 @@ class ListBookings extends LocalizedListRecords
         ];
     }
 
-    /** @return array{id: int, event_version: int, specialist_id: int, specialist: string, client: string, client_url: string|null, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, format: string, location_label: string, party_size: int, party_size_label: string|null, has_debt: bool, retention_warning: bool, retention_label: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
+    /** @return array{id: int, event_version: int, specialist_id: int, specialist: string, client: string, client_url: string|null, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, blocks_availability: bool, format: string, location_label: string, party_size: int, party_size_label: string|null, has_debt: bool, retention_warning: bool, retention_label: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
     private function bookingProjection(Booking $booking, CarbonImmutable $localStart, CarbonImmutable $localEnd, bool $canViewClients, bool $retentionWarning = false, bool $hasDebt = false): array
     {
         $startMinutes = ((int) $localStart->format('H')) * 60 + (int) $localStart->format('i');
@@ -569,6 +569,7 @@ class ListBookings extends LocalizedListRecords
             'time_range' => $localStart->format('H:i').'–'.$localEnd->format('H:i'),
             'status' => self::statusLabel($status),
             'status_class' => self::statusClass($status),
+            'blocks_availability' => $status->blocksAvailability(),
             'format' => self::formatLabel($format),
             'location_label' => $locationLabel,
             'party_size' => (int) $booking->party_size,

@@ -14,7 +14,7 @@
         $minuteStyle = fn (int $minutes): string => 'top: '.(($minutes - $grid['start']) * ($rowHeight / 30)).'px;';
         $heightStyle = fn (int $start, int $end): string => 'top: '.(($start - $grid['start']) * ($rowHeight / 30)).'px; height: '.max($rowHeight, ($end - $start) * ($rowHeight / 30)).'px;';
         $isOpen = fn (array $day, int $minutes): bool => collect($day['intervals'])->contains(fn (array $interval): bool => $minutes >= $interval['start_minutes'] && $minutes < $interval['end_minutes']);
-        $isOccupied = fn (array $day, int $minutes): bool => collect($day['bookings'])->contains(fn (array $booking): bool => $minutes >= $booking['start_minutes'] && $minutes < $booking['end_minutes']);
+        $isOccupied = fn (array $day, int $minutes): bool => collect($day['bookings'])->contains(fn (array $booking): bool => ($booking['blocks_availability'] ?? false) && $minutes >= $booking['start_minutes'] && $minutes < $booking['end_minutes']);
         $canCreateBooking = $this->canCreateBooking();
     @endphp
 

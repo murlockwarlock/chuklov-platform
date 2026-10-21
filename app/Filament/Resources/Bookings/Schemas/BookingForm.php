@@ -240,7 +240,6 @@ class BookingForm
                 ->validationMessages(['required' => __('Выберите формат визита.')])
                 ->live()
                 ->afterStateUpdated(function (Get $get, Set $set, mixed $state) use ($multiple): void {
-                    self::preservePrefilledTimeOrClear($get, $set, $multiple);
                     if (self::positiveInteger($get('party_size')) === null) {
                         $set('party_size', 1);
                     }
@@ -260,6 +259,7 @@ class BookingForm
                         $set('working_location_id', null);
                     }
 
+                    self::preservePrefilledTimeOrClear($get, $set, $multiple);
                     $set('booking_time_prefilled', false);
                 }),
             Select::make('working_location_id')
@@ -442,8 +442,18 @@ class BookingForm
             return;
         }
 
-        if ($get('booking_time_prefilled') === true
-            || ($get('booking_date') === null && $get('booking_time') === null)) {
+        if ($get('booking_time_prefilled') === true) {
+            if (! self::hasAvailableTimePrerequisites($get)) {
+                return;
+            }
+
+            $selectedTime = self::selectedBookingTime($get);
+            if ($selectedTime !== null && array_key_exists($selectedTime, self::availableTimeOptions($get))) {
+                return;
+            }
+        }
+
+        if ($get('booking_date') === null && $get('booking_time') === null) {
             return;
         }
 
