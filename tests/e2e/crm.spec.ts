@@ -616,6 +616,8 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
     });
     expect(layout.desktopGridVisible).toBe(true);
     expect(layout.mobileCardsVisible).toBe(false);
+    await expect.poll(() => page.locator(`[title="${fixture.specialistName}"]`).count(), { timeout: 15_000 }).toBeGreaterThan(0);
+    await expect.poll(() => page.locator(`[title="${secondSpecialist.name}"]`).count(), { timeout: 15_000 }).toBeGreaterThan(0);
     await expect(page.locator(`[title="${fixture.specialistName}"]`).first()).toBeVisible();
     await expect(page.locator(`[title="${secondSpecialist.name}"]`).first()).toBeVisible();
 
