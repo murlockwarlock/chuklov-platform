@@ -10,6 +10,8 @@ final class MoreController extends Controller
 {
     public function __invoke(): Response
     {
-        return Inertia::render('Portal/More');
+        return Inertia::render('Portal/More', [
+            'logoutUrl' => route('portal.logout'),
+        ]);
     }
 }

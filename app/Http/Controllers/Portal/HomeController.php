@@ -43,6 +43,7 @@ class HomeController extends Controller
                     'emailRequestUrl' => route('portal.email.request'),
                     'emailVerifyUrl' => route('portal.email.verify'),
                     'emailCodeSent' => (bool) $request->session()->pull('email_code_sent', false),
+                    'loggedOut' => (bool) $request->session()->pull('portal_logged_out', false),
                     'telegramLaunchEntry' => $this->launchEntry($request->query('telegram_entry'), $telegramEntries),
                 ],
             ]);

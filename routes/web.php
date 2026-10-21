@@ -15,6 +15,7 @@ use App\Http\Controllers\Portal\AttributionController;
 use App\Http\Controllers\Portal\AvailabilityController;
 use App\Http\Controllers\Portal\B2bController;
 use App\Http\Controllers\Portal\BookingController;
+use App\Http\Controllers\Portal\ClientLogoutController;
 use App\Http\Controllers\Portal\CompanionController;
 use App\Http\Controllers\Portal\EmailAuthenticationController;
 use App\Http\Controllers\Portal\FamilyController;
@@ -221,6 +222,7 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
                 ->name('portal.bookings.reschedule');
             Route::post('/portal/preferences/timezone', [BookingController::class, 'updateTimezone'])
                 ->name('portal.preferences.timezone');
+            Route::post('/portal/logout', ClientLogoutController::class)->name('portal.logout');
             Route::post('/portal/channels/telegram/link', TelegramLinkController::class)
                 ->name('portal.telegram.link');
             Route::get('/portal/profile', [ProfileController::class, 'show'])->name('portal.profile');

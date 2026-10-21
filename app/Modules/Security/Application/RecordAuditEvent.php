@@ -45,6 +45,7 @@ class RecordAuditEvent
         'client.display_currency.updated' => ['source', 'currency'],
         'client.channel_identity.registered' => ['channel', 'verification_status'],
         'client.channel_identity.verified' => ['channel', 'verification_method'],
+        'client.portal.logged_out' => ['actor_type', 'actor_client_id', 'source'],
         'client.consent.recorded' => ['subject', 'version', 'granted', 'evidence'],
         'client.self_booking.blocked' => ['source'],
         'client.self_booking.unblocked' => ['source'],

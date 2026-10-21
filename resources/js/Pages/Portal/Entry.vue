@@ -16,6 +16,7 @@ type AuthProps = {
     emailRequestUrl: string;
     emailVerifyUrl: string;
     emailCodeSent: boolean;
+    loggedOut: boolean;
 };
 
 function browserTimezone(): string {
@@ -46,6 +47,7 @@ const telegramWebForm = useForm<Record<string, never>>({});
 const emailRequestForm = useForm<{ email: string }>({ email: '' });
 const emailVerifyForm = useForm<{ email: string; code: string }>({ email: '', code: '' });
 const authError = ref<string | null>(props.auth.telegramAuthError);
+const emailError = ref<string | null>(null);
 const telegramMiniAppAuthAttempted = ref(props.auth.telegramAuthError !== null);
 const telegramMiniAppAuthFailed = ref(props.auth.telegramAuthError !== null);
 let telegramStatusTimer: ReturnType<typeof setInterval> | null = null;
@@ -145,24 +147,24 @@ function retryTelegramMiniAppAuthentication(): void {
 }
 
 function requestEmailCode(): void {
-    authError.value = null;
+    emailError.value = null;
     emailRequestForm.post(props.auth.emailRequestUrl, {
         preserveScroll: true,
         onSuccess: () => {
             emailVerifyForm.email = emailRequestForm.email;
         },
         onError: (errors) => {
-            authError.value = errors.email ?? t('entry.emailError');
+            emailError.value = errors.email ?? t('entry.emailError');
         },
     });
 }
 
 function verifyEmailCode(): void {
-    authError.value = null;
+    emailError.value = null;
     emailVerifyForm.post(props.auth.emailVerifyUrl, {
         preserveScroll: true,
         onError: () => {
-            authError.value = t('entry.emailVerifyError');
+            emailError.value = t('entry.emailVerifyError');
         },
     });
 }
@@ -196,6 +198,13 @@ onUnmounted(stopTelegramStatusPolling);
         </h1>
         <p class="portal-lede">
           {{ t('entry.description') }}
+        </p>
+        <p
+          v-if="props.auth.loggedOut"
+          class="portal-notice"
+          role="status"
+        >
+          {{ t('entry.loggedOut') }}
         </p>
       </div>
 
@@ -279,6 +288,13 @@ onUnmounted(stopTelegramStatusPolling);
           >
             {{ t('entry.sendCode') }}
           </button>
+          <p
+            v-if="emailError"
+            class="portal-notice portal-notice--error"
+            role="alert"
+          >
+            {{ emailError }}
+          </p>
           <p
             v-if="props.auth.emailCodeSent"
             class="portal-notice"

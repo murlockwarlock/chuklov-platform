@@ -1,12 +1,33 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
+import { ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
-const props = defineProps<{ portal: PortalShell }>();
+const props = defineProps<{ portal: PortalShell; logoutUrl: string }>();
 const { t } = usePortalLocale();
+const logoutForm = useForm({});
+const logoutError = ref<string | null>(null);
+
+function logout(): void {
+    logoutError.value = null;
+    logoutForm.post(props.logoutUrl, {
+        preserveScroll: true,
+        onError: () => {
+            logoutError.value = t('more.logoutError');
+        },
+        onHttpException: () => {
+            logoutError.value = t('more.logoutError');
+
+            return false;
+        },
+        onNetworkError: () => {
+            logoutError.value = t('more.logoutError');
+        },
+    });
+}
 </script>
 
 <template>
@@ -118,6 +139,26 @@ const { t } = usePortalLocale();
           />
         </Link>
       </nav>
+
+      <form
+        class="portal-stack portal-stack--tight"
+        @submit.prevent="logoutForm.processing ? undefined : logout()"
+      >
+        <button
+          type="submit"
+          class="portal-button portal-button--secondary self-start"
+          :disabled="logoutForm.processing"
+        >
+          {{ logoutForm.processing ? t('more.loggingOut') : t('more.logout') }}
+        </button>
+        <p
+          v-if="logoutError"
+          class="portal-notice portal-notice--error"
+          role="alert"
+        >
+          {{ logoutError }}
+        </p>
+      </form>
     </section>
   </AppShell>
 </template>
