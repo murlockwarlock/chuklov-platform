@@ -6,6 +6,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Inertia\Inertia;
 use Inertia\Testing\AssertableInertia;
 use Tests\TestCase;
 
@@ -54,7 +55,16 @@ final class PortalLogoutTest extends TestCase
         $organization = Organization::factory()->create();
         config()->set('tenancy.default_organization_id', $organization->getKey());
 
+        $this->get(route('portal.more'))->assertUnauthorized();
         $this->post(route('portal.logout'))->assertUnauthorized();
+        $this->get(route('portal.home'))->assertOk();
+
+        $this->withHeaders([
+            'X-Inertia' => 'true',
+            'X-Inertia-Version' => Inertia::getVersion(),
+        ])
+            ->get(route('portal.more'))
+            ->assertRedirect(route('portal.home'));
 
         self::assertSame(0, AuditEvent::query()->where('action', 'client.portal.logged_out')->count());
     }

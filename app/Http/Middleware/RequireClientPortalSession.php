@@ -17,6 +17,10 @@ class RequireClientPortalSession
         try {
             $this->clientContext->client();
         } catch (LogicException) {
+            if ($request->isMethod('GET') && $request->header('X-Inertia') === 'true') {
+                return to_route('portal.home');
+            }
+
             abort(401);
         }
 
