@@ -2914,5 +2914,13 @@
   "Консультация после результатов теста": "Consultation after test results",
   "Эта онлайн-услуга будет предложена клиенту после завершения теста. Доступны только активные услуги с полной предоплатой и назначенным специалистом.": "This online service will be offered to the client after completing the test. Only active services with full prepayment and an assigned specialist are available.",
   "Изменить рабочее время": "Change working hours",
-  "Внесенные здесь изменения не повлияют на установленный регулярный график.": "Changes made here will not affect the regular schedule."
+  "Внесенные здесь изменения не повлияют на установленный регулярный график.": "Changes made here will not affect the regular schedule.",
+  "Войдите в личный кабинет и снова откройте медицинские данные.": "Sign in to your account, then reopen your medical data.",
+  "Медицинская ссылка устарела или недействительна. Откройте медицинские данные и попробуйте снова.": "This medical file link has expired or is invalid. Reopen your medical data and try again.",
+  "Медицинская ссылка недействительна. Откройте медицинские данные и попробуйте снова.": "This medical file link is invalid. Reopen your medical data and try again.",
+  "Файл не найден. Откройте медицинские данные и попробуйте снова.": "The file was not found. Reopen your medical data and try again.",
+  "Предпросмотр этого файла недоступен. Скачайте файл или откройте медицинские данные снова.": "Preview is unavailable for this file. Download it or reopen your medical data.",
+  "Не удалось открыть файл. Повторите попытку. Если ошибка повторится, снова откройте медицинские данные.": "The file could not be opened. Try again. If the problem continues, reopen your medical data.",
+  "Файл не прошёл проверку. Выберите JPG, PNG или PDF размером до 20 МБ.": "The file could not be validated. Choose a JPG, PNG, or PDF up to 20 MB.",
+  "Не удалось загрузить файл. Повторите загрузку. Если ошибка повторится, снова откройте медицинские данные.": "The file could not be uploaded. Retry. If the problem continues, reopen your medical data."
 }

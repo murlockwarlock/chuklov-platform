@@ -43,6 +43,39 @@ class PortalBookingRemediationTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_self_booking_for_a_medical_service_opens_the_medical_editor_and_returns_to_booking_details(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $response = $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'consents' => $this->acceptedConsents($organization),
+        ]));
+
+        $response->assertSessionHasNoErrors()->assertRedirect();
+        $booking = Booking::query()->sole();
+        $medicalProfileUrl = null;
+        $response->assertSessionHas('portal_booking_result', function (array $result) use (&$medicalProfileUrl, $booking): bool {
+            $medicalProfileUrl = $result['medicalProfileUrl'] ?? null;
+
+            return is_string($medicalProfileUrl)
+                && $result['bookingId'] === $booking->getKey()
+                && $result['requiresPatientMedicalProfile'] === false;
+        });
+
+        self::assertIsString($medicalProfileUrl);
+        $query = [];
+        parse_str((string) parse_url($medicalProfileUrl, PHP_URL_QUERY), $query);
+        self::assertSame((string) $booking->getKey(), $query['booking_id'] ?? null);
+        self::assertSame('1', $query['edit'] ?? null);
+
+        $this->get($medicalProfileUrl)->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('Portal/MedicalProfile')
+            ->where('editing', true)
+            ->where('returnUrl', route('portal.bookings.show', ['bookingId' => $booking->getKey()])));
+    }
+
     public function test_family_booking_preserves_customer_patient_and_separate_medical_flow(): void
     {
         [$organization, $client, $specialist, $service] = $this->portalFixture();

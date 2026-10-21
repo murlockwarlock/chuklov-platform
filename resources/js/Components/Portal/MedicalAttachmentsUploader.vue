@@ -93,7 +93,11 @@ function send(index: number): void {
                 ? t('medical.uploadSessionExpired')
                 : response.status === 403
                     ? t('medical.uploadForbidden')
-                    : t('medical.uploadFailed');
+                    : response.status === 404
+                        ? t('medical.uploadPatientUnavailable')
+                        : response.status === 413
+                            ? t('medical.uploadRequestTooLarge')
+                        : t('medical.uploadFailed');
             stopAfterCurrent = true;
             return false;
         },

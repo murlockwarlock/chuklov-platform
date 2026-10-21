@@ -79,6 +79,8 @@ final readonly class UploadMedicalAttachment
                     targetId: (string) $attachment->getKey(),
                     metadata: [
                         'source' => $actor instanceof User ? 'crm' : 'portal',
+                        'actor_type' => $actor instanceof Client ? 'client' : 'user',
+                        'actor_client_id' => $actor instanceof Client ? $actor->getKey() : null,
                         'attachment_type' => $command->attachmentType->value,
                         'mime_type' => $stored->mimeType,
                         'size_bytes' => $stored->sizeBytes,

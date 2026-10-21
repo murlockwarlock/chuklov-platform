@@ -44,6 +44,7 @@ final class TelegramMiniAppLaunchTest extends TestCase
         parent::setUp();
         CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 27, 10, 0, 0, 'UTC'));
         config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.99']);
         Queue::fake();
     }
 
