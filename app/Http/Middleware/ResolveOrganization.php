@@ -26,18 +26,18 @@ class ResolveOrganization
         $organization = Organization::query()->findOrFail((int) $organizationId);
 
         if ($user instanceof User && $user->membershipFor($organization) === null) {
-            if (! $request->is('admin', 'admin/*')) {
-                abort(403);
-            }
-
-            auth('web')->logout();
-
-            if ($request->hasSession()) {
+            $sessionKey = 'privileged_session_version.'.(string) $user->getAuthIdentifier();
+            if ($request->is('admin', 'admin/*')
+                && $request->hasSession()
+                && $request->session()->has($sessionKey)) {
+                auth('web')->logout();
                 $request->session()->invalidate();
                 $request->session()->regenerateToken();
+
+                return redirect()->guest(route('filament.admin.auth.login'));
             }
 
-            return redirect()->guest(route('filament.admin.auth.login'));
+            abort(403);
         }
 
         $this->context->set($organization);

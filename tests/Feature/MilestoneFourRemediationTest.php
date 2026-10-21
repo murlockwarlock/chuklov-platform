@@ -97,6 +97,16 @@ class MilestoneFourRemediationTest extends TestCase
                 'idempotency_key' => 'client-controlled-key',
                 'client_timezone' => 'America/New_York',
                 'meeting_link_mode' => 'manual',
+                'personal_data' => [
+                    'first_name' => 'Portal',
+                    'last_name' => 'Client',
+                    'gender' => 'FEMALE',
+                    'birth_date' => '1990-01-02',
+                    'country' => 'Казахстан',
+                    'city' => 'Алматы',
+                    'phone' => '+7 (701) 234-56-78',
+                    'email' => $client->email,
+                ],
             ])
             ->assertRedirect();
 

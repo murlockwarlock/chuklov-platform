@@ -9,7 +9,9 @@ use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventStatus;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
@@ -316,6 +318,10 @@ final class MilestoneEightSurveyTest extends TestCase
     public function test_portal_renders_start_completion_and_client_scoped_report_flow(): void
     {
         [$organization, $actor, $client] = $this->fixture();
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
         $definition = $this->publishedDefinition($actor);
         $specialist = Specialist::factory()->forOrganization($organization)->create();
         $consultation = Service::factory()->forOrganization($organization)->create([
