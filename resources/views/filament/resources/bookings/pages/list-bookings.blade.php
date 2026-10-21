@@ -7,10 +7,15 @@
         $rowHeight = 44;
         $calendarBottomPadding = 16;
         $calendarHeight = ($grid['rows'] * $rowHeight) + $calendarBottomPadding;
+        $firstDay = $days[array_key_first($days)] ?? ['specialists' => []];
+        $specialistHeaderHeight = 32;
+        $specialistLaneHeight = $calendarHeight + $specialistHeaderHeight;
+        $multiCalendarHeight = count($firstDay['specialists']) * $specialistLaneHeight;
         $minuteStyle = fn (int $minutes): string => 'top: '.(($minutes - $grid['start']) * ($rowHeight / 30)).'px;';
         $heightStyle = fn (int $start, int $end): string => 'top: '.(($start - $grid['start']) * ($rowHeight / 30)).'px; height: '.max($rowHeight, ($end - $start) * ($rowHeight / 30)).'px;';
         $isOpen = fn (array $day, int $minutes): bool => collect($day['intervals'])->contains(fn (array $interval): bool => $minutes >= $interval['start_minutes'] && $minutes < $interval['end_minutes']);
         $isOccupied = fn (array $day, int $minutes): bool => collect($day['bookings'])->contains(fn (array $booking): bool => $minutes >= $booking['start_minutes'] && $minutes < $booking['end_minutes']);
+        $canCreateBooking = $this->canCreateBooking();
     @endphp
 
     <div class="flex min-w-0 flex-col gap-5" wire:poll.30s>
@@ -51,7 +56,7 @@
                         </div>
                     </x-filament::dropdown>
                 @endif
-                @if ($this->canCreateBooking())
+                @if ($canCreateBooking)
                     <div class="flex min-w-0 flex-wrap gap-2">
                         <a href="{{ $this->newBookingUrl() }}" class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500">{{ __('Добавить запись') }}</a>
                         <a href="{{ $this->multipleBookingUrl() }}" class="inline-flex items-center justify-center rounded-lg border border-primary-200 px-4 py-2.5 text-sm font-semibold text-primary-700 hover:bg-primary-50 dark:border-primary-900/60 dark:text-primary-300 dark:hover:bg-primary-950/30">{{ __('Создать несколько записей') }}</a>
@@ -69,7 +74,7 @@
                 {{ $this->table }}
             </div>
         @else
-            <div class="hidden min-w-0 rounded-xl border border-gray-200 bg-white shadow-sm {{ $multipleSpecialists ? '' : 'lg:block' }} dark:border-gray-800 dark:bg-gray-900">
+            <div class="hidden min-w-0 rounded-xl border border-gray-200 bg-white shadow-sm lg:block dark:border-gray-800 dark:bg-gray-900">
                 <div class="grid min-w-0 grid-cols-[4rem_repeat(7,minmax(0,1fr))] border-b border-gray-200 dark:border-gray-800">
                     <div class="border-r border-gray-200 dark:border-gray-800"></div>
                     @foreach ($days as $day)
@@ -82,98 +87,212 @@
                 </div>
 
                 <div class="grid min-w-0 grid-cols-[4rem_repeat(7,minmax(0,1fr))]">
-                    <div class="relative border-r border-gray-200 dark:border-gray-800" style="height: {{ $calendarHeight }}px;">
-                        @foreach ($grid['labels'] as $label)
-                            <span class="absolute right-2 -translate-y-1/2 text-[11px] text-gray-400 dark:text-gray-500" style="{{ $minuteStyle($label['minutes']) }}">{{ $label['label'] }}</span>
-                        @endforeach
-                    </div>
-                    @foreach ($days as $day)
-                        <div class="relative min-w-0 border-r border-gray-200 last:border-r-0 dark:border-gray-800" style="height: {{ $calendarHeight }}px;">
-                            @for ($minute = $grid['start']; $minute < $grid['end']; $minute += 30)
-                                @php($open = $isOpen($day, $minute))
-                                @php($occupied = $isOccupied($day, $minute))
-                                @php($slotTime = sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60))
-                                @if ($open && ! $occupied && $this->canCreateBooking())
-                                    <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime) }}" class="absolute inset-x-0 border-t border-gray-100 bg-white/70 transition hover:bg-primary-50 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:bg-primary-950/30" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-label="{{ __('Добавить запись на :time', ['time' => $slotTime]) }}" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')))" ></a>
-                                @else
-                                    <div class="absolute inset-x-0 border-t border-gray-100 {{ $open ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : 'bg-gray-50/80 dark:bg-gray-950/40' }}" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-hidden="true" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')))" ></div>
-                                @endif
-                            @endfor
-
-                            @foreach ($day['intervals'] as $interval)
-                                <div class="pointer-events-none absolute inset-x-0.5 rounded-md bg-emerald-50/40 dark:bg-emerald-950/20" style="{{ $heightStyle($interval['start_minutes'], $interval['end_minutes']) }}"></div>
-                            @endforeach
-
-                            @foreach ($day['bookings'] as $booking)
-                                <div draggable="true" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute inset-x-1 z-10 min-w-0 cursor-grab overflow-hidden rounded-md border p-1.5 text-[11px] leading-tight shadow-sm transition hover:shadow-md active:cursor-grabbing {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}">
-                                    <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-md"></a>
-                                    <div class="relative z-10 pointer-events-none">
-                                        <span class="block truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
-                                        <span class="block truncate">{{ $booking['service'] }}</span>
-                                        <span class="block truncate opacity-80">{{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</span>
-                                        @if ($booking['retention_warning'])
-                                            <span class="block truncate font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</span>
-                                        @endif
-                                    </div>
-                                </div>
+                    @if (! $multipleSpecialists)
+                        <div class="relative border-r border-gray-200 dark:border-gray-800" style="height: {{ $calendarHeight }}px;">
+                            @foreach ($grid['labels'] as $label)
+                                <span class="absolute right-2 -translate-y-1/2 text-[11px] text-gray-400 dark:text-gray-500" style="{{ $minuteStyle($label['minutes']) }}">{{ $label['label'] }}</span>
                             @endforeach
                         </div>
-                    @endforeach
-                </div>
-            </div>
+                        @foreach ($days as $day)
+                            <div class="relative min-w-0 border-r border-gray-200 last:border-r-0 dark:border-gray-800" style="height: {{ $calendarHeight }}px;">
+                                @for ($minute = $grid['start']; $minute < $grid['end']; $minute += 30)
+                                    @php($open = $isOpen($day, $minute))
+                                    @php($occupied = $isOccupied($day, $minute))
+                                    @php($slotTime = sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60))
+                                    @if ($open && ! $occupied && $canCreateBooking)
+                                        <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime) }}" class="absolute inset-x-0 border-t border-gray-100 bg-white/70 transition hover:bg-primary-50 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:bg-primary-950/30" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-label="{{ __('Добавить запись на :time', ['time' => $slotTime]) }}" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')))" ></a>
+                                    @else
+                                        <div class="absolute inset-x-0 border-t border-gray-100 {{ $open ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : 'bg-gray-50/80 dark:bg-gray-950/40' }}" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-hidden="true" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')))" ></div>
+                                    @endif
+                                @endfor
 
-            <div class="flex min-w-0 flex-col gap-3 {{ $multipleSpecialists ? '' : 'lg:hidden' }}">
-                @foreach ($days as $day)
-                    <section class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 {{ $day['is_today'] ? 'ring-2 ring-primary-500' : '' }}">
-                        <div class="flex min-w-0 items-start justify-between gap-3">
-                            <div class="min-w-0">
-                                <h2 class="text-sm font-semibold text-gray-950 dark:text-white">{{ $day['weekday'] }}, {{ $day['day_number'] }}</h2>
-                                <p class="mt-1 text-xs {{ $day['is_working'] ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-400 dark:text-gray-500' }}">{{ $day['is_working'] ? __('Рабочий день') : __('Не работает') }}</p>
-                            </div>
-                            @if ($day['is_working'])
-                                <span class="min-w-0 max-w-[55%] break-words text-right text-xs leading-4 text-gray-500 dark:text-gray-400">{{ collect($day['intervals'])->map(fn (array $interval): string => $interval['start'].' – '.$interval['end'])->join(', ') }}</span>
-                            @endif
-                        </div>
+                                @foreach ($day['intervals'] as $interval)
+                                    <div class="pointer-events-none absolute inset-x-0.5 rounded-md bg-emerald-50/40 dark:bg-emerald-950/20" style="{{ $heightStyle($interval['start_minutes'], $interval['end_minutes']) }}"></div>
+                                @endforeach
 
-                        @if ($day['bookings'] !== [])
-                            <div class="mt-3 grid gap-2">
                                 @foreach ($day['bookings'] as $booking)
-                                    <div class="relative min-w-0 rounded-lg border p-3 text-sm {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}">
-                                        <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-lg"></a>
+                                    <div draggable="true" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute inset-x-1 z-10 min-w-0 cursor-grab overflow-hidden rounded-md border p-1.5 text-[11px] leading-tight shadow-sm transition hover:shadow-md active:cursor-grabbing {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}">
+                                        <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-md"></a>
                                         <div class="relative z-10 pointer-events-none">
-                                            <div class="flex min-w-0 items-start justify-between gap-2">
-                                                <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
-                                                <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
-                                            </div>
-                                            <div class="mt-1 break-words text-xs">{{ $booking['service'] }} · {{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</div>
-                                            @if ($multipleSpecialists)
-                                                <div class="mt-1 break-words text-xs text-gray-500 dark:text-gray-400">{{ $booking['specialist'] }}</div>
-                                            @endif
+                                            <span class="block truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                            <span class="block truncate">{{ $booking['service'] }}</span>
+                                            <span class="block truncate opacity-80">{{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</span>
                                             @if ($booking['retention_warning'])
-                                                <div class="mt-1 break-words text-xs font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</div>
+                                                <span class="block truncate font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</span>
                                             @endif
                                         </div>
                                     </div>
                                 @endforeach
                             </div>
-                        @endif
+                        @endforeach
+                    @else
+                        <div class="relative border-r border-gray-200 dark:border-gray-800" style="height: {{ $multiCalendarHeight }}px;">
+                            @foreach ($firstDay['specialists'] as $specialist)
+                                <div class="relative border-b border-gray-200 dark:border-gray-800" style="height: {{ $specialistLaneHeight }}px;">
+                                    <div class="h-8"></div>
+                                    <div class="relative" style="height: {{ $calendarHeight }}px;">
+                                        @foreach ($grid['labels'] as $label)
+                                            <span class="absolute right-2 -translate-y-1/2 text-[11px] text-gray-400 dark:text-gray-500" style="{{ $minuteStyle($label['minutes']) }}">{{ $label['label'] }}</span>
+                                        @endforeach
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+                        @foreach ($days as $day)
+                            <div class="relative min-w-0 border-r border-gray-200 last:border-r-0 dark:border-gray-800" style="height: {{ $multiCalendarHeight }}px;">
+                                @foreach ($day['specialists'] as $specialist)
+                                    <div class="relative border-b border-gray-200 dark:border-gray-800" style="height: {{ $specialistLaneHeight }}px;">
+                                        <div class="flex h-8 min-w-0 items-center border-b border-gray-100 px-1 text-[10px] font-semibold leading-3 text-gray-700 dark:border-gray-800 dark:text-gray-200" title="{{ $specialist['name'] }}">
+                                            <span class="min-w-0 break-words">{{ $specialist['name'] }}@if (! $specialist['is_active']) ({{ __('неактивен') }})@endif</span>
+                                        </div>
+                                        <div class="relative min-w-0" style="height: {{ $calendarHeight }}px;">
+                                            @for ($minute = $grid['start']; $minute < $grid['end']; $minute += 30)
+                                                @php($open = $isOpen($specialist, $minute))
+                                                @php($occupied = $isOccupied($specialist, $minute))
+                                                @php($slotTime = sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60))
+                                                @if ($open && ! $occupied && $specialist['is_active'] && $canCreateBooking)
+                                                    <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime, $specialist['specialist_id']) }}" class="absolute inset-x-0 border-t border-gray-100 bg-white/70 transition hover:bg-primary-50 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:bg-primary-950/30" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-label="{{ $specialist['name'] }}: {{ __('Добавить запись на :time', ['time' => $slotTime]) }}" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')), {{ $specialist['specialist_id'] }})"></a>
+                                                @else
+                                                    <div class="absolute inset-x-0 border-t border-gray-100 {{ $open ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : 'bg-gray-50/80 dark:bg-gray-950/40' }}" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-hidden="true" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')), {{ $specialist['specialist_id'] }})"></div>
+                                                @endif
+                                            @endfor
 
-                        @if ($day['is_working'])
-                            <div class="mt-3 flex flex-wrap gap-1.5">
-                                @foreach ($day['intervals'] as $interval)
-                                    @for ($minute = $interval['start_minutes']; $minute < $interval['end_minutes']; $minute += 30)
-                                        @if (! $isOccupied($day, $minute))
-                                            @php($slotTime = sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60))
-                                            @if ($this->canCreateBooking())
-                                                <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime) }}" class="rounded-md border border-primary-200 px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 dark:border-primary-900/60 dark:text-primary-300 dark:hover:bg-primary-950/30">{{ $slotTime }}</a>
-                                            @endif
-                                        @endif
-                                    @endfor
+                                            @foreach ($specialist['intervals'] as $interval)
+                                                <div class="pointer-events-none absolute inset-x-0.5 rounded-md bg-emerald-50/40 dark:bg-emerald-950/20" style="{{ $heightStyle($interval['start_minutes'], $interval['end_minutes']) }}"></div>
+                                            @endforeach
+
+                                            @foreach ($specialist['bookings'] as $booking)
+                                                <div draggable="true" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute inset-x-1 z-10 min-w-0 cursor-grab overflow-hidden rounded-md border p-1.5 text-[11px] leading-tight shadow-sm transition hover:shadow-md active:cursor-grabbing {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}" aria-label="{{ $specialist['name'] }}: {{ $booking['time_range'] }}">
+                                                    <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-md"></a>
+                                                    <div class="relative z-10 pointer-events-none">
+                                                        <span class="block truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                        <span class="block truncate">{{ $booking['service'] }}</span>
+                                                        <span class="block truncate opacity-80">{{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</span>
+                                                        @if ($booking['retention_warning'])
+                                                            <span class="block truncate font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</span>
+                                                        @endif
+                                                    </div>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    </div>
                                 @endforeach
                             </div>
-                        @endif
-                    </section>
-                @endforeach
+                        @endforeach
+                    @endif
+                </div>
+            </div>
+
+            <div class="flex min-w-0 flex-col gap-3 lg:hidden">
+                @if ($multipleSpecialists)
+                    @foreach ($days as $day)
+                        <section class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 {{ $day['is_today'] ? 'ring-2 ring-primary-500' : '' }}">
+                            <div class="min-w-0">
+                                <h2 class="text-sm font-semibold text-gray-950 dark:text-white">{{ $day['weekday'] }}, {{ $day['day_number'] }}</h2>
+                                <p class="mt-1 text-xs {{ $day['is_working'] ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-400 dark:text-gray-500' }}">{{ $day['is_working'] ? __('Рабочий день') : __('Не работает') }}</p>
+                            </div>
+
+                            <div class="mt-3 grid min-w-0 gap-3">
+                                @foreach ($day['specialists'] as $specialist)
+                                    <div class="min-w-0 rounded-lg border border-gray-200 p-3 dark:border-gray-800">
+                                        <div class="min-w-0 break-words text-sm font-semibold text-gray-950 dark:text-white">
+                                            {{ $specialist['name'] }}@if (! $specialist['is_active']) ({{ __('неактивен') }})@endif
+                                        </div>
+                                        @if ($specialist['is_working'])
+                                            <div class="mt-1 break-words text-xs text-emerald-700 dark:text-emerald-300">
+                                                {{ collect($specialist['intervals'])->map(fn (array $interval): string => $interval['start'].' – '.$interval['end'])->join(', ') }}
+                                            </div>
+                                        @else
+                                            <div class="mt-1 text-xs text-gray-400 dark:text-gray-500">{{ __('Не работает') }}</div>
+                                        @endif
+
+                                        @if ($specialist['bookings'] !== [])
+                                            <div class="mt-3 grid gap-2">
+                                                @foreach ($specialist['bookings'] as $booking)
+                                                    <div class="relative min-w-0 rounded-lg border p-3 text-sm {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}">
+                                                        <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-lg"></a>
+                                                        <div class="relative z-10 pointer-events-none">
+                                                            <div class="flex min-w-0 items-start justify-between gap-2">
+                                                                <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                                <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
+                                                            </div>
+                                                            <div class="mt-1 break-words text-xs">{{ $booking['service'] }} · {{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</div>
+                                                            @if ($booking['retention_warning'])
+                                                                <div class="mt-1 break-words text-xs font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</div>
+                                                            @endif
+                                                        </div>
+                                                    </div>
+                                                @endforeach
+                                            </div>
+                                        @endif
+
+                                        @if ($specialist['is_working'] && $specialist['is_active'] && $canCreateBooking)
+                                            <div class="mt-3 flex flex-wrap gap-1.5">
+                                                @foreach ($specialist['intervals'] as $interval)
+                                                    @for ($minute = $interval['start_minutes']; $minute < $interval['end_minutes']; $minute += 30)
+                                                        @if (! $isOccupied($specialist, $minute))
+                                                            @php($slotTime = sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60))
+                                                            <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime, $specialist['specialist_id']) }}" class="rounded-md border border-primary-200 px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 dark:border-primary-900/60 dark:text-primary-300 dark:hover:bg-primary-950/30" aria-label="{{ $specialist['name'] }}: {{ __('Добавить запись на :time', ['time' => $slotTime]) }}">{{ $slotTime }}</a>
+                                                        @endif
+                                                    @endfor
+                                                @endforeach
+                                            </div>
+                                        @endif
+                                    </div>
+                                @endforeach
+                            </div>
+                        </section>
+                    @endforeach
+                @else
+                    @foreach ($days as $day)
+                        <section class="min-w-0 rounded-xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-800 dark:bg-gray-900 {{ $day['is_today'] ? 'ring-2 ring-primary-500' : '' }}">
+                            <div class="flex min-w-0 items-start justify-between gap-3">
+                                <div class="min-w-0">
+                                    <h2 class="text-sm font-semibold text-gray-950 dark:text-white">{{ $day['weekday'] }}, {{ $day['day_number'] }}</h2>
+                                    <p class="mt-1 text-xs {{ $day['is_working'] ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-400 dark:text-gray-500' }}">{{ $day['is_working'] ? __('Рабочий день') : __('Не работает') }}</p>
+                                </div>
+                                @if ($day['is_working'])
+                                    <span class="min-w-0 max-w-[55%] break-words text-right text-xs leading-4 text-gray-500 dark:text-gray-400">{{ collect($day['intervals'])->map(fn (array $interval): string => $interval['start'].' – '.$interval['end'])->join(', ') }}</span>
+                                @endif
+                            </div>
+
+                            @if ($day['bookings'] !== [])
+                                <div class="mt-3 grid gap-2">
+                                    @foreach ($day['bookings'] as $booking)
+                                        <div class="relative min-w-0 rounded-lg border p-3 text-sm {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}">
+                                            <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-lg"></a>
+                                            <div class="relative z-10 pointer-events-none">
+                                                <div class="flex min-w-0 items-start justify-between gap-2">
+                                                    <span class="min-w-0 truncate font-semibold">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                    <span class="shrink-0 text-xs">{{ $booking['time_range'] }}</span>
+                                                </div>
+                                                <div class="mt-1 break-words text-xs">{{ $booking['service'] }} · {{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</div>
+                                                @if ($booking['retention_warning'])
+                                                    <div class="mt-1 break-words text-xs font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</div>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endif
+
+                            @if ($day['is_working'])
+                                <div class="mt-3 flex flex-wrap gap-1.5">
+                                    @foreach ($day['intervals'] as $interval)
+                                        @for ($minute = $interval['start_minutes']; $minute < $interval['end_minutes']; $minute += 30)
+                                            @if (! $isOccupied($day, $minute))
+                                                @php($slotTime = sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60))
+                                                @if ($canCreateBooking)
+                                                    <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime) }}" class="rounded-md border border-primary-200 px-2 py-1 text-xs font-medium text-primary-700 hover:bg-primary-50 dark:border-primary-900/60 dark:text-primary-300 dark:hover:bg-primary-950/30">{{ $slotTime }}</a>
+                                                @endif
+                                            @endif
+                                        @endfor
+                                    @endforeach
+                                </div>
+                            @endif
+                        </section>
+                    @endforeach
+                @endif
             </div>
 
             <div class="hidden" aria-hidden="true">

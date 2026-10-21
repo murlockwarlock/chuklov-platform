@@ -165,7 +165,7 @@ class ListBookings extends LocalizedListRecords
         return $ids;
     }
 
-    /** @return array<string, array{date: string, day_number: int, weekday: string, is_today: bool, is_working: bool, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>, bookings: list<array<string, mixed>>}> */
+    /** @return array<string, array{date: string, day_number: int, weekday: string, is_today: bool, is_working: bool, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>, bookings: list<array<string, mixed>>, specialists: array<int, array{specialist_id: int, name: string, is_active: bool, is_working: bool, exception_type: string|null, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>, bookings: list<array<string, mixed>>}>}> */
     public function getJournalDaysProperty(): array
     {
         $timezone = $this->journalTimezone();
@@ -184,19 +184,32 @@ class ListBookings extends LocalizedListRecords
                 'is_working' => false,
                 'intervals' => [],
                 'bookings' => [],
+                'specialists' => [],
             ];
         }
 
         $selectedIds = $this->specialistFilterIds();
         $specialists = Specialist::query()->where('organization_id', app(OrganizationContext::class)->id())
-            ->when($selectedIds !== [], fn (Builder $query): Builder => $query->whereIn('id', $selectedIds))->get();
+            ->when($selectedIds !== [], fn (Builder $query): Builder => $query->whereIn('id', $selectedIds))
+            ->orderBy('display_name')
+            ->orderBy('id')
+            ->get();
         $schedules = app(GetScheduleCalendar::class)->forSpecialists($specialists, $start->toDateString(), $end->toDateString(), $timezone);
-        foreach ($schedules as $schedule) {
-            foreach ($schedule as $date => $day) {
-                if (isset($calendar[$date])) {
-                    $calendar[$date]['is_working'] = $calendar[$date]['is_working'] || $day['is_working'];
-                    $calendar[$date]['intervals'] = [...$calendar[$date]['intervals'], ...$day['intervals']];
-                }
+        foreach ($specialists as $specialist) {
+            $specialistId = (int) $specialist->getKey();
+            foreach (array_keys($calendar) as $date) {
+                $day = $schedules[$specialistId][$date];
+                $calendar[$date]['specialists'][$specialistId] = [
+                    'specialist_id' => $specialistId,
+                    'name' => (string) $specialist->display_name,
+                    'is_active' => (bool) $specialist->is_active,
+                    'is_working' => $day['is_working'],
+                    'exception_type' => $day['exception_type'],
+                    'intervals' => $day['intervals'],
+                    'bookings' => [],
+                ];
+                $calendar[$date]['is_working'] = $calendar[$date]['is_working'] || $day['is_working'];
+                $calendar[$date]['intervals'] = [...$calendar[$date]['intervals'], ...$day['intervals']];
             }
         }
 
@@ -245,7 +258,7 @@ class ListBookings extends LocalizedListRecords
                 && $completedAt instanceof CarbonImmutable
                 && $now->greaterThanOrEqualTo($completedAt->addMinutes($retentionWindowMinutes))
                 && ! ($hasQualifyingNextBooking[(int) $booking->getKey()] ?? false);
-            $calendar[$date]['bookings'][] = $this->bookingProjection(
+            $projection = $this->bookingProjection(
                 $booking,
                 $localStart,
                 $localEnd,
@@ -253,6 +266,11 @@ class ListBookings extends LocalizedListRecords
                 $retentionWarning,
                 $debtByBooking[(int) $booking->getKey()] ?? false,
             );
+            $calendar[$date]['bookings'][] = $projection;
+            $specialistId = (int) $booking->specialist_id;
+            if (isset($calendar[$date]['specialists'][$specialistId])) {
+                $calendar[$date]['specialists'][$specialistId]['bookings'][] = $projection;
+            }
         }
 
         return $calendar;
@@ -289,7 +307,7 @@ class ListBookings extends LocalizedListRecords
         ];
     }
 
-    public function bookingCreationUrl(string $date, string $time): string
+    public function bookingCreationUrl(string $date, string $time, ?int $specialistId = null): string
     {
         $parameters = [
             'starts_at' => $date.' '.$time,
@@ -297,8 +315,9 @@ class ListBookings extends LocalizedListRecords
             'week' => $this->weekStart,
             'view' => $this->viewMode,
         ];
-        if ($this->selectedSpecialistId !== null) {
-            $parameters['specialist_id'] = (string) $this->selectedSpecialistId;
+        $targetSpecialistId = $specialistId ?? $this->selectedSpecialistId;
+        if ($targetSpecialistId !== null) {
+            $parameters['specialist_id'] = (string) $targetSpecialistId;
         }
 
         return BookingResource::getUrl('create').'?'.http_build_query($parameters);
@@ -368,7 +387,7 @@ class ListBookings extends LocalizedListRecords
         return max(1, (int) config('scenarios.retention_default_delay_days', 30) * 1440);
     }
 
-    public function rescheduleFromJournal(int $bookingId, string $date, string $time, int $expectedEventVersion): void
+    public function rescheduleFromJournal(int $bookingId, string $date, string $time, int $expectedEventVersion, ?int $targetSpecialistId = null): void
     {
         $this->resetErrorBag('calendar');
         $timezone = $this->journalTimezone();
@@ -391,6 +410,12 @@ class ListBookings extends LocalizedListRecords
 
         if (! $booking instanceof Booking || ! $actor instanceof User) {
             $this->addError('calendar', __('Не удалось найти запись. Обновите журнал и попробуйте снова.'));
+
+            return;
+        }
+
+        if ($targetSpecialistId !== null && (int) $booking->specialist_id !== $targetSpecialistId) {
+            $this->addError('calendar', __('Запись нельзя перенести к другому специалисту.'));
 
             return;
         }
@@ -514,7 +539,7 @@ class ListBookings extends LocalizedListRecords
         ];
     }
 
-    /** @return array{id: int, event_version: int, client: string, client_url: string|null, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, format: string, location_label: string, party_size: int, party_size_label: string|null, has_debt: bool, retention_warning: bool, retention_label: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
+    /** @return array{id: int, event_version: int, specialist_id: int, specialist: string, client: string, client_url: string|null, service: string, start_time: string, end_time: string, time_range: string, status: string, status_class: string, format: string, location_label: string, party_size: int, party_size_label: string|null, has_debt: bool, retention_warning: bool, retention_label: string, is_online: bool, start_minutes: int, end_minutes: int, url: string} */
     private function bookingProjection(Booking $booking, CarbonImmutable $localStart, CarbonImmutable $localEnd, bool $canViewClients, bool $retentionWarning = false, bool $hasDebt = false): array
     {
         $startMinutes = ((int) $localStart->format('H')) * 60 + (int) $localStart->format('i');
@@ -534,6 +559,7 @@ class ListBookings extends LocalizedListRecords
         return [
             'id' => $booking->getKey(),
             'event_version' => (int) $booking->event_version,
+            'specialist_id' => (int) $booking->specialist_id,
             'client' => $clientName !== '' ? $clientName : __('Клиент'),
             'client_url' => CrmEntityLinks::clientUrl($booking->client, $canViewClients),
             'service' => $serviceName !== '' ? $serviceName : __('Услуга'),
@@ -557,7 +583,7 @@ class ListBookings extends LocalizedListRecords
             'end_minutes' => max($startMinutes + 30, $endMinutes),
             'url' => BookingResource::getUrl('view', ['record' => $booking]).'?'.http_build_query([
                 'return_to_journal' => '1',
-                'specialist_id' => $this->selectedSpecialistId,
+                'specialist_id' => (int) $booking->specialist_id,
                 'week' => $this->weekStart,
                 'view' => $this->viewMode,
             ]),

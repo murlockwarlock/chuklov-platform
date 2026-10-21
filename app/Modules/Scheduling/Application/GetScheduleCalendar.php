@@ -208,7 +208,9 @@ final class GetScheduleCalendar
                     'start' => $cursor->format('H:i'),
                     'end' => $segmentEnd->format('H:i'),
                     'start_minutes' => ((int) $cursor->format('H')) * 60 + (int) $cursor->format('i'),
-                    'end_minutes' => ((int) $segmentEnd->format('H')) * 60 + (int) $segmentEnd->format('i'),
+                    'end_minutes' => $segmentEnd->equalTo($dayEnd)
+                        ? 24 * 60
+                        : ((int) $segmentEnd->format('H')) * 60 + (int) $segmentEnd->format('i'),
                 ];
                 $cells[$dateKey]['exception_type'] = $exceptions->contains(
                     static fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::CustomWindow,
