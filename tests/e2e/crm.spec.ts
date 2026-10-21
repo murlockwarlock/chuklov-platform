@@ -625,6 +625,13 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
     await expect(panel).toBeVisible();
     await checkbox(secondSpecialist.name).check();
     await expect(panel).toBeVisible();
+    await expect.poll(async () => {
+        const specialistIds = await page.locator('a[aria-label*="Добавить запись"]').evaluateAll((links) => [
+            ...new Set(links.map((link) => new URL((link as HTMLAnchorElement).href).searchParams.get('specialist_id'))),
+        ]);
+
+        return specialistIds.filter((specialistId): specialistId is string => specialistId !== null).length;
+    }).toBeGreaterThanOrEqual(2);
     const slotLinks = await page.locator('a[aria-label*="Добавить запись"]').evaluateAll((links) => links.map((link) => new URL((link as HTMLAnchorElement).href)));
     expect(slotLinks.length).toBeGreaterThan(0);
     expect(slotLinks.every((link) => link.searchParams.has('specialist_id'))).toBe(true);
