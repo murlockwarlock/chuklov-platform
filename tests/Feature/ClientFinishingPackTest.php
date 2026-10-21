@@ -73,8 +73,10 @@ final class ClientFinishingPackTest extends TestCase
             ->assertSee($body)
             ->assertSee('Анна Сотрудник');
 
+        $component->mountTableAction('add');
+        self::assertSame('Добавить заметку', $component->instance()->getMountedTableAction()?->getModalSubmitActionLabel());
+
         $component
-            ->mountTableAction('add')
             ->setTableActionData(['body' => 'Заметка из страницы клиента'])
             ->callMountedTableAction()
             ->assertNotified('Заметка добавлена');
@@ -85,8 +87,10 @@ final class ClientFinishingPackTest extends TestCase
             ->firstOrFail();
         $expectedBodyHash = hash('sha256', $editableNote->body);
 
+        $component->mountTableAction('edit', (string) $editableNote->getKey());
+        self::assertSame('Сохранить', $component->instance()->getMountedTableAction()?->getModalSubmitActionLabel());
+
         $component
-            ->mountTableAction('edit', (string) $editableNote->getKey())
             ->assertTableActionDataSet([
                 'body' => 'Заметка из страницы клиента',
                 'expected_body_hash' => $expectedBodyHash,

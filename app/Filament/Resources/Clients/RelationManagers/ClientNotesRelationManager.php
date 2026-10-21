@@ -121,6 +121,7 @@ final class ClientNotesRelationManager extends LocalizedRelationManager
                 Action::make('add')
                     ->label(__('Добавить заметку'))
                     ->icon('heroicon-o-plus')
+                    ->modalSubmitActionLabel(__('Добавить заметку'))
                     ->schema([
                         Textarea::make('body')
                             ->label(__('Текст заметки'))
