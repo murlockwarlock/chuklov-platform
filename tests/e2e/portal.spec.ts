@@ -956,7 +956,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page.getByRole('button', { name: 'English', exact: true })).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-en.jpg');
     await expect(navigation).toHaveText(['Home', 'Book', 'Health', 'Chat', 'Cabinet']);
-    await page.getByRole('link', { name: 'Services' }).last().click();
+    await navigation.nth(1).click();
     await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
     await expect(page.locator('.portal-service-card').first().getByRole('link', { name: 'Book an appointment' })).toHaveAttribute('href', /service_id=/);
     const profileResponse = page.waitForResponse((response) =>
@@ -1062,7 +1062,7 @@ test('home keeps one primary booking action and ordinary referrals remain availa
 
     await page.goto('/portal/referrals');
     await expect(page).toHaveURL(/\/portal\/referrals$/);
-    await expect(page.getByRole('heading', { name: 'Пригласить друга', exact: true })).toBeVisible();
+    await expect(page.getByTestId('ordinary-referral').getByRole('heading', { name: 'Пригласить друга', exact: true })).toBeVisible();
     await expect(page.getByTestId('ordinary-referral')).toBeVisible();
     await expect(page.getByTestId('partner-activate')).toHaveCount(0);
     await expect(page.getByTestId('partner-links')).toHaveCount(0);
@@ -1413,8 +1413,12 @@ test('companion shows accessible typing feedback and respects intentional histor
 
     await page.setViewportSize({ width: 390, height: 844 });
     let continuePollingResponse: () => void = () => {};
+    let signalPollIntercepted: () => void = () => {};
     const userScrolledAway = new Promise<void>((resolve) => {
         continuePollingResponse = resolve;
+    });
+    const pollIntercepted = new Promise<void>((resolve) => {
+        signalPollIntercepted = resolve;
     });
     await page.route('**/portal/companion**', async (route) => {
         if (route.request().headers()['x-inertia'] !== 'true') {
@@ -1445,6 +1449,7 @@ test('companion shows accessible typing feedback and respects intentional histor
                 },
             ];
         }
+        signalPollIntercepted();
         await userScrolledAway;
         await route.fulfill({ response, body: JSON.stringify(payload) });
     });
@@ -1458,10 +1463,10 @@ test('companion shows accessible typing feedback and respects intentional histor
 
     const history = page.locator('[data-testid="companion-history"]');
     await expect.poll(() => history.evaluate((element) => element.scrollHeight - element.clientHeight)).toBeGreaterThan(96);
-    await page.locator('[data-testid="companion-history"]').evaluate((element) => {
-        element.scrollTop = 0;
-        element.dispatchEvent(new Event('scroll'));
-    });
+    await expect.poll(() => history.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeLessThanOrEqual(96);
+    await pollIntercepted;
+    await history.hover();
+    await page.mouse.wheel(0, -5000);
     await expect.poll(() => history.evaluate((element) => element.scrollTop)).toBe(0);
     await expect.poll(() => history.evaluate((element) => element.scrollHeight - element.scrollTop - element.clientHeight)).toBeGreaterThan(96);
     continuePollingResponse();
