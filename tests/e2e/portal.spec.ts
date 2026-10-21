@@ -1524,20 +1524,22 @@ test('September 26 confirmed profile persists and the medical editor saves then 
         buffer: Buffer.from(`%PDF-1.4\n(${index})\n%%EOF\n`),
     })));
     await expect(page.getByText('Выберите не более 5 файлов за одну загрузку.', { exact: true })).toBeVisible();
-    const oversizedPdf = Buffer.alloc(20 * 1024 * 1024 + 1, 32);
+    const maximumFileBytes = 20 * 1024 * 1024;
+    const oversizedPdf = Buffer.alloc(maximumFileBytes + 1, 32);
     oversizedPdf.write('%PDF-1.4\n');
+    oversizedPdf.write('%%EOF\n', maximumFileBytes - Buffer.byteLength('%%EOF\n'));
     await page.locator('#medical-files').setInputFiles([
         { name: 'synthetic-too-large.pdf', mimeType: 'application/pdf', buffer: oversizedPdf },
     ]);
     await expect(page.getByText('Размер файла не должен превышать 20 МБ. Выберите файл меньшего размера.', { exact: true })).toBeVisible();
     await page.locator('#medical-files').setInputFiles([
-        { name: 'synthetic-maximum-size.pdf', mimeType: 'application/pdf', buffer: oversizedPdf.subarray(0, 20 * 1024 * 1024) },
+        { name: 'synthetic-maximum-size.pdf', mimeType: 'application/pdf', buffer: oversizedPdf.subarray(0, maximumFileBytes) },
     ]);
     await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Загрузить файлы', exact: true })).toBeEnabled();
 
     await page.locator('#medical-files').setInputFiles([
-        { name: 'synthetic-report-one.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic report one)\nendobj\n%%EOF\n') },
+        { name: 'synthetic-maximum-size.pdf', mimeType: 'application/pdf', buffer: oversizedPdf.subarray(0, maximumFileBytes) },
         { name: 'synthetic-report-two.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic report two)\nendobj\n%%EOF\n') },
         { name: 'synthetic-report-three.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic report three)\nendobj\n%%EOF\n') },
         { name: 'synthetic-report-photo.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD//gA7Q1JFQVRPUjogZ2QtanBlZyB2MS4wICh1c2luZyBJSkcgSlBFRyB2ODApLCBxdWFsaXR5ID0gODAK/9sAQwAGBAUGBQQGBgUGBwcGCAoQCgoJCQoUDg8MEBcUGBgXFBYWGh0lHxobIxwWFiAsICMmJykqKRkfLTAtKDAlKCko/9sAQwEHBwcKCAoTCgoTKBoWGigoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo/8AAEQgAAQABAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ5e4KDhIWGh4iJipKTlJWWl5iZmqKjpKWmpqipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/jp//aAAwDAQACEQMRAD8A+VKKKKAP/9k=', 'base64') },
@@ -1560,8 +1562,8 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByText('Не удалось загрузить файл из-за проблем с соединением. Проверьте интернет и повторите загрузку.', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Загрузить файлы', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Загрузить файлы', exact: true }).click();
-    await expect(page.getByRole('status').filter({ hasText: 'synthetic-report-one.pdf' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'synthetic-report-one.pdf', exact: true })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'synthetic-maximum-size.pdf' })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'synthetic-maximum-size.pdf', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'synthetic-report-three.pdf', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'synthetic-report-photo.jpg', exact: true })).toBeVisible();
