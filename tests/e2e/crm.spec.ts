@@ -598,6 +598,11 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
     await panel.getByRole('button', { name: 'Все специалисты', exact: true }).click();
     await expect.poll(() => page.locator('[wire\\:key="booking-journal-specialist-filter"] input[type="checkbox"]:checked').count()).toBe(0);
     await expect(filter).toContainText('Все специалисты');
+    await expect.poll(() => {
+        const url = new URL(page.url());
+
+        return url.searchParams.has('specialist_ids') || url.searchParams.has('specialist_id');
+    }).toBe(false);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Журнал записей', exact: true })).toBeVisible();
