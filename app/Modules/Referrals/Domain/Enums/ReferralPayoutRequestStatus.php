@@ -10,8 +10,18 @@ enum ReferralPayoutRequestStatus: string
     case Rejected = 'rejected';
     case Cancelled = 'cancelled';
 
-    public function label(): string
+    public function label(string $locale = 'ru'): string
     {
+        if ($locale === 'en') {
+            return match ($this) {
+                self::Requested => 'Requested',
+                self::Approved => 'Approved',
+                self::Paid => 'Paid',
+                self::Rejected => 'Rejected',
+                self::Cancelled => 'Cancelled',
+            };
+        }
+
         return match ($this) {
             self::Requested => 'Запрошена',
             self::Approved => 'Одобрена',

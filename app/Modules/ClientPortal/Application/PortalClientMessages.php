@@ -53,6 +53,10 @@ final class PortalClientMessages
             'ru' => 'Заявка на выплату отправлена',
             'en' => 'Payout request sent',
         ],
+        'referral_payout_already_exists' => [
+            'ru' => 'Эта заявка уже существует. Проверьте её статус в истории выплат.',
+            'en' => 'This payout request already exists. Check its status in payout history.',
+        ],
         'referral_payout_cancelled' => [
             'ru' => 'Запрос на выплату отменён.',
             'en' => 'Payout request cancelled.',

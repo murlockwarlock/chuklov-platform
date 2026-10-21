@@ -90,6 +90,12 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'Playwright Client '.$suffix,
             'email' => 'playwright-'.$suffix.'@example.test',
+            'first_name' => 'Playwright',
+            'last_name' => 'Client '.$suffix,
+            'gender' => 'MALE',
+            'birth_date' => '1990-02-28',
+            'country' => 'Казахстан',
+            'city' => 'Алматы',
             'language' => 'ru',
             'timezone' => 'UTC',
         ]);
@@ -929,7 +935,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await russianTrigger.click();
     await expect(page.getByRole('menuitemradio', { name: 'Русский', exact: true })).toHaveAttribute('aria-checked', 'true');
     await page.getByRole('menuitemradio', { name: 'English', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Welcome, Playwright Client' })).toBeVisible();
+    await expect(page.locator('h1')).toContainText('Welcome, Playwright Client');
     await expect(page.getByRole('button', { name: 'English', exact: true })).toHaveAttribute('aria-expanded', 'false');
     await expect(page.getByRole('img', { name: 'CHUKLOV' })).toHaveAttribute('src', '/brand/chuklov-designer-logo-en.jpg');
     await expect(navigation).toHaveText(['Home', 'Book', 'Health', 'Chat', 'Cabinet']);
@@ -992,7 +998,7 @@ test('home keeps one primary booking action and ordinary referrals remain availa
             await expect(page.locator('.portal-bottom-nav')).toBeVisible();
 
             const navigationItems = page.locator('.portal-bottom-nav__link');
-            expect(await navigationItems.count()).toBe(6);
+            expect(await navigationItems.count()).toBe(5);
             expect(await navigationItems.evaluateAll((items) => {
                 const widths = items.map((item) => item.getBoundingClientRect().width);
                 const labels = items.map((item) => item.querySelector('.portal-bottom-nav__label'));
@@ -1333,18 +1339,12 @@ test('companion shows accessible typing feedback and respects intentional histor
     }]);
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto('/portal/companion');
-    await expect(page.getByRole('status').filter({ hasText: 'печатает…' })).toBeVisible();
-    await expect(page.locator('.portal-companion__typing-dots i')).toHaveCount(3);
-    await expect(page.getByText('Чат формирует ответ', { exact: true })).toHaveCount(1);
-
-    await page.locator('[data-testid="companion-history"]').evaluate((element) => {
-        element.scrollTop = 0;
-        element.dispatchEvent(new Event('scroll'));
-    });
-    await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
-
     await page.route('**/portal/companion**', async (route) => {
+        if (route.request().headers()['x-inertia'] !== 'true') {
+            await route.continue();
+            return;
+        }
+
         const response = await route.fetch();
         const payload = await response.json() as {
             props?: { companion?: { pending?: boolean; messages?: Array<Record<string, unknown>> } };
@@ -1370,6 +1370,16 @@ test('companion shows accessible typing feedback and respects intentional histor
         }
         await route.fulfill({ response, body: JSON.stringify(payload) });
     });
+    await page.goto('/portal/companion');
+    await expect(page.getByRole('status').filter({ hasText: 'печатает…' })).toBeVisible();
+    await expect(page.locator('.portal-companion__typing-dots i')).toHaveCount(3);
+    await expect(page.getByText('Чат формирует ответ', { exact: true })).toHaveCount(1);
+
+    await page.locator('[data-testid="companion-history"]').evaluate((element) => {
+        element.scrollTop = 0;
+        element.dispatchEvent(new Event('scroll'));
+    });
+    await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => element.scrollTop)).toBe(0);
 
     await expect(page.getByTestId('companion-new-messages')).toBeVisible({ timeout: 7_000 });
     await expect(page.getByText('Новый синтетический ответ.', { exact: true })).toBeVisible();
@@ -1630,9 +1640,9 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.context().clearCookies({ name: fixture.cookieName });
     const unauthorizedAttachmentResponse = await page.request.get(attachmentUrl, { headers: { Accept: 'application/json' } });
     expect(unauthorizedAttachmentResponse.status()).toBe(401);
-    const unauthorizedAttachmentMessage = await unauthorizedAttachmentResponse.text();
-    expect(unauthorizedAttachmentMessage).toMatch(/войдите|sign in/i);
-    expect(unauthorizedAttachmentMessage).not.toContain('Synthetic report two');
+    const unauthorizedAttachmentPayload = await unauthorizedAttachmentResponse.json() as { message?: unknown };
+    expect(unauthorizedAttachmentPayload.message).toMatch(/войдите|sign in/i);
+    expect(JSON.stringify(unauthorizedAttachmentPayload)).not.toContain('Synthetic report two');
     const guestResponse = await page.goto('/');
     expect(guestResponse?.headers()['cache-control']).toContain('no-store');
     await expect(page.getByText('Synthetic symptoms', { exact: true })).toHaveCount(0);
@@ -1881,7 +1891,7 @@ test('booking keeps its state while reviewing grouped legal documents', async ({
     await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
 
     const requiredCheckbox = page.getByRole('checkbox', {
-        name: 'Я ознакомился(лась) и принимаю обязательные документы',
+        name: 'Я ознакомился с обязательными документами и принимаю их условия',
         exact: true,
     });
     const documentLinks = page.locator('.portal-legal-document-links button');
