@@ -1492,7 +1492,8 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByText('Не удалось сохранить данные из-за проблем с соединением. Проверьте интернет и повторите попытку.', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Подтвердить данные', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
-    await expect(page.getByRole('status', { name: 'Сохраняем…' })).toBeVisible();
+    const savingStatus = page.locator('[role="status"]').filter({ hasText: 'Сохраняем…' });
+    await expect(savingStatus).toHaveText('Сохраняем…');
     await expect(page.getByRole('button', { name: 'Сохраняем…', exact: true })).toBeDisabled();
     await expect(page.getByText('Данные сохранены', { exact: true })).toBeVisible();
     await page.unroute('**/portal/medical-profile*');
