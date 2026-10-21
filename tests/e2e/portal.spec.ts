@@ -94,7 +94,6 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'email' => 'playwright-'.$suffix.'@example.test',
             'first_name' => 'Playwright',
             'last_name' => 'Client '.$suffix,
-            'name_confirmed_at' => $confirmedName ? now() : null,
             'gender' => 'MALE',
             'birth_date' => '1990-02-28',
             'country' => 'Казахстан',
@@ -102,6 +101,9 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'language' => 'ru',
             'timezone' => 'UTC',
         ]);
+        if ($confirmedName) {
+            $client->forceFill(['name_confirmed_at' => now()])->save();
+        }
         if (getenv('PLAYWRIGHT_TRACKER') !== '') {
             \\Illuminate\\Support\\Facades\\Queue::fake();
             app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
