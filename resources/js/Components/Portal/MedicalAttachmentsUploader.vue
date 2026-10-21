@@ -13,6 +13,7 @@ const form = useForm<{ file: File | null; upload_key: string }>({ file: null, up
 const uploading = ref(false);
 const activeName = ref('');
 let stopped = false;
+let stopAfterCurrent = false;
 onBeforeUnmount(() => {
     stopped = true;
     form.cancel();
@@ -23,28 +24,44 @@ function select(event: Event): void {
     const files = Array.from(input.files ?? []);
     input.value = '';
     selectionError.value = '';
-    if (files.length > 5 || files.some((file) => file.size > 20 * 1024 * 1024 || !['image/jpeg', 'image/png', 'application/pdf'].includes(file.type))) {
-        selectionError.value = t('medical.filesLimit');
+    if (files.length === 0) {
+        return;
+    }
+    if (files.length > 5) {
+        selectionError.value = t('medical.filesTooMany');
+        return;
+    }
+    if (files.some((file) => file.size > 20 * 1024 * 1024)) {
+        selectionError.value = t('medical.fileTooLarge');
+        return;
+    }
+    if (files.some((file) => !['image/jpeg', 'image/png', 'application/pdf'].includes(file.type))) {
+        selectionError.value = t('medical.unsupportedFileType');
         return;
     }
     selected.value = files.map((file) => ({ file, key: crypto.randomUUID(), uploaded: false, error: null }));
 }
 
 function upload(): void {
-    if (uploading.value) return;
+    if (uploading.value || selectionError.value) return;
     uploading.value = true;
+    stopAfterCurrent = false;
     emit('uploading', true);
     send(0);
+}
+
+function finishUpload(): void {
+    uploading.value = false;
+    emit('uploading', false);
+    activeName.value = '';
+    form.reset();
 }
 
 function send(index: number): void {
     if (stopped) return;
     const item = selected.value[index];
     if (!item) {
-        uploading.value = false;
-        emit('uploading', false);
-        activeName.value = '';
-        form.reset();
+        finishUpload();
         return;
     }
     if (item.uploaded) {
@@ -59,10 +76,34 @@ function send(index: number): void {
         forceFormData: true,
         preserveScroll: true,
         onSuccess: () => { item.uploaded = true; },
-        onError: (errors) => { item.error = Object.values(errors).join(' '); },
+        onError: (errors) => {
+            item.error = errors.upload_key
+                ? t('medical.uploadConflict')
+                : errors.file
+                    ? t('medical.uploadValidationFailed')
+                    : t('medical.uploadFailed');
+        },
+        onNetworkError: () => {
+            item.error = t('medical.uploadNetworkError');
+            stopAfterCurrent = true;
+            return false;
+        },
+        onHttpException: (response) => {
+            item.error = response.status === 401 || response.status === 419
+                ? t('medical.uploadSessionExpired')
+                : response.status === 403
+                    ? t('medical.uploadForbidden')
+                    : t('medical.uploadFailed');
+            stopAfterCurrent = true;
+            return false;
+        },
         onFinish: () => {
             if (!item.uploaded && !item.error) item.error = t('medical.uploadFailed');
-            send(index + 1);
+            if (stopAfterCurrent) {
+                finishUpload();
+            } else {
+                send(index + 1);
+            }
         },
     });
 }
@@ -122,7 +163,7 @@ function send(index: number): void {
     <button
       v-if="selected.some((item) => !item.uploaded)"
       type="button"
-      :disabled="uploading"
+      :disabled="uploading || Boolean(selectionError)"
       class="portal-button portal-button--secondary"
       @click="upload"
     >

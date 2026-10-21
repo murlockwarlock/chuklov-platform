@@ -29,6 +29,10 @@ const props = defineProps<{
 const { t } = usePortalLocale();
 const editing = ref(props.editing || !props.profile.available);
 const uploading = ref(false);
+const currentYear = new Date().getFullYear();
+const requestError = ref('');
+const clientErrors = ref<Record<string, string>>({});
+const medicalForm = ref<HTMLFormElement | null>(null);
 const fields = ['complaints', 'goals', 'chronic_conditions', 'operations', 'injuries', 'medicines', 'supplements'] as const;
 const symptoms = ['headache', 'neck', 'back', 'joints', 'swelling', 'digestion', 'weakness', 'insomnia', 'stress'];
 const form = useForm({
@@ -46,13 +50,91 @@ const form = useForm({
         ...props.profile.answers,
     } as Answers,
 });
+function clearClientError(...keys: string[]): void {
+    for (const key of keys) {
+        delete clientErrors.value[key];
+    }
+}
+
+function validate(): string | null {
+    const answers = form.answers;
+
+    if (!form.goals.trim()) {
+        clientErrors.value.goals = t('medical.goalRequired');
+    }
+    if (answers.symptoms.length === 0 && !form.complaints.trim()) {
+        clientErrors.value.complaints = t('medical.complaintsRequired');
+    }
+
+    for (const field of ['operations', 'injuries'] as const) {
+        const answer = field === 'operations' ? answers.had_operations : answers.had_injuries;
+        const year = field === 'operations' ? answers.operation_year : answers.injury_year;
+        const yearField = field === 'operations' ? 'operation_year' : 'injury_year';
+        const answerField = field === 'operations' ? 'had_operations' : 'had_injuries';
+
+        if (answer === null) {
+            clientErrors.value[answerField] = t('medical.answerRequired');
+            continue;
+        }
+        if (!answer) {
+            continue;
+        }
+        if (typeof year !== 'number') {
+            clientErrors.value[yearField] = t('medical.yearRequired');
+        } else if (!Number.isInteger(year) || year < 1900 || year > currentYear) {
+            clientErrors.value[yearField] = t('medical.yearInvalid', { year: currentYear });
+        }
+        if (!form[field].trim()) {
+            clientErrors.value[field] = t('medical.detailsRequired');
+        }
+    }
+
+    const firstInvalid = ['goals', 'complaints', 'had_operations', 'operation_year', 'operations', 'had_injuries', 'injury_year', 'injuries']
+        .find((field) => clientErrors.value[field]);
+
+    return firstInvalid ?? null;
+}
+
 function save(): void {
+    if (form.processing || uploading.value) {
+        return;
+    }
+    clientErrors.value = {};
+    requestError.value = '';
+    const firstInvalid = validate();
+    if (firstInvalid) {
+        const fieldTargets: Record<string, string> = {
+            goals: '#medical-goals',
+            complaints: '[data-medical-field="complaints"] input',
+            had_operations: 'input[name="operations"]',
+            operation_year: '#medical-operation-year',
+            operations: '#medical-operations',
+            had_injuries: 'input[name="injuries"]',
+            injury_year: '#medical-injury-year',
+            injuries: '#medical-injuries',
+        };
+        medicalForm.value?.querySelector<HTMLElement>(fieldTargets[firstInvalid])?.focus();
+        return;
+    }
+
     form.post(props.urls.update, {
         preserveScroll: true,
         onSuccess: () => {
             form.expected_snapshot = props.profile.expectedSnapshot;
             form.defaults();
             editing.value = false;
+        },
+        onNetworkError: () => {
+            requestError.value = t('medical.saveNetworkError');
+            return false;
+        },
+        onHttpException: (response) => {
+            requestError.value = response.status === 401 || response.status === 419
+                ? t('medical.saveSessionExpired')
+                : response.status === 403
+                    ? t('medical.saveForbidden')
+                    : t('medical.saveFailed');
+            return false;
         },
     });
 }
@@ -106,10 +188,15 @@ function save(): void {
         </p>
         <form
           v-if="editing"
+          ref="medicalForm"
           class="portal-stack"
+          novalidate
           @submit.prevent="save"
         >
-          <fieldset class="portal-stack min-w-0">
+          <fieldset
+            class="portal-stack min-w-0"
+            data-medical-field="complaints"
+          >
             <legend class="portal-label">
               {{ t('medical.complaints') }}
             </legend>
@@ -123,6 +210,7 @@ function save(): void {
                   v-model="form.answers.symptoms"
                   type="checkbox"
                   :value="symptom"
+                  @change="clearClientError('complaints')"
                 >
                 {{ t('medical.' + symptom) }}
               </label>
@@ -132,62 +220,133 @@ function save(): void {
           <div
             v-for="field in fields"
             :key="field"
-            class="portal-field"
+            :data-medical-field="field"
+            class="portal-field min-w-0"
           >
-            <label
-              :for="'medical-' + field"
-              class="portal-label"
-            >{{ t('medical.' + field) }}</label>
             <template v-if="field === 'operations' || field === 'injuries'">
-              <div class="portal-action-row">
-                <label
-                  v-for="answer in [true, false]"
-                  :key="String(answer)"
-                  class="portal-copy"
-                >
-                  <input
-                    v-model="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
-                    type="radio"
-                    :name="field"
-                    :value="answer"
-                    required
+              <fieldset class="portal-stack min-w-0">
+                <legend class="portal-label">
+                  {{ t('medical.' + field) }}
+                </legend>
+                <div class="portal-action-row">
+                  <label
+                    v-for="answer in [true, false]"
+                    :key="String(answer)"
+                    class="portal-copy"
                   >
-                  {{ t(answer ? 'medical.yes' : 'medical.no') }}
-                </label>
-              </div>
-              <label
-                v-if="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
-                class="portal-label"
-              >
-                {{ t('medical.year') }}
-                <input
-                  v-model.number="form.answers[field === 'operations' ? 'operation_year' : 'injury_year']"
-                  type="number"
-                  min="1900"
-                  required
-                  class="portal-input"
+                    <input
+                      v-model="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
+                      type="radio"
+                      :name="field"
+                      :value="answer"
+                      required
+                      :aria-invalid="Boolean(clientErrors[field === 'operations' ? 'had_operations' : 'had_injuries'])"
+                      :aria-describedby="clientErrors[field === 'operations' ? 'had_operations' : 'had_injuries'] ? `medical-${field}-answer-error` : undefined"
+                      @change="clearClientError(field, field === 'operations' ? 'had_operations' : 'had_injuries', field === 'operations' ? 'operation_year' : 'injury_year')"
+                    >
+                    {{ t(answer ? 'medical.yes' : 'medical.no') }}
+                  </label>
+                </div>
+                <p
+                  v-if="clientErrors[field === 'operations' ? 'had_operations' : 'had_injuries']"
+                  :id="`medical-${field}-answer-error`"
+                  class="portal-error"
+                  role="alert"
                 >
-              </label>
+                  {{ clientErrors[field === 'operations' ? 'had_operations' : 'had_injuries'] }}
+                </p>
+                <label
+                  v-if="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
+                  :for="field === 'operations' ? 'medical-operation-year' : 'medical-injury-year'"
+                  class="portal-field"
+                >
+                  <span class="portal-label">{{ t(field === 'operations' ? 'medical.operationYear' : 'medical.injuryYear') }}</span>
+                  <input
+                    :id="field === 'operations' ? 'medical-operation-year' : 'medical-injury-year'"
+                    v-model.number="form.answers[field === 'operations' ? 'operation_year' : 'injury_year']"
+                    type="number"
+                    min="1900"
+                    :max="currentYear"
+                    required
+                    :aria-invalid="Boolean(clientErrors[field === 'operations' ? 'operation_year' : 'injury_year'])"
+                    :aria-describedby="clientErrors[field === 'operations' ? 'operation_year' : 'injury_year'] ? `medical-${field}-year-error` : undefined"
+                    class="portal-input"
+                    @input="clearClientError(field === 'operations' ? 'operation_year' : 'injury_year')"
+                  >
+                  <span
+                    v-if="clientErrors[field === 'operations' ? 'operation_year' : 'injury_year']"
+                    :id="`medical-${field}-year-error`"
+                    class="portal-error"
+                    role="alert"
+                  >
+                    {{ clientErrors[field === 'operations' ? 'operation_year' : 'injury_year'] }}
+                  </span>
+                </label>
+                <label
+                  v-if="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
+                  :for="'medical-' + field"
+                  class="portal-field"
+                >
+                  <span class="portal-label">{{ t(field === 'operations' ? 'medical.operationDetails' : 'medical.injuryDetails') }}</span>
+                  <textarea
+                    :id="'medical-' + field"
+                    v-model="form[field]"
+                    rows="3"
+                    maxlength="10000"
+                    required
+                    :aria-invalid="Boolean(clientErrors[field])"
+                    :aria-describedby="clientErrors[field] ? `medical-${field}-error` : undefined"
+                    class="portal-input"
+                    @input="clearClientError(field)"
+                  />
+                  <span
+                    v-if="clientErrors[field]"
+                    :id="`medical-${field}-error`"
+                    class="portal-error"
+                    role="alert"
+                  >
+                    {{ clientErrors[field] }}
+                  </span>
+                </label>
+              </fieldset>
             </template>
-            <label
-              v-if="field === 'chronic_conditions'"
-              class="portal-copy"
-            >
-              <input
-                v-model="form.answers.no_chronic_conditions"
-                type="checkbox"
+            <template v-else>
+              <label
+                :for="'medical-' + field"
+                class="portal-label"
+              >{{ t(field === 'complaints' ? 'medical.complaintsDetails' : 'medical.' + field) }}</label>
+              <label
+                v-if="field === 'chronic_conditions'"
+                class="portal-copy"
               >
-              {{ t('medical.noChronic') }}
-            </label>
-            <textarea
-              v-if="(field !== 'operations' || form.answers.had_operations) && (field !== 'injuries' || form.answers.had_injuries) && (field !== 'chronic_conditions' || !form.answers.no_chronic_conditions)"
-              :id="'medical-' + field"
-              v-model="form[field]"
-              rows="3"
-              maxlength="10000"
-              :required="field === 'goals'"
-              class="portal-input"
-            />
+                <input
+                  v-model="form.answers.no_chronic_conditions"
+                  type="checkbox"
+                >
+                {{ t('medical.noChronic') }}
+              </label>
+              <textarea
+                v-if="field !== 'chronic_conditions' || !form.answers.no_chronic_conditions"
+                :id="'medical-' + field"
+                v-model="form[field]"
+                rows="3"
+                maxlength="10000"
+                :required="field === 'goals'"
+                :placeholder="field === 'goals' ? t('medical.goalsPlaceholder') : undefined"
+                :aria-invalid="Boolean(clientErrors[field])"
+                :aria-describedby="clientErrors[field] ? `medical-${field}-error` : undefined"
+                class="portal-input"
+                @input="clearClientError(field)"
+              />
+              <p
+                v-if="clientErrors[field]"
+                :id="`medical-${field}-error`"
+                class="portal-error"
+                role="alert"
+              >
+                {{ clientErrors[field] }}
+              </p>
+            </template>
           </div>
           <p
             v-for="(error, key) in form.errors"
@@ -197,12 +356,27 @@ function save(): void {
           >
             {{ error }}
           </p>
+          <p
+            v-if="form.processing"
+            role="status"
+            class="portal-copy"
+          >
+            {{ t('medical.saving') }}
+          </p>
+          <p
+            v-if="requestError"
+            class="portal-error"
+            role="alert"
+          >
+            {{ requestError }}
+          </p>
           <button
             type="submit"
             :disabled="form.processing || uploading"
+            :aria-busy="form.processing"
             class="portal-button portal-button--primary"
           >
-            {{ t('medical.confirm') }}
+            {{ t(form.processing ? 'medical.saving' : 'medical.confirm') }}
           </button>
         </form>
         <template v-else>

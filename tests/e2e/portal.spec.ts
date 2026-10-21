@@ -1430,23 +1430,76 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByRole('heading', { name: 'Добро пожаловать, Денис!' })).toBeVisible();
     await page.goto('/portal/more');
     await page.getByRole('link', { name: 'Медицинские данные', exact: true }).click();
+    await expect(page.getByLabel('Подробно опишите жалобы', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Задачи по здоровью', { exact: true })).toHaveAttribute('placeholder', 'Опишите конкретные результаты и задачи, которые вы хотите решить с Евгением (например: 1. Убрать тянущую боль в пояснице при наклонах. 2. Избавиться от утренней скованности и отеков)');
+    await expect(page.getByLabel('Год операции', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
+    await expect(page.getByText('Опишите, каких результатов вы хотите достичь.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Выберите хотя бы один симптом или опишите жалобу.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Выберите «Да» или «Нет».', { exact: true })).toHaveCount(2);
+
     await page.getByLabel('Боль в шее', { exact: true }).check();
-    await page.getByLabel('Главные жалобы', { exact: true }).last().fill('Synthetic symptoms');
+    await page.getByLabel('Боль в пояснице', { exact: true }).check();
+    await page.getByLabel('Боль в шее', { exact: true }).uncheck();
+    await expect(page.getByLabel('Боль в пояснице', { exact: true })).toBeChecked();
+    await page.getByLabel('Боль в шее', { exact: true }).check();
+    await page.getByLabel('Подробно опишите жалобы', { exact: true }).fill('Synthetic symptoms');
     await page.getByLabel('Задачи по здоровью', { exact: true }).fill('Synthetic goals');
     await page.getByLabel('Хронических заболеваний нет', { exact: true }).check();
+    await expect(page.getByLabel('Хронические заболевания', { exact: true })).toHaveCount(0);
+    await page.getByLabel('Хронических заболеваний нет', { exact: true }).uncheck();
+    await expect(page.getByLabel('Хронические заболевания', { exact: true })).toBeVisible();
+    await page.getByLabel('Хронических заболеваний нет', { exact: true }).check();
+    await page.locator('input[name="operations"][value="true"]').check();
+    await expect(page.getByLabel('Год операции', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Описание операции или рубца (где находится шрам)', { exact: true })).toBeVisible();
     await page.locator('input[name="operations"][value="false"]').check();
+    await expect(page.getByLabel('Год операции', { exact: true })).toHaveCount(0);
+    await page.locator('input[name="operations"][value="true"]').check();
+    await page.getByLabel('Год операции', { exact: true }).fill('1899');
+    await page.getByLabel('Описание операции или рубца (где находится шрам)', { exact: true }).fill('Synthetic scar location');
+    await page.locator('input[name="injuries"][value="true"]').check();
+    await expect(page.getByLabel('Год травмы', { exact: true })).toBeVisible();
     await page.locator('input[name="injuries"][value="false"]').check();
+    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveCount(0);
+    await page.locator('input[name="injuries"][value="true"]').check();
+    await page.getByLabel('Характер травмы', { exact: true }).fill('Synthetic injury description');
+    await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
+    await expect(page.getByText(new RegExp(`Укажите год с 1900 по ${new Date().getFullYear()}\\.`))).toBeVisible();
+    await page.getByLabel('Год операции', { exact: true }).fill(String(new Date().getFullYear()));
+    await page.getByLabel('Год травмы', { exact: true }).fill('2021');
     await page.locator('#medical-pain').focus();
     await page.locator('#medical-pain').press('Home');
     await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
     await page.locator('#medical-pain').press('End');
+    let failFirstSave = true;
+    await page.route('**/portal/medical-profile*', async (route) => {
+        if (route.request().method() === 'POST') {
+            if (failFirstSave) {
+                failFirstSave = false;
+                await route.abort('internetdisconnected');
+                return;
+            }
+            await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+        await route.continue();
+    });
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
+    await expect(page.getByText('Не удалось сохранить данные из-за проблем с соединением. Проверьте интернет и повторите попытку.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Подтвердить данные', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
+    await expect(page.getByRole('status', { name: 'Сохраняем…' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Сохраняем…', exact: true })).toBeDisabled();
     await expect(page.getByText('Данные сохранены', { exact: true })).toBeVisible();
+    await page.unroute('**/portal/medical-profile*');
     await expect(page.getByText('10 / 10', { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByText('Synthetic symptoms', { exact: true })).toBeVisible();
+    await expect(page.getByText('Synthetic scar location', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Редактировать данные', exact: true }).click();
-    await expect(page.getByLabel('Главные жалобы', { exact: true }).last()).toHaveValue('Synthetic symptoms');
+    await expect(page.getByLabel('Подробно опишите жалобы', { exact: true })).toHaveValue('Synthetic symptoms');
+    await expect(page.getByLabel('Год операции', { exact: true })).toHaveValue(String(new Date().getFullYear()));
+    await expect(page.getByLabel('Характер травмы', { exact: true })).toHaveValue('Synthetic injury description');
     await page.locator('#medical-pain').focus();
     await page.locator('#medical-pain').press('Home');
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
@@ -1457,17 +1510,68 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Редактировать данные', exact: true })).toBeVisible();
     await page.locator('#medical-files').setInputFiles([
+        { name: 'synthetic-pending.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic pending report)\nendobj\n%%EOF\n') },
+    ]);
+    await page.locator('#medical-files').setInputFiles([
+        { name: 'synthetic-invalid.exe', mimeType: 'application/x-msdownload', buffer: Buffer.from('not a medical report') },
+    ]);
+    await expect(page.getByText('Поддерживаются только файлы JPG, PNG и PDF.', { exact: true })).toBeVisible();
+    await expect(page.getByText('synthetic-pending.pdf · Не загружен', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Загрузить файлы', exact: true })).toBeDisabled();
+    await page.locator('#medical-files').setInputFiles(Array.from({ length: 6 }, (_, index) => ({
+        name: `synthetic-too-many-${index}.pdf`,
+        mimeType: 'application/pdf',
+        buffer: Buffer.from(`%PDF-1.4\n(${index})\n%%EOF\n`),
+    })));
+    await expect(page.getByText('Выберите не более 5 файлов за одну загрузку.', { exact: true })).toBeVisible();
+    const oversizedPdf = Buffer.alloc(20 * 1024 * 1024 + 1, 32);
+    oversizedPdf.write('%PDF-1.4\n');
+    await page.locator('#medical-files').setInputFiles([
+        { name: 'synthetic-too-large.pdf', mimeType: 'application/pdf', buffer: oversizedPdf },
+    ]);
+    await expect(page.getByText('Размер файла не должен превышать 20 МБ. Выберите файл меньшего размера.', { exact: true })).toBeVisible();
+    await page.locator('#medical-files').setInputFiles([
+        { name: 'synthetic-maximum-size.pdf', mimeType: 'application/pdf', buffer: oversizedPdf.subarray(0, 20 * 1024 * 1024) },
+    ]);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Загрузить файлы', exact: true })).toBeEnabled();
+
+    await page.locator('#medical-files').setInputFiles([
         { name: 'synthetic-report-one.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic report one)\nendobj\n%%EOF\n') },
         { name: 'synthetic-report-two.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic report two)\nendobj\n%%EOF\n') },
+        { name: 'synthetic-report-three.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic report three)\nendobj\n%%EOF\n') },
+        { name: 'synthetic-report-photo.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('/9j/4AAQSkZJRgABAQEAYABgAAD//gA7Q1JFQVRPUjogZ2QtanBlZyB2MS4wICh1c2luZyBJSkcgSlBFRyB2ODApLCBxdWFsaXR5ID0gODAK/9sAQwAGBAUGBQQGBgUGBwcGCAoQCgoJCQoUDg8MEBcUGBgXFBYWGh0lHxobIxwWFiAsICMmJykqKRkfLTAtKDAlKCko/9sAQwEHBwcKCAoTCgoTKBoWGigoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo/8AAEQgAAQABAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ5e4KDhIWGh4iJipKTlJWWl5iZmqKjpKWmpqipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/jp//aAAwDAQACEQMRAD8A+VKKKKAP/9k=', 'base64') },
+        { name: 'synthetic-report-scan.png', mimeType: 'image/png', buffer: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAACXBIWXMAAA7EAAAOxAGVKw4bAAAADElEQVQImWNgYGAAAAAEAAGjChXjAAAAAElFTkSuQmCC', 'base64') },
     ]);
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    let failFirstUpload = true;
+    await page.route('**/portal/medical-attachments*', async (route) => {
+        if (route.request().method() === 'POST' && failFirstUpload) {
+            failFirstUpload = false;
+            await route.abort('internetdisconnected');
+            return;
+        }
+        if (route.request().method() === 'POST') {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        await route.continue();
+    });
     await page.getByRole('button', { name: 'Загрузить файлы', exact: true }).click();
+    await expect(page.getByText('Не удалось загрузить файл из-за проблем с соединением. Проверьте интернет и повторите загрузку.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Загрузить файлы', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Загрузить файлы', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'synthetic-report-one.pdf' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'synthetic-report-one.pdf', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'synthetic-report-three.pdf', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'synthetic-report-photo.jpg', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'synthetic-report-scan.png', exact: true })).toBeVisible();
     const downloadEvent = page.waitForEvent('download');
     await page.getByRole('link', { name: 'synthetic-report-one.pdf', exact: true }).click();
     const download = await downloadEvent;
     expect(download.suggestedFilename()).toBe('synthetic-report-one.pdf');
     expect(await download.failure()).toBeNull();
+    await page.unroute('**/portal/medical-attachments*');
     await page.reload();
     await expect(page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true })).toBeVisible();
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
