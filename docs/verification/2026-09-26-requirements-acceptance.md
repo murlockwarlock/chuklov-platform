@@ -1,7 +1,7 @@
 # 26.09.2026 — requirements and staging acceptance
 
 Starting main SHA: `c201b41a14d91c57c1890e62737f9e2001a231f1`.
-Branch: `codex/26-09-full-implementation`. PR #59 is separate.
+Branch: `codex/26-09-full-implementation`. Current PR: #60.
 
 Sources: original Downloads LIST 1 DOCX (v2.4, 26.09.2026) and original Downloads LIST 2 Markdown. Quotations below were extracted directly from those files; no prior proof matrix is accepted as implementation evidence.
 
