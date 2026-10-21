@@ -467,6 +467,55 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
     return JSON.parse(output.trim().split('\n').at(-1) ?? '') as CrmFixture;
 }
 
+function createJournalSecondSpecialist(fixture: CrmFixture): { id: number; name: string } {
+    const name = `CRM Журнал второй ${Date.now()}`;
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $service = \\App\\Modules\\Services\\Domain\\Models\\Service::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey(${fixture.serviceId})
+            ->firstOrFail();
+        $specialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()
+            ->forOrganization($organization)
+            ->create([
+                'display_name' => '${name}',
+                'timezone' => $organization->defaultTimezone(),
+            ]);
+        \\App\\Modules\\Scheduling\\Domain\\Models\\SpecialistServiceAssignment::factory()
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+        foreach (range(1, 7) as $weekday) {
+            \\App\\Modules\\Scheduling\\Domain\\Models\\SpecialistWorkingHour::factory()
+                ->forSpecialist($specialist)
+                ->create([
+                    'weekday' => $weekday,
+                    'start_time' => '00:00',
+                    'end_time' => '23:59',
+                ]);
+        }
+        echo json_encode(['id' => $specialist->getKey(), 'name' => $specialist->display_name], JSON_THROW_ON_ERROR);
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-journal-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    const output = execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            XDG_CONFIG_HOME: psyshConfigDirectory,
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    return JSON.parse(output.trim().split('\n').at(-1) ?? '') as { id: number; name: string };
+}
+
 function appendCrmMessage(clientId: number, body: string): void {
     const encodedBody = Buffer.from(body).toString('base64');
     const php = `
@@ -517,6 +566,72 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
     await page.locator('button[type="submit"]').click();
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 }
+
+test('multi-specialist Journal keeps the accepted layout and slot ownership', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    const fixture = createCrmFixture();
+    const secondSpecialist = createJournalSecondSpecialist(fixture);
+
+    await login(page, fixture);
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.goto(`/admin/bookings?view=week&week=${fixture.bookingStartsAt.slice(0, 10)}`);
+    await expect(page.getByRole('heading', { name: 'Журнал записей', exact: true })).toBeVisible();
+
+    const filter = page.locator('#booking-journal-specialist');
+    await filter.click();
+    let panel = page.locator('.fi-dropdown-panel:visible').last();
+    await expect(panel).toBeVisible();
+    const checkbox = (name: string) => panel.locator('label').filter({ hasText: name }).locator('input[type="checkbox"]').first();
+
+    await checkbox(fixture.specialistName).check();
+    await expect(panel).toBeVisible();
+    await checkbox(secondSpecialist.name).check();
+    await expect(panel).toBeVisible();
+    await expect.poll(() => page.locator('input[wire\\:model*="selectedSpecialistIds"]:checked').count()).toBe(2);
+    await assertNoHorizontalOverflow(page);
+
+    await checkbox(fixture.specialistName).uncheck();
+    await expect.poll(() => page.locator('input[wire\\:model*="selectedSpecialistIds"]:checked').count()).toBe(1);
+    await expect(checkbox(secondSpecialist.name)).toBeChecked();
+
+    await panel.getByRole('button', { name: 'Все специалисты', exact: true }).click();
+    await expect.poll(() => page.locator('input[wire\\:model*="selectedSpecialistIds"]:checked').count()).toBe(0);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Журнал записей', exact: true })).toBeVisible();
+
+    const layout = await page.evaluate(() => {
+        const isVisible = (element: Element): boolean => {
+            const style = getComputedStyle(element);
+            const rect = element.getBoundingClientRect();
+
+            return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0;
+        };
+
+        return {
+            desktopGridVisible: [...document.querySelectorAll('[class*="lg:block"]')].some(isVisible),
+            mobileCardsVisible: [...document.querySelectorAll('[class*="lg:hidden"]')].some(isVisible),
+        };
+    });
+    expect(layout.desktopGridVisible).toBe(true);
+    expect(layout.mobileCardsVisible).toBe(false);
+    await expect(page.getByText(fixture.specialistName, { exact: true })).toBeVisible();
+    await expect(page.getByText(secondSpecialist.name, { exact: true })).toBeVisible();
+
+    await filter.click();
+    panel = page.locator('.fi-dropdown-panel:visible').last();
+    await checkbox(fixture.specialistName).check();
+    await expect(panel).toBeVisible();
+    await checkbox(secondSpecialist.name).check();
+    await expect(panel).toBeVisible();
+    const slotLinks = await page.locator('a[aria-label*="Добавить запись"]').evaluateAll((links) => links.map((link) => new URL((link as HTMLAnchorElement).href)));
+    expect(slotLinks.length).toBeGreaterThan(0);
+    expect(slotLinks.every((link) => link.searchParams.has('specialist_id'))).toBe(true);
+    expect(slotLinks.some((link) => link.searchParams.get('specialist_id') === String(fixture.specialistId))).toBe(true);
+    expect(slotLinks.some((link) => link.searchParams.get('specialist_id') === String(secondSpecialist.id))).toBe(true);
+    await assertNoHorizontalOverflow(page);
+});
 
 test('enrolled CRM MFA requires a valid code before native browser login', async ({ page }) => {
     const fixture = createCrmFixture();
