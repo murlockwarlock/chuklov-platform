@@ -1137,6 +1137,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertStringContainsString('lg:hidden', $html);
         self::assertStringContainsString('wire:key="booking-journal-specialist-filter"', $html);
         self::assertStringContainsString('wire:ignore.self', $html);
+        self::assertStringContainsString('x-float.placement.bottom-start.flip.shift.offset', $html);
         self::assertStringContainsString($first->display_name, $html);
         self::assertStringContainsString($second->display_name, $html);
         self::assertStringContainsString('specialist_id='.$second->getKey(), $html);
