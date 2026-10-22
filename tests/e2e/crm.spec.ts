@@ -58,7 +58,9 @@ async function uploadCrmMedicalReport(page: Page, filename: string): Promise<voi
         mimeType: 'application/pdf',
         buffer: validPdfBuffer(),
     });
-    await expect(dialog.getByRole('group', { name: filename, exact: true })).toBeVisible();
+    const selectedFile = dialog.getByRole('group', { name: filename, exact: true });
+    await expect(selectedFile).toBeVisible();
+    await expect(selectedFile.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
     await dialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(dialog).toBeHidden();
     await expect(page.getByText('Файл загружен', { exact: true })).toBeVisible();
@@ -1649,6 +1651,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     const selectedFile = uploadDialog.getByRole('group', { name: 'ux-a-report.pdf', exact: true });
     await expect(selectedFile).toHaveCount(1);
     await expect(selectedFile).toBeVisible();
+    await expect(selectedFile.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
     const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
     await expect(uploadSubmit).toBeVisible();
     await expect(uploadSubmit).toBeEnabled();
