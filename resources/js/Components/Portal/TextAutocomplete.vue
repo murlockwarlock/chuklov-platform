@@ -4,7 +4,10 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 const props = withDefaults(defineProps<{ id: string; modelValue: string; suggestions: string[]; required?: boolean; emptyText: string; filterSuggestions?: boolean }>(), {
     filterSuggestions: true,
 });
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
+const emit = defineEmits<{
+    'update:modelValue': [value: string];
+    focus: [];
+}>();
 const root = ref<HTMLElement | null>(null);
 const input = ref<HTMLInputElement | null>(null);
 const open = ref(false);
@@ -27,6 +30,11 @@ function type(event: Event): void {
     emit('update:modelValue', (event.target as HTMLInputElement).value);
     open.value = true;
     active.value = -1;
+}
+
+function focused(): void {
+    open.value = true;
+    emit('focus');
 }
 
 function keydown(event: KeyboardEvent): void {
@@ -88,7 +96,7 @@ onBeforeUnmount(() => document.removeEventListener('pointerdown', outside));
       autocomplete="off"
       maxlength="100"
       class="portal-input"
-      @focus="open = true"
+      @focus="focused"
       @click="open = true"
       @input="type"
       @keydown="keydown"

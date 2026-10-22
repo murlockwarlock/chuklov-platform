@@ -8,7 +8,10 @@ import TextAutocomplete from './TextAutocomplete.vue';
 import CityAutocomplete from './CityAutocomplete.vue';
 
 const props = defineProps<{ modelValue: PersonalData; idPrefix: string; citiesUrl: string; emailEditable: boolean; errors?: Partial<Record<string, string>> }>();
-const emit = defineEmits<{ 'update:modelValue': [value: PersonalData] }>();
+const emit = defineEmits<{
+    'update:modelValue': [value: PersonalData];
+    'city-lookup-loading': [loading: boolean];
+}>();
 const { locale, t } = usePortalLocale();
 const countries = computed(() => countryNames(locale.value));
 const fields = [
@@ -132,6 +135,7 @@ function update(key: keyof PersonalData, value: string): void {
         :country="modelValue.country"
         :cities-url="citiesUrl"
         required
+        @lookup-loading="emit('city-lookup-loading', $event)"
         @update:model-value="update('city', $event)"
       />
       <p

@@ -39,6 +39,7 @@ const props = defineProps<{
     hasLocationDayRules: boolean;
     locationAreaOptions: string[];
     processing: boolean;
+    waitingForCityLookup: boolean;
     error: string | undefined;
     legalDocuments: LegalDocument[];
     consentValues: Record<number, boolean>;
@@ -279,6 +280,13 @@ const location = computed({
     </p>
 
     <div class="portal-action-row">
+      <p
+        v-if="props.waitingForCityLookup"
+        class="portal-copy portal-copy--small"
+        role="status"
+      >
+        {{ t('profile.cityLoading') }}
+      </p>
       <button
         type="button"
         class="portal-button portal-button--secondary"
@@ -289,7 +297,7 @@ const location = computed({
       <button
         type="button"
         class="portal-button portal-button--primary"
-        :disabled="props.processing"
+        :disabled="props.processing || props.waitingForCityLookup"
         @click="emit('confirm')"
       >
         {{ props.processing ? t('booking.creating') : t('booking.create') }}

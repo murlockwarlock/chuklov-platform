@@ -142,6 +142,7 @@ const selectedWorkingLocationId = ref<number | null>(props.query.workingLocation
 const selectedLocationArea = ref<string | null>(props.query.locationArea);
 const timezoneEditorOpen = ref(false);
 const bookingStep = ref<BookingStep>('time');
+const cityLookupLoading = ref(false);
 const confirmationForm = ref<HTMLFormElement | null>(null);
 const bookingForm = useForm<{
     patient_profile_id: number | null;
@@ -623,6 +624,7 @@ function returnToTime(): void {
 }
 
 function submitBooking(): void {
+    if (cityLookupLoading.value || bookingForm.processing) return;
     if (confirmationForm.value && !confirmationForm.value.reportValidity()) return;
     if (startsAtList.value.length === 0 || props.query.serviceId === null || props.query.specialistId === null) {
         return;
@@ -1055,6 +1057,7 @@ function submitBooking(): void {
             :has-location-day-rules="hasLocationDayRules"
             :location-area-options="locationAreaOptions"
             :processing="bookingForm.processing"
+            :waiting-for-city-lookup="cityLookupLoading"
             :error="bookingError"
             :legal-documents="props.legalDocuments"
             :consent-values="consentValues"
@@ -1083,6 +1086,7 @@ function submitBooking(): void {
                 :cities-url="props.urls.cities"
                 :email-editable="props.profile.emailEditable"
                 :errors="personalErrors"
+                @city-lookup-loading="cityLookupLoading = $event"
               />
             </template>
           </BookingConfirmation>

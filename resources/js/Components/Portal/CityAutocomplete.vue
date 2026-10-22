@@ -5,27 +5,40 @@ import { usePortalLocale } from '../../composables/usePortalLocale';
 import TextAutocomplete from './TextAutocomplete.vue';
 
 const props = defineProps<{ id: string; modelValue: string; country: string; citiesUrl: string; required?: boolean }>();
-const emit = defineEmits<{ 'update:modelValue': [value: string] }>();
+const emit = defineEmits<{
+    'update:modelValue': [value: string];
+    'lookup-loading': [loading: boolean];
+}>();
 const { locale, t } = usePortalLocale();
 const cities = ref<string[]>([]);
 const failed = ref(false);
 const loading = ref(false);
 const lookup = useHttp<{ country: string; query: string }, unknown>({ country: '', query: '' });
 let generation = 0;
+let activated = false;
 let timer: ReturnType<typeof setTimeout> | null = null;
 
-watch(() => [props.country, props.modelValue, locale.value] as const, ([country, query]) => {
+function setLoading(value: boolean): void {
+    if (loading.value === value) return;
+    loading.value = value;
+    emit('lookup-loading', value);
+}
+
+function refresh(): void {
     const current = ++generation;
     if (timer) clearTimeout(timer);
     lookup.cancel();
     cities.value = [];
     failed.value = false;
-    loading.value = false;
-    if (!country.trim()) return;
+    if (!activated || !props.country.trim()) {
+        setLoading(false);
+        return;
+    }
+    setLoading(true);
     timer = setTimeout(() => {
-        loading.value = true;
-        lookup.country = country;
-        lookup.query = query;
+        timer = null;
+        lookup.country = props.country;
+        lookup.query = props.modelValue;
         const fail = (): void => { if (current === generation) failed.value = true; };
         lookup.post(props.citiesUrl, {
             onSuccess: (result) => {
@@ -39,12 +52,20 @@ watch(() => [props.country, props.modelValue, locale.value] as const, ([country,
             onError: fail,
             onHttpException: fail,
             onNetworkError: fail,
-            onFinish: () => { if (current === generation) loading.value = false; },
+            onFinish: () => { if (current === generation) setLoading(false); },
         });
     }, 250);
-}, { immediate: true });
+}
 
-onBeforeUnmount(() => { ++generation; if (timer) clearTimeout(timer); lookup.cancel(); });
+function activate(): void {
+    if (activated) return;
+    activated = true;
+    refresh();
+}
+
+watch(() => [props.country, props.modelValue, locale.value], refresh, { immediate: true });
+
+onBeforeUnmount(() => { ++generation; if (timer) clearTimeout(timer); lookup.cancel(); setLoading(false); });
 </script>
 
 <template>
@@ -55,6 +76,7 @@ onBeforeUnmount(() => { ++generation; if (timer) clearTimeout(timer); lookup.can
     :required="required"
     :filter-suggestions="false"
     :empty-text="t(loading ? 'profile.cityLoading' : failed ? 'profile.cityUnavailable' : 'profile.cityNoMatch')"
+    @focus="activate"
     @update:model-value="emit('update:modelValue', $event)"
   />
 </template>

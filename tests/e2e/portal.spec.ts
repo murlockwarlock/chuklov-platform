@@ -2258,6 +2258,66 @@ test('booking keeps its state while reviewing grouped legal documents', async ({
     await assertNoHorizontalOverflow(page);
 });
 
+test('booking denial stays visible while city suggestions are requested', async ({ page }) => {
+    const fixture = createBookingFixture();
+    execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->findOrFail(${fixture.clientId});
+        $admin = \\App\\Models\\User::factory()->forOrganization($client->organization)->create();
+        app(\\App\\Modules\\Identity\\Application\\BlockClientBlacklist::class)->handle(
+            $admin,
+            $client,
+            'Playwright synthetic booking denial.',
+        );
+    `], { encoding: 'utf8' });
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    let cityLookupRequests = 0;
+    page.on('request', (request) => {
+        if (new URL(request.url()).pathname === '/portal/profile/cities') cityLookupRequests++;
+    });
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    await page.getByRole('button', { name: fixture.date, exact: true }).click();
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+
+    const cityInput = page.getByRole('combobox', { name: 'Город', exact: true });
+    const confirm = page.getByRole('button', { name: 'Подтвердить запись', exact: true });
+    await expect(cityInput).toBeVisible();
+    await page.waitForTimeout(350);
+    expect(cityLookupRequests).toBe(0);
+
+    const cityResponsePromise = page.waitForResponse((response) => response.request().method() === 'POST'
+        && new URL(response.url()).pathname === '/portal/profile/cities');
+    await cityInput.focus();
+    await expect(confirm).toBeDisabled();
+    await expect(page.getByRole('status').filter({ hasText: 'Ищем города…' })).toBeVisible();
+    expect((await cityResponsePromise).status()).toBe(200);
+    await expect(confirm).toBeEnabled();
+
+    await acceptRequiredConsents(page);
+    const bookingResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+        && new URL(response.url()).pathname === '/portal/bookings');
+    await confirm.click();
+    expect((await bookingResponse).status()).toBe(302);
+    await expect(page.getByRole('alert')).toHaveText(
+        'Для этого профиля самостоятельная запись недоступна. Свяжитесь с нами, и мы поможем подобрать вариант.',
+    );
+
+    const result = execFileSync('php', ['artisan', 'tinker', '--execute', `
+        echo json_encode([
+            'bookings' => \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::query()->where('client_id', ${fixture.clientId})->count(),
+            'idempotencyKeys' => \\Illuminate\\Support\\Facades\\DB::table('booking_idempotency_keys')
+                ->where('actor_scope', 'client:${fixture.clientId}')
+                ->count(),
+        ], JSON_THROW_ON_ERROR);
+    `], { encoding: 'utf8' }).trim();
+    expect(JSON.parse(result)).toEqual({ bookings: 0, idempotencyKeys: 0 });
+});
+
 test('booking uses a service step and selected-day calendar before confirmation', async ({ page }) => {
     const fixture = createBookingFixture();
     const dateToValue = new Date(`${fixture.date}T00:00:00Z`);
