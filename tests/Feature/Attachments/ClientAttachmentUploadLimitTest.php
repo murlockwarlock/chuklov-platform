@@ -29,6 +29,46 @@ final class ClientAttachmentUploadLimitTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_successive_crm_uploads_refresh_the_attachment_table(): void
+    {
+        Storage::fake('private');
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ClientAttachmentsRelationManager::class, [
+            'ownerRecord' => $client,
+            'pageClass' => ViewClient::class,
+        ]);
+        $component->assertCanSeeTableRecords([]);
+
+        foreach (['first-report.pdf', 'second-report.pdf'] as $filename) {
+            $component
+                ->mountTableAction('upload')
+                ->fillForm([
+                    'attachment_type' => AttachmentType::MedicalReport->value,
+                    'file' => UploadedFile::fake()->createWithContent($filename, "%PDF-1.4\n({$filename})\n%%EOF\n"),
+                ])
+                ->callMountedAction()
+                ->assertNotified(Notification::make()->title('Файл загружен')->success());
+
+            $attachment = MedicalAttachment::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('client_id', $client->getKey())
+                ->where('original_filename', $filename)
+                ->firstOrFail();
+
+            $component->assertCanSeeTableRecords([$attachment]);
+        }
+
+        $component->assertCanSeeTableRecords(MedicalAttachment::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->get());
+    }
+
     public function test_crm_explains_the_medical_attachment_limit_and_logs_the_rejection(): void
     {
         Storage::fake('private');

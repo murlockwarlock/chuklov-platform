@@ -171,6 +171,7 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                             return;
                         }
 
+                        $this->flushCachedTableRecords();
                         self::sendUploadNotification();
                     })
                     ->visible(fn (): bool => app(AttachmentAuthorization::class)->allowsUpload($actor, $client)),

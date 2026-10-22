@@ -58,8 +58,10 @@ async function uploadCrmMedicalReport(page: Page, filename: string): Promise<voi
         mimeType: 'application/pdf',
         buffer: validPdfBuffer(),
     });
+    await expect(dialog.getByRole('group', { name: filename, exact: true })).toBeVisible();
     await dialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(dialog).toBeHidden();
+    await expect(page.getByText('Файл загружен', { exact: true })).toBeVisible();
 }
 
 function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean } = {}): CrmFixture {
@@ -1653,6 +1655,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(uploadDialog.getByText('Ошибка при загрузке', { exact: true })).toBeHidden();
     await uploadSubmit.click();
     await expect(uploadDialog).toBeHidden();
+    await expect(page.getByText('Файл загружен', { exact: true })).toBeVisible();
 
     const attachmentsTable = page.getByRole('table', { name: 'Файлы и МРТ' });
     const uploadedRow = attachmentsTable.getByRole('row').filter({ hasText: 'ux-a-report.pdf' });
