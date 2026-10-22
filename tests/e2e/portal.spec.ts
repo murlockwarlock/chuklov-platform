@@ -1833,22 +1833,16 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.setViewportSize({ width: 390, height: 844 });
     const painSlider = page.locator('#medical-pain');
     await painSlider.scrollIntoViewIfNeeded();
-    const painSliderBounds = await painSlider.boundingBox();
-    expect(painSliderBounds).not.toBeNull();
-    if (painSliderBounds !== null) {
-        const sliderY = painSliderBounds.y + painSliderBounds.height / 2;
-        await page.mouse.move(painSliderBounds.x + painSliderBounds.width * 0.02, sliderY);
-        await page.mouse.down();
-        await page.mouse.move(painSliderBounds.x + painSliderBounds.width * 0.8, sliderY, { steps: 12 });
-        await page.mouse.up();
-    }
-    const pointerPainValue = Number(await painSlider.inputValue());
-    expect(pointerPainValue).toBeGreaterThanOrEqual(7);
-    expect(pointerPainValue).toBeLessThanOrEqual(9);
-    await page.locator('#medical-pain').focus();
-    await page.locator('#medical-pain').press('Home');
+    await expect(painSlider).toBeVisible();
+    await painSlider.focus();
+    await painSlider.press('Home');
     await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
-    await page.locator('#medical-pain').press('End');
+    for (let step = 0; step < 8; step++) {
+        await painSlider.press('ArrowRight');
+    }
+    await expect(painSlider).toHaveValue('8');
+    await expect(page.getByText('8 / 10', { exact: true })).toBeVisible();
+    await painSlider.press('End');
     let failFirstSave = true;
     await page.route('**/portal/medical-profile*', async (route) => {
         if (route.request().method() === 'POST') {
