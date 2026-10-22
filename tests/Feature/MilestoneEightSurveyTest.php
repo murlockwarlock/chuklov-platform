@@ -81,6 +81,7 @@ final class MilestoneEightSurveyTest extends TestCase
 
         $versionTwoData = $this->definitionData();
         $versionTwoData['definition']['sections'][0]['questions'][0]['label'] = 'Updated label';
+        $versionTwoData['approval_status'] = 'approved';
         $versionTwo = app(CreateSurveyVersion::class)->handle($actor, $definition, $versionTwoData);
         app(PublishSurveyVersion::class)->handle($actor, $versionTwo);
 
@@ -215,8 +216,9 @@ final class MilestoneEightSurveyTest extends TestCase
             ->where('organization_id', $organization->getKey())
             ->where('definition_key', PlatformSurveyCatalog::HEALTH_KEY)
             ->firstOrFail();
-        $published = $definition->activeVersion()->firstOrFail();
+        $published = $definition->versions()->latest('version')->firstOrFail();
         $state = SurveyDefinitionFormMapper::denormalize($published);
+        $state['approval_status'] = 'approved';
         foreach ($state['rules'][0]['points'] as &$point) {
             if (($point['value'] ?? null) === 'never') {
                 $point['points'] = 2;
@@ -306,6 +308,7 @@ final class MilestoneEightSurveyTest extends TestCase
 
         $newData = $this->definitionData();
         $newData['metric_schema_key'] = 'symptom-schema-v2';
+        $newData['approval_status'] = 'approved';
         $version = app(CreateSurveyVersion::class)->handle($actor, $definition, $newData);
         app(PublishSurveyVersion::class)->handle($actor, $version);
         $third = app(StartSurveyAttempt::class)->handle($client, $definition->refresh());
@@ -423,7 +426,9 @@ final class MilestoneEightSurveyTest extends TestCase
 
     private function publishedDefinition(User $actor): SurveyDefinition
     {
-        $definition = app(CreateSurveyDefinition::class)->handle($actor, $this->definitionData());
+        $data = $this->definitionData();
+        $data['approval_status'] = 'approved';
+        $definition = app(CreateSurveyDefinition::class)->handle($actor, $data);
         app(PublishSurveyVersion::class)->handle($actor, $definition->versions()->sole());
 
         return $definition->refresh();

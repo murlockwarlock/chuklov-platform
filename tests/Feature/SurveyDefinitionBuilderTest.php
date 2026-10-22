@@ -400,7 +400,11 @@ final class SurveyDefinitionBuilderTest extends TestCase
             ->where('organization_id', $organization->getKey())
             ->where('definition_key', PlatformSurveyCatalog::HEALTH_KEY)
             ->firstOrFail();
-        $published = $definition->activeVersion()->firstOrFail();
+        $draft = $definition->versions()->latest('version')->firstOrFail();
+        $draft->forceFill(['approval_status' => 'approved'])->save();
+        app(PublishSurveyVersion::class)->handle($admin, $draft);
+        $definition->forceFill(['is_available' => true])->save();
+        $published = $definition->refresh()->activeVersion()->firstOrFail();
         $client = Client::factory()->forOrganization($organization)->create();
         $attempt = app(StartSurveyAttempt::class)->handle($client, $definition);
         $originalScoring = $published->scoring;

@@ -225,6 +225,7 @@ final class CrmEntityClickThroughTest extends TestCase
             'description_en' => null,
             'metric_schema_key' => null,
             'source_reference' => null,
+            'approval_status' => 'approved',
             'definition' => [
                 'sections' => [[
                     'key' => 'general',

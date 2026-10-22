@@ -54,6 +54,7 @@ final class InstallPlatformSurveyCatalog
                     ->where('status', SurveyVersionStatus::Published->value)
                     ->latest('version')
                     ->first();
+                $installedVersion = $published;
 
                 if ($published === null) {
                     $existingVersion = SurveyVersion::query()
@@ -71,7 +72,7 @@ final class InstallPlatformSurveyCatalog
                         'organization_id' => $organization->getKey(),
                         'survey_definition_id' => $definition->getKey(),
                         'version' => (int) $definition->versions()->max('version') + 1,
-                        'status' => SurveyVersionStatus::Published,
+                        'status' => SurveyVersionStatus::Draft,
                         'title' => $definitionData['title'],
                         'title_en' => $definitionData['title_en'],
                         'description' => $definitionData['description'],
@@ -83,43 +84,48 @@ final class InstallPlatformSurveyCatalog
                         'source' => $definitionData['source'],
                         'approval_status' => $definitionData['approval_status'],
                         'methodology' => $definitionData['methodology'],
-                        'published_at' => now(),
                     ]);
-                    $definition->forceFill(['active_version_id' => $version->getKey()])->save();
-                    $published = $version;
-                } elseif ($this->isUntouchedPlatformVersion($definition, $published)
-                    && $this->fingerprint($published, $definitionData) !== $this->fingerprintData($definitionData)) {
+                    $installedVersion = $version;
+                } elseif ($this->isUntouchedPlatformVersion($definition, $published)) {
                     $published->forceFill([
                         'status' => SurveyVersionStatus::Retired,
                         'retired_at' => now(),
                     ])->save();
+                    $definition->forceFill([
+                        'active_version_id' => null,
+                        'is_available' => false,
+                    ])->save();
 
-                    $version = SurveyVersion::query()->create([
-                        'organization_id' => $organization->getKey(),
-                        'survey_definition_id' => $definition->getKey(),
-                        'version' => (int) $definition->versions()->max('version') + 1,
-                        'status' => SurveyVersionStatus::Published,
-                        'title' => $definitionData['title'],
-                        'title_en' => $definitionData['title_en'],
-                        'description' => $definitionData['description'],
-                        'description_en' => $definitionData['description_en'],
-                        'definition' => $definitionData['definition'],
-                        'scoring' => $definitionData['scoring'],
-                        'metric_schema_key' => $definitionData['metric_schema_key'],
-                        'source_reference' => null,
-                        'source' => $definitionData['source'],
-                        'approval_status' => $definitionData['approval_status'],
-                        'methodology' => $definitionData['methodology'],
-                        'published_at' => now(),
-                    ]);
-                    $definition->forceFill(['active_version_id' => $version->getKey()])->save();
-                    $published = $version;
+                    $installedVersion = $published;
+                    if ($this->fingerprint($published, $definitionData) !== $this->fingerprintData($definitionData)) {
+                        $installedVersion = SurveyVersion::query()->create([
+                            'organization_id' => $organization->getKey(),
+                            'survey_definition_id' => $definition->getKey(),
+                            'version' => (int) $definition->versions()->max('version') + 1,
+                            'status' => SurveyVersionStatus::Draft,
+                            'title' => $definitionData['title'],
+                            'title_en' => $definitionData['title_en'],
+                            'description' => $definitionData['description'],
+                            'description_en' => $definitionData['description_en'],
+                            'definition' => $definitionData['definition'],
+                            'scoring' => $definitionData['scoring'],
+                            'metric_schema_key' => $definitionData['metric_schema_key'],
+                            'source_reference' => null,
+                            'source' => $definitionData['source'],
+                            'approval_status' => $definitionData['approval_status'],
+                            'methodology' => $definitionData['methodology'],
+                        ]);
+                    }
+                }
+
+                if (! $installedVersion instanceof SurveyVersion) {
+                    continue;
                 }
 
                 $installed[] = [
                     'definition_key' => $definition->definition_key,
                     'definition_id' => (int) $definition->getKey(),
-                    'version' => (int) $published->version,
+                    'version' => (int) $installedVersion->version,
                 ];
             }
 

@@ -12,6 +12,7 @@ use App\Modules\Surveys\Application\ProjectSurveyContent;
 use App\Modules\Surveys\Application\SaveSurveyAttempt;
 use App\Modules\Surveys\Application\StartSurveyAttempt;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
+use App\Modules\Surveys\Domain\Exceptions\SurveyAttemptUnavailableException;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Modules\Surveys\Domain\Models\SurveyReport;
 use Illuminate\Http\RedirectResponse;
@@ -28,6 +29,10 @@ final class SurveyController extends Controller
         return Inertia::render('Portal/Surveys', [
             ...$data,
             'urls' => ['start' => route('portal.surveys.start', ['definitionId' => '__id__'])],
+            'notices' => [
+                'startUnavailable' => (bool) session('survey_start_unavailable', false),
+                'resultUnavailable' => (bool) session('survey_result_unavailable', false),
+            ],
         ]);
     }
 
@@ -35,14 +40,22 @@ final class SurveyController extends Controller
     {
         $client = $context->client();
         $definition = SurveyDefinition::query()->where('organization_id', $client->organization_id)->findOrFail($definitionId);
-        $attempt = $start->handle($client, $definition);
+        try {
+            $attempt = $start->handle($client, $definition);
+        } catch (SurveyAttemptUnavailableException) {
+            return redirect()->route('portal.surveys.index')->with('survey_start_unavailable', true);
+        }
 
         return redirect()->route('portal.surveys.show', $attempt->getKey());
     }
 
     public function show(int $attemptId, ClientPortalContext $context, GetClientSurveyAttempt $get, ProjectSurveyContent $content): Response|RedirectResponse
     {
-        $attempt = $get->handle($context->client(), $attemptId);
+        try {
+            $attempt = $get->handle($context->client(), $attemptId);
+        } catch (SurveyAttemptUnavailableException) {
+            return $this->redirectToSurveysForUnavailableResult();
+        }
         if ($attempt->status === SurveyAttemptStatus::Completed) {
             $reportId = $attempt->report()->value('id');
 
@@ -65,16 +78,26 @@ final class SurveyController extends Controller
 
     public function save(int $attemptId, Request $request, ClientPortalContext $context, GetClientSurveyAttempt $get, SaveSurveyAttempt $save): RedirectResponse
     {
+        try {
+            $attempt = $get->handle($context->client(), $attemptId);
+        } catch (SurveyAttemptUnavailableException) {
+            return $this->redirectToSurveysForUnavailableResult();
+        }
         $answers = $request->validate(['answers' => ['present', 'array']])['answers'];
-        $save->handle($context->client(), $get->handle($context->client(), $attemptId), $answers);
+        $save->handle($context->client(), $attempt, $answers);
 
         return back()->with('survey_saved', true);
     }
 
     public function complete(int $attemptId, Request $request, ClientPortalContext $context, GetClientSurveyAttempt $get, CompleteSurveyAttempt $complete): RedirectResponse
     {
+        try {
+            $attempt = $get->handle($context->client(), $attemptId);
+        } catch (SurveyAttemptUnavailableException) {
+            return $this->redirectToSurveysForUnavailableResult();
+        }
         $answers = $request->validate(['answers' => ['present', 'array']])['answers'];
-        $attempt = $complete->handle($context->client(), $get->handle($context->client(), $attemptId), $answers);
+        $attempt = $complete->handle($context->client(), $attempt, $answers);
 
         return redirect()->route('portal.surveys.report', $attempt->report()->value('id'));
     }
@@ -84,13 +107,19 @@ final class SurveyController extends Controller
         ClientPortalContext $context,
         ProjectSurveyContent $content,
         ResolveOnlineConsultationService $consultations,
-    ): Response {
+        GetClientSurveyAttempt $get,
+    ): Response|RedirectResponse {
         $client = $context->client();
         $report = SurveyReport::query()
             ->where('organization_id', $client->organization_id)
             ->where('client_id', $client->getKey())
             ->findOrFail($reportId);
         $attempt = $report->attempt()->firstOrFail();
+        try {
+            $get->handle($client, (int) $attempt->getKey());
+        } catch (SurveyAttemptUnavailableException) {
+            return $this->redirectToSurveysForUnavailableResult();
+        }
 
         $snapshot = $content->report($report->report_snapshot, app()->getLocale());
         $consultation = $consultations->handle((int) $client->organization_id);
@@ -113,5 +142,10 @@ final class SurveyController extends Controller
                     ]),
             ],
         ]);
+    }
+
+    private function redirectToSurveysForUnavailableResult(): RedirectResponse
+    {
+        return redirect()->route('portal.surveys.index')->with('survey_result_unavailable', true);
     }
 }
