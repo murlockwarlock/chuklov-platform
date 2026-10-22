@@ -16,6 +16,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use RuntimeException;
 use Tests\TestCase;
@@ -45,12 +46,14 @@ final class MedicalAttachmentLimitPostgresTest extends TestCase
 
         try {
             for ($attempt = 0; $attempt < 4; $attempt++) {
-                $this->upload($client, $filePath, 'medical-limit-seed-'.$attempt);
+                $this->upload($client, $filePath, (string) Str::uuid());
             }
 
+            $firstRaceKey = (string) Str::uuid();
+            $secondRaceKey = (string) Str::uuid();
             $results = Concurrency::driver('process')->run([
-                static fn (): string => self::uploadInProcess($organizationId, $clientId, $filePath, 'medical-limit-race-a'),
-                static fn (): string => self::uploadInProcess($organizationId, $clientId, $filePath, 'medical-limit-race-b'),
+                static fn (): string => self::uploadInProcess($organizationId, $clientId, $filePath, $firstRaceKey),
+                static fn (): string => self::uploadInProcess($organizationId, $clientId, $filePath, $secondRaceKey),
             ]);
 
             self::assertSame(1, count(array_filter($results, static fn (string $result): bool => $result === 'uploaded')));
