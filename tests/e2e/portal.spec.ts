@@ -1765,6 +1765,7 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.goto('/portal/more');
     await page.getByRole('link', { name: 'Медицинские данные', exact: true }).click();
     await expect(page.getByLabel('Подробно опишите жалобы', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Шкала интенсивности боли (ВАШ):', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Задачи по здоровью', { exact: true })).toHaveAttribute('placeholder', 'Опишите конкретные результаты и задачи, которые вы хотите решить с Евгением (например: 1. Убрать тянущую боль в пояснице при наклонах. 2. Избавиться от утренней скованности и отеков)');
     await expect(page.getByLabel('Год операции', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
@@ -1772,6 +1773,13 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByText('Выберите хотя бы один симптом или опишите жалобу.', { exact: true })).toBeVisible();
     await expect(page.getByText('Выберите «Да» или «Нет».', { exact: true })).toHaveCount(2);
 
+    for (const symptom of ['Головные боли', 'Боль в шее', 'Боль в пояснице', 'Суставы', 'Отечность', 'Проблемы ЖКТ', 'Сонливость/Слабость', 'Бессонница', 'Стресс/Тревожность']) {
+        const chip = page.getByLabel(symptom, { exact: true });
+        await chip.check();
+        await expect(chip).toBeChecked();
+        await chip.uncheck();
+        await expect(chip).not.toBeChecked();
+    }
     await page.getByLabel('Боль в шее', { exact: true }).check();
     await page.getByLabel('Боль в пояснице', { exact: true }).check();
     await page.getByLabel('Боль в шее', { exact: true }).uncheck();
@@ -1798,12 +1806,39 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByLabel('Год травмы', { exact: true })).toHaveCount(0);
     await page.locator('input[name="injuries"][value="true"]').check();
     await page.getByLabel('Характер травмы', { exact: true }).fill('Synthetic injury description');
+    await page.getByLabel('Год операции', { exact: true }).fill('');
+    await page.getByLabel('Год травмы', { exact: true }).fill('');
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
-    await expect(page.getByText(new RegExp(`Укажите год с 1900 по ${new Date().getFullYear()}\\.`))).toBeVisible();
+    await expect(page.locator('#medical-operations-year-error')).toHaveText('Укажите год.');
+    await expect(page.locator('#medical-injuries-year-error')).toHaveText('Укажите год.');
+    await expect(page.getByLabel('Год операции', { exact: true })).toHaveAttribute('aria-describedby', 'medical-operations-year-error');
+    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('aria-describedby', 'medical-injuries-year-error');
+    await expect(page.getByLabel('Год операции', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+    await page.getByLabel('Год операции', { exact: true }).fill('1899');
+    await page.getByLabel('Год травмы', { exact: true }).fill('2027');
+    await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
+    await expect(page.locator('#medical-operations-year-error')).toHaveText(`Укажите год с 1900 по ${new Date().getFullYear()}.`);
+    await expect(page.locator('#medical-injuries-year-error')).toHaveText(`Укажите год с 1900 по ${new Date().getFullYear()}.`);
+    await expect(page.getByLabel('Год операции', { exact: true })).toHaveAttribute('aria-describedby', 'medical-operations-year-error');
+    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('aria-describedby', 'medical-injuries-year-error');
+    await expect(page.getByLabel('Год операции', { exact: true })).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('aria-invalid', 'true');
     await expect(page.getByLabel('Год операции', { exact: true })).toHaveValue('1899');
     await expect(page.getByLabel('Описание операции или рубца (где находится шрам)', { exact: true })).toHaveValue('Synthetic scar location');
     await page.getByLabel('Год операции', { exact: true }).fill(String(new Date().getFullYear()));
     await page.getByLabel('Год травмы', { exact: true }).fill('2021');
+    await expect(page.locator('#medical-operations-year-error')).toHaveCount(0);
+    await expect(page.locator('#medical-injuries-year-error')).toHaveCount(0);
+    const painSlider = page.locator('#medical-pain');
+    const painSliderBounds = await painSlider.boundingBox();
+    expect(painSliderBounds).not.toBeNull();
+    if (painSliderBounds !== null) {
+        await page.mouse.click(painSliderBounds.x + painSliderBounds.width * 0.8, painSliderBounds.y + painSliderBounds.height / 2);
+    }
+    const pointerPainValue = Number(await painSlider.inputValue());
+    expect(pointerPainValue).toBeGreaterThanOrEqual(7);
+    expect(pointerPainValue).toBeLessThanOrEqual(9);
     await page.locator('#medical-pain').focus();
     await page.locator('#medical-pain').press('Home');
     await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();

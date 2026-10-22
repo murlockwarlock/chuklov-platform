@@ -393,7 +393,7 @@ const messages: Record<PortalLocale, Record<string, string>> = {
         'medical.medicines': 'Лекарственные препараты',
         'medical.supplements': 'Нутрицевтики и БАДы',
         'medical.noChronic': 'Хронических заболеваний нет',
-        'medical.pain': 'Шкала боли (ВАШ)',
+        'medical.pain': 'Шкала интенсивности боли (ВАШ):',
         'medical.noPain': 'Нет боли',
         'medical.maxPain': 'Нестерпимая боль',
         'medical.notSpecified': 'Не указано',
