@@ -8,6 +8,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 final class PurgeStagingClientAccountData
@@ -26,13 +27,52 @@ final class PurgeStagingClientAccountData
     ) {}
 
     /**
-     * @return array{deleted_record_count: int, attachment_paths: array<int, string>, receipt_paths: array<int, string>}
+     * @return array{deleted_record_count: int, attachment_paths: array<int, string>, receipt_paths: array<int, string>, patient_profile_ids: array<int, int>, patient_invitation_profile_ids: array<int, int>}
      */
     public function handle(Organization $organization, Client $client): array
     {
         $organizationId = (int) $organization->getKey();
         $clientId = (int) $client->getKey();
+        if (DB::table('patient_profiles')
+            ->where('organization_id', $organizationId)
+            ->where('clinical_client_id', $clientId)
+            ->where('owner_client_id', '<>', $clientId)
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'account' => __('Сначала отзовите связь с профилем пациента другого владельца.'),
+            ]);
+        }
+
+        if (DB::table('patient_profiles')
+            ->where('organization_id', $organizationId)
+            ->where('linked_account_client_id', $clientId)
+            ->where('owner_client_id', '<>', $clientId)
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'account' => __('Сначала отзовите связь с профилем пациента другого владельца.'),
+            ]);
+        }
+
         $bookingIds = $this->idsByClient('bookings', 'id', $organizationId, 'client_id', $clientId);
+        $patientProfileIds = $this->idsByClient('patient_profiles', 'id', $organizationId, 'owner_client_id', $clientId);
+        $patientInvitationIds = $this->mergeIds(
+            $this->idsByClient('patient_invitations', 'id', $organizationId, 'owner_client_id', $clientId),
+            $this->idsByClient('patient_invitations', 'id', $organizationId, 'accepted_by_client_id', $clientId),
+        );
+        $patientInvitationIds = $this->mergeIds(
+            $patientInvitationIds,
+            $this->idsByClient('patient_invitations', 'id', $organizationId, 'intended_client_id', $clientId),
+        );
+        $patientInvitationIds = $this->mergeIds(
+            $patientInvitationIds,
+            $this->idsByValues('patient_invitations', 'id', $organizationId, 'patient_profile_id', $patientProfileIds),
+        );
+        $patientInvitationProfileIds = DB::table('patient_invitations')
+            ->where('organization_id', $organizationId)
+            ->whereIn('id', $patientInvitationIds)
+            ->pluck('patient_profile_id', 'id')
+            ->map(static fn (mixed $patientProfileId): int => (int) $patientProfileId)
+            ->all();
         $b2bLeadIds = $this->idsByClient('b2b_leads', 'id', $organizationId, 'client_id', $clientId);
         $b2bSalesCallIds = $this->idsByClient('b2b_sales_calls', 'id', $organizationId, 'client_id', $clientId);
         $b2bSalesCallIds = $this->mergeIds(
@@ -180,6 +220,7 @@ final class PurgeStagingClientAccountData
 
         try {
             $deletedRecordCount = 0;
+            $deletedRecordCount += $this->deleteByValues('patient_invitations', $organizationId, 'id', $patientInvitationIds);
             $deletedRecordCount += $this->deleteByValues('unavailable_periods', $organizationId, 'b2b_sales_call_id', $b2bSalesCallIds);
             $deletedRecordCount += $this->deleteByClientOrValues('booking_events', $organizationId, 'actor_client_id', $clientId, 'booking_id', $bookingIds);
             $deletedRecordCount += $this->deleteByClientOrValues('booking_idempotency_keys', $organizationId, 'actor_client_id', $clientId, 'booking_id', $bookingIds);
@@ -230,11 +271,14 @@ final class PurgeStagingClientAccountData
             $deletedRecordCount += $this->deleteByClient('feedback_submissions', $organizationId, 'client_id', $clientId);
             $deletedRecordCount += $this->deleteByClient('pre_auth_attributions', $organizationId, 'consumed_client_id', $clientId);
             $deletedRecordCount += $this->deleteByValues('medical_attachments', $organizationId, 'id', $medicalAttachmentIds);
+            $deletedRecordCount += $this->deleteByValues('patient_profiles', $organizationId, 'id', $patientProfileIds);
 
             return [
                 'deleted_record_count' => $deletedRecordCount,
                 'attachment_paths' => $attachmentPaths,
                 'receipt_paths' => $receiptPaths,
+                'patient_profile_ids' => $patientProfileIds,
+                'patient_invitation_profile_ids' => $patientInvitationProfileIds,
             ];
         } finally {
             $this->enableMutationTriggers($disabledTriggers);
@@ -242,7 +286,7 @@ final class PurgeStagingClientAccountData
     }
 
     /**
-     * @param  array{deleted_record_count: int, attachment_paths: array<int, string>, receipt_paths: array<int, string>}  $purge
+     * @param  array{deleted_record_count: int, attachment_paths: array<int, string>, receipt_paths: array<int, string>, patient_profile_ids: array<int, int>, patient_invitation_profile_ids: array<int, int>}  $purge
      */
     public function deleteStorage(array $purge): void
     {

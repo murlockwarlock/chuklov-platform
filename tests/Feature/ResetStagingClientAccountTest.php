@@ -10,6 +10,8 @@ use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Identity\Application\ResetStagingClientAccount;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
+use App\Modules\Identity\Domain\Models\PatientInvitation;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -23,6 +25,8 @@ use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -79,6 +83,35 @@ final class ResetStagingClientAccountTest extends TestCase
             ->forSpecialist($specialist)
             ->forService($service)
             ->create();
+        $selfPatient = PatientProfile::forceCreate([
+            'organization_id' => $organization->getKey(),
+            'owner_client_id' => $client->getKey(),
+            'clinical_client_id' => $client->getKey(),
+            'linked_account_client_id' => $client->getKey(),
+            'relationship' => 'SELF',
+        ]);
+        $booking->forceFill(['patient_profile_id' => $selfPatient->getKey()])->save();
+        $familyClient = Client::factory()->forOrganization($organization)->create();
+        $familyPatient = PatientProfile::forceCreate([
+            'organization_id' => $organization->getKey(),
+            'owner_client_id' => $client->getKey(),
+            'clinical_client_id' => $familyClient->getKey(),
+            'linked_account_client_id' => null,
+            'first_name' => 'Synthetic',
+            'last_name' => 'Patient',
+            'relationship' => 'CHILD',
+            'gender' => 'FEMALE',
+            'birth_date' => '2016-01-01',
+        ]);
+        $invitation = PatientInvitation::forceCreate([
+            'organization_id' => $organization->getKey(),
+            'owner_client_id' => $client->getKey(),
+            'patient_profile_id' => $familyPatient->getKey(),
+            'request_key' => (string) Str::uuid(),
+            'token_hash' => hash('sha256', 'reset-staging-patient-invitation'),
+            'encrypted_token' => 'synthetic-invitation-token',
+            'expires_at' => now()->addDay(),
+        ]);
         $bookingEvent = BookingEvent::factory()->forBooking($booking)->create();
         ClientAttribution::forceCreate([
             'organization_id' => $organization->getKey(),
@@ -96,6 +129,60 @@ final class ResetStagingClientAccountTest extends TestCase
         self::assertDatabaseMissing('bookings', ['id' => $booking->getKey()]);
         self::assertDatabaseMissing('booking_events', ['id' => $bookingEvent->getKey()]);
         self::assertDatabaseMissing('client_attributions', ['client_id' => $client->getKey()]);
+        self::assertDatabaseMissing('patient_invitations', ['id' => $invitation->getKey()]);
+        self::assertDatabaseMissing('patient_profiles', ['id' => $selfPatient->getKey()]);
+        self::assertDatabaseMissing('patient_profiles', ['id' => $familyPatient->getKey()]);
+        self::assertDatabaseHas('clients', ['id' => $familyClient->getKey()]);
+        self::assertDatabaseHas('audit_events', [
+            'organization_id' => $organization->getKey(),
+            'actor_user_id' => $admin->getKey(),
+            'action' => 'patient.invitation.removed',
+            'target_id' => (string) $invitation->getKey(),
+        ]);
+        self::assertDatabaseHas('audit_events', [
+            'organization_id' => $organization->getKey(),
+            'actor_user_id' => $admin->getKey(),
+            'action' => 'patient.profile.deleted',
+            'target_id' => (string) $selfPatient->getKey(),
+        ]);
+    }
+
+    public function test_reset_rejects_a_client_linked_to_another_owners_patient_profile(): void
+    {
+        [$organization, $admin, $owner] = $this->fixture();
+        $clinicalClient = Client::factory()->forOrganization($organization)->create();
+        $patient = PatientProfile::forceCreate([
+            'organization_id' => $organization->getKey(),
+            'owner_client_id' => $owner->getKey(),
+            'clinical_client_id' => $clinicalClient->getKey(),
+            'linked_account_client_id' => $clinicalClient->getKey(),
+            'first_name' => 'Synthetic',
+            'last_name' => 'Patient',
+            'relationship' => 'CHILD',
+            'gender' => 'FEMALE',
+            'birth_date' => '2016-01-01',
+        ]);
+
+        try {
+            app(ResetStagingClientAccount::class)->handle($admin, $clinicalClient);
+            self::fail('Resetting a linked account must not delete another owner’s patient profile.');
+        } catch (ValidationException $exception) {
+            self::assertSame(
+                'Сначала отзовите связь с профилем пациента другого владельца.',
+                $exception->errors()['account'][0],
+            );
+        }
+
+        self::assertDatabaseHas('clients', ['id' => $clinicalClient->getKey()]);
+        self::assertDatabaseHas('patient_profiles', [
+            'id' => $patient->getKey(),
+            'owner_client_id' => $owner->getKey(),
+            'linked_account_client_id' => $clinicalClient->getKey(),
+        ]);
+        self::assertDatabaseMissing('audit_events', [
+            'action' => 'client.staging_account.reset',
+            'target_id' => (string) $clinicalClient->getKey(),
+        ]);
     }
 
     public function test_reset_rejects_a_client_from_another_organization(): void
