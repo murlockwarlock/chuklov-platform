@@ -1053,7 +1053,7 @@ test('staff gets actionable validation and can save a location day after correct
     await login(page, fixture);
     await page.goto('/admin/location-days/create');
     await expect(page.getByRole('heading', { name: 'Добавить день выезда' })).toBeVisible();
-    await expect(page.locator('form#form')).toHaveAttribute('novalidate', '');
+    await expect(page.locator('form#form')).toHaveAttribute('novalidate', 'novalidate');
 
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByText('Выберите специалиста.', { exact: true })).toBeVisible();
@@ -1084,7 +1084,7 @@ test('staff gets actionable validation and can save a location day after correct
     await expect(area).toHaveValue(areaName);
     await expect(page.getByRole('combobox', { name: 'Специалист*', exact: true })).toContainText(fixture.specialistName);
     await page.reload();
-    await expect(page.locator('form#form')).toHaveAttribute('novalidate', '');
+    await expect(page.locator('form#form')).toHaveAttribute('novalidate', 'novalidate');
     await expect(area).toHaveValue(areaName);
     await expect(page.getByRole('combobox', { name: 'Специалист*', exact: true })).toContainText(fixture.specialistName);
 });
