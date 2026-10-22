@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Models\User;
+use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Identity\Application\ResetStagingClientAccount;
@@ -22,9 +23,11 @@ use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
+use Filament\Notifications\Notification;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -185,6 +188,152 @@ final class ResetStagingClientAccountTest extends TestCase
         ]);
     }
 
+    public function test_reset_rejects_a_client_with_purchase_history_and_preserves_it(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $purchaseId = $this->createPurchase($organization, $client);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->callAction('resetStagingAccount')
+            ->assertNotified(Notification::make()
+                ->title('Аккаунт не сброшен')
+                ->body('Сброс невозможен: у клиента есть история покупок или подарочных сертификатов, которую нужно сохранить. Используйте новый тестовый аккаунт.')
+                ->danger());
+
+        self::assertDatabaseHas('clients', ['id' => $client->getKey()]);
+        self::assertDatabaseHas('commerce_purchases', ['id' => $purchaseId, 'client_id' => $client->getKey()]);
+        self::assertDatabaseMissing('audit_events', [
+            'action' => 'client.staging_account.reset',
+            'target_id' => (string) $client->getKey(),
+        ]);
+    }
+
+    public function test_reset_rejects_a_client_holding_another_clients_gift_certificate(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $purchaser = Client::factory()->forOrganization($organization)->create();
+        $purchaseId = $this->createPurchase($organization, $purchaser);
+        $purchaseItemId = DB::table('commerce_purchase_items')->insertGetId([
+            'organization_id' => $organization->getKey(),
+            'purchase_id' => $purchaseId,
+            'sellable_type' => Service::class,
+            'sellable_id' => 999,
+            'quantity' => 1,
+            'amount_minor' => 1000,
+            'currency' => 'USD',
+            'product_snapshot' => json_encode(['name' => 'Synthetic gift certificate'], JSON_THROW_ON_ERROR),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $fulfillmentId = DB::table('commerce_purchase_fulfillments')->insertGetId([
+            'organization_id' => $organization->getKey(),
+            'purchase_item_id' => $purchaseItemId,
+            'provider_type' => 'gift_certificate',
+            'status' => 'fulfilled',
+            'attempts' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $certificateId = DB::table('gift_certificates')->insertGetId([
+            'organization_id' => $organization->getKey(),
+            'purchase_id' => $purchaseId,
+            'purchase_item_id' => $purchaseItemId,
+            'purchase_fulfillment_id' => $fulfillmentId,
+            'purchaser_client_id' => $purchaser->getKey(),
+            'current_holder_client_id' => $client->getKey(),
+            'original_amount_minor' => 1000,
+            'currency' => 'USD',
+            'issued_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->callAction('resetStagingAccount')
+            ->assertNotified(Notification::make()
+                ->title('Аккаунт не сброшен')
+                ->body('Сброс невозможен: у клиента есть история покупок или подарочных сертификатов, которую нужно сохранить. Используйте новый тестовый аккаунт.')
+                ->danger());
+
+        self::assertDatabaseHas('clients', ['id' => $client->getKey()]);
+        self::assertDatabaseHas('clients', ['id' => $purchaser->getKey()]);
+        self::assertDatabaseHas('gift_certificates', [
+            'id' => $certificateId,
+            'purchaser_client_id' => $purchaser->getKey(),
+            'current_holder_client_id' => $client->getKey(),
+        ]);
+        self::assertDatabaseMissing('audit_events', [
+            'action' => 'client.staging_account.reset',
+            'target_id' => (string) $client->getKey(),
+        ]);
+    }
+
+    public function test_unexpected_reset_failure_shows_and_logs_the_same_safe_reference(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        DB::table('medical_attachments')->insert([
+            'uuid' => (string) Str::uuid(),
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'uploaded_by_user_id' => $admin->getKey(),
+            'attachment_type' => 'medical_report',
+            'disk' => 'private',
+            'storage_path' => 'staging/medical-attachments/synthetic.pdf',
+            'original_filename' => 'synthetic.pdf',
+            'mime_type' => 'application/pdf',
+            'size_bytes' => 10,
+            'sha256_checksum' => str_repeat('a', 64),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $this->mock(AttachmentStorageInterface::class)
+            ->shouldReceive('delete')
+            ->once()
+            ->with('staging/medical-attachments/synthetic.pdf')
+            ->andThrow(new \RuntimeException('SQL details and private data'));
+        Log::spy();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->callAction('resetStagingAccount');
+        $context = null;
+
+        Log::shouldHaveReceived('error')
+            ->once()
+            ->with('client.staging_account.reset_failed', \Mockery::on(function (array $data) use (&$context, $organization, $admin, $client): bool {
+                $context = $data;
+
+                return $data['event_name'] === 'client.staging_account.reset_failed'
+                    && (int) $data['organization_id'] === (int) $organization->getKey()
+                    && (int) $data['actor_user_id'] === (int) $admin->getKey()
+                    && $data['entity_type'] === 'client'
+                    && (int) $data['entity_id'] === (int) $client->getKey()
+                    && $data['safe_error_code'] === 'storage_cleanup_failed'
+                    && $data['exception_class'] === \RuntimeException::class
+                    && $data['outcome'] === 'partial'
+                    && preg_match('/^[0-9a-f-]{36}$/', $data['reference_id']) === 1
+                    && isset($data['occurred_at_utc'])
+                    && ! array_key_exists('message', $data);
+            }));
+
+        self::assertNotNull($context);
+        $component->assertNotified(Notification::make()
+            ->title('Аккаунт удалён не полностью')
+            ->body('Аккаунт удалён, но не удалось полностью очистить связанные файлы. Передайте администратору код обращения: '.$context['reference_id'])
+            ->danger());
+        $component->assertRedirect(ClientResource::getUrl('index'));
+        self::assertDatabaseMissing('clients', ['id' => $client->getKey()]);
+        self::assertDatabaseHas('audit_events', [
+            'action' => 'client.staging_account.reset',
+            'target_id' => (string) $client->getKey(),
+        ]);
+    }
+
     public function test_reset_rejects_a_client_from_another_organization(): void
     {
         [$organization, $admin] = $this->fixture();
@@ -233,5 +382,20 @@ final class ResetStagingClientAccountTest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         return [$organization, $admin, $client];
+    }
+
+    private function createPurchase(Organization $organization, Client $client): int
+    {
+        return (int) DB::table('commerce_purchases')->insertGetId([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'status' => 'paid',
+            'total_amount_minor' => 1000,
+            'currency' => 'USD',
+            'purchase_snapshot' => json_encode(['kind' => 'synthetic'], JSON_THROW_ON_ERROR),
+            'paid_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 }

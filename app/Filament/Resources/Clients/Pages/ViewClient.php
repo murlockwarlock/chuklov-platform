@@ -56,7 +56,10 @@ use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class ViewClient extends LocalizedViewRecord
 {
@@ -735,8 +738,11 @@ class ViewClient extends LocalizedViewRecord
             ->authorize(fn (): bool => $this->canResetStagingAccount())
             ->visible(fn (): bool => $this->canResetStagingAccount())
             ->action(function (): void {
+                $actor = $this->actor();
+                $client = $this->clientRecord();
+
                 try {
-                    app(ResetStagingClientAccount::class)->handle($this->actor(), $this->clientRecord());
+                    app(ResetStagingClientAccount::class)->handle($actor, $client);
                     Notification::make()->title(__('Аккаунт сброшен для повторного теста'))->success()->send();
                     $this->redirect(ClientResource::getUrl('index'));
                 } catch (ValidationException $exception) {
@@ -745,6 +751,57 @@ class ViewClient extends LocalizedViewRecord
                         ->body(collect($exception->errors())->flatten()->implode(' '))
                         ->danger()
                         ->send();
+                } catch (Throwable $exception) {
+                    $referenceId = (string) Str::uuid();
+                    $clientStillExists = null;
+
+                    try {
+                        $clientStillExists = Client::query()
+                            ->where('organization_id', $client->organization_id)
+                            ->whereKey($client->getKey())
+                            ->exists();
+                    } catch (Throwable) {
+                    }
+
+                    $outcome = match ($clientStillExists) {
+                        true => 'failed',
+                        false => 'partial',
+                        null => 'unknown',
+                    };
+                    $errorCode = match ($clientStillExists) {
+                        true => 'reset_failed',
+                        false => 'storage_cleanup_failed',
+                        null => 'reset_outcome_unknown',
+                    };
+
+                    Log::error('client.staging_account.reset_failed', [
+                        'event_name' => 'client.staging_account.reset_failed',
+                        'organization_id' => $client->organization_id,
+                        'actor_user_id' => $actor->getKey(),
+                        'entity_type' => 'client',
+                        'entity_id' => $client->getKey(),
+                        'safe_error_code' => $errorCode,
+                        'exception_class' => $exception::class,
+                        'outcome' => $outcome,
+                        'reference_id' => $referenceId,
+                        'occurred_at_utc' => now()->utc()->toIso8601String(),
+                    ]);
+
+                    $body = match ($clientStillExists) {
+                        true => __('Сброс не выполнен, данные клиента сохранены. Исправьте причину и повторите действие. Код обращения: :reference', ['reference' => $referenceId]),
+                        false => __('Аккаунт удалён, но не удалось полностью очистить связанные файлы. Передайте администратору код обращения: :reference', ['reference' => $referenceId]),
+                        null => __('Не удалось подтвердить результат. Обновите список клиентов: если аккаунт остался, повторите сброс; если удалён, передайте администратору код обращения: :reference', ['reference' => $referenceId]),
+                    };
+
+                    Notification::make()
+                        ->title($clientStillExists === false ? __('Аккаунт удалён не полностью') : __('Не удалось завершить сброс'))
+                        ->body($body)
+                        ->danger()
+                        ->send();
+
+                    if ($clientStillExists === false) {
+                        $this->redirect(ClientResource::getUrl('index'));
+                    }
                 }
             });
     }
