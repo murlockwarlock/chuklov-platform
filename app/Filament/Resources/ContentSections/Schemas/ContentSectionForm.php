@@ -94,7 +94,16 @@ class ContentSectionForm
                 Section::make(__('Видео'))
                     ->description(__('Сохраните раздел, затем загрузите MP4 через кнопку «Загрузить видео». Для приветствия — до 60 секунд.'))
                     ->schema([
-                        TextInput::make('media.subtitles')->label(__('Ссылка на субтитры WebVTT'))->url()->startsWith('https://')->nullable()->maxLength(2000),
+                        TextInput::make('media.subtitles')
+                            ->label(__('Ссылка на субтитры WebVTT'))
+                            ->url()
+                            ->startsWith('https://')
+                            ->nullable()
+                            ->maxLength(2000)
+                            ->validationMessages([
+                                'url' => __('Укажите корректную ссылку на файл WebVTT.'),
+                                'starts_with' => __('Ссылка на файл субтитров должна начинаться с https://.'),
+                            ]),
                         Placeholder::make('current_video')->label(__('Загруженное видео'))
                             ->content(function (?ContentSection $record): HtmlString|string {
                                 if ($record === null) {
