@@ -1834,7 +1834,9 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     const painSliderBounds = await painSlider.boundingBox();
     expect(painSliderBounds).not.toBeNull();
     if (painSliderBounds !== null) {
-        await page.mouse.click(painSliderBounds.x + painSliderBounds.width * 0.8, painSliderBounds.y + painSliderBounds.height / 2);
+        await page.mouse.move(painSliderBounds.x + painSliderBounds.width * 0.8, painSliderBounds.y + painSliderBounds.height / 2);
+        await page.mouse.down();
+        await page.mouse.up();
     }
     const pointerPainValue = Number(await painSlider.inputValue());
     expect(pointerPainValue).toBeGreaterThanOrEqual(7);
