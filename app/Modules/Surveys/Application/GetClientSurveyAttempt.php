@@ -18,7 +18,7 @@ final readonly class GetClientSurveyAttempt
             ->where('client_id', $client->getKey())
             ->with('surveyVersion:id,organization_id,approval_status')
             ->find($attemptId);
-        if ($attempt === null || $attempt->surveyVersion?->approval_status !== 'approved') {
+        if ($attempt === null || $attempt->surveyVersion->approval_status !== 'approved') {
             Log::warning('portal.surveys.attempt_access_denied', [
                 'operation' => 'view_survey_attempt',
                 'organization_id' => $client->organization_id,

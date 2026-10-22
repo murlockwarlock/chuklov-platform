@@ -301,7 +301,7 @@ final class ClientWorkspaceInfolist
                             ->state(function (Client $record): ?string {
                                 $value = MedicalProfileForm::answers(self::medicalProfile($record))['pain_vas'] ?? null;
 
-                                return is_int($value) && $value >= 0 && $value <= 10 ? __(':value / 10', ['value' => $value]) : null;
+                                return is_int($value) && $value >= 0 && $value <= 10 ? self::text(':value / 10', ['value' => $value]) : null;
                             })->placeholder(__('Не указана')),
                         ...ClinicalProfileInfolist::answers(),
                         TextEntry::make('goals')
