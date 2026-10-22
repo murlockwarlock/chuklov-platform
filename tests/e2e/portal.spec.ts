@@ -1072,6 +1072,32 @@ test('home keeps one primary booking action and ordinary referrals remain availa
     await expect(page.getByTestId('partner-links')).toHaveCount(0);
 });
 
+test('new client can open personal diagnostics and gets a clear empty tests result', async ({ page }) => {
+    const fixture = createBookingFixture();
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/');
+
+    const healthAction = page.getByTestId('home-health-action');
+    await expect(healthAction.getByText('Персональная диагностика', { exact: true })).toBeVisible();
+    await expect(healthAction.getByText('Экспресс-скрининг 9 систем организма. ИИ выявит первопричины боли за 3 минуты.', { exact: true })).toBeVisible();
+    await expect(healthAction.getByText('Новое', { exact: true })).toBeVisible();
+
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(healthAction.getByRole('link', { name: 'Пройти тест →', exact: true })).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+    }
+
+    await healthAction.getByRole('link', { name: 'Пройти тест →', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/surveys$/);
+    const emptyState = page.getByTestId('surveys-empty-state');
+    await expect(emptyState.getByText('Пока нет доступных тестов. Вернитесь позже.', { exact: true })).toBeVisible();
+    await expect(emptyState.getByRole('link', { name: 'На главную', exact: true })).toHaveAttribute('href', '/');
+    await emptyState.getByRole('link', { name: 'На главную', exact: true }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByTestId('home-health-action')).toBeVisible();
+});
+
 test('home changes the booking action when an upcoming booking is shown', async ({ page }) => {
     const fixture = createBookingFixture({ withBooking: true });
 

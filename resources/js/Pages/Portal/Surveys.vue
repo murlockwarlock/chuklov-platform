@@ -102,6 +102,22 @@ const formatDate = (value: string | null): string => value ? new Intl.DateTimeFo
           </article>
         </div>
       </section>
+
+      <section
+        v-if="!props.definitions.length && !props.attempts.length"
+        class="portal-panel portal-stack portal-stack--tight"
+        data-testid="surveys-empty-state"
+      >
+        <p class="portal-copy">
+          {{ t('surveys.noneAvailable') }}
+        </p>
+        <Link
+          :href="props.portal.urls.home"
+          class="portal-button portal-button--secondary self-start"
+        >
+          {{ t('surveys.backHome') }}
+        </Link>
+      </section>
     </section>
   </AppShell>
 </template>

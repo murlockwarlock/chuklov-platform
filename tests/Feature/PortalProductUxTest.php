@@ -51,7 +51,7 @@ class PortalProductUxTest extends TestCase
                 ->where('portal.authenticated', true)
                 ->where('portal.clientName', 'Portal Client')
                 ->where('portal.isPartner', false)
-                ->where('healthAction', null)
+                ->where('healthAction.kind', 'diagnostics')
                 ->where('portal.urls.health', route('portal.health'))
                 ->where('portal.urls.more', route('portal.more'))
                 ->missing('auth')
@@ -72,7 +72,11 @@ class PortalProductUxTest extends TestCase
                 ->missing('surveys.attempts.0'));
 
         $this->get(route('portal.surveys.index'))
-            ->assertRedirect(route('portal.health'));
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Surveys')
+                ->has('definitions', 0)
+                ->has('attempts', 0));
 
         $this->get(route('portal.more'))
             ->assertOk()

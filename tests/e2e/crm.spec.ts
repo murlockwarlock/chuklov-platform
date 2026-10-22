@@ -746,6 +746,7 @@ test('cancelled Journal booking offers its released time as a real create action
 
     const date = fixture.bookingStartsAt.slice(0, 10);
     const time = fixture.bookingStartsAt.slice(11, 16);
+    const expectedStartsAt = `${date} ${time}`;
     await page.goto(`/admin/bookings?view=week&week=${date}&specialist_id=${fixture.specialistId}`);
 
     const cancelledCard = page.getByTestId('journal-released-booking-card');
@@ -766,21 +767,30 @@ test('cancelled Journal booking offers its released time as a real create action
             continue;
         }
 
-        await expect.poll(() => page.locator('a[href]').evaluateAll((anchors, expectedStartsAt) => anchors.some((anchor) => {
-            const link = anchor as HTMLAnchorElement;
-            const target = new URL(link.href);
-            const rectangle = link.getBoundingClientRect();
+        await expect.poll(async () => {
+            const createLinks = await page.locator('a[href]').evaluateAll((anchors) => anchors.map((anchor) => {
+                const link = anchor as HTMLAnchorElement;
+                const rectangle = link.getBoundingClientRect();
 
-            return target.pathname === '/admin/bookings/create'
-                && target.searchParams.get('starts_at') === expectedStartsAt
-                && rectangle.width > 0
-                && rectangle.height > 0;
-        }, `${date} ${time}`))).toBe(true);
+                return {
+                    href: link.href,
+                    visible: rectangle.width > 0 && rectangle.height > 0,
+                };
+            }));
+
+            return createLinks.some(({ href, visible }) => {
+                const target = new URL(href);
+
+                return target.pathname === '/admin/bookings/create'
+                    && target.searchParams.get('starts_at') === expectedStartsAt
+                    && visible;
+            });
+        }).toBe(true);
     }
 
     const target = new URL(await createReleasedSlot.getAttribute('href') ?? '', page.url());
     expect(target.pathname).toBe('/admin/bookings/create');
-    expect(target.searchParams.get('starts_at')).toBe(`${date} ${time}`);
+    expect(target.searchParams.get('starts_at')).toBe(expectedStartsAt);
     expect(target.searchParams.get('specialist_id')).toBe(String(fixture.specialistId));
 
     await createReleasedSlot.click();
@@ -1323,8 +1333,9 @@ test('staff sees the Telegram limit and preview while writing to a client', asyn
     await expect(page.locator('.fi-in-text-item').filter({ hasText: message })).toHaveCount(1);
 
     await page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true }).click();
-    const telegramPreview = page.locator('.fi-modal-window:visible').filter({ hasText: 'TELEGRAM' }).last();
+    const telegramPreview = page.getByRole('dialog').filter({ hasText: 'Предпросмотр Telegram' }).last();
     await expect(telegramPreview).toBeVisible();
+    await expect(telegramPreview).toContainText('Telegram');
     await expect(telegramPreview).toContainText(message);
 });
 
