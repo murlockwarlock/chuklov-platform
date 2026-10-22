@@ -777,6 +777,8 @@ class PortalBookingRemediationTest extends TestCase
             'expected_snapshot' => $snapshot, 'complaints' => 'Synthetic symptoms', 'goals' => 'Synthetic goals',
             'answers' => ['symptoms' => ['neck'], 'pain_vas' => null, 'no_chronic_conditions' => true, 'had_operations' => false, 'had_injuries' => false],
         ])->assertSessionHasNoErrors()->assertRedirect(route('portal.bookings.index'));
+        $bookingsPage = $this->get(route('portal.bookings.index'))->assertOk()->viewData('page');
+        self::assertSame('Медицинские данные подтверждены', $bookingsPage['flash']['success'] ?? null);
         $this->get(route('portal.medical-profile', ['booking_id' => $booking->id]))
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->where('returnUrl', route('portal.bookings.show', $booking->id))->where('returnLabelKey', 'medical.backToBooking'));

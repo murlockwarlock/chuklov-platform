@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import PortalIcon from './PortalIcon.vue';
 import LanguageSwitcher from './LanguageSwitcher.vue';
@@ -24,6 +24,12 @@ const navigation = [
     { key: 'companion', label: 'shell.companion' },
     { key: 'more', label: 'shell.more' },
 ] as const;
+const page = usePage();
+const successMessage = computed(() => {
+    const message = page.flash.success;
+
+    return typeof message === 'string' && message.trim() !== '' ? message : null;
+});
 const bonusDialog = ref<HTMLDialogElement | null>(null);
 
 function navigationHref(key: Exclude<PortalNavKey, null>): string {
@@ -94,6 +100,18 @@ const brandLogo = computed(() => props.portal.locale === 'en'
     </header>
 
     <main class="portal-main">
+      <div
+        v-if="successMessage"
+        class="portal-shell__flash"
+      >
+        <p
+          class="portal-feedback portal-feedback--success"
+          role="status"
+          aria-live="polite"
+        >
+          {{ successMessage }}
+        </p>
+      </div>
       <slot />
     </main>
     <dialog
@@ -151,4 +169,9 @@ const brandLogo = computed(() => props.portal.locale === 'en'
 .portal-header-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; margin-left: auto; }
 .portal-header-actions button { max-width: 100%; overflow-wrap: anywhere; }
 .portal-bonus-dialog { width: min(400px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid #e0d3c9; border-radius: 16px; }
+.portal-shell__flash { width: min(100%, var(--portal-content-width)); margin-inline: auto; padding: var(--portal-space-4) var(--portal-space-5) 0; }
+
+@media (min-width: 40rem) {
+    .portal-shell__flash { padding-inline: var(--portal-space-8); }
+}
 </style>

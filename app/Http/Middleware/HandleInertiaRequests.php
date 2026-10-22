@@ -7,6 +7,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Support\SupportedLocale;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Inertia\Middleware;
 use LogicException;
 
@@ -24,13 +25,17 @@ class HandleInertiaRequests extends Middleware
             (string) config('portal.default_locale', 'ru'),
         );
 
+        $successMessage = $request->session()->get('success');
+        if (is_string($successMessage) && trim($successMessage) !== '') {
+            Inertia::flash('success', $successMessage);
+        }
+
         app()->setLocale($locale);
         $bonus = app(GetClientAvailableBonus::class);
 
         return [
             ...parent::share($request),
             'flash' => [
-                'success' => fn (): ?string => $request->session()->get('success'),
                 'payout' => fn (): ?array => $this->payoutFeedback($request->session()->get('payout_feedback')),
                 'giftCertificateTransferUrl' => fn (): ?string => is_string($request->session()->get('gift_certificate_transfer_url'))
                     ? $request->session()->get('gift_certificate_transfer_url')

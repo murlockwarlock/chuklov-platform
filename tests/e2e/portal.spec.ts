@@ -1876,10 +1876,25 @@ test('September 26 medical service opens the saved-profile onboarding after the 
     await acceptRequiredConsents(page);
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/medical-profile\?booking_id=\d+&edit=1/);
-    await page.getByRole('link', { name: 'К записи', exact: true }).click();
+    const bookingId = new URL(page.url()).searchParams.get('booking_id');
+    expect(bookingId).toMatch(/^\d+$/);
+    await page.getByLabel('Головные боли', { exact: true }).check();
+    await page.locator('#medical-goals').fill('Проверка завершения записи.');
+    await page.getByLabel('Хронических заболеваний нет', { exact: true }).check();
+    await page.locator('input[name="operations"][value="false"]').check();
+    await page.locator('input[name="injuries"][value="false"]').check();
+    await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/bookings\/\d+$/);
+    await expect(page.getByRole('status').filter({ hasText: 'Медицинские данные подтверждены' })).toBeVisible();
     await expect(page.getByText(fixture.serviceName, { exact: true }).first()).toBeVisible();
     await page.reload();
+    await expect(page.getByRole('status').filter({ hasText: 'Медицинские данные подтверждены' })).toHaveCount(0);
+    await page.goto(`/portal/medical-profile?booking_id=${bookingId}`);
+    await expect(page.getByText('Проверка завершения записи.', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('Проверка завершения записи.', { exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'К записи', exact: true }).click();
+    await expect(page).toHaveURL(`/portal/bookings/${bookingId}`);
     await expect(page.getByText(fixture.serviceName, { exact: true }).first()).toBeVisible();
 });
 
