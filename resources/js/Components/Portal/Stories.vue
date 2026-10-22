@@ -6,16 +6,17 @@ import { usePortalLocale } from '../../composables/usePortalLocale';
 type Story = { key: string; title: string; videoUrl: string | null; previewUrl: string | null; subtitlesUrl: string | null };
 const props = defineProps<{ stories: Story[] }>();
 const { t, locale } = usePortalLocale();
+const availableStories = computed(() => props.stories.filter((story) => story.videoUrl !== null));
 const active = ref<number | null>(null);
 const dialog = ref<HTMLDialogElement | null>(null);
-const selected = computed(() => active.value === null ? null : props.stories[active.value]);
-const canPrevious = computed(() => props.stories.slice(0, active.value ?? 0).some((story) => story.videoUrl !== null));
-const canNext = computed(() => props.stories.slice((active.value ?? 0) + 1).some((story) => story.videoUrl !== null));
+const selected = computed(() => active.value === null ? null : availableStories.value[active.value]);
+const canPrevious = computed(() => active.value !== null && active.value > 0);
+const canNext = computed(() => active.value !== null && active.value < availableStories.value.length - 1);
 const playbackError = ref(false);
 let touchStart = 0;
 
 async function open(index: number): Promise<void> {
-    if (!props.stories[index]?.videoUrl) return;
+    if (!availableStories.value[index]?.videoUrl) return;
     active.value = index;
     playbackError.value = false;
     await nextTick();
@@ -27,8 +28,8 @@ function close(): void {
 }
 function move(direction: number): void {
     if (active.value === null) return;
-    for (let index = active.value + direction; index >= 0 && index < props.stories.length; index += direction) {
-        if (props.stories[index]?.videoUrl) {
+    for (let index = active.value + direction; index >= 0 && index < availableStories.value.length; index += direction) {
+        if (availableStories.value[index]?.videoUrl) {
             active.value = index;
             playbackError.value = false;
             return;
@@ -43,11 +44,12 @@ function swipe(event: TouchEvent): void {
 
 <template>
   <div
+    v-if="availableStories.length > 0"
     class="portal-stories"
     :aria-label="t('stories.title')"
   >
     <button
-      v-for="(story, index) in stories"
+      v-for="(story, index) in availableStories"
       :key="story.key"
       type="button"
       class="portal-story"
@@ -127,7 +129,7 @@ function swipe(event: TouchEvent): void {
         >
           {{ t('stories.previous') }}
         </button>
-        <span>{{ (active ?? 0) + 1 }} / {{ stories.length }}</span>
+        <span>{{ (active ?? 0) + 1 }} / {{ availableStories.length }}</span>
         <button
           type="button"
           class="portal-button"

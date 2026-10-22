@@ -746,6 +746,29 @@ test('successful email verification enters the authenticated portal without a ma
     expect(authenticatedHomeVisits).toBe(1);
 });
 
+test('Story placeholders are hidden when no playable videos are available', async ({ page }) => {
+    const fixture = createBookingFixture();
+    execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->findOrFail(${fixture.clientId});
+        foreach (array_keys(\\App\\Modules\\Content\\Application\\GetClientEntryMedia::STORIES) as $key) {
+            \\App\\Modules\\Content\\Domain\\Models\\ContentSection::factory()->create([
+                'organization_id' => $client->organization_id,
+                'section_key' => $key, 'locale' => 'ru', 'is_visible' => true, 'delivery_mode' => 'mini_app',
+                'media' => [],
+            ]);
+        }
+    `], { env: { ...process.env, APP_ENV: 'e2e' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/');
+    await expect(page.getByTestId('home-empty-schedule')).toBeVisible();
+    await expect(page.locator('.portal-stories')).toHaveCount(0);
+    await expect(page.locator('.portal-story')).toHaveCount(0);
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+    }
+});
+
 test('portrait Story previews stay inside their frames and player navigation works', async ({ page }) => {
     const fixture = createBookingFixture();
     execFileSync('php', ['artisan', 'tinker', '--execute', `
