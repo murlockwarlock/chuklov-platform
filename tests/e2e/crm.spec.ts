@@ -41,6 +41,27 @@ function validPdfBuffer(): Buffer {
     ].join('\n'));
 }
 
+async function uploadCrmMedicalReport(page: Page, filename: string): Promise<void> {
+    await page.getByRole('button', { name: 'Загрузить файл', exact: true }).first().click();
+    const dialog = page.getByRole('dialog', { name: 'Загрузить файл' });
+    await dialog.getByLabel('Тип файла').selectOption('medical_report');
+    const uploadControl = dialog
+        .getByRole('group', { name: 'Файл*', exact: true })
+        .locator('label')
+        .filter({ hasText: 'Перетащите файлы или выберите', visible: true });
+    const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser'),
+        uploadControl.click(),
+    ]);
+    await fileChooser.setFiles({
+        name: filename,
+        mimeType: 'application/pdf',
+        buffer: validPdfBuffer(),
+    });
+    await dialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(dialog).toBeHidden();
+}
+
 function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
@@ -1684,6 +1705,16 @@ test('staff can use the client cockpit for medical profile and private files', a
         throw new Error('The authorized attachment download did not produce a file.');
     }
     expect(readFileSync(downloadPath)).toEqual(validPdfBuffer());
+
+    for (const filename of ['ux-b-report.pdf', 'ux-c-report.pdf', 'ux-d-report.pdf', 'ux-e-report.pdf']) {
+        await uploadCrmMedicalReport(page, filename);
+        await expect(attachmentsTable.getByRole('row').filter({ hasText: filename })).toHaveCount(1);
+    }
+
+    await uploadCrmMedicalReport(page, 'ux-sixth-report.pdf');
+    await expect(page.getByText('В медицинском профиле уже пять файлов. Откройте список «Файлы и МРТ», чтобы проверить загруженные документы.', { exact: true })).toBeVisible();
+    await expect(attachmentsTable.getByRole('row').filter({ hasText: 'ux-sixth-report.pdf' })).toHaveCount(0);
+    await expect(attachmentsTable.getByRole('row').filter({ hasText: /ux-[a-e]-report\.pdf/ })).toHaveCount(5);
 });
 
 test('staff can complete the clinical AI workflow from the client cockpit', async ({ page }) => {
