@@ -644,6 +644,108 @@ test('client portal shell is responsive', async ({ page }) => {
     await expect(page.getByText(/Личный кабинет|Вы вошли как|Продолжить/)).toHaveCount(0);
 });
 
+test('successful email verification enters the authenticated portal without a manual reload', async ({ page }) => {
+    await page.goto('/');
+    await expect(page.locator('#portal-email')).toBeVisible();
+
+    const initialPage = await page.locator('script[type="application/json"]').evaluate((element) =>
+        JSON.parse(element.textContent ?? '{}') as {
+            component: string;
+            props: Record<string, unknown>;
+            url: string;
+            version: string | null;
+        },
+    );
+    const entryProps = {
+        ...initialPage.props,
+        auth: {
+            ...(initialPage.props.auth as Record<string, unknown>),
+            emailCodeSent: true,
+        },
+    };
+    const entryPage = { ...initialPage, props: entryProps };
+    const authenticatedHome = {
+        component: 'Portal/Home',
+        props: {
+            portal: {
+                authenticated: true,
+                clientName: 'QA Client',
+                confirmedFirstName: null,
+                availableBonus: null,
+                bonusCurrencyUnavailable: false,
+                isPartner: false,
+                locale: 'ru',
+                localeUrl: '/portal/locale',
+                urls: {
+                    home: '/',
+                    services: '/portal/services',
+                    bookings: '/portal/bookings',
+                    health: '/portal/health',
+                    more: '/portal/more',
+                    profile: '/portal/profile',
+                    medicalProfile: '/portal/medical-profile',
+                    communities: '/portal/family',
+                    finance: '/portal/finance',
+                    giftCertificates: '/portal/gift-certificates',
+                    surveys: '/portal/surveys',
+                    companion: '/portal/companion',
+                    tracker: '/portal/tracker',
+                    referrals: '/portal/referrals',
+                    feedback: '/portal/feedback',
+                    attribution: '/portal/attribution',
+                    booking: '/portal/bookings/create',
+                    b2b: '/portal/b2b',
+                },
+            },
+            upcomingBooking: null,
+            healthAction: null,
+            stories: [],
+        },
+        url: '/',
+        version: null,
+    };
+    let authenticatedHomeVisits = 0;
+
+    await page.route('**/portal/auth/email/request', async (route) => {
+        await route.fulfill({
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'X-Inertia': 'true' },
+            body: JSON.stringify(entryPage),
+        });
+    });
+    await page.route('**/portal/auth/email/verify', async (route) => {
+        await route.fulfill({
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'X-Inertia': 'true' },
+            body: JSON.stringify(entryPage),
+        });
+    });
+    await page.route('**/', async (route) => {
+        if (route.request().method() !== 'GET' || route.request().headers()['x-inertia'] !== 'true') {
+            await route.continue();
+            return;
+        }
+
+        authenticatedHomeVisits += 1;
+        await route.fulfill({
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'X-Inertia': 'true' },
+            body: JSON.stringify(authenticatedHome),
+        });
+    });
+
+    await page.getByLabel('Email').fill('portal-login@example.test');
+    await page.getByRole('button', { name: 'Получить код' }).click();
+    await expect(page.locator('#portal-email-code')).toBeVisible();
+    await page.locator('#portal-email-code').fill('123456');
+    await page.getByRole('button', { name: 'Войти', exact: true }).click();
+
+    await expect(page.getByText('Добро пожаловать в пространство здоровья!')).toBeVisible();
+    await expect(page.locator('#portal-email')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Войти через Telegram' })).toHaveCount(0);
+    expect(authenticatedHomeVisits).toBe(1);
+});
+
 test('portrait Story previews stay inside their frames and player navigation works', async ({ page }) => {
     const fixture = createBookingFixture();
     execFileSync('php', ['artisan', 'tinker', '--execute', `

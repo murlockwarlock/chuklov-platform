@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link, useForm } from '@inertiajs/vue3';
+import { Link, router, useForm } from '@inertiajs/vue3';
 import { onMounted, onUnmounted, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
@@ -163,6 +163,7 @@ function verifyEmailCode(): void {
     emailError.value = null;
     emailVerifyForm.post(props.auth.emailVerifyUrl, {
         preserveScroll: true,
+        onSuccess: () => router.visit(props.portal.urls.home, { replace: true }),
         onError: () => {
             emailError.value = t('entry.emailVerifyError');
         },
