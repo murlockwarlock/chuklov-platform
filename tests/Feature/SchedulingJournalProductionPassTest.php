@@ -1340,7 +1340,10 @@ final class SchedulingJournalProductionPassTest extends TestCase
 
         self::assertIsArray($projection);
         self::assertFalse($projection['blocks_availability']);
+        self::assertTrue($projection['is_terminal']);
+        self::assertTrue($projection['released_for_rebooking']);
         self::assertStringContainsString('Добавить запись на 10:00', $journal->html());
+        self::assertStringContainsString('Создать новую запись на 10:00', $journal->html());
     }
 
     public function test_journal_retention_warning_waits_for_completion_window_and_rechecks_next_booking(): void

@@ -516,6 +516,58 @@ function createJournalSecondSpecialist(fixture: CrmFixture): { id: number; name:
     return JSON.parse(output.trim().split('\n').at(-1) ?? '') as { id: number; name: string };
 }
 
+function createCancelledJournalBooking(fixture: CrmFixture): void {
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey(${fixture.clientId})
+            ->firstOrFail();
+        $specialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey(${fixture.specialistId})
+            ->firstOrFail();
+        $service = \\App\\Modules\\Services\\Domain\\Models\\Service::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey(${fixture.serviceId})
+            ->firstOrFail();
+        $startsAt = \\Carbon\\CarbonImmutable::createFromFormat('!Y-m-d\\TH:i', '${fixture.bookingStartsAt}', $specialist->timezone)->utc();
+        $duration = max(30, (int) ($service->duration_minutes ?? 60));
+        $buffer = (int) ($service->buffer_minutes ?? 0);
+        \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'visit_format' => \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office->value,
+                'status' => \\App\\Modules\\Scheduling\\Domain\\Enums\\BookingStatus::Cancelled->value,
+                'starts_at' => $startsAt,
+                'ends_at' => $startsAt->addMinutes($duration),
+                'blocking_ends_at' => $startsAt->addMinutes($duration + $buffer),
+                'schedule_timezone' => $specialist->timezone,
+                'cancelled_at' => now(),
+            ]);
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-cancelled-journal-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            XDG_CONFIG_HOME: psyshConfigDirectory,
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+}
+
 function appendCrmMessage(clientId: number, body: string): void {
     const encodedBody = Buffer.from(body).toString('base64');
     const php = `
@@ -646,6 +698,62 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
     expect(slotLinks.every((link) => link.searchParams.has('specialist_id'))).toBe(true);
     expect(slotLinks.some((link) => link.searchParams.get('specialist_id') === String(fixture.specialistId))).toBe(true);
     expect(slotLinks.some((link) => link.searchParams.get('specialist_id') === String(secondSpecialist.id))).toBe(true);
+    await assertNoHorizontalOverflow(page);
+});
+
+test('cancelled Journal booking offers its released time as a real create action', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    const fixture = createCrmFixture();
+    createCancelledJournalBooking(fixture);
+    await login(page, fixture);
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    const date = fixture.bookingStartsAt.slice(0, 10);
+    const time = fixture.bookingStartsAt.slice(11, 16);
+    await page.goto(`/admin/bookings?view=week&week=${date}&specialist_id=${fixture.specialistId}`);
+
+    const cancelledCard = page.getByTestId('journal-released-booking-card');
+    let createReleasedSlot = cancelledCard.getByTestId('journal-released-booking-create');
+
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+
+        if (width >= 1024) {
+            await expect(cancelledCard).toBeVisible();
+            await expect(cancelledCard).toContainText('Отменена');
+            await expect(cancelledCard).toHaveAttribute('draggable', 'false');
+            createReleasedSlot = cancelledCard.getByTestId('journal-released-booking-create');
+            await expect(createReleasedSlot).toBeVisible();
+            await expect(createReleasedSlot).toHaveAccessibleName(`Создать новую запись на ${time}`);
+
+            continue;
+        }
+
+        await expect.poll(() => page.locator('a[href]').evaluateAll((anchors, expectedStartsAt) => anchors.some((anchor) => {
+            const link = anchor as HTMLAnchorElement;
+            const target = new URL(link.href);
+            const rectangle = link.getBoundingClientRect();
+
+            return target.pathname === '/admin/bookings/create'
+                && target.searchParams.get('starts_at') === expectedStartsAt
+                && rectangle.width > 0
+                && rectangle.height > 0;
+        }, `${date} ${time}`))).toBe(true);
+    }
+
+    const target = new URL(await createReleasedSlot.getAttribute('href') ?? '', page.url());
+    expect(target.pathname).toBe('/admin/bookings/create');
+    expect(target.searchParams.get('starts_at')).toBe(`${date} ${time}`);
+    expect(target.searchParams.get('specialist_id')).toBe(String(fixture.specialistId));
+
+    await createReleasedSlot.click();
+    await expect(page).toHaveURL(/\/admin\/bookings\/create\?/);
+    await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
+    await expect(page.getByLabel('Дата')).toHaveValue(date);
+    const bookingTime = page.getByRole('combobox', { name: /^Доступное время/ }).first();
+    await expect(bookingTime).toContainText(time);
     await assertNoHorizontalOverflow(page);
 });
 

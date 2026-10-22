@@ -111,10 +111,23 @@
                                 @endforeach
 
                                 @foreach ($day['bookings'] as $booking)
-                                    <div draggable="true" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute inset-x-1 z-10 min-w-0 cursor-grab overflow-hidden rounded-md border p-1.5 text-[11px] leading-tight shadow-sm transition hover:shadow-md active:cursor-grabbing {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}">
+                                    <div draggable="{{ $booking['is_terminal'] ? 'false' : 'true' }}" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute inset-x-1 z-10 min-w-0 overflow-hidden rounded-md border p-1.5 text-[11px] leading-tight shadow-sm transition hover:shadow-md {{ $booking['is_terminal'] ? '' : 'cursor-grab active:cursor-grabbing' }} {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}" @if ($booking['released_for_rebooking']) data-testid="journal-released-booking-card" @endif>
                                         <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-md"></a>
                                         <div class="relative z-10 pointer-events-none">
-                                            <span class="block truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                            <div class="flex min-w-0 items-center gap-1">
+                                                <span class="min-w-0 flex-1 truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                @if ($booking['released_for_rebooking'])
+                                                    <a
+                                                        href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"
+                                                        aria-label="{{ __('Создать новую запись на :time', ['time' => $booking['start_time']]) }}"
+                                                        data-testid="journal-released-booking-create"
+                                                        class="pointer-events-auto relative z-20 inline-flex shrink-0 items-center gap-1 rounded-md border border-primary-200 bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-primary-700 shadow-sm hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary-600 dark:border-primary-900/60 dark:bg-gray-900/90 dark:text-primary-300 dark:hover:bg-primary-950/30"
+                                                    >
+                                                        <x-filament::icon icon="heroicon-o-plus" class="size-3" />
+                                                        <span>{{ __('Добавить') }}</span>
+                                                    </a>
+                                                @endif
+                                            </div>
                                             <span class="block truncate">{{ $booking['service'] }}</span>
                                             <span class="block truncate opacity-80">{{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</span>
                                             @if ($booking['retention_warning'])
@@ -162,10 +175,23 @@
                                             @endforeach
 
                                             @foreach ($specialist['bookings'] as $booking)
-                                                <div draggable="true" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute inset-x-1 z-10 min-w-0 cursor-grab overflow-hidden rounded-md border p-1.5 text-[11px] leading-tight shadow-sm transition hover:shadow-md active:cursor-grabbing {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}" aria-label="{{ $specialist['name'] }}: {{ $booking['time_range'] }}">
+                                                <div draggable="{{ $booking['is_terminal'] ? 'false' : 'true' }}" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute inset-x-1 z-10 min-w-0 overflow-hidden rounded-md border p-1.5 text-[11px] leading-tight shadow-sm transition hover:shadow-md {{ $booking['is_terminal'] ? '' : 'cursor-grab active:cursor-grabbing' }} {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}" aria-label="{{ $specialist['name'] }}: {{ $booking['time_range'] }}" @if ($booking['released_for_rebooking']) data-testid="journal-released-booking-card" @endif>
                                                     <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-md"></a>
                                                     <div class="relative z-10 pointer-events-none">
-                                                        <span class="block truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                        <div class="flex min-w-0 items-center gap-1">
+                                                            <span class="min-w-0 flex-1 truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                            @if ($booking['released_for_rebooking'])
+                                                                <a
+                                                                    href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"
+                                                                    aria-label="{{ __('Создать новую запись на :time', ['time' => $booking['start_time']]) }}"
+                                                                    data-testid="journal-released-booking-create"
+                                                                    class="pointer-events-auto relative z-20 inline-flex shrink-0 items-center gap-1 rounded-md border border-primary-200 bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-primary-700 shadow-sm hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary-600 dark:border-primary-900/60 dark:bg-gray-900/90 dark:text-primary-300 dark:hover:bg-primary-950/30"
+                                                                >
+                                                                    <x-filament::icon icon="heroicon-o-plus" class="size-3" />
+                                                                    <span>{{ __('Добавить') }}</span>
+                                                                </a>
+                                                            @endif
+                                                        </div>
                                                         <span class="block truncate">{{ $booking['service'] }}</span>
                                                         <span class="block truncate opacity-80">{{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</span>
                                                         @if ($booking['retention_warning'])
