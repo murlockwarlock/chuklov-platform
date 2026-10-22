@@ -30,8 +30,10 @@ class RedactSensitiveLogData implements ProcessorInterface
         'referral_credit_restore',
         'replacement',
         'request_referral_payout',
+        'start_survey_attempt',
         'upload',
         'update',
+        'view_survey_attempt',
     ];
 
     private const SENSITIVE_KEY_PATTERN = '/secret|token|password|credential|authorization|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury|clinical|chronic|symptom|pain[_-]?(vas|not_measured)|goal|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|bearer|prompt|retrieved_content|rag_chunk|tool_payload/i';

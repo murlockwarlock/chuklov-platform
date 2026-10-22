@@ -108,8 +108,10 @@ class RedactSensitiveLogDataTest extends TestCase
             'referral_credit_restore',
             'replacement',
             'request_referral_payout',
+            'start_survey_attempt',
             'upload',
             'update',
+            'view_survey_attempt',
         ] as $operation) {
             $record = new LogRecord(
                 datetime: new DateTimeImmutable,
