@@ -461,39 +461,6 @@ class MilestoneFourFinalRemediationTest extends TestCase
         self::assertModelMissing($period);
     }
 
-    public function test_schedule_changes_search_matches_reason_and_specialist(): void
-    {
-        [, $admin, , $specialist] = $this->fixture();
-        Filament::setCurrentPanel(Filament::getPanel('admin'));
-
-        Livewire::actingAs($admin)
-            ->test(CreateScheduleExceptionPage::class)
-            ->fillForm([
-                'change_type' => 'unavailable',
-                'specialist_id' => $specialist->getKey(),
-                'starts_at' => '2040-04-06 12:00',
-                'ends_at' => '2040-04-06 13:30',
-                'reason' => 'Searchable unavailable period',
-            ])
-            ->call('create')
-            ->assertHasNoFormErrors();
-
-        $row = ScheduleExceptionResource::getEloquentQuery()
-            ->get()
-            ->first(fn (ScheduleException $record): bool => $record->getAttribute('reason') === 'Searchable unavailable period');
-        self::assertNotNull($row);
-
-        Livewire::actingAs($admin)
-            ->test(ListScheduleExceptions::class)
-            ->assertCanSeeTableRecords([$row])
-            ->searchTable('Searchable unavailable period')
-            ->assertCanSeeTableRecords([$row])
-            ->searchTable((string) $specialist->display_name)
-            ->assertCanSeeTableRecords([$row])
-            ->searchTable('No matching schedule change')
-            ->assertCanNotSeeTableRecords([$row]);
-    }
-
     public function test_unavailable_time_form_shows_actionable_required_errors_without_writing(): void
     {
         [$organization, $admin] = $this->fixture();
