@@ -1125,7 +1125,12 @@ test('staff gets actionable unavailable-time errors and can save the corrected s
     await page.locator('[id="form.ends_at"]').fill('2040-04-06T13:30');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
-    await expect(page).toHaveURL(/\/admin\/schedule-exceptions$/);
+    await expect(page).toHaveURL(/\/admin\/schedule-exceptions(?:\?.*)?$/);
+    await expect(page.getByText('Создано', { exact: true })).toBeVisible();
+    const lastPageButton = page.getByRole('button', { name: /Перейти к странице \d+/ }).last();
+    if (await lastPageButton.count() && await lastPageButton.isEnabled()) {
+        await lastPageButton.click();
+    }
     const savedRow = page.getByRole('row').filter({ hasText: reason });
     await expect(savedRow).toBeVisible();
     await page.reload();
