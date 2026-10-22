@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useForm } from '@inertiajs/vue3';
-import { onBeforeUnmount, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 
 const props = defineProps<{ url: string; materials: { id: number; filename: string; downloadUrl: string }[] }>();
@@ -12,6 +12,8 @@ const selectionError = ref('');
 const form = useForm<{ file: File | null; upload_key: string }>({ file: null, upload_key: '' });
 const uploading = ref(false);
 const activeName = ref('');
+const maxFiles = 5;
+const remainingFiles = computed(() => Math.max(0, maxFiles - props.materials.length));
 let stopped = false;
 let stopAfterCurrent = false;
 onBeforeUnmount(() => {
@@ -29,6 +31,12 @@ function select(event: Event): void {
     }
     if (files.length > 5) {
         selectionError.value = t('medical.filesTooMany');
+        return;
+    }
+    if (files.length > remainingFiles.value) {
+        selectionError.value = remainingFiles.value === 1
+            ? t('medical.oneFileRemaining')
+            : t('medical.filesRemaining', { count: remainingFiles.value });
         return;
     }
     if (files.some((file) => file.size > 20 * 1024 * 1024)) {
@@ -79,6 +87,8 @@ function send(index: number): void {
         onError: (errors) => {
             item.error = errors.upload_key
                 ? t('medical.uploadConflict')
+                : errors.file_count
+                    ? t('medical.filesLimitReached')
                 : errors.file
                     ? t('medical.uploadValidationFailed')
                     : t('medical.uploadFailed');
@@ -122,12 +132,19 @@ function send(index: number): void {
     <p class="portal-copy">
       {{ t('medical.filesLimit') }}
     </p>
+    <p
+      v-if="remainingFiles === 0"
+      class="portal-copy"
+      role="status"
+    >
+      {{ t('medical.filesLimitReached') }}
+    </p>
     <input
       id="medical-files"
       type="file"
       multiple
       accept="image/jpeg,image/png,application/pdf"
-      :disabled="uploading"
+      :disabled="uploading || remainingFiles === 0"
       class="portal-input min-w-0 max-w-full"
       @change="select"
     >

@@ -96,6 +96,42 @@ final class September26MedicalAttachmentTest extends TestCase
         self::assertCount(1, Storage::disk('private')->allFiles());
     }
 
+    public function test_medical_profile_upload_limit_applies_across_batches_and_replays_after_limit(): void
+    {
+        $client = $this->fixture();
+        $keys = [];
+        for ($attempt = 0; $attempt < 5; $attempt++) {
+            $keys[] = (string) Str::uuid();
+            $this->from(route('portal.medical-profile'))
+                ->post(route('portal.medical-attachments.upload'), ['upload_key' => $keys[$attempt], 'file' => $this->report()])
+                ->assertSessionHasNoErrors();
+        }
+
+        Log::spy();
+        $this->from(route('portal.medical-profile'))
+            ->post(route('portal.medical-attachments.upload'), ['upload_key' => (string) Str::uuid(), 'file' => $this->report()])
+            ->assertSessionHasErrors('file_count', 'В медицинском профиле можно загрузить не более пяти файлов.');
+
+        self::assertSame(5, MedicalAttachment::query()->where('client_id', $client->getKey())->count());
+        self::assertCount(5, Storage::disk('private')->allFiles());
+        self::assertSame(5, AuditEvent::query()->where('action', 'attachment.uploaded')->count());
+        Log::shouldHaveReceived('log')->withArgs(fn (string $level, string $event, array $context): bool => $level === 'warning'
+            && $event === 'portal.medical_attachment.upload_rejected'
+            && $context['organization_id'] === $client->organization_id
+            && $context['actor_client_id'] === $client->getKey()
+            && $context['safe_error_code'] === 'medical_attachment_limit_reached'
+            && $context['response_status'] === 422
+            && $context['outcome'] === 'rejected')->once();
+
+        $this->from(route('portal.medical-profile'))
+            ->post(route('portal.medical-attachments.upload'), ['upload_key' => $keys[4], 'file' => $this->report()])
+            ->assertSessionHasNoErrors();
+
+        self::assertSame(5, MedicalAttachment::query()->where('client_id', $client->getKey())->count());
+        self::assertCount(5, Storage::disk('private')->allFiles());
+        self::assertSame(5, AuditEvent::query()->where('action', 'attachment.uploaded')->count());
+    }
+
     public function test_unauthenticated_medical_attachment_access_returns_a_human_status_and_safe_diagnostic(): void
     {
         $client = $this->fixture();

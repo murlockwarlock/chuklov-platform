@@ -5,6 +5,7 @@ namespace App\Modules\Attachments\Application;
 use App\Models\User;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Attachments\Domain\ValueObjects\StoredAttachment;
 use App\Modules\Identity\Domain\Models\Client;
@@ -16,6 +17,8 @@ use Illuminate\Validation\ValidationException;
 
 final readonly class UploadMedicalAttachment
 {
+    private const MAX_MEDICAL_REPORTS_PER_CLIENT = 5;
+
     public function __construct(
         private AttachmentAuthorization $authorization,
         private AttachmentStorageInterface $storage,
@@ -54,6 +57,18 @@ final readonly class UploadMedicalAttachment
                     }
 
                     return $existing;
+                }
+                if ($command->attachmentType === AttachmentType::MedicalReport) {
+                    $medicalReportCount = MedicalAttachment::query()
+                        ->where('organization_id', $organization->getKey())
+                        ->where('client_id', $client->getKey())
+                        ->where('attachment_type', AttachmentType::MedicalReport)
+                        ->count();
+                    if ($medicalReportCount >= self::MAX_MEDICAL_REPORTS_PER_CLIENT) {
+                        throw ValidationException::withMessages([
+                            'file_count' => __('В медицинском профиле можно загрузить не более пяти файлов.'),
+                        ]);
+                    }
                 }
                 $attachment = new MedicalAttachment;
                 $attachment->forceFill([

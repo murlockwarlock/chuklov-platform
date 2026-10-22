@@ -62,9 +62,10 @@ final readonly class UploadClientMedicalAttachment
 
             throw ValidationException::withMessages(['file' => __('Файл не прошёл проверку. Выберите JPG, PNG или PDF размером до 20 МБ.')]);
         } catch (ValidationException $exception) {
-            $errorCode = array_key_exists('upload_key', $exception->errors())
+            $errors = $exception->errors();
+            $errorCode = array_key_exists('upload_key', $errors)
                 ? 'duplicate_upload_key'
-                : 'attachment_validation_failed';
+                : (array_key_exists('file_count', $errors) ? 'medical_attachment_limit_reached' : 'attachment_validation_failed');
             $this->logFailure('warning', 'portal.medical_attachment.upload_rejected', $client, $patientId, $errorCode, 422);
 
             throw $exception;

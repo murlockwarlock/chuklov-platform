@@ -1719,6 +1719,8 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByRole('link', { name: 'synthetic-report-three.pdf', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'synthetic-report-photo.jpg', exact: true })).toBeVisible();
     await expect(page.getByRole('link', { name: 'synthetic-report-scan.png', exact: true })).toBeVisible();
+    await expect(page.locator('#medical-files')).toBeDisabled();
+    await expect(page.getByRole('status').filter({ hasText: 'В медицинском профиле уже загружено пять файлов.' })).toBeVisible();
     const attachmentUrl = await page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true }).getAttribute('href');
     if (!attachmentUrl) throw new Error('Medical attachment download link is missing its URL');
     const downloadEvent = page.waitForEvent('download');
