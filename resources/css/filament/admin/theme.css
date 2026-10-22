@@ -198,7 +198,7 @@
     padding: clamp(1.5rem, 5vw, 2.75rem);
 }
 
-@media (max-width: 639px) {
+@media (max-width: 1279px) {
     .booking-client-select-field .fi-input-wrp {
         flex-wrap: wrap;
     }
