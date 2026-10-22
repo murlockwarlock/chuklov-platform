@@ -68,7 +68,7 @@ final readonly class StartSurveyAttempt
 
     private function rejectUnavailable(Client $client, SurveyDefinition $definition, ?int $versionId, string $errorCode): never
     {
-        Log::notice('portal.surveys.start_denied', [
+        Log::warning('portal.surveys.start_denied', [
             'operation' => 'start_survey_attempt',
             'organization_id' => $client->organization_id,
             'actor_type' => 'client',

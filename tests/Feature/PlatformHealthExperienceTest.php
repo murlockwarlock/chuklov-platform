@@ -136,11 +136,17 @@ final class PlatformHealthExperienceTest extends TestCase
             'started_at' => now(),
         ]);
         $this->withSession(['client_portal.client_id' => $client->getKey()]);
-        Log::shouldReceive('notice')->once()->with('portal.surveys.start_denied', Mockery::on(fn (array $context): bool => $context['safe_error_code'] === 'content_not_approved'
+        Log::shouldReceive('warning')->once()->with('portal.surveys.start_denied', Mockery::on(fn (array $context): bool => $context['safe_error_code'] === 'content_not_approved'
             && $context['outcome'] === 'denied'
+            && $context['operation'] === 'start_survey_attempt'
+            && $context['organization_id'] === $organization->getKey()
+            && $context['entity_id'] === $definition->getKey()
             && ! array_key_exists('definition_snapshot', $context)));
-        Log::shouldReceive('notice')->once()->with('portal.surveys.attempt_access_denied', Mockery::on(fn (array $context): bool => $context['safe_error_code'] === 'attempt_unavailable'
+        Log::shouldReceive('warning')->once()->with('portal.surveys.attempt_access_denied', Mockery::on(fn (array $context): bool => $context['safe_error_code'] === 'attempt_unavailable'
             && $context['outcome'] === 'denied'
+            && $context['operation'] === 'view_survey_attempt'
+            && $context['organization_id'] === $organization->getKey()
+            && $context['entity_id'] === $attempt->getKey()
             && ! array_key_exists('definition_snapshot', $context)));
 
         $this->get(route('portal.surveys.index'))
