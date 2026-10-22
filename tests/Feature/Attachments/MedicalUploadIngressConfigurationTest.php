@@ -44,6 +44,7 @@ final class MedicalUploadIngressConfigurationTest extends TestCase
 
         $hostConfiguration = file_get_contents(base_path('docker/host-nginx/chuklov-staging-tls.conf'));
         self::assertIsString($hostConfiguration);
+        self::assertMatchesRegularExpression('/^\s*listen\s+127\.0\.0\.1:18081\s+ssl\s*;/m', $hostConfiguration);
         self::assertMatchesRegularExpression('/location\s+@medical_attachment_app\s*\{[^}]*access_log\s+[^;]+medical_attachment_safe\s*;/s', $hostConfiguration);
         self::assertMatchesRegularExpression('/location\s+~\s+\\\.php\$\s*\{\s*access_log\s+[^;]+medical_attachment_safe\s*;/s', $applicationConfiguration);
     }

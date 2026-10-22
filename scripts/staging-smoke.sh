@@ -67,6 +67,24 @@ if [[ "$deployed_revision" != "$expected_revision" ]]; then
 fi
 ok 'STAGING SHA' "${deployed_revision:0:7}"
 
+if ! ssh "${ssh_options[@]}" "$remote" bash -s <<'REMOTE_NGINX_MEDICAL_UPLOAD' > /dev/null 2>&1
+site_configuration='/etc/nginx/conf.d/chuklov-staging-tls.conf'
+sudo -n test -f "$site_configuration"
+sudo -n grep -Eq '^[[:space:]]*client_max_body_size[[:space:]]+24m[[:space:]]*;' "$site_configuration"
+sudo -n awk '
+    /^[[:space:]]*location \^~ \/portal\/medical-attachments \{/ { in_location = 1 }
+    in_location && /access_log \/var\/log\/nginx\/access\.log medical_attachment_safe;/ { found = 1 }
+    in_location && /^[[:space:]]*}/ { in_location = 0 }
+    END { exit !found }
+' "$site_configuration"
+sudo -n nginx -t > /dev/null
+sudo -n nginx -T 2>&1 | grep -Fq 'log_format medical_attachment_safe'
+REMOTE_NGINX_MEDICAL_UPLOAD
+then
+    fail 'NGINX MEDICAL UPLOAD' 'host Nginx upload limit or safe access logging is not active'
+fi
+ok 'NGINX MEDICAL UPLOAD'
+
 health="$(curl --noproxy '*' --fail --silent --show-error "$STAGING_HEALTH_URL")"
 if ! jq -e '.status == "ok" and (.checks | to_entries | all(.value == true))' <<< "$health" > /dev/null; then
     fail 'HEALTH' 'health contract is not fully green'

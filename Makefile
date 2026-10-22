@@ -1,7 +1,7 @@
 COMPOSE := docker-compose
 PHP := php
 
-.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-integration-foundation test-integration-rag test-integration-concurrency test-e2e lint static quality check-fast ci check-app-key check-docker-context scan-secrets privacy migrate seed backup deploy deploy-staging rollback
+.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-integration-foundation test-integration-rag test-integration-concurrency test-e2e lint static quality check-fast ci check-app-key check-docker-context scan-secrets privacy migrate seed backup deploy deploy-staging deploy-staging-nginx-config rollback
 
 setup:
 	test -f .env || cp .env.example .env
@@ -93,6 +93,10 @@ deploy:
 deploy-staging:
 	@test -n "$(REVISION)" || (echo "Usage: make deploy-staging REVISION=<full-sha> [EXPECTED_CURRENT_REVISION=<full-sha>]" >&2; exit 1)
 	scripts/deploy-staging.sh "$(REVISION)" "$(EXPECTED_CURRENT_REVISION)"
+
+deploy-staging-nginx-config:
+	@test -n "$(REVISION)" -a -n "$(EXPECTED_SITE_SHA256)" -a -n "$(EXPECTED_LOG_FORMAT_SHA256)" || (echo "Usage: make deploy-staging-nginx-config REVISION=<full-sha> EXPECTED_SITE_SHA256=<sha256> EXPECTED_LOG_FORMAT_SHA256=<sha256|absent>" >&2; exit 1)
+	scripts/deploy-staging-nginx-config.sh "$(REVISION)" "$(EXPECTED_SITE_SHA256)" "$(EXPECTED_LOG_FORMAT_SHA256)"
 
 rollback:
 	@echo "Rollback is intentionally unavailable before Milestone 16." && exit 2

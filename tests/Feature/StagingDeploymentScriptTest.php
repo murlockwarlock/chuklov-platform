@@ -527,6 +527,34 @@ class StagingDeploymentScriptTest extends TestCase
     }
 
     #[Test]
+    public function staging_host_nginx_configuration_deployment_is_hash_guarded_and_reversible(): void
+    {
+        $script = file_get_contents(base_path('scripts/deploy-staging-nginx-config.sh'));
+        $smoke = file_get_contents(base_path('scripts/staging-smoke.sh'));
+        $makefile = file_get_contents(base_path('Makefile'));
+
+        self::assertIsString($script);
+        self::assertIsString($smoke);
+        self::assertIsString($makefile);
+        self::assertStringContainsString('git merge-base --is-ancestor "$revision" "$deployment_ref"', $script);
+        self::assertStringContainsString('git status --porcelain', $script);
+        self::assertStringContainsString("site_target='/etc/nginx/conf.d/chuklov-staging-tls.conf'", $script);
+        self::assertStringContainsString("log_format_target='/etc/nginx/conf.d/00-medical-attachment-log-format.conf'", $script);
+        self::assertStringContainsString('current_site_hash', $script);
+        self::assertStringContainsString('expected_log_format_hash', $script);
+        self::assertStringContainsString('restore_configuration()', $script);
+        self::assertStringContainsString('sudo -n nginx -t', $script);
+        self::assertStringContainsString('sudo -n systemctl reload nginx', $script);
+        self::assertStringContainsString('shared/backups/nginx-config-', $script);
+        self::assertStringContainsString("grep -Fq 'log_format medical_attachment_safe'", $script);
+        self::assertStringContainsString("sudo -n nginx -T 2>&1 | grep -Fq 'log_format medical_attachment_safe'", $smoke);
+        self::assertStringContainsString('NGINX MEDICAL UPLOAD', $smoke);
+        self::assertStringContainsString('deploy-staging-nginx-config:', $makefile);
+        self::assertStringNotContainsString('iptables', $script);
+        self::assertStringNotContainsString('nft', $script);
+    }
+
+    #[Test]
     public function staging_smoke_uses_the_guarded_environment_and_read_only_container_contract(): void
     {
         $shell = file_get_contents(base_path('scripts/staging-smoke.sh'));
