@@ -831,9 +831,19 @@ test('cancelled Journal booking offers its released time as a real create action
     await assertNoHorizontalOverflow(page);
 
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
-    await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
-    await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();
-    await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(url => url.pathname === '/admin/bookings'
+        && url.searchParams.get('week') === date
+        && url.searchParams.get('view') === 'week'
+        && url.searchParams.get('specialist_id') === String(fixture.specialistId), { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Журнал записей', exact: true })).toBeVisible();
+    const createdBookingCard = page.locator('[draggable="true"]')
+        .filter({ hasText: fixture.clientName })
+        .filter({ hasText: time });
+    await expect(createdBookingCard).toHaveCount(1);
+    await expect(createdBookingCard).toContainText(fixture.serviceName);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Журнал записей', exact: true })).toBeVisible();
+    await expect(createdBookingCard).toBeVisible();
 });
 
 test('stale Journal time explains the conflict and allows another slot', async ({ page }) => {
