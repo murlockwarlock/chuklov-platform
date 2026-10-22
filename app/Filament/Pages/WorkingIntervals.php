@@ -334,7 +334,7 @@ final class WorkingIntervals extends LocalizedPage
     public function specialistScheduleTimezoneLabel(): string
     {
         $specialist = $this->selectedSpecialist();
-        $timezone = $specialist instanceof Specialist ? $specialist->timezone : app(OrganizationContext::class)->defaultTimezone();
+        $timezone = $specialist?->timezone ?: app(OrganizationContext::class)->defaultTimezone();
         $offsetHours = now($timezone)->getOffset() / 3600;
         $offset = $offsetHours === 0.0
             ? 'UTC'

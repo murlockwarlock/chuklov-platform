@@ -117,6 +117,17 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ));
     }
 
+    public function test_working_intervals_show_organization_timezone_when_specialist_timezone_is_unset(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture('Asia/Almaty', 'UTC');
+        $specialist->forceFill(['timezone' => null])->save();
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(WorkingIntervals::class)
+            ->assertSee('График задан по времени: Алматы (UTC+5) · Asia/Almaty');
+    }
+
     public function test_settings_save_round_trips_multiple_intervals_and_validity_dates(): void
     {
         [$organization, $admin, $specialist] = $this->fixture();
