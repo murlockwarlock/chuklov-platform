@@ -96,6 +96,7 @@ final class ListClientBookings
             CarbonImmutable::instance(now())->utc()->addMinutes($this->cutoff->handle()),
         );
         $ownsBooking = (int) $booking->client_id === (int) $client->getKey();
+        $supportsSelfServiceChanges = in_array($booking->status, [BookingStatus::Requested, BookingStatus::Confirmed], true);
 
         return [
             'id' => $booking->getKey(),
@@ -131,6 +132,7 @@ final class ListClientBookings
             'eventVersion' => $booking->event_version,
             'canCancel' => $ownsBooking && ! $terminal && ($pendingHomeVisit || $outsideCutoff),
             'canReschedule' => $ownsBooking && ! $terminal && ($pendingHomeVisit || $outsideCutoff),
+            'selfServiceChangesClosed' => $ownsBooking && $supportsSelfServiceChanges && ! $outsideCutoff,
             'pendingReview' => $pendingHomeVisit,
             'history' => $this->safeHistory($booking, $locale),
         ];

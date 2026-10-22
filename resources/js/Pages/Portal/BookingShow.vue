@@ -46,6 +46,7 @@ type Booking = {
     eventVersion: number;
     canCancel: boolean;
     canReschedule: boolean;
+    selfServiceChangesClosed: boolean;
     pendingReview: boolean;
     workingLocationId: number | null;
     locationArea: string | null;
@@ -429,6 +430,13 @@ function rescheduleBooking(): void {
           class="portal-notice"
         >
           {{ t('booking.requestSent') }}
+        </p>
+        <p
+          v-if="props.booking.selfServiceChangesClosed"
+          class="portal-notice"
+          role="status"
+        >
+          {{ t('booking.selfServiceChangesClosed') }}
         </p>
         <div
           v-if="props.booking.canReschedule || props.booking.canCancel"

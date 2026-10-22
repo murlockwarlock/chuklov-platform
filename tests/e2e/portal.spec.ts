@@ -24,6 +24,7 @@ type BookingFixtureOptions = {
     confirmedName?: boolean;
     medicalService?: boolean;
     withBooking?: boolean;
+    bookingWithinCancellationCutoff?: boolean;
     withCompanionMessages?: boolean;
     withCompanionFailure?: boolean;
     withPartnerRewards?: boolean;
@@ -424,17 +425,41 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $date = \\Carbon\\CarbonImmutable::now('UTC')->addDays((int) getenv('PLAYWRIGHT_BOOKING_DAYS_AHEAD'))->toDateString();
         $booking = null;
         if (getenv('PLAYWRIGHT_WITH_BOOKING') === '1') {
-            $date = \\Carbon\\CarbonImmutable::now('UTC')->addDays(3)->toDateString();
             app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
-            $booking = app(\\App\\Modules\\Scheduling\\Application\\CreateBooking::class)->handle(
-                actor: $client,
-                client: $client,
-                specialist: $specialist,
-                service: $service,
-                startsAt: \\Carbon\\CarbonImmutable::parse($date.' 09:00:00', 'UTC'),
-                format: \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office,
-                idempotencyKey: 'playwright-'.$suffix,
-            );
+            if (getenv('PLAYWRIGHT_BOOKING_WITHIN_CANCELLATION_CUTOFF') === '1') {
+                $cutoffMinutes = (int) (\\Illuminate\\Support\\Facades\\DB::table('organization_settings')
+                    ->where('organization_id', $organization->getKey())
+                    ->where('setting_key', 'booking_cancellation_cutoff_minutes')
+                    ->value('integer_value') ?? config('scheduling.booking_cancellation_cutoff_minutes'));
+                $start = \\Carbon\\CarbonImmutable::now('UTC')->addMinutes(max(1, $cutoffMinutes - 60));
+                $booking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()
+                    ->forOrganization($organization)
+                    ->forClient($client)
+                    ->forSpecialist($specialist)
+                    ->forService($service)
+                    ->create([
+                        'status' => \\App\\Modules\\Scheduling\\Domain\\Enums\\BookingStatus::Requested->value,
+                        'source' => \\App\\Modules\\Scheduling\\Domain\\Enums\\BookingSource::Portal->value,
+                        'visit_format' => \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office->value,
+                        'starts_at' => $start,
+                        'ends_at' => $start->addHour(),
+                        'blocking_ends_at' => $start->addHour(),
+                        'schedule_timezone' => 'UTC',
+                        'client_timezone' => 'UTC',
+                        'requested_at' => now(),
+                    ]);
+            } else {
+                $date = \\Carbon\\CarbonImmutable::now('UTC')->addDays(3)->toDateString();
+                $booking = app(\\App\\Modules\\Scheduling\\Application\\CreateBooking::class)->handle(
+                    actor: $client,
+                    client: $client,
+                    specialist: $specialist,
+                    service: $service,
+                    startsAt: \\Carbon\\CarbonImmutable::parse($date.' 09:00:00', 'UTC'),
+                    format: \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office,
+                    idempotencyKey: 'playwright-'.$suffix,
+                );
+            }
         }
         $sessionId = \\Illuminate\\Support\\Str::random(40);
         $sessionData = json_encode([
@@ -493,6 +518,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
         PLAYWRIGHT_CONFIRMED_NAME: normalizedOptions.confirmedName ? '1' : '0',
         PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
+        PLAYWRIGHT_BOOKING_WITHIN_CANCELLATION_CUTOFF: normalizedOptions.bookingWithinCancellationCutoff ? '1' : '0',
         PLAYWRIGHT_MEDICAL_SERVICE: normalizedOptions.medicalService ? '1' : '0',
         PLAYWRIGHT_BOOKING_DAYS_AHEAD: String(normalizedOptions.daysAhead ?? 1),
         PLAYWRIGHT_TRACKER: normalizedOptions.tracker ?? '',
@@ -2038,6 +2064,34 @@ test('September 26 client selects multiple sessions before the medical editor an
     await page.getByRole('link', { name: 'Мои записи' }).last().click();
     await page.getByRole('link', { name: new RegExp(fixture.serviceName) }).first().click();
     await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toBeVisible();
+});
+
+test('September 26 booking explains when self-service changes are closed', async ({ page }) => {
+    const fixture = createBookingFixture({ withBooking: true, bookingWithinCancellationCutoff: true });
+    if (fixture.bookingId === null) {
+        throw new Error('The cancellation cutoff fixture did not create a booking.');
+    }
+
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto(`/portal/bookings/${fixture.bookingId}`);
+
+    const guidance = page.getByRole('status').filter({
+        hasText: 'Сейчас запись уже нельзя изменить или отменить самостоятельно. Свяжитесь с нами — поможем.',
+    });
+
+    await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
+    await expect(guidance).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Перенести', exact: true })).toHaveCount(0);
+
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(guidance).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+    }
+
+    await page.reload();
+    await expect(guidance).toBeVisible();
 });
 
 test('September 26 medical service opens the saved-profile onboarding after the slot is created', async ({ page }) => {
