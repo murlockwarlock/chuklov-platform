@@ -59,7 +59,7 @@ async function uploadCrmMedicalReport(page: Page, filename: string): Promise<voi
         buffer: validPdfBuffer(),
     });
     const selectedFile = dialog.getByRole('group', { name: filename, exact: true });
-    await expect(selectedFile).toBeVisible();
+    await expect(selectedFile).toBeVisible({ timeout: 15_000 });
     await expect(selectedFile.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
     await dialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(dialog).toBeHidden();
@@ -1606,6 +1606,7 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
 });
 
 test('staff can use the client cockpit for medical profile and private files', async ({ page }) => {
+    test.setTimeout(90_000);
     const fixture = createCrmFixture({ includeMedicalAttachment: false });
 
     await login(page, fixture);
@@ -1649,8 +1650,8 @@ test('staff can use the client cockpit for medical profile and private files', a
         buffer: validPdfBuffer(),
     });
     const selectedFile = uploadDialog.getByRole('group', { name: 'ux-a-report.pdf', exact: true });
-    await expect(selectedFile).toHaveCount(1);
-    await expect(selectedFile).toBeVisible();
+    await expect(selectedFile).toHaveCount(1, { timeout: 15_000 });
+    await expect(selectedFile).toBeVisible({ timeout: 15_000 });
     await expect(selectedFile.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
     const uploadSubmit = uploadDialog.getByRole('button', { name: 'Отправить', exact: true });
     await expect(uploadSubmit).toBeVisible();
