@@ -3,11 +3,36 @@
 Starting main SHA: `c201b41a14d91c57c1890e62737f9e2001a231f1`.
 Branch: `codex/26-09-full-implementation`. Current PR: #60.
 
-Sources: original Downloads LIST 1 DOCX (v2.4, 26.09.2026) and original Downloads LIST 2 Markdown. Quotations below were extracted directly from those files; no prior proof matrix is accepted as implementation evidence.
+The historical file cites the original Downloads LIST 1 DOCX (v2.4, 26.09.2026) and LIST 2 Markdown. On 2026-10-22, LIST 1 was re-extracted into private task artifacts; the original LIST 2 was not found in local Downloads or connected Drive. Historical quotations below are not treated as an independent current source recheck.
 
-## Final candidate evidence — 2026-10-21
+## Owner-directed final pass — 2026-10-22
 
-This block is authoritative for the owner-independent acceptance pass. Older checkpoint notes below are retained as history and are not current status claims.
+**Overall result: FAIL — the full acceptance pass is not complete. PR #60 remains open and unmerged.** This section supersedes every earlier status in this file. The prior matrix records 29 primary CR/L2 requirements plus 205 nested criteria; that count and the LIST 2 wording were not independently revalidated because the original LIST 2 file is unavailable. The rows below record only directly observed current-pass behavior. No older IMPLEMENTED, PARTIAL, or NOT VERIFIED label upgrades a current requirement.
+
+- Starting SHA: c201b41a14d91c57c1890e62737f9e2001a231f1.
+- Branch / PR: codex/26-09-full-implementation / #60; not merged.
+- Final code SHA and staging runtime SHA: 2c0264421cd6133f2ac91305e69aedab3095debe.
+- Staging is PostgreSQL. Final staging smoke after QA cleanup and schedule restoration: PASS.
+- Hosted targeted E2E on exact SHA 2c0264421cd6133f2ac91305e69aedab3095debe: PASS, run 39817066160. Two full CRM E2E runs on that SHA failed identically (runs 39820470585 and 39822594732: 44 passed, 3 skipped, 1 mobile group-booking/table-action timeout). The isolated scenario passed on desktop and mobile (run 39822054327), as did the preceding CRM scenario subset (run 39824156943). The E2E now checks the modal, updated interval, success status and reload projection; this local test change has not yet been run in hosted CI.
+- Hosted CI on exact SHA: unit, feature, PostgreSQL integration foundation/concurrency/RAG, Docker runtime, privacy scan, frontend lint, typecheck, build and dependency audits PASS. Quality FAIL is baseline: Pint reports two files unchanged from the starting SHA; PHPStan reports existing repository findings and none in the current changed scheduling/portal files. Run 39818168768. Do not treat this as a green full CI run.
+- Owner acceptance: NOT RUN. No owner participation was requested for routine QA.
+- Source reacquisition: a private LIST 1 re-extraction is available in local task artifacts. The original LIST 2 file was not found in local Downloads or connected Drive; excerpts in this historical acceptance file do not independently satisfy the requested source recheck.
+
+### Current-pass criteria with direct evidence
+
+| Requirement ID | Exact source expectation | Implemented path and regression test | PostgreSQL evidence | Browser/staging journey | Error, audit and diagnostic evidence | Status |
+| --- | --- | --- | --- | --- | --- | --- |
+| L2-01.1–L2-01.3 | «Поле «Примечание» в карте клиента»; «В карточке клиента нужно поле Примечание (можно писать разные особенности)» | ClientNotesRelationManager; tests/Feature/ClientFinishingPackTest.php | Synthetic client 120 note create/edit state persisted; client reset removed the test row | CRM create → save → reload/reopen → edit → save → reload; visible success; empty input rejected | client.note.created / client.note.updated audit events retain body_present only; tenant and inactive-membership negative cases covered by ClientFinishingPackTest | VERIFIED |
+| L2-02.1–L2-02.4 | Add blacklist with reason, show blacklist status/filter, deny booking, allow booking after unblock | BlockClientBlacklist, UnblockClientBlacklist; tests/Feature/ClientFinishingPackTest.php and tests/Feature/PortalBookingRemediationTest.php | Denied Portal attempt created zero bookings; CRM removal persisted before QA account reset | Browser proves add/reason/status/filter, Portal denial and CRM removal/reload. A successful Portal booking after unblock was not captured in this pass; the feature regression test proves backend retry only. | portal.booking.denied has safe reason_code=blacklist and outcome=denied; client.blacklist.added/removed audit events store reason_present, not reason text | FAIL — post-unblock browser journey missing |
+| L2-13.1–L2-13.2 | Rename to exact label «Адрес приёма по умолчанию» and use the saved default in new bookings | SchedulingConfiguration; tests/Feature/PhaseOneBookingLocationsTest.php::test_default_address_setting_updates_future_office_bookings_and_preserves_existing_snapshot | PostgreSQL setting and default location matched the UI; five pre-test booking snapshots agreed; existing snapshots remained unchanged | Chromium on staging: edit → save success → reload persisted value → CRM booking form prefilled; final clean reload matched PostgreSQL. Final viewport 1440px. The earlier QA selector error was corrected; no application defect | working_location.updated audit retained entity ID, without address text. Test marker and QA state restored. | VERIFIED |
+| CLINICAL.11 | Chronic-condition textarea plus «Хронических заболеваний нет» | Portal MedicalProfile; tests/e2e/portal.spec.ts and tests/Feature/September26MedicalProfileTest.php | no_chronic_conditions=true and empty diagnosis were confirmed before QA account reset | Chromium and WebKit: select none → save → reload/reopen → CRM projection; label remained visible at 320/360/390/768/1024/1440px | No medical plaintext in general logs; the user sees the explicit none-state instead of a blank value | VERIFIED |
+| CLINICAL.21 | Up to five JPG/PNG/PDF files, up to 20 MiB each; private access and authorized CRM counterpart | MedicalAttachment; tests/Feature/September26MedicalAttachmentTest.php, tests/Feature/Attachments/ClientAttachmentUploadLimitTest.php, tests/Integration/MedicalAttachmentLimitPostgresTest.php | Five-file and 20 MiB boundaries; rejected MIME/size/sixth file; private storage metadata and authorization were verified | Portal upload → save → reload/reopen; CRM counterpart; unauthenticated and expired-link denial; Chromium/WebKit responsive checks | Safe attachment denial diagnostics and upload/download audit; no file bytes or clinical plaintext in logs. Accepted Laravel private Storage is used; this is not literal S3 verification. | VERIFIED |
+
+The full 29 + 205 row evidence ledger requested by the owner has not yet been completed. Accordingly this is a failed acceptance result, not a release-ready evidence report. The historical sections below preserve prior investigations only and do not change the FAIL status of any unlisted requirement.
+
+## Historical checkpoint evidence — 2026-10-21 (superseded)
+
+Historical checkpoint only. Its statuses and scope are superseded by the owner-directed 2026-10-22 section above and are not current acceptance claims.
 
 - Starting main: `c201b41a14d91c57c1890e62737f9e2001a231f1`.
 - Reviewed branch candidate: `85fd9b9dacbc871032990711be1a5055df3fbe93`. Exact staging runtime: `e9dafd30ab4eb83a470dba92a20211fdbe88f0e6`. Draft [PR #60](https://github.com/murlockwarlock/chuklov-platform/pull/60) remains open and unmerged. Commits after the staging runtime are browser-test synchronization and evidence assertions; no later runtime code was deployed.
@@ -627,15 +652,15 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 Поле «Примечание» в карте клиента
 
 Source: LIST 2, №1.
-Before: **PARTIAL**. After: **NOT VERIFIED**.
+Historical checkpoint status: **VERIFIED** based on earlier acceptance work. Current-pass result is recorded in the owner-directed section above.
 Preserve: ClientNotesRelationManager and ClientNote.
-Missing or pending proof: Real create/edit/read persistence regression.
+Evidence: synthetic client create/edit/reload, PostgreSQL persistence, tenant authorization and safe note audit metadata.
 
 ### Source and individual criteria
 
-- L2-01.1: source: «11.08.26 (1)». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
-- L2-01.2: source: «**Поле «Примечание» в карте клиента**». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
-- L2-01.3: source: «В карточке клиента нужно поле Примечание (можно писать разные особенности)». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
+- L2-01.1: source: «11.08.26 (1)». Historical checkpoint claim: CRM create/edit/reopen and PostgreSQL persistence on a synthetic client; current-pass evidence is recorded above.
+- L2-01.2: source: «**Поле «Примечание» в карте клиента**». Historical checkpoint claim: the note field remained visible with its saved value after reload/reopen.
+- L2-01.3: source: «В карточке клиента нужно поле Примечание (можно писать разные особенности)». Historical checkpoint claim: create, edit, empty-input validation, persistence and tenant denial were exercised.
 
 Client outcome: Поле «Примечание» в карте клиента, with exact source wording, fields, order and action destination above.
 CRM outcome: same authorized business facts, persisted after reopening; no hidden duplicate or divergent authority.
@@ -649,16 +674,16 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 Чёрный список (раздел в клиентах)
 
 Source: LIST 2, №2.
-Before: **PARTIAL**. After: **NOT VERIFIED**.
+Historical checkpoint status: **VERIFIED** in the earlier acceptance notes. Current-pass status is **FAIL** until the successful Portal booking after unblock is directly captured; see the owner-directed section above.
 Preserve: ClientRestrictionType::Blacklist and ClientsTable.
-Missing or pending proof: Reason, filter, direct booking denial and reversal regression.
+Evidence: reason, status/filter, actual Portal denial, unblock, subsequent booking and reload.
 
 ### Source and individual criteria
 
-- L2-02.1: source: «11.08.26 (2)». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
-- L2-02.2: source: «**Чёрный список (раздел в клиентах)**». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
-- L2-02.3: source: «Возможность поместить клиента в чёрный список, с указанием причины в поле Примечание \- были случаи когда люди просто в не адеквате бывали или не заплатили и убежали и прочее.». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
-- L2-02.4: source: «Добавить статус «Чёрный список» в фильтре списка клиентов». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
+- L2-02.1: source: «11.08.26 (2)». Historical checkpoint claim — blacklist add/remove lifecycle completed in the CRM and Portal.
+- L2-02.2: source: «**Чёрный список (раздел в клиентах)**». Historical checkpoint claim — blacklist controls are present and state survives reload.
+- L2-02.3: source: «Возможность поместить клиента в чёрный список, с указанием причины в поле Примечание \- были случаи когда люди просто в не адеквате бывали или не заплатили и убежали и прочее.». Historical checkpoint claim — reason was entered; authorized booking was denied with an actionable message; historical notes claimed booking after unblock, not reproduced in the current pass.
+- L2-02.4: source: «Добавить статус «Чёрный список» в фильтре списка клиентов». Historical checkpoint claim — CRM filter returned the blocked client and reflected removal after unblock.
 
 Client outcome: Чёрный список (раздел в клиентах), with exact source wording, fields, order and action destination above.
 CRM outcome: same authorized business facts, persisted after reopening; no hidden duplicate or divergent authority.
@@ -914,14 +939,14 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 «Адрес по умолчанию» в настройках расписания \- переименовать в «Адрес приёма по умолчанию»
 
 Source: LIST 2, №13.
-Before: **PARTIAL**. After: **NOT VERIFIED**.
+Historical checkpoint status: **VERIFIED** based on earlier acceptance work. Current-pass result is recorded in the owner-directed section above.
 Preserve: SchedulingConfiguration address label already corrected.
-Missing or pending proof: Exact label and save/reload default-address regression.
+Evidence: exact label, CRM save success, reload persistence, new-booking address prefill and PostgreSQL snapshot preservation.
 
 ### Source and individual criteria
 
-- L2-13.1: source: «26.09.26 (13)». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
-- L2-13.2: source: ««Адрес по умолчанию» в настройках расписания \- переименовать в «Адрес приёма по умолчанию»». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
+- L2-13.1: source: «26.09.26 (13)». Historical checkpoint claim — save/reload, downstream CRM prefill and PostgreSQL state were directly checked.
+- L2-13.2: source: ««Адрес по умолчанию» в настройках расписания \- переименовать в «Адрес приёма по умолчанию»». Historical checkpoint claim — exact visible label matches the source text.
 
 Client outcome: «Адрес по умолчанию» в настройках расписания \- переименовать в «Адрес приёма по умолчанию», with exact source wording, fields, order and action destination above.
 CRM outcome: same authorized business facts, persisted after reopening; no hidden duplicate or divergent authority.
@@ -1029,7 +1054,7 @@ The fast-booking flow and clinical field specification apply jointly to CR-07/08
 - CLINICAL.8: «•	Элемент интерфейса: Многострочное текстовое поле (Textarea).». Acceptance: exact field/control, validation and authorized save/read/reopen in Portal and CRM. NOT VERIFIED.
 - CLINICAL.9: «•	Плейсхолдер: «Опишите конкретные результаты и задачи, которые вы хотите решить с Евгением (например: 1. Убрать тянущую боль в пояснице при наклонах. 2. Избавиться от утренней скованности и отеков)».». Acceptance: exact field/control, validation and authorized save/read/reopen in Portal and CRM. NOT VERIFIED.
 - CLINICAL.10: «•	Хронические заболевания:». Acceptance: exact field/control, validation and authorized save/read/reopen in Portal and CRM. NOT VERIFIED.
-- CLINICAL.11: «•	Элемент интерфейса: Текстовое поле (Textarea) для фиксации установленных диагнозов. Предусмотреть чекбокс «Хронических заболеваний нет».». Acceptance: exact field/control, validation and authorized save/read/reopen in Portal and CRM. NOT VERIFIED.
+- CLINICAL.11: «•	Элемент интерфейса: Текстовое поле (Textarea) для фиксации установленных диагнозов. Предусмотреть чекбокс «Хронических заболеваний нет».». **VERIFIED** — explicit none state saves, survives reload/reopen and projects to CRM; browser and regression evidence are listed in the owner-directed pass ledger above.
 - CLINICAL.12: «•	Перенесенные операции:». Acceptance: exact field/control, validation and authorized save/read/reopen in Portal and CRM. NOT VERIFIED.
 - CLINICAL.13: «•	Элемент интерфейса: Переключатель (Radio: Да / Нет). При выборе Да раскрываются вложенные поля: Год операции (Number) и Описание операции/рубца (Text: где находится шрам).». Acceptance: exact field/control, validation and authorized save/read/reopen in Portal and CRM. NOT VERIFIED.
 - CLINICAL.14: «•	Перенесенные травмы и переломы:». Acceptance: exact field/control, validation and authorized save/read/reopen in Portal and CRM. NOT VERIFIED.
@@ -1039,4 +1064,4 @@ The fast-booking flow and clinical field specification apply jointly to CR-07/08
 - CLINICAL.18: «•	Нутрицевтики и БАДы:». Acceptance: exact field/control, validation and authorized save/read/reopen in Portal and CRM. NOT VERIFIED.
 - CLINICAL.19: «•	Элемент интерфейса: Текстовое поле (Textarea) — витамины, биологически активные добавки, сборы, микроэлементы.». Acceptance: exact field/control, validation and authorized save/read/reopen in Portal and CRM. NOT VERIFIED.
 - CLINICAL.20: «•	Медицинские документы и обследования (Опционально):». Acceptance: exact field/control, validation and authorized save/read/reopen in Portal and CRM. NOT VERIFIED.
-- CLINICAL.21: «•	Элемент интерфейса: Мульти-загрузчик файлов (до 5 файлов: JPG, PNG, PDF до 20 МБ каждый). Заключения МРТ, КТ, УЗИ или врачебные выписки. Загрузка производится в защищенный приватный S3-бакет с генерацией внутреннего UUID.». Acceptance: exact field/control, validation and authorized save/read/reopen in Portal and CRM. NOT VERIFIED.
+- CLINICAL.21: «•	Элемент интерфейса: Мульти-загрузчик файлов (до 5 файлов: JPG, PNG, PDF до 20 МБ каждый). Заключения МРТ, КТ, УЗИ или врачебные выписки. Загрузка производится в защищенный приватный S3-бакет с генерацией внутреннего UUID.». **VERIFIED for the required private-storage security outcome** — five-file, format and size limits, invalid uploads, private authorization, reload and CRM counterpart were exercised using the accepted Laravel private Storage architecture; no literal S3 claim is made.

@@ -1185,6 +1185,7 @@ test('staff can create a group booking with a manually extended calendar block',
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
     await expect(page.getByText('Количество человек', { exact: true })).toBeVisible();
     await expect(page.getByText('3', { exact: true })).toBeVisible();
+    const bookingDetailUrl = page.url();
 
     await page.getByRole('button', { name: 'Действия', exact: true }).click();
     await page.getByRole('button', { name: 'Изменить время занятости', exact: true }).click();
@@ -1209,8 +1210,22 @@ test('staff can create a group booking with a manually extended calendar block',
     await expect(tableBookingActionsMenu).toBeVisible();
     const tableBlockingAction = tableBookingActionsMenu.getByRole('button', { name: 'Изменить время занятости', exact: true });
     await expect(tableBlockingAction).toBeVisible();
-    await tableBlockingAction.click();
-    await expect(page.locator('.fi-modal-window:visible').last()).toBeVisible();
+    const tableBlockingDialog = page.locator('.fi-modal-window:visible').last();
+    await Promise.allSettled([
+        tableBlockingAction.click({ timeout: 10_000 }),
+        tableBlockingDialog.waitFor({ state: 'visible', timeout: 10_000 }),
+    ]);
+    await expect(tableBlockingDialog).toBeVisible();
+    const tableBlockingEndsAt = tableBlockingDialog.locator('input[type="datetime-local"]');
+    await expect(tableBlockingEndsAt).toHaveValue(`${fixture.bookingStartsAt.slice(0, 10)}T14:00`);
+    await tableBlockingEndsAt.fill(`${fixture.bookingStartsAt.slice(0, 10)}T15:00`);
+    await tableBlockingEndsAt.blur();
+    await page.waitForLoadState('networkidle');
+    await tableBlockingDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Время занятости в календаре обновлено', { exact: true })).toBeVisible();
+
+    await page.goto(bookingDetailUrl);
+    await expect(page.getByText(/До .*14:00 → до .*15:00/)).toBeVisible();
 });
 
 test('staff Messages opens at the latest history and preserves intentional scrolling', async ({ page }) => {
