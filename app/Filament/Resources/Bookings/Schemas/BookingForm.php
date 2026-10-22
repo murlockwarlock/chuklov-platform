@@ -109,6 +109,7 @@ class BookingForm
                     self::preservePrefilledTimeOrClear($get, $set, $multiple);
                 }),
             Select::make('client_id')
+                ->extraFieldWrapperAttributes(['class' => 'booking-client-select-field'])
                 ->label(__('Клиент'))
                 ->options([])
                 ->searchable()

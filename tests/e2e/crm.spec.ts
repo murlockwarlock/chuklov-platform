@@ -1343,6 +1343,42 @@ test('staff can create a new client inline while creating a booking', async ({ p
     await expect(page.locator('.fi-in-text-item').filter({ hasText: newClientName }).first()).toBeVisible();
 });
 
+test('client picker remains usable at 320px while adding a booking client', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'mobile');
+
+    const fixture = createCrmFixture();
+
+    await page.setViewportSize({ width: 320, height: 720 });
+    await login(page, fixture);
+    await page.goto('/admin/bookings/create');
+
+    const field = page.locator('.booking-client-select-field');
+    const picker = field.locator('.fi-input-wrp');
+    const selection = field.locator('.fi-input-wrp-content-ctn');
+    const createClient = page.getByTestId('booking-create-client');
+
+    await expect(field).toBeVisible();
+    await expect(createClient).toBeVisible();
+
+    const selectionWidth = await selection.evaluate((element) => element.getBoundingClientRect().width);
+    const pickerBounds = await picker.boundingBox();
+    const actionBounds = await createClient.boundingBox();
+    const documentWidth = await page.evaluate(() => ({
+        client: document.documentElement.clientWidth,
+        scroll: document.documentElement.scrollWidth,
+    }));
+
+    expect(selectionWidth).toBeGreaterThan(200);
+    expect(pickerBounds).not.toBeNull();
+    expect(actionBounds).not.toBeNull();
+    expect(actionBounds!.x).toBeGreaterThanOrEqual(pickerBounds!.x);
+    expect(actionBounds!.x + actionBounds!.width).toBeLessThanOrEqual(pickerBounds!.x + pickerBounds!.width + 1);
+    expect(documentWidth.scroll).toBeLessThanOrEqual(documentWidth.client);
+
+    await createClient.click();
+    await expect(page.getByRole('dialog').last().getByLabel('Имя и фамилия*', { exact: true })).toBeVisible();
+});
+
 test('staff sees business labels for client and content settings', async ({ page }) => {
     const fixture = createCrmFixture();
 

@@ -198,6 +198,29 @@
     padding: clamp(1.5rem, 5vw, 2.75rem);
 }
 
+@media (max-width: 639px) {
+    .booking-client-select-field .fi-input-wrp {
+        flex-wrap: wrap;
+    }
+
+    .booking-client-select-field .fi-input-wrp-content-ctn,
+    .booking-client-select-field .fi-input-wrp-suffix {
+        flex: 1 1 100%;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .booking-client-select-field .fi-input-wrp-actions {
+        width: 100%;
+    }
+
+    .booking-client-select-field .fi-input-wrp-suffix .fi-btn {
+        max-width: 100%;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+}
+
 .fi-simple-main:has(.fi-one-time-code-input-ctn) .fi-simple-page-content {
     gap: 1.75rem;
 }
