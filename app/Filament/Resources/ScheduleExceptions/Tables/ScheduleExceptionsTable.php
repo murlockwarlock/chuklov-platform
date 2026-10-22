@@ -29,6 +29,7 @@ class ScheduleExceptionsTable
             ->columns([
                 TextColumn::make('specialist.display_name')
                     ->label(__('Специалист'))
+                    ->searchable()
                     ->sortable()
                     ->url(fn (ScheduleException $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
                     ->color(fn (ScheduleException $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
@@ -45,7 +46,11 @@ class ScheduleExceptionsTable
                     ->state(fn (ScheduleException $record): string => self::endLabel($record))
                     ->placeholder(__('Весь день'))
                     ->sortable(),
-                TextColumn::make('reason')->label(__('Причина'))->limit(80)->placeholder('—'),
+                TextColumn::make('reason')
+                    ->label(__('Причина'))
+                    ->searchable()
+                    ->limit(80)
+                    ->placeholder('—'),
             ])
             ->recordActions([
                 Action::make('delete')

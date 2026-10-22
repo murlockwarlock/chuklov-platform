@@ -984,10 +984,7 @@ async function assertNoTableHorizontalOverflow(page: Page): Promise<void> {
 }
 
 async function searchTableFor(page: Page, query: string): Promise<void> {
-    const searchInput = page.getByRole('searchbox', {
-        name: 'Поиск',
-        exact: true,
-    });
+    const searchInput = page.getByPlaceholder('Поиск', { exact: true });
 
     await expect(searchInput).toBeVisible();
     await searchInput.fill(query);
@@ -1125,10 +1122,11 @@ test('staff gets actionable unavailable-time errors and can save the corrected s
     await page.locator('[id="form.ends_at"]').fill('2040-04-06T13:30');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
-    await expect(page).toHaveURL(/\/admin\/schedule-exceptions$/);
-    const savedRow = page.getByRole('row').filter({ hasText: reason });
-    await expect(savedRow).toBeVisible();
+    await expect(page).toHaveURL(/\/admin\/schedule-exceptions(?:\?.*)?$/);
+    await expect(page.getByText('Создано', { exact: true })).toBeVisible();
+    await searchTableFor(page, reason);
     await page.reload();
+    await expect(page.getByPlaceholder('Поиск', { exact: true })).toHaveValue(reason);
     await expect(page.getByRole('row').filter({ hasText: reason })).toBeVisible();
 });
 
