@@ -1079,15 +1079,12 @@ test('staff gets actionable validation and can save a location day after correct
     await page.getByRole('option', { name: /Asia\/Almaty/ }).click();
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
-    await expect(page).toHaveURL(/\/admin\/location-days(?:\?.*)?$/);
-    const row = page.getByRole('row').filter({ hasText: areaName });
-    await expect(row).toBeVisible();
-    await page.reload();
-    await expect(row).toBeVisible();
-    await row.getByRole('button', { name: 'Изменить', exact: true }).click();
     await expect(page).toHaveURL(/\/admin\/location-days\/\d+\/edit$/);
+    const area = page.getByRole('textbox', { name: 'Район*', exact: true });
+    await expect(area).toHaveValue(areaName);
+    await page.reload();
     await expect(page.locator('form#form')).toHaveAttribute('novalidate', '');
-    await expect(page.getByRole('textbox', { name: 'Район*', exact: true })).toHaveValue(areaName);
+    await expect(area).toHaveValue(areaName);
 });
 
 test('staff can create a booking without technical inputs', async ({ page }) => {
