@@ -1807,8 +1807,11 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.reload();
     await expect(page.getByText('Synthetic symptoms', { exact: true })).toBeVisible();
     await expect(page.getByText('Synthetic scar location', { exact: true })).toBeVisible();
+    const chronicValue = page.getByText('Хронические заболевания', { exact: true }).locator('..').locator('dd');
+    await expect(chronicValue).toHaveText('Хронических заболеваний нет');
     await page.getByRole('button', { name: 'Редактировать данные', exact: true }).click();
     await expect(page.getByLabel('Подробно опишите жалобы', { exact: true })).toHaveValue('Synthetic symptoms');
+    await expect(page.getByLabel('Хронических заболеваний нет', { exact: true })).toBeChecked();
     await expect(page.getByLabel('Год операции', { exact: true })).toHaveValue(String(new Date().getFullYear()));
     await expect(page.getByLabel('Характер травмы', { exact: true })).toHaveValue('Synthetic injury description');
     await page.locator('#medical-pain').focus();

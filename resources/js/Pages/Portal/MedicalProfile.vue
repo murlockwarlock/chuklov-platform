@@ -35,6 +35,15 @@ const clientErrors = ref<Record<string, string>>({});
 const medicalForm = ref<HTMLFormElement | null>(null);
 const fields = ['complaints', 'goals', 'chronic_conditions', 'operations', 'injuries', 'medicines', 'supplements'] as const;
 const symptoms = ['headache', 'neck', 'back', 'joints', 'swelling', 'digestion', 'weakness', 'insomnia', 'stress'];
+
+function displayField(field: typeof fields[number]): string {
+    if (field === 'chronic_conditions' && props.profile.answers.no_chronic_conditions) {
+        return t('medical.noChronic');
+    }
+
+    return props.profile.fields[field] || t('medical.notSpecified');
+}
+
 const form = useForm({
     expected_snapshot: props.profile.expectedSnapshot,
     complaints: props.profile.fields.complaints ?? '',
@@ -404,7 +413,7 @@ function save(): void {
                 {{ t('medical.' + field) }}
               </dt>
               <dd class="portal-copy whitespace-pre-wrap break-words">
-                {{ profile.fields[field] || t('medical.notSpecified') }}
+                {{ displayField(field) }}
               </dd>
             </div>
           </dl>
