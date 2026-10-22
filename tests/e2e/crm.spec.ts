@@ -1082,9 +1082,11 @@ test('staff gets actionable validation and can save a location day after correct
     await expect(page).toHaveURL(/\/admin\/location-days\/\d+\/edit$/);
     const area = page.getByRole('textbox', { name: 'Район*', exact: true });
     await expect(area).toHaveValue(areaName);
+    await expect(page.getByRole('combobox', { name: 'Специалист*', exact: true })).toContainText(fixture.specialistName);
     await page.reload();
     await expect(page.locator('form#form')).toHaveAttribute('novalidate', '');
     await expect(area).toHaveValue(areaName);
+    await expect(page.getByRole('combobox', { name: 'Специалист*', exact: true })).toContainText(fixture.specialistName);
 });
 
 test('staff can create a booking without technical inputs', async ({ page }) => {
