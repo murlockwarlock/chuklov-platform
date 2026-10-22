@@ -1089,6 +1089,49 @@ test('staff gets actionable validation and can save a location day after correct
     await expect(page.getByRole('combobox', { name: 'Специалист*', exact: true })).toContainText(fixture.specialistName);
 });
 
+test('staff gets actionable unavailable-time errors and can save the corrected schedule change', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    const fixture = createCrmFixture();
+    const reason = `Playwright недоступность ${Date.now()}`;
+
+    await login(page, fixture);
+    await page.goto('/admin/schedule-exceptions');
+    await expect(page.getByRole('heading', { name: 'Изменения расписания', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Тип изменения: Рабочие интервалы', exact: true }).click();
+    await page.getByRole('link', { name: 'Недоступное время', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/schedule-exceptions\/create\?change_type=unavailable$/);
+    await expect(page.locator('form#form')).toHaveAttribute('novalidate', 'novalidate');
+
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByText('Выберите специалиста.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Укажите дату и время начала недоступности.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Укажите дату и время окончания недоступности.', { exact: true })).toBeVisible();
+    await expect(page.getByText('validation.required', { exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(/\/admin\/schedule-exceptions\/create\?change_type=unavailable$/);
+
+    const specialist = page.getByRole('combobox', { name: 'Специалист*', exact: true });
+    await specialist.click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
+    await page.getByRole('option', { name: fixture.specialistName, exact: true }).click();
+    await page.locator('[id="form.starts_at"]').fill('2040-04-06T12:00');
+    await page.locator('[id="form.ends_at"]').fill('2040-04-06T11:30');
+    await page.getByRole('textbox', { name: 'Причина', exact: true }).fill(reason);
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByText('Окончание периода должно быть позже начала.', { exact: true })).toBeVisible();
+    await expect(page.getByText('validation.after', { exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(/\/admin\/schedule-exceptions\/create\?change_type=unavailable$/);
+
+    await page.locator('[id="form.ends_at"]').fill('2040-04-06T13:30');
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/admin\/schedule-exceptions$/);
+    const savedRow = page.getByRole('row').filter({ hasText: reason });
+    await expect(savedRow).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('row').filter({ hasText: reason })).toBeVisible();
+});
+
 test('staff can create a booking without technical inputs', async ({ page }) => {
     test.setTimeout(60_000);
 

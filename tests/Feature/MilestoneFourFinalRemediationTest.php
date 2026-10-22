@@ -9,6 +9,7 @@ use App\Filament\Resources\ScheduleExceptions\Pages\ListScheduleExceptions;
 use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
 use App\Filament\Resources\Services\Pages\EditService;
 use App\Filament\Resources\Specialists\Pages\ListSpecialists;
+use App\Filament\Resources\UnavailablePeriods\Pages\CreateUnavailablePeriod as CreateUnavailablePeriodPage;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
@@ -26,6 +27,7 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Scheduling\Domain\ValueObjects\SpecialistScheduleDefinition;
@@ -457,6 +459,120 @@ class MilestoneFourFinalRemediationTest extends TestCase
             ->assertHasNoErrors();
 
         self::assertModelMissing($period);
+    }
+
+    public function test_unavailable_time_form_shows_actionable_required_errors_without_writing(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateScheduleExceptionPage::class)
+            ->fillForm(['change_type' => 'unavailable'])
+            ->call('create')
+            ->assertHasErrors([
+                'data.specialist_id' => 'required',
+                'data.starts_at' => 'required',
+                'data.ends_at' => 'required',
+            ])
+            ->assertSee('Выберите специалиста.')
+            ->assertSee('Укажите дату и время начала недоступности.')
+            ->assertSee('Укажите дату и время окончания недоступности.')
+            ->assertDontSee('validation.required');
+
+        self::assertStringContainsString('novalidate="novalidate"', $component->html());
+        self::assertSame(0, UnavailablePeriod::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_unavailable_time_form_rejects_an_end_before_its_start_without_writing(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateScheduleExceptionPage::class)
+            ->fillForm([
+                'change_type' => 'unavailable',
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => '2026-04-06 13:30',
+                'ends_at' => '2026-04-06 12:00',
+            ])
+            ->call('create')
+            ->assertHasErrors(['data.ends_at'])
+            ->assertSee('Окончание периода должно быть позже начала.')
+            ->assertDontSee('validation.after');
+
+        self::assertSame(0, UnavailablePeriod::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_custom_schedule_window_requires_valid_start_and_end_times(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateScheduleExceptionPage::class)
+            ->fillForm([
+                'change_type' => 'working_intervals',
+                'specialist_id' => $specialist->getKey(),
+                'exception_date' => '2026-04-06',
+                'exception_type' => ScheduleExceptionType::CustomWindow->value,
+            ])
+            ->call('create')
+            ->assertHasErrors([
+                'data.start_time' => 'required',
+                'data.end_time' => 'required',
+            ])
+            ->assertSee('Укажите время начала.')
+            ->assertSee('Укажите время окончания.')
+            ->assertDontSee('validation.required');
+
+        self::assertSame(0, ScheduleException::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_custom_schedule_window_rejects_end_before_start(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateScheduleExceptionPage::class)
+            ->fillForm([
+                'change_type' => 'working_intervals',
+                'specialist_id' => $specialist->getKey(),
+                'exception_date' => '2026-04-06',
+                'exception_type' => ScheduleExceptionType::CustomWindow->value,
+                'start_time' => '13:30',
+                'end_time' => '12:00',
+            ])
+            ->call('create')
+            ->assertHasErrors(['data.end_time'])
+            ->assertSee('Окончание должно быть позже начала.')
+            ->assertDontSee('validation.after');
+
+        self::assertSame(0, ScheduleException::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_legacy_unavailable_period_form_has_the_same_localized_required_validation(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateUnavailablePeriodPage::class)
+            ->call('create')
+            ->assertHasErrors([
+                'data.specialist_id' => 'required',
+                'data.starts_at' => 'required',
+                'data.ends_at' => 'required',
+            ])
+            ->assertSee('Выберите специалиста.')
+            ->assertSee('Укажите дату и время начала недоступности.')
+            ->assertSee('Укажите дату и время окончания недоступности.')
+            ->assertDontSee('validation.required');
+
+        self::assertStringContainsString('novalidate="novalidate"', $component->html());
+        self::assertSame(0, UnavailablePeriod::query()->where('organization_id', $organization->getKey())->count());
     }
 
     public function test_display_local_availability_accepts_dates_with_midnight_transitions(): void
