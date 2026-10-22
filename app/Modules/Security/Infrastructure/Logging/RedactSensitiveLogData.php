@@ -9,6 +9,31 @@ use Throwable;
 
 class RedactSensitiveLogData implements ProcessorInterface
 {
+    private const SAFE_OPERATION_CODES = [
+        'booking.create',
+        'cancel',
+        'client.email_auth.code_delivery',
+        'client.portal.logout',
+        'create',
+        'download',
+        'fake_gateway_initiation',
+        'financial_correction',
+        'gateway_initiation',
+        'gift_certificate_correction',
+        'gift_certificate_redemption',
+        'manual_payment',
+        'portal.medical-attachments.download',
+        'portal.medical-attachments.upload',
+        'reconcile',
+        'recreate',
+        'referral_credit_redemption',
+        'referral_credit_restore',
+        'replacement',
+        'request_referral_payout',
+        'upload',
+        'update',
+    ];
+
     private const SENSITIVE_KEY_PATTERN = '/secret|token|password|credential|authorization|cookie|session|medical|payment|anamnesis|complaint|medicine|supplement|operation|injury|clinical|chronic|symptom|pain[_-]?(vas|not_measured)|goal|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret|bearer|prompt|retrieved_content|rag_chunk|tool_payload/i';
 
     private const SESSION_CLINICAL_KEY_PATTERN = '/^(pain|tests|observations|root_cause_hypothesis|protocol|result)$/i';
@@ -41,7 +66,7 @@ class RedactSensitiveLogData implements ProcessorInterface
         foreach ($context as $key => $value) {
             $key = (string) $key;
 
-            if ($this->isSensitiveKey($key)) {
+            if ($this->isSensitiveKey($key, $value)) {
                 $redacted[$key] = '[REDACTED]';
 
                 continue;
@@ -60,8 +85,12 @@ class RedactSensitiveLogData implements ProcessorInterface
         return $redacted;
     }
 
-    private function isSensitiveKey(string $key): bool
+    private function isSensitiveKey(string $key, mixed $value): bool
     {
+        if ($key === 'operation' && is_string($value) && in_array($value, self::SAFE_OPERATION_CODES, true)) {
+            return false;
+        }
+
         return preg_match(self::SENSITIVE_KEY_PATTERN, $key) === 1
             || preg_match(self::SESSION_CLINICAL_KEY_PATTERN, $key) === 1;
     }
