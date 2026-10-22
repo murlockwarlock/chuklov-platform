@@ -1830,12 +1830,16 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.getByLabel('Год травмы', { exact: true }).fill('2021');
     await expect(page.locator('#medical-operations-year-error')).toHaveCount(0);
     await expect(page.locator('#medical-injuries-year-error')).toHaveCount(0);
+    await page.setViewportSize({ width: 390, height: 844 });
     const painSlider = page.locator('#medical-pain');
+    await painSlider.scrollIntoViewIfNeeded();
     const painSliderBounds = await painSlider.boundingBox();
     expect(painSliderBounds).not.toBeNull();
     if (painSliderBounds !== null) {
-        await page.mouse.move(painSliderBounds.x + painSliderBounds.width * 0.8, painSliderBounds.y + painSliderBounds.height / 2);
+        const sliderY = painSliderBounds.y + painSliderBounds.height / 2;
+        await page.mouse.move(painSliderBounds.x + painSliderBounds.width * 0.02, sliderY);
         await page.mouse.down();
+        await page.mouse.move(painSliderBounds.x + painSliderBounds.width * 0.8, sliderY, { steps: 12 });
         await page.mouse.up();
     }
     const pointerPainValue = Number(await painSlider.inputValue());
