@@ -458,10 +458,8 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ], $bookingTimeField->getOptions());
         self::assertTrue($bookingTimeField->isDisabled());
 
-        $component->fillForm([
-            'service_id' => $service->getKey(),
-            'visit_format' => VisitFormat::Online->value,
-        ]);
+        $component->fillForm(['service_id' => $service->getKey()]);
+        $component->fillForm(['visit_format' => VisitFormat::Online->value]);
 
         self::assertNull($component->instance()->data['booking_time']);
         self::assertNull($component->instance()->data['starts_at']);
@@ -473,6 +471,18 @@ final class SchedulingJournalProductionPassTest extends TestCase
         $bookingTimeOptions = $component->instance()->getSchemaComponent('form.booking_time')->getOptions();
         self::assertNotEmpty($bookingTimeOptions);
         self::assertArrayNotHasKey('2026-10-05T10:00:00+00:00', $bookingTimeOptions);
+
+        $component->fillForm(['booking_date' => '2026-10-12']);
+
+        self::assertTrue($component->instance()->data['journal_time_unavailable']);
+        self::assertTrue($component->instance()->getSchemaComponent('form.journal_time_unavailable_notice', withHidden: true)->isVisible());
+
+        $replacementTime = array_key_first($component->instance()->getSchemaComponent('form.booking_time')->getOptions());
+        self::assertIsString($replacementTime);
+        $component->fillForm(['booking_time' => $replacementTime]);
+
+        self::assertFalse($component->instance()->data['journal_time_unavailable']);
+        self::assertFalse($component->instance()->getSchemaComponent('form.journal_time_unavailable_notice', withHidden: true)->isVisible());
     }
 
     public function test_journal_drag_drop_uses_authoritative_reschedule_and_rejects_stale_or_unavailable_drops(): void

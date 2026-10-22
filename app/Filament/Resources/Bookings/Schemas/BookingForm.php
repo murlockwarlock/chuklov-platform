@@ -429,7 +429,6 @@ class BookingForm
         $set('blocking_ends_at', null);
         $set('confirm_backdated', false);
         $set('booking_time_prefilled', false);
-        $set('journal_time_unavailable', false);
     }
 
     private static function selectedBookingTime(Get $get): ?string
