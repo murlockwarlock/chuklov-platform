@@ -41,7 +41,7 @@ function validPdfBuffer(): Buffer {
     ].join('\n'));
 }
 
-async function uploadCrmMedicalReport(page: Page, filename: string): Promise<void> {
+async function uploadCrmMedicalReport(page: Page, filename: string, expectedOutcome: 'uploaded' | 'limit_rejected' = 'uploaded'): Promise<void> {
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).first().click();
     const dialog = page.getByRole('dialog', { name: 'Загрузить файл' });
     await dialog.getByLabel('Тип файла').selectOption('medical_report');
@@ -63,6 +63,14 @@ async function uploadCrmMedicalReport(page: Page, filename: string): Promise<voi
     await expect(selectedFile.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
     await dialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(dialog).toBeHidden();
+
+    if (expectedOutcome === 'limit_rejected') {
+        await expect(page.getByText('Файл не загружен', { exact: true })).toBeVisible();
+        await expect(page.getByText('В медицинском профиле уже пять файлов. Откройте список «Файлы и МРТ», чтобы проверить загруженные документы.', { exact: true })).toBeVisible();
+
+        return;
+    }
+
     await expect(page.getByText('Файл загружен', { exact: true })).toBeVisible();
 }
 
@@ -1720,8 +1728,7 @@ test('staff can use the client cockpit for medical profile and private files', a
         await expect(attachmentsTable.getByRole('row').filter({ hasText: filename })).toHaveCount(1);
     }
 
-    await uploadCrmMedicalReport(page, 'ux-sixth-report.pdf');
-    await expect(page.getByText('В медицинском профиле уже пять файлов. Откройте список «Файлы и МРТ», чтобы проверить загруженные документы.', { exact: true })).toBeVisible();
+    await uploadCrmMedicalReport(page, 'ux-sixth-report.pdf', 'limit_rejected');
     await expect(attachmentsTable.getByRole('row').filter({ hasText: 'ux-sixth-report.pdf' })).toHaveCount(0);
     await expect(attachmentsTable.getByRole('row').filter({ hasText: /ux-[a-e]-report\.pdf/ })).toHaveCount(5);
 });
