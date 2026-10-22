@@ -21,8 +21,10 @@ class LocationDayForm
             Select::make('specialist_id')->label(__('Специалист'))
                 ->relationship('specialist', 'display_name', modifyQueryUsing: fn (Builder $query): Builder => $query
                     ->where('organization_id', app(OrganizationContext::class)->id())->where('is_active', true))
-                ->required()->searchable()->preload()->optionsLimit(50)->native(false),
-            TextInput::make('area_name')->label(__('Район'))->required()->maxLength(160),
+                ->required()->validationMessages(['required' => __('Выберите специалиста.')])
+                ->searchable()->preload()->optionsLimit(50)->native(false),
+            TextInput::make('area_name')->label(__('Район'))->required()
+                ->validationMessages(['required' => __('Укажите район.')])->maxLength(160),
             Select::make('weekday')->label(__('День недели'))->options([
                 1 => __('Понедельник'),
                 2 => __('Вторник'),
@@ -33,8 +35,10 @@ class LocationDayForm
                 7 => __('Воскресенье'),
             ])->nullable(),
             DatePicker::make('specific_date')->label(__('Или конкретная дата'))->native(false)->nullable(),
-            TimePicker::make('start_time')->label(__('Начало'))->seconds(false)->required(),
-            TimePicker::make('end_time')->label(__('Окончание'))->seconds(false)->required(),
+            TimePicker::make('start_time')->label(__('Начало'))->seconds(false)->required()
+                ->validationMessages(['required' => __('Укажите время начала выезда.')]),
+            TimePicker::make('end_time')->label(__('Окончание'))->seconds(false)->required()
+                ->validationMessages(['required' => __('Укажите время окончания выезда.')]),
             Select::make('timezone')
                 ->label(__('Часовой пояс'))
                 ->options(fn (Get $get): array => TimezoneOptions::options(
@@ -42,7 +46,7 @@ class LocationDayForm
                     organization: app(OrganizationContext::class)->defaultTimezone(),
                 ))
                 ->searchable()
-                ->required(),
+                ->required()->validationMessages(['required' => __('Выберите часовой пояс.')]),
             Toggle::make('is_active')->label(__('Активен'))->default(true)->required(),
             TextInput::make('notes')->label(__('Примечание'))->maxLength(500)->nullable(),
         ]);

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Resources\LocationDays\Pages\CreateLocationDay;
 use App\Models\User;
 use App\Modules\Channels\Application\HandleTelegramBookingConfirmation;
 use App\Modules\Identity\Domain\Models\Client;
@@ -67,6 +68,31 @@ class PhaseOneBookingLocationsTest extends TestCase
     {
         CarbonImmutable::setTestNow();
         parent::tearDown();
+    }
+
+    public function test_location_day_create_shows_actionable_required_errors_without_creating_a_record(): void
+    {
+        [, $admin] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateLocationDay::class)
+            ->call('create')
+            ->assertHasErrors([
+                'data.specialist_id' => 'required',
+                'data.area_name' => 'required',
+                'data.start_time' => 'required',
+                'data.end_time' => 'required',
+                'data.timezone' => 'required',
+            ])
+            ->assertSee('Выберите специалиста.')
+            ->assertSee('Укажите район.')
+            ->assertSee('Укажите время начала выезда.')
+            ->assertSee('Укажите время окончания выезда.')
+            ->assertSee('Выберите часовой пояс.')
+            ->assertDontSee('validation.required');
+
+        self::assertSame(0, LocationDay::query()->count());
     }
 
     public function test_viewer_and_client_formatters_keep_utc_invariant_across_berlin_dst(): void

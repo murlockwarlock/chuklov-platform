@@ -1044,6 +1044,52 @@ test.describe('specialist viewer timezone suggestion', () => {
     });
 });
 
+test('staff gets actionable validation and can save a location day after correction', async ({ page }) => {
+    test.setTimeout(60_000);
+
+    const fixture = createCrmFixture();
+    const areaName = `Playwright район ${Date.now()}`;
+
+    await login(page, fixture);
+    await page.goto('/admin/location-days/create');
+    await expect(page.getByRole('heading', { name: 'Добавить день выезда' })).toBeVisible();
+    await expect(page.locator('form#form')).toHaveAttribute('novalidate', '');
+
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByText('Выберите специалиста.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Укажите район.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Укажите время начала выезда.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Укажите время окончания выезда.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Выберите часовой пояс.', { exact: true })).toBeVisible();
+    await expect(page.getByText('validation.required', { exact: true })).toHaveCount(0);
+    await expect(page).toHaveURL(/\/admin\/location-days\/create$/);
+
+    const specialist = page.getByRole('combobox', { name: 'Специалист*', exact: true });
+    await specialist.click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
+    await page.getByRole('option', { name: fixture.specialistName, exact: true }).click();
+    await page.getByRole('textbox', { name: 'Район*', exact: true }).fill(areaName);
+    await page.getByLabel('День недели', { exact: true }).selectOption('5');
+    await page.getByLabel('Начало*', { exact: true }).fill('10:00');
+    await page.getByLabel('Окончание*', { exact: true }).fill('11:00');
+
+    const timezone = page.getByRole('combobox', { name: 'Часовой пояс*', exact: true });
+    await timezone.click();
+    await page.getByRole('textbox', { name: 'Search' }).fill('Asia/Almaty');
+    await page.getByRole('option', { name: /Asia\/Almaty/ }).click();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/admin\/location-days(?:\?.*)?$/);
+    const row = page.getByRole('row').filter({ hasText: areaName });
+    await expect(row).toBeVisible();
+    await page.reload();
+    await expect(row).toBeVisible();
+    await row.getByRole('button', { name: 'Изменить', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/location-days\/\d+\/edit$/);
+    await expect(page.locator('form#form')).toHaveAttribute('novalidate', '');
+    await expect(page.getByRole('textbox', { name: 'Район*', exact: true })).toHaveValue(areaName);
+});
+
 test('staff can create a booking without technical inputs', async ({ page }) => {
     test.setTimeout(60_000);
 
