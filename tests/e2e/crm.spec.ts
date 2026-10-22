@@ -62,7 +62,7 @@ async function uploadCrmMedicalReport(page: Page, filename: string): Promise<voi
     await expect(dialog).toBeHidden();
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -422,19 +422,21 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             }
         }
         $attachmentFilename = 'Заключение '.$suffix.'.pdf';
-        \\App\\Modules\\Attachments\\Domain\\Models\\MedicalAttachment::query()->create([
-            'uuid' => (string) \\Illuminate\\Support\\Str::uuid(),
-            'organization_id' => $organization->getKey(),
-            'client_id' => $client->getKey(),
-            'uploaded_by_user_id' => $admin->getKey(),
-            'attachment_type' => \\App\\Modules\\Attachments\\Domain\\Enums\\AttachmentType::MedicalReport,
-            'disk' => 'private',
-            'storage_path' => 'medical/attachments/'.$organization->getKey().'/'.\\Illuminate\\Support\\Str::uuid().'.pdf',
-            'original_filename' => $attachmentFilename,
-            'mime_type' => 'application/pdf',
-            'size_bytes' => 2048,
-            'sha256_checksum' => hash('sha256', $suffix),
-        ]);
+        if (${options.includeMedicalAttachment === false ? 'false' : 'true'}) {
+            \\App\\Modules\\Attachments\\Domain\\Models\\MedicalAttachment::query()->create([
+                'uuid' => (string) \\Illuminate\\Support\\Str::uuid(),
+                'organization_id' => $organization->getKey(),
+                'client_id' => $client->getKey(),
+                'uploaded_by_user_id' => $admin->getKey(),
+                'attachment_type' => \\App\\Modules\\Attachments\\Domain\\Enums\\AttachmentType::MedicalReport,
+                'disk' => 'private',
+                'storage_path' => 'medical/attachments/'.$organization->getKey().'/'.\\Illuminate\\Support\\Str::uuid().'.pdf',
+                'original_filename' => $attachmentFilename,
+                'mime_type' => 'application/pdf',
+                'size_bytes' => 2048,
+                'sha256_checksum' => hash('sha256', $suffix),
+            ]);
+        }
         echo json_encode([
             'email' => $email,
             'password' => $password,
@@ -1600,7 +1602,7 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
 });
 
 test('staff can use the client cockpit for medical profile and private files', async ({ page }) => {
-    const fixture = createCrmFixture();
+    const fixture = createCrmFixture({ includeMedicalAttachment: false });
 
     await login(page, fixture);
     await page.goto('/admin/clients');
