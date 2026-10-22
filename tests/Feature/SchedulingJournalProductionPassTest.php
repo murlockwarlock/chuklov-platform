@@ -38,6 +38,7 @@ use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -399,6 +400,12 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertSame('2026-10-05 14:15', CarbonImmutable::parse((string) $startsAt)->format('Y-m-d H:i'));
         self::assertSame('2026-10-05', $component->instance()->data['booking_date']);
         self::assertSame('2026-10-05T07:15:00+00:00', $component->instance()->data['booking_time']);
+        $bookingTimeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertInstanceOf(Select::class, $bookingTimeField);
+        self::assertSame([
+            '2026-10-05T07:15:00+00:00' => '14:15 — выбрано в Журнале, доступность не проверена',
+        ], $bookingTimeField->getOptions());
+        self::assertTrue($bookingTimeField->isDisabled());
         $startsAtField = $component->instance()->getSchemaComponent('form.starts_at', withHidden: true);
         self::assertInstanceOf(Hidden::class, $startsAtField);
 
@@ -409,6 +416,8 @@ final class SchedulingJournalProductionPassTest extends TestCase
 
         self::assertSame('2026-10-05T07:15:00+00:00', $component->instance()->data['booking_time']);
         self::assertSame('2026-10-05 14:15', CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->format('Y-m-d H:i'));
+        $bookingTimeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertStringStartsWith('14:15–', $bookingTimeField->getOptions()['2026-10-05T07:15:00+00:00'] ?? '');
     }
 
     public function test_journal_create_prefill_clears_a_time_that_is_not_available_for_the_selected_service(): void
@@ -419,6 +428,20 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'start_time' => '09:00',
             'end_time' => '18:00',
         ]]);
+        $blockingClient = Client::factory()->forOrganization($organization)->create();
+        Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($blockingClient)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'visit_format' => VisitFormat::Online->value,
+                'status' => BookingStatus::Confirmed->value,
+                'starts_at' => '2026-10-05 10:00:00',
+                'ends_at' => '2026-10-05 11:00:00',
+                'blocking_ends_at' => '2026-10-05 11:15:00',
+                'schedule_timezone' => 'UTC',
+            ]);
         $this->resolveFilamentContext($admin, $organization);
 
         $component = Livewire::withQueryParams([
@@ -429,6 +452,12 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'view' => 'week',
         ])->actingAs($admin)->test(CreateBooking::class);
 
+        $bookingTimeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertSame([
+            '2026-10-05T10:00:00+00:00' => '10:00 — выбрано в Журнале, доступность не проверена',
+        ], $bookingTimeField->getOptions());
+        self::assertTrue($bookingTimeField->isDisabled());
+
         $component->fillForm([
             'service_id' => $service->getKey(),
             'visit_format' => VisitFormat::Online->value,
@@ -436,6 +465,14 @@ final class SchedulingJournalProductionPassTest extends TestCase
 
         self::assertNull($component->instance()->data['booking_time']);
         self::assertNull($component->instance()->data['starts_at']);
+        self::assertTrue($component->instance()->data['journal_time_unavailable']);
+        $unavailableNotice = $component->instance()->getSchemaComponent('form.journal_time_unavailable_notice');
+        self::assertInstanceOf(TextEntry::class, $unavailableNotice);
+        self::assertTrue($unavailableNotice->isVisible());
+        self::assertSame('Выбранное время больше недоступно. Выберите другое свободное время.', $unavailableNotice->getState());
+        $bookingTimeOptions = $component->instance()->getSchemaComponent('form.booking_time')->getOptions();
+        self::assertNotEmpty($bookingTimeOptions);
+        self::assertArrayNotHasKey('2026-10-05T10:00:00+00:00', $bookingTimeOptions);
     }
 
     public function test_journal_drag_drop_uses_authoritative_reschedule_and_rejects_stale_or_unavailable_drops(): void

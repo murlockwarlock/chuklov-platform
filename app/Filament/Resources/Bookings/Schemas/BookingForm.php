@@ -349,10 +349,20 @@ class BookingForm
                     $set('blocking_ends_at', null);
                     $set('confirm_backdated', false);
                     $set('booking_time_prefilled', false);
+                    $set('journal_time_unavailable', false);
                 })
                 ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
                 ->validationMessages(['required' => __('Выберите доступное время.')])
                 ->helperText(fn (Get $get): string => self::availableTimeHelper($get)),
+            Hidden::make('journal_time_unavailable')
+                ->default(false)
+                ->dehydrated(false),
+            TextEntry::make('journal_time_unavailable_notice')
+                ->label(__('Время недоступно'))
+                ->state(__('Выбранное время больше недоступно. Выберите другое свободное время.'))
+                ->color('warning')
+                ->visible(fn (Get $get): bool => $get('journal_time_unavailable') === true)
+                ->columnSpanFull(),
             Hidden::make('booking_time_prefilled')
                 ->default(false)
                 ->dehydrated(false),
@@ -419,6 +429,7 @@ class BookingForm
         $set('blocking_ends_at', null);
         $set('confirm_backdated', false);
         $set('booking_time_prefilled', false);
+        $set('journal_time_unavailable', false);
     }
 
     private static function selectedBookingTime(Get $get): ?string
@@ -451,6 +462,11 @@ class BookingForm
             if ($selectedTime !== null && array_key_exists($selectedTime, self::availableTimeOptions($get))) {
                 return;
             }
+
+            self::clearAvailableTime($set);
+            $set('journal_time_unavailable', true);
+
+            return;
         }
 
         if ($get('booking_date') === null && $get('booking_time') === null) {
@@ -472,6 +488,10 @@ class BookingForm
 
     private static function availableTimeHelper(Get $get): string
     {
+        if (self::prefilledStartsAt($get) instanceof CarbonImmutable) {
+            return __('После выбора услуги и формата визита проверим, свободно ли это время.');
+        }
+
         if (self::positiveInteger($get('specialist_id')) === null
             || self::positiveInteger($get('service_id')) === null) {
             return __('Сначала выберите специалиста и услугу.');
@@ -498,12 +518,15 @@ class BookingForm
         $format = VisitFormat::tryFrom((string) $get('visit_format'));
         $date = self::bookingDate($get('booking_date'));
 
-        if (! $actor instanceof User
-            || $specialistId === null
+        if (! $actor instanceof User) {
+            return [];
+        }
+
+        if ($specialistId === null
             || $serviceId === null
             || ! $format instanceof VisitFormat
             || ! $date instanceof CarbonImmutable) {
-            return [];
+            return self::prefilledTimeOptions($get);
         }
 
         return app(BookingAvailabilityOptions::class)->forDate(
@@ -517,6 +540,31 @@ class BookingForm
             locationArea: self::nullableString($get('location_area')),
             allowHistorical: true,
         );
+    }
+
+    /** @return array<string, string> */
+    private static function prefilledTimeOptions(Get $get): array
+    {
+        $selectedTime = self::selectedBookingTime($get);
+        $startsAt = self::prefilledStartsAt($get);
+
+        if (! is_string($selectedTime) || ! $startsAt instanceof CarbonImmutable) {
+            return [];
+        }
+
+        return [
+            $selectedTime => $startsAt->setTimezone(self::viewerTimezone())->format('H:i')
+                .' — '.__('выбрано в Журнале, доступность не проверена'),
+        ];
+    }
+
+    private static function prefilledStartsAt(Get $get): ?CarbonImmutable
+    {
+        if ($get('booking_time_prefilled') !== true) {
+            return null;
+        }
+
+        return self::startsAt(self::selectedBookingTime($get));
     }
 
     private static function bookingDate(mixed $state): ?CarbonImmutable

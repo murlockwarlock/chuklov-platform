@@ -551,7 +551,7 @@ function createJournalSecondSpecialist(fixture: CrmFixture): { id: number; name:
     return JSON.parse(output.trim().split('\n').at(-1) ?? '') as { id: number; name: string };
 }
 
-function createCancelledJournalBooking(fixture: CrmFixture): void {
+function createJournalBooking(fixture: CrmFixture, status: 'cancelled' | 'confirmed'): void {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
@@ -577,15 +577,15 @@ function createCancelledJournalBooking(fixture: CrmFixture): void {
             ->forService($service)
             ->create([
                 'visit_format' => \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office->value,
-                'status' => \\App\\Modules\\Scheduling\\Domain\\Enums\\BookingStatus::Cancelled->value,
+                'status' => \\App\\Modules\\Scheduling\\Domain\\Enums\\BookingStatus::from('${status}'),
                 'starts_at' => $startsAt,
                 'ends_at' => $startsAt->addMinutes($duration),
                 'blocking_ends_at' => $startsAt->addMinutes($duration + $buffer),
                 'schedule_timezone' => $specialist->timezone,
-                'cancelled_at' => now(),
+                'cancelled_at' => '${status}' === 'cancelled' ? now() : null,
             ]);
     `;
-    const psyshConfigDirectory = `/tmp/chuklov-playwright-cancelled-journal-${process.pid}`;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-journal-booking-${process.pid}`;
     mkdirSync(psyshConfigDirectory, { recursive: true });
     execFileSync('php', ['artisan', 'tinker', '--execute', php], {
         encoding: 'utf8',
@@ -740,7 +740,7 @@ test('cancelled Journal booking offers its released time as a real create action
     test.setTimeout(60_000);
 
     const fixture = createCrmFixture();
-    createCancelledJournalBooking(fixture);
+    createJournalBooking(fixture, 'cancelled');
     await login(page, fixture);
     await page.setViewportSize({ width: 1440, height: 900 });
 
@@ -797,9 +797,73 @@ test('cancelled Journal booking offers its released time as a real create action
     await expect(page).toHaveURL(/\/admin\/bookings\/create\?/);
     await expect(page.getByRole('heading', { name: 'Создать Запись' })).toBeVisible();
     await expect(page.getByLabel('Дата')).toHaveValue(date);
+    await expect(page.getByRole('combobox', { name: 'Специалист*', exact: true })).toContainText(fixture.specialistName);
     const bookingTime = page.getByRole('combobox', { name: /^Доступное время/ }).first();
+    await expect(bookingTime).toContainText(`${time} — выбрано в Журнале, доступность не проверена`);
+    await expect(bookingTime).toBeDisabled();
+    await expect(page.getByText('После выбора услуги и формата визита проверим, свободно ли это время.', { exact: true })).toBeVisible();
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(bookingTime).toBeVisible();
+        await expect(bookingTime).toBeDisabled();
+        await assertNoHorizontalOverflow(page);
+    }
+    await page.setViewportSize({ width: 1440, height: 900 });
+
+    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
+    await page.getByRole('option', { name: fixture.serviceName, exact: true }).click();
+    await page.getByRole('combobox', { name: 'Клиент*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.clientName);
+    await page.getByRole('option').filter({ hasText: fixture.clientName }).last().click();
+    await page.getByLabel('Формат визита').selectOption('office');
+
+    const workingLocation = page.getByRole('combobox', { name: 'Локация', exact: true });
+    await workingLocation.click();
+    await page.locator('.fi-select-input-option:visible').filter({ hasText: fixture.workingLocationName }).first().click();
+
+    await bookingTime.click();
+    const releasedTime = page.locator('.fi-select-input-option:visible').filter({ hasText: `${time}–` }).first();
+    await expect(releasedTime).toBeVisible({ timeout: 15_000 });
+    await releasedTime.click();
     await expect(bookingTime).toContainText(time);
+    await expect(page.getByLabel('Адрес приёма', { exact: true })).toHaveValue(/\S+/);
     await assertNoHorizontalOverflow(page);
+
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
+    await expect(page.locator('.fi-in-text-item').filter({ hasText: fixture.clientName }).first()).toBeVisible();
+    await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();
+});
+
+test('stale Journal time explains the conflict and allows another slot', async ({ page }) => {
+    const fixture = createCrmFixture();
+    createJournalBooking(fixture, 'confirmed');
+    await login(page, fixture);
+
+    const date = fixture.bookingStartsAt.slice(0, 10);
+    const time = fixture.bookingStartsAt.slice(11, 16);
+    const startsAt = encodeURIComponent(`${date} ${time}`);
+    await page.goto(`/admin/bookings/create?starts_at=${startsAt}&specialist_id=${fixture.specialistId}&return_to_journal=1&week=${date}&view=week`);
+
+    const bookingTime = page.getByRole('combobox', { name: /^Доступное время/ }).first();
+    await expect(bookingTime).toContainText(`${time} — выбрано в Журнале, доступность не проверена`);
+    await page.getByRole('combobox', { name: 'Услуга*', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.serviceName);
+    await page.getByRole('option', { name: fixture.serviceName, exact: true }).click();
+    await page.getByLabel('Формат визита').selectOption('office');
+
+    const warning = page.getByText('Выбранное время больше недоступно. Выберите другое свободное время.', { exact: true });
+    await expect(warning).toBeVisible();
+    await expect(bookingTime).toBeEnabled();
+    await bookingTime.click();
+    const availableSlot = page.locator('.fi-select-input-option:visible').first();
+    await expect(availableSlot).toBeVisible();
+    const alternativeLabel = (await availableSlot.innerText()).trim();
+    expect(alternativeLabel).not.toBe(time);
+    await availableSlot.click();
+    await expect(warning).toBeHidden();
+    await expect(bookingTime).toContainText(alternativeLabel);
 });
 
 test('enrolled CRM MFA requires a valid code before native browser login', async ({ page }) => {
@@ -1334,9 +1398,12 @@ test('staff sees the Telegram limit and preview while writing to a client', asyn
 
     await page.getByRole('button', { name: 'Предпросмотр Telegram', exact: true }).click();
     const telegramPreview = page.getByRole('dialog').filter({ hasText: 'Предпросмотр Telegram' }).last();
-    await expect(telegramPreview).toBeVisible();
-    await expect(telegramPreview).toContainText('Telegram');
-    await expect(telegramPreview).toContainText(message);
+    const telegramPreviewWindow = telegramPreview.locator('.fi-modal-window');
+    await expect(telegramPreviewWindow).toBeVisible();
+    await expect(telegramPreviewWindow).toContainText('Telegram');
+    await expect(telegramPreviewWindow).toContainText(message);
+    await telegramPreviewWindow.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
+    await expect(telegramPreviewWindow).toBeHidden();
 });
 
 test('staff can choose and send an attachment in CRM Messages', async ({ page }) => {
