@@ -15,6 +15,7 @@ use App\Modules\Services\Domain\Contracts\ServiceMediaStorageInterface;
 use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Services\Domain\ValueObjects\ServiceConfiguration;
+use BackedEnum;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -162,7 +163,12 @@ class UpdateService
                 $changedFields = [];
 
                 foreach ($finalConfiguration->attributes() as $field => $value) {
-                    if ($lockedService->getAttribute($field) !== $value) {
+                    $currentValue = $lockedService->getAttribute($field);
+                    if ($currentValue instanceof BackedEnum) {
+                        $currentValue = $currentValue->value;
+                    }
+
+                    if ($currentValue !== $value) {
                         $changedFields[] = $field;
                     }
                 }
