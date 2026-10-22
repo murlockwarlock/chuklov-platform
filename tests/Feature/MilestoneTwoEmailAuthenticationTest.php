@@ -121,11 +121,19 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
     {
         $this->organizationWithClientRecords();
         $sender = $this->fakeSender();
+        Log::spy();
+
+        $this->assertCodeValidationError($this->post(route('portal.email.verify'), [
+            'email' => 'missing@example.test',
+            'code' => '123456',
+        ]));
 
         $this->post(route('portal.email.request'), ['email' => 'invalid@example.test']);
+        $invalidChallenge = ClientEmailAuthChallenge::query()->where('email', 'invalid@example.test')->sole();
+        $invalidCode = $sender->code;
         $response = $this->post(route('portal.email.verify'), [
             'email' => 'invalid@example.test',
-            'code' => '000000',
+            'code' => $invalidCode === '000000' ? '000001' : '000000',
         ]);
         $this->assertCodeValidationError($response);
         $response->assertSessionHas('email_code_sent', true);
@@ -135,10 +143,11 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
         );
 
         $this->post(route('portal.email.request'), ['email' => 'expired@example.test']);
+        $expiredCode = $sender->code;
         Carbon::setTestNow(now()->addMinutes(11));
         $this->assertCodeValidationError($this->post(route('portal.email.verify'), [
             'email' => 'expired@example.test',
-            'code' => $sender->code,
+            'code' => $expiredCode,
         ]));
         Carbon::setTestNow();
 
@@ -152,12 +161,51 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
             'email' => 'replay@example.test',
             'code' => $code,
         ]));
+
+        $errorCodes = ['challenge_missing', 'code_mismatch', 'challenge_expired', 'challenge_consumed'];
+
+        foreach ($errorCodes as $errorCode) {
+            Log::shouldHaveReceived('notice')->with(
+                'client.email_auth.code_verification_failed',
+                \Mockery::on(function (array $context) use ($errorCode, $invalidChallenge, $invalidCode, $expiredCode, $code): bool {
+                    if (($context['error_code'] ?? null) !== $errorCode) {
+                        return false;
+                    }
+
+                    $encoded = json_encode($context, JSON_THROW_ON_ERROR);
+
+                    self::assertSame('anonymous', $context['actor_type']);
+                    self::assertSame('client_email_auth_challenge', $context['entity_type']);
+                    self::assertSame('email_auth', $context['integration']);
+                    self::assertSame('failed', $context['outcome']);
+                    self::assertArrayHasKey('occurred_at_utc', $context);
+                    self::assertArrayNotHasKey('email', $context);
+                    self::assertArrayNotHasKey('code', $context);
+                    self::assertArrayNotHasKey('code_hash', $context);
+                    self::assertStringNotContainsString('missing@example.test', $encoded);
+                    self::assertStringNotContainsString('invalid@example.test', $encoded);
+                    self::assertStringNotContainsString('expired@example.test', $encoded);
+                    self::assertStringNotContainsString('replay@example.test', $encoded);
+                    self::assertStringNotContainsString($invalidCode, $encoded);
+                    self::assertStringNotContainsString($expiredCode, $encoded);
+                    self::assertStringNotContainsString($code, $encoded);
+
+                    if ($errorCode === 'code_mismatch') {
+                        self::assertSame($invalidChallenge->getKey(), $context['entity_id']);
+                        self::assertSame(1, $context['attempt']);
+                    }
+
+                    return true;
+                }),
+            )->once();
+        }
     }
 
     public function test_attempts_are_bounded_and_request_rate_is_limited(): void
     {
-        $this->organizationWithClientRecords();
+        $organization = $this->organizationWithClientRecords();
         $this->fakeSender();
+        Log::spy();
         config()->set('portal.email_auth.max_attempts', 2);
         config()->set('portal.email_auth.request_limit', 1);
 
@@ -182,6 +230,22 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
             ->assertSessionHasErrors([
                 'email' => app(PortalClientMessages::class)->message('email_code_rate_limited'),
             ]);
+
+        Log::shouldHaveReceived('notice')
+            ->withArgs(fn (string $eventName, array $context): bool => $eventName === 'client.email_auth.code_request_rate_limited'
+                && $context['organization_id'] === $organization->id
+                && $context['actor_type'] === 'anonymous'
+                && $context['error_code'] === 'request_rate_limited'
+                && $context['outcome'] === 'failed'
+                && isset($context['occurred_at_utc'])
+                && ! array_key_exists('email', $context))
+            ->once();
+
+        Log::shouldHaveReceived('notice')
+            ->with('client.email_auth.code_verification_failed', \Mockery::on(static fn (array $context): bool => ($context['error_code'] ?? null) === 'attempt_limit'
+                && ($context['attempt'] ?? null) === 2
+                && ($context['outcome'] ?? null) === 'failed'))
+            ->once();
     }
 
     public function test_email_auth_does_not_merge_an_unverified_profile_or_persist_secrets(): void

@@ -36,6 +36,22 @@ class RequestClientEmailVerificationCode
         $decay = max(1, (int) config('portal.email_auth.request_decay', 900));
 
         if (RateLimiter::tooManyAttempts($rateLimitKey, $maxRequests)) {
+            Log::notice('client.email_auth.code_request_rate_limited', [
+                'event_name' => 'client.email_auth.code_request_rate_limited',
+                'operation' => 'client.email_auth.code_request',
+                'organization_id' => (int) $organization->getKey(),
+                'actor_type' => Auth::check() ? 'user' : 'anonymous',
+                'actor_user_id' => Auth::id(),
+                'entity_type' => 'client_email_auth_challenge',
+                'entity_id' => null,
+                'integration' => 'email_auth',
+                'attempt' => RateLimiter::attempts($rateLimitKey),
+                'error_code' => 'request_rate_limited',
+                'error_class' => TooManyRequestsHttpException::class,
+                'outcome' => 'failed',
+                'occurred_at_utc' => now()->utc()->toIso8601String(),
+            ]);
+
             throw new TooManyRequestsHttpException($decay, 'Please try again later.');
         }
 
