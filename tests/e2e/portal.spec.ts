@@ -757,10 +757,21 @@ test('portrait Story previews stay inside their frames and player navigation wor
                 'media' => [
                     'image' => 'content/'.$client->organization_id.'/'.\\Illuminate\\Support\\Str::uuid().'.png',
                     'video' => 'content/'.$client->organization_id.'/'.\\Illuminate\\Support\\Str::uuid().'.mp4',
+                    'subtitles' => $key === 'story_author' ? 'https://qa-subtitles.invalid/story.vtt' : null,
                 ],
             ]);
         }
     `], { env: { ...process.env, APP_ENV: 'e2e' }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let subtitleRequests = 0;
+    await page.route('https://qa-subtitles.invalid/story.vtt', async (route) => {
+        subtitleRequests += 1;
+        await route.fulfill({
+            status: 200,
+            contentType: 'text/vtt',
+            headers: { 'Access-Control-Allow-Origin': '*' },
+            body: 'WEBVTT\n\n00:00:00.000 --> 00:00:03.000\nQA subtitles verification\n',
+        });
+    });
     await page.route('**/storage/content/**/*.png', (route) => route.fulfill({
         contentType: 'image/svg+xml',
         body: '<svg xmlns="http://www.w3.org/2000/svg" width="360" height="640"><rect width="360" height="640" fill="#b88059"/></svg>',
@@ -803,6 +814,12 @@ test('portrait Story previews stay inside their frames and player navigation wor
     const dialog = page.locator('.portal-story-player');
     await expect(dialog).toBeVisible();
     await expect(dialog.locator('strong')).toHaveText('Кто такой Евгений Чуклов (видео)');
+    const subtitles = dialog.locator('track[kind="subtitles"]');
+    await expect.poll(() => subtitles.evaluate((element) => {
+        const track = element as HTMLTrackElement;
+        return track.readyState === 2 ? track.track.cues?.[0]?.text ?? '' : '';
+    })).toBe('QA subtitles verification');
+    expect(subtitleRequests).toBe(1);
     await dialog.getByRole('button', { name: 'Далее', exact: true }).click();
     await expect(dialog.locator('strong')).toHaveText('История мастера (видео)');
     await dialog.getByRole('button', { name: 'Назад', exact: true }).click();

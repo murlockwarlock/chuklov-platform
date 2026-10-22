@@ -96,6 +96,7 @@ function swipe(event: TouchEvent): void {
         :key="selected.key"
         :src="selected.videoUrl ?? undefined"
         :poster="selected.previewUrl ?? undefined"
+        crossorigin="anonymous"
         controls
         autoplay
         playsinline
