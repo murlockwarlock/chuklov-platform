@@ -6,6 +6,7 @@ use App\Mail\ClientEmailVerificationCode;
 use App\Modules\Identity\Domain\Contracts\EmailVerificationCodeSender;
 use Illuminate\Contracts\Mail\Factory as MailFactory;
 use Illuminate\Mail\Mailer;
+use Illuminate\Mail\Transport\ArrayTransport;
 use LogicException;
 use Symfony\Component\Mailer\Transport\TransportInterface;
 
@@ -28,6 +29,10 @@ final class LaravelEmailVerificationCodeSender implements EmailVerificationCodeS
 
         if ($this->isLoggingTransport($transport)) {
             throw new LogicException('The authentication mail transport cannot log message contents.');
+        }
+
+        if ($transport instanceof ArrayTransport && ! app()->environment('testing')) {
+            throw new LogicException('The authentication mail transport cannot deliver messages.');
         }
 
         $mailer->to($email)->send(new ClientEmailVerificationCode($code));

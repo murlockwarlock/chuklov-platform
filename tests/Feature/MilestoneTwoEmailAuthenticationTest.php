@@ -379,6 +379,43 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
             }));
     }
 
+    public function test_non_delivering_array_transport_does_not_report_success_outside_testing(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $this->app->detectEnvironment(static fn (): string => 'staging');
+        config()->set('mail.auth_mailer', 'array');
+        Mail::forgetMailers();
+        Log::spy();
+
+        $this->withHeader('Sec-Fetch-Site', 'same-origin')
+            ->post(route('portal.email.request'), ['email' => 'array-mailer@example.test'])
+            ->assertRedirect(route('portal.home'))
+            ->assertSessionHasErrors([
+                'email' => app(PortalClientMessages::class)->message('email_code_delivery_failed'),
+            ])
+            ->assertSessionMissing('email_code_sent');
+
+        $challenge = ClientEmailAuthChallenge::query()->sole();
+        self::assertSame($organization->id, $challenge->organization_id);
+        self::assertNotNull($challenge->consumed_at);
+
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->with('client.email_auth.code_delivery_failed', \Mockery::on(static function (array $context): bool {
+                $encoded = json_encode($context, JSON_THROW_ON_ERROR);
+
+                self::assertSame('client.email_auth.code_delivery', $context['operation']);
+                self::assertSame('mail_transport_configuration_invalid', $context['error_code']);
+                self::assertSame('failed', $context['outcome']);
+                self::assertArrayHasKey('occurred_at_utc', $context);
+                self::assertArrayNotHasKey('email', $context);
+                self::assertArrayNotHasKey('code', $context);
+                self::assertStringNotContainsString('array-mailer@example.test', $encoded);
+
+                return true;
+            }));
+    }
+
     public function test_reserved_qa_domain_uses_the_dedicated_mailer_only_when_enabled(): void
     {
         config()->set('mail.qa_auth.enabled', true);
