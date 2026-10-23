@@ -283,6 +283,69 @@ class MilestoneFourCrmBookingTest extends TestCase
         );
     }
 
+    public function test_portal_multi_booking_conflict_logs_safe_client_context(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $occupiedSlot = CarbonImmutable::create(2026, 4, 13, 9, 0, 0, 'UTC');
+        app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: $occupiedSlot,
+            format: VisitFormat::Office,
+            idempotencyKey: 'portal-occupied-before-batch',
+        );
+        Log::spy();
+
+        try {
+            app(CreateMultipleBookingsAction::class)->handle(
+                actor: $client,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                format: VisitFormat::Office,
+                slots: [
+                    [
+                        'date' => '2026-04-06',
+                        'time' => '2026-04-06T09:00:00+00:00',
+                    ],
+                    [
+                        'date' => $occupiedSlot->toDateString(),
+                        'time' => $occupiedSlot->toIso8601String(),
+                    ],
+                ],
+                batchIntentKey: 'portal-conflicting-batch-intent',
+                clientTimezone: 'UTC',
+            );
+            self::fail('A Portal batch with an occupied slot must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertStringContainsString('13.04.2026 09:00', $exception->errors()['slots'][0]);
+        }
+
+        self::assertSame(1, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertDatabaseMissing('bookings', [
+            'organization_id' => $organization->getKey(),
+            'starts_at' => '2026-04-06 09:00:00',
+        ]);
+        Log::shouldHaveReceived('warning')->once()->with(
+            'booking.multiple.slot_unavailable',
+            Mockery::on(function (array $context) use ($organization, $client, $specialist, $service, $occupiedSlot): bool {
+                return ($context['organization_id'] ?? null) === $organization->getKey()
+                    && ($context['actor_type'] ?? null) === 'client'
+                    && ($context['actor_id'] ?? null) === $client->getKey()
+                    && ($context['client_id'] ?? null) === $client->getKey()
+                    && ($context['specialist_id'] ?? null) === $specialist->getKey()
+                    && ($context['service_id'] ?? null) === $service->getKey()
+                    && ($context['error_code'] ?? null) === 'slot_unavailable'
+                    && ($context['outcome'] ?? null) === 'rejected'
+                    && ($context['slot_start_at_utc'] ?? null) === $occupiedSlot->toIso8601String()
+                    && isset($context['occurred_at'])
+                    && ! array_key_exists('batch_intent_key', $context);
+            }),
+        );
+    }
+
     public function test_multi_booking_form_keeps_selected_slots_after_a_conflict(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
