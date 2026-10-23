@@ -1748,7 +1748,7 @@ test('staff can complete a visit and record a manual payment through the normal 
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     const confirmationDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Подтвердить запись' }).last();
     await expect(confirmationDialog).toBeVisible();
-    await confirmationDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await confirmationDialog.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     await expect(page.getByText('Запись подтверждена', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Действия', exact: true }).click();
