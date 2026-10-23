@@ -58,7 +58,7 @@ final class ListClientBookings
             ->where(fn (Builder $query) => $query->where('client_id', $client->getKey())
                 ->orWhereHas('patientProfile', fn (Builder $query) => $query->where('organization_id', $client->organization_id)->where('linked_account_client_id', $client->getKey())))
             ->where('starts_at', '>=', now()->utc())
-            ->whereNotIn('status', BookingStatus::terminalValues())
+            ->whereIn('status', [BookingStatus::Confirmed->value, BookingStatus::PendingReview->value])
             ->with(['service', 'specialist', 'patientProfile.clinicalClient'])->orderBy('starts_at')->orderBy('id')->first();
 
         return $booking === null ? null : $this->projection($booking, $locale);

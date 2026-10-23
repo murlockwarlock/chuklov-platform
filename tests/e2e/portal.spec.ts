@@ -25,6 +25,7 @@ type BookingFixtureOptions = {
     confirmedName?: boolean;
     medicalService?: boolean;
     withBooking?: boolean;
+    confirmedOfficeBooking?: boolean;
     bookingWithinCancellationCutoff?: boolean;
     onlineMeeting?: boolean;
     withCompanionMessages?: boolean;
@@ -53,6 +54,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $multipleChoices = getenv('PLAYWRIGHT_MULTIPLE_CHOICES') === '1';
         $multipleLocations = getenv('PLAYWRIGHT_MULTIPLE_LOCATIONS') === '1';
         $onlineMeeting = getenv('PLAYWRIGHT_ONLINE_MEETING') === '1';
+        $confirmedOfficeBooking = getenv('PLAYWRIGHT_CONFIRMED_OFFICE_BOOKING') === '1';
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
@@ -489,6 +491,11 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     format: \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office,
                     idempotencyKey: 'playwright-'.$suffix,
                 );
+                if ($confirmedOfficeBooking) {
+                    $booking->forceFill([
+                        'status' => \\App\\Modules\\Scheduling\\Domain\\Enums\\BookingStatus::Confirmed->value,
+                    ])->save();
+                }
             }
         }
         $sessionId = \\Illuminate\\Support\\Str::random(40);
@@ -549,6 +556,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
         PLAYWRIGHT_CONFIRMED_NAME: normalizedOptions.confirmedName ? '1' : '0',
         PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
+        PLAYWRIGHT_CONFIRMED_OFFICE_BOOKING: normalizedOptions.confirmedOfficeBooking ? '1' : '0',
         PLAYWRIGHT_ONLINE_MEETING: normalizedOptions.onlineMeeting ? '1' : '0',
         PLAYWRIGHT_BOOKING_WITHIN_CANCELLATION_CUTOFF: normalizedOptions.bookingWithinCancellationCutoff ? '1' : '0',
         PLAYWRIGHT_MEDICAL_SERVICE: normalizedOptions.medicalService ? '1' : '0',
@@ -1428,7 +1436,7 @@ test('new client can open personal diagnostics and gets a clear empty tests resu
 });
 
 test('home changes the booking action when an upcoming booking is shown', async ({ page }) => {
-    const fixture = createBookingFixture({ withBooking: true });
+    const fixture = createBookingFixture({ withBooking: true, confirmedOfficeBooking: true });
 
     await page.context().addCookies([{
         name: fixture.cookieName,
@@ -1454,6 +1462,37 @@ test('home changes the booking action when an upcoming booking is shown', async 
     await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
+});
+
+test('requested booking stays in My bookings while Home keeps the empty schedule state', async ({ page }) => {
+    const fixture = createBookingFixture({ withBooking: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/');
+    const emptySchedule = page.getByTestId('home-empty-schedule');
+    await expect(emptySchedule).toBeVisible();
+    await expect(emptySchedule.getByRole('heading', { name: 'Ваш график восстановления', exact: true })).toBeVisible();
+    await expect(emptySchedule.getByText('У вас пока нет запланированных сеансов. Самое время разгрузить тело и снять накопленное напряжение.', { exact: true })).toBeVisible();
+    await expect(emptySchedule.getByTestId('home-booking-cta')).toHaveText('Выбрать удобное время');
+    await expect(page.locator('.portal-booking-card')).toHaveCount(0);
+
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+    }
+
+    await page.reload();
+    await expect(page.getByTestId('home-empty-schedule')).toBeVisible();
+    await page.getByTestId('home-booking-cta').click();
+    await expect(page).toHaveURL(/\/portal\/services$/);
+
+    await page.goto('/portal/bookings');
+    await expect(page.getByText(fixture.serviceName, { exact: true })).toBeVisible();
 });
 
 test('home shows the confirmed online meeting link on the upcoming booking', async ({ page }) => {
