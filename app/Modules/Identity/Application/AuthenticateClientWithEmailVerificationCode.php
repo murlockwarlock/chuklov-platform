@@ -180,7 +180,7 @@ class AuthenticateClientWithEmailVerificationCode
         ?int $challengeId,
         int $attempt,
     ): void {
-        Log::notice('client.email_auth.code_verification_failed', [
+        Log::warning('client.email_auth.code_verification_failed', [
             'event_name' => 'client.email_auth.code_verification_failed',
             'operation' => 'client.email_auth.code_verification',
             'organization_id' => (int) $organization->getKey(),

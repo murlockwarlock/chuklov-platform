@@ -165,7 +165,7 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
         $errorCodes = ['challenge_missing', 'code_mismatch', 'challenge_expired', 'challenge_consumed'];
 
         foreach ($errorCodes as $errorCode) {
-            Log::shouldHaveReceived('notice')->with(
+            Log::shouldHaveReceived('warning')->with(
                 'client.email_auth.code_verification_failed',
                 \Mockery::on(function (array $context) use ($errorCode, $invalidChallenge, $invalidCode, $expiredCode, $code): bool {
                     if (($context['error_code'] ?? null) !== $errorCode) {
@@ -231,7 +231,7 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
                 'email' => app(PortalClientMessages::class)->message('email_code_rate_limited'),
             ]);
 
-        Log::shouldHaveReceived('notice')
+        Log::shouldHaveReceived('warning')
             ->withArgs(fn (string $eventName, array $context): bool => $eventName === 'client.email_auth.code_request_rate_limited'
                 && $context['organization_id'] === $organization->id
                 && $context['actor_type'] === 'anonymous'
@@ -241,7 +241,7 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
                 && ! array_key_exists('email', $context))
             ->once();
 
-        Log::shouldHaveReceived('notice')
+        Log::shouldHaveReceived('warning')
             ->with('client.email_auth.code_verification_failed', \Mockery::on(static fn (array $context): bool => ($context['error_code'] ?? null) === 'attempt_limit'
                 && ($context['attempt'] ?? null) === 2
                 && ($context['outcome'] ?? null) === 'failed'))
@@ -360,23 +360,40 @@ class MilestoneTwoEmailAuthenticationTest extends TestCase
             'code' => $sender->code,
         ])->assertSessionHasErrors('code');
 
+        $warningEvents = [];
         Log::shouldHaveReceived('warning')
-            ->once()
-            ->with('client.email_auth.code_delivery_failed', \Mockery::on(function (array $context) use ($organization, $sender): bool {
+            ->withArgs(function (string $eventName, array $context) use ($organization, $challenge, $sender, &$warningEvents): bool {
                 $encoded = json_encode($context, JSON_THROW_ON_ERROR);
-
-                self::assertSame($organization->id, $context['organization_id']);
-                self::assertSame('anonymous', $context['actor_type']);
-                self::assertSame('client_email_auth_challenge', $context['entity_type']);
-                self::assertSame('email_auth', $context['integration']);
-                self::assertSame('mail_provider_unavailable', $context['error_code']);
                 self::assertSame('failed', $context['outcome']);
                 self::assertArrayHasKey('occurred_at_utc', $context);
                 self::assertStringNotContainsString((string) $sender->email, $encoded);
                 self::assertStringNotContainsString((string) $sender->code, $encoded);
 
-                return true;
-            }));
+                if ($eventName === 'client.email_auth.code_delivery_failed') {
+                    self::assertSame($organization->id, $context['organization_id']);
+                    self::assertSame('anonymous', $context['actor_type']);
+                    self::assertSame('client_email_auth_challenge', $context['entity_type']);
+                    self::assertSame('email_auth', $context['integration']);
+                    self::assertSame('mail_provider_unavailable', $context['error_code']);
+                    $warningEvents['delivery'] = true;
+
+                    return true;
+                }
+
+                if ($eventName === 'client.email_auth.code_verification_failed') {
+                    self::assertSame($challenge->getKey(), $context['entity_id']);
+                    self::assertSame('challenge_consumed', $context['error_code']);
+                    self::assertArrayNotHasKey('email', $context);
+                    self::assertArrayNotHasKey('code', $context);
+                    $warningEvents['verification'] = true;
+
+                    return true;
+                }
+
+                return false;
+            })
+            ->twice();
+        self::assertSame(['delivery' => true, 'verification' => true], $warningEvents);
     }
 
     public function test_non_delivering_array_transport_does_not_report_success_outside_testing(): void

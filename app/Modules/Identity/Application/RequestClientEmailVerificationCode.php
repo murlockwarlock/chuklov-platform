@@ -36,7 +36,7 @@ class RequestClientEmailVerificationCode
         $decay = max(1, (int) config('portal.email_auth.request_decay', 900));
 
         if (RateLimiter::tooManyAttempts($rateLimitKey, $maxRequests)) {
-            Log::notice('client.email_auth.code_request_rate_limited', [
+            Log::warning('client.email_auth.code_request_rate_limited', [
                 'event_name' => 'client.email_auth.code_request_rate_limited',
                 'operation' => 'client.email_auth.code_request',
                 'organization_id' => (int) $organization->getKey(),
