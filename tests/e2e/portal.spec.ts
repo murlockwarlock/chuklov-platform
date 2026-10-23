@@ -1199,6 +1199,10 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
 
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!' })).toBeVisible();
+    await expect(page.getByRole('dialog').filter({ hasText: /имя|как вас зовут/i })).toHaveCount(0);
+    await expect(page.getByLabel('Имя', { exact: true })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!' })).toBeVisible();
     const russianTrigger = page.getByRole('button', { name: 'Русский', exact: true });
     await expect(russianTrigger).toBeVisible();
     await expect(page.getByRole('menu')).toHaveCount(0);
