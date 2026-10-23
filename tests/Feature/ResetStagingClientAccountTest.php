@@ -5,9 +5,17 @@ namespace Tests\Feature;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Models\User;
+use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiExecutionMode;
+use App\Modules\AI\Domain\Enums\AiRunOrigin;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\HumanReviewStatus;
+use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
+use App\Modules\Conversations\Domain\Models\Conversation;
+use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Application\ResetStagingClientAccount;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -147,6 +155,108 @@ final class ResetStagingClientAccountTest extends TestCase
             'actor_user_id' => $admin->getKey(),
             'action' => 'patient.profile.deleted',
             'target_id' => (string) $selfPatient->getKey(),
+        ]);
+    }
+
+    public function test_reset_removes_companion_records_before_their_ai_run(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $conversation = Conversation::factory()->forClient($client)->create([
+            'conversation_type' => 'client_companion',
+        ]);
+        $message = ConversationMessage::factory()->forConversation($conversation)->create([
+            'direction' => 'inbound',
+            'author_type' => 'client',
+        ]);
+        $aiRun = AiRun::create([
+            'organization_id' => $organization->getKey(),
+            'capability' => AiCapability::ClientCompanion,
+            'workflow_key' => 'client_companion_reply',
+            'origin' => AiRunOrigin::ClientCompanion,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $client->getKey(),
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::NotRequired,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+        ]);
+        $turnId = DB::table('companion_turns')->insertGetId([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'conversation_id' => $conversation->getKey(),
+            'sequence' => 1,
+            'inbound_message_id' => $message->getKey(),
+            'ai_run_id' => $aiRun->getKey(),
+            'origin_channel' => 'portal',
+            'request_hash' => str_repeat('b', 64),
+            'status' => 'completed',
+            'accepted_at' => now(),
+            'completed_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $deliveryId = DB::table('companion_deliveries')->insertGetId([
+            'organization_id' => $organization->getKey(),
+            'turn_id' => $turnId,
+            'conversation_message_id' => $message->getKey(),
+            'channel' => 'portal',
+            'recipient_external_id' => 'synthetic-client',
+            'chunk_index' => 0,
+            'chunk_count' => 1,
+            'status' => 'delivered',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $escalationId = DB::table('companion_escalations')->insertGetId([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'conversation_id' => $conversation->getKey(),
+            'turn_id' => $turnId,
+            'ai_run_id' => $aiRun->getKey(),
+            'reason' => 'synthetic_test',
+            'status' => 'resolved',
+            'safe_metadata' => json_encode([], JSON_THROW_ON_ERROR),
+            'opened_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $feedbackId = DB::table('companion_feedback')->insertGetId([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'conversation_id' => $conversation->getKey(),
+            'message_id' => $message->getKey(),
+            'turn_id' => $turnId,
+            'ai_run_id' => $aiRun->getKey(),
+            'value' => 'helpful',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        $attemptId = DB::table('companion_turn_attempts')->insertGetId([
+            'organization_id' => $organization->getKey(),
+            'turn_id' => $turnId,
+            'attempt_number' => 1,
+            'execution_key' => (string) Str::uuid(),
+            'status' => 'succeeded',
+            'ai_run_id' => $aiRun->getKey(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        app(ResetStagingClientAccount::class)->handle($admin, $client);
+
+        self::assertDatabaseMissing('clients', ['id' => $client->getKey()]);
+        self::assertDatabaseMissing('ai_runs', ['id' => $aiRun->getKey()]);
+        self::assertDatabaseMissing('companion_turns', ['id' => $turnId]);
+        self::assertDatabaseMissing('companion_turn_attempts', ['id' => $attemptId]);
+        self::assertDatabaseMissing('companion_deliveries', ['id' => $deliveryId]);
+        self::assertDatabaseMissing('companion_escalations', ['id' => $escalationId]);
+        self::assertDatabaseMissing('companion_feedback', ['id' => $feedbackId]);
+        self::assertDatabaseHas('audit_events', [
+            'organization_id' => $organization->getKey(),
+            'actor_user_id' => $admin->getKey(),
+            'action' => 'client.staging_account.reset',
+            'target_id' => (string) $client->getKey(),
         ]);
     }
 

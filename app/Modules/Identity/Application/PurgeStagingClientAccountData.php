@@ -58,6 +58,7 @@ final class PurgeStagingClientAccountData
         }
 
         $bookingIds = $this->idsByClient('bookings', 'id', $organizationId, 'client_id', $clientId);
+        $companionTurnIds = $this->idsByClient('companion_turns', 'id', $organizationId, 'client_id', $clientId);
         $patientProfileIds = $this->idsByClient('patient_profiles', 'id', $organizationId, 'owner_client_id', $clientId);
         $patientInvitationIds = $this->mergeIds(
             $this->idsByClient('patient_invitations', 'id', $organizationId, 'owner_client_id', $clientId),
@@ -274,6 +275,10 @@ final class PurgeStagingClientAccountData
         $deletedRecordCount += $this->deleteSelfReferencing('financial_ledger_entries', $organizationId, 'id', 'corrects_ledger_entry_id', $financialLedgerEntryIds);
         $deletedRecordCount += $this->deleteByValues('financial_obligations', $organizationId, 'id', $financialObligationIds);
         $deletedRecordCount += $this->deleteByValues('bookings', $organizationId, 'id', $bookingIds);
+        $deletedRecordCount += $this->deleteByClient('companion_feedback', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByClient('companion_escalations', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByValues('companion_deliveries', $organizationId, 'turn_id', $companionTurnIds);
+        $deletedRecordCount += $this->deleteByClient('companion_turns', $organizationId, 'client_id', $clientId);
         $deletedRecordCount += $this->deleteByValues('ai_runs', $organizationId, 'id', $this->idsByClient('ai_runs', 'id', $organizationId, 'client_id', $clientId));
         $deletedRecordCount += $this->deleteByValues('b2b_sales_calls', $organizationId, 'id', $b2bSalesCallIds);
         $deletedRecordCount += $this->deleteByValues('b2b_leads', $organizationId, 'id', $b2bLeadIds);
