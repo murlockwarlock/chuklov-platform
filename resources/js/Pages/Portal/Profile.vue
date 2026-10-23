@@ -69,6 +69,8 @@ const props = defineProps<{
 }>();
 
 const { locale, t } = usePortalLocale();
+const profileSaved = ref(props.saved);
+const profileSaveError = ref<string | null>(null);
 const currencyForm = useForm({ preferred_currency: props.currencyPreference.selected ?? '' });
 const profileForm = useForm<{
     first_name: string;
@@ -126,6 +128,28 @@ const hasRequiredConsentError = computed(() =>
 function saveProfile(): void {
     profileForm.post(props.urls.update, {
         preserveScroll: true,
+        preserveState: true,
+        onStart: () => {
+            profileSaved.value = false;
+            profileSaveError.value = null;
+        },
+        onSuccess: () => {
+            profileSaved.value = true;
+        },
+        onHttpException: (response) => {
+            profileSaveError.value = response.status === 401 || response.status === 419
+                ? t('profile.saveSessionExpired')
+                : response.status === 403
+                    ? t('profile.saveAccessDenied')
+                    : t('profile.saveRetry');
+
+            return false;
+        },
+        onNetworkError: () => {
+            profileSaveError.value = t('profile.saveRetry');
+
+            return false;
+        },
     });
 }
 
@@ -429,11 +453,18 @@ function saveB2bAnswer(): void {
               {{ profileForm.processing ? t('profile.saving') : t('profile.save') }}
             </button>
             <p
-              v-if="props.saved"
+              v-if="profileSaved"
               class="portal-notice"
               role="status"
             >
               {{ t('profile.saved') }}
+            </p>
+            <p
+              v-if="profileSaveError"
+              class="portal-error"
+              role="alert"
+            >
+              {{ profileSaveError }}
             </p>
           </div>
         </form>

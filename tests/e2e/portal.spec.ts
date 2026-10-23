@@ -1857,6 +1857,26 @@ test('authenticated client can complete the booking journey', async ({ page }) =
 test('September 26 confirmed profile persists and the medical editor saves then reopens', async ({ page }) => {
     const fixture = createBookingFixture();
     await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    const profileResponses = { suppressSavedFlash: false, savedFlashSuppressed: false, failNextSave: false };
+    await page.route('**/portal/profile', async (route) => {
+        const request = route.request();
+        if (profileResponses.failNextSave && request.method() === 'POST') {
+            profileResponses.failNextSave = false;
+            await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Service unavailable.' }) });
+            return;
+        }
+        if (profileResponses.suppressSavedFlash && request.method() === 'GET' && request.headers()['x-inertia'] === 'true') {
+            const response = await route.fetch();
+            const payload = await response.json() as { props?: Record<string, unknown> };
+            if (payload.props) {
+                payload.props.saved = false;
+            }
+            profileResponses.savedFlashSuppressed = true;
+            await route.fulfill({ response, body: JSON.stringify(payload) });
+            return;
+        }
+        await route.continue();
+    });
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!' })).toBeVisible();
     await page.getByTestId('home-booking-cta').click();
@@ -1891,10 +1911,23 @@ test('September 26 confirmed profile persists and the medical editor saves then 
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
         await page.getByLabel('Страна', { exact: true }).press('Escape');
     }
-    await page.locator('form').filter({ has: page.getByLabel('Фамилия', { exact: true }) }).getByRole('button', { name: 'Сохранить', exact: true }).click();
+    const profileForm = page.locator('form').filter({ has: page.getByLabel('Фамилия', { exact: true }) });
+    profileResponses.suppressSavedFlash = true;
+    await profileForm.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible();
+    expect(profileResponses.savedFlashSuppressed).toBe(true);
+    await page.getByLabel('Город', { exact: true }).fill('Астана');
+    profileResponses.failNextSave = true;
+    await profileForm.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(profileForm.getByRole('alert')).toHaveText('Не удалось сохранить данные. Проверьте соединение и повторите попытку.');
+    await page.reload();
+    await expect(page.getByLabel('Город', { exact: true })).toHaveValue('Алматы');
+    await page.getByLabel('Город', { exact: true }).fill('Астана');
+    await profileForm.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByLabel('Фамилия', { exact: true })).toHaveValue('Солдатов');
+    await expect(page.getByLabel('Город', { exact: true })).toHaveValue('Астана');
     await page.goto('/');
     await expect(page.getByRole('heading', { name: 'Добро пожаловать, Денис!' })).toBeVisible();
     await page.goto('/portal/more');

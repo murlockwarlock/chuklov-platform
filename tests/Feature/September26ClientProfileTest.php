@@ -44,6 +44,7 @@ class September26ClientProfileTest extends TestCase
         self::assertNotNull($client->name_confirmed_at);
         self::assertSame('1990-02-28', $client->birth_date->toDateString());
         $this->get(route('portal.profile'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('saved', true)
             ->where('profile.firstName', 'Денис')->where('profile.lastName', 'Солдатов')
             ->where('profile.gender', 'MALE')->where('profile.birthDate', '1990-02-28')
             ->where('profile.country', 'Казахстан')->where('profile.city', 'Алматы'));
