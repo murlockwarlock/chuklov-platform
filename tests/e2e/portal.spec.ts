@@ -2794,6 +2794,13 @@ test('booking details stay readable at 320px Mini App width', async ({ page }) =
 });
 
 test('family profiles persist, invitations retry safely, and linked patients can be booked then unlinked', async ({ page }) => {
+    await page.addInitScript(() => {
+        window.open = ((url?: string | URL, target?: string, features?: string) => {
+            window.name = JSON.stringify([String(url ?? ''), target ?? '', features ?? '']);
+
+            return null;
+        }) as typeof window.open;
+    });
     const owner = createBookingFixture();
     await page.context().addCookies([{ name: owner.cookieName, value: owner.cookieValue, url: 'http://127.0.0.1:8000' }]);
     await page.goto('/portal/family');
@@ -2874,17 +2881,14 @@ test('family profiles persist, invitations retry safely, and linked patients can
     expect(inviteRequestKeys[1]).toBe(inviteRequestKeys[0]);
     await page.unroute(invitePath);
 
-    await page.context().route('https://t.me/**', async (route) => {
-        await route.fulfill({ status: 200, contentType: 'text/html', body: '<title>Telegram share QA</title>' });
-    });
     const shareLink = await page.locator('#family-invitation-url').inputValue();
-    const sharePopupPromise = page.waitForEvent('popup');
     await page.getByRole('button', { name: 'Отправить в Telegram' }).click();
-    const sharePopup = await sharePopupPromise;
-    const shareUrl = new URL(sharePopup.url());
+    const [transportUrl, target, features] = await page.evaluate(() => JSON.parse(window.name) as [string, string, string]);
+    const shareUrl = new URL(transportUrl);
     expect(shareUrl.origin + shareUrl.pathname).toBe('https://t.me/share/url');
     expect(shareUrl.searchParams.get('url')).toBe(shareLink);
-    await sharePopup.close();
+    expect(target).toBe('_blank');
+    expect(features).toBe('noopener,noreferrer');
 
     const recipient = createFamilyAcceptanceFixture(owner.clientId);
     await page.context().addCookies([{ name: recipient.cookieName, value: recipient.cookieValue, url: 'http://127.0.0.1:8000' }]);
