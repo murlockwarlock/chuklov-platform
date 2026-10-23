@@ -910,6 +910,13 @@ test('portrait Story previews stay inside their frames and player navigation wor
     await page.goto('/');
     const cards = page.locator('.portal-story');
     await expect(cards).toHaveCount(4);
+    const expectedStoryTitles = [
+        'Кто такой Евгений Чуклов (видео)',
+        'История мастера (видео)',
+        'Авторский метод (видео)',
+        'Подробно о методике (видео)',
+    ];
+    await expect.poll(() => cards.evaluateAll((elements) => elements.map((element) => element.querySelector('.portal-story__title')?.textContent?.trim() ?? ''))).toEqual(expectedStoryTitles);
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await expect.poll(() => cards.evaluateAll((elements) => elements.every((element) => {
@@ -923,8 +930,11 @@ test('portrait Story previews stay inside their frames and player navigation wor
                 && imageBounds.left >= bounds.left && imageBounds.right <= bounds.right
                 && imageBounds.top >= bounds.top && imageBounds.bottom <= bounds.bottom
                 && titleBounds.top >= bounds.bottom
-                && element.getBoundingClientRect().bottom >= titleBounds.bottom;
+                && element.getBoundingClientRect().bottom >= titleBounds.bottom
+                && title.scrollHeight <= title.clientHeight + 1
+                && title.textContent?.trim() === element.getAttribute('aria-label');
         }))).toBe(true);
+        await expect.poll(() => page.locator('.portal-stories').evaluate((element) => element.getBoundingClientRect().height)).toBeLessThanOrEqual(90);
         await assertNoHorizontalOverflow(page);
         if (width < 768) {
             const labels = page.locator('.portal-bottom-nav__label');

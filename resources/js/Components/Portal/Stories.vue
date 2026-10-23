@@ -144,12 +144,12 @@ function swipe(event: TouchEvent): void {
 </template>
 
 <style scoped>
-.portal-stories { display: flex; align-items: flex-start; gap: 12px; width: 100%; max-width: 100%; height: 78px; max-height: 90px; overflow-x: auto; overflow-y: hidden; }
-.portal-story { flex: 0 0 76px; min-width: 0; height: 78px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; line-height: 12px; }
+.portal-stories { display: flex; align-items: flex-start; gap: 12px; width: 100%; max-width: 100%; height: 90px; max-height: 90px; overflow-x: auto; overflow-y: hidden; }
+.portal-story { flex: 0 0 76px; min-width: 0; height: 90px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10px; line-height: 12px; }
 .portal-story:disabled { opacity: .55; }
 .portal-story__preview { position: relative; display: grid; place-items: center; width: 48px; height: 48px; box-sizing: border-box; flex-shrink: 0; overflow: hidden; border-radius: 50%; background: #f0e5dd; border: 2px solid #b88059; }
 .portal-story__preview img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: cover; }
-.portal-story__title { display: -webkit-box; max-width: 100%; overflow: hidden; overflow-wrap: anywhere; text-align: center; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.portal-story__title { display: -webkit-box; max-width: 100%; overflow: hidden; overflow-wrap: anywhere; text-align: center; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .portal-story-player { width: 100vw; height: 100dvh; max-width: none; max-height: none; margin: 0; padding: 12px; border: 0; background: #171717; color: white; }
 .portal-story-player[open] { display: flex; flex-direction: column; gap: 12px; }
 .portal-story-player__header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
