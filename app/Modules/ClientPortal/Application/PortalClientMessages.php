@@ -33,6 +33,78 @@ final class PortalClientMessages
             'ru' => 'Вы запрашивали код слишком часто. Подождите немного и попробуйте снова.',
             'en' => 'Too many code requests. Wait a little and try again.',
         ],
+        'family_name_required' => [
+            'ru' => 'Укажите имя и фамилию пациента.',
+            'en' => 'Enter the patient’s first and last name.',
+        ],
+        'family_name_too_long' => [
+            'ru' => 'Имя пациента слишком длинное.',
+            'en' => 'The patient’s name is too long.',
+        ],
+        'family_gender_required' => [
+            'ru' => 'Выберите пол пациента.',
+            'en' => 'Choose the patient’s gender.',
+        ],
+        'family_gender_invalid' => [
+            'ru' => 'Выберите пол пациента из списка.',
+            'en' => 'Choose a gender from the list.',
+        ],
+        'family_birth_date_required' => [
+            'ru' => 'Укажите дату рождения пациента.',
+            'en' => 'Enter the patient’s date of birth.',
+        ],
+        'family_birth_date_invalid' => [
+            'ru' => 'Укажите корректную дату рождения.',
+            'en' => 'Enter a valid date of birth.',
+        ],
+        'family_birth_date_future' => [
+            'ru' => 'Дата рождения не может быть в будущем.',
+            'en' => 'The date of birth cannot be in the future.',
+        ],
+        'family_relationship_required' => [
+            'ru' => 'Выберите родство.',
+            'en' => 'Choose the family relationship.',
+        ],
+        'family_relationship_invalid' => [
+            'ru' => 'Выберите родство из списка.',
+            'en' => 'Choose a relationship from the list.',
+        ],
+        'family_form_retry' => [
+            'ru' => 'Форма устарела. Обновите страницу и заполните её заново.',
+            'en' => 'This form has expired. Refresh the page and fill it in again.',
+        ],
+        'family_telegram_unavailable' => [
+            'ru' => 'Создание Telegram-приглашений сейчас недоступно. Попробуйте позже.',
+            'en' => 'Telegram invitations are temporarily unavailable. Try again later.',
+        ],
+        'family_created' => [
+            'ru' => 'Член семьи добавлен.',
+            'en' => 'Family member added.',
+        ],
+        'family_updated' => [
+            'ru' => 'Данные пациента сохранены.',
+            'en' => 'Patient details saved.',
+        ],
+        'family_unlinked' => [
+            'ru' => 'Семейная связь отозвана.',
+            'en' => 'Family relationship revoked.',
+        ],
+        'family_invitation_accepted' => [
+            'ru' => 'Приглашение принято.',
+            'en' => 'Invitation accepted.',
+        ],
+        'family_invitation_expired' => [
+            'ru' => 'Срок приглашения истёк. Попросите отправить новое.',
+            'en' => 'This invitation has expired. Ask the sender for a new one.',
+        ],
+        'family_invitation_revoked' => [
+            'ru' => 'Приглашение отозвано. Попросите отправить новое.',
+            'en' => 'This invitation was revoked. Ask the sender for a new one.',
+        ],
+        'family_invitation_wrong_account' => [
+            'ru' => 'Это приглашение связано с другим аккаунтом. Войдите в аккаунт получателя или попросите отправить новое приглашение.',
+            'en' => 'This invitation belongs to a different account. Sign in to the invited account or ask for a new invitation.',
+        ],
         'feedback_review' => [
             'ru' => 'Оставить отзыв',
             'en' => 'Leave a review',
@@ -280,6 +352,31 @@ final class PortalClientMessages
                 'email.required' => $this->message('email_required'),
                 'email.email' => $this->message('profile_email_invalid'),
                 'email.max' => $this->message('profile_email_too_long'),
+            ],
+            'patient_profile' => [
+                'creation_key.required' => $this->message('family_form_retry'),
+                'creation_key.uuid' => $this->message('family_form_retry'),
+                'first_name.required' => $this->message('family_name_required'),
+                'first_name.string' => $this->message('family_name_required'),
+                'first_name.max' => $this->message('family_name_too_long'),
+                'last_name.required' => $this->message('family_name_required'),
+                'last_name.string' => $this->message('family_name_required'),
+                'last_name.max' => $this->message('family_name_too_long'),
+                'middle_name.string' => $this->message('family_name_required'),
+                'middle_name.max' => $this->message('family_name_too_long'),
+                'gender.required' => $this->message('family_gender_required'),
+                'gender.in' => $this->message('family_gender_invalid'),
+                'birth_date.required' => $this->message('family_birth_date_required'),
+                'birth_date.date_format' => $this->message('family_birth_date_invalid'),
+                'birth_date.before_or_equal' => $this->message('family_birth_date_future'),
+                'relationship.required' => $this->message('family_relationship_required'),
+                'relationship.in' => $this->message('family_relationship_invalid'),
+                'return_to.in' => $this->message('request_invalid'),
+                'service_id.integer' => $this->message('family_form_retry'),
+                'service_id.min' => $this->message('family_form_retry'),
+                'specialist_id.integer' => $this->message('family_form_retry'),
+                'specialist_id.min' => $this->message('family_form_retry'),
+                'format.in' => $this->message('family_form_retry'),
             ],
             'email_verify' => [
                 'email.required' => $this->message('email_required'),

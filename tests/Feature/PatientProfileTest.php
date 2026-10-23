@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Identity\Application\AcceptPatientInvitation;
 use App\Modules\Identity\Application\BindPatientInvitationToAccount;
 use App\Modules\Identity\Application\CreatePatientProfile;
@@ -31,8 +32,10 @@ use Database\Seeders\ScenarioNotificationSeeder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
+use Mockery;
 use Tests\TestCase;
 
 final class PatientProfileTest extends TestCase
@@ -86,6 +89,163 @@ final class PatientProfileTest extends TestCase
         self::assertSame(1, PatientProfile::query()->count());
         $this->expectException(AuthorizationException::class);
         app(AcceptPatientInvitation::class)->handle($adult, (int) $invitation->getKey(), true);
+    }
+
+    public function test_family_profile_http_validation_is_localized_and_success_is_confirmed(): void
+    {
+        $owner = $this->account();
+        $this->withSession(['client_portal.client_id' => $owner->getKey()]);
+        $url = route('portal.family.store');
+        $key = '00000000-0000-4000-8000-000000000005';
+
+        $this->post($url, ['creation_key' => $key])
+            ->assertSessionHasErrors([
+                'first_name' => app(PortalClientMessages::class)->message('family_name_required'),
+                'last_name' => app(PortalClientMessages::class)->message('family_name_required'),
+                'gender' => app(PortalClientMessages::class)->message('family_gender_required'),
+                'birth_date' => app(PortalClientMessages::class)->message('family_birth_date_required'),
+                'relationship' => app(PortalClientMessages::class)->message('family_relationship_required'),
+            ]);
+        self::assertSame(0, PatientProfile::query()->where('owner_client_id', $owner->getKey())->count());
+
+        $this->post($url, [...$this->details(), 'creation_key' => $key, 'birth_date' => now()->addDay()->toDateString()])
+            ->assertSessionHasErrors([
+                'birth_date' => app(PortalClientMessages::class)->message('family_birth_date_future'),
+            ]);
+
+        $this->post($url, [...$this->details(), 'creation_key' => $key])
+            ->assertRedirect(route('portal.family'))
+            ->assertSessionHas('success', app(PortalClientMessages::class)->message('family_created'));
+        self::assertSame(1, PatientProfile::query()->where('owner_client_id', $owner->getKey())->count());
+        self::assertSame(1, AuditEvent::query()->where('action', 'patient.created')->count());
+    }
+
+    public function test_missing_telegram_configuration_does_not_create_or_audit_an_invitation_and_retry_is_safe(): void
+    {
+        $owner = $this->account();
+        $patient = $this->patient($owner);
+        $this->withSession(['client_portal.client_id' => $owner->getKey()]);
+        $requestKey = '00000000-0000-4000-8000-000000000006';
+        config()->set('portal.telegram.bot_username', null);
+        Log::spy();
+
+        $failureResponse = $this->postJson(route('portal.family.invite', ['patientId' => $patient->getKey()]), ['request_key' => $requestKey]);
+        $failureResponse
+            ->assertStatus(503)
+            ->assertJsonPath('message', app(PortalClientMessages::class)->message('family_telegram_unavailable'))
+            ->assertHeader('Cache-Control', 'no-store, private');
+        self::assertSame(0, PatientInvitation::query()->count());
+        self::assertSame(0, AuditEvent::query()->where('action', 'patient.invitation.created')->count());
+
+        Log::shouldHaveReceived('warning')->once()->with('portal.family.invitation.failed', Mockery::on(
+            static fn (array $context): bool => ($context['organization_id'] ?? null) === $owner->organization_id
+                && ($context['actor_client_id'] ?? null) === $owner->getKey()
+                && ($context['entity_id'] ?? null) === $patient->getKey()
+                && ($context['provider'] ?? null) === 'telegram'
+                && ($context['safe_error_code'] ?? null) === 'telegram_bot_configuration_missing'
+                && ($context['outcome'] ?? null) === 'failed'
+                && isset($context['occurred_at_utc'])
+                && ! array_key_exists('token', $context)
+                && ! array_key_exists('message', $context),
+        ));
+
+        config()->set('portal.telegram.bot_username', 'FamilyQaBot');
+        $this->postJson(route('portal.family.invite', ['patientId' => $patient->getKey()]), ['request_key' => $requestKey])
+            ->assertOk()
+            ->assertJsonPath('url', fn (string $url): bool => str_starts_with($url, 'https://t.me/FamilyQaBot?start=family_'));
+        self::assertSame(1, PatientInvitation::query()->count());
+        self::assertSame(1, AuditEvent::query()->where('action', 'patient.invitation.created')->count());
+    }
+
+    public function test_invitation_acceptance_reports_confirmation_error_then_persists_acceptance_and_audit(): void
+    {
+        $owner = $this->account();
+        $patient = $this->patient($owner);
+        $adult = Client::factory()->forOrganization($owner->organization)->create(array_diff_key($this->details(), ['relationship' => true]));
+        $invitation = app(IssuePatientInvitation::class)->handle($owner, $patient, '00000000-0000-4000-8000-000000000007');
+        app(BindPatientInvitationToAccount::class)->handle($invitation->encrypted_token, $adult);
+        $this->withSession([
+            'client_portal.client_id' => $adult->getKey(),
+            'patient_invitation_id' => $invitation->getKey(),
+        ]);
+        Log::spy();
+
+        $this->post(route('portal.family.invitation.accept'), ['confirm_identity' => false])
+            ->assertSessionHasErrors([
+                'confirm_identity' => __('Подтвердите, что указанные данные относятся к вам.'),
+            ]);
+        self::assertNull($invitation->refresh()->accepted_at);
+        self::assertNull($patient->refresh()->linked_account_client_id);
+        self::assertSame(0, AuditEvent::query()->where('action', 'patient.invitation.accepted')->count());
+        Log::shouldHaveReceived('warning')->once()->with('portal.family.invitation.failed', Mockery::on(
+            static fn (array $context): bool => ($context['organization_id'] ?? null) === $adult->organization_id
+                && ($context['actor_client_id'] ?? null) === $adult->getKey()
+                && ($context['entity_id'] ?? null) === $invitation->getKey()
+                && ($context['operation'] ?? null) === 'patient.invitation.accept'
+                && ($context['safe_error_code'] ?? null) === 'identity_confirmation_missing'
+                && ($context['outcome'] ?? null) === 'denied'
+                && isset($context['occurred_at_utc'])
+                && ! array_key_exists('medical_text', $context)
+                && ! array_key_exists('token', $context),
+        ));
+
+        $this->post(route('portal.family.invitation.accept'), ['confirm_identity' => true])
+            ->assertRedirect(route('portal.family.invitation'))
+            ->assertSessionHas('success', app(PortalClientMessages::class)->message('family_invitation_accepted'));
+        self::assertNotNull($invitation->refresh()->accepted_at);
+        self::assertSame($adult->getKey(), $patient->refresh()->linked_account_client_id);
+        self::assertSame(1, AuditEvent::query()->where('action', 'patient.invitation.accepted')->count());
+        $this->get(route('portal.family.invitation'))->assertInertia(fn (AssertableInertia $page) => $page->where('accepted', true));
+        $this->post(route('portal.family.invitation.accept'), ['confirm_identity' => true])->assertRedirect(route('portal.family.invitation'));
+        self::assertSame(1, AuditEvent::query()->where('action', 'patient.invitation.accepted')->count());
+    }
+
+    public function test_revoked_and_expired_invitation_links_explain_recovery_and_log_safe_reasons(): void
+    {
+        $owner = $this->account();
+        $patient = $this->patient($owner);
+        $revokedRecipient = Client::factory()->forOrganization($owner->organization)->create(array_diff_key($this->details(), ['relationship' => true]));
+        $revokedInvite = app(IssuePatientInvitation::class)->handle($owner, $patient, '00000000-0000-4000-8000-000000000008');
+        app(BindPatientInvitationToAccount::class)->handle($revokedInvite->encrypted_token, $revokedRecipient);
+        app(RevokePatientRelationship::class)->handle($owner, $patient);
+
+        Log::spy();
+        $this->withSession([
+            'client_portal.client_id' => $revokedRecipient->getKey(),
+            'patient_invitation_id' => $revokedInvite->getKey(),
+        ])->get(route('portal.family.invitation'))
+            ->assertRedirect(route('portal.family'))
+            ->assertSessionHas('error', app(PortalClientMessages::class)->message('family_invitation_revoked'));
+
+        $expiredRecipient = Client::factory()->forOrganization($owner->organization)->create(array_diff_key($this->details(), ['relationship' => true]));
+        $expiredInvite = app(IssuePatientInvitation::class)->handle($owner, $patient->refresh(), '00000000-0000-4000-8000-000000000009');
+        app(BindPatientInvitationToAccount::class)->handle($expiredInvite->encrypted_token, $expiredRecipient);
+        $expiredInvite->forceFill(['expires_at' => now()->subMinute()])->save();
+
+        $wrongRecipient = Client::factory()->forOrganization($owner->organization)->create();
+        $this->withSession([
+            'client_portal.client_id' => $wrongRecipient->getKey(),
+            'patient_invitation_id' => $expiredInvite->getKey(),
+        ])->get(route('portal.family.invitation'))
+            ->assertRedirect(route('portal.family'))
+            ->assertSessionHas('error', app(PortalClientMessages::class)->message('family_invitation_wrong_account'));
+
+        $this->withSession([
+            'client_portal.client_id' => $expiredRecipient->getKey(),
+            'patient_invitation_id' => $expiredInvite->getKey(),
+        ])->get(route('portal.family.invitation'))
+            ->assertRedirect(route('portal.family'))
+            ->assertSessionHas('error', app(PortalClientMessages::class)->message('family_invitation_expired'));
+
+        Log::shouldHaveReceived('warning')->times(3)->with('portal.family.invitation.failed', Mockery::on(
+            static fn (array $context): bool => in_array($context['safe_error_code'] ?? null, ['invitation_revoked', 'invitation_expired', 'invitation_wrong_account'], true)
+                && ($context['operation'] ?? null) === 'patient.invitation.open'
+                && ($context['outcome'] ?? null) === 'denied'
+                && isset($context['organization_id'], $context['actor_client_id'], $context['entity_id'], $context['occurred_at_utc'])
+                && ! array_key_exists('name', $context)
+                && ! array_key_exists('token', $context)
+                && ! array_key_exists('medical_text', $context),
+        ));
     }
 
     public function test_revoked_adult_can_be_reinvited_without_losing_medical_history(): void

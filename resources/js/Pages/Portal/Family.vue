@@ -12,23 +12,78 @@ const props = defineProps<{ portal: PortalShell; patients: { data: PatientSummar
 const { t } = usePortalLocale();
 const form = useForm({ ...emptyPatientIdentity(), creation_key: crypto.randomUUID() });
 const patientError = computed(() => Object.entries(form.errors).find(([key]) => key === 'patient')?.[1]);
+const formError = ref('');
 const dialog = ref<HTMLDialogElement | null>(null);
 const editingPatient = ref<PatientSummary | null>(null);
 const revokeDialog = ref<HTMLDialogElement | null>(null);
 const revokePatient = ref<PatientSummary | null>(null);
 const revokeProcessing = ref(false);
+const revokeError = ref('');
 const invite = useHttp<{ request_key: string }, { url: string; expiresAt: string }>({ request_key: '' });
 const invitationUrl = ref('');
 const invitationError = ref('');
+const invitationStatus = ref('');
 const copied = ref(false);
 const inviteKeys = new Map<number, string>();
 
 function create(): void {
-    form.post(editingPatient.value?.updateUrl ?? props.urls.create, { preserveScroll: true, onSuccess: () => { dialog.value?.close(); form.reset(); editingPatient.value = null; form.creation_key = crypto.randomUUID(); invitationUrl.value = ''; inviteKeys.clear(); } });
+    if (form.processing) return;
+    formError.value = '';
+    form.post(editingPatient.value?.updateUrl ?? props.urls.create, {
+        preserveScroll: true,
+        onSuccess: () => {
+            dialog.value?.close();
+            form.reset();
+            editingPatient.value = null;
+            form.creation_key = crypto.randomUUID();
+            invitationUrl.value = '';
+            inviteKeys.clear();
+        },
+        onError: (errors) => {
+            formError.value = typeof errors.patient === 'string' ? errors.patient : '';
+        },
+        onHttpException: (response) => {
+            formError.value = errorForStatus(response.status);
+
+            return false;
+        },
+        onNetworkError: () => {
+            formError.value = t('family.saveRetry');
+
+            return false;
+        },
+    });
+}
+
+function updateIdentity(value: ReturnType<typeof emptyPatientIdentity>): void {
+    const changedField = (Object.keys(value) as Array<keyof typeof value>).find((key) => form[key] !== value[key]);
+    Object.assign(form, value);
+    if (changedField) form.clearErrors(changedField);
+    formError.value = '';
+}
+
+function errorForStatus(status: number): string {
+    if (status === 401 || status === 419) return t('family.sessionExpired');
+    if (status === 403) return t('family.accessDenied');
+    if (status === 404 || status === 410) return t('family.objectUnavailable');
+
+    return t('family.saveRetry');
+}
+
+function safeErrorCode(data: unknown): string | null {
+    if (typeof data !== 'string') return null;
+    try {
+        const payload = JSON.parse(data) as { safe_error_code?: unknown };
+
+        return typeof payload.safe_error_code === 'string' ? payload.safe_error_code : null;
+    } catch {
+        return null;
+    }
 }
 
 function openPatient(patient: PatientSummary | null = null): void {
     editingPatient.value = patient;
+    formError.value = '';
     form.reset();
     form.clearErrors();
     if (patient) Object.assign(form, patient.identity);
@@ -39,13 +94,38 @@ function issue(patient: PatientSummary): void {
     if (invite.processing) return;
     invitationUrl.value = '';
     invitationError.value = '';
+    invitationStatus.value = '';
     copied.value = false;
     if (!inviteKeys.has(patient.id)) inviteKeys.set(patient.id, crypto.randomUUID());
     invite.request_key = inviteKeys.get(patient.id) ?? '';
-    const failed = (): void => { invitationError.value = t('family.invitationFailed'); };
+    const failed = (): void => {
+        if (!invitationError.value) invitationError.value = t('family.invitationFailed');
+    };
     void invite.post(patient.invitationUrl, {
-        onSuccess: (response) => { invitationUrl.value = response.url; },
-        onError: () => { inviteKeys.delete(patient.id); failed(); }, onHttpException: failed, onNetworkError: failed,
+        onSuccess: (response) => {
+            invitationUrl.value = response.url;
+            invitationStatus.value = t('family.invitationReady');
+        },
+        onError: (errors) => {
+            inviteKeys.delete(patient.id);
+            invitationError.value = typeof errors.invitation === 'string' ? errors.invitation : t('family.invitationFailed');
+        },
+        onHttpException: (response) => {
+            invitationError.value = response.status === 401 || response.status === 419
+                ? t('family.sessionExpired')
+                : response.status === 403
+                    ? t('family.accessDenied')
+                    : response.status === 503 && safeErrorCode(response.data) === 'telegram_bot_configuration_missing'
+                        ? t('family.telegramUnavailable')
+                        : t('family.invitationFailed');
+
+            return false;
+        },
+        onNetworkError: () => {
+            invitationError.value = t('family.invitationRetry');
+
+            return false;
+        },
     }).catch(failed);
 }
 
@@ -56,13 +136,30 @@ async function copy(): Promise<void> {
 
 function askRevoke(patient: PatientSummary): void {
     revokePatient.value = patient;
+    revokeError.value = '';
     revokeDialog.value?.showModal();
 }
 
 function revoke(): void {
     if (!revokePatient.value || revokeProcessing.value) return;
+    revokeError.value = '';
     revokeProcessing.value = true;
-    router.post(revokePatient.value.revokeUrl, {}, { preserveScroll: true, onSuccess: () => revokeDialog.value?.close(), onFinish: () => { revokeProcessing.value = false; } });
+    router.post(revokePatient.value.revokeUrl, {}, {
+        preserveScroll: true,
+        onSuccess: () => revokeDialog.value?.close(),
+        onError: () => { revokeError.value = t('family.saveRetry'); },
+        onHttpException: (response) => {
+            revokeError.value = errorForStatus(response.status);
+
+            return false;
+        },
+        onNetworkError: () => {
+            revokeError.value = t('family.saveRetry');
+
+            return false;
+        },
+        onFinish: () => { revokeProcessing.value = false; },
+    });
 }
 </script>
 
@@ -143,7 +240,7 @@ function revoke(): void {
               class="portal-button portal-button--secondary"
               @click="issue(patient)"
             >
-              {{ t('family.invite') }}
+              {{ invite.processing ? t('family.inviting') : t('family.invite') }}
             </button>
             <button
               v-if="patient.canRevoke"
@@ -156,6 +253,14 @@ function revoke(): void {
             </button>
           </div>
         </article>
+      </div>
+      <div
+        v-if="invitationStatus"
+        class="portal-notice portal-notice--success"
+        role="status"
+        aria-live="polite"
+      >
+        {{ invitationStatus }}
       </div>
       <div
         v-if="invitationUrl"
@@ -220,6 +325,7 @@ function revoke(): void {
       >
         <form
           class="portal-stack"
+          novalidate
           @submit.prevent="create"
         >
           <h2 class="portal-heading portal-heading--section">
@@ -229,7 +335,7 @@ function revoke(): void {
             :model-value="form.data()"
             id-prefix="family-new"
             :errors="form.errors"
-            @update:model-value="Object.assign(form, $event)"
+            @update:model-value="updateIdentity"
           />
           <p
             v-if="patientError"
@@ -237,6 +343,14 @@ function revoke(): void {
             role="alert"
           >
             {{ patientError }}
+          </p>
+          <p
+            v-if="formError"
+            class="portal-error"
+            role="alert"
+            aria-live="assertive"
+          >
+            {{ formError }}
           </p>
           <p
             v-if="form.errors.creation_key"
@@ -250,7 +364,7 @@ function revoke(): void {
               :disabled="form.processing"
               class="portal-button portal-button--primary"
             >
-              {{ t('profile.save') }}
+              {{ form.processing ? t('profile.saving') : t('profile.save') }}
             </button>
             <button
               type="button"
@@ -268,6 +382,7 @@ function revoke(): void {
       >
         <form
           class="portal-stack"
+          novalidate
           @submit.prevent="revoke"
         >
           <h2 class="portal-heading portal-heading--section">
@@ -276,13 +391,21 @@ function revoke(): void {
           <p class="portal-copy">
             {{ t('family.unlinkConfirmation') }}
           </p>
+          <p
+            v-if="revokeError"
+            class="portal-error"
+            role="alert"
+            aria-live="assertive"
+          >
+            {{ revokeError }}
+          </p>
           <div class="portal-form-actions">
             <button
               type="submit"
               :disabled="revokeProcessing"
               class="portal-button portal-button--primary"
             >
-              {{ t('family.unlink') }}
+              {{ revokeProcessing ? t('family.unlinking') : t('family.unlink') }}
             </button>
             <button
               type="button"

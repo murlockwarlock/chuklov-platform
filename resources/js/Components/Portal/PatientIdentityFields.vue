@@ -32,11 +32,15 @@ function update(field: keyof PatientIdentity, value: string): void {
         :required="field.key !== 'middle_name'"
         maxlength="100"
         class="portal-input"
+        :aria-invalid="errors?.[field.key] ? 'true' : 'false'"
+        :aria-describedby="errors?.[field.key] ? idPrefix + '-' + field.key + '-error' : undefined"
         @input="update(field.key, ($event.target as HTMLInputElement).value)"
       >
       <p
         v-if="errors?.[field.key]"
+        :id="idPrefix + '-' + field.key + '-error'"
         class="portal-error"
+        role="alert"
       >
         {{ errors[field.key] }}
       </p>
@@ -45,7 +49,11 @@ function update(field: keyof PatientIdentity, value: string): void {
       <legend class="portal-label">
         {{ t('profile.gender') }}
       </legend>
-      <div class="portal-segmented portal-profile-gender">
+      <div
+        class="portal-segmented portal-profile-gender"
+        :aria-invalid="errors?.gender ? 'true' : 'false'"
+        :aria-describedby="errors?.gender ? idPrefix + '-gender-error' : undefined"
+      >
         <label
           v-for="gender in ['MALE', 'FEMALE']"
           :key="gender"
@@ -58,6 +66,8 @@ function update(field: keyof PatientIdentity, value: string): void {
             type="radio"
             :value="gender"
             required
+            :aria-invalid="errors?.gender ? 'true' : 'false'"
+            :aria-describedby="errors?.gender ? idPrefix + '-gender-error' : undefined"
             class="sr-only"
             @change="update('gender', gender)"
           >
@@ -66,7 +76,9 @@ function update(field: keyof PatientIdentity, value: string): void {
       </div>
       <p
         v-if="errors?.gender"
+        :id="idPrefix + '-gender-error'"
         class="portal-error"
+        role="alert"
       >
         {{ errors.gender }}
       </p>
@@ -82,11 +94,15 @@ function update(field: keyof PatientIdentity, value: string): void {
         type="date"
         required
         class="portal-input"
+        :aria-invalid="errors?.birth_date ? 'true' : 'false'"
+        :aria-describedby="errors?.birth_date ? idPrefix + '-birth-date-error' : undefined"
         @input="update('birth_date', ($event.target as HTMLInputElement).value)"
       >
       <p
         v-if="errors?.birth_date"
+        :id="idPrefix + '-birth-date-error'"
         class="portal-error"
+        role="alert"
       >
         {{ errors.birth_date }}
       </p>
@@ -101,6 +117,8 @@ function update(field: keyof PatientIdentity, value: string): void {
         :value="modelValue.relationship"
         required
         class="portal-input"
+        :aria-invalid="errors?.relationship ? 'true' : 'false'"
+        :aria-describedby="errors?.relationship ? idPrefix + '-relationship-error' : undefined"
         @change="update('relationship', ($event.target as HTMLSelectElement).value)"
       >
         <option
@@ -121,7 +139,9 @@ function update(field: keyof PatientIdentity, value: string): void {
       </select>
       <p
         v-if="errors?.relationship"
+        :id="idPrefix + '-relationship-error'"
         class="portal-error"
+        role="alert"
       >
         {{ errors.relationship }}
       </p>

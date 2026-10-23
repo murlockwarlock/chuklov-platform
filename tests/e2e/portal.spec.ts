@@ -36,6 +36,13 @@ type BookingFixtureOptions = {
     tracker?: 'empty' | 'task';
 };
 
+type FamilyAcceptanceFixture = {
+    cookieName: string;
+    cookieValue: string;
+    patientId: number;
+    adultClientId: number;
+};
+
 function createBookingFixture(options: BookingFixtureOptions | boolean = false): BookingFixture {
     const normalizedOptions = typeof options === 'boolean' ? { withBooking: options } : options;
     const php = `
@@ -540,6 +547,80 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
     const json = output.trim().split('\n').at(-1) ?? '';
 
     return JSON.parse(json) as BookingFixture;
+}
+
+function createFamilyAcceptanceFixture(ownerClientId: number): FamilyAcceptanceFixture {
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        $owner = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()
+            ->where('organization_id', $organization->getKey())->findOrFail(${ownerClientId});
+        $patient = \\App\\Modules\\Identity\\Domain\\Models\\PatientProfile::query()
+            ->where('organization_id', $organization->getKey())->where('owner_client_id', $owner->getKey())
+            ->where('relationship', 'CHILD')->latest('id')->firstOrFail();
+        $invitation = \\App\\Modules\\Identity\\Domain\\Models\\PatientInvitation::query()
+            ->where('organization_id', $organization->getKey())->where('patient_profile_id', $patient->getKey())
+            ->whereNull('revoked_at')->whereNull('accepted_at')->latest('id')->firstOrFail();
+        $adult = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+            'full_name' => $patient->clinicalClient->full_name,
+            'first_name' => $patient->first_name,
+            'last_name' => $patient->last_name,
+            'gender' => $patient->gender,
+            'birth_date' => $patient->birth_date->toDateString(),
+            'language' => 'ru',
+            'timezone' => 'UTC',
+        ]);
+        $invitation = app(\\App\\Modules\\Identity\\Application\\BindPatientInvitationToAccount::class)
+            ->handle($invitation->encrypted_token, $adult);
+        $sessionId = \\Illuminate\\Support\\Str::random(40);
+        $sessionData = json_encode([
+            '_token' => \\Illuminate\\Support\\Str::random(40),
+            'client_portal' => ['client_id' => $adult->getKey()],
+            'patient_invitation_id' => $invitation->getKey(),
+        ], JSON_THROW_ON_ERROR);
+        $sessionPayload = config('session.encrypt')
+            ? app('encrypter')->encrypt($sessionData)
+            : $sessionData;
+        \\Illuminate\\Support\\Facades\\DB::table('sessions')->insert([
+            'id' => $sessionId,
+            'user_id' => null,
+            'ip_address' => '127.0.0.1',
+            'user_agent' => 'Playwright Family QA',
+            'payload' => base64_encode($sessionPayload),
+            'last_activity' => time(),
+        ]);
+        $cookieName = (string) config('session.cookie');
+        $cookieValue = app('encrypter')->encrypt(
+            \\Illuminate\\Cookie\\CookieValuePrefix::create($cookieName, app('encrypter')->getKey()).$sessionId,
+            false,
+        );
+        echo json_encode([
+            'cookieName' => $cookieName,
+            'cookieValue' => $cookieValue,
+            'patientId' => $patient->getKey(),
+            'adultClientId' => $adult->getKey(),
+        ]);
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-family-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    const output = execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            APP_ENV: 'e2e',
+            XDG_CONFIG_HOME: psyshConfigDirectory,
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    const json = output.trim().split('\n').at(-1) ?? '';
+
+    return JSON.parse(json) as FamilyAcceptanceFixture;
 }
 
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
@@ -2710,4 +2791,149 @@ test('booking details stay readable at 320px Mini App width', async ({ page }) =
     await expect(page.getByRole('heading', { name: 'Выберите новое время' })).toBeVisible();
     await expect(page.locator('.portal-calendar-card__weekdays span')).toHaveCount(7);
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('family profiles persist, invitations retry safely, and linked patients can be booked then unlinked', async ({ page }) => {
+    const owner = createBookingFixture();
+    await page.context().addCookies([{ name: owner.cookieName, value: owner.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/portal/family');
+    await expect(page.getByRole('heading', { name: 'Члены семьи' })).toBeVisible();
+    const addFamilyButton = page.getByRole('button', { name: 'Добавить члена семьи' });
+    const createDialog = page.getByRole('dialog');
+
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+        await addFamilyButton.click();
+        await expect(createDialog).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+        await page.keyboard.press('Escape');
+        await expect(createDialog).not.toBeVisible();
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
+
+    await addFamilyButton.click();
+    await expect(createDialog).toBeVisible();
+    await expect(createDialog.locator('form')).toHaveJSProperty('noValidate', true);
+    await createDialog.getByLabel('Имя').focus();
+    await expect(createDialog.getByLabel('Имя')).toBeFocused();
+    await createDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(createDialog.getByText('Укажите имя и фамилию пациента.', { exact: true }).first()).toBeVisible();
+    await expect(createDialog.getByLabel('Имя')).toHaveAttribute('aria-invalid', 'true');
+
+    await createDialog.getByLabel('Фамилия').fill('QA Family');
+    await createDialog.getByLabel('Имя').fill('Анна');
+    await createDialog.getByRole('radio', { name: 'Женский' }).check({ force: true });
+    await createDialog.getByLabel('Дата рождения').fill('1990-01-02');
+    await createDialog.getByLabel('Кем приходится').selectOption('CHILD');
+    await createDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByRole('heading', { name: /Анна/ })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Член семьи добавлен.' })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: /Анна/ })).toBeVisible();
+
+    const patientCard = page.locator('article').filter({ hasText: /Анна/ });
+    await patientCard.getByRole('button', { name: 'Редактировать данные' }).click();
+    const editDialog = page.getByRole('dialog');
+    await editDialog.getByLabel('Имя').fill('Анна обновлена');
+    await editDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByRole('heading', { name: /Анна обновлена/ })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Данные пациента сохранены.' })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: /Анна обновлена/ })).toBeVisible();
+
+    const updatedPatientCard = page.locator('article').filter({ hasText: /Анна обновлена/ });
+    const invitePath = '**/portal/family/*/invite';
+    let inviteAttempts = 0;
+    const inviteRequestKeys: string[] = [];
+    page.on('request', (request) => {
+        if (request.method() === 'POST' && /\/portal\/family\/\d+\/invite$/.test(new URL(request.url()).pathname)) {
+            inviteRequestKeys.push((request.postDataJSON() as { request_key: string }).request_key);
+        }
+    });
+    await page.route(invitePath, async (route) => {
+        inviteAttempts += 1;
+        if (inviteAttempts === 1) {
+            await route.fulfill({
+                status: 503,
+                contentType: 'application/json',
+                body: JSON.stringify({ safe_error_code: 'telegram_bot_configuration_missing', message: 'Safe QA provider failure' }),
+            });
+            return;
+        }
+
+        await route.continue();
+    });
+    await updatedPatientCard.getByRole('button', { name: 'Выслать приглашение' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Создание Telegram-приглашений сейчас недоступно.' })).toBeVisible();
+    await expect(updatedPatientCard.getByRole('button', { name: 'Выслать приглашение' })).toBeEnabled();
+    await updatedPatientCard.getByRole('button', { name: 'Выслать приглашение' }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Приглашение создано.' })).toBeVisible();
+    await expect(page.locator('#family-invitation-url')).toHaveValue(/^https:\/\/t\.me\/chuklov_test_bot\?start=family_/);
+    expect(inviteRequestKeys).toHaveLength(2);
+    expect(inviteRequestKeys[1]).toBe(inviteRequestKeys[0]);
+    await page.unroute(invitePath);
+
+    await page.context().route('https://t.me/**', async (route) => {
+        await route.fulfill({ status: 200, contentType: 'text/html', body: '<title>Telegram share QA</title>' });
+    });
+    const shareLink = await page.locator('#family-invitation-url').inputValue();
+    const sharePopupPromise = page.waitForEvent('popup');
+    await page.getByRole('button', { name: 'Отправить в Telegram' }).click();
+    const sharePopup = await sharePopupPromise;
+    const shareUrl = new URL(sharePopup.url());
+    expect(shareUrl.origin + shareUrl.pathname).toBe('https://t.me/share/url');
+    expect(shareUrl.searchParams.get('url')).toBe(shareLink);
+    await sharePopup.close();
+
+    const recipient = createFamilyAcceptanceFixture(owner.clientId);
+    await page.context().addCookies([{ name: recipient.cookieName, value: recipient.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/portal/family/invitation');
+    await expect(page.getByRole('heading', { name: 'Приглашение в семью' })).toBeVisible();
+    const confirm = page.getByRole('checkbox', { name: 'Подтверждаю, что это мои данные' });
+    await page.getByRole('button', { name: 'Принять приглашение' }).click();
+    await expect(page.getByRole('alert').filter({ hasText: 'Подтвердите, что указанные данные относятся к вам.' })).toBeVisible();
+    await expect(confirm).toHaveAttribute('aria-invalid', 'true');
+    await confirm.check();
+    await page.getByRole('button', { name: 'Принять приглашение' }).click();
+    await expect(page.getByText('Приглашение принято', { exact: true })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Приглашение принято.' })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('Приглашение принято', { exact: true })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Члены семьи' }).click();
+    const linkedPatient = page.locator('article').filter({ hasText: /Анна обновлена/ });
+    await expect(linkedPatient).toBeVisible();
+    await linkedPatient.getByRole('link', { name: 'Записаться' }).click();
+    const bookingPatient = page.getByLabel('Кого записываем?');
+    await expect(bookingPatient).toHaveValue(String(recipient.patientId));
+    await bookingPatient.selectOption('');
+    await expect(bookingPatient).toHaveValue('');
+    await bookingPatient.selectOption(String(recipient.patientId));
+    await expect(bookingPatient).toHaveValue(String(recipient.patientId));
+    await page.reload();
+    await expect(bookingPatient).toHaveValue(String(recipient.patientId));
+    await assertNoHorizontalOverflow(page);
+    await page.goBack();
+    await expect(page.getByRole('heading', { name: 'Члены семьи' })).toBeVisible();
+    await page.goForward();
+    await expect(bookingPatient).toHaveValue(String(recipient.patientId));
+
+    await page.context().addCookies([{ name: owner.cookieName, value: owner.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/portal/family');
+    const ownerPatient = page.locator('article').filter({ hasText: /Анна обновлена/ });
+    await ownerPatient.getByRole('button', { name: 'Отвязать' }).click();
+    const unlinkDialog = page.getByRole('dialog');
+    await expect(unlinkDialog).toBeVisible();
+    await unlinkDialog.getByRole('button', { name: 'Отвязать' }).click();
+    await expect(page.getByText('Семейная связь отозвана', { exact: true })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Семейная связь отозвана.' })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('Семейная связь отозвана', { exact: true })).toBeVisible();
+
+    await page.context().addCookies([{ name: recipient.cookieName, value: recipient.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/portal/family/invitation');
+    await expect(page.getByRole('alert').filter({ hasText: 'Приглашение отозвано. Попросите отправить новое.' })).toBeVisible();
+    await page.goto('/portal/bookings/create');
+    await expect(page.getByLabel('Кого записываем?').locator('option')).toHaveCount(1);
 });

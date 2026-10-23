@@ -2,6 +2,7 @@
 
 namespace App\Http\Requests;
 
+use App\Modules\ClientPortal\Application\PortalClientMessages;
 use Illuminate\Foundation\Http\FormRequest;
 
 final class CreatePatientProfileRequest extends FormRequest
@@ -22,5 +23,11 @@ final class CreatePatientProfileRequest extends FormRequest
             'return_to' => ['sometimes', 'in:family,booking'], 'service_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
             'specialist_id' => ['sometimes', 'nullable', 'integer', 'min:1'], 'format' => ['sometimes', 'in:office,home,online'],
         ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return app(PortalClientMessages::class)->validationMessages('patient_profile');
     }
 }

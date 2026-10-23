@@ -29,6 +29,10 @@ class HandleInertiaRequests extends Middleware
         if (is_string($successMessage) && trim($successMessage) !== '') {
             Inertia::flash('success', $successMessage);
         }
+        $errorMessage = $request->session()->get('error');
+        if (is_string($errorMessage) && trim($errorMessage) !== '') {
+            Inertia::flash('error', $errorMessage);
+        }
 
         app()->setLocale($locale);
         $bonus = app(GetClientAvailableBonus::class);

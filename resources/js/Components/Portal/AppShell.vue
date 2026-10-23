@@ -30,6 +30,11 @@ const successMessage = computed(() => {
 
     return typeof message === 'string' && message.trim() !== '' ? message : null;
 });
+const errorMessage = computed(() => {
+    const message = page.flash.error;
+
+    return typeof message === 'string' && message.trim() !== '' ? message : null;
+});
 const bonusDialog = ref<HTMLDialogElement | null>(null);
 
 function navigationHref(key: Exclude<PortalNavKey, null>): string {
@@ -101,15 +106,24 @@ const brandLogo = computed(() => props.portal.locale === 'en'
 
     <main class="portal-main">
       <div
-        v-if="successMessage"
+        v-if="successMessage || errorMessage"
         class="portal-shell__flash"
       >
         <p
+          v-if="successMessage"
           class="portal-feedback portal-feedback--success"
           role="status"
           aria-live="polite"
         >
           {{ successMessage }}
+        </p>
+        <p
+          v-if="errorMessage"
+          class="portal-feedback portal-feedback--error"
+          role="alert"
+          aria-live="assertive"
+        >
+          {{ errorMessage }}
         </p>
       </div>
       <slot />
