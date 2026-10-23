@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { expect, test, type Page, type Response } from '@playwright/test';
+import { expect, test, type Locator, type Page, type Response } from '@playwright/test';
 
 type BookingFixture = {
     clientId: number;
@@ -23,6 +23,7 @@ type BookingFixture = {
 type BookingFixtureOptions = {
     daysAhead?: number;
     confirmedName?: boolean;
+    roadmap?: boolean;
     medicalService?: boolean;
     withBooking?: boolean;
     confirmedOfficeBooking?: boolean;
@@ -62,6 +63,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $withCompanionPending = getenv('PLAYWRIGHT_WITH_COMPANION_PENDING') === '1';
         $withCompanionFailure = getenv('PLAYWRIGHT_WITH_COMPANION_FAILURE') === '1';
         $confirmedName = getenv('PLAYWRIGHT_CONFIRMED_NAME') === '1';
+        $roadmap = getenv('PLAYWRIGHT_ROADMAP') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([
             [
                 'organization_id' => $organization->getKey(),
@@ -116,6 +118,34 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         ]);
         if ($confirmedName) {
             $client->forceFill(['name_confirmed_at' => now()])->save();
+        }
+        if ($roadmap) {
+            $run = new \\App\\Modules\\AI\\Domain\\Models\\AiRun;
+            $run->forceFill([
+                'organization_id' => $organization->getKey(),
+                'capability' => \\App\\Modules\\AI\\Domain\\Enums\\AiCapability::ClinicalSynthesizer,
+                'workflow_key' => \\App\\Modules\\AI\\Domain\\Enums\\ClinicalSynthesizerWorkflow::CourseReport->value,
+                'origin' => \\App\\Modules\\AI\\Domain\\Enums\\AiRunOrigin::User,
+                'execution_mode' => \\App\\Modules\\AI\\Domain\\Enums\\AiExecutionMode::Async,
+                'client_id' => $client->getKey(),
+                'status' => \\App\\Modules\\AI\\Domain\\Enums\\AiRunStatus::Succeeded,
+                'human_review_status' => \\App\\Modules\\AI\\Domain\\Enums\\HumanReviewStatus::Accepted,
+                'input_references' => [],
+                'context_provenance' => [],
+                'token_usage' => [],
+                'finished_at' => now(),
+            ]);
+            $run->save();
+            $reportPayload = json_encode(['course_summary' => 'Synthetic accepted report fixture.'], JSON_THROW_ON_ERROR);
+            $payload = new \\App\\Modules\\AI\\Domain\\Models\\AiRunPayload;
+            $payload->forceFill([
+                'organization_id' => $organization->getKey(),
+                'ai_run_id' => $run->getKey(),
+                'encryption_key_version' => 1,
+                'encrypted_output_payload' => app(\\App\\Modules\\MedicalProfiles\\Domain\\Contracts\\MedicalEncryptorInterface::class)
+                    ->encryptField($organization->getKey(), $reportPayload, 1),
+            ]);
+            $payload->save();
         }
         if (getenv('PLAYWRIGHT_TRACKER') !== '') {
             \\Illuminate\\Support\\Facades\\Queue::fake();
@@ -555,6 +585,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
         DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
         PLAYWRIGHT_CONFIRMED_NAME: normalizedOptions.confirmedName ? '1' : '0',
+        PLAYWRIGHT_ROADMAP: normalizedOptions.roadmap ? '1' : '0',
         PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
         PLAYWRIGHT_CONFIRMED_OFFICE_BOOKING: normalizedOptions.confirmedOfficeBooking ? '1' : '0',
         PLAYWRIGHT_ONLINE_MEETING: normalizedOptions.onlineMeeting ? '1' : '0',
@@ -658,6 +689,43 @@ function createFamilyAcceptanceFixture(ownerClientId: number): FamilyAcceptanceF
 
 async function assertNoHorizontalOverflow(page: Page): Promise<void> {
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+}
+
+async function assertHealthActionHeadingLayout(healthAction: Locator): Promise<void> {
+    const metrics = await healthAction.evaluate((element) => {
+        const heading = element.querySelector<HTMLElement>('.portal-health-action__heading');
+        const icon = heading?.children.item(0);
+        const title = heading?.querySelector<HTMLElement>('.portal-health-action__title');
+        const badge = heading?.querySelector<HTMLElement>('.portal-health-action__badge');
+
+        if (!heading || !icon || !title || !badge) {
+            return null;
+        }
+
+        const bounds = (target: Element) => {
+            const rect = target.getBoundingClientRect();
+
+            return { left: rect.left, right: rect.right, top: rect.top };
+        };
+
+        return {
+            card: bounds(element),
+            heading: bounds(heading),
+            icon: bounds(icon),
+            title: bounds(title),
+            badge: bounds(badge),
+        };
+    });
+
+    if (!metrics) {
+        throw new Error('The Health Action heading is missing its icon, title or badge.');
+    }
+
+    expect(metrics.icon.left).toBeGreaterThanOrEqual(metrics.card.left + 15);
+    expect(metrics.icon.right).toBeLessThan(metrics.title.left);
+    expect(metrics.title.right).toBeLessThanOrEqual(metrics.badge.left);
+    expect(metrics.badge.right).toBeLessThanOrEqual(metrics.heading.right + 1);
+    expect(metrics.badge.top).toBeLessThanOrEqual(metrics.heading.top + 2);
 }
 
 async function assertPortalResponseAccepted(responsePromise: Promise<Response>, action: string): Promise<void> {
@@ -1418,10 +1486,12 @@ test('new client can open personal diagnostics and gets a clear empty tests resu
     await expect(healthAction.getByText('Персональная диагностика', { exact: true })).toBeVisible();
     await expect(healthAction.getByText('Экспресс-скрининг 9 систем организма. ИИ выявит первопричины боли за 3 минуты.', { exact: true })).toBeVisible();
     await expect(healthAction.getByText('Новое', { exact: true })).toBeVisible();
+    await expect(healthAction.getByText('ДЕЙСТВИЕ ПО ЗДОРОВЬЮ', { exact: true })).toHaveCount(0);
 
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await expect(healthAction.getByRole('link', { name: 'Пройти тест →', exact: true })).toBeVisible();
+        await assertHealthActionHeadingLayout(healthAction);
         await assertNoHorizontalOverflow(page);
     }
 
@@ -1433,6 +1503,40 @@ test('new client can open personal diagnostics and gets a clear empty tests resu
     await emptyState.getByRole('link', { name: 'На главную', exact: true }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByTestId('home-health-action')).toBeVisible();
+});
+
+test('reviewed synthetic course report appears as the Road Map and opens from Home', async ({ page }) => {
+    const fixture = createBookingFixture({ roadmap: true });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/');
+
+    const healthAction = page.getByTestId('home-health-action');
+    await expect(healthAction.getByText('Ваша Дорожная карта', { exact: true })).toBeVisible();
+    await expect(healthAction.getByText('Индивидуальные рекомендации и план восстановления готовы к просмотру.', { exact: true })).toBeVisible();
+    await expect(healthAction.getByText('Готово', { exact: true })).toBeVisible();
+    await expect(healthAction.getByText('ДЕЙСТВИЕ ПО ЗДОРОВЬЮ', { exact: true })).toHaveCount(0);
+
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(healthAction.getByRole('link', { name: 'Открыть план', exact: true })).toBeVisible();
+        await assertHealthActionHeadingLayout(healthAction);
+        await assertNoHorizontalOverflow(page);
+    }
+
+    await healthAction.getByRole('link', { name: 'Открыть план', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/health#course-report$/);
+    const courseReport = page.locator('#course-report');
+    await expect(courseReport).toBeVisible();
+    await expect(courseReport.getByText('Synthetic accepted report fixture.', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page).toHaveURL(/\/portal\/health#course-report$/);
+    await expect(courseReport.getByText('Synthetic accepted report fixture.', { exact: true })).toBeVisible();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.getByTestId('home-health-action').getByText('Ваша Дорожная карта', { exact: true })).toBeVisible();
+    await page.goForward();
+    await expect(page).toHaveURL(/\/portal\/health#course-report$/);
+    await expect(page.locator('#course-report').getByText('Synthetic accepted report fixture.', { exact: true })).toBeVisible();
 });
 
 test('home changes the booking action when an upcoming booking is shown', async ({ page }) => {
@@ -2240,23 +2344,89 @@ test('September 26 confirmed profile persists and the medical editor saves then 
 test('September 26 paid focus stays on home through completion and correction and empty focus opens the tracker', async ({ page }) => {
     const active = createBookingFixture({ tracker: 'task' });
     await page.context().addCookies([{ name: active.cookieName, value: active.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    const pageErrors: string[] = [];
+    page.on('pageerror', (error) => pageErrors.push(error.name));
     await page.goto('/');
     await expect(page.getByText('Фокус дня', { exact: true })).toBeVisible();
     await expect(page.getByText('Практика QA', { exact: true })).toBeVisible();
     const healthAction = page.getByTestId('home-health-action');
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
-        expect(await healthAction.evaluate((element) => {
-            const bounds = element.getBoundingClientRect();
-            return Array.from(element.children).every((child) => {
-                const childBounds = child.getBoundingClientRect();
-                return childBounds.left >= bounds.left + 16
-                    && childBounds.right <= bounds.right - 16;
-            });
-        })).toBe(true);
+        await assertHealthActionHeadingLayout(healthAction);
         await assertNoHorizontalOverflow(page);
     }
     const completed = page.getByRole('checkbox', { name: 'Выполнено', exact: true });
+
+    await page.route('**/portal/tracker/tasks/*/entry', async (route) => {
+        if (route.request().method() === 'POST') {
+            await route.continue({
+                postData: JSON.stringify({ status: 'unknown' }),
+                headers: { ...route.request().headers(), 'content-type': 'application/json' },
+            });
+
+            return;
+        }
+
+        await route.continue();
+    });
+    const invalidStatus = page.waitForResponse((response) => response.request().method() === 'POST'
+        && response.url().includes('/portal/tracker/tasks/')
+        && response.status() >= 300 && response.status() < 400);
+    await completed.check();
+    await invalidStatus;
+    await expect(page.getByRole('alert')).toHaveText('Не удалось определить отметку задачи. Выберите состояние и попробуйте снова.');
+    await expect(completed).not.toBeChecked();
+    await page.unroute('**/portal/tracker/tasks/*/entry');
+
+    await page.route('**/portal/tracker/tasks/*/entry', async (route) => {
+        if (route.request().method() === 'POST') {
+            await route.fulfill({ status: 404, contentType: 'application/json', body: JSON.stringify({ message: 'Not found' }) });
+
+            return;
+        }
+
+        await route.continue();
+    });
+    await completed.check();
+    await expect(page.getByRole('alert')).toHaveText('Эта задача больше недоступна. Мы обновили её статус.');
+    await expect(completed).not.toBeChecked();
+    await expect(page.getByRole('status').filter({ hasText: 'Статус обновлён.' })).toBeVisible();
+    await page.unroute('**/portal/tracker/tasks/*/entry');
+
+    await page.route('**/portal/tracker/tasks/*/entry', async (route) => {
+        if (route.request().method() !== 'POST') {
+            await route.continue();
+
+            return;
+        }
+
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Unavailable' });
+    });
+    await completed.check();
+    await expect(page.getByRole('status').filter({ hasText: 'Сохраняем отметку…' })).toBeVisible();
+    await expect(completed).toBeDisabled();
+    await expect(page.getByRole('alert')).toHaveText('Сервер не сохранил отметку. Проверьте актуальный статус задачи и повторите действие.');
+    await expect(completed).not.toBeChecked();
+    await expect(page.getByRole('status').filter({ hasText: 'Статус обновлён.' })).toBeVisible();
+    await page.unroute('**/portal/tracker/tasks/*/entry');
+
+    await page.route('**/portal/tracker/tasks/*/entry', async (route) => {
+        if (route.request().method() === 'POST') {
+            await route.abort('failed');
+
+            return;
+        }
+
+        await route.continue();
+    });
+    await completed.check();
+    await expect(page.getByRole('alert')).toHaveText('Не удалось связаться с сервером. Проверьте соединение; мы сверим статус, затем можно повторить отметку.');
+    await expect(completed).not.toBeChecked();
+    await expect(page.getByRole('status').filter({ hasText: 'Статус обновлён.' })).toBeVisible();
+    expect(pageErrors).toEqual([]);
+    await page.unroute('**/portal/tracker/tasks/*/entry');
+
     const completion = page.waitForResponse((response) => response.request().method() === 'POST' && /\/portal\/tracker\/tasks\/\d+\/entry$/.test(response.url()));
     await completed.check();
     const completionResponse = await completion;
@@ -2264,6 +2434,7 @@ test('September 26 paid focus stays on home through completion and correction an
     expect(new URL(completionResponse.headers().location, completionResponse.url()).pathname).toBe('/');
     await expect(completed).toBeEnabled();
     await expect(completed).toBeChecked();
+    await expect(page.getByRole('status').filter({ hasText: 'Отметка сохранена: задача выполнена.' })).toBeVisible();
     await expect(page).toHaveURL(/\/$/);
     await page.reload();
     await expect(completed).toBeChecked();
@@ -2273,6 +2444,7 @@ test('September 26 paid focus stays on home through completion and correction an
     expect(correctionResponse.status()).toBe(302);
     expect(new URL(correctionResponse.headers().location, correctionResponse.url()).pathname).toBe('/');
     await expect(completed).toBeEnabled();
+    await expect(page.getByRole('status').filter({ hasText: 'Отметка снята. Задача снова отмечена как невыполненная.' })).toBeVisible();
     await page.reload();
     await expect(completed).not.toBeChecked();
     await page.getByRole('link', { name: 'Открыть трекер', exact: true }).click();

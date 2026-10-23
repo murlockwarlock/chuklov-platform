@@ -875,6 +875,24 @@ select.portal-input[aria-invalid='true'] {
     min-width: 0;
 }
 
+.portal-health-action__heading {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: var(--portal-space-3);
+}
+
+.portal-health-action__title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.portal-health-action__badge {
+    align-self: start;
+    justify-self: end;
+}
+
 .portal-count {
     flex: 0 0 auto;
     border: 1px solid var(--portal-color-border);

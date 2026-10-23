@@ -309,6 +309,10 @@ final class PortalClientMessages
             'ru' => 'Эта задача сейчас недоступна для отметки.',
             'en' => 'This task is not available to update right now.',
         ],
+        'tracker_task_status_invalid' => [
+            'ru' => 'Не удалось определить отметку задачи. Выберите состояние и попробуйте снова.',
+            'en' => 'We could not identify the task update. Choose a status and try again.',
+        ],
         'tracker_access_required' => [
             'ru' => 'Для этого действия нужен доступ к трекеру.',
             'en' => 'Tracker access is required for this action.',
@@ -415,6 +419,8 @@ final class PortalClientMessages
                 'note.required' => $this->message('tracker_note_required'),
             ],
             'tracker_task' => [
+                'status.required' => $this->message('tracker_task_status_invalid'),
+                'status.in' => $this->message('tracker_task_status_invalid'),
                 'comment.max' => $this->message('tracker_comment_too_long'),
             ],
             default => [],

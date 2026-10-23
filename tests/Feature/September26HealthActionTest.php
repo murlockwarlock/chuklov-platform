@@ -13,6 +13,7 @@ use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\ClientPortal\Application\GetClientHomeHealthAction;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Tracker\Application\AssignTrackerTask;
@@ -22,6 +23,7 @@ use App\Modules\Tracker\Application\SaveTrackerPlan;
 use App\Modules\Tracker\Domain\Enums\TrackerEntitlementSource;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskFrequency;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskType;
+use App\Modules\Tracker\Domain\Models\TrackerTaskEntry;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -104,6 +106,47 @@ final class September26HealthActionTest extends TestCase
         );
     }
 
+    public function test_accepted_course_report_projects_the_roadmap_with_the_existing_report_destination(): void
+    {
+        [$organization, , $client] = $this->actors();
+        $run = AiRun::create([
+            'organization_id' => $organization->getKey(),
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => ClinicalSynthesizerWorkflow::CourseReport->value,
+            'origin' => AiRunOrigin::User,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $client->getKey(),
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::Accepted,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+            'finished_at' => now(),
+        ]);
+        $summary = 'Synthetic reviewed course report.';
+        $encryptor = app(MedicalEncryptorInterface::class);
+        $payload = AiRunPayload::create([
+            'organization_id' => $organization->getKey(),
+            'ai_run_id' => $run->getKey(),
+            'encryption_key_version' => 1,
+            'encrypted_output_payload' => $encryptor->encryptField(
+                $organization->getKey(),
+                json_encode(['course_summary' => $summary], JSON_THROW_ON_ERROR),
+                1,
+            ),
+        ]);
+
+        self::assertStringNotContainsString($summary, (string) $payload->encrypted_output_payload);
+        $healthAction = app(GetClientHomeHealthAction::class)->handle($client, ['today' => []]);
+
+        self::assertSame('roadmap', $healthAction['kind']);
+        self::assertSame('home.roadmap', $healthAction['titleKey']);
+        self::assertSame('home.roadmapDescription', $healthAction['summaryKey']);
+        self::assertSame('home.ready', $healthAction['badgeKey']);
+        self::assertSame('home.openPlan', $healthAction['actionKey']);
+        self::assertSame(route('portal.health').'#course-report', $healthAction['url']);
+    }
+
     public function test_paid_renewal_of_manual_access_updates_its_source_without_replacing_the_entitlement(): void
     {
         [$organization, $admin, $client] = $this->actors();
@@ -137,6 +180,46 @@ final class September26HealthActionTest extends TestCase
             $this->post($url, ['status' => $status])->assertSessionHasNoErrors()->assertRedirect();
             $this->get(route('portal.home'))->assertInertia(fn (AssertableInertia $page) => $page->where('healthAction.taskStatus', $status));
         }
+    }
+
+    public function test_invalid_task_status_has_a_localized_error_and_does_not_create_an_entry(): void
+    {
+        [$organization, $admin, $client] = $this->actors();
+        $client->forceFill(['language' => 'ru'])->save();
+        $version = app(SaveTrackerPlan::class)->handle($admin, null, 'Synthetic plan', true, true, '10.00', 'USD', 30, null, true, 1);
+        app(GrantPaidTrackerAccess::class)->handle($organization, $client, $version);
+        $task = app(AssignTrackerTask::class)->handle($admin, $client, 'Synthetic daily practice', TrackerTaskType::Practice, TrackerTaskFrequency::Daily, CarbonImmutable::now($client->timezone)->startOfDay());
+        $url = route('portal.tracker.task-entry', ['taskId' => $task->getKey()]);
+
+        $this->from(route('portal.home'))
+            ->post($url, ['status' => 'unknown'])
+            ->assertRedirect(route('portal.home'))
+            ->assertSessionHasErrors([
+                'status' => 'Не удалось определить отметку задачи. Выберите состояние и попробуйте снова.',
+            ]);
+
+        self::assertFalse(TrackerTaskEntry::query()->where('tracker_task_id', $task->getKey())->exists());
+    }
+
+    public function test_client_cannot_record_a_foreign_organizations_task(): void
+    {
+        [$organization, $admin, $client] = $this->actors();
+        $version = app(SaveTrackerPlan::class)->handle($admin, null, 'Synthetic plan', true, true, '10.00', 'USD', 30, null, true, 1);
+        app(GrantPaidTrackerAccess::class)->handle($organization, $client, $version);
+
+        $foreignOrganization = Organization::factory()->create();
+        $foreignAdmin = User::factory()->forOrganization($foreignOrganization)->create();
+        $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create();
+        app(OrganizationContext::class)->set($foreignOrganization);
+        $foreignVersion = app(SaveTrackerPlan::class)->handle($foreignAdmin, null, 'Foreign synthetic plan', true, true, '10.00', 'USD', 30, null, true, 1);
+        app(GrantPaidTrackerAccess::class)->handle($foreignOrganization, $foreignClient, $foreignVersion);
+        $foreignTask = app(AssignTrackerTask::class)->handle($foreignAdmin, $foreignClient, 'Foreign synthetic practice', TrackerTaskType::Practice, TrackerTaskFrequency::Daily, CarbonImmutable::now($foreignClient->timezone)->startOfDay());
+        app(OrganizationContext::class)->set($organization);
+
+        $this->postJson(route('portal.tracker.task-entry', ['taskId' => $foreignTask->getKey()]), ['status' => 'completed'])
+            ->assertNotFound();
+
+        self::assertFalse(TrackerTaskEntry::query()->where('tracker_task_id', $foreignTask->getKey())->exists());
     }
 
     public function test_foreign_client_cannot_supply_focus_data(): void

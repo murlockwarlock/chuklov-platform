@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Link, useForm, usePoll } from '@inertiajs/vue3';
+import { Link, router, usePoll } from '@inertiajs/vue3';
+import { ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCard from '../../Components/Portal/BookingCard.vue';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
@@ -40,15 +41,145 @@ const props = defineProps<{
 
 const { locale, t } = usePortalLocale();
 usePoll(15000, { only: ['upcomingBooking', 'healthAction'] });
-const taskForm = useForm({ status: 'completed' });
-function completeTask(event: Event): void {
-    if (!props.healthAction?.taskEntryUrl) return;
-    const checkbox = event.target as HTMLInputElement;
-    taskForm.status = checkbox.checked ? 'completed' : 'not_completed';
-    taskForm.post(props.healthAction.taskEntryUrl, {
+const taskCompleted = ref(props.healthAction?.taskStatus === 'completed');
+const taskRequestError = ref('');
+const taskStatusMessage = ref('');
+const taskSaving = ref(false);
+const taskStatusRefreshing = ref(false);
+
+watch(() => props.healthAction?.taskStatus, (status) => {
+    if (!taskSaving.value && !taskStatusRefreshing.value) {
+        taskCompleted.value = status === 'completed';
+    }
+});
+
+function restoreTaskStatus(): void {
+    taskCompleted.value = props.healthAction?.taskStatus === 'completed';
+}
+
+function refreshTaskStatus(expectedStatus?: 'completed' | 'not_completed'): void {
+    taskStatusRefreshing.value = true;
+    taskStatusMessage.value = t('home.taskCheckingStatus');
+    let refreshFailed = false;
+
+    router.reload({
+        only: ['healthAction'],
         preserveScroll: true,
-        onError: () => { checkbox.checked = props.healthAction?.taskStatus === 'completed'; },
-        onCancel: () => { checkbox.checked = props.healthAction?.taskStatus === 'completed'; },
+        onSuccess: () => {
+            restoreTaskStatus();
+
+            if (expectedStatus !== undefined && props.healthAction?.taskStatus === expectedStatus) {
+                taskRequestError.value = '';
+                taskStatusMessage.value = t(expectedStatus === 'completed' ? 'home.taskSavedCompleted' : 'home.taskSavedReset');
+            } else if (expectedStatus !== undefined) {
+                if (!taskRequestError.value) {
+                    taskRequestError.value = t('home.taskSaveFailed');
+                }
+
+                taskStatusMessage.value = t('home.taskStatusRefreshed');
+            }
+        },
+        onError: () => {
+            refreshFailed = true;
+        },
+        onHttpException: () => {
+            refreshFailed = true;
+
+            return false;
+        },
+        onNetworkError: () => {
+            refreshFailed = true;
+
+            return false;
+        },
+        onFinish: () => {
+            taskStatusRefreshing.value = false;
+            restoreTaskStatus();
+
+            if (refreshFailed) {
+                taskStatusMessage.value = t('home.taskRefreshFailed');
+            } else if (expectedStatus === undefined) {
+                taskStatusMessage.value = t('home.taskStatusRefreshed');
+            }
+        },
+    });
+}
+
+function completeTask(event: Event): void {
+    if (!props.healthAction?.taskEntryUrl || taskSaving.value || taskStatusRefreshing.value) {
+        restoreTaskStatus();
+
+        return;
+    }
+
+    const checkbox = event.target as HTMLInputElement;
+    const requestedStatus = checkbox.checked ? 'completed' : 'not_completed';
+    taskCompleted.value = checkbox.checked;
+    taskRequestError.value = '';
+    taskStatusMessage.value = '';
+
+    router.post(props.healthAction.taskEntryUrl, { status: requestedStatus }, {
+        preserveScroll: true,
+        onStart: () => {
+            taskSaving.value = true;
+            taskStatusMessage.value = t('home.taskSaving');
+        },
+        onSuccess: () => {
+            restoreTaskStatus();
+
+            if (props.healthAction?.taskStatus !== requestedStatus) {
+                taskRequestError.value = t('home.taskSaveFailed');
+                refreshTaskStatus(requestedStatus);
+
+                return;
+            }
+
+            taskStatusMessage.value = t(requestedStatus === 'completed' ? 'home.taskSavedCompleted' : 'home.taskSavedReset');
+        },
+        onError: (errors) => {
+            restoreTaskStatus();
+            taskStatusMessage.value = '';
+            taskRequestError.value = Object.values(errors).find((message) => typeof message === 'string')
+                ?? t('home.taskValidationFailed');
+        },
+        onHttpException: (response) => {
+            restoreTaskStatus();
+            taskStatusMessage.value = '';
+            taskRequestError.value = response.status === 401 || response.status === 419
+                ? t('home.taskSessionExpired')
+                : response.status === 403
+                    ? t('home.taskAccessDenied')
+                    : response.status === 404
+                        ? t('home.taskUnavailable')
+                        : response.status === 409
+                            ? t('home.taskConflict')
+                            : response.status === 422
+                                ? t('home.taskValidationFailed')
+                                : t('home.taskSaveFailed');
+
+            if (response.status === 404 || response.status === 409 || response.status >= 500) {
+                refreshTaskStatus(requestedStatus);
+            }
+
+            return false;
+        },
+        onNetworkError: () => {
+            restoreTaskStatus();
+            taskStatusMessage.value = '';
+            taskRequestError.value = t('home.taskNetworkError');
+            refreshTaskStatus(requestedStatus);
+
+            return false;
+        },
+        onCancel: () => {
+            restoreTaskStatus();
+            taskStatusMessage.value = '';
+            taskRequestError.value = t('home.taskSaveFailed');
+            refreshTaskStatus(requestedStatus);
+        },
+        onFinish: () => {
+            taskSaving.value = false;
+        },
     });
 }
 </script>
@@ -116,10 +247,10 @@ function completeTask(event: Event): void {
         class="portal-content-section portal-stack rounded-2xl bg-orange-50 p-5 sm:p-6"
         data-testid="home-health-action"
       >
-        <div class="portal-section-heading">
+        <div class="portal-health-action__heading">
           <span class="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-orange-100 text-orange-700"><PortalIcon name="health" /></span>
-          <strong class="portal-list__title">{{ props.healthAction.titleKey ? t(props.healthAction.titleKey) : props.healthAction.title }}</strong>
-          <span class="portal-count">{{ t(props.healthAction.badgeKey) }}</span>
+          <strong class="portal-list__title portal-health-action__title">{{ props.healthAction.titleKey ? t(props.healthAction.titleKey) : props.healthAction.title }}</strong>
+          <span class="portal-count portal-health-action__badge">{{ t(props.healthAction.badgeKey) }}</span>
         </div>
         <p class="portal-copy">
           {{ props.healthAction.summaryKey ? t(props.healthAction.summaryKey) : props.healthAction.summary }}
@@ -130,18 +261,27 @@ function completeTask(event: Event): void {
         >
           <input
             type="checkbox"
-            :checked="props.healthAction.taskStatus === 'completed'"
-            :disabled="taskForm.processing"
+            :checked="taskCompleted"
+            :disabled="taskSaving || taskStatusRefreshing"
             @change="completeTask"
           >
           {{ t('home.completed') }}
         </label>
         <p
-          v-for="(error, key) in taskForm.errors"
-          :key="key"
-          class="portal-error"
+          v-if="taskSaving || taskStatusRefreshing || taskStatusMessage"
+          class="portal-notice"
+          role="status"
+          aria-live="polite"
         >
-          {{ error }}
+          {{ taskSaving ? t('home.taskSaving') : taskStatusMessage }}
+        </p>
+        <p
+          v-if="taskRequestError"
+          class="portal-error"
+          role="alert"
+          aria-live="assertive"
+        >
+          {{ taskRequestError }}
         </p>
         <Link
           :href="props.healthAction.url"
@@ -150,6 +290,22 @@ function completeTask(event: Event): void {
           {{ t(props.healthAction.actionKey) }}
         </Link>
       </section>
+      <p
+        v-if="!props.healthAction?.taskEntryUrl && taskStatusMessage"
+        class="portal-notice"
+        role="status"
+        aria-live="polite"
+      >
+        {{ taskStatusMessage }}
+      </p>
+      <p
+        v-if="!props.healthAction?.taskEntryUrl && taskRequestError"
+        class="portal-error"
+        role="alert"
+        aria-live="assertive"
+      >
+        {{ taskRequestError }}
+      </p>
 
       <Link
         :href="props.portal.urls.companion"
