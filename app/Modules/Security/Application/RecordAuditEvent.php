@@ -51,6 +51,7 @@ class RecordAuditEvent
         'client.consent.recorded' => ['subject', 'version', 'granted', 'evidence'],
         'client.self_booking.blocked' => ['source'],
         'client.self_booking.unblocked' => ['source'],
+        'tracker.task_entry.updated' => ['actor_client_id', 'task_id', 'previous_status', 'status', 'period_start'],
         'client.blacklist.added' => ['source', 'client_id', 'old_blacklist_state', 'new_blacklist_state', 'reason_present'],
         'client.blacklist.removed' => ['source', 'client_id', 'old_blacklist_state', 'new_blacklist_state', 'reason_present'],
         'client.note.created' => ['client_id', 'body_present'],

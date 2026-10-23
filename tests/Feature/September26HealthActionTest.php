@@ -16,6 +16,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Tracker\Application\AssignTrackerTask;
 use App\Modules\Tracker\Application\GrantPaidTrackerAccess;
 use App\Modules\Tracker\Application\GrantTrackerAccess;
@@ -176,9 +177,26 @@ final class September26HealthActionTest extends TestCase
         $url = route('portal.tracker.task-entry', ['taskId' => $task->getKey()]);
         $this->get(route('portal.home'))->assertInertia(fn (AssertableInertia $page) => $page
             ->where('healthAction.summary', 'Synthetic daily practice')->where('healthAction.taskEntryUrl', $url));
+        $previousStatus = null;
         foreach (['completed', 'not_completed', 'completed'] as $status) {
             $this->post($url, ['status' => $status])->assertSessionHasNoErrors()->assertRedirect();
             $this->get(route('portal.home'))->assertInertia(fn (AssertableInertia $page) => $page->where('healthAction.taskStatus', $status));
+            $entry = TrackerTaskEntry::query()->where('tracker_task_id', $task->getKey())->firstOrFail();
+            $audit = AuditEvent::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('action', 'tracker.task_entry.updated')
+                ->where('target_type', TrackerTaskEntry::class)
+                ->where('target_id', (string) $entry->getKey())
+                ->latest('id')
+                ->firstOrFail();
+
+            self::assertSame($client->getKey(), $audit->metadata['actor_client_id']);
+            self::assertSame($task->getKey(), $audit->metadata['task_id']);
+            self::assertSame($previousStatus, $audit->metadata['previous_status']);
+            self::assertSame($status, $audit->metadata['status']);
+            self::assertSame($entry->period_start->toDateString(), $audit->metadata['period_start']);
+            self::assertArrayNotHasKey('comment', $audit->metadata);
+            $previousStatus = $status;
         }
     }
 
@@ -215,11 +233,44 @@ final class September26HealthActionTest extends TestCase
         app(GrantPaidTrackerAccess::class)->handle($foreignOrganization, $foreignClient, $foreignVersion);
         $foreignTask = app(AssignTrackerTask::class)->handle($foreignAdmin, $foreignClient, 'Foreign synthetic practice', TrackerTaskType::Practice, TrackerTaskFrequency::Daily, CarbonImmutable::now($foreignClient->timezone)->startOfDay());
         app(OrganizationContext::class)->set($organization);
+        Log::spy();
 
         $this->postJson(route('portal.tracker.task-entry', ['taskId' => $foreignTask->getKey()]), ['status' => 'completed'])
             ->assertNotFound();
 
+        Log::shouldHaveReceived('warning')->once()->with(
+            'portal.tracker.task_entry.denied',
+            Mockery::on(fn (array $context): bool => $context['organization_id'] === $organization->getKey()
+                && $context['actor_client_id'] === $client->getKey()
+                && $context['entity_type'] === \App\Modules\Tracker\Domain\Models\TrackerTask::class
+                && $context['entity_id'] === $foreignTask->getKey()
+                && $context['safe_error_code'] === 'task_unavailable'
+                && $context['outcome'] === 'denied'
+                && ! array_key_exists('comment', $context)),
+        );
+
         self::assertFalse(TrackerTaskEntry::query()->where('tracker_task_id', $foreignTask->getKey())->exists());
+    }
+
+    public function test_tracker_access_denial_is_logged_without_recording_a_task_entry(): void
+    {
+        [, $admin, $client] = $this->actors();
+        $task = app(AssignTrackerTask::class)->handle($admin, $client, 'Synthetic daily practice', TrackerTaskType::Practice, TrackerTaskFrequency::Daily, CarbonImmutable::now($client->timezone)->startOfDay());
+        Log::spy();
+
+        $this->postJson(route('portal.tracker.task-entry', ['taskId' => $task->getKey()]), ['status' => 'completed'])
+            ->assertForbidden();
+
+        Log::shouldHaveReceived('warning')->once()->with(
+            'portal.tracker.task_entry.denied',
+            Mockery::on(fn (array $context): bool => $context['organization_id'] === $client->organization_id
+                && $context['actor_client_id'] === $client->getKey()
+                && $context['entity_id'] === $task->getKey()
+                && $context['safe_error_code'] === 'tracker_access_required'
+                && $context['outcome'] === 'denied'),
+        );
+
+        self::assertFalse(TrackerTaskEntry::query()->where('tracker_task_id', $task->getKey())->exists());
     }
 
     public function test_foreign_client_cannot_supply_focus_data(): void
