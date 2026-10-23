@@ -2957,7 +2957,10 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await expect(page.getByText('Приглашение принято', { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Члены семьи' }).click();
-    const linkedPatient = page.locator('article').filter({ hasText: /Анна обновлена/ });
+    const linkedPatient = page.locator('article')
+        .filter({ hasText: /Анна обновлена/ })
+        .filter({ hasText: 'Дочь' });
+    await expect(linkedPatient).toHaveCount(1);
     await expect(linkedPatient).toBeVisible();
     await linkedPatient.getByRole('link', { name: 'Записаться' }).click();
     const bookingPatient = page.getByLabel('Кого записываем?');
