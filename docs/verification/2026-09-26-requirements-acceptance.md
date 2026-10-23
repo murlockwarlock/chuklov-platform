@@ -444,6 +444,8 @@ Missing or pending proof: Confirmed given name and exact fallback.
 - CR-03.3: source: «Условие 2 (Клиент заполнил профиль/анкету, указав подтвержденное имя): выводить: «Добро пожаловать, {first_name}!».». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
 - CR-03.4: source: «Любые модальные окна с запросом имени при входе в приложение исключить.». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
 
+Execution note, 2026-10-23: hosted E2E run `39978220908` passed on exact SHA `80a25ff9f552f21c408498c24b0ced407e3b073a`; the focused desktop/mobile Portal tests covered static fallback, no name-request dialog/input, reload, and personalized greeting. This is fixture-app regression evidence, not staging. A short direct staging check with both saved Portal state files landed on the unauthenticated Entry page; the current shell lacks the staging SSH/Mailpit configuration needed to complete normal synthetic email verification. No staging data or saved browser state was changed. CR-03.1–CR-03.4 remain **NOT VERIFIED** until direct staging/PostgreSQL evidence is completed.
+
 Client outcome: Fallback-логика приветствия в шапке (Header Greeting), with exact source wording, fields, order and action destination above.
 CRM outcome: same authorized business facts, persisted after reopening; no hidden duplicate or divergent authority.
 Backend/DB/notification outcome: existing organization-scoped authority; atomic mutation/audit where required, UTC instants and explicit notification transport. Clinical plaintext excluded from general logs/audit/storage.
