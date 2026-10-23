@@ -2795,8 +2795,10 @@ test('booking details stay readable at 320px Mini App width', async ({ page }) =
 
 test('family profiles persist, invitations retry safely, and linked patients can be booked then unlinked', async ({ page }) => {
     await page.addInitScript(() => {
+        const capture = window as unknown as { __familyBrowserShareCalls: Array<[string, string, string]> };
+        capture.__familyBrowserShareCalls = [];
         window.open = ((url?: string | URL, target?: string, features?: string) => {
-            window.name = JSON.stringify([String(url ?? ''), target ?? '', features ?? '']);
+            capture.__familyBrowserShareCalls.push([String(url ?? ''), target ?? '', features ?? '']);
 
             return null;
         }) as typeof window.open;
@@ -2876,19 +2878,68 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await expect(updatedPatientCard.getByRole('button', { name: 'Выслать приглашение' })).toBeEnabled();
     await updatedPatientCard.getByRole('button', { name: 'Выслать приглашение' }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Приглашение создано.' })).toBeVisible();
-    await expect(page.locator('#family-invitation-url')).toHaveValue(/^https:\/\/t\.me\/chuklov_test_bot\?start=family_/);
+    const invitationLinkIsValid = await page.locator('#family-invitation-url').evaluate((element) => {
+        try {
+            const invitation = new URL((element as HTMLInputElement).value);
+
+            return invitation.origin === 'https://t.me'
+                && invitation.pathname === '/chuklov_test_bot'
+                && invitation.searchParams.get('start')?.startsWith('family_') === true;
+        } catch {
+            return false;
+        }
+    });
+    expect(invitationLinkIsValid).toBe(true);
     expect(inviteRequestKeys).toHaveLength(2);
     expect(inviteRequestKeys[1]).toBe(inviteRequestKeys[0]);
     await page.unroute(invitePath);
 
     const shareLink = await page.locator('#family-invitation-url').inputValue();
+    const telegramBridgeAvailable = await page.evaluate(() => {
+        const capture = window as unknown as {
+            __familyTelegramShareCalls: string[];
+            Telegram?: { WebApp?: { openTelegramLink?: (url: string) => void } };
+        };
+        capture.__familyTelegramShareCalls = [];
+        const webApp = capture.Telegram?.WebApp;
+        if (typeof webApp?.openTelegramLink === 'function') {
+            webApp.openTelegramLink = (url: string): void => capture.__familyTelegramShareCalls.push(String(url));
+
+            return true;
+        }
+
+        return false;
+    });
     await page.getByRole('button', { name: 'Отправить в Telegram' }).click();
-    const [transportUrl, target, features] = await page.evaluate(() => JSON.parse(window.name) as [string, string, string]);
-    const shareUrl = new URL(transportUrl);
-    expect(shareUrl.origin + shareUrl.pathname).toBe('https://t.me/share/url');
-    expect(shareUrl.searchParams.get('url')).toBe(shareLink);
-    expect(target).toBe('_blank');
-    expect(features).toBe('noopener,noreferrer');
+    const shareCalls = await page.evaluate(() => {
+        const capture = window as unknown as {
+            __familyBrowserShareCalls: Array<[string, string, string]>;
+            __familyTelegramShareCalls?: string[];
+        };
+
+        return {
+            browser: capture.__familyBrowserShareCalls,
+            telegram: capture.__familyTelegramShareCalls ?? [],
+        };
+    });
+    expect(shareCalls.browser.length + shareCalls.telegram.length).toBe(1);
+    const transport = telegramBridgeAvailable ? shareCalls.telegram[0] : shareCalls.browser[0]?.[0];
+    let sharePayloadIsCorrect = false;
+    if (typeof transport === 'string') {
+        try {
+            const shareUrl = new URL(transport);
+            sharePayloadIsCorrect = shareUrl.origin === 'https://t.me'
+                && shareUrl.pathname === '/share/url'
+                && shareUrl.searchParams.get('url') === shareLink;
+        } catch {
+            sharePayloadIsCorrect = false;
+        }
+    }
+    expect(sharePayloadIsCorrect).toBe(true);
+    if (!telegramBridgeAvailable) {
+        const [, target, features] = shareCalls.browser[0] ?? [];
+        expect(target === '_blank' && features === 'noopener,noreferrer').toBe(true);
+    }
 
     const recipient = createFamilyAcceptanceFixture(owner.clientId);
     await page.context().addCookies([{ name: recipient.cookieName, value: recipient.cookieValue, url: 'http://127.0.0.1:8000' }]);
