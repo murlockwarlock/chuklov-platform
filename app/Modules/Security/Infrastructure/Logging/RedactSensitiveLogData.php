@@ -11,6 +11,7 @@ class RedactSensitiveLogData implements ProcessorInterface
 {
     private const SAFE_OPERATION_CODES = [
         'booking.create',
+        'booking.create_multiple',
         'cancel',
         'client.email_auth.code_delivery',
         'client.portal.logout',

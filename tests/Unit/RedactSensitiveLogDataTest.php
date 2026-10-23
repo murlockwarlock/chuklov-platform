@@ -89,6 +89,7 @@ class RedactSensitiveLogDataTest extends TestCase
     {
         foreach ([
             'booking.create',
+            'booking.create_multiple',
             'cancel',
             'client.email_auth.code_delivery',
             'client.portal.logout',
