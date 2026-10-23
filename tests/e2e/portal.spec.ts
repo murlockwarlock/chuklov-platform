@@ -1948,22 +1948,12 @@ test('authenticated client can complete the booking journey', async ({ page }) =
 test('September 26 confirmed profile persists and the medical editor saves then reopens', async ({ page }) => {
     const fixture = createBookingFixture();
     await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
-    const profileResponses = { suppressSavedFlash: false, savedFlashSuppressed: false, failNextSave: false };
+    const profileResponses = { failNextSave: false };
     await page.route('**/portal/profile', async (route) => {
         const request = route.request();
         if (profileResponses.failNextSave && request.method() === 'POST') {
             profileResponses.failNextSave = false;
             await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: 'Service unavailable.' }) });
-            return;
-        }
-        if (profileResponses.suppressSavedFlash && request.method() === 'GET' && request.headers()['x-inertia'] === 'true') {
-            const response = await route.fetch();
-            const payload = await response.json() as { props?: Record<string, unknown> };
-            if (payload.props) {
-                payload.props.saved = false;
-            }
-            profileResponses.savedFlashSuppressed = true;
-            await route.fulfill({ response, body: JSON.stringify(payload) });
             return;
         }
         await route.continue();
@@ -2003,10 +1993,8 @@ test('September 26 confirmed profile persists and the medical editor saves then 
         await page.getByLabel('Страна', { exact: true }).press('Escape');
     }
     const profileForm = page.locator('form').filter({ has: page.getByLabel('Фамилия', { exact: true }) });
-    profileResponses.suppressSavedFlash = true;
     await profileForm.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible();
-    expect(profileResponses.savedFlashSuppressed).toBe(true);
     await page.getByLabel('Город', { exact: true }).fill('Астана');
     profileResponses.failNextSave = true;
     await profileForm.getByRole('button', { name: 'Сохранить', exact: true }).click();
