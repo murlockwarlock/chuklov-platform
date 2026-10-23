@@ -82,6 +82,7 @@ const selectedDate = ref<string | null>(props.booking.localDate);
 const rescheduleOpen = ref(props.availability !== null);
 const rescheduleLoading = ref(false);
 const rescheduleRequestError = ref<string | null>(null);
+const cancelRequestError = ref<string | null>(null);
 const meetingReloading = ref(false);
 const savedWorkingLocation = props.workingLocations.find((location) => location.id === props.booking.workingLocationId);
 const defaultWorkingLocation = props.workingLocations.find((location) => location.isDefault) ?? props.workingLocations[0] ?? null;
@@ -133,7 +134,7 @@ const rescheduleError = computed(() => {
         ?? errorMessage(errors.reason)
         ?? rescheduleRequestError.value;
 });
-const cancelError = computed(() => (cancelForm.errors as Record<string, string | undefined>).booking);
+const cancelError = computed(() => firstErrorMessage(cancelForm.errors as Record<string, unknown>) ?? cancelRequestError.value);
 let meetingPollTimer: ReturnType<typeof setInterval> | null = null;
 let meetingPollStartedAt: number | null = null;
 const meetingPollTimeoutMs = 120000;
@@ -304,7 +305,36 @@ function changeMonth(dateFrom: string, dateTo: string): void {
 }
 
 function cancelBooking(): void {
-    cancelForm.post(props.urls.cancel, { preserveScroll: true });
+    cancelRequestError.value = null;
+    cancelForm.clearErrors();
+    cancelForm.post(props.urls.cancel, {
+        preserveScroll: true,
+        onSuccess: () => {
+            cancelRequestError.value = null;
+        },
+        onError: (errors) => {
+            cancelRequestError.value = firstErrorMessage(errors as Record<string, unknown>)
+                ?? t('booking.cancelFailed');
+        },
+        onHttpException: (response) => {
+            cancelRequestError.value = response.status === 401 || response.status === 419
+                ? t('booking.cancelSessionExpired')
+                : response.status === 403
+                    ? t('booking.cancelAccessDenied')
+                    : response.status === 404
+                        ? t('booking.cancelUnavailable')
+                        : response.status === 409
+                            ? t('booking.cancelConflict')
+                            : t('booking.cancelHttpError');
+
+            return false;
+        },
+        onNetworkError: () => {
+            cancelRequestError.value = t('booking.cancelNetworkError');
+
+            return false;
+        },
+    });
 }
 
 function rescheduleBooking(): void {

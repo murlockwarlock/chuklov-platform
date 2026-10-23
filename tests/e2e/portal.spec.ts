@@ -12,6 +12,7 @@ type BookingFixture = {
     specialistName: string;
     alternateSpecialistName: string | null;
     firstWorkingLocationName: string | null;
+    firstWorkingLocationAddress: string | null;
     secondWorkingLocationId: number | null;
     secondWorkingLocationName: string | null;
     date: string;
@@ -25,6 +26,7 @@ type BookingFixtureOptions = {
     medicalService?: boolean;
     withBooking?: boolean;
     bookingWithinCancellationCutoff?: boolean;
+    onlineMeeting?: boolean;
     withCompanionMessages?: boolean;
     withCompanionFailure?: boolean;
     withPartnerRewards?: boolean;
@@ -50,6 +52,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
         $multipleChoices = getenv('PLAYWRIGHT_MULTIPLE_CHOICES') === '1';
         $multipleLocations = getenv('PLAYWRIGHT_MULTIPLE_LOCATIONS') === '1';
+        $onlineMeeting = getenv('PLAYWRIGHT_ONLINE_MEETING') === '1';
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
@@ -363,7 +366,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'name' => $longServiceTitle
                 ? 'Индивидуальная консультация по глубоким и устойчивым изменениям в жизни '.$suffix
                 : 'Playwright Service '.$suffix,
-            'formats' => $homeVisit ? ['home'] : ($multipleChoices ? ['office', 'online'] : ['office']),
+            'formats' => $homeVisit ? ['home'] : (($multipleChoices || $onlineMeeting) ? ['office', 'online'] : ['office']),
             'requires_medical_profile' => getenv('PLAYWRIGHT_MEDICAL_SERVICE') === '1',
         ]);
         \\App\\Modules\\Scheduling\\Domain\\Models\\SpecialistServiceAssignment::factory()
@@ -433,7 +436,27 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $booking = null;
         if (getenv('PLAYWRIGHT_WITH_BOOKING') === '1') {
             app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
-            if (getenv('PLAYWRIGHT_BOOKING_WITHIN_CANCELLATION_CUTOFF') === '1') {
+            if ($onlineMeeting) {
+                $start = \\Carbon\\CarbonImmutable::now('UTC')->addDays(3)->setTime(9, 0);
+                $booking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()
+                    ->forOrganization($organization)
+                    ->forClient($client)
+                    ->forSpecialist($specialist)
+                    ->forService($service)
+                    ->create([
+                        'status' => \\App\\Modules\\Scheduling\\Domain\\Enums\\BookingStatus::Confirmed->value,
+                        'source' => \\App\\Modules\\Scheduling\\Domain\\Enums\\BookingSource::Portal->value,
+                        'visit_format' => \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Online->value,
+                        'starts_at' => $start,
+                        'ends_at' => $start->addHour(),
+                        'blocking_ends_at' => $start->addHour(),
+                        'schedule_timezone' => 'UTC',
+                        'client_timezone' => 'UTC',
+                        'meeting_link_mode' => \\App\\Modules\\Scheduling\\Domain\\Enums\\MeetingLinkMode::Manual->value,
+                        'meeting_url' => 'https://example.invalid/qa-meeting',
+                        'requested_at' => now(),
+                    ]);
+            } elseif (getenv('PLAYWRIGHT_BOOKING_WITHIN_CANCELLATION_CUTOFF') === '1') {
                 $cutoffMinutes = (int) (\\Illuminate\\Support\\Facades\\DB::table('organization_settings')
                     ->where('organization_id', $organization->getKey())
                     ->where('setting_key', 'booking_cancellation_cutoff_minutes')
@@ -500,6 +523,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'specialistName' => $specialist->display_name,
             'alternateSpecialistName' => $alternateSpecialist?->display_name,
             'firstWorkingLocationName' => ($workingLocations[0] ?? null)?->name,
+            'firstWorkingLocationAddress' => ($workingLocations[0] ?? null)?->address,
             'secondWorkingLocationId' => ($workingLocations[1] ?? null)?->getKey(),
             'secondWorkingLocationName' => ($workingLocations[1] ?? null)?->name,
             'date' => $date,
@@ -525,6 +549,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
         PLAYWRIGHT_CONFIRMED_NAME: normalizedOptions.confirmedName ? '1' : '0',
         PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
+        PLAYWRIGHT_ONLINE_MEETING: normalizedOptions.onlineMeeting ? '1' : '0',
         PLAYWRIGHT_BOOKING_WITHIN_CANCELLATION_CUTOFF: normalizedOptions.bookingWithinCancellationCutoff ? '1' : '0',
         PLAYWRIGHT_MEDICAL_SERVICE: normalizedOptions.medicalService ? '1' : '0',
         PLAYWRIGHT_BOOKING_DAYS_AHEAD: String(normalizedOptions.daysAhead ?? 1),
@@ -1333,6 +1358,7 @@ test('home keeps one primary booking action and ordinary referrals remain availa
         await page.goto('/');
         await expect(page.getByTestId('home-booking-cta')).toHaveCount(1);
         await expect(page.getByTestId('home-booking-cta')).toHaveText('Выбрать удобное время');
+        await expect(page.getByTestId('home-booking-cta').locator('svg')).toBeVisible();
         await expect(page.getByRole('heading', { name: 'Ваш график восстановления', exact: true })).toBeVisible();
         await expect(page.getByText('У вас пока нет запланированных сеансов. Самое время разгрузить тело и снять накопленное напряжение.', { exact: true })).toBeVisible();
         await assertNoHorizontalOverflow(page);
@@ -1416,12 +1442,38 @@ test('home changes the booking action when an upcoming booking is shown', async 
     await expect(upcomingBooking.getByText('Ближайшая запись', { exact: true })).toBeVisible();
     await expect(upcomingBooking.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
     await expect(upcomingBooking.getByText(fixture.specialistName, { exact: true })).toBeVisible();
+    await expect(upcomingBooking.getByText('В клинике', { exact: true })).toBeVisible();
+    await expect(upcomingBooking.getByText('Оплата не внесена', { exact: true })).toBeVisible();
+    if (fixture.firstWorkingLocationAddress === null) {
+        throw new Error('The booking fixture did not provide its office address.');
+    }
+    await expect(upcomingBooking.getByText(fixture.firstWorkingLocationAddress, { exact: true })).toBeVisible();
     await expect(page.getByTestId('home-booking-cta')).toHaveText('Записаться ещё');
     await upcomingBooking.getByRole('link', { name: 'Подробнее', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/portal/bookings/${fixture.bookingId}$`));
     await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
+});
+
+test('home shows the confirmed online meeting link on the upcoming booking', async ({ page }) => {
+    const fixture = createBookingFixture({ withBooking: true, onlineMeeting: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto('/');
+    const bookingCard = page.locator('.portal-booking-card');
+    const meetingLink = bookingCard.getByRole('link', { name: 'Подключиться к встрече', exact: true });
+
+    await expect(bookingCard).toBeVisible();
+    await expect(meetingLink).toHaveAttribute('href', 'https://example.invalid/qa-meeting');
+    await expect(meetingLink).toHaveAttribute('target', '_blank');
+    await expect(meetingLink).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(bookingCard.getByText('Оплата не внесена', { exact: true })).toBeVisible();
 });
 
 test('CRM-assigned partner can manage multiple campaign links', async ({ page }) => {
@@ -2870,7 +2922,37 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     await expect(page.getByRole('heading', { name: 'История' })).toBeVisible();
     await expect(page.getByText('Запись перенесена')).toHaveCount(2, { timeout: 15_000 });
 
-    await page.getByRole('button', { name: 'Отменить' }).click();
+    const cancelButton = page.getByRole('button', { name: 'Отменить', exact: true });
+    const cancelRoute = `**/portal/bookings/${fixture.bookingId}/cancel`;
+    const failedResponses = [
+        { status: 401, message: 'Сеанс входа завершился. Войдите снова, чтобы отменить запись.' },
+        { status: 403, message: 'Эту запись нельзя отменить из текущего профиля.' },
+        { status: 404, message: 'Запись больше не найдена. Обновите список записей.' },
+        { status: 409, message: 'Статус записи изменился. Обновите страницу, чтобы проверить актуальный статус.' },
+        { status: 503, message: 'Не удалось подтвердить отмену. Обновите страницу, чтобы проверить статус записи, затем повторите попытку.' },
+    ];
+    for (const failure of failedResponses) {
+        await page.route(cancelRoute, (route) => route.fulfill({
+            status: failure.status,
+            contentType: 'text/html',
+            body: 'Request could not be completed',
+        }));
+        await cancelButton.click();
+        await expect(page.getByRole('alert')).toHaveText(failure.message);
+        await expect(cancelButton).toBeEnabled();
+        await page.unroute(cancelRoute);
+    }
+
+    await page.route(cancelRoute, (route) => route.abort('failed'));
+    await cancelButton.click();
+    await expect(page.getByRole('alert')).toHaveText('Связь с сервером прервалась. Обновите страницу, чтобы проверить статус записи; если она ещё активна, повторите отмену.');
+    await expect(cancelButton).toBeEnabled();
+    await expect(page.getByText('Отменена', { exact: true })).toHaveCount(0);
+    await page.unroute(cancelRoute);
+
+    await page.reload();
+    await expect(cancelButton).toBeVisible();
+    await cancelButton.click();
     await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
     await expect(page.locator('li').filter({ hasText: 'Запись отменена' })).toBeVisible();
 });

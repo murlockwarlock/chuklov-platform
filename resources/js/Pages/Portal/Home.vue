@@ -18,7 +18,14 @@ type Booking = {
     localEndsAt: string;
     timezone: string;
     formatLabel: string;
+    format: 'office' | 'home' | 'online';
     statusLabel: string;
+    paymentStatusLabel: string;
+    location: string | null;
+    locationArea: string | null;
+    locationSnapshot: { name?: string; address?: string };
+    meetingUrl: string | null;
+    meetingPending: boolean;
     canReschedule: boolean;
 };
 
@@ -88,6 +95,7 @@ function completeTask(event: Event): void {
           data-testid="home-booking-cta"
         >
           {{ t('home.chooseTime') }}
+          <PortalIcon name="arrow" />
         </Link>
       </section>
       <div
