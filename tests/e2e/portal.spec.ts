@@ -2158,7 +2158,7 @@ test('September 26 multi-session booking explains a stale slot and succeeds afte
     await expect(page).toHaveURL(/\/portal\/bookings\/create/);
     await expect(page.getByRole('heading', { name: 'Медицинские данные', exact: true })).toHaveCount(0);
 
-    await page.locator('.portal-booking-confirmation').getByRole('button', { name: 'Изменить время', exact: true }).click();
+    await page.locator('.portal-booking-confirmation').getByRole('button', { name: 'Изменить дату и время', exact: true }).click();
     await expect(page.getByTestId('queued-booking-session')).toHaveCount(2);
     await page.getByTestId('queued-booking-session').first().getByRole('button', { name: 'Убрать сеанс' }).click();
     await expect(staleSlotError).toHaveCount(0);
