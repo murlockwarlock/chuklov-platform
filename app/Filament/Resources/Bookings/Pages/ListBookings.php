@@ -111,6 +111,10 @@ class ListBookings extends LocalizedListRecords
 
     public function updatedSelectedSpecialistId(): void
     {
+        if ($this->selectedSpecialistId === null && $this->selectedSpecialistIds !== []) {
+            return;
+        }
+
         $specialist = $this->selectedSpecialist();
         $this->selectedSpecialistIds = $specialist instanceof Specialist ? [(int) $specialist->getKey()] : [];
         $this->updatedSelectedSpecialistIds();

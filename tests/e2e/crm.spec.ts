@@ -701,6 +701,27 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
     await expect(filter).toHaveAccessibleName('Все специалисты');
     await expect(filter).toContainText('Все специалисты');
 
+    await page.goBack();
+    await expect(filter).toHaveAccessibleName('Специалисты: 1');
+    await expect.poll(() => {
+        const url = new URL(page.url());
+
+        return url.searchParams.get('specialist_ids[0]');
+    }).toBe(String(secondSpecialist.id));
+    await filter.click();
+    panel = page.locator('.fi-dropdown-panel:visible').last();
+    await expect(checkbox(secondSpecialist.name)).toBeChecked();
+    await expect.poll(() => page.locator('[wire\\:key="booking-journal-specialist-filter"] input[type="checkbox"]:checked').count()).toBe(1);
+
+    await page.goForward();
+    await expect(filter).toHaveAccessibleName('Все специалисты');
+    await expect.poll(() => page.locator('[wire\\:key="booking-journal-specialist-filter"] input[type="checkbox"]:checked').count()).toBe(0);
+    await expect.poll(() => {
+        const url = new URL(page.url());
+
+        return url.searchParams.has('specialist_ids') || url.searchParams.has('specialist_id');
+    }).toBe(false);
+
     const layout = await page.evaluate(() => {
         const isVisible = (element: Element): boolean => {
             const style = getComputedStyle(element);
