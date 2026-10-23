@@ -1525,7 +1525,7 @@ test('reviewed synthetic course report appears as the Road Map and opens from Ho
 
     await healthAction.getByRole('link', { name: 'Открыть план', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/health#course-report$/);
-    const courseReport = page.locator('#course-report');
+    const courseReport = page.locator('#course-report').locator('xpath=..');
     await expect(courseReport).toBeVisible();
     await expect(courseReport.getByText('Synthetic accepted report fixture.', { exact: true })).toBeVisible();
     await page.reload();
