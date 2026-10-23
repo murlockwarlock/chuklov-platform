@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { Link, router, useForm } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { Link, router, useForm, useRemember } from '@inertiajs/vue3';
+import { computed, ref, unref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import BookingChoiceList from '../../Components/Portal/BookingChoiceList.vue';
@@ -204,7 +204,10 @@ const requiredConsentsAccepted = computed(() => props.legalDocuments
     .every((document) => consentValues.value[document.id] === true) && hasPublishedRequiredDocuments.value);
 const requiredConsentAttempted = ref(false);
 
-const acknowledgedBookingId = ref<number | null>(null);
+const rememberedBookingNavigation = unref(useRemember(
+    { acknowledgedBookingId: null as number | null },
+    'Portal/BookingCreate:medical-profile-navigation',
+));
 
 watch(
     () => [
@@ -248,11 +251,11 @@ watch(
 watch(
     () => props.bookingResult?.bookingId ?? null,
     (bookingId) => {
-        if (bookingId === null || bookingId === acknowledgedBookingId.value) {
+        if (bookingId === null || bookingId === rememberedBookingNavigation.acknowledgedBookingId) {
             return;
         }
 
-        acknowledgedBookingId.value = bookingId;
+        rememberedBookingNavigation.acknowledgedBookingId = bookingId;
         if (props.bookingResult?.medicalProfileUrl) {
             router.visit(props.bookingResult.medicalProfileUrl);
             return;

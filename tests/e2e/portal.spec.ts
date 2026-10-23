@@ -2151,6 +2151,18 @@ test('September 26 client selects multiple sessions before the medical editor an
     await acceptRequiredConsents(page);
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/medical-profile\?booking_id=\d+&edit=1/);
+    await expect(page.getByRole('heading', { name: 'Медицинские данные', exact: true })).toBeVisible();
+    const repeatedMedicalNavigation = page.waitForRequest((request) =>
+        request.method() === 'GET' && new URL(request.url()).pathname === '/portal/medical-profile',
+    { timeout: 2000 }).catch(() => null);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/portal\/bookings\/create\?/);
+    await expect(page.locator('#booking-success-heading')).toBeVisible();
+    await expect(page.locator('.portal-booking-summary time')).toHaveCount(4);
+    expect(await repeatedMedicalNavigation).toBeNull();
+    await page.goForward();
+    await expect(page).toHaveURL(/\/portal\/medical-profile\?booking_id=\d+&edit=1/);
+    await expect(page.getByRole('heading', { name: 'Медицинские данные', exact: true })).toBeVisible();
     const result = execFileSync('php', ['artisan', 'tinker', '--execute', `
         $bookings = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::query()->where('client_id', ${fixture.clientId})->orderBy('starts_at')->get();
         echo json_encode($bookings->map(fn ($booking) => ['id' => $booking->getKey(), 'source' => $booking->source->value, 'client_id' => $booking->client_id])->all());
