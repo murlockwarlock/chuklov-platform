@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Pages\WorkingIntervals;
+use App\Filament\Pages\WorkSchedule;
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
 use App\Filament\Resources\SpecialistServiceAssignments\SpecialistServiceAssignmentResource;
@@ -48,6 +50,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class MilestoneFourSchedulingTest extends TestCase
@@ -1067,6 +1070,45 @@ class MilestoneFourSchedulingTest extends TestCase
 
         $this->get(route('filament.admin.pages.scheduling-configuration'))
             ->assertOk();
+    }
+
+    public function test_schedule_pages_show_the_accepted_labels_copy_and_separated_fields(): void
+    {
+        [, $admin] = $this->fixture('UTC');
+        $originalLocale = app()->getLocale();
+        app()->setLocale('ru');
+
+        try {
+            $settings = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+            self::assertSame('Настройки расписания', (string) $settings->instance()->getHeading());
+            self::assertSame(
+                'Здесь настраиваются общие параметры для всего расписания',
+                (string) $settings->instance()->getSubheading(),
+            );
+            self::assertSame('Настройки расписания', SchedulingConfiguration::getNavigationLabel());
+            self::assertSame(99, SchedulingConfiguration::getNavigationSort());
+            $settings->assertSee('Минимальный срок до записи')
+                ->assertDontSee('День недели');
+
+            $intervals = Livewire::actingAs($admin)->test(WorkingIntervals::class);
+            self::assertSame('Рабочие интервалы', (string) $intervals->instance()->getHeading());
+            self::assertSame(
+                'Здесь настраиваются регулярные рабочие интервалы выбранного специалиста.',
+                (string) $intervals->instance()->getSubheading(),
+            );
+            self::assertSame('Рабочие интервалы', WorkingIntervals::getNavigationLabel());
+            self::assertSame(3, WorkingIntervals::getNavigationSort());
+            $intervals->assertSee('Добавить интервал')
+                ->assertDontSee('Минимальный срок до записи');
+
+            $workSchedule = Livewire::actingAs($admin)->test(WorkSchedule::class);
+            self::assertSame('График работы специалиста', (string) $workSchedule->instance()->getHeading());
+            self::assertSame('График работы', WorkSchedule::getNavigationLabel());
+            self::assertSame(2, WorkSchedule::getNavigationSort());
+            $workSchedule->assertSee('Календарь конкретных дат. Регулярный график задаётся в «Настройках расписания».');
+        } finally {
+            app()->setLocale($originalLocale);
+        }
     }
 
     /** @return array{Organization, User, Specialist, Service} */
