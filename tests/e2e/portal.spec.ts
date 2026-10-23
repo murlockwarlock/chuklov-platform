@@ -812,8 +812,26 @@ test('successful email verification enters the authenticated portal without a ma
         version: null,
     };
     let authenticatedHomeVisits = 0;
+    let releaseEmailRequest!: () => void;
+    let emailRequestArrived!: () => void;
+    const emailRequestReady = new Promise<void>((resolve) => {
+        emailRequestArrived = resolve;
+    });
+    const emailRequestBarrier = new Promise<void>((resolve) => {
+        releaseEmailRequest = resolve;
+    });
+    let releaseEmailVerification!: () => void;
+    let emailVerificationArrived!: () => void;
+    const emailVerificationReady = new Promise<void>((resolve) => {
+        emailVerificationArrived = resolve;
+    });
+    const emailVerificationBarrier = new Promise<void>((resolve) => {
+        releaseEmailVerification = resolve;
+    });
 
     await page.route('**/portal/auth/email/request', async (route) => {
+        emailRequestArrived();
+        await emailRequestBarrier;
         await route.fulfill({
             status: 200,
             headers: { 'Content-Type': 'application/json', 'X-Inertia': 'true' },
@@ -821,6 +839,8 @@ test('successful email verification enters the authenticated portal without a ma
         });
     });
     await page.route('**/portal/auth/email/verify', async (route) => {
+        emailVerificationArrived();
+        await emailVerificationBarrier;
         await route.fulfill({
             status: 200,
             headers: { 'Content-Type': 'application/json', 'X-Inertia': 'true' },
@@ -842,10 +862,30 @@ test('successful email verification enters the authenticated portal without a ma
     });
 
     await page.getByLabel('Email').fill('portal-login@example.test');
-    await page.getByRole('button', { name: 'Получить код' }).click();
+    const requestButton = page.locator('form').filter({ has: page.locator('#portal-email') }).getByRole('button');
+    const requestClick = requestButton.click();
+    await emailRequestReady;
+    try {
+        await expect(requestButton).toBeDisabled();
+        await expect(requestButton).toHaveText('Отправляем код…');
+        await expect(requestButton).toHaveAttribute('aria-busy', 'true');
+    } finally {
+        releaseEmailRequest();
+    }
+    await requestClick;
     await expect(page.locator('#portal-email-code')).toBeVisible();
     await page.locator('#portal-email-code').fill('123456');
-    await page.getByRole('button', { name: 'Войти', exact: true }).click();
+    const verifyButton = page.locator('form').filter({ has: page.locator('#portal-email-code') }).getByRole('button');
+    const verifyClick = verifyButton.click();
+    await emailVerificationReady;
+    try {
+        await expect(verifyButton).toBeDisabled();
+        await expect(verifyButton).toHaveText('Проверяем код…');
+        await expect(verifyButton).toHaveAttribute('aria-busy', 'true');
+    } finally {
+        releaseEmailVerification();
+    }
+    await verifyClick;
 
     await expect(page.getByText('Добро пожаловать в пространство здоровья!')).toBeVisible();
     await expect(page.locator('#portal-email')).toHaveCount(0);

@@ -286,8 +286,9 @@ onUnmounted(stopTelegramStatusPolling);
             type="submit"
             class="portal-button portal-button--secondary"
             :disabled="emailRequestForm.processing"
+            :aria-busy="emailRequestForm.processing"
           >
-            {{ t('entry.sendCode') }}
+            {{ emailRequestForm.processing ? t('entry.sendingCode') : t('entry.sendCode') }}
           </button>
           <p
             v-if="emailError"
@@ -329,8 +330,9 @@ onUnmounted(stopTelegramStatusPolling);
             type="submit"
             class="portal-button portal-button--primary"
             :disabled="emailVerifyForm.processing"
+            :aria-busy="emailVerifyForm.processing"
           >
-            {{ t('entry.verifyCode') }}
+            {{ emailVerifyForm.processing ? t('entry.verifyingCode') : t('entry.verifyCode') }}
           </button>
         </form>
       </section>
