@@ -16,6 +16,7 @@ use Carbon\CarbonImmutable;
 use Closure;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
@@ -122,6 +123,24 @@ final readonly class CreateMultipleBookings
                     if (! $this->isUnavailableSlot($exception)) {
                         throw $exception;
                     }
+
+                    Log::warning('booking.multiple.slot_unavailable', [
+                        'event_name' => 'booking.multiple.slot_unavailable',
+                        'operation' => 'booking.create_multiple',
+                        'organization_id' => $organizationId,
+                        'actor_type' => $actor instanceof Client ? 'client' : 'user',
+                        'actor_id' => (int) $actor->getKey(),
+                        'client_id' => (int) $client->getKey(),
+                        'specialist_id' => (int) $specialist->getKey(),
+                        'service_id' => (int) $service->getKey(),
+                        'slot_position' => $index + 1,
+                        'slot_count' => count($normalizedSlots),
+                        'slot_start_at_utc' => $slot['starts_at']->toIso8601String(),
+                        'error_code' => 'slot_unavailable',
+                        'error_class' => $exception::class,
+                        'outcome' => 'rejected',
+                        'occurred_at' => now()->utc()->toIso8601String(),
+                    ]);
 
                     throw ValidationException::withMessages([
                         'slots' => [

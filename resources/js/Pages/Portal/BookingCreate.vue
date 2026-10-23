@@ -132,7 +132,7 @@ const selectedSpecialistId = ref<number | null>(props.query.specialistId);
 const selectedFormat = ref<VisitFormat | null>(props.query.formatSelected ? props.query.format : null);
 const selectedDate = ref<string | null>(props.query.dateFrom);
 const selectedStart = ref<string | null>(props.bookingResult?.startsAt ?? null);
-const { queuedStarts, startsAtList, canAdd, add: addSession, remove: removeSession, keyFor } = useBookingSessions(selectedStart);
+const { queuedStarts, startsAtList, canAdd, add: addSession, remove: removeQueuedSession, keyFor } = useBookingSessions(selectedStart);
 const selectionAvailability = computed(() => props.availability === null ? null : {
     ...props.availability,
     slots: props.availability.slots.filter((slot) => !queuedStarts.value.includes(slot.startsAt)),
@@ -570,15 +570,29 @@ function changeMonth(dateFrom: string, dateTo: string): void {
     visitBooking(bookingQuery(dateFrom, dateTo), true, true);
 }
 
+function clearSlotErrors(): void {
+    bookingForm.clearErrors('starts_at', 'additional_starts_at', 'idempotency_key');
+}
+
 function selectDate(date: string): void {
+    if (selectedDate.value !== date) {
+        clearSlotErrors();
+    }
+
     selectedDate.value = date;
     selectedStart.value = null;
     bookingForm.starts_at = null;
 }
 
 function selectSlot(slot: AvailabilitySlot): void {
+    clearSlotErrors();
     selectedStart.value = slot.startsAt;
     bookingForm.starts_at = slot.startsAt;
+}
+
+function removeSession(start: string): void {
+    removeQueuedSession(start);
+    clearSlotErrors();
 }
 
 function changeClientTimezone(timezone: string): void {

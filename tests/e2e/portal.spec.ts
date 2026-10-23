@@ -2101,6 +2101,91 @@ test('September 26 client selects multiple sessions before the medical editor an
     await expect(page.getByRole('button', { name: 'Отменить', exact: true })).toBeVisible();
 });
 
+test('September 26 multi-session booking explains a stale slot and succeeds after replacement', async ({ page }) => {
+    const fixture = createBookingFixture({ medicalService: true, daysAhead: 3 });
+    const dateAtOffset = (days: number): string => {
+        const date = new Date(`${fixture.date}T00:00:00.000Z`);
+        date.setUTCDate(date.getUTCDate() + days);
+        return date.toISOString().slice(0, 10);
+    };
+    const finalDate = dateAtOffset(3);
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${finalDate}&format=office`);
+    await page.getByRole('button', { name: fixture.date, exact: true }).click();
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Добавить ещё сеанс', exact: true }).click();
+    await expect(page.getByTestId('queued-booking-session')).toHaveCount(1);
+
+    const secondDate = dateAtOffset(1);
+    await page.getByRole('button', { name: secondDate, exact: true }).click();
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Добавить ещё сеанс', exact: true }).click();
+    await expect(page.getByTestId('queued-booking-session')).toHaveCount(2);
+
+    const conflictStart = await page.getByTestId('queued-booking-session').first().locator('time').getAttribute('datetime');
+    if (conflictStart === null) {
+        throw new Error('The selected multi-session slot did not expose its canonical start instant.');
+    }
+
+    await page.getByTestId('queued-booking-session').last().getByRole('button', { name: 'Убрать сеанс' }).click();
+    await expect(page.getByTestId('queued-booking-session')).toHaveCount(1);
+
+    const thirdDate = dateAtOffset(2);
+    await page.getByRole('button', { name: thirdDate, exact: true }).click();
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    await acceptRequiredConsents(page);
+
+    execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
+        app(\\App\\Modules\\Scheduling\\Application\\CreateBooking::class)->handle(
+            actor: $client,
+            client: $client,
+            specialist: \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::query()->findOrFail(${fixture.specialistId}),
+            service: \\App\\Modules\\Services\\Domain\\Models\\Service::query()->findOrFail(${fixture.serviceId}),
+            startsAt: \\Carbon\\CarbonImmutable::parse(${JSON.stringify(conflictStart)}),
+            format: \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office,
+            idempotencyKey: 'playwright-multi-session-conflict-' . \\Illuminate\\Support\\Str::uuid(),
+        );
+        echo 'reserved';
+    `], { encoding: 'utf8', env: { ...process.env, APP_ENV: 'e2e' }, stdio: ['ignore', 'pipe', 'pipe'] });
+
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    const staleSlotError = page.getByRole('alert').filter({ hasText: 'больше недоступен' });
+    await expect(staleSlotError).toContainText('Выберите другое время');
+    await expect(page).toHaveURL(/\/portal\/bookings\/create/);
+    await expect(page.getByRole('heading', { name: 'Медицинские данные', exact: true })).toHaveCount(0);
+
+    await page.locator('.portal-booking-confirmation').getByRole('button', { name: 'Изменить время', exact: true }).click();
+    await expect(page.getByTestId('queued-booking-session')).toHaveCount(2);
+    await page.getByTestId('queued-booking-session').first().getByRole('button', { name: 'Убрать сеанс' }).click();
+    await expect(staleSlotError).toHaveCount(0);
+    await page.getByRole('button', { name: 'Добавить ещё сеанс', exact: true }).click();
+    await expect(page.getByTestId('queued-booking-session')).toHaveCount(1);
+
+    await page.getByRole('button', { name: finalDate, exact: true }).click();
+    await page.getByTestId('availability-slot').first().click();
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+    }
+
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    await acceptRequiredConsents(page);
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/medical-profile\?booking_id=\d+&edit=1/);
+
+    const result = execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $bookings = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::query()->where('client_id', ${fixture.clientId})->orderBy('starts_at')->get();
+        echo json_encode($bookings->map(fn ($booking) => ['id' => $booking->getKey(), 'source' => $booking->source->value, 'client_id' => $booking->client_id])->all());
+    `], { encoding: 'utf8' }).trim();
+    const bookings = JSON.parse(result) as Array<{ id: number; source: string; client_id: number }>;
+    expect(bookings).toHaveLength(2);
+    expect(bookings.every((booking) => booking.source === 'portal' && booking.client_id === fixture.clientId)).toBe(true);
+});
+
 test('September 26 booking explains when self-service changes are closed', async ({ page }) => {
     const fixture = createBookingFixture({ withBooking: true, bookingWithinCancellationCutoff: true });
     if (fixture.bookingId === null) {
