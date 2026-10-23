@@ -14,6 +14,8 @@ License: Creative Commons Attribution 4.0
 https://creativecommons.org/licenses/by/4.0/
 Changes: grouped by ISO country code; kept names, aliases and population;
 selected a Cyrillic name where available and sorted by population.
+Corrected the Russian display names for Almaty and Astana to Алматы and Астана;
+the GeoNames source forms remain searchable aliases.
 The dataset includes cities with population over 15,000 and capitals.
 Manual entry remains available for places not represented in the dataset.
 No warranty of accuracy, timeliness or completeness is provided.

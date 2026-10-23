@@ -49,7 +49,10 @@ final class ProfileReferenceDataTest extends TestCase
         $response = $this->withSession(['client_portal.client_id' => $client->getKey()])->postJson($url, $query)
             ->assertOk()->assertJsonStructure(['cities']);
         self::assertNotEmpty($response->json('cities'));
+        self::assertContains('Алматы', $response->json('cities'));
         self::assertLessThanOrEqual(25, count($response->json('cities')));
+        $astana = $this->postJson($url, ['country' => 'Казахстан', 'query' => 'Astana'])->assertOk();
+        self::assertContains('Астана', $astana->json('cities'));
         $this->postJson($url, ['country' => '../../private', 'query' => 'secret'])
             ->assertOk()->assertJsonPath('cities', [])->assertJsonPath('attribution.source', 'GeoNames');
         $this->postJson($url, ['country' => 'RU', 'query' => str_repeat('a', 101)])->assertUnprocessable();
