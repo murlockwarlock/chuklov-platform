@@ -41,7 +41,7 @@
                 @if (count($this->specialistOptions) > 1)
                     <x-filament::dropdown wire:key="booking-journal-specialist-filter" placement="bottom-start" shift width="sm">
                         <x-slot name="trigger">
-                            <x-filament::button id="booking-journal-specialist" aria-label="{{ __('Специалисты') }}" color="gray" icon="heroicon-o-funnel">
+                            <x-filament::button id="booking-journal-specialist" color="gray" icon="heroicon-o-funnel">
                                 {{ $selectedSpecialistIds === [] ? __('Все специалисты') : __('Специалисты: :count', ['count' => count($selectedSpecialistIds)]) }}
                             </x-filament::button>
                         </x-slot>

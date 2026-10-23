@@ -666,6 +666,7 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
     await expect(page.getByRole('heading', { name: 'Журнал записей', exact: true })).toBeVisible();
 
     const filter = page.locator('#booking-journal-specialist');
+    await expect(filter).toHaveAccessibleName('Все специалисты');
     await filter.click();
     let panel = page.locator('.fi-dropdown-panel:visible').last();
     await expect(panel).toBeVisible();
@@ -673,17 +674,21 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
 
     await checkbox(fixture.specialistName).check();
     await expect(panel).toBeVisible();
+    await expect(filter).toHaveAccessibleName('Специалисты: 1');
     await checkbox(secondSpecialist.name).check();
     await expect(panel).toBeVisible();
     await expect.poll(() => page.locator('[wire\\:key="booking-journal-specialist-filter"] input[type="checkbox"]:checked').count()).toBe(2);
+    await expect(filter).toHaveAccessibleName('Специалисты: 2');
     await assertNoHorizontalOverflow(page);
 
     await checkbox(fixture.specialistName).uncheck();
     await expect.poll(() => page.locator('[wire\\:key="booking-journal-specialist-filter"] input[type="checkbox"]:checked').count()).toBe(1);
     await expect(checkbox(secondSpecialist.name)).toBeChecked();
+    await expect(filter).toHaveAccessibleName('Специалисты: 1');
 
     await panel.getByRole('button', { name: 'Все специалисты', exact: true }).click();
     await expect.poll(() => page.locator('[wire\\:key="booking-journal-specialist-filter"] input[type="checkbox"]:checked').count()).toBe(0);
+    await expect(filter).toHaveAccessibleName('Все специалисты');
     await expect(filter).toContainText('Все специалисты');
     await expect.poll(() => {
         const url = new URL(page.url());
@@ -693,6 +698,7 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Журнал записей', exact: true })).toBeVisible();
+    await expect(filter).toHaveAccessibleName('Все специалисты');
     await expect(filter).toContainText('Все специалисты');
 
     const layout = await page.evaluate(() => {
