@@ -32,7 +32,7 @@ class MilestoneTwoTelegramBotTest extends TestCase
         config()->set('portal.telegram.portal_url', 'https://mini.example.test');
 
         $this->assertLocalizedMenu('ru', [
-            'portal' => 'Открыть приложение',
+            'portal' => '🚀 Открыть приложение',
         ]);
         $this->assertLocalizedMenu('en', [
             'portal' => 'Open app',
@@ -668,6 +668,8 @@ class MilestoneTwoTelegramBotTest extends TestCase
             first_name: ucfirst($language),
             language_code: $language,
         ));
+        $bot->willReceive(['message_id' => 1, 'date' => 1, 'chat' => ['id' => $language === 'ru' ? 555001 : 555002, 'type' => 'private']]);
+        $bot->willReceive(true);
 
         $bot->hearText('/start')->reply();
 
@@ -676,10 +678,17 @@ class MilestoneTwoTelegramBotTest extends TestCase
         $request = array_values($history[0])[0];
         $body = json_decode((string) $request->getBody(), true, 512, JSON_THROW_ON_ERROR);
         $keyboard = $body['reply_markup']['inline_keyboard'];
+        self::assertSame(
+            config('portal.telegram.greeting.'.$language)."\n\n".($language === 'ru'
+                ? 'Видео приветствия пока недоступно. Откройте приложение кнопкой ниже.'
+                : 'The welcome video is not available yet. Open the app using the button below.'),
+            $body['text'],
+        );
         $bot->assertCalled('setChatMenuButton');
         $menuRequest = array_values($history[1])[0];
         $menuBody = json_decode((string) $menuRequest->getBody(), true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('web_app', $menuBody['menu_button']['type']);
+        self::assertSame($language === 'ru' ? 'Открыть приложение' : 'Open app', $menuBody['menu_button']['text']);
         self::assertSame('https://mini.example.test/portal/telegram/launch/portal', $menuBody['menu_button']['web_app']['url']);
 
         self::assertCount(count($expected), $keyboard);
