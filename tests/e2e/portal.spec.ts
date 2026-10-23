@@ -2345,6 +2345,10 @@ test('client can change display timezone and choose a physical office', async ({
 
     const locationSelect = page.getByTestId('booking-working-location-select');
     await expect(locationSelect).toBeVisible();
+    await expect(locationSelect).toHaveValue('');
+    const calendarTimezone = page.locator('.portal-booking-calendar__timezone');
+    await expect(calendarTimezone).toContainText('UTC+00:00');
+    await expect(calendarTimezone).not.toContainText(/UTC\d{4}-\d{2}-\d{2}T/);
     await locationSelect.selectOption(String(fixture.secondWorkingLocationId));
     await expect(locationSelect).toHaveValue(String(fixture.secondWorkingLocationId));
     await expect(page.getByTestId('booking-context-summary')).toContainText(fixture.secondWorkingLocationName as string);

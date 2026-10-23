@@ -1011,6 +1011,7 @@ function submitBooking(): void {
             :availability="selectionAvailability"
             :date-from="props.query.dateFrom"
             :date-to="props.query.dateTo"
+            :display-timezone="selectedClientTimezone"
             :locale="locale"
             :selected-date="selectedDate"
             :selected-start="selectedStart"
