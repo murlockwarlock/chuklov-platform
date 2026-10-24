@@ -1669,7 +1669,8 @@ test('reviewed synthetic course report appears as the Road Map and opens from Ho
     await expect(page.getByTestId('home-health-action').getByText('Ваша Дорожная карта', { exact: true })).toBeVisible();
     await page.goForward();
     await expect(page).toHaveURL(/\/portal\/health#course-report$/);
-    await expect(page.locator('#course-report').getByText('Synthetic accepted report fixture.', { exact: true })).toBeVisible();
+    await expect(comparison.getByText('7 → 3', { exact: false })).toBeVisible();
+    await expect(page.locator('#course-report').locator('xpath=..')).toContainText('Synthetic accepted report fixture.');
 });
 
 test('home changes the booking action when an upcoming booking is shown', async ({ page }) => {
