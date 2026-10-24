@@ -1389,11 +1389,22 @@ test('staff can create a backdated booking from the ordinary availability form',
     const warning = page.getByText(localWarning, { exact: true });
     await expect(page.getByText('Внимание', { exact: true })).toBeVisible();
     await expect(warning).toBeVisible();
-    const warningColor = await warning.evaluate((element) => getComputedStyle(element).color);
-    const colorChannels = warningColor.match(/(?:rgb|color\(srgb)\(?\s*(\d*\.?\d+)[,\s]+(\d*\.?\d+)[,\s]+(\d*\.?\d+)/)?.slice(1).map(Number);
-    expect(colorChannels).toHaveLength(3);
-    expect(colorChannels?.[0]).toBeGreaterThan(colorChannels?.[1] ?? 0);
-    expect(colorChannels?.[0]).toBeGreaterThan(colorChannels?.[2] ?? 0);
+    const warningUsesRedEmphasis = await warning.evaluate((element) => {
+        const color = getComputedStyle(element).color;
+        const oklch = color.match(/^oklch\(\s*[\d.]+%?\s+([\d.]+)\s+([\d.]+)/i);
+
+        if (oklch) {
+            const chroma = Number(oklch[1]);
+            const hue = Number(oklch[2]);
+
+            return chroma > 0.08 && (hue <= 50 || hue >= 330);
+        }
+
+        const channels = color.match(/^rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i)?.slice(1).map(Number);
+
+        return channels !== undefined && channels[0] > channels[1] && channels[0] > channels[2];
+    });
+    expect(warningUsesRedEmphasis).toBe(true);
     await expect(page.getByLabel('Подтверждаю создание записи задним числом', { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/admin\/bookings\/create$/);
 
@@ -1922,9 +1933,37 @@ test('staff can activate a partner, create a campaign link, and assign a referre
     await expect(page.getByText(fixture.clientName, { exact: true })).toBeVisible();
 });
 
+test('CRM referral statistics show non-zero overall and campaign results after reload', async ({ page }) => {
+    const fixture = createCrmFixture({ payoutFlow: true, referralStatsFlow: true });
+
+    if (fixture.partnerProfileId === null || fixture.referralStatsCampaignName === null) {
+        throw new Error('The referral statistics fixture is incomplete.');
+    }
+
+    await login(page, fixture);
+    await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`, { waitUntil: 'domcontentloaded' });
+    await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+    await expect(page.getByText(fixture.partnerName, { exact: true })).toBeVisible();
+    await expect(page.getByText('Переходы: 3', { exact: false })).toBeVisible();
+    await expect(page.getByText('Регистрации: 2', { exact: false })).toBeVisible();
+    await expect(page.getByText('Оплатили: 1', { exact: false })).toBeVisible();
+    await expect(page.getByText(fixture.referralStatsCampaignName, { exact: true })).toBeVisible();
+    await page.getByRole('tab', { name: 'Приглашённые клиенты', exact: true }).click();
+    await expect(page.getByText('Оплатил', { exact: true })).toBeVisible();
+    await expect(page.getByText('Не оплатил', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByText('Переходы: 3', { exact: false })).toBeVisible();
+    await expect(page.getByText('Регистрации: 2', { exact: false })).toBeVisible();
+    await expect(page.getByText('Оплатили: 1', { exact: false })).toBeVisible();
+    await page.goto('/admin/referral-relationships');
+    await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`);
+    await expect(page.getByText('Переходы: 3', { exact: false })).toBeVisible();
+    await expect(page.getByText('Оплатили: 1', { exact: false })).toBeVisible();
+});
+
 test('CRM partner, recommendations, bookings, and AI run controls fit every acceptance viewport', async ({ page }) => {
     test.setTimeout(90_000);
-    const fixture = createCrmFixture({ payoutFlow: true, referralStatsFlow: true });
+    const fixture = createCrmFixture({ payoutFlow: true });
 
     if (fixture.partnerProfileId === null) {
         throw new Error('The partner fixture did not create a profile.');
@@ -1937,28 +1976,6 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
 
         await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`, { waitUntil: 'domcontentloaded' });
         await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
-        if (width === 1440) {
-            if (fixture.referralStatsCampaignName === null) {
-                throw new Error('The referral fixture did not create a second campaign.');
-            }
-
-            await expect(page.getByText(fixture.partnerName, { exact: true })).toBeVisible();
-            await expect(page.getByText('Переходы: 3', { exact: false })).toBeVisible();
-            await expect(page.getByText('Регистрации: 2', { exact: false })).toBeVisible();
-            await expect(page.getByText('Оплатили: 1', { exact: false })).toBeVisible();
-            await expect(page.getByText(fixture.referralStatsCampaignName, { exact: true })).toBeVisible();
-            await page.getByRole('tab', { name: 'Приглашённые клиенты', exact: true }).click();
-            await expect(page.getByText('Оплатил', { exact: true })).toBeVisible();
-            await expect(page.getByText('Не оплатил', { exact: true })).toBeVisible();
-            await page.reload();
-            await expect(page.getByText('Переходы: 3', { exact: false })).toBeVisible();
-            await expect(page.getByText('Регистрации: 2', { exact: false })).toBeVisible();
-            await expect(page.getByText('Оплатили: 1', { exact: false })).toBeVisible();
-            await page.goto('/admin/referral-relationships');
-            await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`);
-            await expect(page.getByText('Переходы: 3', { exact: false })).toBeVisible();
-            await expect(page.getByText('Оплатили: 1', { exact: false })).toBeVisible();
-        }
         await expect(page.locator('[data-testid^="partner-primary-"]')).toHaveCount(3);
         await assertRenderedViewportGeometry(page, [
             '[data-testid="partner-primary-open-client"]',
