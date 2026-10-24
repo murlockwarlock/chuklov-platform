@@ -117,6 +117,7 @@ const props = defineProps<{
 const { t, locale } = usePortalLocale();
 const page = usePage<PortalPageProps>();
 const copiedUrl = ref<string | null>(null);
+const copyErrorUrl = ref<string | null>(null);
 const sharedUrl = ref<string | null>(null);
 const payoutFeedback = ref<PayoutFeedback | null>(null);
 const activeSection = ref<PartnerSection>('links');
@@ -243,6 +244,10 @@ function formatDate(value: string | null): string {
 }
 
 async function copyUrl(url: string): Promise<void> {
+    copiedUrl.value = null;
+    copyErrorUrl.value = null;
+    sharedUrl.value = null;
+
     try {
         let copied = false;
 
@@ -279,14 +284,18 @@ async function copyUrl(url: string): Promise<void> {
         }, 1800);
     } catch {
         copiedUrl.value = null;
+        copyErrorUrl.value = url;
     }
 }
 
 async function shareLink(link: { name: string; shareUrl: string }): Promise<void> {
+    copyErrorUrl.value = null;
+
     if (navigator.share) {
         try {
             await navigator.share({ title: link.name, url: link.shareUrl });
             sharedUrl.value = link.shareUrl;
+            copyErrorUrl.value = null;
             window.setTimeout(() => {
                 if (sharedUrl.value === link.shareUrl) {
                     sharedUrl.value = null;
@@ -390,6 +399,14 @@ function cancelPayout(payout: Payout): void {
                 {{ sharedUrl === props.referrals.link ? t('referrals.shared') : t('referrals.sharePersonal') }}
               </button>
             </div>
+            <p
+              v-if="copyErrorUrl === props.referrals.link"
+              class="portal-copy text-[var(--portal-color-danger)]"
+              role="alert"
+              aria-live="assertive"
+            >
+              {{ t('referrals.copyFailed') }}
+            </p>
           </div>
         </section>
 
@@ -664,6 +681,14 @@ function cancelPayout(payout: Payout): void {
                   {{ sharedUrl === link.shareUrl ? t('referrals.shared') : t('referrals.share') }}
                 </button>
               </div>
+              <p
+                v-if="copyErrorUrl === link.shareUrl"
+                class="portal-copy text-[var(--portal-color-danger)]"
+                role="alert"
+                aria-live="assertive"
+              >
+                {{ t('referrals.copyFailed') }}
+              </p>
             </article>
           </div>
           <p

@@ -1477,6 +1477,62 @@ test('home keeps one primary booking action and ordinary referrals remain availa
     await expect(page.getByTestId('partner-links')).toHaveCount(0);
 });
 
+test('ordinary referral copy reports clipboard failure and recovers on retry', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    let referralPosts = 0;
+    page.on('request', (request) => {
+        if (request.method() === 'POST' && new URL(request.url()).pathname === '/portal/referrals') {
+            referralPosts += 1;
+        }
+    });
+
+    await page.goto('/portal/referrals');
+    const referral = page.getByTestId('ordinary-referral');
+    const copyButton = referral.getByTestId('ordinary-referral-copy');
+    const copyError = referral.getByRole('alert');
+
+    await page.evaluate(() => {
+        Object.defineProperty(Navigator.prototype, 'clipboard', {
+            configurable: true,
+            get: () => ({ writeText: async () => { throw new DOMException('blocked', 'NotAllowedError'); } }),
+        });
+        Object.defineProperty(document, 'execCommand', { configurable: true, value: () => false });
+    });
+    await copyButton.click();
+    await expect(copyError).toHaveText('Скопируйте ссылку вручную из текста выше.');
+    await expect(copyButton).toHaveText('Скопировать');
+
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(copyError).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+    }
+
+    await page.evaluate(() => {
+        Object.defineProperty(Navigator.prototype, 'clipboard', {
+            configurable: true,
+            get: () => ({ writeText: async () => { document.documentElement.dataset.clipboardWrite = 'done'; } }),
+        });
+    });
+    await copyButton.click();
+    await expect(copyButton).toHaveText('Ссылка скопирована');
+    await expect(copyError).toHaveCount(0);
+    await expect(page.locator('html')).toHaveAttribute('data-clipboard-write', 'done');
+    await expect.poll(() => referralPosts).toBe(0);
+
+    await page.reload();
+    await expect(copyButton).toHaveText('Скопировать');
+    await expect(copyError).toHaveCount(0);
+    await expect.poll(() => referralPosts).toBe(0);
+});
+
 test('new client can open personal diagnostics and gets a clear empty tests result', async ({ page }) => {
     const fixture = createBookingFixture();
     await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
@@ -1663,8 +1719,25 @@ test('CRM-assigned partner can manage multiple campaign links', async ({ page })
         await expect(link.getByText('—', { exact: true })).toHaveCount(1);
     }
 
-    await instagramLink.getByRole('button', { name: 'Скопировать', exact: true }).click();
+    const instagramCopy = instagramLink.getByRole('button', { name: 'Скопировать', exact: true });
+    await page.evaluate(() => {
+        Object.defineProperty(Navigator.prototype, 'clipboard', {
+            configurable: true,
+            get: () => ({ writeText: async () => { throw new DOMException('blocked', 'NotAllowedError'); } }),
+        });
+        Object.defineProperty(document, 'execCommand', { configurable: true, value: () => false });
+    });
+    await instagramCopy.click();
+    await expect(instagramLink.getByRole('alert')).toHaveText('Скопируйте ссылку вручную из текста выше.');
+    await page.evaluate(() => {
+        Object.defineProperty(Navigator.prototype, 'clipboard', {
+            configurable: true,
+            get: () => ({ writeText: async () => { document.documentElement.dataset.clipboardWrite = 'done'; } }),
+        });
+    });
+    await instagramCopy.click();
     await expect(instagramLink.getByRole('button', { name: 'Ссылка скопирована', exact: true })).toBeVisible();
+    await expect(instagramLink.getByRole('alert')).toHaveCount(0);
     await instagramLink.getByRole('button', { name: 'Поделиться', exact: true }).click();
 
     for (const width of [1440, 1280, 1024, 768, 390, 360, 320]) {
