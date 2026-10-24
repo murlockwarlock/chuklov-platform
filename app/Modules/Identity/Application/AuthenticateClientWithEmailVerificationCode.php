@@ -84,8 +84,8 @@ class AuthenticateClientWithEmailVerificationCode
             }
 
             if ($failureCode !== null) {
-                $failureChallengeId = $challenge instanceof ClientEmailAuthChallenge ? (int) $challenge->getKey() : null;
-                $failureAttempt = $challenge instanceof ClientEmailAuthChallenge ? (int) $challenge->attempts : 0;
+                $failureChallengeId = (int) $challenge->getKey();
+                $failureAttempt = (int) $challenge->attempts;
 
                 return null;
             }
