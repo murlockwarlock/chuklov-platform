@@ -648,24 +648,26 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 DB_PORT: '5432',
                 DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
-        DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
-        PLAYWRIGHT_CONFIRMED_NAME: normalizedOptions.confirmedName ? '1' : '0',
-        PLAYWRIGHT_ROADMAP: normalizedOptions.roadmap ? '1' : '0',
-        PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
-        PLAYWRIGHT_CONFIRMED_OFFICE_BOOKING: normalizedOptions.confirmedOfficeBooking ? '1' : '0',
-        PLAYWRIGHT_ONLINE_MEETING: normalizedOptions.onlineMeeting ? '1' : '0',
-        PLAYWRIGHT_BOOKING_WITHIN_CANCELLATION_CUTOFF: normalizedOptions.bookingWithinCancellationCutoff ? '1' : '0',
-        PLAYWRIGHT_MEDICAL_SERVICE: normalizedOptions.medicalService ? '1' : '0',
-        PLAYWRIGHT_BOOKING_DAYS_AHEAD: String(normalizedOptions.daysAhead ?? 1),
-        PLAYWRIGHT_TRACKER: normalizedOptions.tracker ?? '',
-        PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
-        PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
-        PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
-        PLAYWRIGHT_WITH_COMPANION_FAILURE: normalizedOptions.withCompanionFailure ? '1' : '0',
-        PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
-        PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
-        PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
-        PLAYWRIGHT_HOME_VISIT: normalizedOptions.homeVisit ? '1' : '0',
+                DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+                MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                    ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
+                PLAYWRIGHT_CONFIRMED_NAME: normalizedOptions.confirmedName ? '1' : '0',
+                PLAYWRIGHT_ROADMAP: normalizedOptions.roadmap ? '1' : '0',
+                PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
+                PLAYWRIGHT_CONFIRMED_OFFICE_BOOKING: normalizedOptions.confirmedOfficeBooking ? '1' : '0',
+                PLAYWRIGHT_ONLINE_MEETING: normalizedOptions.onlineMeeting ? '1' : '0',
+                PLAYWRIGHT_BOOKING_WITHIN_CANCELLATION_CUTOFF: normalizedOptions.bookingWithinCancellationCutoff ? '1' : '0',
+                PLAYWRIGHT_MEDICAL_SERVICE: normalizedOptions.medicalService ? '1' : '0',
+                PLAYWRIGHT_BOOKING_DAYS_AHEAD: String(normalizedOptions.daysAhead ?? 1),
+                PLAYWRIGHT_TRACKER: normalizedOptions.tracker ?? '',
+                PLAYWRIGHT_WITH_COMPANION_MESSAGES: normalizedOptions.withCompanionMessages ? '1' : '0',
+                PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
+                PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
+                PLAYWRIGHT_WITH_COMPANION_FAILURE: normalizedOptions.withCompanionFailure ? '1' : '0',
+                PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
+                PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
+                PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
+                PLAYWRIGHT_HOME_VISIT: normalizedOptions.homeVisit ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -2520,7 +2522,7 @@ test('September 26 paid focus stays on home through completion and correction an
     const invalidStatus = page.waitForResponse((response) => response.request().method() === 'POST'
         && response.url().includes('/portal/tracker/tasks/')
         && response.status() >= 300 && response.status() < 400);
-    await completed.check();
+    await completed.click();
     await invalidStatus;
     await expect(page.getByRole('alert')).toHaveText('Не удалось определить отметку задачи. Выберите состояние и попробуйте снова.');
     await expect(completed).not.toBeChecked();
@@ -2535,7 +2537,7 @@ test('September 26 paid focus stays on home through completion and correction an
 
         await route.continue();
     });
-    await completed.check();
+    await completed.click();
     await expect(page.getByRole('alert')).toHaveText('Эта задача больше недоступна. Мы обновили её статус.');
     await expect(completed).not.toBeChecked();
     await expect(page.getByRole('status').filter({ hasText: 'Статус обновлён.' })).toBeVisible();
@@ -2551,7 +2553,7 @@ test('September 26 paid focus stays on home through completion and correction an
         await new Promise((resolve) => setTimeout(resolve, 500));
         await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Unavailable' });
     });
-    await completed.check();
+    await completed.click();
     await expect(page.getByRole('status').filter({ hasText: 'Сохраняем отметку…' })).toBeVisible();
     await expect(completed).toBeDisabled();
     await expect(page.getByRole('alert')).toHaveText('Сервер не сохранил отметку. Проверьте актуальный статус задачи и повторите действие.');
@@ -2568,7 +2570,7 @@ test('September 26 paid focus stays on home through completion and correction an
 
         await route.continue();
     });
-    await completed.check();
+    await completed.click();
     await expect(page.getByRole('alert')).toHaveText('Не удалось связаться с сервером. Проверьте соединение; мы сверим статус, затем можно повторить отметку.');
     await expect(completed).not.toBeChecked();
     await expect(page.getByRole('status').filter({ hasText: 'Статус обновлён.' })).toBeVisible();
