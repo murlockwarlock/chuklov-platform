@@ -704,6 +704,8 @@ Before: **PARTIAL**. After: **NOT VERIFIED**.
 Preserve: Medical authorization; existing encrypted profile/session authorities.
 Missing or pending proof: Exact public/private field audit and negative browser/API proof.
 
+Continuation check on 2026-10-24: read-only staging preflight at 2026-10-24T10:43:10Z confirmed runtime SHA `f8575f0a3f8526f4a94a0dd2d727d70376ffbd19`, health HTTP 200, PostgreSQL 18, Mailpit SMTP/API readiness, and the approved CRM QA identity. Focused local SQLite feature checks on code-equivalent SHA `f8575f0a3f8526f4a94a0dd2d727d70376ffbd19` passed: 59 tests / 335 assertions across `PortalHealthProgressTest.php`, `MedicalSessionTest.php`, `MedicalProfileTest.php`, and `September26MedicalAttachmentTest.php`. These are regression-test PASS results, not direct acceptance evidence; CR-10.1–CR-10.11 remain NOT VERIFIED. The current execution surface still lacks the approved browser controller, and synthetic client 280 remains pending reset through the CRM UI. No staging writes or reset bypass were performed.
+
 ### Source and individual criteria
 
 - CR-10.1: source: «Публичный контур API (доступен клиенту в WebApp и Евгению в CRM):». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
