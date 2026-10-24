@@ -7,11 +7,25 @@ On 2026-10-23, `/Users/ivankorakin/Downloads/Изменения_в_CRM_Чукл�
 
 ## Owner-directed final pass — 2026-10-24
 
-**Overall result: FAIL / INCOMPLETE — machine-verifiable scope remains. PR #60 is Draft/Open and unmerged.** The denominator remains 29 parent requirements / 226 literal leaves. Current direct/automated evidence covers CR-02.1–.5/.7, CR-03.1–.4, CR-04.1–.7, CR-05.1–.5/.8–.15, CR-06.1–.3, CR-07.1–.17/.20, CR-08.1–.9, CR-09.1–.9, CR-10.1–.11, CR-11.1–.5, CR-13.1–.8, L2-05.1–.7, L2-06.1–.14 and L2-07.1–.4; criterion-specific tests, runs and the CR-13.3 staging chain are recorded below. CR-09 projection checks used product candidate 26d654b8cfb92c4dfded29b732789762703224d8, with its form-validation correction journey rerun on staging SHA f8575f0a3f8526f4a94a0dd2d727d70376ffbd19. PostgreSQL staging is version 18. CR-11 did not deploy or mutate staging; the CR-13.3 follow-up used synthetic QA scheduling records through CRM and removed the temporary availability through CRM while retaining the cancelled booking and audit/delivery history. CR-09 synthetic account cleanup remains pending. The 15 prior objective blockers plus CR-12.1–.22 under the accepted owner/legal scope decision total 37 BLOCKED leaves. Current status is 182 VERIFIED, 0 FAIL, 37 BLOCKED, 7 other machine-verifiable leaves remaining, and 0 PARTIAL. Acceptance remains FAIL / INCOMPLETE; owner acceptance is NOT RUN.
+**Overall result: FAIL / INCOMPLETE — 37 objectively blocked leaves remain; no machine-verifiable criterion remains. PR #60 is Draft/Open and unmerged.** The denominator remains 29 parent requirements / 226 literal leaves. The final technical batch closed L2-08.2, L2-09.2–.4, L2-10.2, L2-11.2 and L2-12.2 with hosted PostgreSQL and Chromium/WebKit evidence recorded below. Current status is 189 VERIFIED, 0 FAIL, 37 BLOCKED, 0 machine-verifiable remaining, and 0 PARTIAL/NOT VERIFIED. The blockers remain the 15 prior objective blockers plus CR-12.1–.22 under the accepted owner/legal scope decision. CR-09 synthetic account cleanup and client 280 QA hygiene remain pending; neither is counted as a product requirement blocker. Acceptance remains FAIL / INCOMPLETE; owner acceptance is NOT RUN.
 
 L2-07.3–L2-07.4 closed in a bounded automated checkpoint from PR head `83213588009ab085d74690de0868d5e67453491c`. The gift-certificate runtime paths are unchanged from staging `f8575f0a3f8526f4a94a0dd2d727d70376ffbd19`; no staging deploy or mutation was needed. Hosted E2E run `40122316297` passed the existing certificate journey in desktop Chromium and mobile WebKit (2/2) on exact test SHA `20abf2be0998fb990a69d19efcc4cd78fb177ba6`; the workflow PostgreSQL 18 fixture completed a synthetic `StartPurchaseCheckout` → `RecordManualPayment` → fulfillment/issue chain, with no real payment/provider call. The browser journey proved buyer nominal/currency and reload, transfer URL with token only in the fragment and no query, unchanged ownership/balance while pending, authenticated recipient claim, residual 40 USD after a 60 USD redemption, finance settlement, and cabinet/finance persistence after reload. Read-only PostgreSQL readback independently matched purchase/fulfillment, single issuance, claim token hash/status, holder, movements, redemption-linked financial ledger entry, obligation reconciliation, and movement-derived balance.
 
 Hosted PostgreSQL run `40122089184` (source SHA `ebce2cb93adf95b216ea147b2ccc2ee8be74ec41`) executed and passed `GiftCertificateTest::test_transfer_claim_is_single_use_hashed_and_organization_scoped` and `GiftCertificateTest::test_partial_full_idempotent_redemption_and_correction_restore_both_balances`. Its overall CI conclusion is FAILURE, not PASS: Quality later failed repository-wide Pint and PHPStan findings outside this E2E-only diff. Existing `GiftCertificateConcurrencyTest` ran in PostgreSQL job `Integration concurrency` of run `40085744571` on application SHA `f8575f0a3f8526f4a94a0dd2d727d70376ffbd19`; the job passed, while that overall CI run also remains FAILURE due Quality. The certificate/claim/redemption implementation is unchanged between that application SHA and the current candidate. The existing browser journey does not replay the claim URL; single-use/replay and correction are directly protected by the named PostgreSQL Feature assertions and PostgreSQL concurrency tests.
+
+### Final automated batch — 2026-10-25
+
+The final seven machine-verifiable leaves are VERIFIED. This batch changed tests only; it did not change product runtime code, deploy staging, mutate staging data, send a real Telegram message, or charge a payment. Staging remains at its last confirmed runtime SHA `f8575f0a3f8526f4a94a0dd2d727d70376ffbd19`.
+
+| Requirement | Direct regression evidence | Hosted evidence and result |
+| --- | --- | --- |
+| L2-08.2 | `AnalyticsProjectionTest::test_metrics_reconcile_to_source_records_and_ignore_another_organization` proves overall acquisition totals and source counts from PostgreSQL; `ReferralPartnerStatisticsTest::test_overview_distinguishes_link_visits_registrations_and_paid_clients` proves partner/campaign visits, registrations and paid-client aggregates. The CRM E2E seeds two synthetic referred clients, opens «Аналитика», observes nonzero overall/new-client and «Реферальный переход» values, reloads, then checks the individual partner/campaign/client results and the 320px action menu. | Focused PostgreSQL Feature run `40128050039`, exact SHA `6fd82971a7392329c007ca6ad24f47f5e6a5b7a8`: aggregate test passed (1 test / 31 assertions). Focused PostgreSQL Feature run `40127747090`, same SHA: referral partner statistics passed as part of 5 tests / 95 assertions. Hosted E2E `40127491596`, exact SHA `6fd82971a7392329c007ca6ad24f47f5e6a5b7a8`, passed 2/2 (desktop Chromium and mobile WebKit). |
+| L2-09.2–.4 | `MilestoneFourCrmBookingTest::test_crm_form_shows_backdated_warning_and_requires_confirmation` checks warning and confirmation validation. `tests/e2e/crm.spec.ts::staff can create a backdated booking from the ordinary availability form` checks the localized warning, red emphasis, explicit confirmation, successful save, reload/reopen, and PostgreSQL UTC instant against the organization timezone. | Focused PostgreSQL Feature run `40127747090`, exact SHA `6fd82971a7392329c007ca6ad24f47f5e6a5b7a8`, passed this test within the 5-test / 95-assertion selection. E2E `40125747801` passed this journey in desktop Chromium and mobile WebKit on SHA `eb3326b37058fbdb749bbfe169e578e0a777c2ec`. No browser-offset adjustment was applied twice. |
+| L2-10.2 | `tests/e2e/crm.spec.ts::staff can open a verified client Telegram username from the CRM card` clicks the verified username link, intercepts the actual `t.me` navigation, checks target/URL and persistence after reload. No message is sent. Current implementation exposes the supported username link; no numeric-ID fallback is claimed or invented. | E2E `40125747801` passed in desktop Chromium and mobile WebKit on SHA `eb3326b37058fbdb749bbfe169e578e0a777c2ec`. |
+| L2-11.2 | `CrmUxRemediationTest::test_standard_create_actions_use_save_copy` protects shared «Сохранить» / «Сохранить и создать ещё» labels. The 23 concrete create pages found in the repository inherit `LocalizedCreateRecord`. `tests/e2e/crm.spec.ts::service create actions save buffers, reset for another service, and reopen persisted values` exercises both actions, persistence, clean-form reset and reopen. | Focused PostgreSQL Feature run `40127747090`, exact SHA `6fd82971a7392329c007ca6ad24f47f5e6a5b7a8`, passed this test within the 5-test / 95-assertion selection. E2E `40125747801` passed the representative shared-action flow in desktop Chromium and mobile WebKit on SHA `eb3326b37058fbdb749bbfe169e578e0a777c2ec`. |
+| L2-12.2 | `ServiceCatalogFormTest::test_service_medical_profile_requirement_is_created_and_persisted_through_edit_and_reopen` asserts distinct office/home/online buffer values in PostgreSQL and verifies the values through edit/reopen. `MilestoneFourSchedulingTest::test_per_format_buffers_change_authoritative_availability_and_persisted_occupancy` verifies persisted values, per-format blocking boundaries, available next slot and cancellation release. The service-form E2E saves and reopens distinct values. | Focused PostgreSQL Feature run `40127747090`, exact SHA `6fd82971a7392329c007ca6ad24f47f5e6a5b7a8`, passed both tests within the 5-test / 95-assertion selection. E2E `40125747801` passed the form journey in desktop Chromium and mobile WebKit on SHA `eb3326b37058fbdb749bbfe169e578e0a777c2ec`. |
+
+Hosted focused PostgreSQL tests on exact candidate SHA `6fd82971a7392329c007ca6ad24f47f5e6a5b7a8` passed in runs `40127747090` (5 tests / 95 assertions) and `40128050039` (1 test / 31 assertions). Both CI workflow conclusions are **FAILURE**, not PASS: the `Quality` job failed on two Pint findings in untouched `ReadClinicalAiClientSummary.php` and `2026_09_12_095000_allow_knowledge_ingestion_scenario_events.php`, plus existing PHPStan findings in untouched files; frontend lint/typecheck/build and Composer/npm audits passed. The CI job selection skipped the other integration/privacy/Docker jobs. These findings do not touch this batch's E2E-only changes. The first attempt `40127306547` on `2814ff1c` failed because a PHP namespace in the Playwright fixture was not escaped inside its JavaScript template literal; the test-only correction is `6fd82971`, with no product defect. Final referral E2E `40127491596` on exact candidate SHA `6fd82971` passed 2/2 desktop Chromium/mobile WebKit. Earlier CI run `40125228727` is not cited as Feature evidence: its Quality job failed and the other CI jobs were skipped.
 
 The CR-05 checkpoint used normal synthetic Portal email verification through staging Mailpit and a separate approved QA CRM session. PostgreSQL staging reads confirmed its focus entitlement/task, task-entry transitions, booking status and audit rows. Chromium and WebKit exercised the Health Action projections, diagnostics and Focus actions, invalid-status/HTTP/network failures, completion/correction, reload and Back/Forward at widths 320/360/390/768/1024/1440. Successful focus transitions wrote audit events `4260` and `4261`; browser-side failure injections did not reach the backend and are not represented as server-log evidence. Synthetic clients and related fixtures were removed after a zero-finance/medical/invitation preflight; reset audit was retained.
 
@@ -1066,107 +1080,107 @@ Evidence: pending candidate SHA, test/run ID, synthetic record references, scree
 Статистика по рекомендациям, чтобы оценить эффективность в целом и конкретными пользователями
 
 Source: LIST 2, №8.
-Current evidence status: 1 VERIFIED, 0 FAIL, 1 remaining. .2 lacks PostgreSQL proof of the full aggregate and browser assertion of nonzero overall/per-user statistics.
+Current evidence status: 2 VERIFIED, 0 FAIL, 0 remaining.
 Preserve: Existing referral statistics.
-Missing or pending proof: Overall and client-specific counts/authoritative outcomes regression.
+Evidence: PostgreSQL aggregate and hosted Chromium/WebKit journey are recorded in the Final automated batch table above.
 
 ### Source and individual criteria
 
 - L2-08.1: source: «26.09.26 (8)». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **VERIFIED**. Reconciliation: Source-only metadata, verified against LIST 2 SHA-256 20a869450b7c5bac032eecee389d5a240012f434d9a2e462a4c2637926f24e0d; no separate product behavior is implied.
-- L2-08.2: source: «Статистика по рекомендациям, чтобы оценить эффективность в целом и конкретными пользователями». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
+- L2-08.2: source: «Статистика по рекомендациям, чтобы оценить эффективность в целом и конкретными пользователями». **VERIFIED**. Hosted PostgreSQL exact-source aggregate and partner-statistics tests (`40128050039`, `40127747090`) plus exact-candidate Chromium/WebKit dashboard-to-partner E2E (`40127491596`) prove nonzero overall and individual values, reload persistence, campaign/referee rows and the 320px action menu.
 
 Client outcome: Статистика по рекомендациям, чтобы оценить эффективность в целом и конкретными пользователями, with exact source wording, fields, order and action destination above.
 CRM outcome: same authorized business facts, persisted after reopening; no hidden duplicate or divergent authority.
 Backend/DB/notification outcome: existing organization-scoped authority; atomic mutation/audit where required, UTC instants and explicit notification transport. Clinical plaintext excluded from general logs/audit/storage.
-Positive staging: real action, persisted result, counterpart view and reload for every numbered criterion above.
-Negative staging: invalid/missing input, wrong actor/tenant/client, duplicate and stale operation; cancel/correct and provider retry/failure for stateful flows.
-Evidence: pending candidate SHA, test/run ID, synthetic record references, screenshots kept outside Git.
+Automated/browser acceptance: criterion-level PostgreSQL and hosted Chromium/WebKit evidence is listed above; staging was not repeated because no staging-specific integration gap remained.
+Relevant negative/transition behavior: explicit backdated confirmation, actual Telegram link navigation, create-form reset/reopen, and cancellation release at buffer boundaries are asserted where applicable.
+Evidence: direct automated proof in the Final automated batch table above; no staging-only gap remained.
 
 ## L2-09
 
 При создании новой записи на приём
 
 Source: LIST 2, №9.
-Current evidence status: 1 VERIFIED, 0 FAIL, 3 remaining. .2–.4 need current hosted Playwright proof of backdated creation, exact warning and red presentation.
+Current evidence status: 4 VERIFIED, 0 FAIL, 0 remaining.
 Preserve: Existing backdated confirmation in BookingForm.
-Missing or pending proof: Exact red warning and mandatory confirmation direct/UI proof.
+Evidence: Hosted PostgreSQL timestamp and Chromium/WebKit warning/confirmation/reload journey are recorded in the Final automated batch table above.
 
 ### Source and individual criteria
 
 - L2-09.1: source: «26.09.26 (9)». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **VERIFIED**. Reconciliation: Source-only metadata, verified against LIST 2 SHA-256 20a869450b7c5bac032eecee389d5a240012f434d9a2e462a4c2637926f24e0d; no separate product behavior is implied.
-- L2-09.2: source: «При создании новой записи на приём». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
-- L2-09.3: source: ««Внимание\! Вы создаёте запись задним числом: 30.09.2026 04:30.»». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
-- L2-09.4: source: «Надпись сделать красным шрифтом». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
+- L2-09.2: source: «При создании новой записи на приём». **VERIFIED**. Ordinary availability form creates a backdated booking after the warning and explicit confirmation; persisted organization-local time survives reload/reopen.
+- L2-09.3: source: ««Внимание\! Вы создаёте запись задним числом: 30.09.2026 04:30.»». **VERIFIED**. Browser asserts the exact localized warning form with the selected date/time and rejects submission without confirmation.
+- L2-09.4: source: «Надпись сделать красным шрифтом». **VERIFIED**. Hosted Chromium and WebKit assert visible red emphasis on the warning.
 
 Client outcome: При создании новой записи на приём  , with exact source wording, fields, order and action destination above.
 CRM outcome: same authorized business facts, persisted after reopening; no hidden duplicate or divergent authority.
 Backend/DB/notification outcome: existing organization-scoped authority; atomic mutation/audit where required, UTC instants and explicit notification transport. Clinical plaintext excluded from general logs/audit/storage.
-Positive staging: real action, persisted result, counterpart view and reload for every numbered criterion above.
-Negative staging: invalid/missing input, wrong actor/tenant/client, duplicate and stale operation; cancel/correct and provider retry/failure for stateful flows.
-Evidence: pending candidate SHA, test/run ID, synthetic record references, screenshots kept outside Git.
+Automated/browser acceptance: criterion-level PostgreSQL and hosted Chromium/WebKit evidence is listed above; staging was not repeated because no staging-specific integration gap remained.
+Relevant negative/transition behavior: explicit backdated confirmation, actual Telegram link navigation, create-form reset/reopen, and cancellation release at buffer boundaries are asserted where applicable.
+Evidence: direct automated proof in the Final automated batch table above; staging was not needed for this environment-independent CRM flow.
 
 ## L2-10
 
 Добавить никнейм телеграм в карточке клиента (сейчас есть только telegram id) со ссылкой на тг акк по id или никнейму.
 
 Source: LIST 2, №10.
-Current evidence status: 1 VERIFIED, 0 FAIL, 1 remaining. .2 feature identity/link assertions exist; actual browser click/target behavior needs hosted Playwright.
+Current evidence status: 2 VERIFIED, 0 FAIL, 0 remaining.
 Preserve: Verified Telegram presentation in client workspace.
-Missing or pending proof: Username/id link updating from verified identity regression.
+Evidence: Hosted browser click/target/reload proof for the supported verified-username link is recorded in the Final automated batch table above.
 
 ### Source and individual criteria
 
 - L2-10.1: source: «26.09.26 (10)». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **VERIFIED**. Reconciliation: Source-only metadata, verified against LIST 2 SHA-256 20a869450b7c5bac032eecee389d5a240012f434d9a2e462a4c2637926f24e0d; no separate product behavior is implied.
-- L2-10.2: source: «Добавить никнейм телеграм в карточке клиента (сейчас есть только telegram id) со ссылкой на тг акк по id или никнейму.». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
+- L2-10.2: source: «Добавить никнейм телеграм в карточке клиента (сейчас есть только telegram id) со ссылкой на тг акк по id или никнейму.». **VERIFIED**. Hosted browser opens the actual verified-username Telegram link, checks the intercepted `t.me` target and confirms it persists after reload. The current accepted implementation does not provide an ID-only link fallback; no fallback behavior is claimed.
 
 Client outcome: Добавить никнейм телеграм в карточке клиента (сейчас есть только telegram id) со ссылкой на тг акк по id или никнейму., with exact source wording, fields, order and action destination above.
 CRM outcome: same authorized business facts, persisted after reopening; no hidden duplicate or divergent authority.
 Backend/DB/notification outcome: existing organization-scoped authority; atomic mutation/audit where required, UTC instants and explicit notification transport. Clinical plaintext excluded from general logs/audit/storage.
-Positive staging: real action, persisted result, counterpart view and reload for every numbered criterion above.
-Negative staging: invalid/missing input, wrong actor/tenant/client, duplicate and stale operation; cancel/correct and provider retry/failure for stateful flows.
-Evidence: pending candidate SHA, test/run ID, synthetic record references, screenshots kept outside Git.
+Automated/browser acceptance: criterion-level PostgreSQL and hosted Chromium/WebKit evidence is listed above; staging was not repeated because no staging-specific integration gap remained.
+Relevant negative/transition behavior: explicit backdated confirmation, actual Telegram link navigation, create-form reset/reopen, and cancellation release at buffer boundaries are asserted where applicable.
+Evidence: direct automated proof in the Final automated batch table above; no actual Telegram message or recipient was involved.
 
 ## L2-11
 
 Переименовать везде кнопки с «Создать» и «Создать и создать ещё» в «Сохранить»и «Сохранить и создать ещё»
 
 Source: LIST 2, №11.
-Current evidence status: 1 VERIFIED, 0 FAIL, 1 remaining. .2 test only inspects CreateBroadcastCampaign and does not prove labels across all create forms.
+Current evidence status: 2 VERIFIED, 0 FAIL, 0 remaining.
 Preserve: Existing customized create-page labels.
-Missing or pending proof: Every create/create-another label inventory and submit behavior.
+Evidence: Shared-action regression, repository inventory and representative save/reset/reopen browser journey are recorded in the Final automated batch table above.
 
 ### Source and individual criteria
 
 - L2-11.1: source: «26.09.26 (11)». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **VERIFIED**. Reconciliation: Source-only metadata, verified against LIST 2 SHA-256 20a869450b7c5bac032eecee389d5a240012f434d9a2e462a4c2637926f24e0d; no separate product behavior is implied.
-- L2-11.2: source: «Переименовать везде кнопки с «Создать» и «Создать и создать ещё» в «Сохранить»и «Сохранить и создать ещё»». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
+- L2-11.2: source: «Переименовать везде кнопки с «Создать» и «Создать и создать ещё» в «Сохранить»и «Сохранить и создать ещё»». **VERIFIED**. The shared `LocalizedCreateRecord` labels are regression-protected; all 23 concrete create pages use that abstraction, and browser acceptance performs both actions, validates reset/persistence, and reopens the saved entity.
 
 Client outcome: Переименовать везде кнопки с «Создать» и «Создать и создать ещё» в «Сохранить»и «Сохранить и создать ещё», with exact source wording, fields, order and action destination above.
 CRM outcome: same authorized business facts, persisted after reopening; no hidden duplicate or divergent authority.
 Backend/DB/notification outcome: existing organization-scoped authority; atomic mutation/audit where required, UTC instants and explicit notification transport. Clinical plaintext excluded from general logs/audit/storage.
-Positive staging: real action, persisted result, counterpart view and reload for every numbered criterion above.
-Negative staging: invalid/missing input, wrong actor/tenant/client, duplicate and stale operation; cancel/correct and provider retry/failure for stateful flows.
-Evidence: pending candidate SHA, test/run ID, synthetic record references, screenshots kept outside Git.
+Automated/browser acceptance: criterion-level PostgreSQL and hosted Chromium/WebKit evidence is listed above; staging was not repeated because no staging-specific integration gap remained.
+Relevant negative/transition behavior: explicit backdated confirmation, actual Telegram link navigation, create-form reset/reopen, and cancellation release at buffer boundaries are asserted where applicable.
+Evidence: direct automated proof in the Final automated batch table above; no per-resource duplicate journey was needed because the create pages share one action implementation.
 
 ## L2-12
 
 В каждой услуге добавить «время перерыва после записи». Для каждого формата услуги этот период может быть свой.
 
 Source: LIST 2, №12.
-Current evidence status: 1 VERIFIED, 0 FAIL, 1 remaining. .2 has an SQLite occupancy regression; service-form persistence and PostgreSQL per-format semantics are not directly tested.
+Current evidence status: 2 VERIFIED, 0 FAIL, 0 remaining.
 Preserve: Service.buffer_minutes; CalculateAvailability; occupancy.
-Missing or pending proof: Per-format authoritative buffers and legacy fallback; race proof.
+Evidence: PostgreSQL per-format persistence/availability boundaries and hosted service-form save/reopen are recorded in the Final automated batch table above.
 
 ### Source and individual criteria
 
 - L2-12.1: source: «26.09.26 (12)». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **VERIFIED**. Reconciliation: Source-only metadata, verified against LIST 2 SHA-256 20a869450b7c5bac032eecee389d5a240012f434d9a2e462a4c2637926f24e0d; no separate product behavior is implied.
-- L2-12.2: source: «В каждой услуге добавить «время перерыва после записи». Для каждого формата услуги этот период может быть свой.». Acceptance: reproduce this exact stated outcome in the applicable client/CRM flow; record visible result and authoritative state. **NOT VERIFIED**.
+- L2-12.2: source: «В каждой услуге добавить «время перерыва после записи». Для каждого формата услуги этот период может быть свой.». **VERIFIED**. PostgreSQL verifies distinct office/home/online values, occupancy through each buffer boundary, next-slot availability and cancellation release; browser save/reopen confirms persisted service-form values.
 
 Client outcome: В каждой услуге добавить «время перерыва после записи». Для каждого формата услуги этот период может быть свой., with exact source wording, fields, order and action destination above.
 CRM outcome: same authorized business facts, persisted after reopening; no hidden duplicate or divergent authority.
 Backend/DB/notification outcome: existing organization-scoped authority; atomic mutation/audit where required, UTC instants and explicit notification transport. Clinical plaintext excluded from general logs/audit/storage.
-Positive staging: real action, persisted result, counterpart view and reload for every numbered criterion above.
-Negative staging: invalid/missing input, wrong actor/tenant/client, duplicate and stale operation; cancel/correct and provider retry/failure for stateful flows.
-Evidence: pending candidate SHA, test/run ID, synthetic record references, screenshots kept outside Git.
+Automated/browser acceptance: criterion-level PostgreSQL and hosted Chromium/WebKit evidence is listed above; staging was not repeated because no staging-specific integration gap remained.
+Relevant negative/transition behavior: explicit backdated confirmation, actual Telegram link navigation, create-form reset/reopen, and cancellation release at buffer boundaries are asserted where applicable.
+Evidence: direct automated proof in the Final automated batch table above; SQLite-only occupancy evidence was not used for this status.
 
 ## L2-13
 
