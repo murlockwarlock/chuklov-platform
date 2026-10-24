@@ -158,6 +158,11 @@ class MilestoneFourSchedulingTest extends TestCase
                 CarbonImmutable::parse((string) DB::table('bookings')->where('id', $booking->getKey())->value('blocking_ends_at'), 'UTC')->toIso8601String(),
             );
 
+            if ($format === VisitFormat::HomeVisit) {
+                $booking = app(ApproveHomeVisitBooking::class)->handle($admin, $booking);
+                self::assertSame(BookingStatus::Confirmed, $booking->status);
+            }
+
             $afterBooking = app(CalculateAvailability::class)->forStaff(
                 $admin,
                 $specialist->id,
