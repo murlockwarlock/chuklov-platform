@@ -27,6 +27,7 @@ use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Application\ApproveHomeVisitBooking;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CalculateAvailability;
+use App\Modules\Scheduling\Application\CancelBooking;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Application\CreateScheduleException;
 use App\Modules\Scheduling\Application\CreateUnavailablePeriod;
@@ -102,18 +103,87 @@ class MilestoneFourSchedulingTest extends TestCase
     public function test_per_format_buffers_change_authoritative_availability_and_persisted_occupancy(): void
     {
         [, $admin, $specialist, $service] = $this->fixture('UTC');
-        $service->update(['buffer_office_minutes' => 30, 'buffer_online_minutes' => 0]);
-        self::assertSame(15, $service->bufferMinutesForFormat('home'));
+        $service->update([
+            'buffer_minutes' => 0,
+            'buffer_office_minutes' => 30,
+            'buffer_home_minutes' => 20,
+            'buffer_online_minutes' => 0,
+        ]);
+        $service->refresh();
+        self::assertSame([
+            VisitFormat::Office->value => 30,
+            VisitFormat::HomeVisit->value => 20,
+            VisitFormat::Online->value => 0,
+        ], [
+            VisitFormat::Office->value => $service->bufferMinutesForFormat(VisitFormat::Office->value),
+            VisitFormat::HomeVisit->value => $service->bufferMinutesForFormat(VisitFormat::HomeVisit->value),
+            VisitFormat::Online->value => $service->bufferMinutesForFormat(VisitFormat::Online->value),
+        ]);
+        self::assertSame([30, 20, 0], array_map(
+            static fn (string $field): int => (int) DB::table('services')->where('id', $service->getKey())->value($field),
+            ['buffer_office_minutes', 'buffer_home_minutes', 'buffer_online_minutes'],
+        ));
         app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [['weekday' => 1, 'start_time' => '09:00', 'end_time' => '12:00']]);
-        foreach ([VisitFormat::Office, VisitFormat::Online] as $format) {
+
+        foreach ([
+            VisitFormat::Office->value => [VisitFormat::Office, 30],
+            VisitFormat::HomeVisit->value => [VisitFormat::HomeVisit, 20],
+            VisitFormat::Online->value => [VisitFormat::Online, 0],
+        ] as [$format, $bufferMinutes]) {
             $result = app(CalculateAvailability::class)->forStaff($admin, $specialist->id, $service->id, '2026-03-30', '2026-03-30', $format, 'UTC');
-            self::assertSame($format === VisitFormat::Office ? '2026-03-30T10:30:00+00:00' : '2026-03-30T10:00:00+00:00', $result->slots[0]->blockingEndsAt->toIso8601String());
+            self::assertSame('2026-03-30T09:00:00+00:00', $result->slots[0]->startsAt->toIso8601String());
+            self::assertSame(
+                CarbonImmutable::create(2026, 3, 30, 10, 0, 0, 'UTC')->addMinutes($bufferMinutes)->toIso8601String(),
+                $result->slots[0]->blockingEndsAt->toIso8601String(),
+            );
+
+            $client = Client::factory()->forOrganization($specialist->organization)->create();
+            $booking = app(CreateBooking::class)->handle(
+                actor: $admin,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: CarbonImmutable::parse('2026-03-30T09:00:00Z'),
+                format: $format,
+                location: $format === VisitFormat::HomeVisit ? 'Client destination' : null,
+                locationArea: $format === VisitFormat::HomeVisit ? 'Almaty' : null,
+                idempotencyKey: 'per-format-buffer-'.$format->value,
+            );
+            self::assertSame(
+                CarbonImmutable::create(2026, 3, 30, 10, 0, 0, 'UTC')->addMinutes($bufferMinutes)->toIso8601String(),
+                $booking->refresh()->blockingEndsAtUtc()->toIso8601String(),
+            );
+            self::assertSame(
+                CarbonImmutable::create(2026, 3, 30, 10, 0, 0, 'UTC')->addMinutes($bufferMinutes)->toIso8601String(),
+                CarbonImmutable::parse((string) DB::table('bookings')->where('id', $booking->getKey())->value('blocking_ends_at'), 'UTC')->toIso8601String(),
+            );
+
+            $afterBooking = app(CalculateAvailability::class)->forStaff(
+                $admin,
+                $specialist->id,
+                $service->id,
+                '2026-03-30',
+                '2026-03-30',
+                $format,
+                'UTC',
+            );
+            self::assertSame(
+                CarbonImmutable::create(2026, 3, 30, 10, 0, 0, 'UTC')->addMinutes($bufferMinutes)->toIso8601String(),
+                $afterBooking->slots[0]->startsAt->toIso8601String(),
+            );
+
+            app(CancelBooking::class)->handle($admin, $booking, 'Synthetic buffer acceptance');
+            $afterCancellation = app(CalculateAvailability::class)->forStaff(
+                $admin,
+                $specialist->id,
+                $service->id,
+                '2026-03-30',
+                '2026-03-30',
+                $format,
+                'UTC',
+            );
+            self::assertSame('2026-03-30T09:00:00+00:00', $afterCancellation->slots[0]->startsAt->toIso8601String());
         }
-        $client = Client::factory()->forOrganization($specialist->organization)->create();
-        $booking = app(CreateBooking::class)->handle($admin, $client, $specialist, $service, CarbonImmutable::parse('2026-03-30T09:00:00Z'), VisitFormat::Office);
-        self::assertSame('2026-03-30T10:30:00+00:00', $booking->blockingEndsAtUtc()->toIso8601String());
-        $this->expectException(ValidationException::class);
-        app(CreateBooking::class)->handle($admin, $client, $specialist, $service, CarbonImmutable::parse('2026-03-30T10:00:00Z'), VisitFormat::Online);
     }
 
     public function test_day_off_and_custom_window_exceptions_have_explicit_precedence(): void

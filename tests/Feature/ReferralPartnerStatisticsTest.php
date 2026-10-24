@@ -20,6 +20,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 final class ReferralPartnerStatisticsTest extends TestCase
@@ -67,6 +68,9 @@ final class ReferralPartnerStatisticsTest extends TestCase
         self::assertSame(0, $overview['links'][2]['paidClients']);
         self::assertSame('Instagram', $overview['links'][1]['channel']);
         self::assertSame('Telegram', $overview['links'][2]['channel']);
+        self::assertSame(3, DB::table('referral_link_visits')->where('organization_id', $organization->getKey())->count());
+        self::assertSame(2, ReferralRelationship::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(1, ReferralCommercialEvidence::query()->where('referral_relationship_id', $firstRelationship->getKey())->count());
     }
 
     public function test_overview_marks_only_authoritative_commercial_evidence_as_paid(): void

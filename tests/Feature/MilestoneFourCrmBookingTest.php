@@ -480,6 +480,7 @@ class MilestoneFourCrmBookingTest extends TestCase
                 'party_size' => 1,
             ])
             ->assertFormFieldExists('confirm_backdated')
+            ->assertSee('Внимание')
             ->assertSee('Вы создаёте запись задним числом: 23.03.2026 09:00.')
             ->call('create')
             ->assertHasFormErrors(['confirm_backdated']);

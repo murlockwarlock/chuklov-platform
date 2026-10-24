@@ -69,6 +69,9 @@ final class ServiceCatalogFormTest extends TestCase
         self::assertSame('Доступна для записи', $activeField->getLabel());
         self::assertSame('Когда клиент оплачивает', $paymentRequirementField->getLabel());
         self::assertSame('Требуется медицинская анкета', $requiresMedicalProfileField->getLabel());
+        self::assertSame('Перерыв — кабинет, минут', $page->getSchemaComponent('form.buffer_office_minutes')->getLabel());
+        self::assertSame('Перерыв — выезд, минут', $page->getSchemaComponent('form.buffer_home_minutes')->getLabel());
+        self::assertSame('Перерыв — онлайн, минут', $page->getSchemaComponent('form.buffer_online_minutes')->getLabel());
         $component->assertSet('data.requires_medical_profile', true);
         self::assertSame('Перерыв после приёма, минут', $page->getSchemaComponent('form.buffer_minutes')->getLabel());
         self::assertStringContainsString(
@@ -91,7 +94,10 @@ final class ServiceCatalogFormTest extends TestCase
                 'catalog_type' => CatalogItemType::Service->value,
                 'is_active' => true,
                 'duration_minutes' => 45,
-                'formats' => ['office'],
+                'buffer_office_minutes' => 7,
+                'buffer_home_minutes' => 13,
+                'buffer_online_minutes' => 19,
+                'formats' => ['office', 'home', 'online'],
                 'payment_requirement' => ServicePaymentRequirement::Postpay->value,
             ])
             ->call('create')
@@ -102,17 +108,34 @@ final class ServiceCatalogFormTest extends TestCase
             ->where('name', 'Первичная консультация')
             ->sole();
         self::assertTrue((bool) DB::table('services')->where('id', $defaultService->getKey())->value('requires_medical_profile'));
+        self::assertSame([7, 13, 19], array_map(
+            static fn (string $field): int => (int) DB::table('services')->where('id', $defaultService->getKey())->value($field),
+            ['buffer_office_minutes', 'buffer_home_minutes', 'buffer_online_minutes'],
+        ));
 
         Testable::create(EditService::class, ['record' => $defaultService->getRouteKey()])
             ->assertSet('data.requires_medical_profile', true)
+            ->assertSet('data.buffer_office_minutes', 7)
+            ->assertSet('data.buffer_home_minutes', 13)
+            ->assertSet('data.buffer_online_minutes', 19)
+            ->assertFormFieldVisible('buffer_office_minutes')
+            ->assertFormFieldVisible('buffer_home_minutes')
+            ->assertFormFieldVisible('buffer_online_minutes')
             ->assertFormFieldVisible('requires_medical_profile')
             ->set('data.requires_medical_profile', false)
             ->call('save')
             ->assertHasNoFormErrors();
 
         self::assertFalse((bool) DB::table('services')->where('id', $defaultService->getKey())->value('requires_medical_profile'));
+        self::assertSame([7, 13, 19], array_map(
+            static fn (string $field): int => (int) DB::table('services')->where('id', $defaultService->getKey())->value($field),
+            ['buffer_office_minutes', 'buffer_home_minutes', 'buffer_online_minutes'],
+        ));
         Testable::create(EditService::class, ['record' => $defaultService->getRouteKey()])
             ->assertSet('data.requires_medical_profile', false)
+            ->assertSet('data.buffer_office_minutes', 7)
+            ->assertSet('data.buffer_home_minutes', 13)
+            ->assertSet('data.buffer_online_minutes', 19)
             ->assertFormFieldVisible('requires_medical_profile');
 
         $disabledServiceForm = Testable::create(CreateService::class);

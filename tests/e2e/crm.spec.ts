@@ -13,14 +13,18 @@ type CrmFixture = {
     partnerName: string;
     serviceName: string;
     specialistName: string;
+    organizationTimezone: string;
     contentSectionId: number;
     contentSectionTitle: string;
     attachmentFilename: string;
     workingLocationName: string;
     bookingStartsAt: string;
     pastBookingDate: string;
+    pastBookingStartsAtUtc: string;
     financeBookingId: number | null;
     partnerProfileId: number | null;
+    referralStatsCampaignName: string | null;
+    telegramUsername: string | null;
     giftProductName: string | null;
 };
 
@@ -74,13 +78,15 @@ async function uploadCrmMedicalReport(page: Page, filename: string, expectedOutc
     await expect(page.getByText('Файл загружен', { exact: true })).toBeVisible();
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
         $email = 'playwright-crm-'.$suffix.'@example.test';
         $password = 'password';
         $payoutFlow = getenv('PLAYWRIGHT_PAYOUT_FLOW') === '1';
+        $referralStatsFlow = getenv('PLAYWRIGHT_REFERRAL_STATS_FLOW') === '1';
+        $telegramLinkFlow = getenv('PLAYWRIGHT_TELEGRAM_LINK_FLOW') === '1';
         $admin = \\App\\Models\\User::factory()->forOrganization($organization)->create(['email' => $email]);
         app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
         \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::query()
@@ -108,6 +114,19 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'CRM Клиент '.$suffix,
         ]);
+        $telegramUsername = null;
+        if ($telegramLinkFlow) {
+            $telegramUsername = 'crm_'.$suffix;
+            \\App\\Modules\\Identity\\Domain\\Models\\ClientChannelIdentity::forceCreate([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $client->getKey(),
+                'channel' => 'telegram',
+                'external_id' => '900'.random_int(1000000, 9999999),
+                'external_username' => $telegramUsername,
+                'verification_status' => \\App\\Modules\\Identity\\Domain\\Enums\\ChannelIdentityStatus::Verified,
+                'verified_at' => now(),
+            ]);
+        }
         $partner = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'CRM Партнёр '.$suffix,
         ]);
@@ -167,6 +186,9 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         $minimumBookingStart = \\Carbon\\CarbonImmutable::now($organizationTimezone)->addMinutes($leadTimeMinutes + 60);
         $bookingStartsAt = $minimumBookingStart->startOfDay()->addDay()->setTime(9, 0);
         $pastBookingDate = \\Carbon\\CarbonImmutable::now($organizationTimezone)->subDay()->toDateString();
+        $pastBookingStartsAtUtc = \\Carbon\\CarbonImmutable::createFromFormat('!Y-m-d H:i', $pastBookingDate.' 10:00', $organizationTimezone)
+            ->utc()
+            ->format('Y-m-d\\TH:i:s\\Z');
         if (getenv('PLAYWRIGHT_MESSAGES_FLOW') === '1') {
             config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
             $recordMessage = app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class);
@@ -199,6 +221,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         }
         $financeBooking = null;
         $partnerProfileId = null;
+        $referralStatsCampaignName = null;
         if (getenv('PLAYWRIGHT_FINANCE_FLOW') === '1') {
             app(\\App\\Modules\\Finance\\Application\\SaveCurrencyConfiguration::class)->handle($admin, [
                 'base_currency' => 'USD',
@@ -245,6 +268,19 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             $profile = app(\\App\\Modules\\Referrals\\Application\\ActivateReferralPartner::class)->handle($partner, 'crm', $admin);
             $partnerProfileId = $profile->getKey();
             $defaultLink = $profile->campaignLinks()->where('is_default', true)->firstOrFail();
+            if ($referralStatsFlow) {
+                $statsCampaign = app(\\App\\Modules\\Referrals\\Application\\CreateReferralCampaignLink::class)->handle(
+                    client: $partner,
+                    name: 'CRM Campaign '.$suffix,
+                    channel: \\App\\Modules\\Referrals\\Domain\\Enums\\ReferralCampaignChannel::Instagram,
+                    actor: $admin,
+                );
+                $referralStatsCampaignName = $statsCampaign->name;
+                $recordVisit = app(\\App\\Modules\\Referrals\\Application\\RecordReferralLinkVisit::class);
+                $recordVisit->handle($defaultLink->public_token, 'e2e-default-visit-one-'.$suffix);
+                $recordVisit->handle($defaultLink->public_token, 'e2e-default-visit-two-'.$suffix);
+                $recordVisit->handle($statsCampaign->public_token, 'e2e-campaign-visit-'.$suffix);
+            }
             $referred = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
                 'full_name' => 'CRM Referred '.$suffix,
                 'email' => 'crm-referred-'.$suffix.'@example.test',
@@ -259,6 +295,22 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 'registered_at' => now(),
             ]);
             $relationship->save();
+            if ($referralStatsFlow) {
+                $registeredClient = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+                    'full_name' => 'CRM Registered '.$suffix,
+                    'email' => 'crm-registered-'.$suffix.'@example.test',
+                ]);
+                $registeredRelationship = new \\App\\Modules\\Referrals\\Domain\\Models\\ReferralRelationship;
+                $registeredRelationship->forceFill([
+                    'organization_id' => $organization->getKey(),
+                    'referrer_client_id' => $partner->getKey(),
+                    'referred_client_id' => $registeredClient->getKey(),
+                    'establishment_method' => 'automatic_referral_link',
+                    'referral_campaign_link_id' => $statsCampaign->getKey(),
+                    'registered_at' => now(),
+                ]);
+                $registeredRelationship->save();
+            }
             $booking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()
                 ->forOrganization($organization)
                 ->forClient($referred)
@@ -460,14 +512,18 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'partnerName' => $partner->full_name,
             'serviceName' => $service->name,
             'specialistName' => $specialist->display_name,
+            'organizationTimezone' => $organizationTimezone,
             'contentSectionId' => $contentSection->getKey(),
             'contentSectionTitle' => $contentSection->title,
             'attachmentFilename' => $attachmentFilename,
             'workingLocationName' => $workingLocation->name,
             'bookingStartsAt' => $bookingStartsAt->format('Y-m-d').'T'.$bookingStartsAt->format('H:i'),
             'pastBookingDate' => $pastBookingDate,
+            'pastBookingStartsAtUtc' => $pastBookingStartsAtUtc,
             'financeBookingId' => $financeBooking?->getKey(),
             'partnerProfileId' => $partnerProfileId,
+            'referralStatsCampaignName' => $referralStatsCampaignName,
+            'telegramUsername' => $telegramUsername,
             'giftProductName' => $giftProductName,
         ], JSON_THROW_ON_ERROR);
     `;
@@ -489,6 +545,8 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
                 PLAYWRIGHT_FINANCE_FLOW: options.financeFlow ? '1' : '0',
                 PLAYWRIGHT_PAYOUT_FLOW: options.payoutFlow ? '1' : '0',
+                PLAYWRIGHT_REFERRAL_STATS_FLOW: options.referralStatsFlow ? '1' : '0',
+                PLAYWRIGHT_TELEGRAM_LINK_FLOW: options.telegramLinkFlow ? '1' : '0',
                 PLAYWRIGHT_MESSAGES_FLOW: options.messagesFlow ? '1' : '0',
                 PLAYWRIGHT_GIFT_SALE_FLOW: options.giftSaleFlow ? '1' : '0',
             },
@@ -500,6 +558,79 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
     }
 
     return JSON.parse(output.trim().split('\n').at(-1) ?? '') as CrmFixture;
+}
+
+function readCrmBookingSnapshot(bookingId: number): { startsAtUtc: string; scheduleTimezone: string } {
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $booking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey(${bookingId})
+            ->firstOrFail();
+        echo json_encode([
+            'startsAtUtc' => $booking->startsAtUtc()->format('Y-m-d\\TH:i:s\\Z'),
+            'scheduleTimezone' => $booking->schedule_timezone,
+        ], JSON_THROW_ON_ERROR);
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-booking-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    const output = execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            XDG_CONFIG_HOME: psyshConfigDirectory,
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    return JSON.parse(output.trim().split('\n').at(-1) ?? '') as { startsAtUtc: string; scheduleTimezone: string };
+}
+
+function readCrmServiceSnapshot(name: string): { id: number; bufferOfficeMinutes: number; bufferHomeMinutes: number; bufferOnlineMinutes: number } {
+    const encodedName = Buffer.from(name).toString('base64');
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $name = base64_decode('${encodedName}', true);
+        $service = \\App\\Modules\\Services\\Domain\\Models\\Service::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('name', $name)
+            ->firstOrFail();
+        echo json_encode([
+            'id' => $service->getKey(),
+            'bufferOfficeMinutes' => (int) $service->buffer_office_minutes,
+            'bufferHomeMinutes' => (int) $service->buffer_home_minutes,
+            'bufferOnlineMinutes' => (int) $service->buffer_online_minutes,
+        ], JSON_THROW_ON_ERROR);
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-service-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    const output = execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            XDG_CONFIG_HOME: psyshConfigDirectory,
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    return JSON.parse(output.trim().split('\n').at(-1) ?? '') as {
+        id: number;
+        bufferOfficeMinutes: number;
+        bufferHomeMinutes: number;
+        bufferOnlineMinutes: number;
+    };
 }
 
 function createJournalSecondSpecialist(fixture: CrmFixture): { id: number; name: string } {
@@ -1253,7 +1384,16 @@ test('staff can create a backdated booking from the ordinary availability form',
     const availableTime = page.locator('.fi-select-input-option:visible').filter({ hasText: '10:00–11:00' }).first();
     await expect(availableTime).toBeVisible({ timeout: 15_000 });
     await availableTime.click();
-    await expect(page.getByText(/Вы создаёте запись задним числом:/)).toBeVisible();
+    const [year, month, day] = fixture.pastBookingDate.split('-');
+    const localWarning = `Вы создаёте запись задним числом: ${day}.${month}.${year} 10:00.`;
+    const warning = page.getByText(localWarning, { exact: true });
+    await expect(page.getByText('Внимание', { exact: true })).toBeVisible();
+    await expect(warning).toBeVisible();
+    const warningColor = await warning.evaluate((element) => getComputedStyle(element).color);
+    const colorChannels = warningColor.match(/\d+/g)?.map(Number);
+    expect(colorChannels).toHaveLength(3);
+    expect(colorChannels?.[0]).toBeGreaterThan(colorChannels?.[1] ?? 0);
+    expect(colorChannels?.[0]).toBeGreaterThan(colorChannels?.[2] ?? 0);
     await expect(page.getByLabel('Подтверждаю создание записи задним числом', { exact: true })).toBeVisible();
     await expect(page).toHaveURL(/\/admin\/bookings\/create$/);
 
@@ -1265,6 +1405,93 @@ test('staff can create a backdated booking from the ordinary availability form',
 
     await expect(page).toHaveURL(/\/admin\/bookings\/\d+$/, { timeout: 15_000 });
     await expect(page.getByText('Ожидает подтверждения', { exact: true })).toBeVisible();
+    const bookingId = Number(page.url().match(/\/admin\/bookings\/(\d+)$/)?.[1]);
+    expect(Number.isInteger(bookingId)).toBe(true);
+    const bookingSnapshot = readCrmBookingSnapshot(bookingId);
+    expect(bookingSnapshot).toEqual({
+        startsAtUtc: fixture.pastBookingStartsAtUtc,
+        scheduleTimezone: fixture.organizationTimezone,
+    });
+    await expect(page.getByText(`${day}.${month}.${year} 10:00`, { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Запись на приём', exact: true })).toBeVisible();
+    await expect(page.getByText(`${day}.${month}.${year} 10:00`, { exact: true })).toBeVisible();
+    await expect(page.getByText('Ожидает подтверждения', { exact: true })).toBeVisible();
+});
+
+test('staff can open a verified client Telegram username from the CRM card', async ({ page }) => {
+    const fixture = createCrmFixture({ telegramLinkFlow: true });
+    if (fixture.telegramUsername === null) {
+        throw new Error('The CRM fixture did not create a verified Telegram username.');
+    }
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    const expectedUrl = `https://t.me/${fixture.telegramUsername}`;
+    const telegramLink = page.getByRole('link', { name: `@${fixture.telegramUsername}`, exact: true });
+    await expect(telegramLink).toHaveAttribute('href', expectedUrl);
+    await expect(telegramLink).toHaveAttribute('target', '_blank');
+    await page.context().route('https://t.me/**', (route) => route.abort());
+    const [telegramPage] = await Promise.all([
+        page.waitForEvent('popup'),
+        telegramLink.click(),
+    ]);
+    await expect.poll(() => telegramPage.url()).toBe(expectedUrl);
+    await telegramPage.close();
+
+    await page.reload();
+    await expect(page.getByRole('link', { name: `@${fixture.telegramUsername}`, exact: true })).toHaveAttribute('href', expectedUrl);
+});
+
+test('service create actions save buffers, reset for another service, and reopen persisted values', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+    const firstName = `${fixture.serviceName} Buffers one`;
+    const secondName = `${fixture.serviceName} Buffers two`;
+
+    await login(page, fixture);
+    await page.goto('/admin/services/create');
+    await expect(page.getByRole('heading', { name: 'Добавить услугу', exact: true })).toBeVisible();
+
+    const fillService = async (name: string, buffers: { office: string; home: string; online: string }): Promise<void> => {
+        await page.getByLabel('Название*', { exact: true }).fill(name);
+        await page.getByLabel('Тип предложения*', { exact: true }).selectOption('service');
+        await page.getByLabel('Краткое описание*', { exact: true }).fill('Синтетическая услуга для проверки интервалов между записями.');
+        await page.getByLabel('Длительность (минуты)', { exact: true }).fill('60');
+        await page.getByLabel('Перерыв после приёма, минут', { exact: true }).fill('0');
+        await page.getByLabel('Перерыв — кабинет, минут', { exact: true }).fill(buffers.office);
+        await page.getByLabel('Перерыв — выезд, минут', { exact: true }).fill(buffers.home);
+        await page.getByLabel('Перерыв — онлайн, минут', { exact: true }).fill(buffers.online);
+        await page.getByRole('checkbox', { name: 'В клинике', exact: true }).check();
+        await page.getByRole('checkbox', { name: 'Выезд на дом', exact: true }).check();
+        await page.getByRole('checkbox', { name: 'Онлайн', exact: true }).check();
+        await page.getByLabel('Когда клиент оплачивает*', { exact: true }).selectOption('postpay');
+    };
+
+    await fillService(firstName, { office: '7', home: '13', online: '19' });
+    await page.getByRole('button', { name: 'Сохранить и создать ещё', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/services\/create$/);
+    await expect(page.locator('.fi-no-notification.fi-status-success').last()).toBeVisible();
+    await expect(page.getByLabel('Название*', { exact: true })).toHaveValue('');
+    const createdFirst = readCrmServiceSnapshot(firstName);
+    expect(createdFirst).toMatchObject({ bufferOfficeMinutes: 7, bufferHomeMinutes: 13, bufferOnlineMinutes: 19 });
+
+    await fillService(secondName, { office: '8', home: '14', online: '20' });
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/services\/\d+\/edit$/, { timeout: 15_000 });
+    await expect(page.locator('.fi-no-notification.fi-status-success').last()).toBeVisible();
+    const createdSecond = readCrmServiceSnapshot(secondName);
+    expect(createdSecond).toMatchObject({ bufferOfficeMinutes: 8, bufferHomeMinutes: 14, bufferOnlineMinutes: 20 });
+    await expect(page).toHaveURL(new RegExp(`/admin/services/${createdSecond.id}/edit$`));
+
+    await page.goto(`/admin/services/${createdFirst.id}/edit`);
+    await expect(page.getByLabel('Перерыв — кабинет, минут', { exact: true })).toHaveValue('7');
+    await expect(page.getByLabel('Перерыв — выезд, минут', { exact: true })).toHaveValue('13');
+    await expect(page.getByLabel('Перерыв — онлайн, минут', { exact: true })).toHaveValue('19');
+    await page.reload();
+    await expect(page.getByLabel('Перерыв — кабинет, минут', { exact: true })).toHaveValue('7');
+    await expect(page.getByLabel('Перерыв — выезд, минут', { exact: true })).toHaveValue('13');
+    await expect(page.getByLabel('Перерыв — онлайн, минут', { exact: true })).toHaveValue('19');
 });
 
 test('staff can create a group booking with a manually extended calendar block', async ({ page }) => {
@@ -1691,7 +1918,7 @@ test('staff can activate a partner, create a campaign link, and assign a referre
 
 test('CRM partner, recommendations, bookings, and AI run controls fit every acceptance viewport', async ({ page }) => {
     test.setTimeout(90_000);
-    const fixture = createCrmFixture({ payoutFlow: true });
+    const fixture = createCrmFixture({ payoutFlow: true, referralStatsFlow: true });
 
     if (fixture.partnerProfileId === null) {
         throw new Error('The partner fixture did not create a profile.');
@@ -1704,6 +1931,28 @@ test('CRM partner, recommendations, bookings, and AI run controls fit every acce
 
         await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`, { waitUntil: 'domcontentloaded' });
         await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
+        if (width === 1440) {
+            if (fixture.referralStatsCampaignName === null) {
+                throw new Error('The referral fixture did not create a second campaign.');
+            }
+
+            await expect(page.getByText(fixture.partnerName, { exact: true })).toBeVisible();
+            await expect(page.getByText('Переходы: 3', { exact: false })).toBeVisible();
+            await expect(page.getByText('Регистрации: 2', { exact: false })).toBeVisible();
+            await expect(page.getByText('Оплатили: 1', { exact: false })).toBeVisible();
+            await expect(page.getByText(fixture.referralStatsCampaignName, { exact: true })).toBeVisible();
+            await page.getByRole('tab', { name: 'Приглашённые клиенты', exact: true }).click();
+            await expect(page.getByText('Оплатил', { exact: true })).toBeVisible();
+            await expect(page.getByText('Не оплатил', { exact: true })).toBeVisible();
+            await page.reload();
+            await expect(page.getByText('Переходы: 3', { exact: false })).toBeVisible();
+            await expect(page.getByText('Регистрации: 2', { exact: false })).toBeVisible();
+            await expect(page.getByText('Оплатили: 1', { exact: false })).toBeVisible();
+            await page.goto('/admin/referral-relationships');
+            await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`);
+            await expect(page.getByText('Переходы: 3', { exact: false })).toBeVisible();
+            await expect(page.getByText('Оплатили: 1', { exact: false })).toBeVisible();
+        }
         await expect(page.locator('[data-testid^="partner-primary-"]')).toHaveCount(3);
         await assertRenderedViewportGeometry(page, [
             '[data-testid="partner-primary-open-client"]',
