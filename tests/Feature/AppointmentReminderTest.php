@@ -330,7 +330,10 @@ final class AppointmentReminderTest extends TestCase
         app(ExecuteScenarioAction::class)->handle($daily->id);
         self::assertCount(1, $this->channel->messages);
         $message = $this->channel->messages[0];
-        self::assertStringContainsString('До вашего сеанса осталось 24 часа!', $message->body);
+        self::assertSame(
+            'До вашего сеанса осталось 24 часа! Пожалуйста, уделите 3 минуты на заполнение жалоб, чтобы мастер встретил вас с готовой стратегией:',
+            $message->body,
+        );
         self::assertSame('Заполнить карту здоровья', $message->actionButton?->text);
         self::assertSame('https://mini.example.test/portal/telegram/launch/medical_profile', $message->actionButton?->webAppUrl);
         self::assertNull($message->actionButton?->url);
@@ -345,8 +348,10 @@ final class AppointmentReminderTest extends TestCase
         $this->makeDue($hourly);
         app(ExecuteScenarioAction::class)->handle($hourly->id);
         self::assertCount(2, $this->channel->messages);
-        self::assertStringContainsString('Synthetic office', $this->channel->messages[1]->body);
-        self::assertStringNotContainsString('заполнени', $this->channel->messages[1]->body);
+        self::assertSame(
+            "Напоминаем: у вас запись к Евгений Чуклов 05-09-2026 в 14:00.\nАдрес: Synthetic office",
+            $this->channel->messages[1]->body,
+        );
         self::assertNull($this->channel->messages[1]->actionButton);
         self::assertSame($hourly->template_version_id, ScenarioDeliveryAttempt::query()
             ->whereHas('delivery', fn ($query) => $query->where('scenario_action_id', $hourly->id))->sole()->template_version_id);
@@ -382,18 +387,57 @@ final class AppointmentReminderTest extends TestCase
         app(ExecuteScenarioAction::class)->handle($immediate->id);
         app(ExecuteScenarioAction::class)->handle($immediate->id);
         self::assertCount(1, $this->channel->messages);
-        self::assertStringStartsWith('Запись создана!', $this->channel->messages[0]->body);
+        self::assertSame(
+            'Запись создана! Чтобы Евгений Чуклов заранее ознакомился с вашей ситуацией и подготовил индивидуальный план — заполните короткую карту здоровья:',
+            $this->channel->messages[0]->body,
+        );
         self::assertStringNotContainsString('подтверждено', $this->channel->messages[0]->body);
-        self::assertNotNull($this->channel->messages[0]->actionButton?->webAppUrl);
+        self::assertSame('Заполнить карту здоровья', $this->channel->messages[0]->actionButton?->text);
+        self::assertSame('https://mini.example.test/portal/telegram/launch/medical_profile', $this->channel->messages[0]->actionButton?->webAppUrl);
+        self::assertNull($this->channel->messages[0]->actionButton?->url);
         self::assertSame(BookingStatus::Requested, $booking->fresh()->status);
 
         $hourly = $reminders->first(fn ($action) => $action->appointmentReminder->offset_unit === ScenarioDelayUnit::Hours);
         $this->makeDue($hourly);
         app(ExecuteScenarioAction::class)->handle($hourly->id);
         self::assertCount(2, $this->channel->messages);
-        self::assertStringContainsString('осталось 2 часа!', $this->channel->messages[1]->body);
+        self::assertSame(
+            'До вашего сеанса осталось 2 часа! Пожалуйста, уделите 3 минуты на заполнение жалоб, чтобы мастер встретил вас с готовой стратегией:',
+            $this->channel->messages[1]->body,
+        );
+        self::assertSame('Заполнить карту здоровья', $this->channel->messages[1]->actionButton?->text);
+        self::assertSame('https://mini.example.test/portal/telegram/launch/medical_profile', $this->channel->messages[1]->actionButton?->webAppUrl);
+        self::assertNull($this->channel->messages[1]->actionButton?->url);
         self::assertSame(2, ScenarioDeliveryAttempt::query()->count());
         self::assertSame(ScenarioActionStatus::Delivered, $hourly->fresh()->status);
+    }
+
+    public function test_confirmed_medical_creation_uses_status_accurate_copy_and_profile_cta(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        app(ScenarioNotificationSeeder::class)->run();
+        $booking = $this->booking($organization, $client, $specialist, $service, VisitFormat::Office,
+            CarbonImmutable::create(2026, 9, 5, 14, 0, 0, 'UTC'), 'Synthetic office', BookingStatus::Confirmed);
+        $booking->forceFill(['source' => 'portal'])->save();
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'created-confirmed-medical-test', CarbonImmutable::now());
+
+        app(MaterializeScenarioEvent::class)->handle($event->id);
+        $action = ScenarioAction::query()->where('scenario_event_id', $event->id)
+            ->where('recipient_type', 'client')->where('kind', 'scenario')->sole();
+        $this->makeDue($action);
+        app(ExecuteScenarioAction::class)->handle($action->id);
+
+        self::assertCount(1, $this->channel->messages);
+        self::assertSame(
+            'Бронирование подтверждено! Чтобы Евгений Чуклов заранее ознакомился с вашей ситуацией и подготовил индивидуальный план — заполните короткую карту здоровья:',
+            $this->channel->messages[0]->body,
+        );
+        self::assertSame('Заполнить карту здоровья', $this->channel->messages[0]->actionButton?->text);
+        self::assertSame('https://mini.example.test/portal/telegram/launch/medical_profile', $this->channel->messages[0]->actionButton?->webAppUrl);
+        self::assertNull($this->channel->messages[0]->actionButton?->url);
+        self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
     }
 
     public function test_completing_profile_after_materialization_suppresses_pending_prompts(): void
