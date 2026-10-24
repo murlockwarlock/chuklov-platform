@@ -3,6 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiExecutionMode;
+use App\Modules\AI\Domain\Enums\AiRunOrigin;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
+use App\Modules\AI\Domain\Enums\HumanReviewStatus;
+use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\UploadMedicalAttachment;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
@@ -11,6 +19,7 @@ use App\Modules\ClientPortal\Application\ListClientHealthOverview;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -33,24 +42,67 @@ final class PortalHealthProgressTest extends TestCase
     {
         [$organization, $client, $staff] = $this->fixture();
         $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $privateValues = [
+            'kinesiotherapyTests' => 'PRIVATE_KINESIOTHERAPY_TESTS_CR10',
+            'kinesiotherapyObservations' => 'PRIVATE_KINESIOTHERAPY_OBSERVATIONS_CR10',
+            'rootCause' => 'PRIVATE_ROOT_CAUSE_CR10',
+            'protocol' => 'PRIVATE_SESSION_PROTOCOL_CR10',
+            'aiSummary' => 'PRIVATE_AI_SUMMARY_CR10',
+        ];
         app(CreateSession::class)->handle($staff, $client, new CreateSessionCommand(
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::parse('2026-09-10 10:00:00', 'UTC'),
-            pain: 'Internal pain note',
-            rootCauseHypothesis: 'Internal hypothesis',
-            protocol: 'Internal protocol',
+            pain: 'PRIVATE_PAIN_CR10',
+            tests: $privateValues['kinesiotherapyTests'],
+            observations: $privateValues['kinesiotherapyObservations'],
+            rootCauseHypothesis: $privateValues['rootCause'],
+            protocol: $privateValues['protocol'],
             result: 'Client-safe session result',
         ));
+        $run = AiRun::query()->create([
+            'organization_id' => $organization->getKey(),
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => ClinicalSynthesizerWorkflow::Summary->value,
+            'origin' => AiRunOrigin::User,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $client->getKey(),
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::Accepted,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+            'finished_at' => Carbon::parse('2026-09-10 11:00:00', 'UTC'),
+        ]);
+        $summaryPayload = json_encode(['client_summary' => $privateValues['aiSummary']], JSON_THROW_ON_ERROR);
+        AiRunPayload::query()->create([
+            'organization_id' => $organization->getKey(),
+            'ai_run_id' => $run->getKey(),
+            'encryption_key_version' => 1,
+            'encrypted_output_payload' => app(MedicalEncryptorInterface::class)->encryptField((int) $organization->getKey(), $summaryPayload, 1),
+            'encrypted_output_text' => app(MedicalEncryptorInterface::class)->encryptField((int) $organization->getKey(), $summaryPayload, 1),
+        ]);
 
         app(ClientPortalContext::class)->set($client);
         $overview = app(ListClientHealthOverview::class)->handle();
 
         self::assertCount(1, $overview['history']);
         self::assertSame('Client-safe session result', $overview['history'][0]['result']);
-        self::assertArrayNotHasKey('pain', $overview['history'][0]);
-        self::assertArrayNotHasKey('rootCauseHypothesis', $overview['history'][0]);
-        self::assertArrayNotHasKey('protocol', $overview['history'][0]);
+        self::assertSame(['id', 'clientId', 'occurredAt', 'service', 'specialist', 'result', 'attachments'], array_keys($overview['history'][0]));
+        self::assertStringNotContainsString('PRIVATE_', json_encode($overview, JSON_THROW_ON_ERROR));
         self::assertSame((int) $client->getKey(), $overview['history'][0]['clientId']);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.health'))
+            ->assertOk()
+            ->assertDontSee('PRIVATE_')
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/Health')
+                ->missing('health.history.0.pain')
+                ->missing('health.history.0.tests')
+                ->missing('health.history.0.observations')
+                ->missing('health.history.0.rootCauseHypothesis')
+                ->missing('health.history.0.protocol')
+                ->where('health.courseReport', null));
     }
 
     public function test_client_health_exposes_only_own_safe_profile_fields_and_private_materials(): void
