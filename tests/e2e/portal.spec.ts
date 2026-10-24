@@ -2336,6 +2336,13 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     const painSlider = page.locator('#medical-pain');
     await painSlider.scrollIntoViewIfNeeded();
     await expect(painSlider).toBeVisible();
+    if (test.info().project.name === 'mobile') {
+        const sliderBounds = await painSlider.boundingBox();
+        if (!sliderBounds) throw new Error('Medical pain slider is not positioned for touch input');
+        await page.touchscreen.tap(sliderBounds.x + sliderBounds.width - 2, sliderBounds.y + sliderBounds.height / 2);
+        await expect(painSlider).toHaveValue('10');
+        await expect(page.getByText('10 / 10', { exact: true })).toBeVisible();
+    }
     await painSlider.focus();
     await painSlider.press('Home');
     await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
