@@ -1390,7 +1390,7 @@ test('staff can create a backdated booking from the ordinary availability form',
     await expect(page.getByText('Внимание', { exact: true })).toBeVisible();
     await expect(warning).toBeVisible();
     const warningColor = await warning.evaluate((element) => getComputedStyle(element).color);
-    const colorChannels = warningColor.match(/\d+/g)?.map(Number);
+    const colorChannels = warningColor.match(/(?:rgb|color\(srgb)\(?\s*(\d*\.?\d+)[,\s]+(\d*\.?\d+)[,\s]+(\d*\.?\d+)/)?.slice(1).map(Number);
     expect(colorChannels).toHaveLength(3);
     expect(colorChannels?.[0]).toBeGreaterThan(colorChannels?.[1] ?? 0);
     expect(colorChannels?.[0]).toBeGreaterThan(colorChannels?.[2] ?? 0);
@@ -1431,12 +1431,18 @@ test('staff can open a verified client Telegram username from the CRM card', asy
     const telegramLink = page.getByRole('link', { name: `@${fixture.telegramUsername}`, exact: true });
     await expect(telegramLink).toHaveAttribute('href', expectedUrl);
     await expect(telegramLink).toHaveAttribute('target', '_blank');
-    await page.context().route('https://t.me/**', (route) => route.abort());
+    let requestedTelegramUrl = '';
+    await page.context().route('https://t.me/**', async (route) => {
+        requestedTelegramUrl = route.request().url();
+        await route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Telegram navigation intercepted</title>' });
+    });
     const [telegramPage] = await Promise.all([
         page.waitForEvent('popup'),
         telegramLink.click(),
     ]);
-    await expect.poll(() => telegramPage.url()).toBe(expectedUrl);
+    await telegramPage.waitForLoadState();
+    expect(requestedTelegramUrl).toBe(expectedUrl);
+    await expect(telegramPage).toHaveURL(expectedUrl);
     await telegramPage.close();
 
     await page.reload();
