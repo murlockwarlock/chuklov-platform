@@ -311,7 +311,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 ]);
                 $registeredRelationship->save();
                 foreach ([$referred, $registeredClient] as $attributedClient) {
-                    \App\Modules\Attribution\Domain\Models\ClientAttribution::forceCreate([
+                    \\App\\Modules\\Attribution\\Domain\\Models\\ClientAttribution::forceCreate([
                         'organization_id' => $organization->getKey(),
                         'client_id' => $attributedClient->getKey(),
                         'source_type' => 'referral',
