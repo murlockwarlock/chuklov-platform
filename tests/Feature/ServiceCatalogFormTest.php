@@ -105,13 +105,15 @@ final class ServiceCatalogFormTest extends TestCase
 
         Testable::create(EditService::class, ['record' => $defaultService->getRouteKey()])
             ->assertSet('data.requires_medical_profile', true)
+            ->assertFormFieldVisible('requires_medical_profile')
             ->set('data.requires_medical_profile', false)
             ->call('save')
             ->assertHasNoFormErrors();
 
         self::assertFalse((bool) DB::table('services')->where('id', $defaultService->getKey())->value('requires_medical_profile'));
         Testable::create(EditService::class, ['record' => $defaultService->getRouteKey()])
-            ->assertSet('data.requires_medical_profile', false);
+            ->assertSet('data.requires_medical_profile', false)
+            ->assertFormFieldVisible('requires_medical_profile');
 
         $disabledServiceForm = Testable::create(CreateService::class);
         $disabledServiceForm
@@ -135,6 +137,7 @@ final class ServiceCatalogFormTest extends TestCase
         self::assertFalse((bool) DB::table('services')->where('id', $disabledService->getKey())->value('requires_medical_profile'));
         Testable::create(EditService::class, ['record' => $disabledService->getRouteKey()])
             ->assertSet('data.requires_medical_profile', false)
+            ->assertFormFieldVisible('requires_medical_profile')
             ->set('data.requires_medical_profile', true)
             ->call('save')
             ->assertHasNoFormErrors();
