@@ -1959,6 +1959,13 @@ test('CRM referral statistics show non-zero overall and campaign results after r
     await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`);
     await expect(page.getByText('Переходы: 3', { exact: false })).toBeVisible();
     await expect(page.getByText('Оплатили: 1', { exact: false })).toBeVisible();
+    await page.setViewportSize({ width: 320, height: 900 });
+    await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`);
+    await page.getByRole('button', { name: 'Ещё', exact: true }).click();
+    const partnerMenu = page.locator('.fi-dropdown-panel:visible').last();
+    await expect(partnerMenu).toBeVisible();
+    await assertRenderedViewportGeometry(page, ['[data-testid="partner-primary-open-client"]'], ['.fi-dropdown-panel']);
+    await page.keyboard.press('Escape');
 });
 
 test('CRM partner, recommendations, bookings, and AI run controls fit every acceptance viewport', async ({ page }) => {
