@@ -6,6 +6,7 @@ use App\Modules\Broadcasts\Domain\Contracts\BroadcastMediaStorageInterface;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\ValueObjects\ContentExternalImageUrl;
+use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateMediaStorageInterface;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Validation\ValidationException;
 use Throwable;
@@ -15,6 +16,7 @@ final readonly class BroadcastCampaignMedia
     public function __construct(
         private BroadcastMediaStorageInterface $media,
         private ContentMediaStorageInterface $legacyMedia,
+        private NotificationTemplateMediaStorageInterface $templateMedia,
     ) {}
 
     /**
@@ -204,7 +206,7 @@ final readonly class BroadcastCampaignMedia
     {
         $paths = [];
         foreach ($this->items($media) as $item) {
-            if ($this->isManagedPath($organizationId, $item['source'])) {
+            if ($this->isCampaignPath($organizationId, $item['source'])) {
                 $paths[] = $item['source'];
             }
         }
@@ -224,13 +226,17 @@ final readonly class BroadcastCampaignMedia
     public function isManagedPath(int $organizationId, ?string $path): bool
     {
         return $path !== null
-            && ($this->media->isManagedPath($organizationId, $path) || $this->legacyMedia->isManagedPath($organizationId, $path));
+            && ($this->isCampaignPath($organizationId, $path) || $this->templateMedia->isManagedPath($organizationId, $path));
     }
 
     public function readStream(int $organizationId, string $path): mixed
     {
         if ($this->media->isManagedPath($organizationId, $path)) {
             return $this->media->readStream($organizationId, $path);
+        }
+
+        if ($this->templateMedia->isManagedPath($organizationId, $path)) {
+            return $this->templateMedia->readStream($organizationId, $path);
         }
 
         if ($this->legacyMedia->isManagedPath($organizationId, $path)) {
@@ -248,7 +254,15 @@ final readonly class BroadcastCampaignMedia
             return;
         }
 
-        $this->legacyMedia->deleteManaged($organizationId, $path);
+        if ($this->legacyMedia->isManagedPath($organizationId, $path)) {
+            $this->legacyMedia->deleteManaged($organizationId, $path);
+        }
+    }
+
+    private function isCampaignPath(int $organizationId, ?string $path): bool
+    {
+        return $path !== null
+            && ($this->media->isManagedPath($organizationId, $path) || $this->legacyMedia->isManagedPath($organizationId, $path));
     }
 
     /**

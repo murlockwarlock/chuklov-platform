@@ -12,6 +12,8 @@ final class ClientProfileSnapshotHasher
             'id' => (int) $client->getKey(),
             'organization_id' => (int) $client->organization_id,
             'full_name' => $client->getRawOriginal('full_name'),
+            'demographics' => array_map($client->getRawOriginal(...), NormalizeClientDemographics::FIELDS),
+            'name_confirmed_at' => $client->getRawOriginal('name_confirmed_at'),
             'email' => $client->getRawOriginal('email'),
             'phone' => $client->getRawOriginal('phone'),
             'language' => $client->getRawOriginal('language'),

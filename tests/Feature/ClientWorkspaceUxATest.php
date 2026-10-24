@@ -422,17 +422,49 @@ final class ClientWorkspaceUxATest extends TestCase
 
         self::assertCount(1, $sections);
         self::assertSame(1, $sections[0]->getColumns('lg'));
+        $children = $sections[0]->getChildComponents();
+        $complaintsAndPainSections = array_values(array_filter(
+            $children,
+            static fn (mixed $component): bool => $component instanceof Section
+                && (string) $component->getHeading() === 'Жалобы и шкала боли (ВАШ)',
+        ));
+        $goalSections = array_values(array_filter(
+            $children,
+            static fn (mixed $component): bool => $component instanceof Section
+                && (string) $component->getHeading() === 'Задачи по здоровью',
+        ));
+
+        self::assertCount(1, $complaintsAndPainSections);
+        self::assertCount(1, $goalSections);
+        self::assertSame(1, $complaintsAndPainSections[0]->getColumns('lg'));
+        self::assertSame(1, $goalSections[0]->getColumns('lg'));
+        self::assertSame(
+            ['complaints', 'profile_symptoms', 'profile_pain_vas'],
+            array_map(static fn (mixed $component): string => $component->getName(), $complaintsAndPainSections[0]->getChildComponents()),
+        );
+        self::assertSame(
+            ['goals'],
+            array_map(static fn (mixed $component): string => $component->getName(), $goalSections[0]->getChildComponents()),
+        );
         self::assertSame([
             'anamnesis',
-            'complaints',
-            'goals',
+            'Жалобы и шкала боли (ВАШ)',
+            'profile_no_chronic_conditions',
+            'profile_had_operations',
+            'profile_operation_year',
+            'profile_had_injuries',
+            'profile_injury_year',
+            'Задачи по здоровью',
+            'chronic_conditions',
             'operations',
             'injuries',
             'medicines',
             'supplements',
         ], array_map(
-            static fn (mixed $component): string => $component->getName(),
-            $sections[0]->getChildComponents(),
+            static fn (mixed $component): string => $component instanceof Section
+                ? (string) $component->getHeading()
+                : $component->getName(),
+            $children,
         ));
     }
 
@@ -895,13 +927,19 @@ final class ClientWorkspaceUxATest extends TestCase
         [$organization, $admin] = $this->organizationWithAdmin();
         $client = Client::factory()->forOrganization($organization)->create();
         $anamnesis = 'Анамнез через действие клиентского кабинета';
+        $updatedAnamnesis = 'Обновлённый синтетический анамнез';
 
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
-        Livewire::actingAs($admin)
+        $component = Livewire::actingAs($admin)
             ->test(ViewClient::class, ['record' => $client->getKey()])
-            ->assertActionVisible('editMedicalProfile')
-            ->callAction('editMedicalProfile', ['anamnesis' => $anamnesis]);
+            ->assertActionVisible('editMedicalProfile');
+        $component
+            ->callAction('editMedicalProfile', ['anamnesis' => $anamnesis])
+            ->assertNotified('Медицинский профиль сохранён');
+        $component
+            ->callAction('editMedicalProfile', ['anamnesis' => $updatedAnamnesis])
+            ->assertNotified('Медицинский профиль сохранён');
 
         $rawProfile = MedicalProfile::query()
             ->where('organization_id', $organization->getKey())
@@ -910,6 +948,7 @@ final class ClientWorkspaceUxATest extends TestCase
 
         self::assertNotNull($rawProfile);
         self::assertNotSame($anamnesis, $rawProfile->anamnesis);
+        self::assertNotSame($updatedAnamnesis, $rawProfile->anamnesis);
         self::assertStringNotContainsString($anamnesis, (string) $rawProfile->anamnesis);
         self::assertSame($organization->getKey(), $rawProfile->organization_id);
         self::assertSame($client->getKey(), $rawProfile->client_id);
@@ -921,13 +960,14 @@ final class ClientWorkspaceUxATest extends TestCase
             ->first();
 
         self::assertNotNull($auditEvent);
-        self::assertSame('medical.profile.created', $auditEvent->action);
+        self::assertSame('medical.profile.updated', $auditEvent->action);
         self::assertStringNotContainsString($anamnesis, (string) json_encode($auditEvent->metadata));
+        self::assertStringNotContainsString($updatedAnamnesis, (string) json_encode($auditEvent->metadata));
 
         $profile = app(GetMedicalProfile::class)->handle($admin, $client);
 
         self::assertNotNull($profile);
-        self::assertSame($anamnesis, $profile->anamnesis);
+        self::assertSame($updatedAnamnesis, $profile->anamnesis);
     }
 
     public function test_client_search_supports_international_phones_and_telegram_id(): void

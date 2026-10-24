@@ -23,6 +23,8 @@ use Illuminate\Support\Carbon;
  * @property int|null $amount_minor
  * @property CurrencyCode|null $currency
  * @property Carbon|null $processed_at
+ * @property Carbon|null $next_attempt_at
+ * @property Carbon|null $lease_expires_at
  * @property PaymentGatewayEventStatus $processing_status
  */
 #[Fillable([])]

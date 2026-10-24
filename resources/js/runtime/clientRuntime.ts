@@ -6,8 +6,18 @@ declare global {
             WebApp?: {
                 initData?: string;
                 ready(): void;
+                openTelegramLink?(url: string): void;
             };
         };
+    }
+}
+
+export function shareTelegramLink(url: string): void {
+    const shareUrl = 'https://t.me/share/url?' + new URLSearchParams({ url }).toString();
+    if (window.Telegram?.WebApp?.openTelegramLink) {
+        window.Telegram.WebApp.openTelegramLink(shareUrl);
+    } else {
+        window.open(shareUrl, '_blank', 'noopener,noreferrer');
     }
 }
 

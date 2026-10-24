@@ -19,6 +19,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Surveys\Application\CompleteSurveyAttempt;
 use App\Modules\Surveys\Application\InstallPlatformSurveyCatalog;
+use App\Modules\Surveys\Application\PublishSurveyVersion;
 use App\Modules\Surveys\Application\StartSurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -140,6 +141,7 @@ final class ClientCompanionContextTest extends TestCase
             ->where('organization_id', $this->organization->getKey())
             ->where('definition_key', 'platform_health_9_systems')
             ->firstOrFail();
+        $this->approvePlatformDraftForTest($this->organization, $definition);
         $attempt = app(StartSurveyAttempt::class)->handle($this->client, $definition);
         $answers = [];
         foreach (collect($attempt->definition_snapshot['sections'])->flatMap(static fn (array $section): array => $section['questions']) as $question) {
@@ -155,6 +157,7 @@ final class ClientCompanionContextTest extends TestCase
             ->where('organization_id', $foreignOrganization->getKey())
             ->where('definition_key', 'platform_health_9_systems')
             ->firstOrFail();
+        $this->approvePlatformDraftForTest($foreignOrganization, $foreignDefinition);
         $foreignAttempt = app(StartSurveyAttempt::class)->handle($foreignClient, $foreignDefinition);
         $foreignAnswers = [];
         foreach (collect($foreignAttempt->definition_snapshot['sections'])->flatMap(static fn (array $section): array => $section['questions']) as $question) {
@@ -181,6 +184,16 @@ final class ClientCompanionContextTest extends TestCase
         self::assertStringContainsString('Rarely', $assembled['health_context']);
         self::assertStringNotContainsString('Almost always', $assembled['health_context']);
         self::assertLessThanOrEqual(7000, mb_strlen($assembled['health_context']));
+    }
+
+    private function approvePlatformDraftForTest(Organization $organization, SurveyDefinition $definition): void
+    {
+        app(OrganizationContext::class)->set($organization);
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $draft = $definition->versions()->latest('version')->firstOrFail();
+        $draft->forceFill(['approval_status' => 'approved'])->save();
+        app(PublishSurveyVersion::class)->handle($admin, $draft);
+        $definition->forceFill(['is_available' => true])->save();
     }
 
     private function setContextSettings(int $first, int $recent): void

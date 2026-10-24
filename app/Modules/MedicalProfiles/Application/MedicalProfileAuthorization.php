@@ -3,9 +3,13 @@
 namespace App\Modules\MedicalProfiles\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Application\PatientProfileAccess;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -16,6 +20,7 @@ final class MedicalProfileAuthorization
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly OrganizationFeatureGate $features,
     ) {}
 
     public function organization(): Organization
@@ -32,9 +37,24 @@ final class MedicalProfileAuthorization
         return $organization;
     }
 
-    public function authorizeManage(User $actor, Client $client): Organization
+    public function authorizeManage(User|Client $actor, Client $client): Organization
     {
         $organization = $this->organization();
+        if ($actor instanceof Client) {
+            $this->features->authorize($organization, OrganizationFeature::ClientRecords);
+            $this->assertClientOwned($actor, $organization);
+            $this->assertClientOwned($client, $organization);
+            if ($actor->getKey() !== $client->getKey()) {
+                $patient = PatientProfile::query()->where('organization_id', $organization->getKey())
+                    ->where('clinical_client_id', $client->getKey())->first();
+                if ($patient === null) {
+                    throw new AuthorizationException('Only the authenticated patient may edit this profile.');
+                }
+                app(PatientProfileAccess::class)->authorizeClinicalSubject($actor, $patient);
+            }
+
+            return $organization;
+        }
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
         $this->assertClientOwned($client, $organization);
 

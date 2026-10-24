@@ -7,6 +7,7 @@ use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Scheduling\Application\SaveLocationDay;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
+use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Model;
 
 class EditLocationDay extends LocalizedEditRecord
@@ -14,6 +15,11 @@ class EditLocationDay extends LocalizedEditRecord
     protected static string $resource = LocationDayResource::class;
 
     protected static ?string $title = 'Изменить день выезда';
+
+    public function getFormContentComponent(): Component
+    {
+        return parent::getFormContentComponent()->extraAttributes(['novalidate' => true]);
+    }
 
     protected function handleRecordUpdate(Model $record, array $data): Model
     {
@@ -32,6 +38,7 @@ class EditLocationDay extends LocalizedEditRecord
             timezone: (string) $data['timezone'],
             isActive: (bool) ($data['is_active'] ?? true),
             notes: isset($data['notes']) ? (string) $data['notes'] : null,
+            specialistId: $this->nullableInt($data['specialist_id'] ?? null),
         );
     }
 

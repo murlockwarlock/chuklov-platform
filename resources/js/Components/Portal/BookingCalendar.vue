@@ -31,6 +31,7 @@ const props = withDefaults(defineProps<{
     availability: Availability | null;
     dateFrom: string;
     dateTo: string;
+    displayTimezone?: string;
     locale: PortalLocale;
     selectedDate: string | null;
     selectedStart: string | null;
@@ -43,6 +44,7 @@ const props = withDefaults(defineProps<{
     autoSelectAvailableDate: false,
     showNearestDates: false,
     emptyRangeMessage: '',
+    displayTimezone: '',
 });
 
 const emit = defineEmits<{
@@ -220,10 +222,13 @@ function offsetLabel(value: string, timezone: string | undefined): string {
     }
 }
 
-const timezoneLabel = computed(() => offsetLabel(
-    selectedDaySlots.value[0]?.startsAt ?? new Date().toISOString(),
-    props.availability?.displayTimezone,
-));
+const timezoneLabel = computed(() => {
+    const timezone = props.availability?.displayTimezone ?? props.displayTimezone;
+
+    return timezone === ''
+        ? ''
+        : offsetLabel(selectedDaySlots.value[0]?.startsAt ?? new Date().toISOString(), timezone);
+});
 
 const rangeIsEmpty = computed(() => props.availability !== null && props.availability.slots.length === 0);
 

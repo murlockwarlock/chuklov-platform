@@ -75,7 +75,7 @@ class BookingResource extends LocalizedResource
     {
         return Booking::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
-            ->with(['client', 'specialist', 'service']);
+            ->with(['client', 'specialist', 'service', 'patientProfile.clinicalClient']);
     }
 
     public static function getPages(): array

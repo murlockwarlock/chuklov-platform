@@ -64,6 +64,7 @@ final class BookingLifecycleActions
                 ->label(__('Подтвердить запись'))
                 ->color('success')
                 ->icon('heroicon-o-check')
+                ->modalSubmitActionLabel(__('Подтвердить запись'))
                 ->schema([Textarea::make('reason')->label(__('Комментарий'))->maxLength(500)])
                 ->visible(fn (Booking $record): bool => $canManageScheduling
                     && $record->status === BookingStatus::Requested

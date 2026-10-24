@@ -14,12 +14,19 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Livewire\Attributes\On;
 
 final class FinancialPaymentsRelationManager extends LocalizedRelationManager
 {
     protected static string $relationship = 'ledgerEntries';
 
     protected static ?string $title = 'История оплат';
+
+    #[On('refresh-page')]
+    public function refreshPaymentHistory(): void
+    {
+        $this->flushCachedTableRecords();
+    }
 
     public static function canViewForRecord(Model $ownerRecord, string $pageClass): bool
     {

@@ -18,6 +18,8 @@ final readonly class MedicalProfileData
         public ?string $goals = null,
         public ?string $operations = null,
         public ?string $injuries = null,
+        public ?string $chronicConditions = null,
+        public ?string $clinicalAnswers = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -33,6 +35,8 @@ final readonly class MedicalProfileData
             'goals' => $this->goals,
             'operations' => $this->operations,
             'injuries' => $this->injuries,
+            'chronic_conditions' => $this->chronicConditions,
+            'clinical_answers' => $this->clinicalAnswers,
             'encryption_key_version' => $this->encryptionKeyVersion,
             'updated_at' => $this->updatedAt?->format(DateTimeInterface::ATOM),
         ];

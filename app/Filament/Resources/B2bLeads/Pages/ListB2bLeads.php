@@ -36,7 +36,7 @@ final class ListB2bLeads extends LocalizedListRecords
         $zoom = $readiness['automaticZoomConfigured'] ? __('Настроено') : __('Не настроено');
         $manual = $readiness['manualLinkFallbackAvailable'] ? __('Доступна') : __('Не настроено');
 
-        return __('Длительность разговора: :duration · календарь специалиста: :calendar · автоматическая встреча Zoom: :zoom · ручная ссылка: :manual. Время и исключения настраиваются в разделах «Настройки расписания», «Изменения расписания» и «Недоступное время».', [
+        return __('Длительность разговора: :duration · календарь специалиста: :calendar · автоматическая встреча Zoom: :zoom · ручная ссылка: :manual. Общие параметры — в «Настройках расписания», даты и периоды — в «Изменениях расписания».', [
             'duration' => $duration,
             'calendar' => $calendar,
             'zoom' => $zoom,

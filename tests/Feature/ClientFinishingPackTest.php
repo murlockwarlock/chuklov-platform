@@ -11,7 +11,7 @@ use App\Modules\Identity\Application\BlockClientSelfBooking;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Application\CreateClientNote;
 use App\Modules\Identity\Application\ListClientNotesForCrm;
-use App\Modules\Identity\Application\UnblockClientBlacklist;
+use App\Modules\Identity\Application\UpdateClientNote;
 use App\Modules\Identity\Domain\Enums\ClientRestrictionType;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientNote;
@@ -72,10 +72,34 @@ final class ClientFinishingPackTest extends TestCase
             ->assertSee($body)
             ->assertSee('Анна Сотрудник');
 
+        $component->mountTableAction('add');
+        self::assertSame('Добавить заметку', $component->instance()->getMountedTableAction()?->getModalSubmitActionLabel());
+
         $component
-            ->mountTableAction('add')
             ->setTableActionData(['body' => 'Заметка из страницы клиента'])
-            ->callMountedTableAction();
+            ->callMountedTableAction()
+            ->assertNotified('Заметка добавлена');
+
+        $editableNote = ClientNote::query()
+            ->where('client_id', $client->getKey())
+            ->orderByDesc('id')
+            ->firstOrFail();
+        $expectedBodyHash = hash('sha256', $editableNote->body);
+
+        $component->mountTableAction('edit', (string) $editableNote->getKey());
+        self::assertSame('Сохранить', $component->instance()->getMountedTableAction()?->getModalSubmitActionLabel());
+
+        $component
+            ->assertTableActionDataSet([
+                'body' => 'Заметка из страницы клиента',
+                'expected_body_hash' => $expectedBodyHash,
+            ])
+            ->setTableActionData([
+                'body' => 'Заметка после редактирования и повторного открытия.',
+                'expected_body_hash' => $expectedBodyHash,
+            ])
+            ->callMountedTableAction()
+            ->assertNotified('Заметка сохранена');
 
         self::assertDatabaseHas('client_notes', [
             'organization_id' => $organization->getKey(),
@@ -83,6 +107,31 @@ final class ClientFinishingPackTest extends TestCase
             'author_user_id' => $admin->getKey(),
         ]);
         self::assertCount(2, ClientNote::query()->where('client_id', $client->getKey())->get());
+
+        Livewire::actingAs($admin)
+            ->test(ClientNotesRelationManager::class, [
+                'ownerRecord' => $client->refresh(),
+                'pageClass' => ViewClient::class,
+            ])
+            ->assertSuccessful()
+            ->assertSee('Заметка после редактирования и повторного открытия.')
+            ->assertDontSee('Заметка из страницы клиента');
+
+        self::assertSame('Заметка после редактирования и повторного открытия.', $editableNote->fresh()->body);
+        self::assertNotSame(
+            'Заметка после редактирования и повторного открытия.',
+            (string) DB::table('client_notes')->where('id', $editableNote->getKey())->value('body'),
+        );
+
+        $updateAudit = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'client.note.updated')
+            ->sole();
+        self::assertTrue($updateAudit->metadata['body_present'] ?? false);
+        self::assertStringNotContainsString(
+            'Заметка после редактирования и повторного открытия.',
+            json_encode($updateAudit->metadata, JSON_UNESCAPED_UNICODE),
+        );
     }
 
     public function test_client_notes_respect_permission_and_tenant_boundaries(): void
@@ -91,6 +140,7 @@ final class ClientFinishingPackTest extends TestCase
         $body = 'Организационно изолированная заметка.';
 
         app(CreateClientNote::class)->handle($admin, $client, $body);
+        $note = ClientNote::query()->where('client_id', $client->getKey())->sole();
 
         $unauthorized = User::factory()->create();
         try {
@@ -98,6 +148,13 @@ final class ClientFinishingPackTest extends TestCase
             self::fail('A user without organization membership should not create client notes.');
         } catch (AuthorizationException) {
             self::assertTrue(true);
+        }
+
+        try {
+            app(UpdateClientNote::class)->handle($unauthorized, $client, $note, 'Недоступное изменение', hash('sha256', $body));
+            self::fail('A user without organization membership should not update client notes.');
+        } catch (AuthorizationException) {
+            self::assertSame($body, $note->fresh()->body);
         }
 
         $otherOrganization = Organization::factory()->create();
@@ -108,8 +165,52 @@ final class ClientFinishingPackTest extends TestCase
         $otherAdmin = User::factory()->forOrganization($otherOrganization)->create();
         app(OrganizationContext::class)->set($otherOrganization);
 
+        try {
+            app(CreateClientNote::class)->handle($otherAdmin, $client, 'Чужой tenant');
+            self::fail('A different tenant should not create client notes.');
+        } catch (AuthorizationException) {
+            self::assertSame($body, $note->fresh()->body);
+        }
+
         $this->expectException(AuthorizationException::class);
-        app(CreateClientNote::class)->handle($otherAdmin, $client, 'Чужой tenant');
+        app(UpdateClientNote::class)->handle($otherAdmin, $client, $note, 'Чужое изменение', hash('sha256', $body));
+    }
+
+    public function test_client_note_edit_replay_is_idempotent_and_stale_edits_are_audited_without_plaintext(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $originalBody = 'Исходная заметка.';
+        $updatedBody = 'Актуальная заметка после первой правки.';
+        $note = app(CreateClientNote::class)->handle($admin, $client, $originalBody);
+        $staleHash = hash('sha256', $originalBody);
+
+        app(UpdateClientNote::class)->handle($admin, $client, $note, $updatedBody, $staleHash);
+        app(UpdateClientNote::class)->handle($admin, $client, $note, $updatedBody, $staleHash);
+
+        self::assertSame($updatedBody, $note->fresh()->body);
+        self::assertSame(1, AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'client.note.updated')
+            ->count());
+
+        try {
+            app(UpdateClientNote::class)->handle($admin, $client, $note, 'Устаревшая правка', $staleHash);
+            self::fail('A stale note edit should be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertSame(
+                'Заметка уже изменилась. Закройте форму, снова откройте заметку и повторите правку.',
+                $exception->errors()['body'][0],
+            );
+        }
+
+        self::assertSame($updatedBody, $note->fresh()->body);
+        $conflict = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'client.note.update_conflicted')
+            ->sole();
+        self::assertSame('stale_note_version', $conflict->metadata['safe_error_code']);
+        self::assertStringNotContainsString('Устаревшая правка', json_encode($conflict->metadata, JSON_UNESCAPED_UNICODE));
+        self::assertStringNotContainsString($updatedBody, json_encode($conflict->metadata, JSON_UNESCAPED_UNICODE));
     }
 
     public function test_blacklist_requires_reason_is_filterable_visible_and_does_not_remove_booking_search_result(): void
@@ -128,11 +229,31 @@ final class ClientFinishingPackTest extends TestCase
 
         $reason = 'Повторные нарушения правил общения.';
         app(BlockClientSelfBooking::class)->handle($admin, $client, 'Проверка самостоятельной записи.');
-        $restriction = app(BlockClientBlacklist::class)->handle($admin, $client, $reason);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $component = Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertSuccessful()
+            ->mountAction('blockBlacklist');
 
+        self::assertSame('Добавить в чёрный список', $component->instance()->getMountedAction()?->getModalSubmitActionLabel());
+        $component
+            ->setActionData(['reason' => '  '])
+            ->callMountedAction()
+            ->assertHasActionErrors(['reason']);
+        self::assertNull($client->refresh()->activeBlacklistRestriction);
+
+        $component
+            ->setActionData(['reason' => $reason])
+            ->callMountedAction()
+            ->assertNotified('Клиент добавлен в чёрный список')
+            ->assertSee('В чёрном списке')
+            ->assertSee($reason)
+            ->assertSee('Запись сотрудником CRM доступна');
+
+        $restriction = $client->refresh()->activeBlacklistRestriction;
+        self::assertNotNull($restriction);
         self::assertSame(ClientRestrictionType::Blacklist, $restriction->restriction_type);
         self::assertSame($reason, $restriction->reason);
-        self::assertTrue($client->refresh()->activeBlacklistRestriction !== null);
         self::assertSame(ClientRestrictionType::SelfBooking, $client->activeBookingRestriction->restriction_type);
         self::assertSame($reason, $client->activeBlacklistRestriction->reason);
 
@@ -142,19 +263,10 @@ final class ClientFinishingPackTest extends TestCase
             ->pluck('id')
             ->all();
         self::assertSame([$client->getKey()], $filtered);
-
         self::assertSame(
             [$client->getKey()],
             app(ClientSearch::class)->query($admin, 'Чёрный')->pluck('id')->all(),
         );
-
-        Filament::setCurrentPanel(Filament::getPanel('admin'));
-        Livewire::actingAs($admin)
-            ->test(ViewClient::class, ['record' => $client->getKey()])
-            ->assertSuccessful()
-            ->assertSee('В чёрном списке')
-            ->assertSee($reason)
-            ->assertSee('Запись сотрудником CRM доступна');
 
         Livewire::actingAs($admin)
             ->test(ListClients::class)
@@ -162,7 +274,14 @@ final class ClientFinishingPackTest extends TestCase
             ->assertCanSeeTableRecords([$client])
             ->assertCanNotSeeTableRecords([$otherClient]);
 
-        app(UnblockClientBlacklist::class)->handle($admin, $client);
+        $component
+            ->mountAction('unblockBlacklist');
+        self::assertSame('Убрать из чёрного списка', $component->instance()->getMountedAction()?->getModalSubmitActionLabel());
+        $component
+            ->callMountedAction()
+            ->assertNotified('Клиент убран из чёрного списка')
+            ->assertSee('Не в чёрном списке')
+            ->assertDontSee($reason);
 
         self::assertNull($client->refresh()->activeBlacklistRestriction);
         self::assertSame(
@@ -170,13 +289,20 @@ final class ClientFinishingPackTest extends TestCase
             app(ClientSearch::class)->query($admin, 'Чёрный')->pluck('id')->all(),
         );
 
-        $auditActions = AuditEvent::query()
+        $auditEvents = AuditEvent::query()
             ->where('organization_id', $organization->getKey())
             ->whereIn('action', ['client.blacklist.added', 'client.blacklist.removed'])
             ->orderBy('id')
-            ->pluck('action')
-            ->all();
-        self::assertSame(['client.blacklist.added', 'client.blacklist.removed'], $auditActions);
+            ->get();
+        self::assertSame(['client.blacklist.added', 'client.blacklist.removed'], $auditEvents->pluck('action')->all());
+        self::assertSame($admin->getKey(), $auditEvents->first()->actor_user_id);
+        self::assertSame((string) $restriction->getKey(), $auditEvents->first()->target_id);
+        self::assertSame($client->getKey(), $auditEvents->first()->metadata['client_id']);
+        self::assertTrue($auditEvents->first()->metadata['reason_present']);
+        self::assertStringNotContainsString($reason, json_encode($auditEvents->first()->metadata, JSON_UNESCAPED_UNICODE));
+        self::assertSame($admin->getKey(), $auditEvents->last()->actor_user_id);
+        self::assertSame($client->getKey(), $auditEvents->last()->metadata['client_id']);
+        self::assertStringNotContainsString($reason, json_encode($auditEvents->last()->metadata, JSON_UNESCAPED_UNICODE));
     }
 
     public function test_blacklist_is_tenant_scoped_and_does_not_block_self_booking_rules_for_crm(): void
@@ -192,6 +318,29 @@ final class ClientFinishingPackTest extends TestCase
 
         $this->expectException(AuthorizationException::class);
         app(BlockClientBlacklist::class)->handle($otherAdmin, $client, 'Чужой tenant');
+    }
+
+    public function test_blacklist_action_shows_clear_english_copy_and_validation(): void
+    {
+        [, $admin, $client] = $this->fixture();
+        app()->setLocale('en');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->mountAction('blockBlacklist');
+        $action = $component->instance()->getMountedAction();
+
+        self::assertSame('Add client to blacklist', $action?->getModalHeading());
+        self::assertSame('Provide a reason. After this restriction is added, the client cannot book independently.', $action?->getModalDescription());
+        self::assertSame('Add to blacklist', $action?->getModalSubmitActionLabel());
+
+        $component
+            ->setActionData(['reason' => '  '])
+            ->callMountedAction()
+            ->assertHasActionErrors(['reason']);
+
+        self::assertNull($client->refresh()->activeBlacklistRestriction);
     }
 
     /** @return array{Organization, User, Client} */

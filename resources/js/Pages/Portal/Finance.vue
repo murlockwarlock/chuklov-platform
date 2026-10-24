@@ -42,6 +42,7 @@ type ReferralCredit = {
     outstandingMinor: number;
     conversionAvailable: boolean;
     applyUrl: string;
+    display: { amountMinor: number; currency: string; conversionAvailable: boolean };
 };
 
 type LavaPayment = {
@@ -204,7 +205,7 @@ function refreshFinance(): void {
 
     pollingInFlight = true;
     router.reload({
-        only: ['obligations', 'totals', 'hasUnavailableObligations'],
+        only: ['obligations', 'totals', 'hasUnavailableObligations', 'portal'],
         onFinish: () => {
             pollingInFlight = false;
             schedulePolling();
@@ -377,12 +378,18 @@ onBeforeUnmount(() => {
               {{ t('finance.referralCreditTitle') }}
             </h3>
             <span class="min-w-0 max-w-full break-words text-sm text-[var(--portal-color-ink-soft)]">
-              {{ t('finance.referralCreditAvailable') }}: {{ formatMoney(obligation.referralCredit.baseAvailableMinor, obligation.referralCredit.baseCurrency) }}
-              <template v-if="obligation.referralCredit.conversionAvailable && obligation.referralCredit.baseCurrency !== obligation.referralCredit.currency">
+              {{ t('finance.referralCreditAvailable') }}: {{ formatMoney(obligation.referralCredit.display.amountMinor, obligation.referralCredit.display.currency) }}
+              <template v-if="obligation.referralCredit.conversionAvailable && obligation.referralCredit.display.currency !== obligation.referralCredit.currency">
                 · {{ t('finance.referralCreditEquivalent') }}: {{ formatMoney(obligation.referralCredit.availableMinor, obligation.referralCredit.currency) }}
               </template>
             </span>
           </div>
+          <p
+            v-if="!obligation.referralCredit.display.conversionAvailable"
+            class="portal-copy portal-copy--small"
+          >
+            {{ t('bonus.currencyUnavailable') }}
+          </p>
           <div
             v-if="!obligation.referralCredit.conversionAvailable"
             class="portal-notice min-w-0 max-w-full break-words"

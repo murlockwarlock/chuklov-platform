@@ -3,8 +3,10 @@
 namespace App\Modules\Surveys\Application;
 
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
+use Illuminate\Database\Eloquent\Builder;
 
 final readonly class ListClientSurveys
 {
@@ -18,12 +20,19 @@ final readonly class ListClientSurveys
             ->where('organization_id', $client->organization_id)
             ->where('is_available', true)
             ->whereNotNull('active_version_id')
+            ->whereHas('activeVersion', fn (Builder $query): Builder => $query
+                ->where('organization_id', $client->organization_id)
+                ->where('status', SurveyVersionStatus::Published->value)
+                ->where('approval_status', 'approved'))
             ->with('activeVersion:id,organization_id,version,status,title,title_en,description,description_en,definition')
             ->orderBy('title')
             ->get(['id', 'organization_id', 'active_version_id', 'title', 'title_en', 'description', 'description_en']);
         $attempts = SurveyAttempt::query()
             ->where('organization_id', $client->organization_id)
             ->where('client_id', $client->getKey())
+            ->whereHas('surveyVersion', fn (Builder $query): Builder => $query
+                ->where('organization_id', $client->organization_id)
+                ->where('approval_status', 'approved'))
             ->with(['surveyVersion:id,version,title,title_en', 'report:id,survey_attempt_id'])
             ->latest('started_at')
             ->limit(50)

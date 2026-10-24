@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import PortalDateTime from '../PortalDateTime.vue';
 import { portalText } from '../../locales/portal';
 import type { PortalLocale } from '../../types/portal';
@@ -15,15 +16,34 @@ type Booking = {
     localEndsAt: string;
     timezone: string;
     formatLabel: string;
+    format: 'office' | 'home' | 'online';
     statusLabel: string;
+    paymentStatusLabel: string;
+    location: string | null;
+    locationArea: string | null;
+    locationSnapshot: { name?: string; address?: string };
+    meetingUrl: string | null;
+    meetingPending: boolean;
     canReschedule: boolean;
 };
 
-defineProps<{
+const props = defineProps<{
     booking: Booking;
     locale: PortalLocale;
     detailsUrl: string;
 }>();
+
+const locationLabel = computed(() => {
+    if (props.booking.format === 'online') {
+        return null;
+    }
+
+    if (props.booking.format === 'home') {
+        return props.booking.location ?? props.booking.locationSnapshot.address ?? props.booking.locationArea;
+    }
+
+    return props.booking.locationSnapshot.address ?? props.booking.locationSnapshot.name ?? null;
+});
 </script>
 
 <template>
@@ -46,7 +66,7 @@ defineProps<{
           {{ booking.localTime }}–{{ booking.localEndsAt }}
         </strong>
       </div>
-      <div class="portal-stack portal-stack--tight">
+      <div class="portal-stack portal-stack--tight min-w-0 wrap-anywhere">
         <h2 class="portal-heading portal-heading--card">
           {{ booking.service.name }}
         </h2>
@@ -55,6 +75,31 @@ defineProps<{
         </p>
         <p class="portal-copy portal-copy--small">
           {{ booking.formatLabel }}
+        </p>
+        <p
+          v-if="locationLabel"
+          class="portal-copy portal-copy--small"
+        >
+          {{ locationLabel }}
+        </p>
+        <a
+          v-if="booking.meetingUrl"
+          :href="booking.meetingUrl"
+          rel="noopener noreferrer"
+          target="_blank"
+          class="portal-link"
+        >
+          {{ portalText(locale, 'booking.meeting') }}
+        </a>
+        <p
+          v-else-if="booking.meetingPending"
+          class="portal-copy portal-copy--small"
+          role="status"
+        >
+          {{ portalText(locale, 'booking.meetingPending') }}
+        </p>
+        <p class="portal-copy portal-copy--small">
+          {{ booking.paymentStatusLabel }}
         </p>
       </div>
     </div>

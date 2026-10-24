@@ -18,6 +18,7 @@ use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Application\BookingChangedGuard;
 use App\Modules\Scenarios\Application\CreateNotificationTemplate;
 use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
@@ -630,9 +631,16 @@ final class MilestoneFiveScenarioTest extends TestCase
             'provider_sync_status' => 'ready',
             'provider_join_url' => 'https://zoom.us/j/rescheduled-ready',
         ])->save();
-        $event->forceFill(['available_at' => now()->subSecond()])->save();
+        self::assertTrue(app(BookingChangedGuard::class)->allows($event->fresh(), $booking->fresh()));
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        self::assertSame(ScenarioEventStatus::Pending, $event->fresh()->status);
+        self::assertSame(0, ScenarioAction::query()->where('scenario_event_id', $event->getKey())->count());
+        CarbonImmutable::setTestNow(CarbonImmutable::parse((string) $event->fresh()->available_at)->addSecond());
+        self::assertTrue(CarbonImmutable::parse((string) $event->fresh()->available_at)->lessThanOrEqualTo(CarbonImmutable::now()));
 
         app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        self::assertNull($event->fresh()->last_error_code);
+        self::assertSame(ScenarioEventStatus::Processed, $event->fresh()->status);
         $action = ScenarioAction::query()->where('scenario_event_id', $event->getKey())->sole();
         $this->makeDue($action);
         app(ExecuteScenarioAction::class)->handle($action->getKey());

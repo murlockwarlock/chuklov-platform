@@ -24,6 +24,11 @@ final readonly class UpdateMedicalProfileCommand
         public ?bool $goalsProvided = null,
         public ?bool $operationsProvided = null,
         public ?bool $injuriesProvided = null,
+        public ?string $chronicConditions = null,
+        public ?string $clinicalAnswers = null,
+        public bool $chronicConditionsProvided = false,
+        public bool $clinicalAnswersProvided = false,
+        public bool $confirmCurrentData = false,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -49,6 +54,10 @@ final readonly class UpdateMedicalProfileCommand
             goalsProvided: array_key_exists('goals', $data),
             operationsProvided: array_key_exists('operations', $data),
             injuriesProvided: array_key_exists('injuries', $data),
+            chronicConditions: is_string($data['chronic_conditions'] ?? null) ? trim($data['chronic_conditions']) : null,
+            chronicConditionsProvided: array_key_exists('chronic_conditions', $data),
+            clinicalAnswers: is_string($data['clinical_answers'] ?? null) ? $data['clinical_answers'] : null,
+            clinicalAnswersProvided: array_key_exists('clinical_answers', $data),
         );
     }
 

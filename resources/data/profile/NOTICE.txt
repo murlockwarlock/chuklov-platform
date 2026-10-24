@@ -1,0 +1,21 @@
+Phone numbering and formatting metadata
+Copyright (C) 2009 The Libphonenumber Authors.
+Source: Google libphonenumber v9.0.41, resources/PhoneNumberMetadata.xml
+https://github.com/google/libphonenumber/tree/v9.0.41
+License: Apache License 2.0; see LICENSE.libphonenumber.
+Changes: extracted country names, calling codes, national-number patterns,
+examples and international formatting patterns into phones.json.
+
+City reference data
+Source: GeoNames cities15000.zip, retrieved 2026-10-14.
+https://download.geonames.org/export/dump/cities15000.zip
+https://www.geonames.org/
+License: Creative Commons Attribution 4.0
+https://creativecommons.org/licenses/by/4.0/
+Changes: grouped by ISO country code; kept names, aliases and population;
+selected a Cyrillic name where available and sorted by population.
+Corrected the Russian display names for Almaty and Astana to Алматы and Астана;
+the GeoNames source forms remain searchable aliases.
+The dataset includes cities with population over 15,000 and capitals.
+Manual entry remains available for places not represented in the dataset.
+No warranty of accuracy, timeliness or completeness is provided.

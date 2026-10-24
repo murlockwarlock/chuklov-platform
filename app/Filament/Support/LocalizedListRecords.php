@@ -11,13 +11,25 @@ abstract class LocalizedListRecords extends ListRecords
     {
         $title = parent::getTitle();
 
-        return $title instanceof Htmlable ? $title : __($title);
+        if ($title instanceof Htmlable) {
+            return $title;
+        }
+
+        $translated = __($title);
+
+        return is_string($translated) ? $translated : $title;
     }
 
     public function getBreadcrumb(): ?string
     {
         $breadcrumb = parent::getBreadcrumb();
 
-        return $breadcrumb === null ? null : __($breadcrumb);
+        if ($breadcrumb === null) {
+            return null;
+        }
+
+        $translated = __($breadcrumb);
+
+        return is_string($translated) ? $translated : $breadcrumb;
     }
 }

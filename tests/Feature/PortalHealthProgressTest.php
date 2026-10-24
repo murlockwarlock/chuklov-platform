@@ -2,53 +2,114 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\Clients\Pages\EditClient;
 use App\Models\User;
+use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiExecutionMode;
+use App\Modules\AI\Domain\Enums\AiRunOrigin;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
+use App\Modules\AI\Domain\Enums\HumanReviewStatus;
+use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\UploadMedicalAttachment;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Broadcasts\Domain\Models\BroadcastClientProfile;
+use App\Modules\Broadcasts\Domain\Models\BroadcastClientTag;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\ListClientHealthOverview;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia;
+use Livewire\Livewire;
+use Tests\Support\AuthenticatesMfaConfiguredAdmin;
 use Tests\TestCase;
 
 final class PortalHealthProgressTest extends TestCase
 {
+    use AuthenticatesMfaConfiguredAdmin;
     use RefreshDatabase;
 
     public function test_client_health_projection_is_scoped_and_excludes_internal_session_fields(): void
     {
         [$organization, $client, $staff] = $this->fixture();
         $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $privateValues = [
+            'kinesiotherapyTests' => 'PRIVATE_KINESIOTHERAPY_TESTS_CR10',
+            'kinesiotherapyObservations' => 'PRIVATE_KINESIOTHERAPY_OBSERVATIONS_CR10',
+            'rootCause' => 'PRIVATE_ROOT_CAUSE_CR10',
+            'protocol' => 'PRIVATE_SESSION_PROTOCOL_CR10',
+            'aiSummary' => 'PRIVATE_AI_SUMMARY_CR10',
+        ];
         app(CreateSession::class)->handle($staff, $client, new CreateSessionCommand(
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::parse('2026-09-10 10:00:00', 'UTC'),
-            pain: 'Internal pain note',
-            rootCauseHypothesis: 'Internal hypothesis',
-            protocol: 'Internal protocol',
+            pain: 'PRIVATE_PAIN_CR10',
+            tests: $privateValues['kinesiotherapyTests'],
+            observations: $privateValues['kinesiotherapyObservations'],
+            rootCauseHypothesis: $privateValues['rootCause'],
+            protocol: $privateValues['protocol'],
             result: 'Client-safe session result',
         ));
+        $run = AiRun::query()->create([
+            'organization_id' => $organization->getKey(),
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => ClinicalSynthesizerWorkflow::Summary->value,
+            'origin' => AiRunOrigin::User,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $client->getKey(),
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::Accepted,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+            'finished_at' => Carbon::parse('2026-09-10 11:00:00', 'UTC'),
+        ]);
+        $summaryPayload = json_encode(['client_summary' => $privateValues['aiSummary']], JSON_THROW_ON_ERROR);
+        AiRunPayload::query()->create([
+            'organization_id' => $organization->getKey(),
+            'ai_run_id' => $run->getKey(),
+            'encryption_key_version' => 1,
+            'encrypted_output_payload' => app(MedicalEncryptorInterface::class)->encryptField((int) $organization->getKey(), $summaryPayload, 1),
+            'encrypted_output_text' => app(MedicalEncryptorInterface::class)->encryptField((int) $organization->getKey(), $summaryPayload, 1),
+        ]);
 
         app(ClientPortalContext::class)->set($client);
         $overview = app(ListClientHealthOverview::class)->handle();
 
         self::assertCount(1, $overview['history']);
         self::assertSame('Client-safe session result', $overview['history'][0]['result']);
-        self::assertArrayNotHasKey('pain', $overview['history'][0]);
-        self::assertArrayNotHasKey('rootCauseHypothesis', $overview['history'][0]);
-        self::assertArrayNotHasKey('protocol', $overview['history'][0]);
+        self::assertSame(['id', 'clientId', 'occurredAt', 'service', 'specialist', 'result', 'attachments'], array_keys($overview['history'][0]));
+        self::assertStringNotContainsString('PRIVATE_', json_encode($overview, JSON_THROW_ON_ERROR));
         self::assertSame((int) $client->getKey(), $overview['history'][0]['clientId']);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.health'))
+            ->assertOk()
+            ->assertDontSee('PRIVATE_')
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/Health')
+                ->missing('health.history.0.pain')
+                ->missing('health.history.0.tests')
+                ->missing('health.history.0.observations')
+                ->missing('health.history.0.rootCauseHypothesis')
+                ->missing('health.history.0.protocol')
+                ->where('health.courseReport', null));
     }
 
     public function test_client_health_exposes_only_own_safe_profile_fields_and_private_materials(): void
@@ -115,10 +176,70 @@ final class PortalHealthProgressTest extends TestCase
                 ->has('health.courseReport'));
     }
 
+    public function test_client_portal_excludes_crm_classification_while_authorized_crm_keeps_it(): void
+    {
+        [$organization, $client, $staff] = $this->fixture();
+        $role = 'INTERNAL_CR10_B2B_ROLE';
+        $tag = 'internal-cr10-marketing-tag';
+        BroadcastClientProfile::query()->create([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'b2b_role' => $role,
+        ]);
+        BroadcastClientTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'tag' => $tag,
+        ]);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $profile = $this->get(route('portal.profile'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/Profile')
+                ->missing('b2b_role')
+                ->missing('b2bRole')
+                ->missing('broadcast_tags')
+                ->missing('broadcastTags'));
+        $health = $this->get(route('portal.health'))->assertOk();
+        $home = $this->get(route('portal.home'))->assertOk();
+
+        foreach ([$profile, $health, $home] as $response) {
+            $page = $response->viewData('page');
+            self::assertIsArray($page);
+            self::assertIsArray($page['props'] ?? null);
+            $serializedProps = json_encode($page['props'], JSON_THROW_ON_ERROR);
+
+            self::assertStringNotContainsString($role, $serializedProps);
+            self::assertStringNotContainsString($tag, $serializedProps);
+            self::assertStringNotContainsString('"b2b_role"', $serializedProps);
+            self::assertStringNotContainsString('"broadcast_tags"', $serializedProps);
+            self::assertStringNotContainsString('"b2bRole"', $serializedProps);
+            self::assertStringNotContainsString('"broadcastTags"', $serializedProps);
+            $response->assertDontSee($role)->assertDontSee($tag);
+        }
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->authenticateConfiguredAdmin($staff, $organization);
+
+        Livewire::actingAs($staff)
+            ->test(EditClient::class, ['record' => $client->getRouteKey()])
+            ->assertSuccessful()
+            ->assertFormSet([
+                'b2b_role' => $role,
+                'broadcast_tags' => [$tag],
+            ]);
+    }
+
     /** @return array{Organization, Client, User} */
     private function fixture(): array
     {
         $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
+            'enabled' => true,
+        ]);
         $staff = User::factory()->forOrganization($organization)->create();
         $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
         config()->set('tenancy.default_organization_id', $organization->getKey());

@@ -17,6 +17,8 @@ use Illuminate\Database\Eloquent\Builder;
 
 class UnavailablePeriodResource extends LocalizedResource
 {
+    protected static bool $shouldRegisterNavigation = false;
+
     protected static ?string $model = UnavailablePeriod::class;
 
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedRectangleStack;
@@ -31,7 +33,7 @@ class UnavailablePeriodResource extends LocalizedResource
 
     protected static ?string $pluralModelLabel = 'периоды недоступности';
 
-    protected static ?string $breadcrumb = 'Недоступное время';
+    protected static ?string $breadcrumb = 'Изменения расписания';
 
     public static function getEloquentQuery(): Builder
     {

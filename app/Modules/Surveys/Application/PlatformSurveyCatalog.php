@@ -163,7 +163,7 @@ final class PlatformSurveyCatalog
                     ['ru' => 'Какие ограничения по нагрузке и восстановлению актуальны именно для меня?', 'en' => 'Which activity and recovery limits are relevant to me?'],
                 ],
             ],
-            'is_available' => true,
+            'is_available' => false,
         ];
     }
 

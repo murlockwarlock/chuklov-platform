@@ -240,7 +240,10 @@ const profileFields = computed(() => [
         </article>
 
         <article class="portal-panel portal-stack portal-stack--tight min-w-0">
-          <h3 class="portal-heading portal-heading--card">
+          <h3
+            id="course-report"
+            class="portal-heading portal-heading--card"
+          >
             {{ t('health.courseReport') }}
           </h3>
           <div

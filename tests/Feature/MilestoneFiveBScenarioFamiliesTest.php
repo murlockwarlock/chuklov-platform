@@ -48,6 +48,7 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
         $this->channel = new RecordingNotificationChannel;
         $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([$this->channel]));
     }
@@ -102,6 +103,7 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
 
     public function test_seeded_post_session_follow_ups_wait_for_due_time_and_deliver_once(): void
     {
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
         [$organization, , $client, $specialist, $service] = $this->fixture();
         $client->forceFill(['language' => 'ru'])->save();
         $this->verifiedClient($client);
@@ -158,7 +160,11 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
         foreach ($this->channel->messages as $message) {
             self::assertStringContainsString($escapedClientName, $message->body);
             self::assertNotNull($message->actionButton);
-            self::assertSame(route('portal.health'), $message->actionButton->url);
+            self::assertSame(
+                'https://mini.example.test/portal/telegram/launch/health',
+                $message->actionButton->webAppUrl,
+            );
+            self::assertNull($message->actionButton->url);
         }
     }
 
@@ -475,6 +481,8 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'finance-payment-succeeded-client-telegram',
             'finance-payment-succeeded-survey-client-telegram',
             'knowledge-ingestion-failed-database',
+            'medical-profile-after-booking-en',
+            'medical-profile-after-booking-ru',
             'post-session-follow-up-24h-en',
             'post-session-follow-up-24h-ru',
             'post-session-follow-up-48h-en',
@@ -550,6 +558,10 @@ final class MilestoneFiveBScenarioFamiliesTest extends TestCase
             'finance-payment-succeeded-survey:en',
             'finance-payment-succeeded-survey:ru',
             'knowledge-ingestion-failed-crm:ru',
+            'medical-profile-after-booking:en',
+            'medical-profile-after-booking:ru',
+            'medical-profile-reminder:en',
+            'medical-profile-reminder:ru',
             'post-session-follow-up:en',
             'post-session-follow-up:ru',
             'post-session-follow-up-24h:en',

@@ -10,7 +10,9 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Surveys\Application\CompleteSurveyAttempt;
 use App\Modules\Surveys\Application\InstallPlatformSurveyCatalog;
 use App\Modules\Surveys\Application\PlatformSurveyCatalog;
+use App\Modules\Surveys\Application\PublishSurveyVersion;
 use App\Modules\Surveys\Application\StartSurveyAttempt;
+use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyComparison;
@@ -18,6 +20,9 @@ use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Modules\Surveys\Domain\Models\SurveyReport;
 use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
+use Inertia\Testing\AssertableInertia;
+use Mockery;
 use Tests\TestCase;
 
 final class PlatformHealthExperienceTest extends TestCase
@@ -37,7 +42,7 @@ final class PlatformHealthExperienceTest extends TestCase
         self::assertNotSame('official_msq', $catalog[1]['methodology']);
     }
 
-    public function test_seeded_nine_systems_has_forty_five_questions_and_neutral_scoring(): void
+    public function test_seeded_nine_systems_stays_an_inactive_draft_until_approved(): void
     {
         $organization = Organization::factory()->create();
         app(OrganizationContext::class)->set($organization);
@@ -45,17 +50,123 @@ final class PlatformHealthExperienceTest extends TestCase
         app(InstallPlatformSurveyCatalog::class)->handle($organization);
 
         $definition = SurveyDefinition::query()->where('organization_id', $organization->getKey())->where('definition_key', 'platform_health_9_systems')->firstOrFail();
-        $version = $definition->activeVersion()->firstOrFail();
+        $version = $definition->versions()->sole();
         $questions = collect($version->definition['sections'])->flatMap(static fn (array $section): array => $section['questions'])->values();
 
         self::assertCount(9, $version->definition['sections']);
         self::assertCount(45, $questions);
         self::assertSame('platform_default', $version->source);
         self::assertSame('draft', $version->approval_status);
-        self::assertSame('published', $version->status->value);
+        self::assertSame(SurveyVersionStatus::Draft, $version->status);
+        self::assertNull($definition->active_version_id);
+        self::assertFalse($definition->is_available);
         self::assertCount(9, $version->scoring['metrics']);
         self::assertSame(['never', 'rarely', 'sometimes', 'often', 'almost_always'], array_column($questions[0]['options'], 'value'));
         self::assertSame(['never' => 0, 'rarely' => 1, 'sometimes' => 2, 'often' => 3, 'almost_always' => 4], $version->scoring['answer_scale']);
+    }
+
+    public function test_legacy_published_demo_is_deactivated_without_deleting_its_version(): void
+    {
+        $organization = Organization::factory()->create();
+        app(OrganizationContext::class)->set($organization);
+        $catalog = app(InstallPlatformSurveyCatalog::class)->catalog()[0];
+        $definition = SurveyDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'definition_key' => $catalog['definition_key'],
+            'title' => $catalog['title'],
+            'title_en' => $catalog['title_en'],
+            'description' => $catalog['description'],
+            'description_en' => $catalog['description_en'],
+            'is_available' => true,
+        ]);
+        $version = SurveyVersion::query()->create([
+            'organization_id' => $organization->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'version' => 1,
+            'status' => SurveyVersionStatus::Published,
+            'title' => $catalog['title'],
+            'title_en' => $catalog['title_en'],
+            'description' => $catalog['description'],
+            'description_en' => $catalog['description_en'],
+            'definition' => $catalog['definition'],
+            'scoring' => $catalog['scoring'],
+            'metric_schema_key' => $catalog['metric_schema_key'],
+            'source' => $catalog['source'],
+            'approval_status' => $catalog['approval_status'],
+            'methodology' => $catalog['methodology'],
+            'published_at' => now(),
+        ]);
+        $definition->forceFill(['active_version_id' => $version->getKey()])->save();
+
+        app(InstallPlatformSurveyCatalog::class)->handle($organization);
+
+        self::assertSame(SurveyVersionStatus::Retired, $version->fresh()->status);
+        self::assertNull($definition->fresh()->active_version_id);
+        self::assertFalse($definition->fresh()->is_available);
+        self::assertSame(1, $definition->versions()->count());
+    }
+
+    public function test_client_cannot_list_or_start_unapproved_content_and_old_attempts_return_a_clear_notice(): void
+    {
+        [$organization, $client] = $this->fixture();
+        app(InstallPlatformSurveyCatalog::class)->handle($organization);
+        $definition = SurveyDefinition::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('definition_key', PlatformSurveyCatalog::HEALTH_KEY)
+            ->firstOrFail();
+        $version = $definition->versions()->sole();
+        $version->forceFill([
+            'status' => SurveyVersionStatus::Published,
+            'published_at' => now(),
+        ])->save();
+        $definition->forceFill([
+            'active_version_id' => $version->getKey(),
+            'is_available' => true,
+        ])->save();
+        $attempt = SurveyAttempt::query()->create([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'survey_version_id' => $version->getKey(),
+            'status' => SurveyAttemptStatus::InProgress,
+            'definition_snapshot' => $version->definition,
+            'answers_snapshot' => [],
+            'scoring_snapshot' => $version->scoring,
+            'metric_schema_key' => $version->metric_schema_key,
+            'started_at' => now(),
+        ]);
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        Log::shouldReceive('warning')->once()->with('portal.surveys.start_denied', Mockery::on(fn (array $context): bool => $context['safe_error_code'] === 'content_not_approved'
+            && $context['outcome'] === 'denied'
+            && $context['operation'] === 'start_survey_attempt'
+            && $context['organization_id'] === $organization->getKey()
+            && $context['entity_id'] === $definition->getKey()
+            && ! array_key_exists('definition_snapshot', $context)));
+        Log::shouldReceive('warning')->once()->with('portal.surveys.attempt_access_denied', Mockery::on(fn (array $context): bool => $context['safe_error_code'] === 'attempt_unavailable'
+            && $context['outcome'] === 'denied'
+            && $context['operation'] === 'view_survey_attempt'
+            && $context['organization_id'] === $organization->getKey()
+            && $context['entity_id'] === $attempt->getKey()
+            && ! array_key_exists('definition_snapshot', $context)));
+
+        $this->get(route('portal.surveys.index'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/Surveys')
+                ->has('definitions', 0)
+                ->has('attempts', 0));
+        $this->post(route('portal.surveys.start', $definition->getKey()))
+            ->assertRedirect(route('portal.surveys.index'))
+            ->assertSessionHas('survey_start_unavailable', true);
+        $this->get(route('portal.surveys.index'))
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('notices.startUnavailable', true));
+        $this->get(route('portal.surveys.show', $attempt->getKey()))
+            ->assertRedirect(route('portal.surveys.index'))
+            ->assertSessionHas('survey_result_unavailable', true);
+        $this->get(route('portal.surveys.index'))
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('notices.resultUnavailable', true));
+
+        self::assertSame(1, SurveyAttempt::query()->where('client_id', $client->getKey())->count());
     }
 
     public function test_seed_is_idempotent_and_new_version_does_not_rewrite_completed_attempt(): void
@@ -68,6 +179,7 @@ final class PlatformHealthExperienceTest extends TestCase
         self::assertSame(2, SurveyDefinition::query()->where('organization_id', $organization->getKey())->count());
 
         $definition = SurveyDefinition::query()->where('organization_id', $organization->getKey())->where('definition_key', 'platform_health_9_systems')->firstOrFail();
+        $this->approvePlatformDraftForTest($organization, $definition);
         $attempt = app(StartSurveyAttempt::class)->handle($client, $definition);
         $answers = $this->answers($attempt);
         $completed = app(CompleteSurveyAttempt::class)->handle($client, $attempt, $answers);
@@ -109,7 +221,7 @@ final class PlatformHealthExperienceTest extends TestCase
             ->where('organization_id', $organization->getKey())
             ->where('definition_key', PlatformSurveyCatalog::HEALTH_KEY)
             ->firstOrFail();
-        $current = $definition->activeVersion()->firstOrFail();
+        $current = $definition->versions()->latest('version')->firstOrFail();
         $approved = SurveyVersion::query()->create([
             'organization_id' => $organization->getKey(),
             'survey_definition_id' => $definition->getKey(),
@@ -145,7 +257,7 @@ final class PlatformHealthExperienceTest extends TestCase
             ->where('organization_id', $organization->getKey())
             ->where('definition_key', PlatformSurveyCatalog::HEALTH_KEY)
             ->firstOrFail();
-        $current = $definition->activeVersion()->firstOrFail();
+        $current = $definition->versions()->latest('version')->firstOrFail();
         $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
         $customScoring = $current->scoring;
         $customScoring['summary']['ru'] = 'Мой текст результата.';
@@ -205,7 +317,7 @@ final class PlatformHealthExperienceTest extends TestCase
             'description_en' => 'My description.',
             'definition' => ['sections' => []],
             'scoring' => ['metrics' => []],
-            'source' => 'admin_custom',
+            'source' => 'chuklov_approved',
             'approval_status' => 'draft',
             'methodology' => 'admin_custom',
         ]);
@@ -223,6 +335,7 @@ final class PlatformHealthExperienceTest extends TestCase
         [$organization, $client] = $this->fixture();
         app(InstallPlatformSurveyCatalog::class)->handle($organization);
         $definition = SurveyDefinition::query()->where('organization_id', $organization->getKey())->where('definition_key', 'platform_health_9_systems')->firstOrFail();
+        $this->approvePlatformDraftForTest($organization, $definition);
 
         $first = app(StartSurveyAttempt::class)->handle($client, $definition);
         $firstCompleted = app(CompleteSurveyAttempt::class)->handle($client, $first, $this->answers($first, ['digestive' => 'almost_always', 'sleep' => 'often', 'stress' => 'often']));
@@ -252,6 +365,7 @@ final class PlatformHealthExperienceTest extends TestCase
             ->where('organization_id', $organization->getKey())
             ->where('definition_key', PlatformSurveyCatalog::HEALTH_KEY)
             ->firstOrFail();
+        $this->approvePlatformDraftForTest($organization, $definition);
         $attempt = app(StartSurveyAttempt::class)->handle($client, $definition);
         $answers = [];
         foreach (collect($attempt->definition_snapshot['sections'])->flatMap(static fn (array $section): array => $section['questions']) as $question) {
@@ -287,5 +401,17 @@ final class PlatformHealthExperienceTest extends TestCase
         }
 
         return $answers;
+    }
+
+    private function approvePlatformDraftForTest(Organization $organization, SurveyDefinition $definition): SurveyDefinition
+    {
+        app(OrganizationContext::class)->set($organization);
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $draft = $definition->versions()->latest('version')->firstOrFail();
+        $draft->forceFill(['approval_status' => 'approved'])->save();
+        app(PublishSurveyVersion::class)->handle($admin, $draft);
+        $definition->forceFill(['is_available' => true])->save();
+
+        return $definition->refresh();
     }
 }

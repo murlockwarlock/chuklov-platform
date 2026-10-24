@@ -11,11 +11,20 @@ abstract class LocalizedViewRecord extends ViewRecord
     {
         $title = parent::getTitle();
 
-        return $title instanceof Htmlable ? $title : __($title);
+        if ($title instanceof Htmlable) {
+            return $title;
+        }
+
+        $translated = __($title);
+
+        return is_string($translated) ? $translated : $title;
     }
 
     public function getBreadcrumb(): string
     {
-        return __(parent::getBreadcrumb());
+        $breadcrumb = parent::getBreadcrumb();
+        $translated = __($breadcrumb);
+
+        return is_string($translated) ? $translated : $breadcrumb;
     }
 }

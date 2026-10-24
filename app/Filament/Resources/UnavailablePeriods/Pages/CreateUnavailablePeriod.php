@@ -11,6 +11,7 @@ use App\Modules\Scheduling\Application\CreateUnavailablePeriod as CreateUnavaila
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeInterface;
+use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 
@@ -19,6 +20,11 @@ class CreateUnavailablePeriod extends LocalizedCreateRecord
     protected static string $resource = UnavailablePeriodResource::class;
 
     protected static ?string $title = 'Создать период недоступности';
+
+    public function getFormContentComponent(): Component
+    {
+        return parent::getFormContentComponent()->extraAttributes(['novalidate' => true]);
+    }
 
     protected function handleRecordCreation(array $data): Model
     {
@@ -42,8 +48,16 @@ class CreateUnavailablePeriod extends LocalizedCreateRecord
             );
         } catch (ValidationException $exception) {
             $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($data, $exception));
+            $errors = $exception->errors();
 
-            throw $exception;
+            foreach (['starts_at', 'ends_at', 'reason'] as $field) {
+                if (isset($errors[$field])) {
+                    $errors['data.'.$field] = $errors[$field];
+                    unset($errors[$field]);
+                }
+            }
+
+            throw ValidationException::withMessages($errors);
         }
     }
 

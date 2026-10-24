@@ -16,6 +16,7 @@ use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
+use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Scheduling\Domain\Services\SlotCalculator;
@@ -177,7 +178,7 @@ class CalculateAvailability
     ): AvailabilityResult {
         $organization = $this->context->organization();
         $locationDays = $format === VisitFormat::HomeVisit
-            ? $this->locations->activeLocationDays($locationArea)
+            ? $this->locations->activeLocationDays($locationArea, (int) $specialist->getKey())
             : null;
 
         $locationSelection = $this->locations->selection(
@@ -186,6 +187,7 @@ class CalculateAvailability
             areaName: $locationArea,
             startsAt: $startsAt->utc(),
             allowInactiveLocation: $allowInactiveLocation,
+            specialistId: (int) $specialist->getKey(),
         );
         $scheduleTimezone = $this->locations->scheduleTimezone($specialist, $format, $locationSelection);
         $scheduleDate = LocalDate::from($startsAt->setTimezone($scheduleTimezone)->toDateString());
@@ -207,7 +209,7 @@ class CalculateAvailability
             leadTimeMinutes: $leadTimeMinutes,
             now: $now,
             durationMinutes: $service->durationMinutes() ?? 0,
-            bufferMinutes: $service->buffer_minutes,
+            bufferMinutes: $service->bufferMinutesForFormat($format->value),
             blockingDurationMinutes: $blockingDurationMinutes,
             workingLocation: $locationSelection->workingLocation,
             locationArea: $locationArea,
@@ -305,10 +307,10 @@ class CalculateAvailability
             ? $this->locations->officeLocation($workingLocationId)
             : null;
         $locationDays = $format === VisitFormat::HomeVisit
-            ? $this->locations->activeLocationDays($locationArea)
+            ? $this->locations->activeLocationDays($locationArea, (int) $specialist->getKey())
             : null;
         if ($format === VisitFormat::HomeVisit
-            && $this->locations->hasActiveLocationDays()
+            && $this->locations->hasActiveLocationDays((int) $specialist->getKey())
             && ($locationArea === null || trim($locationArea) === '' || $locationDays?->isEmpty())) {
             throw ValidationException::withMessages([
                 'location_area' => 'Для этого района нет подходящего дня выезда.',
@@ -340,7 +342,7 @@ class CalculateAvailability
             displayDateTo: $datesInDisplayTimezone ? $requestedDateTo->value : null,
             maxDateCount: $datesInDisplayTimezone ? 33 : 31,
             durationMinutes: $service->durationMinutes() ?? 0,
-            bufferMinutes: $service->buffer_minutes,
+            bufferMinutes: $service->bufferMinutesForFormat($format->value),
             leadTimeMinutes: $leadTimeMinutes,
             now: $now,
             workingLocation: $workingLocation,
@@ -416,13 +418,14 @@ class CalculateAvailability
         }
 
         $workingHours = $this->workingHoursResolver->forRange($specialist, $workingDateFrom, $workingDateTo);
-        $exceptions = ScheduleException::query()
+        $exceptions = collect(ScheduleException::query()
             ->where('organization_id', $organizationId)
             ->where('specialist_id', $specialist->getKey())
             ->whereBetween('exception_date', [$workingDateFrom->value, $workingDateTo->value])
             ->where('is_active', true)
             ->get()
-            ->groupBy(fn (ScheduleException $exception): string => $exception->dateKey());
+            ->groupBy(fn (ScheduleException $exception): string => $exception->dateKey())
+            ->all());
         $unavailableIntervals = array_values(UnavailablePeriod::query()
             ->where('organization_id', $organizationId)
             ->where('specialist_id', $specialist->getKey())
@@ -564,7 +567,8 @@ class CalculateAvailability
 
     /**
      * @param  Collection<int, LocationDay>  $locationDays
-     * @param  SupportCollection<string, SupportCollection<int, ScheduleException>>  $exceptions
+     * @param  SupportCollection<int|string, Collection<int, ScheduleException>>  $exceptions
+     * @param  Collection<int, SpecialistWorkingHour>  $workingHours
      * @param  list<InstantInterval>  $unavailableIntervals
      * @param  list<InstantInterval>  $bookingIntervals
      * @return list<AvailabilitySlot>
@@ -576,7 +580,7 @@ class CalculateAvailability
         CarbonImmutable $rangeEnd,
         CarbonImmutable $resultRangeStart,
         CarbonImmutable $resultRangeEnd,
-        SupportCollection $workingHours,
+        Collection $workingHours,
         SupportCollection $exceptions,
         array $unavailableIntervals,
         array $bookingIntervals,
@@ -696,17 +700,17 @@ class CalculateAvailability
         CarbonImmutable $rangeStart,
         CarbonImmutable $rangeEnd,
     ): array {
-        $dateFrom = null;
-        $dateTo = null;
+        $dateFrom = '';
+        $dateTo = '';
 
         foreach ($this->locations->locationDaysByTimezone($locationDays)->keys() as $timezone) {
             $timezoneDateFrom = $rangeStart->setTimezone($timezone)->toDateString();
             $timezoneDateTo = $rangeEnd->subSecond()->setTimezone($timezone)->toDateString();
-            $dateFrom = $dateFrom === null || $timezoneDateFrom < $dateFrom ? $timezoneDateFrom : $dateFrom;
-            $dateTo = $dateTo === null || $timezoneDateTo > $dateTo ? $timezoneDateTo : $dateTo;
+            $dateFrom = $dateFrom === '' || $timezoneDateFrom < $dateFrom ? $timezoneDateFrom : $dateFrom;
+            $dateTo = $dateTo === '' || $timezoneDateTo > $dateTo ? $timezoneDateTo : $dateTo;
         }
 
-        if ($dateFrom === null || $dateTo === null) {
+        if ($dateFrom === '' || $dateTo === '') {
             throw new InvalidArgumentException('The location-day date range is invalid.');
         }
 
@@ -743,7 +747,7 @@ class CalculateAvailability
         }
 
         if ($booking->visit_format === VisitFormat::HomeVisit && $booking->location_area !== null) {
-            $locationDays = $this->locations->activeLocationDays($booking->location_area);
+            $locationDays = $this->locations->activeLocationDays($booking->location_area, (int) $specialist->getKey());
             if ($locationDays->isNotEmpty()) {
                 $matchingLocationDays = $this->locations->matchingLocationDays(
                     $booking->location_area,

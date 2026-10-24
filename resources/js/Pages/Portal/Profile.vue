@@ -1,10 +1,14 @@
 <script setup lang="ts">
-import { useForm } from '@inertiajs/vue3';
+import { Link, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import LegalConsentChecklist from '../../Components/Portal/LegalConsentChecklist.vue';
+import TextAutocomplete from '../../Components/Portal/TextAutocomplete.vue';
+import CityAutocomplete from '../../Components/Portal/CityAutocomplete.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
+import { countryNames } from '../../utils/countryNames';
+import { formatPhone, formatPhoneInput, phoneExample } from '../../utils/profilePhone';
 
 type LegalDocument = {
     id: number;
@@ -20,6 +24,13 @@ type LegalDocument = {
 
 type Profile = {
     fullName: string | null;
+    firstName: string | null;
+    lastName: string | null;
+    middleName: string | null;
+    gender: 'MALE' | 'FEMALE' | null;
+    birthDate: string | null;
+    country: string | null;
+    city: string | null;
     email: string | null;
     phone: string | null;
     timezone: string;
@@ -39,13 +50,18 @@ const props = defineProps<{
     telegram: Telegram;
     legalDocuments: LegalDocument[];
     urls: {
+        family: string | null;
         update: string;
         consents: string;
         telegramLink: string;
         b2bAnswer: string;
         referrals: string;
+        cities: string;
+        currency: string;
     };
     saved: boolean;
+    currencySaved: boolean;
+    currencyPreference: { selected: string | null; base: string | null; options: string[] };
     consentsSaved: boolean;
     b2bSpecialistAnswer: 'yes' | 'no' | null;
     marketingConsent: { documentId: number; accepted: boolean } | null;
@@ -53,13 +69,28 @@ const props = defineProps<{
 }>();
 
 const { locale, t } = usePortalLocale();
+const profileSaved = ref(props.saved);
+const profileSaveError = ref<string | null>(null);
+const currencyForm = useForm({ preferred_currency: props.currencyPreference.selected ?? '' });
 const profileForm = useForm<{
-    full_name: string;
+    first_name: string;
+    last_name: string;
+    middle_name: string;
+    gender: string;
+    birth_date: string;
+    country: string;
+    city: string;
     email: string;
     phone: string;
     timezone: string;
 }>({
-    full_name: props.profile.fullName ?? '',
+    first_name: props.profile.firstName ?? '',
+    last_name: props.profile.lastName ?? '',
+    middle_name: props.profile.middleName ?? '',
+    gender: props.profile.gender ?? '',
+    birth_date: props.profile.birthDate ?? '',
+    country: props.profile.country ?? '',
+    city: props.profile.city ?? '',
     email: props.profile.email ?? '',
     phone: props.profile.phone ?? '',
     timezone: props.profile.timezone,
@@ -82,6 +113,14 @@ const b2bAnswerForm = useForm<{ b2b_specialist_answer: 'yes' | 'no' | null }>({
     b2b_specialist_answer: props.b2bSpecialistAnswer,
 });
 const editingB2bAnswer = ref(false);
+const personalFields = [
+    { key: 'last_name', label: 'profile.lastName', autocomplete: 'family-name', required: true },
+    { key: 'first_name', label: 'profile.firstName', autocomplete: 'given-name', required: true },
+    { key: 'middle_name', label: 'profile.middleName', autocomplete: 'additional-name', required: false },
+    { key: 'country', label: 'profile.country', autocomplete: 'country-name', required: true },
+    { key: 'city', label: 'profile.city', autocomplete: 'address-level2', required: true },
+] as const;
+const countries = computed(() => countryNames(locale.value));
 const hasRequiredConsentError = computed(() =>
     Object.keys(consentForm.errors).some((key) => key.startsWith('consents')),
 );
@@ -89,6 +128,28 @@ const hasRequiredConsentError = computed(() =>
 function saveProfile(): void {
     profileForm.post(props.urls.update, {
         preserveScroll: true,
+        preserveState: true,
+        onStart: () => {
+            profileSaved.value = false;
+            profileSaveError.value = null;
+        },
+        onSuccess: () => {
+            profileSaved.value = true;
+        },
+        onHttpException: (response) => {
+            profileSaveError.value = response.status === 401 || response.status === 419
+                ? t('profile.saveSessionExpired')
+                : response.status === 403
+                    ? t('profile.saveAccessDenied')
+                    : t('profile.saveRetry');
+
+            return false;
+        },
+        onNetworkError: () => {
+            profileSaveError.value = t('profile.saveRetry');
+
+            return false;
+        },
     });
 }
 
@@ -147,6 +208,63 @@ function saveB2bAnswer(): void {
         </div>
       </header>
 
+      <form
+        v-if="props.currencyPreference.options.length"
+        class="portal-content-section portal-stack"
+        @submit.prevent="currencyForm.post(props.urls.currency, { preserveScroll: true })"
+      >
+        <div class="portal-field">
+          <label
+            for="profile-currency"
+            class="portal-label"
+          >{{ t('profile.currency') }}</label>
+          <select
+            id="profile-currency"
+            v-model="currencyForm.preferred_currency"
+            class="portal-input"
+          >
+            <option value="">
+              {{ t('profile.currencyDefault') }} ({{ props.currencyPreference.base }})
+            </option>
+            <option
+              v-for="currency in props.currencyPreference.options"
+              :key="currency"
+              :value="currency"
+            >
+              {{ currency }}
+            </option>
+          </select>
+          <p
+            v-if="currencyForm.errors.preferred_currency"
+            class="portal-error"
+          >
+            {{ currencyForm.errors.preferred_currency }}
+          </p>
+        </div>
+        <div class="portal-form-actions">
+          <button
+            type="submit"
+            class="portal-button portal-button--primary"
+            :disabled="currencyForm.processing"
+          >
+            {{ t('profile.save') }}
+          </button>
+          <p
+            v-if="currencySaved"
+            class="portal-copy"
+          >
+            {{ t('profile.saved') }}
+          </p>
+        </div>
+      </form>
+
+      <Link
+        v-if="props.urls.family"
+        :href="props.urls.family"
+        class="portal-link"
+      >
+        {{ t('family.title') }}
+      </Link>
       <section class="portal-content-section portal-stack">
         <div class="portal-section-heading">
           <span class="portal-label">{{ t('profile.language') }}</span>
@@ -159,23 +277,95 @@ function saveB2bAnswer(): void {
           @submit.prevent="saveProfile"
         >
           <div class="portal-grid portal-grid--two">
+            <div
+              v-for="field in personalFields"
+              :key="field.key"
+              class="portal-field"
+            >
+              <label
+                :for="'profile-' + field.key"
+                class="portal-label"
+              >{{ t(field.label) }}</label>
+              <TextAutocomplete
+                v-if="field.key === 'country'"
+                :id="'profile-' + field.key"
+                v-model="profileForm.country"
+                :suggestions="countries"
+                :empty-text="t('profile.countryNoMatch')"
+                required
+              />
+              <input
+                v-else-if="field.key !== 'city'"
+                :id="'profile-' + field.key"
+                v-model="profileForm[field.key]"
+                type="text"
+                :autocomplete="field.autocomplete"
+                :required="field.required"
+                maxlength="100"
+                class="portal-input"
+              >
+              <CityAutocomplete
+                v-else
+                :id="'profile-' + field.key"
+                v-model="profileForm.city"
+                :country="profileForm.country"
+                :cities-url="props.urls.cities"
+                required
+              />
+              <p
+                v-if="profileForm.errors[field.key]"
+                class="portal-error"
+              >
+                {{ profileForm.errors[field.key] }}
+              </p>
+            </div>
+
+            <fieldset class="portal-field">
+              <legend class="portal-label">
+                {{ t('profile.gender') }}
+              </legend>
+              <div class="portal-segmented portal-profile-gender">
+                <label
+                  v-for="gender in ['MALE', 'FEMALE']"
+                  :key="gender"
+                  class="portal-segmented__button portal-profile-gender__option"
+                  :class="{ 'portal-segmented__button--active': profileForm.gender === gender }"
+                >
+                  <input
+                    v-model="profileForm.gender"
+                    type="radio"
+                    name="gender"
+                    :value="gender"
+                    required
+                    class="sr-only"
+                  >
+                  {{ t(gender === 'MALE' ? 'profile.male' : 'profile.female') }}
+                </label>
+              </div>
+              <p
+                v-if="profileForm.errors.gender"
+                class="portal-error"
+              >
+                {{ profileForm.errors.gender }}
+              </p>
+            </fieldset>
             <div class="portal-field">
               <label
-                for="profile-full-name"
+                for="profile-birth-date"
                 class="portal-label"
-              >{{ t('profile.name') }}</label>
+              >{{ t('profile.birthDate') }}</label>
               <input
-                id="profile-full-name"
-                v-model="profileForm.full_name"
-                type="text"
-                autocomplete="name"
+                id="profile-birth-date"
+                v-model="profileForm.birth_date"
+                type="date"
+                required
                 class="portal-input"
               >
               <p
-                v-if="profileForm.errors.full_name"
+                v-if="profileForm.errors.birth_date"
                 class="portal-error"
               >
-                {{ profileForm.errors.full_name }}
+                {{ profileForm.errors.birth_date }}
               </p>
             </div>
 
@@ -188,9 +378,13 @@ function saveB2bAnswer(): void {
                 id="profile-phone"
                 v-model="profileForm.phone"
                 type="tel"
+                required
                 autocomplete="tel"
                 class="portal-input"
-                :placeholder="t('profile.notSpecified')"
+                :placeholder="phoneExample(profileForm.country)"
+                maxlength="32"
+                @input="profileForm.phone = formatPhoneInput(profileForm.phone, profileForm.country)"
+                @blur="profileForm.phone = formatPhone(profileForm.phone, profileForm.country)"
               >
               <p
                 v-if="profileForm.errors.phone"
@@ -214,6 +408,9 @@ function saveB2bAnswer(): void {
                 :disabled="!props.profile.emailEditable"
                 :placeholder="t('profile.notSpecified')"
               >
+              <p class="portal-copy portal-copy--small">
+                {{ t('profile.emailPurpose') }}
+              </p>
               <p
                 v-if="!props.profile.emailEditable"
                 class="portal-copy portal-copy--small"
@@ -256,11 +453,18 @@ function saveB2bAnswer(): void {
               {{ profileForm.processing ? t('profile.saving') : t('profile.save') }}
             </button>
             <p
-              v-if="props.saved"
+              v-if="profileSaved"
               class="portal-notice"
               role="status"
             >
               {{ t('profile.saved') }}
+            </p>
+            <p
+              v-if="profileSaveError"
+              class="portal-error"
+              role="alert"
+            >
+              {{ profileSaveError }}
             </p>
           </div>
         </form>
@@ -430,3 +634,20 @@ function saveB2bAnswer(): void {
     </section>
   </AppShell>
 </template>
+
+<style scoped>
+.portal-profile-gender {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.portal-profile-gender__option {
+    display: grid;
+    place-items: center;
+    text-align: center;
+}
+
+.portal-profile-gender__option:focus-within {
+    outline: 2px solid var(--portal-color-ink);
+    outline-offset: 2px;
+}
+</style>

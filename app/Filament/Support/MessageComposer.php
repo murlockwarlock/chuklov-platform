@@ -29,6 +29,7 @@ final class MessageComposer
      * @param  Closure(): array<int, mixed>|null  $savedTemplateSchema
      * @param  array<int, mixed>  $additionalMediaComponents
      * @param  array<int, string>|null  $mediaAcceptedFileTypes
+     * @param  Closure(Get, ?Model): bool|null  $hasSavedMedia
      * @return array<int, Section>
      */
     public static function make(
@@ -56,6 +57,7 @@ final class MessageComposer
         ?string $mediaSelectionField = null,
         bool $mediaUsesCaptionLimit = false,
         bool $compact = false,
+        ?Closure $hasSavedMedia = null,
     ): array {
         $messageModeField = 'message_mode';
 
@@ -98,8 +100,10 @@ final class MessageComposer
                 ->inline()
                 ->helperText(__('Для разовой отправки оставьте «Написать сообщение».'))
                 ->columnSpanFull()
-                ->visible(fn (Get $get): bool => self::includesText($get, $deliveryModeField))
-                ->required(fn (Get $get): bool => self::includesText($get, $deliveryModeField));
+                ->visible(fn (Get $get): bool => self::includesText($get, $deliveryModeField)
+                    || self::usesMedia($get, $deliveryModeField))
+                ->required(fn (Get $get): bool => self::includesText($get, $deliveryModeField)
+                    || self::usesMedia($get, $deliveryModeField));
         }
 
         $bodyEditor = $compact
@@ -166,10 +170,11 @@ final class MessageComposer
             ->maxSize($mediaMaxKilobytes ?? self::mediaUploadKilobytes())
             ->storeFiles(false)
             ->live()
-            ->required(fn (Get $get): bool => $requireMedia
+            ->required(fn (Get $get, ?Model $record): bool => $requireMedia
                 && self::usesMedia($get, $deliveryModeField)
                 && ! self::hasUploads($get, $mediaField)
-                && blank($get($mediaUrlField)))
+                && blank($get($mediaUrlField))
+                && ($hasSavedMedia === null || ! $hasSavedMedia($get, $record)))
             ->afterStateUpdated(function (Set $set): void {
                 $set('remove_media', false);
             })
@@ -240,9 +245,10 @@ final class MessageComposer
                     ->url()
                     ->maxLength(2000)
                     ->live()
-                    ->required(fn (Get $get): bool => $requireMedia
+                    ->required(fn (Get $get, ?Model $record): bool => $requireMedia
                         && self::usesMedia($get, $deliveryModeField)
-                        && ! self::hasUploads($get, $mediaField))
+                        && ! self::hasUploads($get, $mediaField)
+                        && ($hasSavedMedia === null || ! $hasSavedMedia($get, $record)))
                     ->afterStateUpdated(function (Set $set): void {
                         $set('remove_media', false);
                     })

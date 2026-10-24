@@ -12,7 +12,17 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** @property CarbonImmutable $starts_at @property CarbonImmutable $ends_at @property CarbonImmutable|null $ended_at @property int|null $applied_price_minor @property int|null $applied_duration_days @property string|null $applied_plan_name @property string|null $applied_monthly_practice @property CurrencyCode|string|null $applied_currency */
+/**
+ * @property CarbonImmutable $starts_at
+ * @property CarbonImmutable $ends_at
+ * @property CarbonImmutable|null $ended_at
+ * @property int|null $applied_price_minor
+ * @property int|null $applied_duration_days
+ * @property string|null $applied_plan_name
+ * @property string|null $applied_monthly_practice
+ * @property CurrencyCode|string|null $applied_currency
+ * @property TrackerEntitlementSource $source
+ */
 #[Fillable(['active', 'starts_at', 'ends_at', 'source', 'reason', 'applied_price_minor', 'applied_currency', 'applied_duration_days', 'applied_monthly_practice', 'created_by_user_id', 'ended_at'])]
 class TrackerEntitlement extends Model
 {

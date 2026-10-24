@@ -2,15 +2,22 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
+use App\Modules\Identity\Application\BlockClientBlacklist;
+use App\Modules\Identity\Application\CreatePatientProfile;
 use App\Modules\Identity\Application\CreatePlatformLegalDocumentDraft;
 use App\Modules\Identity\Application\PublishLegalDocument;
+use App\Modules\Identity\Application\RevokePatientRelationship;
+use App\Modules\Identity\Application\UnblockClientBlacklist;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\LegalDocument;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
+use App\Modules\Scheduling\Application\ConfirmBooking;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
@@ -18,18 +25,164 @@ use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
+use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia;
+use Mockery;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
 class PortalBookingRemediationTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_self_booking_for_a_medical_service_opens_the_medical_editor_and_returns_to_booking_details(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $response = $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'consents' => $this->acceptedConsents($organization),
+        ]));
+
+        $response->assertSessionHasNoErrors()->assertRedirect();
+        $booking = Booking::query()->sole();
+        $medicalProfileUrl = null;
+        $response->assertSessionHas('portal_booking_result', function (array $result) use (&$medicalProfileUrl, $booking): bool {
+            $medicalProfileUrl = $result['medicalProfileUrl'] ?? null;
+
+            return is_string($medicalProfileUrl)
+                && $result['bookingId'] === $booking->getKey()
+                && $result['requiresPatientMedicalProfile'] === false;
+        });
+
+        self::assertIsString($medicalProfileUrl);
+        $query = [];
+        parse_str((string) parse_url($medicalProfileUrl, PHP_URL_QUERY), $query);
+        self::assertSame((string) $booking->getKey(), $query['booking_id'] ?? null);
+        self::assertSame('1', $query['edit'] ?? null);
+
+        $this->get($medicalProfileUrl)->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('Portal/MedicalProfile')
+            ->where('editing', true)
+            ->where('returnUrl', route('portal.bookings.show', ['bookingId' => $booking->getKey()])));
+    }
+
+    public function test_family_booking_preserves_customer_patient_and_separate_medical_flow(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $service->forceFill(['requires_medical_profile' => true])->save();
+        $patient = app(CreatePatientProfile::class)->handle($client, [
+            'first_name' => 'Synthetic', 'last_name' => 'Child', 'gender' => 'MALE',
+            'birth_date' => '2020-01-02', 'relationship' => 'CHILD',
+        ], '00000000-0000-4000-8000-000000000321');
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->get(route('portal.bookings.create', ['patient_profile_id' => $patient->getKey()]))
+            ->assertInertia(fn (AssertableInertia $page) => $page->where('selectedPatientId', $patient->getKey()));
+        $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'patient_profile_id' => $patient->getKey(), 'consents' => $this->acceptedConsents($organization),
+        ]))->assertSessionHasNoErrors()->assertRedirect()
+            ->assertSessionHas('portal_booking_result', fn (array $result): bool => $result['medicalProfileUrl'] === null
+                && $result['patientProfileId'] === $patient->getKey() && $result['requiresPatientMedicalProfile'] === true);
+        $booking = Booking::query()->sole();
+        self::assertSame($client->getKey(), $booking->client_id);
+        self::assertSame($patient->getKey(), $booking->patient_profile_id);
+        self::assertSame($patient->clinical_client_id, $booking->clinicalClientId());
+        $this->get(route('portal.bookings.show', ['bookingId' => $booking->getKey()]))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('booking.patientName', $patient->clinicalClient->full_name)->where('booking.isCustomer', true));
+        $this->get(route('portal.medical-profile', ['booking_id' => $booking->getKey()]))->assertForbidden();
+        app(RevokePatientRelationship::class)->handle($client, $patient);
+        $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'patient_profile_id' => $patient->getKey(), 'starts_at' => '2026-03-17T09:00:00+00:00',
+            'consents' => $this->acceptedConsents($organization),
+        ]))->assertForbidden();
+        self::assertSame(1, Booking::query()->count());
+    }
+
+    public function test_nonmedical_booking_remains_available_when_medical_records_are_disabled(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $service->forceFill(['requires_medical_profile' => false])->save();
+        $organization->featureFlags()->where('feature_key', OrganizationFeature::ClientRecords->value)->update(['enabled' => false]);
+        OrganizationFeatureGate::invalidate();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->get(route('portal.bookings.create'))->assertInertia(fn (AssertableInertia $page) => $page->where('patients.enabled', false));
+        $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'consents' => $this->acceptedConsents($organization),
+        ]))->assertSessionHasNoErrors()->assertRedirect()->assertSessionHas('portal_booking_result', fn (array $result): bool => $result['medicalProfileUrl'] === null);
+        self::assertSame(1, Booking::query()->count());
+    }
+
+    public function test_blacklist_denies_portal_booking_with_a_specific_error_then_allows_an_idempotent_retry_after_unblock(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(BlockClientBlacklist::class)->handle($admin, $client, 'Синтетическая проверка booking denial.');
+        Log::spy();
+
+        $payload = $this->bookingPayload($service, $specialist, [
+            'consents' => $this->acceptedConsents($organization),
+        ]);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.store'), $payload)
+            ->assertSessionHasErrors([
+                'starts_at' => 'Online booking is unavailable for this profile. Contact us and we will help you find an option.',
+            ]);
+
+        self::assertSame(0, Booking::query()->where('client_id', $client->getKey())->count());
+        self::assertSame(0, DB::table('booking_idempotency_keys')->where('actor_scope', 'client:'.$client->getKey())->count());
+
+        Log::shouldHaveReceived('warning')
+            ->with('portal.booking.denied', Mockery::on(function (array $context) use ($organization, $client): bool {
+                return $context['operation'] === 'booking.create'
+                    && $context['organization_id'] === $organization->getKey()
+                    && $context['actor_type'] === 'client'
+                    && $context['actor_id'] === $client->getKey()
+                    && $context['client_id'] === $client->getKey()
+                    && $context['reason_code'] === 'blacklist'
+                    && $context['outcome'] === 'denied'
+                    && isset($context['occurred_at'])
+                    && ! array_key_exists('reason', $context);
+            }))
+            ->once();
+
+        app(UnblockClientBlacklist::class)->handle($admin, $client);
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors()->assertRedirect();
+        $booking = Booking::query()->where('client_id', $client->getKey())->sole();
+        self::assertSame($client->getKey(), $booking->client_id);
+
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors();
+        self::assertSame(1, Booking::query()->where('client_id', $client->getKey())->count());
+        self::assertSame(1, AuditEvent::query()->where('organization_id', $organization->getKey())
+            ->where('action', 'booking.created')->count());
+    }
+
+    public function test_foreign_patient_identifier_cannot_book_or_mutate_customer_personal_data(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $other = Client::factory()->forOrganization($organization)->create();
+        $patient = app(CreatePatientProfile::class)->handle($other, [
+            'first_name' => 'Synthetic', 'last_name' => 'Patient', 'gender' => 'FEMALE',
+            'birth_date' => '1990-01-02', 'relationship' => 'SPOUSE',
+        ], '00000000-0000-4000-8000-000000000321');
+        $before = $client->fresh()->getRawOriginal();
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'patient_profile_id' => $patient->getKey(), 'personal_data' => ['first_name' => 'Forbidden mutation'],
+            'consents' => $this->acceptedConsents($organization),
+        ]))->assertForbidden();
+        self::assertSame($before, $client->fresh()->getRawOriginal());
+        self::assertSame(0, Booking::query()->count());
+    }
 
     protected function setUp(): void
     {
@@ -43,6 +196,85 @@ class PortalBookingRemediationTest extends TestCase
         Carbon::setTestNow();
 
         parent::tearDown();
+    }
+
+    public function test_booking_personal_data_is_persisted_atomically_and_prefilled_when_reopened(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $this->withSession(['client_portal.client_id' => $client->getKey()])->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'personal_data' => ['first_name' => 'Новый', 'last_name' => 'Клиент', 'middle_name' => 'Тестовый',
+                'gender' => 'MALE', 'birth_date' => '1990-01-02', 'country' => 'Казахстан',
+                'city' => 'Алматы', 'phone' => '+7 (701) 234-56-78', 'email' => $client->email],
+            'consents' => $this->acceptedConsents($organization),
+        ]))->assertSessionHasNoErrors()->assertRedirect();
+        self::assertSame('Клиент Новый Тестовый', $client->refresh()->full_name);
+        self::assertSame('+77012345678', $client->phone);
+        self::assertSame(1, Booking::query()->where('client_id', $client->getKey())->count());
+        $this->get(route('portal.bookings.create'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('profile.firstName', 'Новый')->where('profile.city', 'Алматы')->where('profile.phone', '+77012345678'));
+        $this->get(route('portal.profile'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('profile.lastName', 'Клиент')->where('profile.middleName', 'Тестовый'));
+    }
+
+    /** @return array<string, array{array<string, list<string>>, int}> */
+    public static function personalDataBookingModes(): array
+    {
+        return [
+            'single' => [[], 1],
+            'multiple' => [['additional_starts_at' => ['2026-03-17T09:00:00+00:00']], 2],
+        ];
+    }
+
+    /** @param array<string, list<string>> $additional */
+    #[DataProvider('personalDataBookingModes')]
+    public function test_booking_personal_data_replay_does_not_overwrite_profile_or_accept_changed_intent(array $additional, int $bookingCount): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $payload = $this->bookingPayload($service, $specialist, [
+            'personal_data' => ['first_name' => 'Original booking name'],
+            'idempotency_key' => '00000000-0000-4000-8000-000000000123',
+            'consents' => $this->acceptedConsents($organization),
+            ...$additional,
+        ]);
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors();
+        $auditCount = AuditEvent::query()->count();
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors();
+        self::assertSame($auditCount, AuditEvent::query()->count());
+        self::assertSame($bookingCount, Booking::query()->where('client_id', $client->getKey())->count());
+        $payload['personal_data']['first_name'] = 'Changed replay';
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors();
+        self::assertSame('Original booking name', $client->refresh()->first_name);
+        self::assertSame($bookingCount, Booking::query()->where('client_id', $client->getKey())->count());
+    }
+
+    public function test_missing_or_invalid_booking_personal_data_cannot_create_a_booking_or_mutate_identity(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $original = $client->only(['first_name', 'last_name', 'city', 'phone']);
+        foreach ([['first_name' => ''], ['birth_date' => '2999-01-01'], ['phone' => '+7 garbage'], ['gender' => 'OTHER']] as $invalid) {
+            $this->withSession(['client_portal.client_id' => $client->getKey()])->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+                'personal_data' => [...$invalid, 'city' => 'Must not be saved'], 'consents' => $this->acceptedConsents($organization),
+            ]))->assertSessionHasErrors('personal_data.'.array_key_first($invalid));
+            self::assertSame($original, $client->refresh()->only(array_keys($original)));
+            self::assertSame(0, Booking::query()->where('client_id', $client->getKey())->count());
+        }
+    }
+
+    public function test_later_booking_failure_rolls_back_personal_data_and_its_audit(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $original = $client->only(['first_name', 'last_name', 'city', 'phone']);
+        $auditCount = AuditEvent::query()->where('target_type', Client::class)
+            ->where('target_id', (string) $client->getKey())->count();
+        $this->withSession(['client_portal.client_id' => $client->getKey()])->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'personal_data' => ['first_name' => 'Should roll back', 'city' => 'Changed city'],
+            'consents' => [],
+        ]))->assertSessionHasErrors('consents');
+        self::assertSame($original, $client->refresh()->only(array_keys($original)));
+        self::assertSame(0, Booking::query()->where('client_id', $client->getKey())->count());
+        self::assertSame($auditCount, AuditEvent::query()->where('target_type', Client::class)
+            ->where('target_id', (string) $client->getKey())->count());
     }
 
     public function test_booking_create_projects_exact_major_prices_without_exposing_minor_units(): void
@@ -452,6 +684,109 @@ class PortalBookingRemediationTest extends TestCase
             ->assertInvalid(['service_id' => 'Выберите услугу.']);
     }
 
+    public function test_portal_multi_session_create_replay_receipt_and_independent_cancellation(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $service->update(['requires_medical_profile' => false]);
+        $idempotencyKey = (string) Str::uuid();
+        $payload = $this->bookingPayload($service, $specialist, [
+            'additional_starts_at' => ['2026-03-17T09:00:00+00:00'],
+            'idempotency_key' => $idempotencyKey,
+            'consents' => $this->acceptedConsents($organization),
+        ]);
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $response = $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors()->assertRedirect();
+        $receiptUrl = $response->headers->get('Location');
+        self::assertCount(2, Booking::query()->where('client_id', $client->id)->get());
+        self::assertSame(2, DB::table('scenario_events')->where('event_name', 'booking.created')->count());
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors();
+        self::assertSame(2, Booking::query()->count());
+        self::assertSame(2, DB::table('scenario_events')->where('event_name', 'booking.created')->count());
+        $this->get($receiptUrl)->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('bookingResult.startsAtList', ['2026-03-16T09:00:00+00:00', '2026-03-17T09:00:00+00:00'])
+            ->where('bookingResult.medicalProfileUrl', null));
+        $admin = User::factory()->forOrganization($organization)->create();
+        foreach (Booking::query()->get() as $booking) {
+            self::assertSame(BookingStatus::Requested, $booking->status);
+            app(ConfirmBooking::class)->handle($admin, $booking);
+        }
+        $first = Booking::query()->orderBy('starts_at')->firstOrFail();
+        $this->post(route('portal.bookings.cancel', $first->id))->assertSessionHasNoErrors();
+        self::assertSame(BookingStatus::Cancelled, $first->refresh()->status);
+        self::assertSame(BookingStatus::Confirmed, Booking::query()->whereKeyNot($first->id)->sole()->status);
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasNoErrors();
+        self::assertSame(2, Booking::query()->count());
+        self::assertSame(BookingStatus::Cancelled, $first->refresh()->status);
+        $payload['additional_starts_at'] = ['2026-03-18T09:00:00+00:00'];
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('idempotency_key');
+        self::assertSame(2, Booking::query()->count());
+        $payload['starts_at'] = '2026-03-19T09:00:00+00:00';
+        $payload['additional_starts_at'] = ['2026-03-20T09:00:00+00:00'];
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('idempotency_key');
+        self::assertSame(2, Booking::query()->count());
+        $otherClient = Client::factory()->forOrganization($organization)->create();
+        $this->withSession(['client_portal.client_id' => $otherClient->id]);
+        $this->get($receiptUrl)->assertNotFound();
+        $foreignClient = Client::factory()->forOrganization(Organization::factory()->create())->create();
+        $this->withSession(['client_portal.client_id' => $foreignClient->id]);
+        $this->post(route('portal.bookings.store'), $payload)->assertUnauthorized();
+    }
+
+    public function test_multi_session_conflict_rolls_back_bookings_consents_intents_and_events(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $idempotencyKey = (string) Str::uuid();
+        $payload = $this->bookingPayload($service, $specialist, [
+            'additional_starts_at' => ['2026-03-17T11:00:00+00:00'],
+            'idempotency_key' => $idempotencyKey,
+            'consents' => $this->acceptedConsents($organization),
+        ]);
+        $this->withSession(['client_portal.client_id' => $client->id]);
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('additional_starts_at');
+        foreach (['bookings', 'client_consents', 'booking_idempotency_keys', 'scenario_events'] as $table) {
+            self::assertSame(0, DB::table($table)->count(), $table);
+        }
+        $payload['additional_starts_at'] = [$payload['starts_at']];
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('additional_starts_at');
+        self::assertSame(0, Booking::query()->count());
+        unset($payload['idempotency_key']);
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('idempotency_key');
+        $payload['idempotency_key'] = $idempotencyKey;
+        $payload['client_timezone'] = 'Not/Timezone';
+        $this->post(route('portal.bookings.store'), $payload)->assertSessionHasErrors('client_timezone');
+        $this->get(route('portal.bookings.create', ['booking_ids' => [999999]]))->assertNotFound();
+    }
+
+    public function test_medical_continuation_returns_a_batch_to_all_bookings_and_rejects_external_return_targets(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $idempotencyKey = (string) Str::uuid();
+        $this->withSession(['client_portal.client_id' => $client->id]);
+        $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+            'additional_starts_at' => ['2026-03-17T09:00:00+00:00'],
+            'idempotency_key' => $idempotencyKey,
+            'consents' => $this->acceptedConsents($organization),
+        ]))->assertSessionHasNoErrors();
+        $booking = Booking::query()->orderBy('starts_at')->firstOrFail();
+        $query = ['booking_id' => $booking->id, 'return_to' => 'bookings', 'edit' => 1];
+        $page = $this->get(route('portal.medical-profile', $query))->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('returnUrl', route('portal.bookings.index'))->where('returnLabelKey', 'bookings.title'));
+        $snapshot = $page->viewData('page')['props']['profile']['expectedSnapshot'];
+        $this->post(route('portal.medical-profile.update', $query), [
+            'expected_snapshot' => $snapshot, 'complaints' => 'Synthetic symptoms', 'goals' => 'Synthetic goals',
+            'answers' => ['symptoms' => ['neck'], 'pain_vas' => null, 'no_chronic_conditions' => true, 'had_operations' => false, 'had_injuries' => false],
+        ])->assertSessionHasNoErrors()->assertRedirect(route('portal.bookings.index'));
+        $bookingsPage = $this->get(route('portal.bookings.index'))->assertOk()->viewData('page');
+        self::assertSame('Медицинские данные подтверждены', $bookingsPage['flash']['success'] ?? null);
+        $this->get(route('portal.medical-profile', ['booking_id' => $booking->id]))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('returnUrl', route('portal.bookings.show', $booking->id))->where('returnLabelKey', 'medical.backToBooking'));
+        $this->get(route('portal.medical-profile', ['booking_id' => $booking->id, 'return_to' => 'https://example.test']))
+            ->assertSessionHasErrors('return_to');
+        self::assertSame(2, Booking::query()->count());
+    }
+
     /** @return array{Organization, Client, Specialist, Service} */
     private function portalFixture(array $formats = ['office'], string $language = 'en'): array
     {
@@ -486,6 +821,8 @@ class PortalBookingRemediationTest extends TestCase
         $client = Client::factory()->forOrganization($organization)->create([
             'language' => $language,
             'timezone' => 'UTC',
+            'first_name' => 'QA', 'last_name' => 'Booking', 'gender' => 'MALE',
+            'birth_date' => '1990-01-02', 'country' => 'United States', 'city' => 'Washington', 'phone' => '+12025550123',
         ]);
         $specialist = Specialist::factory()->forOrganization($organization)->create(['timezone' => 'UTC']);
         $service = Service::factory()->forOrganization($organization)->create([

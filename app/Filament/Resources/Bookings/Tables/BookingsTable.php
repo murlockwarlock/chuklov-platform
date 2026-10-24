@@ -11,6 +11,7 @@ use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\CrmLabel;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Application\BookingNeedsAttention;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
@@ -43,8 +44,19 @@ class BookingsTable
                 ->url(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
                 ->color(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                 ->disabledClick(fn (Booking $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null)
-                ->toggleable(isToggledHiddenByDefault: true),
+                ->toggleable(),
             TextColumn::make('service.name')->label(__('Услуга'))->sortable()->wrap(),
+            TextColumn::make('patientProfile.clinicalClient.full_name')->label(__('Пациент'))->wrap()
+                ->state(function (Booking $record): ?string {
+                    if ($record->patient_profile_id !== null) {
+                        $profile = $record->patientProfile;
+                        if ($profile instanceof PatientProfile && $profile->clinicalClient instanceof Client) {
+                            return $profile->clinicalClient->full_name;
+                        }
+                    }
+
+                    return $record->client->full_name;
+                }),
             TextColumn::make('starts_at')
                 ->label(fn (): string => __('Дата и время (').self::viewerTimezone().')')
                 ->dateTime('d.m.Y H:i')
@@ -112,6 +124,7 @@ class BookingsTable
                     fn (Builder $query): Builder => $query->where('organization_id', self::organizationId()),
                 )
                 ->searchable()
+                ->multiple()
                 ->preload()
                 ->optionsLimit(50),
             SelectFilter::make('service')

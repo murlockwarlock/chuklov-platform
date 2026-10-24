@@ -24,12 +24,14 @@ class UpdateClientProfileFromPortal
         'phone',
         'language',
         'timezone',
+        ...NormalizeClientDemographics::FIELDS,
     ];
 
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationFeatureGate $features,
         private readonly RecordAuditEvent $audit,
+        private readonly NormalizeClientDemographics $demographics,
     ) {}
 
     /**
@@ -38,13 +40,31 @@ class UpdateClientProfileFromPortal
      */
     public function handle(Client $client, array $attributes, array $confirmedFields): Client
     {
+        return $this->update($client, $attributes, $confirmedFields, OrganizationFeature::ClientRecords);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $confirmedFields
+     */
+    public function handleForBooking(Client $client, array $attributes, array $confirmedFields): Client
+    {
+        return $this->update($client, $attributes, $confirmedFields, OrganizationFeature::ServiceCatalog);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     * @param  list<string>  $confirmedFields
+     */
+    private function update(Client $client, array $attributes, array $confirmedFields, OrganizationFeature $feature): Client
+    {
         $organization = $this->context->organization();
 
         if ((int) $client->organization_id !== $organization->getKey()) {
             throw new AuthorizationException('The client is outside the current organization.');
         }
 
-        $this->features->authorize($organization, OrganizationFeature::ClientRecords);
+        $this->features->authorize($organization, $feature);
 
         $confirmedFields = array_values(array_intersect($confirmedFields, self::FIELDS));
         $normalized = $this->normalize($attributes);
@@ -68,7 +88,22 @@ class UpdateClientProfileFromPortal
 
         }
 
-        return DB::transaction(function () use ($client, $normalized, $organization): Client {
+        return DB::transaction(function () use ($client, $normalized, $organization, $attributes): Client {
+            $client = Client::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($client->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            $normalized = [...$normalized, ...$this->demographics->handle($attributes, $client)];
+            if (is_string($normalized['phone'] ?? null)) {
+                $country = $normalized['country'] ?? $client->country;
+                $normalized['phone'] = app(ProfileReferenceData::class)->phone($normalized['phone'], is_string($country) ? $country : null);
+            }
+            if (array_key_exists('email', $normalized)
+                && $this->hasVerifiedEmailIdentity($client)
+                && $normalized['email'] !== $client->email) {
+                throw ValidationException::withMessages(['email' => 'A verified email can only be changed through a new verification flow.']);
+            }
             $changedFields = [];
             $attributesToSave = $normalized;
 

@@ -9,12 +9,19 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
+use App\Modules\Referrals\Application\CreditManualReferralBonus;
 use App\Modules\Referrals\Application\EnsureReferralIdentity;
+use App\Modules\Referrals\Application\RequestReferralPayout;
+use App\Modules\Referrals\Application\TransitionReferralPayoutRequest;
 use App\Modules\Referrals\Domain\Enums\ReferralCampaignChannel;
+use App\Modules\Referrals\Domain\Enums\ReferralPayoutRequestStatus;
 use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
+use App\Modules\Referrals\Domain\Models\ReferralPayoutRequest;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Route;
 use Inertia\Testing\AssertableInertia;
+use Mockery;
 use Tests\TestCase;
 
 class PortalProductUxTest extends TestCase
@@ -44,7 +51,7 @@ class PortalProductUxTest extends TestCase
                 ->where('portal.authenticated', true)
                 ->where('portal.clientName', 'Portal Client')
                 ->where('portal.isPartner', false)
-                ->where('healthAction', null)
+                ->where('healthAction.kind', 'diagnostics')
                 ->where('portal.urls.health', route('portal.health'))
                 ->where('portal.urls.more', route('portal.more'))
                 ->missing('auth')
@@ -65,7 +72,11 @@ class PortalProductUxTest extends TestCase
                 ->missing('surveys.attempts.0'));
 
         $this->get(route('portal.surveys.index'))
-            ->assertRedirect(route('portal.health'));
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Surveys')
+                ->has('definitions', 0)
+                ->has('attempts', 0));
 
         $this->get(route('portal.more'))
             ->assertOk()
@@ -149,14 +160,14 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('portal-report-metrics', $surveyReport);
         self::assertStringNotContainsString('grid grid-cols-1 gap-3 sm:grid-cols-2', $surveyReport);
         self::assertStringContainsString('active="more"', $section);
-        self::assertSame(6, substr_count($more, 'class="portal-list__row"'));
+        self::assertSame(9, substr_count($more, 'class="portal-list__row"'));
         self::assertStringContainsString("t('more.title')", $more);
         self::assertStringContainsString("t('more.profile')", $more);
         self::assertStringContainsString("t('more.finance')", $more);
         self::assertStringContainsString("t('more.giftCertificates')", $more);
         self::assertStringContainsString("t('more.partnership')", $more);
         self::assertStringContainsString("t('more.feedback')", $more);
-        self::assertStringNotContainsString("t('more.business')", $more);
+        self::assertStringContainsString("t('more.business')", $more);
         self::assertStringContainsString("'shell.more': 'Кабинет'", $portalLocale);
         self::assertStringContainsString("'shell.companion': 'Чат'", $portalLocale);
         self::assertStringContainsString("'more.title': 'Кабинет'", $portalLocale);
@@ -300,6 +311,78 @@ class PortalProductUxTest extends TestCase
         ])->assertInvalid('partner');
 
         self::assertDatabaseCount('referral_payout_requests', 0);
+    }
+
+    public function test_payout_feedback_reports_the_persisted_status_for_an_idempotent_replay(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create(['language' => 'ru']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(OrganizationContext::class)->set($organization);
+        $partner = app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
+        app(CreditManualReferralBonus::class)->handle(
+            actor: $admin,
+            partner: $partner,
+            amount: '2.00',
+            currency: 'USD',
+            reason: 'Synthetic payout status verification',
+            comment: null,
+            idempotencyKey: 'payout-status-credit',
+        );
+        $request = app(RequestReferralPayout::class)->handle($client, '2.00', 'USD', 'cancelled-payout-replay');
+        app(TransitionReferralPayoutRequest::class)->handle(
+            request: $request,
+            target: ReferralPayoutRequestStatus::Cancelled,
+            actor: $client,
+            idempotencyKey: 'cancel-payout-feedback',
+        );
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->from(route('portal.referrals'))
+            ->post(route('portal.referrals.payouts.store'), [
+                'amount' => '2.00',
+                'currency' => 'USD',
+                'idempotency_key' => 'cancelled-payout-replay',
+            ])
+            ->assertRedirect(route('portal.referrals'))
+            ->assertSessionHas('payout_feedback', fn (array $feedback): bool => $feedback['message'] === 'Эта заявка уже существует. Проверьте её статус в истории выплат.'
+                && $feedback['amount'] === '2.00 USD'
+                && $feedback['status'] === 'Отменена'
+            );
+
+        self::assertDatabaseHas('referral_payout_requests', [
+            'organization_id' => $organization->getKey(),
+            'beneficiary_client_id' => $client->getKey(),
+            'idempotency_key' => 'cancelled-payout-replay',
+            'status' => ReferralPayoutRequestStatus::Cancelled->value,
+        ]);
+
+        Log::spy();
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->from(route('portal.referrals'))
+            ->post(route('portal.referrals.payouts.store'), [
+                'amount' => '3.00',
+                'currency' => 'USD',
+                'idempotency_key' => 'cancelled-payout-replay',
+            ])
+            ->assertRedirect(route('portal.referrals'))
+            ->assertSessionHasErrors([
+                'idempotency_conflict' => 'Этот ключ уже использован для другой суммы или валюты. Обновите страницу и отправьте запрос ещё раз.',
+            ]);
+
+        self::assertSame(1, ReferralPayoutRequest::query()->count());
+        Log::shouldHaveReceived('warning')
+            ->with('referral.payout.idempotency_conflict', Mockery::on(function (array $context) use ($organization, $client, $request): bool {
+                return $context['operation'] === 'request_referral_payout'
+                    && $context['organization_id'] === $organization->getKey()
+                    && $context['actor_client_id'] === $client->getKey()
+                    && $context['entity_type'] === $request::class
+                    && $context['entity_id'] === (string) $request->getKey()
+                    && $context['error_code'] === 'idempotency_payload_mismatch'
+                    && preg_match('/^\d{4}-\d{2}-\d{2}T.*\+00:00$/', $context['occurred_at']) === 1
+                    && $context['outcome'] === 'rejected'
+                    && ! array_key_exists('idempotency_key', $context);
+            }));
     }
 
     public function test_incomplete_optional_profile_does_not_block_home_or_profile_updates(): void

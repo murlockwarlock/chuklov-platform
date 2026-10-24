@@ -6,6 +6,7 @@ use App\Mail\ClientEmailVerificationCode;
 use App\Modules\Identity\Domain\Contracts\EmailVerificationCodeSender;
 use Illuminate\Contracts\Mail\Factory as MailFactory;
 use Illuminate\Mail\Mailer;
+use Illuminate\Mail\Transport\ArrayTransport;
 use LogicException;
 use Symfony\Component\Mailer\Transport\TransportInterface;
 
@@ -15,10 +16,10 @@ final class LaravelEmailVerificationCodeSender implements EmailVerificationCodeS
 
     public function send(string $email, string $code): void
     {
-        $mailer = $this->mailFactory->mailer((string) config(
-            'mail.auth_mailer',
-            config('mail.default'),
-        ));
+        $mailerName = $this->isQaAddress($email)
+            ? 'qa_auth'
+            : (string) config('mail.auth_mailer', config('mail.default'));
+        $mailer = $this->mailFactory->mailer($mailerName);
 
         if (! $mailer instanceof Mailer) {
             throw new LogicException('The authentication mail transport cannot be verified.');
@@ -30,7 +31,20 @@ final class LaravelEmailVerificationCodeSender implements EmailVerificationCodeS
             throw new LogicException('The authentication mail transport cannot log message contents.');
         }
 
+        if ($transport instanceof ArrayTransport && ! app()->environment('testing')) {
+            throw new LogicException('The authentication mail transport cannot deliver messages.');
+        }
+
         $mailer->to($email)->send(new ClientEmailVerificationCode($code));
+    }
+
+    private function isQaAddress(string $email): bool
+    {
+        $domain = strtolower(trim((string) config('mail.qa_auth.domain', '')));
+
+        return (bool) config('mail.qa_auth.enabled', false)
+            && preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+invalid$/D', $domain) === 1
+            && str_ends_with(strtolower(trim($email)), '@'.$domain);
     }
 
     private function isLoggingTransport(TransportInterface $transport): bool

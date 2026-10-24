@@ -1,7 +1,7 @@
 COMPOSE := docker-compose
 PHP := php
 
-.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-integration-foundation test-integration-rag test-integration-concurrency test-e2e lint static quality check-fast ci check-app-key check-docker-context scan-secrets privacy migrate seed backup deploy deploy-staging rollback
+.PHONY: setup up down infra infra-wait test test-unit test-feature test-integration test-integration-foundation test-integration-rag test-integration-concurrency test-e2e lint static quality check-fast ci check-app-key check-docker-context scan-secrets privacy migrate seed backup deploy deploy-staging deploy-staging-nginx-config rollback
 
 setup:
 	test -f .env || cp .env.example .env
@@ -45,7 +45,7 @@ test-integration-rag:
 	DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=chuklov_test DB_USERNAME=chuklov DB_PASSWORD=chuklov_local CACHE_STORE=array QUEUE_CONNECTION=sync $(PHP) artisan test tests/Integration/MilestoneNineDatabaseTest.php tests/Integration/PgvectorStatementTimeoutTest.php tests/Integration/KnowledgeRevisionsFilamentPostgresTest.php
 
 test-integration-concurrency:
-	DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=chuklov_test DB_USERNAME=chuklov DB_PASSWORD=chuklov_local CACHE_STORE=array QUEUE_CONNECTION=sync $(PHP) artisan test tests/Integration/ClientCompanionPostgresTest.php tests/Integration/ClinicalAiConcurrencyTest.php tests/Integration/ClinicalAiReviewedSourceSelectionTest.php tests/Integration/MilestoneFourConcurrencyTest.php tests/Integration/MilestoneFiveConcurrencyTest.php tests/Integration/MilestoneSixFinanceConcurrencyTest.php tests/Integration/MilestoneNineConcurrencyTest.php tests/Integration/MilestoneTenConcurrencyTest.php tests/Integration/MilestoneElevenAConcurrencyTest.php tests/Integration/ReferralRewardsConcurrencyTest.php tests/Integration/ReferralPartnerConcurrencyTest.php tests/Integration/MilestoneElevenBBroadcastConcurrencyTest.php tests/Integration/B2bSalesCallPostgresTest.php tests/Integration/B2bZoomCredentialPostgresTest.php tests/Integration/KnowledgeStorageCleanupPostgresTest.php tests/Integration/GiftCertificateConcurrencyTest.php
+	DB_CONNECTION=pgsql DB_HOST=127.0.0.1 DB_PORT=5432 DB_DATABASE=chuklov_test DB_USERNAME=chuklov DB_PASSWORD=chuklov_local CACHE_STORE=array QUEUE_CONNECTION=sync $(PHP) artisan test tests/Integration/ClientCompanionPostgresTest.php tests/Integration/ClinicalAiConcurrencyTest.php tests/Integration/ClinicalAiReviewedSourceSelectionTest.php tests/Integration/MedicalAttachmentLimitPostgresTest.php tests/Integration/MilestoneFourConcurrencyTest.php tests/Integration/MilestoneFiveConcurrencyTest.php tests/Integration/PatientInvitationConcurrencyTest.php tests/Integration/AppointmentReminderConcurrencyTest.php tests/Integration/MilestoneSixFinanceConcurrencyTest.php tests/Integration/MilestoneNineConcurrencyTest.php tests/Integration/MilestoneTenConcurrencyTest.php tests/Integration/MilestoneElevenAConcurrencyTest.php tests/Integration/ReferralRewardsConcurrencyTest.php tests/Integration/ReferralPartnerConcurrencyTest.php tests/Integration/MilestoneElevenBBroadcastConcurrencyTest.php tests/Integration/B2bSalesCallPostgresTest.php tests/Integration/B2bZoomCredentialPostgresTest.php tests/Integration/KnowledgeStorageCleanupPostgresTest.php tests/Integration/GiftCertificateConcurrencyTest.php
 
 test-e2e:
 	npm run test:e2e
@@ -93,6 +93,10 @@ deploy:
 deploy-staging:
 	@test -n "$(REVISION)" || (echo "Usage: make deploy-staging REVISION=<full-sha> [EXPECTED_CURRENT_REVISION=<full-sha>]" >&2; exit 1)
 	scripts/deploy-staging.sh "$(REVISION)" "$(EXPECTED_CURRENT_REVISION)"
+
+deploy-staging-nginx-config:
+	@test -n "$(REVISION)" -a -n "$(EXPECTED_SITE_SHA256)" -a -n "$(EXPECTED_LOG_FORMAT_SHA256)" || (echo "Usage: make deploy-staging-nginx-config REVISION=<full-sha> EXPECTED_SITE_SHA256=<sha256> EXPECTED_LOG_FORMAT_SHA256=<sha256|absent>" >&2; exit 1)
+	scripts/deploy-staging-nginx-config.sh "$(REVISION)" "$(EXPECTED_SITE_SHA256)" "$(EXPECTED_LOG_FORMAT_SHA256)"
 
 rollback:
 	@echo "Rollback is intentionally unavailable before Milestone 16." && exit 2

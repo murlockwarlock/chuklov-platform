@@ -169,6 +169,7 @@ class CreateBooking extends LocalizedCreateRecord
                 locationArea: isset($data['location_area']) ? (string) $data['location_area'] : null,
                 confirmedBackdated: (bool) ($data['confirm_backdated'] ?? false),
                 blockingEndsAt: $blockingEndsAt,
+                patientProfileId: isset($data['patient_profile_id']) && $data['patient_profile_id'] !== '' ? (int) $data['patient_profile_id'] : null,
             );
         } catch (ValidationException $exception) {
             $errors = $exception->errors();

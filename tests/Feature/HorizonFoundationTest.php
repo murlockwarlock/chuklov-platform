@@ -73,8 +73,10 @@ class HorizonFoundationTest extends TestCase
             'broadcasts',
             'ai-companion',
             'ai-companion-delivery',
+            'ai-evaluations',
             'telegram-typing',
-            'referrals',
+            'notifications',
+            (string) config('referrals.queue'),
             (string) config('b2b.queue'),
         ], config('horizon.defaults.supervisor-1.queue'));
     }
@@ -199,6 +201,7 @@ class HorizonFoundationTest extends TestCase
         $environment = [
             'APP_CONFIG_CACHE' => $cachePath,
             'B2B_QUEUE' => 'b2b.custom',
+            'REFERRALS_QUEUE' => 'referrals.custom',
             'QUEUE_CONNECTION' => 'sync',
         ];
 
@@ -209,11 +212,11 @@ class HorizonFoundationTest extends TestCase
             $fresh = new Process([
                 'php',
                 '-r',
-                'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); echo json_encode([app()->configurationIsCached(), config("queue.default"), config("b2b.queue"), config("horizon.defaults.supervisor-1.connection"), in_array(config("b2b.queue"), config("horizon.defaults.supervisor-1.queue"), true)]);',
+                'require "vendor/autoload.php"; $app = require "bootstrap/app.php"; $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); echo json_encode([app()->configurationIsCached(), config("queue.default"), config("b2b.queue"), config("horizon.defaults.supervisor-1.connection"), in_array(config("b2b.queue"), config("horizon.defaults.supervisor-1.queue"), true), config("referrals.queue"), in_array(config("referrals.queue"), config("horizon.defaults.supervisor-1.queue"), true)]);',
             ], base_path(), $environment);
             $fresh->mustRun();
 
-            self::assertSame([true, 'sync', 'b2b.custom', 'redis', true], json_decode(trim($fresh->getOutput()), true, 512, JSON_THROW_ON_ERROR));
+            self::assertSame([true, 'sync', 'b2b.custom', 'redis', true, 'referrals.custom', true], json_decode(trim($fresh->getOutput()), true, 512, JSON_THROW_ON_ERROR));
         } finally {
             $filesystem->remove($cacheDirectory);
         }
@@ -230,7 +233,9 @@ class HorizonFoundationTest extends TestCase
             'broadcasts',
             'ai-companion',
             'ai-companion-delivery',
+            'ai-evaluations',
             'telegram-typing',
+            'notifications',
             config('referrals.queue'),
             (string) config('b2b.queue'),
         ], $configuration['queue']);

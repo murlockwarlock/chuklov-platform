@@ -1,9 +1,10 @@
 <?php
 
-use App\Modules\Channels\Application\GetTelegramMenu;
 use App\Modules\Channels\Application\HandleTelegramBookingConfirmation;
+use App\Modules\Channels\Application\PreparePatientTelegramInvitation;
 use App\Modules\Channels\Application\SendTelegramContentSection;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
+use App\Modules\Channels\Infrastructure\Telegram\SendTelegramWelcome;
 use App\Modules\Channels\Infrastructure\Telegram\TelegramBotIdentityVerifier;
 use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionCallback;
 use App\Modules\ClientCompanion\Application\Actions\HandleTelegramCompanionDocument;
@@ -23,10 +24,8 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Application\HandleReferralTelegramStart;
 use App\Modules\Referrals\Application\SendReferralInvite;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use SergiX44\Nutgram\Nutgram;
-use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton;
-use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup;
-use SergiX44\Nutgram\Telegram\Types\WebApp\WebAppInfo;
 use Symfony\Component\HttpKernel\Exception\UnauthorizedHttpException;
 
 $bot->onCommand('start web_{token}', function (
@@ -50,7 +49,6 @@ $bot->onCommand('start ref_{token}', function (
     TelegramBotIdentityVerifier $identityVerifier,
     HandleReferralTelegramStart $referrals,
     OrganizationContext $organizationContext,
-    GetTelegramMenu $menu,
     RefreshTelegramClientIdentity $refreshIdentity,
 ): void {
     $language = str_starts_with(strtolower((string) $bot->user()?->language_code), 'ru') ? 'ru' : 'en';
@@ -84,43 +82,33 @@ $bot->onCommand('start ref_{token}', function (
             return;
         }
 
-        $keyboard = InlineKeyboardMarkup::make();
-        $keyboard->addRow(InlineKeyboardButton::make(
-            text: $language === 'ru' ? 'Открыть приложение' : 'Open app',
-            web_app: WebAppInfo::make($url),
-        ));
-
-        $client = $refreshIdentity->handle($organization, $identity);
-        foreach ($menu->handle($language, $client) as $entry) {
-            if ($entry['key'] === 'portal') {
-                continue;
-            }
-
-            $button = match ($entry['launch']) {
-                'mini_app' => InlineKeyboardButton::make(
-                    text: $entry['label'],
-                    web_app: WebAppInfo::make($entry['url']),
-                ),
-                'telegram_content' => InlineKeyboardButton::make(
-                    text: $entry['label'],
-                    callback_data: $entry['callback_data'],
-                ),
-                default => InlineKeyboardButton::make(
-                    text: $entry['label'],
-                    url: $entry['url'],
-                ),
-            };
-            $keyboard->addRow($button);
-        }
-
-        $bot->sendMessage(
-            $language === 'ru' ? 'Откройте приложение, чтобы продолжить. Ниже доступны основные разделы.' : 'Open the app to continue. The main sections are available below.',
-            reply_markup: $keyboard,
-        );
+        $refreshIdentity->handle($organization, $identity);
+        app(SendTelegramWelcome::class)->handle($bot, $language, $url);
     } catch (AuthorizationException|UnauthorizedHttpException|LogicException) {
         $bot->sendMessage($invalidMessage);
     }
 })->where('token', '[A-Za-z0-9_-]{16,128}')->description('Открыть реферальное приложение');
+
+$bot->onCommand('start family_{token}', function (
+    Nutgram $bot,
+    string $token,
+    TelegramBotIdentityVerifier $identityVerifier,
+    PreparePatientTelegramInvitation $prepare,
+    OrganizationContext $context,
+): void {
+    try {
+        $organizationId = config('tenancy.default_organization_id');
+        if (! is_int($organizationId) && ! (is_string($organizationId) && ctype_digit($organizationId))) {
+            throw new AuthorizationException;
+        }
+        $context->set(Organization::query()->findOrFail((int) $organizationId));
+        $identity = $identityVerifier->handle($bot);
+        $url = $prepare->handle($token, $identity);
+        app(SendTelegramWelcome::class)->handle($bot, $identity->language, $url);
+    } catch (AuthorizationException|UnauthorizedHttpException|ModelNotFoundException) {
+        $bot->sendMessage('Приглашение недействительно, устарело или предназначено другому аккаунту.');
+    }
+})->where('token', '[A-Za-z0-9_-]{43}')->description('Открыть приглашение семьи');
 
 $bot->onCommand('start staff_{token}', function (
     Nutgram $bot,
@@ -157,7 +145,7 @@ $bot->onCommand('start {token}', function (
     } catch (InvalidTelegramLinkToken|AuthorizationException|UnauthorizedHttpException) {
         $bot->sendMessage('Ссылка недействительна или уже использована.');
     }
-})->where('token', '(?!(?:staff_|web_|ref_))[A-Za-z0-9_-]+')->description('Запустить приложение');
+})->where('token', '(?!(?:staff_|web_|ref_|family_))[A-Za-z0-9_-]+')->description('Запустить приложение');
 
 $bot->onCommand('invite', function (
     Nutgram $bot,
@@ -203,49 +191,23 @@ $bot->onCommand('invite', function (
 
 $bot->onCommand('start', function (
     Nutgram $bot,
-    GetTelegramMenu $menu,
     TelegramBotIdentityVerifier $identityVerifier,
     RefreshTelegramClientIdentity $refreshIdentity,
     OrganizationContext $organizationContext,
 ): void {
     $language = str_starts_with(strtolower((string) $bot->user()?->language_code), 'ru') ? 'ru' : 'en';
     $organizationId = config('tenancy.default_organization_id');
-    $client = null;
     if (is_int($organizationId) || (is_string($organizationId) && ctype_digit($organizationId))) {
         $organization = Organization::query()->find((int) $organizationId);
         if ($organization instanceof Organization) {
             $organizationContext->set($organization);
             try {
-                $client = $refreshIdentity->handle($organization, $identityVerifier->handle($bot));
+                $refreshIdentity->handle($organization, $identityVerifier->handle($bot));
             } catch (UnauthorizedHttpException) {
             }
         }
     }
-    $keyboard = InlineKeyboardMarkup::make();
-
-    foreach ($menu->handle($language, $client) as $entry) {
-        $button = match ($entry['launch']) {
-            'mini_app' => InlineKeyboardButton::make(
-                text: $entry['label'],
-                web_app: WebAppInfo::make($entry['url']),
-            ),
-            'telegram_content' => InlineKeyboardButton::make(
-                text: $entry['label'],
-                callback_data: $entry['callback_data'],
-            ),
-            default => InlineKeyboardButton::make(
-                text: $entry['label'],
-                url: $entry['url'],
-            ),
-        };
-
-        $keyboard->addRow($button);
-    }
-
-    $bot->sendMessage(
-        (string) config('portal.telegram.greeting.'.$language, ''),
-        reply_markup: $keyboard,
-    );
+    app(SendTelegramWelcome::class)->handle($bot, $language);
 })->description('Запустить приложение');
 
 $bot->onText('^(?!/).+', function (Nutgram $bot, HandleTelegramCompanionText $handler): void {

@@ -112,6 +112,10 @@ final class PortalBookingErrorMessages
             'ru' => 'Самостоятельная запись сейчас недоступна. Свяжитесь с нами.',
             'en' => 'Self-service booking is unavailable. Please contact us.',
         ],
+        'client_blacklisted' => [
+            'ru' => 'Для этого профиля самостоятельная запись недоступна. Свяжитесь с нами, и мы поможем подобрать вариант.',
+            'en' => 'Online booking is unavailable for this profile. Contact us and we will help you find an option.',
+        ],
         'service_unavailable' => [
             'ru' => 'Эта услуга сейчас недоступна.',
             'en' => 'This service is not available.',
@@ -293,10 +297,21 @@ final class PortalBookingErrorMessages
         $errors = [];
 
         foreach ($exception->errors() as $field => $_messages) {
+            if (str_starts_with($field, 'personal_data.')) {
+                $errors[$field] = $_messages;
+
+                continue;
+            }
+            if ($field === 'slots' || $field === 'batchIntentKey') {
+                $errors[$field === 'slots' ? 'additional_starts_at' : 'idempotency_key'] = $_messages;
+
+                continue;
+            }
             [$displayField, $key] = match ($field) {
                 'startsAt' => ['starts_at', 'slot_unavailable'],
                 'source_detail' => ['attribution_source_detail', 'source_detail_invalid'],
                 'client' => ['starts_at', 'self_booking_unavailable'],
+                'blacklist' => ['starts_at', 'client_blacklisted'],
                 'service', 'service_id' => ['service_id', 'service_unavailable'],
                 'specialist', 'specialist_id', 'assignment' => ['specialist_id', 'specialist_unavailable'],
                 'format', 'meetingLinkMode' => ['format', 'format_unavailable'],

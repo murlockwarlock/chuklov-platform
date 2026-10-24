@@ -2,75 +2,51 @@
 
 namespace App\Filament\Auth;
 
-use DanHarrin\LivewireRateLimiting\Exceptions\TooManyRequestsException;
-use Filament\Auth\Http\Responses\Contracts\LoginResponse;
+use App\Models\User;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Filament\Auth\Pages\Login as BaseLogin;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\TextInput;
 use Filament\Models\Contracts\FilamentUser;
-use Illuminate\Auth\Events\Attempting;
-use Illuminate\Auth\Events\Failed;
-use Illuminate\Auth\SessionGuard;
+use Filament\Panel;
+use Filament\Schemas\Components\Component;
 use Illuminate\Contracts\Auth\Authenticatable;
-use Illuminate\Contracts\Auth\Guard;
-use Illuminate\Support\Timebox;
-use Illuminate\Validation\ValidationException;
-use SensitiveParameter;
 
 final class Login extends BaseLogin
 {
-    public function authenticate(): ?LoginResponse
+    protected function getEmailFormComponent(): Component
     {
-        try {
-            $this->rateLimit(5);
-        } catch (TooManyRequestsException $exception) {
-            $this->getRateLimitedNotification($exception)?->send();
+        $component = parent::getEmailFormComponent();
 
-            return null;
+        if (! $component instanceof TextInput) {
+            return $component;
         }
 
-        $data = $this->form->getState();
+        return $component
+            ->autocomplete('username')
+            ->extraInputAttributes(['name' => 'email']);
+    }
 
-        /** @var SessionGuard $authGuard */
-        $authGuard = Filament::auth();
-        $authProvider = $authGuard->getProvider();
-        $credentials = $this->getCredentialsFromFormData($data);
-        $remember = $data['remember'] ?? false;
-        $timeboxDuration = (int) config('auth.timebox_duration', 200_000);
+    protected function getPasswordFormComponent(): Component
+    {
+        $component = parent::getPasswordFormComponent();
 
-        $user = app(Timebox::class)->call(function (Timebox $timebox) use ($authProvider, $authGuard, $credentials, $remember): Authenticatable {
-            $this->fireAttemptingEvent($authGuard, $credentials, $remember);
-
-            $user = $authProvider->retrieveByCredentials($credentials);
-
-            if ((! $user) || (! $authProvider->validateCredentials($user, $credentials))) {
-                $this->userUndertakingMultiFactorAuthentication = null;
-
-                $this->fireFailedEvent($authGuard, $user, $credentials);
-                $this->throwFailureValidationException();
-            }
-
-            if (! $this->isUserAllowedToAccessPanel($user)) {
-                $this->userUndertakingMultiFactorAuthentication = null;
-
-                $this->fireFailedEvent($authGuard, $user, $credentials);
-                $this->throwFailureValidationException();
-            }
-
-            $timebox->returnEarly();
-
-            return $user;
-        }, $timeboxDuration);
-
-        $this->userUndertakingMultiFactorAuthentication = null;
-
-        if (! $authGuard->attemptWhen($credentials, fn (Authenticatable $user): bool => $this->isUserAllowedToAccessPanel($user), $remember)) {
-            $this->fireFailedEvent($authGuard, $user, $credentials);
-            $this->throwFailureValidationException();
+        if (! $component instanceof TextInput) {
+            return $component;
         }
 
-        session()->regenerate();
+        return $component->extraInputAttributes(['name' => 'password']);
+    }
 
-        return app(LoginResponse::class);
+    public function getFormContentComponent(): Component
+    {
+        return parent::getFormContentComponent()->extraAttributes([
+            'x-on:submit.capture' => <<<'JS'
+                $wire.data.email = $el.querySelector('input[name=email]')?.value ?? ''
+                $wire.data.password = $el.querySelector('input[name=password]')?.value ?? ''
+            JS,
+        ]);
     }
 
     protected function isUserAllowedToAccessPanel(Authenticatable $user): bool
@@ -79,25 +55,11 @@ final class Login extends BaseLogin
             return true;
         }
 
-        return $user->canAccessPanel(Filament::getCurrentOrDefaultPanel());
-    }
+        $panel = Filament::getCurrentOrDefaultPanel();
 
-    /** @param array<string, mixed> $credentials */
-    protected function fireAttemptingEvent(Guard $guard, #[SensitiveParameter] array $credentials, bool $remember): void
-    {
-        event(app(Attempting::class, ['guard' => property_exists($guard, 'name') ? $guard->name : '', 'credentials' => $credentials, 'remember' => $remember]));
-    }
-
-    /** @param array<string, mixed> $credentials */
-    protected function fireFailedEvent(Guard $guard, ?Authenticatable $user, #[SensitiveParameter] array $credentials): void
-    {
-        event(app(Failed::class, ['guard' => property_exists($guard, 'name') ? $guard->name : '', 'user' => $user, 'credentials' => $credentials]));
-    }
-
-    protected function throwFailureValidationException(): never
-    {
-        throw ValidationException::withMessages([
-            'data.email' => __('filament-panels::auth/pages/login.messages.failed'),
-        ]);
+        return $panel instanceof Panel
+            && $user->canAccessPanel($panel)
+            && $user instanceof User
+            && $user->hasPermission(OrganizationPermission::ViewAdmin, app(OrganizationContext::class)->organization());
     }
 }

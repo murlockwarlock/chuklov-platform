@@ -107,6 +107,7 @@ class AdminPanelProvider extends PanelProvider
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,
                 StartSession::class,
+                ResolveOrganization::class,
                 SetAdminLocale::class,
                 AuthenticateSession::class,
                 ShareErrorsFromSession::class,
@@ -118,7 +119,6 @@ class AdminPanelProvider extends PanelProvider
             ->authMiddleware([
                 EnsurePrivilegedSessionIsCurrent::class,
                 Authenticate::class,
-                ResolveOrganization::class,
             ])
             ->persistentMiddleware([
                 EnsurePrivilegedSessionIsCurrent::class,

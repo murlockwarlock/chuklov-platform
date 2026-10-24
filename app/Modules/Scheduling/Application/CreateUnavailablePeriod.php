@@ -42,7 +42,13 @@ class CreateUnavailablePeriod
         }
 
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageScheduling);
-        $interval = InstantInterval::from($startsAt, $endsAt);
+        try {
+            $interval = InstantInterval::from($startsAt, $endsAt);
+        } catch (InvalidArgumentException) {
+            throw ValidationException::withMessages([
+                'ends_at' => __('Окончание периода должно быть позже начала.'),
+            ]);
+        }
         $reason = $this->reason($reason);
 
         return DB::transaction(function () use ($actor, $organization, $interval, $reason, $specialist, $acknowledgeImpact, $acknowledgedImpactDigest): UnavailablePeriod {
@@ -115,8 +121,14 @@ class CreateUnavailablePeriod
 
         $reason = trim($reason);
 
-        if ($reason === '' || mb_strlen($reason) > 500) {
-            throw new InvalidArgumentException('The unavailable period reason is invalid.');
+        if ($reason === '') {
+            return null;
+        }
+
+        if (mb_strlen($reason) > 500) {
+            throw ValidationException::withMessages([
+                'reason' => __('Причина не должна превышать 500 символов.'),
+            ]);
         }
 
         return $reason;

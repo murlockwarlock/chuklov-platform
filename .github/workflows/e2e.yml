@@ -13,6 +13,11 @@ on:
         required: false
         default: tests/e2e/crm.spec.ts
         type: string
+      publish_diagnostics:
+        description: Explicitly publish failure screenshots and traces to GitHub
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: '15 2 * * *'
 
@@ -99,7 +104,7 @@ jobs:
       - if: failure()
         name: Print safe portal reschedule diagnostics
         run: grep -R -F 'portal.booking.reschedule.' storage/logs || true
-      - if: failure()
+      - if: ${{ failure() && (github.event_name == 'schedule' || inputs.publish_diagnostics) }}
         uses: actions/upload-artifact@v6
         with:
           name: playwright-diagnostics

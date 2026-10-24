@@ -34,6 +34,7 @@ class EditClient extends LocalizedEditRecord
             ? B2bSpecialistAnswer::tryFrom($data['b2b_specialist_answer'])
             : null;
         unset($data['b2b_role'], $data['broadcast_tags'], $data['b2b_specialist_answer']);
+        unset($data['full_name']);
         $updated = app(UpdateClientProfileFromCrm::class)->handle($actor, $record, $data);
         app(SetBroadcastClientClassification::class)->handle($actor, $updated, $role, $tags);
         if ($answer instanceof B2bSpecialistAnswer) {

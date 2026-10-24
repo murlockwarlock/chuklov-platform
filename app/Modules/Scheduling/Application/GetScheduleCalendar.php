@@ -6,10 +6,12 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Models\ScheduleException;
+use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
 use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use DateTimeZone;
+use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use InvalidArgumentException;
 
@@ -27,6 +29,60 @@ final class GetScheduleCalendar
         string $dateTo,
         ?string $displayTimezone = null,
     ): array {
+        return $this->buildCalendar($specialist, $dateFrom, $dateTo, $displayTimezone);
+    }
+
+    /**
+     * @param  EloquentCollection<int, Specialist>  $specialists
+     * @return array<int, array<string, array{date: string, weekday: int, is_working: bool, exception_type: string|null, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>}>>
+     */
+    public function forSpecialists(EloquentCollection $specialists, string $dateFrom, string $dateTo, string $displayTimezone): array
+    {
+        foreach ($specialists as $specialist) {
+            if ((int) $specialist->organization_id !== $this->context->id()) {
+                throw new InvalidArgumentException('The specialist is outside the current organization.');
+            }
+        }
+        $timezone = IanaTimezone::from($displayTimezone)->value;
+        $from = $this->parseDate($dateFrom, $timezone)->subDays(4)->toDateString();
+        $to = $this->parseDate($dateTo, $timezone)->addDays(4)->toDateString();
+        $hours = SpecialistWorkingHour::query()->where('organization_id', $this->context->id())
+            ->whereIn('specialist_id', $specialists->modelKeys())->where('is_active', true)
+            ->where(fn ($query) => $query->whereNull('starts_on')->orWhere('starts_on', '<=', $to))
+            ->where(fn ($query) => $query->whereNull('ends_on')->orWhere('ends_on', '>=', $from))
+            ->get();
+        $exceptions = ScheduleException::query()->where('organization_id', $this->context->id())
+            ->whereIn('specialist_id', $specialists->modelKeys())->where('is_active', true)
+            ->whereBetween('exception_date', [$from, $to])->get();
+        /** @var array<int, list<SpecialistWorkingHour>> $hoursBySpecialist */
+        $hoursBySpecialist = [];
+        foreach ($hours as $hour) {
+            $hoursBySpecialist[(int) $hour->specialist_id][] = $hour;
+        }
+        /** @var array<int, list<ScheduleException>> $exceptionsBySpecialist */
+        $exceptionsBySpecialist = [];
+        foreach ($exceptions as $exception) {
+            $exceptionsBySpecialist[(int) $exception->specialist_id][] = $exception;
+        }
+        $result = [];
+        foreach ($specialists as $specialist) {
+            $id = (int) $specialist->getKey();
+            $result[$id] = $this->buildCalendar($specialist, $dateFrom, $dateTo, $timezone,
+                new EloquentCollection($hoursBySpecialist[$id] ?? []),
+                new EloquentCollection($exceptionsBySpecialist[$id] ?? []));
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  EloquentCollection<int, SpecialistWorkingHour>|null  $preloadedHours
+     * @param  EloquentCollection<int, ScheduleException>|null  $preloadedExceptions
+     * @return array<string, array{date: string, weekday: int, is_working: bool, exception_type: string|null, intervals: list<array{start: string, end: string, start_minutes: int, end_minutes: int}>}>
+     */
+    private function buildCalendar(Specialist $specialist, string $dateFrom, string $dateTo, ?string $displayTimezone,
+        ?EloquentCollection $preloadedHours = null, ?EloquentCollection $preloadedExceptions = null): array
+    {
         if ((int) $specialist->organization_id !== $this->context->id()) {
             throw new InvalidArgumentException('The specialist is outside the current organization.');
         }
@@ -54,17 +110,18 @@ final class GetScheduleCalendar
 
         $scheduleStart = $displayStart->subDays(2)->setTimezone($scheduleTimezone)->toDateString();
         $scheduleEnd = $displayEnd->addDays(2)->setTimezone($scheduleTimezone)->toDateString();
-        $workingHours = $this->workingHoursResolver->forRange(
+        $workingHours = $preloadedHours ?? $this->workingHoursResolver->forRange(
             specialist: $specialist,
             dateFrom: LocalDate::from($scheduleStart),
             dateTo: LocalDate::from($scheduleEnd),
         );
-        $exceptions = ScheduleException::query()
+        $exceptionRows = $preloadedExceptions ?? ScheduleException::query()
             ->where('organization_id', $this->context->id())
             ->where('specialist_id', $specialist->getKey())
             ->whereBetween('exception_date', [$scheduleStart, $scheduleEnd])
             ->where('is_active', true)
-            ->get()
+            ->get();
+        $exceptions = $exceptionRows
             ->groupBy(fn (ScheduleException $exception): string => $exception->dateKey());
 
         $scheduleDate = $this->parseDate($scheduleStart, $scheduleTimezone);
@@ -151,7 +208,9 @@ final class GetScheduleCalendar
                     'start' => $cursor->format('H:i'),
                     'end' => $segmentEnd->format('H:i'),
                     'start_minutes' => ((int) $cursor->format('H')) * 60 + (int) $cursor->format('i'),
-                    'end_minutes' => ((int) $segmentEnd->format('H')) * 60 + (int) $segmentEnd->format('i'),
+                    'end_minutes' => $segmentEnd->equalTo($dayEnd)
+                        ? 24 * 60
+                        : ((int) $segmentEnd->format('H')) * 60 + (int) $segmentEnd->format('i'),
                 ];
                 $cells[$dateKey]['exception_type'] = $exceptions->contains(
                     static fn (ScheduleException $exception): bool => $exception->exception_type === ScheduleExceptionType::CustomWindow,

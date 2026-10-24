@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Clients\Pages;
 use App\Filament\Pages\Messages;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
+use App\Filament\Resources\Clients\Schemas\MedicalProfileForm;
 use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResource;
 use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
@@ -19,7 +20,6 @@ use App\Modules\Identity\Application\UnblockClientSelfBooking;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
-use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Application\MedicalProfileSnapshotHasher;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
@@ -49,7 +49,6 @@ use Filament\Actions\EditAction;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\DateTimePicker;
-use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -57,7 +56,10 @@ use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class ViewClient extends LocalizedViewRecord
 {
@@ -133,17 +135,14 @@ class ViewClient extends LocalizedViewRecord
                         ->first();
 
                     return [
-                        'anamnesis' => $profile?->anamnesis,
-                        'complaints' => $profile?->complaints,
-                        'goals' => $profile?->goals,
-                        'operations' => $profile?->operations,
-                        'injuries' => $profile?->injuries,
-                        'medicines' => $profile?->medicines,
-                        'supplements' => $profile?->supplements,
+                        ...MedicalProfileForm::fill($profile),
                         'expected_snapshot' => app(MedicalProfileSnapshotHasher::class)->forProfile($profileRecord),
                     ];
                 })
-                ->schema(self::medicalProfileSchema())
+                ->successNotificationTitle(__('Медицинский профиль сохранён'))
+                ->modalSubmitAction(fn (Action $action): Action => $action->extraAttributes(['formnovalidate' => true]))
+                ->schema(MedicalProfileForm::components())
+                ->authorize(fn (): bool => ClientResource::canEdit($this->clientRecord()))
                 ->visible(fn (): bool => ClientResource::canEdit($this->clientRecord()))
                 ->action(function (array $data): void {
                     $actor = auth()->user();
@@ -154,7 +153,7 @@ class ViewClient extends LocalizedViewRecord
                     app(UpdateMedicalProfile::class)->handle(
                         $actor,
                         $client,
-                        UpdateMedicalProfileCommand::fromArray($data),
+                        MedicalProfileForm::command($data),
                     );
                 }),
             $this->activatePartnerAction(),
@@ -741,8 +740,11 @@ class ViewClient extends LocalizedViewRecord
             ->authorize(fn (): bool => $this->canResetStagingAccount())
             ->visible(fn (): bool => $this->canResetStagingAccount())
             ->action(function (): void {
+                $actor = $this->actor();
+                $client = $this->clientRecord();
+
                 try {
-                    app(ResetStagingClientAccount::class)->handle($this->actor(), $this->clientRecord());
+                    app(ResetStagingClientAccount::class)->handle($actor, $client);
                     Notification::make()->title(__('Аккаунт сброшен для повторного теста'))->success()->send();
                     $this->redirect(ClientResource::getUrl('index'));
                 } catch (ValidationException $exception) {
@@ -751,6 +753,57 @@ class ViewClient extends LocalizedViewRecord
                         ->body(collect($exception->errors())->flatten()->implode(' '))
                         ->danger()
                         ->send();
+                } catch (Throwable $exception) {
+                    $referenceId = (string) Str::uuid();
+                    $clientStillExists = null;
+
+                    try {
+                        $clientStillExists = Client::query()
+                            ->where('organization_id', $client->organization_id)
+                            ->whereKey($client->getKey())
+                            ->exists();
+                    } catch (Throwable) {
+                    }
+
+                    $outcome = match ($clientStillExists) {
+                        true => 'failed',
+                        false => 'partial',
+                        null => 'unknown',
+                    };
+                    $errorCode = match ($clientStillExists) {
+                        true => 'reset_failed',
+                        false => 'storage_cleanup_failed',
+                        null => 'reset_outcome_unknown',
+                    };
+
+                    Log::error('client.staging_account.reset_failed', [
+                        'event_name' => 'client.staging_account.reset_failed',
+                        'organization_id' => $client->organization_id,
+                        'actor_user_id' => $actor->getKey(),
+                        'entity_type' => 'client',
+                        'entity_id' => $client->getKey(),
+                        'safe_error_code' => $errorCode,
+                        'exception_class' => $exception::class,
+                        'outcome' => $outcome,
+                        'reference_id' => $referenceId,
+                        'occurred_at_utc' => now()->utc()->toIso8601String(),
+                    ]);
+
+                    $body = match ($clientStillExists) {
+                        true => __('Сброс не выполнен, данные клиента сохранены. Исправьте причину и повторите действие. Код обращения: :reference', ['reference' => $referenceId]),
+                        false => __('Аккаунт удалён, но не удалось полностью очистить связанные файлы. Передайте администратору код обращения: :reference', ['reference' => $referenceId]),
+                        null => __('Не удалось подтвердить результат. Обновите список клиентов: если аккаунт остался, повторите сброс; если удалён, передайте администратору код обращения: :reference', ['reference' => $referenceId]),
+                    };
+
+                    Notification::make()
+                        ->title($clientStillExists === false ? __('Аккаунт удалён не полностью') : __('Не удалось завершить сброс'))
+                        ->body($body)
+                        ->danger()
+                        ->send();
+
+                    if ($clientStillExists === false) {
+                        $this->redirect(ClientResource::getUrl('index'));
+                    }
                 }
             });
     }
@@ -784,6 +837,9 @@ class ViewClient extends LocalizedViewRecord
         return Action::make('blockBlacklist')
             ->label(__('Добавить в чёрный список'))
             ->color('danger')
+            ->modalHeading(__('Добавить клиента в чёрный список'))
+            ->modalDescription(__('Укажите причину. После добавления клиент не сможет записаться самостоятельно.'))
+            ->modalSubmitActionLabel(__('Добавить в чёрный список'))
             ->schema([
                 Textarea::make('reason')
                     ->label(__('Причина'))
@@ -799,6 +855,10 @@ class ViewClient extends LocalizedViewRecord
                     (string) $data['reason'],
                 );
                 $this->clientRecord()->load('activeBlacklistRestriction');
+                Notification::make()
+                    ->success()
+                    ->title(__('Клиент добавлен в чёрный список'))
+                    ->send();
             });
     }
 
@@ -808,48 +868,19 @@ class ViewClient extends LocalizedViewRecord
             ->label(__('Убрать из чёрного списка'))
             ->color('success')
             ->requiresConfirmation()
+            ->modalHeading(__('Убрать клиента из чёрного списка?'))
+            ->modalDescription(__('После снятия ограничения клиент снова сможет записаться самостоятельно.'))
+            ->modalSubmitActionLabel(__('Убрать из чёрного списка'))
             ->visible(fn (): bool => $this->clientRecord()->activeBlacklistRestriction !== null
                 && ClientResource::canEdit($this->clientRecord()))
             ->action(function (): void {
                 app(UnblockClientBlacklist::class)->handle($this->actor(), $this->clientRecord());
                 $this->clientRecord()->load('activeBlacklistRestriction');
+                Notification::make()
+                    ->success()
+                    ->title(__('Клиент убран из чёрного списка'))
+                    ->send();
             });
-    }
-
-    /** @return array<int, Hidden|Textarea> */
-    private static function medicalProfileSchema(): array
-    {
-        return [
-            Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
-            Textarea::make('anamnesis')
-                ->label(__('Анамнез'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('complaints')
-                ->label(__('Жалобы'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('goals')
-                ->label(__('Цели'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('operations')
-                ->label(__('Операции'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('injuries')
-                ->label(__('Травмы'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('medicines')
-                ->label(__('Лекарственные препараты'))
-                ->rows(3)
-                ->maxLength(10000),
-            Textarea::make('supplements')
-                ->label(__('Биологически активные добавки'))
-                ->rows(3)
-                ->maxLength(10000),
-        ];
     }
 
     private function clientRecord(): Client

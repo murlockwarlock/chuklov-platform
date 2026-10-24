@@ -24,20 +24,28 @@ class UnavailablePeriodForm
                         ->pluck('display_name', 'id')
                         ->all())
                     ->searchable()
-                    ->required(),
+                    ->required()
+                    ->validationMessages(['required' => __('Выберите специалиста.')]),
                 DateTimePicker::make('starts_at')
                     ->label(__('Начало'))
                     ->seconds(false)
                     ->timezone(fn (): string => app(OrganizationContext::class)->organization()->defaultTimezone())
-                    ->required(),
+                    ->required()
+                    ->validationMessages(['required' => __('Укажите дату и время начала недоступности.')]),
                 DateTimePicker::make('ends_at')
                     ->label(__('Окончание'))
                     ->seconds(false)
                     ->timezone(fn (): string => app(OrganizationContext::class)->organization()->defaultTimezone())
-                    ->required(),
+                    ->required()
+                    ->validationMessages([
+                        'required' => __('Укажите дату и время окончания недоступности.'),
+                        'after' => __('Окончание периода должно быть позже начала.'),
+                    ])
+                    ->rules(['after:starts_at']),
                 TextInput::make('reason')
                     ->label(__('Причина'))
-                    ->maxLength(500),
+                    ->maxLength(500)
+                    ->nullable(),
                 ...ScheduleImpactPreview::components(),
             ]);
     }

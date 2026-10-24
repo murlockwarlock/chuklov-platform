@@ -653,13 +653,17 @@ body {
 }
 
 .portal-bottom-nav__label {
-    display: -webkit-box;
+    display: block;
     width: 100%;
     min-height: 1.5rem;
-    overflow: hidden;
-    overflow-wrap: anywhere;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    font-size: clamp(0.6rem, 3vw, 0.64rem);
+    white-space: nowrap;
+}
+
+@media (max-width: 22.5rem) {
+    .portal-bottom-nav {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr) repeat(3, minmax(0, 1fr));
+    }
 }
 
 .portal-icon {
@@ -869,6 +873,24 @@ select.portal-input[aria-invalid='true'] {
 
 .portal-section-heading--compact > * {
     min-width: 0;
+}
+
+.portal-health-action__heading {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: start;
+    column-gap: var(--portal-space-3);
+}
+
+.portal-health-action__title {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.portal-health-action__badge {
+    align-self: start;
+    justify-self: end;
 }
 
 .portal-count {
@@ -2096,6 +2118,24 @@ select.portal-input[aria-invalid='true'] {
         place-items: center;
         background: rgb(22 36 61 / 42%);
         padding: clamp(0.75rem, 3vw, 2rem);
+    }
+
+    .portal-dialog {
+        width: min(44rem, calc(100vw - 2rem));
+        max-width: calc(100% - 2rem);
+        max-height: calc(100dvh - 2rem);
+        min-width: 0;
+        margin: auto;
+        padding: clamp(1rem, 3vw, 2rem);
+        overflow: auto;
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-lg);
+        color: var(--portal-color-ink);
+        background: var(--portal-color-surface);
+    }
+
+    .portal-dialog::backdrop {
+        background: rgb(22 36 61 / 42%);
     }
 
     .portal-legal-modal__dialog {

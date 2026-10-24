@@ -12,9 +12,11 @@ use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
 use App\Modules\Scheduling\Application\CreateMultipleBookings as CreateMultipleBookingsAction;
 use App\Modules\Scheduling\Application\RescheduleBooking;
+use App\Modules\Scheduling\Application\SetOnlineMeetingUrl;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Application\UpdateBookingBlockingInterval;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
@@ -142,6 +144,48 @@ class MilestoneFourConcurrencyTest extends TestCase
             ->count());
     }
 
+    public function test_parallel_saves_of_the_same_manual_meeting_link_record_one_update(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('The race test requires PostgreSQL row locks.');
+        }
+
+        [$organization, $admin, $client, $specialist, $service] = $this->schedulingFixture();
+        $booking = Booking::factory()->forClient($client)->forSpecialist($specialist)->forService($service)->create([
+            'visit_format' => VisitFormat::Online,
+            'meeting_link_mode' => MeetingLinkMode::Manual,
+            'status' => BookingStatus::Confirmed,
+            'meeting_url' => null,
+        ]);
+        $organizationId = $organization->getKey();
+        $actorId = $admin->getKey();
+        $bookingId = $booking->getKey();
+        $version = $booking->event_version;
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): int => self::saveMeetingLinkInProcess($organizationId, $actorId, $bookingId),
+            static fn (): int => self::saveMeetingLinkInProcess($organizationId, $actorId, $bookingId),
+        ]);
+
+        self::assertSame([$version + 1, $version + 1], $results);
+        self::assertSame('https://meet.example.test/system-proof', $booking->fresh()->meeting_url);
+        self::assertSame(1, BookingEvent::query()->where('booking_id', $bookingId)->where('event_type', 'meeting_link_updated')->count());
+        self::assertSame(1, AuditEvent::query()->where('organization_id', $organizationId)->where('action', 'booking.online.meeting_url.updated')->count());
+    }
+
+    private static function saveMeetingLinkInProcess(int $organizationId, int $actorId, int $bookingId): int
+    {
+        $organization = Organization::query()->findOrFail($organizationId);
+        config()->set('tenancy.default_organization_id', $organizationId);
+        app(OrganizationContext::class)->set($organization);
+
+        return app(SetOnlineMeetingUrl::class)->handle(
+            User::query()->findOrFail($actorId),
+            Booking::query()->where('organization_id', $organizationId)->findOrFail($bookingId),
+            'https://meet.example.test/system-proof',
+        )->event_version;
+    }
+
     public function test_two_real_parallel_block_updates_from_the_same_event_version_have_one_winner(): void
     {
         if (DB::getDriverName() !== 'pgsql') {
@@ -266,6 +310,52 @@ class MilestoneFourConcurrencyTest extends TestCase
         self::assertSame(2, Booking::query()->where('organization_id', $organization->getKey())->count());
         self::assertSame(2, BookingEvent::query()->count());
         self::assertSame(2, DB::table('booking_idempotency_keys')->where('organization_id', $organization->getKey())->count());
+        self::assertSame(2, AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'booking.created')
+            ->count());
+    }
+
+    public function test_postgresql_portal_batch_race_binds_the_entire_intent_and_replays_without_duplicates(): void
+    {
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->markTestSkipped('The race test requires PostgreSQL batch idempotency and exclusion constraints.');
+        }
+
+        [$organization, $admin, $client, $specialist, $service] = $this->schedulingFixture();
+        $slots = [
+            ['date' => '2027-04-05', 'time' => '2027-04-05T09:00:00+00:00'],
+            ['date' => '2027-04-12', 'time' => '2027-04-12T09:00:00+00:00'],
+        ];
+
+        $results = Concurrency::driver('process')->run([
+            static fn (): string => self::createMultipleInProcess(
+                organizationId: $organization->getKey(),
+                adminId: $admin->getKey(),
+                clientId: $client->getKey(),
+                specialistId: $specialist->getKey(),
+                serviceId: $service->getKey(),
+                slots: $slots,
+                batchIntentKey: 'same-portal-batch-race',
+                asClient: true,
+            ),
+            static fn (): string => self::createMultipleInProcess(
+                organizationId: $organization->getKey(),
+                adminId: $admin->getKey(),
+                clientId: $client->getKey(),
+                specialistId: $specialist->getKey(),
+                serviceId: $service->getKey(),
+                slots: $slots,
+                batchIntentKey: 'same-portal-batch-race',
+                asClient: true,
+            ),
+        ]);
+
+        self::assertCount(2, $results);
+        self::assertSame(2, count(array_filter($results, static fn (string $result): bool => str_starts_with($result, 'batch:'))));
+        self::assertSame(2, Booking::query()->where('organization_id', $organization->getKey())->count());
+        self::assertSame(2, BookingEvent::query()->count());
+        self::assertSame(3, DB::table('booking_idempotency_keys')->where('organization_id', $organization->getKey())->count());
         self::assertSame(2, AuditEvent::query()
             ->where('organization_id', $organization->getKey())
             ->where('action', 'booking.created')
@@ -481,18 +571,20 @@ class MilestoneFourConcurrencyTest extends TestCase
         int $serviceId,
         array $slots,
         string $batchIntentKey,
+        bool $asClient = false,
     ): string {
         $organization = Organization::query()->findOrFail($organizationId);
         app(OrganizationContext::class)->set($organization);
 
         $bookings = app(CreateMultipleBookingsAction::class)->handle(
-            actor: User::query()->findOrFail($adminId),
+            actor: $asClient ? Client::query()->findOrFail($clientId) : User::query()->findOrFail($adminId),
             client: Client::query()->findOrFail($clientId),
             specialist: Specialist::query()->findOrFail($specialistId),
             service: Service::query()->findOrFail($serviceId),
             format: VisitFormat::Office,
             slots: $slots,
             batchIntentKey: $batchIntentKey,
+            clientTimezone: $asClient ? 'UTC' : null,
         );
 
         return 'batch:'.implode(',', array_map(static fn (Booking $booking): string => (string) $booking->getKey(), $bookings));
