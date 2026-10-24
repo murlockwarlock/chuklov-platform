@@ -68,7 +68,11 @@ class AuthenticateClientWithEmailVerificationCode
 
             if (! $challenge instanceof ClientEmailAuthChallenge) {
                 $failureCode = 'challenge_missing';
-            } elseif ($challenge->consumed_at !== null) {
+
+                return null;
+            }
+
+            if ($challenge->consumed_at !== null) {
                 $failureCode = 'challenge_consumed';
             } elseif ($challenge->expires_at->isPast()) {
                 $failureCode = 'challenge_expired';

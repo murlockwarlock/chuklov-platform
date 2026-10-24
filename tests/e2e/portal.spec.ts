@@ -146,6 +146,71 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     ->encryptField($organization->getKey(), $reportPayload, 1),
             ]);
             $payload->save();
+
+            $surveyDefinition = new \\App\\Modules\\Surveys\\Domain\\Models\\SurveyDefinition;
+            $surveyDefinition->forceFill([
+                'organization_id' => $organization->getKey(),
+                'definition_key' => 'playwright-before-after-'.$suffix,
+                'title' => 'Synthetic comparison',
+                'is_available' => true,
+            ]);
+            $surveyDefinition->save();
+            $surveyVersion = new \\App\\Modules\\Surveys\\Domain\\Models\\SurveyVersion;
+            $surveyVersion->forceFill([
+                'organization_id' => $organization->getKey(),
+                'survey_definition_id' => $surveyDefinition->getKey(),
+                'version' => 1,
+                'status' => \\App\\Modules\\Surveys\\Domain\\Enums\\SurveyVersionStatus::Published,
+                'title' => 'Сравнение До и После',
+                'definition' => [],
+                'scoring' => ['metrics' => [[
+                    'key' => 'pain',
+                    'label' => ['ru' => 'Боль', 'en' => 'Pain'],
+                    'direction' => 'lower_is_better',
+                ]]],
+                'source' => 'platform_default',
+                'approval_status' => 'approved',
+                'published_at' => now()->subDays(30),
+            ]);
+            $surveyVersion->save();
+            $attempts = [];
+            foreach ([7, 3] as $index => $pain) {
+                $completedAt = $index === 0 ? now()->subDays(30) : now();
+                $attempt = new \\App\\Modules\\Surveys\\Domain\\Models\\SurveyAttempt;
+                $attempt->forceFill([
+                    'organization_id' => $organization->getKey(),
+                    'client_id' => $client->getKey(),
+                    'survey_definition_id' => $surveyDefinition->getKey(),
+                    'survey_version_id' => $surveyVersion->getKey(),
+                    'status' => \\App\\Modules\\Surveys\\Domain\\Enums\\SurveyAttemptStatus::Completed,
+                    'definition_snapshot' => [],
+                    'answers_snapshot' => [],
+                    'scoring_snapshot' => ['metrics' => [[
+                        'key' => 'pain',
+                        'label' => ['ru' => 'Боль', 'en' => 'Pain'],
+                        'direction' => 'lower_is_better',
+                        'value' => $pain,
+                    ]]],
+                    'result_snapshot' => [],
+                    'started_at' => $completedAt->copy()->subMinutes(10),
+                    'completed_at' => $completedAt,
+                ]);
+                $attempt->save();
+                $attempts[] = $attempt;
+            }
+            $comparison = new \\App\\Modules\\Surveys\\Domain\\Models\\SurveyComparison;
+            $comparison->forceFill([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $client->getKey(),
+                'previous_attempt_id' => $attempts[0]->getKey(),
+                'current_attempt_id' => $attempts[1]->getKey(),
+                'status' => 'improved',
+                'comparison_snapshot' => [
+                    'configuration' => ['operator' => 'numeric_value'],
+                    'metrics' => ['pain' => ['before' => 7, 'after' => 3, 'delta' => -4]],
+                ],
+            ]);
+            $comparison->save();
         }
         if (getenv('PLAYWRIGHT_TRACKER') !== '') {
             \\Illuminate\\Support\\Facades\\Queue::fake();
@@ -1584,9 +1649,19 @@ test('reviewed synthetic course report appears as the Road Map and opens from Ho
     const courseReport = page.locator('#course-report').locator('xpath=..');
     await expect(courseReport).toBeVisible();
     await expect(courseReport.getByText('Synthetic accepted report fixture.', { exact: true })).toBeVisible();
+    const comparison = page.locator('article.portal-panel').filter({ has: page.getByRole('heading', { name: 'Сравнение До и После', exact: true }) });
+    await expect(comparison.getByText('Боль', { exact: true })).toBeVisible();
+    await expect(comparison.getByText('7 → 3', { exact: false })).toBeVisible();
+    await expect(comparison.getByText('Есть улучшение', { exact: false })).toBeVisible();
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(comparison.getByText('7 → 3', { exact: false })).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+    }
     await page.reload();
     await expect(page).toHaveURL(/\/portal\/health#course-report$/);
     await expect(courseReport.getByText('Synthetic accepted report fixture.', { exact: true })).toBeVisible();
+    await expect(comparison.getByText('7 → 3', { exact: false })).toBeVisible();
     await page.goBack();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByTestId('home-health-action').getByText('Ваша Дорожная карта', { exact: true })).toBeVisible();

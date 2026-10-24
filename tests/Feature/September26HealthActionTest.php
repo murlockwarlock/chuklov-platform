@@ -24,6 +24,7 @@ use App\Modules\Tracker\Application\SaveTrackerPlan;
 use App\Modules\Tracker\Domain\Enums\TrackerEntitlementSource;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskFrequency;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskType;
+use App\Modules\Tracker\Domain\Models\TrackerTask;
 use App\Modules\Tracker\Domain\Models\TrackerTaskEntry;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -242,7 +243,7 @@ final class September26HealthActionTest extends TestCase
             'portal.tracker.task_entry.denied',
             Mockery::on(fn (array $context): bool => $context['organization_id'] === $organization->getKey()
                 && $context['actor_client_id'] === $client->getKey()
-                && $context['entity_type'] === \App\Modules\Tracker\Domain\Models\TrackerTask::class
+                && $context['entity_type'] === TrackerTask::class
                 && $context['entity_id'] === $foreignTask->getKey()
                 && $context['safe_error_code'] === 'task_unavailable'
                 && $context['outcome'] === 'denied'

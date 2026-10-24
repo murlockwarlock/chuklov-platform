@@ -64,7 +64,6 @@ function refreshTaskStatus(expectedStatus?: 'completed' | 'not_completed'): void
 
     router.reload({
         only: ['healthAction'],
-        preserveScroll: true,
         onSuccess: () => {
             restoreTaskStatus();
 

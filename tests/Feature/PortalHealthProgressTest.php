@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Resources\Clients\Pages\EditClient;
 use App\Models\User;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
@@ -14,6 +15,8 @@ use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\UploadMedicalAttachment;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Broadcasts\Domain\Models\BroadcastClientProfile;
+use App\Modules\Broadcasts\Domain\Models\BroadcastClientTag;
 use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\ClientPortal\Application\ListClientHealthOverview;
 use App\Modules\Identity\Domain\Models\Client;
@@ -27,15 +30,19 @@ use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Testing\AssertableInertia;
+use Livewire\Livewire;
+use Tests\Support\AuthenticatesMfaConfiguredAdmin;
 use Tests\TestCase;
 
 final class PortalHealthProgressTest extends TestCase
 {
+    use AuthenticatesMfaConfiguredAdmin;
     use RefreshDatabase;
 
     public function test_client_health_projection_is_scoped_and_excludes_internal_session_fields(): void
@@ -167,6 +174,62 @@ final class PortalHealthProgressTest extends TestCase
                 ->has('health.comparisons')
                 ->has('health.postureProgress')
                 ->has('health.courseReport'));
+    }
+
+    public function test_client_portal_excludes_crm_classification_while_authorized_crm_keeps_it(): void
+    {
+        [$organization, $client, $staff] = $this->fixture();
+        $role = 'INTERNAL_CR10_B2B_ROLE';
+        $tag = 'internal-cr10-marketing-tag';
+        BroadcastClientProfile::query()->create([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'b2b_role' => $role,
+        ]);
+        BroadcastClientTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'tag' => $tag,
+        ]);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $profile = $this->get(route('portal.profile'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->component('Portal/Profile')
+                ->missing('b2b_role')
+                ->missing('b2bRole')
+                ->missing('broadcast_tags')
+                ->missing('broadcastTags'));
+        $health = $this->get(route('portal.health'))->assertOk();
+        $home = $this->get(route('portal.home'))->assertOk();
+
+        foreach ([$profile, $health, $home] as $response) {
+            $page = $response->viewData('page');
+            self::assertIsArray($page);
+            self::assertIsArray($page['props'] ?? null);
+            $serializedProps = json_encode($page['props'], JSON_THROW_ON_ERROR);
+
+            self::assertStringNotContainsString($role, $serializedProps);
+            self::assertStringNotContainsString($tag, $serializedProps);
+            self::assertStringNotContainsString('"b2b_role"', $serializedProps);
+            self::assertStringNotContainsString('"broadcast_tags"', $serializedProps);
+            self::assertStringNotContainsString('"b2bRole"', $serializedProps);
+            self::assertStringNotContainsString('"broadcastTags"', $serializedProps);
+            $response->assertDontSee($role)->assertDontSee($tag);
+        }
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->authenticateConfiguredAdmin($staff, $organization);
+
+        Livewire::actingAs($staff)
+            ->test(EditClient::class, ['record' => $client->getRouteKey()])
+            ->assertSuccessful()
+            ->assertFormSet([
+                'b2b_role' => $role,
+                'broadcast_tags' => [$tag],
+            ]);
     }
 
     /** @return array{Organization, Client, User} */
