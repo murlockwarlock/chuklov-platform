@@ -139,6 +139,7 @@ class ViewClient extends LocalizedViewRecord
                         'expected_snapshot' => app(MedicalProfileSnapshotHasher::class)->forProfile($profileRecord),
                     ];
                 })
+                ->successNotificationTitle(__('Медицинский профиль сохранён'))
                 ->schema(MedicalProfileForm::components())
                 ->authorize(fn (): bool => ClientResource::canEdit($this->clientRecord()))
                 ->visible(fn (): bool => ClientResource::canEdit($this->clientRecord()))
