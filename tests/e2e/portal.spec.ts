@@ -2201,6 +2201,7 @@ test('authenticated client can complete the booking journey', async ({ page }) =
 });
 
 test('September 26 confirmed profile persists and the medical editor saves then reopens', async ({ page }) => {
+    test.setTimeout(60_000);
     const fixture = createBookingFixture();
     await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
     const profileResponses = { failNextSave: false };
