@@ -198,34 +198,38 @@ function save(): void {
         <form
           v-if="editing"
           ref="medicalForm"
-          class="portal-stack"
+          class="portal-stack medical-profile__form"
           novalidate
           @submit.prevent="save"
         >
-          <fieldset
-            class="portal-stack min-w-0"
-            data-medical-field="complaints"
-          >
-            <legend class="portal-label">
-              {{ t('medical.complaints') }}
-            </legend>
-            <div class="flex min-w-0 flex-wrap items-center gap-3">
-              <label
-                v-for="symptom in symptoms"
-                :key="symptom"
-                class="inline-flex min-h-10 max-w-full items-center gap-2 rounded-full border border-stone-200 px-3 py-2 text-sm"
-              >
-                <input
-                  v-model="form.answers.symptoms"
-                  type="checkbox"
-                  :value="symptom"
-                  @change="clearClientError('complaints')"
+          <section class="portal-panel portal-panel--compact portal-stack medical-profile__assessment">
+            <fieldset
+              class="portal-stack min-w-0"
+              data-medical-field="complaints"
+            >
+              <legend class="portal-label">
+                {{ t('medical.complaints') }}
+              </legend>
+              <div class="medical-profile__choice-grid medical-profile__choice-grid--symptoms">
+                <label
+                  v-for="symptom in symptoms"
+                  :key="symptom"
+                  class="medical-profile__choice"
+                  :class="{ 'medical-profile__choice--selected': form.answers.symptoms.includes(symptom) }"
                 >
-                {{ t('medical.' + symptom) }}
-              </label>
-            </div>
-          </fieldset>
-          <PainScale v-model="form.answers.pain_vas" />
+                  <input
+                    v-model="form.answers.symptoms"
+                    type="checkbox"
+                    :value="symptom"
+                    class="medical-profile__choice-control"
+                    @change="clearClientError('complaints')"
+                  >
+                  <span class="min-w-0">{{ t('medical.' + symptom) }}</span>
+                </label>
+              </div>
+            </fieldset>
+            <PainScale v-model="form.answers.pain_vas" />
+          </section>
           <div
             v-for="field in fields"
             :key="field"
@@ -237,11 +241,12 @@ function save(): void {
                 <legend class="portal-label">
                   {{ t('medical.' + field) }}
                 </legend>
-                <div class="portal-action-row">
+                <div class="medical-profile__choice-grid">
                   <label
                     v-for="answer in [true, false]"
                     :key="String(answer)"
-                    class="portal-copy"
+                    class="medical-profile__choice"
+                    :class="{ 'medical-profile__choice--selected': form.answers[field === 'operations' ? 'had_operations' : 'had_injuries'] === answer }"
                   >
                     <input
                       v-model="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
@@ -251,9 +256,10 @@ function save(): void {
                       required
                       :aria-invalid="Boolean(clientErrors[field === 'operations' ? 'had_operations' : 'had_injuries'])"
                       :aria-describedby="clientErrors[field === 'operations' ? 'had_operations' : 'had_injuries'] ? `medical-${field}-answer-error` : undefined"
+                      class="medical-profile__choice-control"
                       @change="clearClientError(field, field === 'operations' ? 'had_operations' : 'had_injuries', field === 'operations' ? 'operation_year' : 'injury_year')"
                     >
-                    {{ t(answer ? 'medical.yes' : 'medical.no') }}
+                    <span>{{ t(answer ? 'medical.yes' : 'medical.no') }}</span>
                   </label>
                 </div>
                 <p
@@ -334,11 +340,12 @@ function save(): void {
               >{{ t(field === 'complaints' ? 'medical.complaintsDetails' : 'medical.' + field) }}</label>
               <label
                 v-if="field === 'chronic_conditions'"
-                class="portal-copy"
+                class="portal-copy medical-profile__inline-choice"
               >
                 <input
                   v-model="form.answers.no_chronic_conditions"
                   type="checkbox"
+                  class="medical-profile__choice-control"
                 >
                 {{ t('medical.noChronic') }}
               </label>
@@ -397,13 +404,24 @@ function save(): void {
           </button>
         </form>
         <template v-else>
-          <PainScale
-            :model-value="profile.answers.pain_vas ?? null"
-            readonly
-          />
-          <p class="portal-copy">
-            {{ profile.answers.symptoms?.map((symptom) => t('medical.' + symptom)).join(', ') }}
-          </p>
+          <section class="portal-panel portal-panel--compact portal-stack medical-profile__assessment">
+            <PainScale
+              :model-value="profile.answers.pain_vas ?? null"
+              readonly
+            />
+            <div
+              v-if="profile.answers.symptoms?.length"
+              class="medical-profile__symptoms"
+            >
+              <span
+                v-for="symptom in profile.answers.symptoms"
+                :key="symptom"
+                class="medical-profile__symptom"
+              >
+                {{ t('medical.' + symptom) }}
+              </span>
+            </div>
+          </section>
           <dl class="portal-stack">
             <div
               v-for="field in fields"

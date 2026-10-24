@@ -1545,7 +1545,7 @@ select.portal-input[aria-invalid='true'] {
         cursor: pointer;
         padding: var(--portal-space-5);
         text-align: left;
-        transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+        transition: border-color 160ms ease, background-color 160ms ease;
     }
 
     .portal-booking-option:hover,
@@ -2357,6 +2357,217 @@ select.portal-input[aria-invalid='true'] {
         accent-color: var(--portal-color-brand);
     }
 
+    .medical-profile__form {
+        min-width: 0;
+    }
+
+    .medical-profile__assessment {
+        gap: var(--portal-space-6);
+        padding: var(--portal-space-4);
+    }
+
+    .medical-profile__choice-grid {
+        display: grid;
+        min-width: 0;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--portal-space-2);
+    }
+
+    .medical-profile__choice {
+        display: grid;
+        min-width: 0;
+        min-height: 3.25rem;
+        grid-template-columns: 1.125rem minmax(0, 1fr);
+        align-items: center;
+        gap: var(--portal-space-2);
+        border: 1px solid var(--portal-color-border);
+        border-radius: var(--portal-radius-md);
+        background: var(--portal-color-surface);
+        color: var(--portal-color-ink);
+        cursor: pointer;
+        padding: 0.65rem 0.75rem;
+        font-size: 0.88rem;
+        font-weight: 600;
+        line-height: 1.4;
+        transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+    }
+
+    .medical-profile__choice:hover {
+        border-color: var(--portal-color-brand);
+    }
+
+    .medical-profile__choice:focus-within {
+        outline: 3px solid rgb(194 111 79 / 28%);
+        outline-offset: 2px;
+    }
+
+    .medical-profile__choice--selected {
+        border-color: var(--portal-color-brand-strong);
+        background: var(--portal-color-surface-warm);
+    }
+
+    .medical-profile__choice-control {
+        width: 1.125rem;
+        height: 1.125rem;
+        flex: 0 0 auto;
+        margin: 0;
+        accent-color: var(--portal-color-brand-strong);
+    }
+
+    .medical-profile__inline-choice {
+        display: inline-flex;
+        min-height: 2.75rem;
+        align-items: center;
+        gap: var(--portal-space-3);
+        cursor: pointer;
+    }
+
+    .medical-profile__symptoms {
+        display: flex;
+        min-width: 0;
+        flex-wrap: wrap;
+        gap: var(--portal-space-2);
+    }
+
+    .medical-profile__symptom {
+        max-width: 100%;
+        border-radius: var(--portal-radius-pill);
+        background: var(--portal-color-surface-muted);
+        color: var(--portal-color-ink);
+        padding: 0.35rem 0.7rem;
+        font-size: 0.84rem;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+    }
+
+    .medical-pain-scale {
+        gap: var(--portal-space-3);
+    }
+
+    .medical-pain-scale__heading {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--portal-space-3);
+    }
+
+    .medical-pain-scale__label {
+        min-width: 0;
+    }
+
+    .medical-pain-scale__reading {
+        display: inline-flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: var(--portal-space-2);
+        white-space: nowrap;
+    }
+
+    .medical-pain-scale__face {
+        width: 2rem;
+        height: 2rem;
+    }
+
+    .medical-pain-scale__score {
+        font-size: 1.05rem;
+        line-height: 1.2;
+    }
+
+    .medical-pain-scale__range {
+        width: 100%;
+        min-width: 0;
+        min-height: 2.75rem;
+        margin: 0;
+        padding: 0;
+        appearance: none;
+        -webkit-appearance: none;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        touch-action: pan-y;
+    }
+
+    .medical-pain-scale__range::-webkit-slider-runnable-track {
+        height: 0.4rem;
+        border-radius: var(--portal-radius-pill);
+        background: linear-gradient(
+            to right,
+            var(--portal-color-brand-strong) 0%,
+            var(--portal-color-brand-strong) var(--pain-progress),
+            var(--portal-color-border-strong) var(--pain-progress),
+            var(--portal-color-border-strong) 100%
+        );
+    }
+
+    .medical-pain-scale__range::-moz-range-track {
+        height: 0.4rem;
+        border-radius: var(--portal-radius-pill);
+        background: linear-gradient(
+            to right,
+            var(--portal-color-brand-strong) 0%,
+            var(--portal-color-brand-strong) var(--pain-progress),
+            var(--portal-color-border-strong) var(--pain-progress),
+            var(--portal-color-border-strong) 100%
+        );
+    }
+
+    .medical-pain-scale__range::-webkit-slider-thumb {
+        width: 1.35rem;
+        height: 1.35rem;
+        box-sizing: border-box;
+        margin-top: -0.475rem;
+        appearance: none;
+        border: 3px solid var(--portal-color-surface);
+        border-radius: 50%;
+        background: var(--portal-color-brand-strong);
+        box-shadow: 0 0.15rem 0.4rem rgb(22 36 61 / 18%);
+    }
+
+    .medical-pain-scale__range::-moz-range-thumb {
+        width: 1.35rem;
+        height: 1.35rem;
+        box-sizing: border-box;
+        border: 3px solid var(--portal-color-surface);
+        border-radius: 50%;
+        background: var(--portal-color-brand-strong);
+        box-shadow: 0 0.15rem 0.4rem rgb(22 36 61 / 18%);
+    }
+
+    .medical-pain-scale__range:focus-visible {
+        outline: none;
+    }
+
+    .medical-pain-scale__range:focus-visible::-webkit-slider-thumb {
+        box-shadow: 0 0 0 4px rgb(194 111 79 / 28%), 0 0.15rem 0.4rem rgb(22 36 61 / 18%);
+    }
+
+    .medical-pain-scale__range:focus-visible::-moz-range-thumb {
+        box-shadow: 0 0 0 4px rgb(194 111 79 / 28%), 0 0.15rem 0.4rem rgb(22 36 61 / 18%);
+    }
+
+    .medical-pain-scale__bounds {
+        display: grid;
+        min-width: 0;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+        gap: var(--portal-space-3);
+    }
+
+    .medical-pain-scale__bound {
+        min-width: 0;
+        color: var(--portal-color-ink-soft);
+        font-size: 0.82rem;
+        line-height: 1.45;
+    }
+
+    .medical-pain-scale__bound:last-child {
+        text-align: right;
+    }
+
+    .medical-pain-scale__reset {
+        align-self: flex-end;
+    }
+
     .portal-error {
         margin: 0;
         color: var(--portal-color-danger);
@@ -2416,6 +2627,10 @@ select.portal-input[aria-invalid='true'] {
     }
 
     @media (min-width: 48rem) {
+        .medical-profile__choice-grid--symptoms {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+
         .portal-header__inner {
             padding-inline: var(--portal-space-8);
         }
@@ -2501,6 +2716,12 @@ select.portal-input[aria-invalid='true'] {
 
         .portal-panel--compact {
             padding: var(--portal-space-6);
+        }
+    }
+
+    @media (max-width: 21rem) {
+        .medical-profile__choice-grid--symptoms {
+            grid-template-columns: minmax(0, 1fr);
         }
     }
 
