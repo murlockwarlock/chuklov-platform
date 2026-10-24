@@ -163,6 +163,7 @@ class MilestoneThreeCrmTest extends TestCase
         $this->setOrganization($organization);
         $attributes = $service->attributesToArray();
         $attributes['is_active'] = false;
+        $attributes['requires_medical_profile'] = false;
 
         app(UpdateService::class)->handle($admin, $service, $attributes);
 
@@ -172,8 +173,9 @@ class MilestoneThreeCrmTest extends TestCase
             ->sole();
         $updatedService = $service->fresh();
 
-        self::assertSame('is_active', $audit->metadata['fields']);
+        self::assertEqualsCanonicalizing(['is_active', 'requires_medical_profile'], explode(',', $audit->metadata['fields']));
         self::assertFalse($updatedService->is_active);
+        self::assertFalse($updatedService->requires_medical_profile);
         self::assertSame(CatalogItemType::Service, $updatedService->catalog_type);
         self::assertSame(ServicePaymentRequirement::Postpay, $updatedService->payment_requirement);
     }
