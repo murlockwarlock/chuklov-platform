@@ -2829,6 +2829,32 @@ test('September 26 medical service opens the saved-profile onboarding after the 
     await expect(page.getByText(fixture.serviceName, { exact: true }).first()).toBeVisible();
 });
 
+test('September 26 non-medical service skips onboarding and reopens the booking confirmation', async ({ page }) => {
+    const fixture = createBookingFixture({ medicalService: false });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Продолжить', exact: true }).click();
+    await acceptRequiredConsents(page);
+    await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/portal\/bookings\/create\?.*booking_id=\d+/);
+    await expect(page).not.toHaveURL(/\/portal\/medical-profile/);
+    await expect(page.getByRole('heading', { name: 'Запись создана.', exact: true })).toBeVisible();
+    await expect(page.getByText(fixture.serviceName, { exact: true }).first()).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Мои записи', exact: true })).toBeVisible();
+
+    const confirmationUrl = page.url();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Запись создана.', exact: true })).toBeVisible();
+    await expect(page.getByText(fixture.serviceName, { exact: true }).first()).toBeVisible();
+    await expect(page).not.toHaveURL(/\/portal\/medical-profile/);
+
+    await page.goto(confirmationUrl);
+    await expect(page.getByRole('heading', { name: 'Запись создана.', exact: true })).toBeVisible();
+    await expect(page.getByText(fixture.serviceName, { exact: true }).first()).toBeVisible();
+});
+
 test('client can change display timezone and choose a physical office', async ({ page }) => {
     const fixture = createBookingFixture({ multipleLocations: true });
 

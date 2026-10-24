@@ -55,6 +55,8 @@ class PortalBookingRemediationTest extends TestCase
 
         $response->assertSessionHasNoErrors()->assertRedirect();
         $booking = Booking::query()->sole();
+        self::assertSame($service->getKey(), $booking->service_id);
+        self::assertTrue($booking->service->requires_medical_profile);
         $medicalProfileUrl = null;
         $response->assertSessionHas('portal_booking_result', function (array $result) use (&$medicalProfileUrl, $booking): bool {
             $medicalProfileUrl = $result['medicalProfileUrl'] ?? null;
@@ -117,8 +119,11 @@ class PortalBookingRemediationTest extends TestCase
         $this->get(route('portal.bookings.create'))->assertInertia(fn (AssertableInertia $page) => $page->where('patients.enabled', false));
         $this->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
             'consents' => $this->acceptedConsents($organization),
-        ]))->assertSessionHasNoErrors()->assertRedirect()->assertSessionHas('portal_booking_result', fn (array $result): bool => $result['medicalProfileUrl'] === null);
-        self::assertSame(1, Booking::query()->count());
+        ]))->assertSessionHasNoErrors()->assertRedirect()->assertSessionHas('portal_booking_result', fn (array $result): bool => $result['medicalProfileUrl'] === null
+            && $result['requiresPatientMedicalProfile'] === false);
+        $booking = Booking::query()->sole();
+        self::assertSame($service->getKey(), $booking->service_id);
+        self::assertFalse($booking->service->requires_medical_profile);
     }
 
     public function test_blacklist_denies_portal_booking_with_a_specific_error_then_allows_an_idempotent_retry_after_unblock(): void
