@@ -211,9 +211,8 @@ function readGiftCertificateState(fixture: GiftCertificateFixture, claimToken: s
     const php = `
         $purchase = \\App\\Modules\\Commerce\\Domain\\Models\\Purchase::query()->findOrFail(${fixture.purchaseId});
         $certificate = \\App\\Modules\\Commerce\\Domain\\Models\\GiftCertificate::query()->findOrFail(${fixture.certificateId});
-        $fulfillment = \\App\\Modules\\Commerce\\Domain\\Models\\PurchaseFulfillment::query()
-            ->where('purchase_id', ${fixture.purchaseId})
-            ->sole();
+        $purchaseItem = $purchase->items()->sole();
+        $fulfillment = $purchaseItem->fulfillment()->sole();
         $movements = \\Illuminate\\Support\\Facades\\DB::table('gift_certificate_movements')
             ->where('certificate_id', ${fixture.certificateId})
             ->orderBy('id')
