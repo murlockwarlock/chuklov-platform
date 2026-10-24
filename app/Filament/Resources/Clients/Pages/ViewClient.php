@@ -140,6 +140,7 @@ class ViewClient extends LocalizedViewRecord
                     ];
                 })
                 ->successNotificationTitle(__('Медицинский профиль сохранён'))
+                ->modalSubmitAction(fn (Action $action): Action => $action->extraAttributes(['formnovalidate' => true]))
                 ->schema(MedicalProfileForm::components())
                 ->authorize(fn (): bool => ClientResource::canEdit($this->clientRecord()))
                 ->visible(fn (): bool => ClientResource::canEdit($this->clientRecord()))

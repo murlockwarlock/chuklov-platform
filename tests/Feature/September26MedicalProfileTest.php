@@ -73,6 +73,39 @@ final class September26MedicalProfileTest extends TestCase
         }
     }
 
+    public function test_crm_medical_form_shows_server_validation_and_allows_correction_for_required_years(): void
+    {
+        [$client, $staff] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $data = $this->answers('');
+        $data['answers']['had_operations'] = true;
+        $data['answers']['had_injuries'] = true;
+        $data['operations'] = 'Synthetic operation details';
+        $data['injuries'] = 'Synthetic injury details';
+
+        $component = Livewire::actingAs($staff)->test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertActionVisible('editMedicalProfile');
+        $component->callAction('editMedicalProfile', $data)
+            ->assertHasFormErrors(['answers.operation_year', 'answers.injury_year']);
+
+        self::assertFalse(MedicalProfile::query()->where('client_id', $client->getKey())->exists());
+        self::assertFalse(AuditEvent::query()->where('target_type', MedicalProfile::class)->exists());
+
+        $data['answers']['operation_year'] = 2020;
+        $data['answers']['injury_year'] = 2021;
+
+        Livewire::actingAs($staff)->test(ViewClient::class, ['record' => $client->getKey()])
+            ->callAction('editMedicalProfile', $data)
+            ->assertHasNoActionErrors()
+            ->assertNotified('Медицинский профиль сохранён');
+
+        $profile = app(GetMedicalProfile::class)->handle($staff, $client);
+        $answers = json_decode((string) $profile?->clinicalAnswers, true, flags: JSON_THROW_ON_ERROR);
+        self::assertSame(2020, $answers['operation_year']);
+        self::assertSame(2021, $answers['injury_year']);
+        self::assertSame(1, AuditEvent::query()->where('target_type', MedicalProfile::class)->count());
+    }
+
     public function test_client_medical_update_is_encrypted_visible_in_crm_and_preserved_after_staff_correction(): void
     {
         [$client, $staff] = $this->fixture();
