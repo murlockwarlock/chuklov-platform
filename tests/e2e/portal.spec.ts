@@ -2333,10 +2333,19 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.getByLabel('Год травмы', { exact: true }).fill('2021');
     await expect(page.locator('#medical-operations-year-error')).toHaveCount(0);
     await expect(page.locator('#medical-injuries-year-error')).toHaveCount(0);
-    await page.setViewportSize({ width: 390, height: 844 });
     const painSlider = page.locator('#medical-pain');
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await painSlider.scrollIntoViewIfNeeded();
+        await expect(painSlider).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+        const sliderBounds = await painSlider.boundingBox();
+        if (!sliderBounds) throw new Error(`Medical pain slider is not positioned at ${width}px`);
+        expect(sliderBounds.x).toBeGreaterThanOrEqual(0);
+        expect(sliderBounds.x + sliderBounds.width).toBeLessThanOrEqual(width);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
     await painSlider.scrollIntoViewIfNeeded();
-    await expect(painSlider).toBeVisible();
     if (test.info().project.name === 'mobile') {
         const sliderBounds = await painSlider.boundingBox();
         if (!sliderBounds) throw new Error('Medical pain slider is not positioned for touch input');
