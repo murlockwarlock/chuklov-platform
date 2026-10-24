@@ -310,6 +310,24 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                     'registered_at' => now(),
                 ]);
                 $registeredRelationship->save();
+                foreach ([$referred, $registeredClient] as $attributedClient) {
+                    \App\Modules\Attribution\Domain\Models\ClientAttribution::forceCreate([
+                        'organization_id' => $organization->getKey(),
+                        'client_id' => $attributedClient->getKey(),
+                        'source_type' => 'referral',
+                        'source' => null,
+                        'referral_code' => $defaultLink->public_token,
+                        'utm_source' => null,
+                        'utm_medium' => null,
+                        'utm_campaign' => null,
+                        'utm_content' => null,
+                        'utm_term' => null,
+                        'capture_channel' => 'portal',
+                        'capture_context' => 'test',
+                        'captured_at' => $attributedClient->created_at,
+                        'accepted_at' => $attributedClient->created_at,
+                    ]);
+                }
             }
             $booking = \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()
                 ->forOrganization($organization)
@@ -1941,6 +1959,26 @@ test('CRM referral statistics show non-zero overall and campaign results after r
     }
 
     await login(page, fixture);
+    const assertOverallReferralStatistics = async (): Promise<void> => {
+        await page.goto('/admin', { waitUntil: 'domcontentloaded' });
+        await expect(page.getByRole('heading', { name: 'Аналитика', exact: true })).toBeVisible();
+        const acquisitionSection = page.locator('.fi-section').filter({ hasText: 'Источники новых клиентов' });
+        await expect(acquisitionSection.getByText('Источники новых клиентов', { exact: true })).toBeVisible();
+
+        const newClientsLabel = acquisitionSection.getByText('Новые клиенты', { exact: true });
+        const newClientsCard = newClientsLabel.locator('xpath=..');
+        await expect(newClientsCard.locator('p').nth(1)).toHaveText(/^[1-9]\d*$/);
+
+        const referralSourceRow = acquisitionSection.getByText('Реферальный переход', { exact: true }).locator('xpath=..');
+        await expect(referralSourceRow).toBeVisible();
+        const referralCount = Number((await referralSourceRow.innerText()).match(/(\d+)\s*·/)?.[1] ?? 0);
+        expect(referralCount).toBeGreaterThanOrEqual(2);
+    };
+
+    await assertOverallReferralStatistics();
+    await page.reload();
+    await assertOverallReferralStatistics();
+
     await page.goto(`/admin/referral-partner-profiles/${fixture.partnerProfileId}`, { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: 'Партнёрский кабинет', exact: true })).toBeVisible();
     await expect(page.getByText(fixture.partnerName, { exact: true })).toBeVisible();
