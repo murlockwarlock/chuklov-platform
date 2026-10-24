@@ -87,6 +87,8 @@ final class September26MedicalProfileTest extends TestCase
             ->assertActionVisible('editMedicalProfile');
         $component->callAction('editMedicalProfile', $data)
             ->assertHasFormErrors(['answers.operation_year', 'answers.injury_year']);
+        self::assertContains('Укажите год операции.', $component->instance()->getErrorBag()->all());
+        self::assertContains('Укажите год травмы.', $component->instance()->getErrorBag()->all());
 
         self::assertFalse(MedicalProfile::query()->where('client_id', $client->getKey())->exists());
         self::assertFalse(AuditEvent::query()->where('target_type', MedicalProfile::class)->exists());

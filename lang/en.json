@@ -2,6 +2,8 @@
   "Валюта или её курс недоступны. Выберите другую валюту.": "This currency or its exchange rate is unavailable. Choose another currency.",
   "Заполните поле «:attribute».": "Complete the :attribute field.",
   "Проверьте поле «:attribute».": "Check the :attribute field.",
+  "Укажите год операции.": "Enter the year of the surgery.",
+  "Укажите год травмы.": "Enter the year of the injury.",
   "Введите корректный номер телефона с кодом страны.": "Enter a valid phone number with its country calling code.",
   "Боль не оценивалась": "Pain was not assessed",
   "Главные жалобы (симптомы)": "Main symptoms",

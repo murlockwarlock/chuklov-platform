@@ -92,11 +92,13 @@ final class MedicalProfileForm
             Textarea::make('chronic_conditions')->label(__('Хронические заболевания'))->rows(3)->maxLength(10000),
             Checkbox::make('answers.had_operations')->label(__('Были операции'))->live(),
             TextInput::make('answers.operation_year')->label(__('Год операции'))->integer()->minValue(1900)->maxValue(now()->year)
-                ->nullable()->required(fn (Get $get): bool => $get('answers.had_operations') === true),
+                ->nullable()->required(fn (Get $get): bool => $get('answers.had_operations') === true)
+                ->validationMessages(['required' => __('Укажите год операции.')]),
             Textarea::make('operations')->label(__('Операции'))->rows(3)->maxLength(10000),
             Checkbox::make('answers.had_injuries')->label(__('Были травмы'))->live(),
             TextInput::make('answers.injury_year')->label(__('Год травмы'))->integer()->minValue(1900)->maxValue(now()->year)
-                ->nullable()->required(fn (Get $get): bool => $get('answers.had_injuries') === true),
+                ->nullable()->required(fn (Get $get): bool => $get('answers.had_injuries') === true)
+                ->validationMessages(['required' => __('Укажите год травмы.')]),
             Textarea::make('injuries')->label(__('Травмы'))->rows(3)->maxLength(10000),
             Textarea::make('medicines')->label(__('Лекарственные препараты'))->rows(3)->maxLength(10000),
             Textarea::make('supplements')->label(__('Нутрицевтики и БАДы'))->rows(3)->maxLength(10000),
