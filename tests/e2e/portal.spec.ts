@@ -31,6 +31,7 @@ type BookingFixtureOptions = {
     onlineMeeting?: boolean;
     withCompanionMessages?: boolean;
     withCompanionFailure?: boolean;
+    withServiceCredit?: boolean;
     withPartnerRewards?: boolean;
     withCompanionPending?: boolean;
     multipleChoices?: boolean;
@@ -60,6 +61,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
+        $withServiceCredit = getenv('PLAYWRIGHT_WITH_SERVICE_CREDIT') === '1';
         $withCompanionPending = getenv('PLAYWRIGHT_WITH_COMPANION_PENDING') === '1';
         $withCompanionFailure = getenv('PLAYWRIGHT_WITH_COMPANION_FAILURE') === '1';
         $confirmedName = getenv('PLAYWRIGHT_CONFIRMED_NAME') === '1';
@@ -233,7 +235,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'display_name' => 'Playwright Specialist '.$suffix,
             'timezone' => 'UTC',
         ]);
-        if ($withPartnerRewards) {
+        if ($withPartnerRewards || $withServiceCredit) {
             $rewardAdmin = \\App\\Models\\User::factory()->forOrganization($organization)->create();
             app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
             app(\\App\\Modules\\Finance\\Application\\SaveCurrencyConfiguration::class)->handle($rewardAdmin, [
@@ -253,7 +255,9 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 percentage: null,
                 effectiveAt: \\Carbon\\CarbonImmutable::now()->subMinute(),
             );
-            app(\\App\\Modules\\Referrals\\Application\\ActivateReferralPartner::class)->handle($client, 'crm', $rewardAdmin);
+            if ($withPartnerRewards) {
+                app(\\App\\Modules\\Referrals\\Application\\ActivateReferralPartner::class)->handle($client, 'crm', $rewardAdmin);
+            }
             $referred = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
                 'full_name' => 'Playwright Referred '.$suffix,
                 'email' => 'playwright-referred-'.$suffix.'@example.test',
@@ -664,6 +668,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
                 PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
                 PLAYWRIGHT_WITH_COMPANION_FAILURE: normalizedOptions.withCompanionFailure ? '1' : '0',
+                PLAYWRIGHT_WITH_SERVICE_CREDIT: normalizedOptions.withServiceCredit ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
@@ -1542,6 +1547,52 @@ test('home keeps one primary booking action and ordinary referrals remain availa
     await expect(page.getByTestId('ordinary-referral')).toBeVisible();
     await expect(page.getByTestId('partner-activate')).toHaveCount(0);
     await expect(page.getByTestId('partner-links')).toHaveCount(0);
+});
+
+test('client sees available bonus in the header and can open the service list from its explanation', async ({ page }) => {
+    const fixture = createBookingFixture({ withServiceCredit: true });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    const bonusButton = page.getByRole('button', { name: 'Доступные бонусы', exact: true });
+
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.goto('/');
+        await expect(bonusButton).toBeVisible();
+        await expect(bonusButton).toContainText('10.00 USD');
+        expect(await bonusButton.evaluate((element) => element.closest('.portal-header-actions') !== null)).toBe(true);
+        await assertRenderedViewportGeometry(page, ['.portal-header-actions button[aria-label="Доступные бонусы"]'], ['.portal-header']);
+
+        if (width === 320) {
+            await bonusButton.click();
+            const dialog = page.getByRole('dialog');
+            await expect(dialog).toBeVisible();
+            await expect(dialog).toContainText('Вы можете частично или полностью оплатить ими любую услугу.');
+            await expect(dialog.getByRole('link', { name: 'Записаться', exact: true })).toBeVisible();
+            await assertRenderedViewportGeometry(page, ['.portal-bonus-dialog a.portal-button'], ['.portal-bonus-dialog']);
+            await dialog.getByRole('button', { name: 'Закрыть видео', exact: true }).click();
+            await expect(dialog).toBeHidden();
+        }
+    }
+
+    await bonusButton.click();
+    await page.getByRole('dialog').getByRole('link', { name: 'Записаться', exact: true }).click();
+    await expect(page).toHaveURL(/\/portal\/services$/);
+    await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();
+    await expect(page.locator('.portal-service-card').filter({ hasText: fixture.serviceName })).toBeVisible();
+    await expect(page.getByRole('dialog')).toBeHidden();
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();
+    await expect(bonusButton).toContainText('10.00 USD');
+    await page.goBack();
+    await expect(page.getByRole('heading', { name: 'Добро пожаловать в пространство здоровья!', exact: true })).toBeVisible();
+    await expect(bonusButton).toContainText('10.00 USD');
 });
 
 test('ordinary referral copy reports clipboard failure and recovers on retry', async ({ page }) => {
