@@ -381,7 +381,7 @@ test('client can transfer, claim, and apply a gift certificate', async ({ page }
     await expect(certificateCard.getByRole('button', { name: 'Применить', exact: true })).toBeVisible();
     const applyForm = certificateCard.locator('.portal-inline-form');
     await expect(applyForm).toBeVisible();
-    for (const width of [320, 390, 1440]) {
+    for (const width of [320, 390, 680, 1440]) {
         await page.setViewportSize({ width, height: 844 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
         const inputBox = await applyForm.locator('.portal-input').boundingBox();

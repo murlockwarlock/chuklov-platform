@@ -153,8 +153,9 @@ function send(index: number): void {
       multiple
       accept="image/jpeg,image/png,application/pdf"
       :disabled="uploading || remainingFiles === 0"
+      aria-hidden="true"
       class="medical-attachments__input"
-      :aria-label="t('medical.chooseFiles')"
+      tabindex="-1"
       @change="select"
     >
     <button

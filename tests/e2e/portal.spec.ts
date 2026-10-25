@@ -2128,7 +2128,10 @@ test('portal retries a failed Companion turn without duplicating the client mess
 
     const retryResponse = page.waitForResponse((response) => response.request().method() === 'POST'
         && response.url().includes('/portal/companion/retry/'));
-    let retryAccepted = false;
+    const retryRefresh = page.waitForResponse((response) => response.request().method() === 'GET'
+        && new URL(response.url()).pathname === '/portal/companion'
+        && response.request().headers()['x-inertia-partial-data']?.includes('companion'));
+    let retryRequested = false;
     await page.route('**/portal/companion**', async (route) => {
         const request = route.request();
         if (request.method() !== 'GET' || request.headers()['x-inertia'] !== 'true') {
@@ -2144,9 +2147,7 @@ test('portal retries a failed Companion turn without duplicating the client mess
             };
         };
         const companion = payload.props?.companion;
-        if (payload.props?.notices?.retry === 'accepted') {
-            retryAccepted = true;
-        } else if (retryAccepted
+        if (retryRequested
             && request.headers()['x-inertia-partial-data']?.includes('companion')
             && companion !== undefined) {
             companion.pending = false;
@@ -2170,9 +2171,11 @@ test('portal retries a failed Companion turn without duplicating the client mess
         }
         await route.fulfill({ response, body: JSON.stringify(payload) });
     });
+    retryRequested = true;
     await page.getByRole('button', { name: 'Повторить', exact: true }).click();
     await assertPortalResponseAccepted(retryResponse, 'Companion retry');
     await expect(page.getByText('Повторный запрос запущен.', { exact: true })).toBeVisible();
+    expect((await retryRefresh).status()).toBe(200);
     await expect(page.locator('.portal-companion__message--client')).toHaveCount(1);
     await expect(page.getByText('Повторите исходный запрос без копирования.', { exact: true })).toHaveCount(1);
     await expect(page.getByText('Ответ после повтора.', { exact: true })).toBeVisible({ timeout: 10_000 });
@@ -3661,7 +3664,9 @@ test('family profiles persist, invitations retry safely, and linked patients can
         .filter({ hasText: 'Дочь' });
     await expect(linkedPatient).toHaveCount(1);
     await expect(linkedPatient).toBeVisible();
-    await linkedPatient.getByRole('link', { name: 'Записать на приём: Анна обновлена', exact: true }).click();
+    const bookingLink = linkedPatient.getByRole('link', { name: /^Записать на приём:/ });
+    await expect(bookingLink).toHaveAccessibleName(/Анна обновлена/);
+    await bookingLink.click();
     const bookingPatient = page.getByLabel('Кого записываем?');
     await expect(bookingPatient).toHaveValue(String(recipient.patientId));
     await bookingPatient.selectOption('');
