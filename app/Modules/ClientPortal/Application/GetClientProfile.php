@@ -56,12 +56,6 @@ final class GetClientProfile
                     ->where('verification_status', ChannelIdentityStatus::Verified)
                     ->exists(),
             ],
-            'telegram' => [
-                'connected' => $client->channelIdentities()
-                    ->where('channel', 'telegram')
-                    ->where('verification_status', ChannelIdentityStatus::Verified)
-                    ->exists(),
-            ],
             'b2bSpecialistAnswer' => $b2bAnswer,
             'legalDocuments' => $documents->map(function (LegalDocument $document) use ($consents): array {
                 $consent = $consents->get($document->getKey());
@@ -95,7 +89,6 @@ final class GetClientProfile
                 'cities' => route('portal.profile.cities'),
                 'update' => route('portal.profile.update'),
                 'consents' => route('portal.profile.consents'),
-                'telegramLink' => route('portal.telegram.link'),
                 'b2bAnswer' => route('portal.profile.b2b-answer'),
             ],
         ];

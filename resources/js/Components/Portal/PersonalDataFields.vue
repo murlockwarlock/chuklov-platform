@@ -24,6 +24,10 @@ function update(key: keyof PersonalData, value: string): void {
     emit('update:modelValue', { ...props.modelValue, [key]: value });
 }
 
+function commitBirthDate(event: KeyboardEvent): void {
+    update('birth_date', (event.currentTarget as HTMLInputElement).value);
+}
+
 </script>
 
 <template>
@@ -96,6 +100,8 @@ function update(key: keyof PersonalData, value: string): void {
         required
         class="portal-input"
         @input="update('birth_date', ($event.target as HTMLInputElement).value)"
+        @change="update('birth_date', ($event.target as HTMLInputElement).value)"
+        @keydown.enter.prevent="commitBirthDate"
       >
       <p
         v-if="errors?.birth_date"

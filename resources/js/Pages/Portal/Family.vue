@@ -9,7 +9,7 @@ import { emptyPatientIdentity, type PatientSummary } from '../../types/patients'
 import type { PortalShell } from '../../types/portal';
 
 const props = defineProps<{ portal: PortalShell; patients: { data: PatientSummary[]; prev_page_url: string | null; next_page_url: string | null }; urls: { create: string; profile: string } }>();
-const { t } = usePortalLocale();
+const { t, locale } = usePortalLocale();
 const form = useForm({ ...emptyPatientIdentity(), creation_key: crypto.randomUUID() });
 const patientError = computed(() => Object.entries(form.errors).find(([key]) => key === 'patient')?.[1]);
 const formError = ref('');
@@ -68,6 +68,12 @@ function errorForStatus(status: number): string {
     if (status === 404 || status === 410) return t('family.objectUnavailable');
 
     return t('family.saveRetry');
+}
+
+function ageLabel(age: number): string {
+    const form = new Intl.PluralRules(locale.value).select(age);
+
+    return t('family.age.' + form, { count: age });
 }
 
 function safeErrorCode(data: unknown): string | null {
@@ -169,24 +175,26 @@ function revoke(): void {
     :portal="props.portal"
   >
     <main class="portal-container portal-stack portal-stack--loose">
-      <header class="portal-section-header">
+      <header class="portal-family-header">
         <h1 class="portal-heading">
           {{ t('family.title') }}
         </h1>
-        <Link
-          :href="props.urls.profile"
-          class="portal-link"
-        >
-          {{ t('profile.title') }}
-        </Link>
+        <div class="portal-family-header__actions">
+          <Link
+            :href="props.urls.profile"
+            class="portal-link"
+          >
+            {{ t('profile.title') }}
+          </Link>
+          <button
+            type="button"
+            class="portal-button portal-button--primary"
+            @click="openPatient()"
+          >
+            {{ t('family.add') }}
+          </button>
+        </div>
       </header>
-      <button
-        type="button"
-        class="portal-button portal-button--primary"
-        @click="openPatient()"
-      >
-        {{ t('family.add') }}
-      </button>
       <p class="portal-copy">
         {{ t('family.medicalPrivacy') }}
       </p>
@@ -194,23 +202,25 @@ function revoke(): void {
         <article
           v-for="patient in props.patients.data"
           :key="patient.id"
-          class="portal-content-section portal-stack portal-stack--tight"
+          class="portal-family-card portal-stack portal-stack--tight"
         >
-          <h2 class="portal-heading portal-heading--section break-words">
-            {{ patient.name }}
-          </h2>
-          <p class="portal-copy">
-            {{ patient.relationshipLabel }}<template v-if="patient.age !== null">
-              · {{ t('family.age', { count: patient.age }) }}
-            </template>
-          </p>
+          <div class="portal-family-card__identity">
+            <h2 class="portal-heading portal-heading--section break-words">
+              {{ patient.name }}
+            </h2>
+            <p class="portal-copy portal-copy--small">
+              {{ patient.relationshipLabel }}<template v-if="patient.age !== null">
+                · {{ ageLabel(patient.age) }}
+              </template>
+            </p>
+          </div>
           <p
             v-if="patient.revoked"
             class="portal-copy"
           >
             {{ t('family.unlinked') }}
           </p>
-          <div class="portal-form-actions">
+          <div class="portal-family-card__actions">
             <button
               v-if="patient.canEdit"
               type="button"
@@ -223,8 +233,9 @@ function revoke(): void {
               v-if="patient.canBook"
               :href="patient.bookingUrl"
               class="portal-button portal-button--secondary"
+              :aria-label="t('family.bookFor', { name: patient.name })"
             >
-              {{ t('shell.book') }}
+              {{ t('family.book') }}
             </Link>
             <Link
               v-if="patient.medicalUrl"
@@ -420,3 +431,55 @@ function revoke(): void {
     </main>
   </AppShell>
 </template>
+
+<style scoped>
+.portal-family-header {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--portal-space-4);
+}
+
+.portal-family-header__actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--portal-space-3);
+}
+
+.portal-family-card {
+    min-width: 0;
+    border: 1px solid var(--portal-color-border);
+    border-radius: var(--portal-radius-lg);
+    background: var(--portal-color-surface);
+    padding: var(--portal-space-4);
+    box-shadow: var(--portal-shadow-card);
+}
+
+.portal-family-card__identity {
+    min-width: 0;
+}
+
+.portal-family-card__actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--portal-space-2);
+}
+
+@media (max-width: 40rem) {
+    .portal-family-header__actions {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .portal-family-header__actions > .portal-button {
+        flex: 1 1 auto;
+    }
+}
+</style>

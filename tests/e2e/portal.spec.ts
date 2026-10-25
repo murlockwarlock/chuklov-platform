@@ -378,7 +378,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     channel: 'portal',
                     direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
                     authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
-                    body: 'Не получилось подготовить ответ.',
+                    body: 'Ответ не удалось проверить. Попробуйте ещё раз или позовите специалиста.',
                     contextEpoch: $failedTurn->context_epoch,
                     metadata: [
                         'message_type' => 'terminal_failure',
@@ -389,7 +389,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 );
                 $failedTurn->update([
                     'status' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionTurnStatus::Failed,
-                    'failure_code' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionFailureCode::ProviderUnavailable,
+                    'failure_code' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionFailureCode::InvalidOutput,
                     'outbound_message_id' => $failureMessage->getKey(),
                     'failed_at' => now(),
                 ]);
@@ -399,7 +399,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     'attempt_number' => 1,
                     'execution_key' => 'playwright-failure-'.$suffix,
                     'status' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionTurnAttemptStatus::Failed,
-                    'failure_code' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionFailureCode::ProviderUnavailable,
+                    'failure_code' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionFailureCode::InvalidOutput,
                     'output_message_id' => $failureMessage->getKey(),
                     'completed_at' => now(),
                 ]);
@@ -2110,9 +2110,12 @@ test('portal retries a failed Companion turn without duplicating the client mess
         await page.setViewportSize({ width, height: 844 });
         await page.goto('/portal/companion');
         await expect(page.getByRole('heading', { name: 'Чат', exact: true })).toBeVisible();
-        await expect(page.getByText('Не получилось подготовить ответ.', { exact: true })).toBeVisible();
+        await expect(page.getByText('Ответ не удалось проверить. Попробуйте ещё раз или позовите специалиста.', { exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Повторить', exact: true })).toBeVisible();
         await expect(page.getByRole('button', { name: 'Позвать специалиста', exact: true })).toBeVisible();
+        await expect(page.getByRole('button', { name: 'Полезно', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('button', { name: 'Не помогло', exact: true })).toHaveCount(0);
+        await expect(page.getByText('· Портал', { exact: true })).toHaveCount(0);
         await expect(page.locator('.portal-companion__message--client')).toHaveCount(1);
         await expect(page.getByText('Повторите исходный запрос без копирования.', { exact: true })).toHaveCount(1);
         await assertNoHorizontalOverflow(page);
@@ -2125,11 +2128,56 @@ test('portal retries a failed Companion turn without duplicating the client mess
 
     const retryResponse = page.waitForResponse((response) => response.request().method() === 'POST'
         && response.url().includes('/portal/companion/retry/'));
+    let retryAccepted = false;
+    await page.route('**/portal/companion**', async (route) => {
+        const request = route.request();
+        if (request.method() !== 'GET' || request.headers()['x-inertia'] !== 'true') {
+            await route.continue();
+            return;
+        }
+
+        const response = await route.fetch();
+        const payload = await response.json() as {
+            props?: {
+                notices?: { retry?: string | null };
+                companion?: { pending?: boolean; messages?: Array<Record<string, unknown>> };
+            };
+        };
+        const companion = payload.props?.companion;
+        if (payload.props?.notices?.retry === 'accepted') {
+            retryAccepted = true;
+        } else if (retryAccepted
+            && request.headers()['x-inertia-partial-data']?.includes('companion')
+            && companion !== undefined) {
+            companion.pending = false;
+            companion.messages = [
+                ...(companion.messages ?? []),
+                {
+                    type: 'message',
+                    id: 'synthetic-retry-success',
+                    role: 'ai',
+                    roleLabel: 'Чат',
+                    content: 'Ответ после повтора.',
+                    occurredAt: new Date().toISOString(),
+                    transportLabel: null,
+                    feedback: null,
+                    feedbackAvailable: true,
+                    attachmentCount: 0,
+                    traceUrl: null,
+                    safeActions: [],
+                },
+            ];
+        }
+        await route.fulfill({ response, body: JSON.stringify(payload) });
+    });
     await page.getByRole('button', { name: 'Повторить', exact: true }).click();
     await assertPortalResponseAccepted(retryResponse, 'Companion retry');
     await expect(page.getByText('Повторный запрос запущен.', { exact: true })).toBeVisible();
     await expect(page.locator('.portal-companion__message--client')).toHaveCount(1);
     await expect(page.getByText('Повторите исходный запрос без копирования.', { exact: true })).toHaveCount(1);
+    await expect(page.getByText('Ответ после повтора.', { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByText('Повторный запрос запущен.', { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Полезно', exact: true })).toBeVisible();
 });
 
 test('companion shows accessible typing feedback and respects intentional history scrolling', async ({ page }) => {
@@ -2172,8 +2220,9 @@ test('companion shows accessible typing feedback and respects intentional histor
                     roleLabel: 'AI-помощник',
                     content: 'Новый синтетический ответ.',
                     occurredAt: new Date().toISOString(),
-                    transportLabel: 'Портал',
+                    transportLabel: null,
                     feedback: null,
+                    feedbackAvailable: true,
                     attachmentCount: 0,
                     traceUrl: null,
                 },
@@ -2271,6 +2320,8 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page).toHaveURL(/\/portal\/services/);
     await page.goto('/portal/more');
     await page.getByRole('link', { name: 'Личные данные', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Telegram', exact: true })).toHaveCount(0);
+    await expect(page.getByText('Подключён', { exact: true })).toHaveCount(0);
     await page.getByLabel('Фамилия', { exact: true }).fill('Солдатов');
     await page.getByLabel('Имя', { exact: true }).fill('Денис');
     await page.getByLabel('Отчество', { exact: true }).fill('Сергеевич');
@@ -2280,7 +2331,10 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByLabel('Женский', { exact: true })).toBeChecked();
     await page.getByText('Мужской', { exact: true }).click();
     await expect(page.getByLabel('Мужской', { exact: true })).toBeChecked();
-    await page.getByLabel('Дата рождения', { exact: true }).fill('1990-02-28');
+    const profileBirthDate = page.getByLabel('Дата рождения', { exact: true });
+    await profileBirthDate.fill('1990-02-28');
+    await profileBirthDate.press('Enter');
+    await expect(profileBirthDate).toHaveValue('1990-02-28');
     await page.getByLabel('Страна', { exact: true }).fill('Каз');
     await expect(page.locator('#profile-country-options [role="option"]')).toHaveCount(1);
     await expect(page.locator('#profile-country-options [role="option"]')).toHaveText('Казахстан');
@@ -2454,9 +2508,15 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
     await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Редактировать данные', exact: true })).toBeVisible();
-    await page.locator('#medical-files').setInputFiles([
+    const fileChooserEvent = page.waitForEvent('filechooser');
+    await page.getByRole('button', { name: 'Выбрать файлы', exact: true }).click();
+    const fileChooser = await fileChooserEvent;
+    await fileChooser.setFiles([
         { name: 'synthetic-pending.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4\n1 0 obj\n(Synthetic pending report)\nendobj\n%%EOF\n') },
     ]);
+    await expect(page.getByRole('button', { name: 'Выбрать файлы', exact: true })).toBeVisible();
+    await expect(page.locator('#medical-files')).toHaveCSS('clip-path', 'inset(50%)');
+    await expect(page.getByText('Файлы не выбраны', { exact: false })).toHaveCount(0);
     await page.locator('#medical-files').setInputFiles([
         { name: 'synthetic-invalid.exe', mimeType: 'application/x-msdownload', buffer: Buffer.from('not a medical report') },
     ]);
@@ -2516,23 +2576,25 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByRole('button', { name: 'Загрузить файлы', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Загрузить файлы', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'synthetic-maximum-size.pdf' })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'synthetic-maximum-size.pdf', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'synthetic-report-three.pdf', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'synthetic-report-photo.jpg', exact: true })).toBeVisible();
-    await expect(page.getByRole('link', { name: 'synthetic-report-scan.png', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Скачать файл: synthetic-maximum-size.pdf', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Скачать файл: synthetic-report-two.pdf', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Скачать файл: synthetic-report-three.pdf', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Скачать файл: synthetic-report-photo.jpg', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Скачать файл: synthetic-report-scan.png', exact: true })).toBeVisible();
     await expect(page.locator('#medical-files')).toBeDisabled();
     await expect(page.getByRole('status').filter({ hasText: 'В медицинском профиле уже загружено пять файлов.' })).toBeVisible();
-    const attachmentUrl = await page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true }).getAttribute('href');
+    const attachmentLink = page.getByRole('link', { name: 'Скачать файл: synthetic-report-two.pdf', exact: true });
+    await expect(attachmentLink).toHaveAttribute('download', 'synthetic-report-two.pdf');
+    const attachmentUrl = await attachmentLink.getAttribute('href');
     if (!attachmentUrl) throw new Error('Medical attachment download link is missing its URL');
     const downloadEvent = page.waitForEvent('download');
-    await page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true }).click();
+    await attachmentLink.click();
     const download = await downloadEvent;
     expect(download.suggestedFilename()).toBe('synthetic-report-two.pdf');
     expect(await download.failure()).toBeNull();
     await page.unroute('**/portal/medical-attachments*');
     await page.reload();
-    await expect(page.getByRole('link', { name: 'synthetic-report-two.pdf', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Скачать файл: synthetic-report-two.pdf', exact: true })).toBeVisible();
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `Medical profile at ${width}px`).toBe(true);
@@ -3436,6 +3498,8 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await page.context().addCookies([{ name: owner.cookieName, value: owner.cookieValue, url: 'http://127.0.0.1:8000' }]);
     await page.goto('/portal/family');
     await expect(page.getByRole('heading', { name: 'Члены семьи' })).toBeVisible();
+    await expect(page.getByText('Медицинские данные доступны только самому пациенту.', { exact: true })).toBeVisible();
+    await expect(page.getByText(/Доступ для представителя не подключён/)).toHaveCount(0);
     const addFamilyButton = page.getByRole('button', { name: 'Добавить члена семьи' });
     const createDialog = page.getByRole('dialog');
 
@@ -3462,7 +3526,13 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await createDialog.getByLabel('Фамилия').fill('QA Family');
     await createDialog.getByLabel('Имя').fill('Анна');
     await createDialog.getByRole('radio', { name: 'Женский' }).check({ force: true });
+    const genderSegments = createDialog.locator('.portal-profile-gender');
+    await expect(genderSegments).toHaveCSS('display', 'grid');
+    expect(await genderSegments.evaluate((element) => getComputedStyle(element).gridTemplateColumns.trim().split(/\s+/).length)).toBe(2);
     await createDialog.getByLabel('Дата рождения').fill('1990-01-02');
+    await createDialog.getByLabel('Дата рождения').press('Enter');
+    await expect(createDialog.getByLabel('Дата рождения')).toHaveValue('1990-01-02');
+    await expect(createDialog).toBeVisible();
     await createDialog.getByLabel('Кем приходится').selectOption('CHILD');
     await createDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page.getByRole('heading', { name: /Анна/ })).toBeVisible();
@@ -3591,7 +3661,7 @@ test('family profiles persist, invitations retry safely, and linked patients can
         .filter({ hasText: 'Дочь' });
     await expect(linkedPatient).toHaveCount(1);
     await expect(linkedPatient).toBeVisible();
-    await linkedPatient.getByRole('link', { name: 'Записаться' }).click();
+    await linkedPatient.getByRole('link', { name: 'Записать на приём: Анна обновлена', exact: true }).click();
     const bookingPatient = page.getByLabel('Кого записываем?');
     await expect(bookingPatient).toHaveValue(String(recipient.patientId));
     await bookingPatient.selectOption('');

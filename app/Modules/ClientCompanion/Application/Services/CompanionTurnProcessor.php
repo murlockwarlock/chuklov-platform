@@ -675,6 +675,7 @@ final class CompanionTurnProcessor
                 CompanionFailureCode::ProviderDisabled,
                 CompanionFailureCode::ProviderMisconfigured,
                 CompanionFailureCode::BudgetUnavailable => $message->unavailable,
+                CompanionFailureCode::InvalidOutput => $message->invalidOutputFailure(),
                 default => $message->failure,
             };
             $outbound = $this->recordMessage->handle(

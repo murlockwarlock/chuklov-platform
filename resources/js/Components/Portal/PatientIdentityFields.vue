@@ -12,6 +12,10 @@ const names = [{ key: 'last_name', label: 'profile.lastName', autocomplete: 'fam
 function update(field: keyof PatientIdentity, value: string): void {
     emit('update:modelValue', { ...props.modelValue, [field]: value });
 }
+
+function commitBirthDate(event: KeyboardEvent): void {
+    update('birth_date', (event.currentTarget as HTMLInputElement).value);
+}
 </script>
 
 <template>
@@ -97,6 +101,8 @@ function update(field: keyof PatientIdentity, value: string): void {
         :aria-invalid="errors?.birth_date ? 'true' : 'false'"
         :aria-describedby="errors?.birth_date ? idPrefix + '-birth-date-error' : undefined"
         @input="update('birth_date', ($event.target as HTMLInputElement).value)"
+        @change="update('birth_date', ($event.target as HTMLInputElement).value)"
+        @keydown.enter.prevent="commitBirthDate"
       >
       <p
         v-if="errors?.birth_date"

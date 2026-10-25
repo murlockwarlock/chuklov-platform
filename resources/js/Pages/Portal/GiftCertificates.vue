@@ -317,3 +317,32 @@ async function copyTransferUrl(): Promise<void> {
     </section>
   </AppShell>
 </template>
+
+<style scoped>
+.portal-inline-form {
+    display: grid;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: end;
+    gap: var(--portal-space-3);
+}
+
+.portal-inline-form > * {
+    min-width: 0;
+}
+
+.portal-inline-form .portal-button {
+    max-width: 100%;
+    white-space: normal;
+}
+
+@media (max-width: 40rem) {
+    .portal-inline-form {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .portal-inline-form .portal-button {
+        width: 100%;
+    }
+}
+</style>

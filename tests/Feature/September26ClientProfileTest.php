@@ -47,7 +47,9 @@ class September26ClientProfileTest extends TestCase
             ->where('saved', true)
             ->where('profile.firstName', 'Денис')->where('profile.lastName', 'Солдатов')
             ->where('profile.gender', 'MALE')->where('profile.birthDate', '1990-02-28')
-            ->where('profile.country', 'Казахстан')->where('profile.city', 'Алматы'));
+            ->where('profile.country', 'Казахстан')->where('profile.city', 'Алматы')
+            ->missing('telegram')
+            ->missing('urls.telegramLink'));
         $this->get(route('portal.home'))->assertInertia(fn (AssertableInertia $page) => $page
             ->where('portal.confirmedFirstName', 'Денис'));
         $actor = User::factory()->forOrganization($client->organization)->create();

@@ -952,6 +952,21 @@ select.portal-input[aria-invalid='true'] {
     color: var(--portal-color-ink);
 }
 
+.portal-profile-gender {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.portal-profile-gender__option {
+    display: grid;
+    place-items: center;
+    text-align: center;
+}
+
+.portal-profile-gender__option:focus-within {
+    outline: 2px solid var(--portal-color-ink);
+    outline-offset: 2px;
+}
+
 .portal-referral-results {
     display: flex;
     min-width: 0;

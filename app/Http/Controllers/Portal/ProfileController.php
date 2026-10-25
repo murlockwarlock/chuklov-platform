@@ -33,8 +33,8 @@ class ProfileController extends Controller
             $data['urls']['update'] = route('portal.profile.update', ['return_to' => 'patient_invitation']);
         }
         Inertia::encryptHistory();
-        $data['telegram']['linkUrl'] = session()->pull('telegram_link_url');
-        $data['telegram']['linkError'] = (bool) session()->pull('telegram_link_error', false);
+        session()->pull('telegram_link_url');
+        session()->pull('telegram_link_error');
 
         return Inertia::render('Portal/Profile', [
             ...$data,

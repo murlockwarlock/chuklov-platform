@@ -379,6 +379,22 @@ test('client can transfer, claim, and apply a gift certificate', async ({ page }
     const certificateCard = page.getByTestId('gift-certificate-card').first();
     await expectCertificateAmounts(certificateCard, 100);
     await expect(certificateCard.getByRole('button', { name: 'Применить', exact: true })).toBeVisible();
+    const applyForm = certificateCard.locator('.portal-inline-form');
+    await expect(applyForm).toBeVisible();
+    for (const width of [320, 390, 1440]) {
+        await page.setViewportSize({ width, height: 844 });
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+        const inputBox = await applyForm.locator('.portal-input').boundingBox();
+        const buttonBox = await applyForm.getByRole('button', { name: 'Применить', exact: true }).boundingBox();
+        expect(inputBox).not.toBeNull();
+        expect(buttonBox).not.toBeNull();
+        const doesNotOverlap = inputBox!.x + inputBox!.width <= buttonBox!.x
+            || buttonBox!.x + buttonBox!.width <= inputBox!.x
+            || inputBox!.y + inputBox!.height <= buttonBox!.y
+            || buttonBox!.y + buttonBox!.height <= inputBox!.y;
+        expect(doesNotOverlap).toBe(true);
+    }
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();
     await expectCertificateAmounts(page.getByTestId('gift-certificate-card').first(), 100);
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { router, useForm } from '@inertiajs/vue3';
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
@@ -18,6 +18,7 @@ type TimelineItem = {
     occurredAt: string;
     transportLabel: string | null;
     feedback: 'helpful' | 'not_helpful' | null;
+    feedbackAvailable: boolean;
     attachmentCount: number;
     traceUrl: null;
     safeActions: string[];
@@ -43,6 +44,7 @@ const props = defineProps<{
 }>();
 
 const { t, locale } = usePortalLocale();
+const retryAccepted = computed(() => props.notices.retry === 'accepted' && props.companion.pending);
 const body = ref('');
 const olderLoading = ref(false);
 const imageInput = ref<HTMLInputElement | null>(null);
@@ -159,7 +161,7 @@ function loadOlder(): void {
 }
 
 function submitFeedback(message: TimelineItem, value: 'helpful' | 'not_helpful'): void {
-    if (message.type !== 'message' || message.role !== 'ai') {
+    if (message.type !== 'message' || message.role !== 'ai' || !message.feedbackAvailable) {
         return;
     }
     router.post(props.urls.feedback.replace('__id__', String(message.id)), { value }, { preserveScroll: true });
@@ -311,7 +313,7 @@ watch(messageSignature, async () => {
               </button>
             </div>
             <div
-              v-if="message.type === 'message' && message.role === 'ai'"
+              v-if="message.type === 'message' && message.role === 'ai' && message.feedbackAvailable"
               class="mt-3 flex flex-wrap gap-2"
             >
               <button
@@ -360,7 +362,7 @@ watch(messageSignature, async () => {
             {{ t('companion.newMessages') }}
           </button>
           <div
-            v-if="props.companion.mode !== 'ai_active' || props.companion.openEscalation || props.notices.retry || props.notices.specialistRequested === 'unavailable'"
+            v-if="props.companion.mode !== 'ai_active' || props.companion.openEscalation || retryAccepted || props.notices.retry === 'unavailable' || props.notices.specialistRequested === 'unavailable'"
             class="portal-panel"
             role="status"
           >
@@ -377,7 +379,7 @@ watch(messageSignature, async () => {
               {{ props.companion.openEscalation.reasonLabel }}
             </p>
             <p
-              v-if="props.notices.retry === 'accepted'"
+              v-if="retryAccepted"
               class="portal-copy portal-copy--small"
             >
               {{ t('companion.retryAccepted') }}

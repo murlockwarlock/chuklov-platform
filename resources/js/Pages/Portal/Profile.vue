@@ -38,22 +38,14 @@ type Profile = {
     emailEditable: boolean;
 };
 
-type Telegram = {
-    connected: boolean;
-    linkUrl?: string | null;
-    linkError?: boolean;
-};
-
 const props = defineProps<{
     portal: PortalShell;
     profile: Profile;
-    telegram: Telegram;
     legalDocuments: LegalDocument[];
     urls: {
         family: string | null;
         update: string;
         consents: string;
-        telegramLink: string;
         b2bAnswer: string;
         referrals: string;
         cities: string;
@@ -108,7 +100,6 @@ const consentForm = useForm<{
 const consentValues = ref<Record<number, boolean>>(Object.fromEntries(
     consentForm.consents.map((consent) => [consent.legal_document_id, consent.granted]),
 ));
-const telegramLinkForm = useForm<Record<string, never>>({});
 const b2bAnswerForm = useForm<{ b2b_specialist_answer: 'yes' | 'no' | null }>({
     b2b_specialist_answer: props.b2bSpecialistAnswer,
 });
@@ -175,12 +166,6 @@ function setRequiredConsent(granted: boolean): void {
 
 function setMarketingConsent(granted: boolean): void {
     consentForm.marketing_consent = granted;
-}
-
-function requestTelegramLink(): void {
-    telegramLinkForm.post(props.urls.telegramLink, {
-        preserveScroll: true,
-    });
 }
 
 function saveB2bAnswer(): void {
@@ -535,51 +520,6 @@ function saveB2bAnswer(): void {
       </section>
 
       <section class="portal-content-section portal-stack">
-        <div class="portal-section-heading">
-          <div class="portal-stack portal-stack--tight">
-            <h2 class="portal-heading portal-heading--card">
-              {{ t('profile.telegram') }}
-            </h2>
-            <p class="portal-copy portal-copy--small">
-              {{ props.telegram.connected
-                ? t('profile.telegramConnected')
-                : t('profile.notSpecified') }}
-            </p>
-          </div>
-          <span
-            v-if="props.telegram.connected"
-            class="portal-status-dot"
-            aria-hidden="true"
-          />
-        </div>
-        <button
-          v-if="!props.telegram.connected"
-          type="button"
-          class="portal-button portal-button--secondary self-start"
-          :disabled="telegramLinkForm.processing"
-          @click="requestTelegramLink"
-        >
-          {{ t('profile.telegramConnect') }}
-        </button>
-        <a
-          v-if="props.telegram.linkUrl"
-          :href="props.telegram.linkUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="portal-link"
-        >
-          {{ t('profile.openTelegram') }}
-        </a>
-        <p
-          v-if="props.telegram.linkError"
-          class="portal-notice portal-notice--error"
-          role="alert"
-        >
-          {{ t('profile.telegramUnavailable') }}
-        </p>
-      </section>
-
-      <section class="portal-content-section portal-stack">
         <div class="portal-stack portal-stack--tight">
           <h2 class="portal-heading portal-heading--card">
             {{ t('profile.legal') }}
@@ -634,20 +574,3 @@ function saveB2bAnswer(): void {
     </section>
   </AppShell>
 </template>
-
-<style scoped>
-.portal-profile-gender {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.portal-profile-gender__option {
-    display: grid;
-    place-items: center;
-    text-align: center;
-}
-
-.portal-profile-gender__option:focus-within {
-    outline: 2px solid var(--portal-color-ink);
-    outline-offset: 2px;
-}
-</style>

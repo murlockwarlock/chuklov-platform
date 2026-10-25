@@ -217,8 +217,12 @@ final class ReadCompanionConversation
                     : null,
                 'occurredAt' => $message->occurred_at?->toIso8601String() ?? $message->created_at?->toIso8601String() ?? now()->toIso8601String(),
                 'transport' => $message->channel === 'telegram' ? 'telegram' : 'portal',
-                'transportLabel' => $message->channel === 'telegram' ? 'Telegram' : 'Портал',
+                'transportLabel' => $staff ? ($message->channel === 'telegram' ? 'Telegram' : 'Портал') : null,
                 'feedback' => $feedbackForMessage?->value?->value,
+                'feedbackAvailable' => $message->author_type === ConversationAuthorType::Ai
+                    && $turn instanceof CompanionTurn
+                    && $turn->status === CompanionTurnStatus::Completed
+                    && (int) $turn->outbound_message_id === (int) $message->getKey(),
                 'safeActions' => $safeActions,
                 'attachments' => $this->attachmentsFor($attachmentsByMessage->get($message->getKey(), collect())),
                 'attachmentCount' => $attachmentsByMessage->get($message->getKey(), collect())->count(),

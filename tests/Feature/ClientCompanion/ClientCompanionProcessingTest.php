@@ -132,6 +132,10 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(CompanionTurnStatus::Failed, $turn->status);
         $outbound = ConversationMessage::query()->findOrFail($turn->outbound_message_id);
         self::assertStringNotContainsString('raw provider payload', app(CompanionMessageBodyReader::class)->read($this->organization->getKey(), $outbound));
+        self::assertSame(
+            'Ответ не удалось проверить. Попробуйте ещё раз или позовите специалиста.',
+            app(CompanionMessageBodyReader::class)->read($this->organization->getKey(), $outbound),
+        );
         self::assertSame('invalid_output', $turn->failure_code);
     }
 
@@ -232,7 +236,10 @@ final class ClientCompanionProcessingTest extends TestCase
         $turn->refresh();
         $failureMessageId = (int) $turn->outbound_message_id;
         $failureMessage = ConversationMessage::query()->findOrFail($failureMessageId);
-        self::assertSame('Не получилось подготовить ответ.', app(CompanionMessageBodyReader::class)->read($this->organization->getKey(), $failureMessage));
+        self::assertSame(
+            'Не получилось подготовить ответ. Попробуйте ещё раз или позовите специалиста.',
+            app(CompanionMessageBodyReader::class)->read($this->organization->getKey(), $failureMessage),
+        );
         self::assertSame(['retry_failed_turn', 'request_human'], array_values(array_filter(explode(',', $failureMessage->metadata['safe_actions']))));
         $firstAttempt = CompanionTurnAttempt::query()->where('turn_id', $turn->getKey())->sole();
         self::assertSame(CompanionTurnAttemptStatus::Failed, $firstAttempt->status);
@@ -273,6 +280,11 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(2, CompanionDelivery::query()->whereIn('conversation_message_id', [$failureMessageId, $turn->outbound_message_id])->count());
         self::assertSame(1, CompanionDelivery::query()->where('conversation_message_id', $failureMessageId)->where('turn_id', $turn->getKey())->count());
         self::assertSame(1, CompanionDelivery::query()->where('conversation_message_id', $turn->outbound_message_id)->whereNull('turn_id')->count());
+
+        $messages = collect(app(ReadCompanionConversation::class)->forClient($this->client)['messages'])->keyBy('id');
+        self::assertFalse($messages->get($failureMessageId)['feedbackAvailable']);
+        self::assertNull($messages->get($failureMessageId)['transportLabel']);
+        self::assertTrue($messages->get((int) $turn->outbound_message_id)['feedbackAvailable']);
     }
 
     public function test_retryable_telegram_failure_delivers_a_retry_button_for_its_failed_message(): void
@@ -316,7 +328,13 @@ final class ClientCompanionProcessingTest extends TestCase
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('Portal/Companion')
                 ->where('urls.retry', route('portal.companion.retry', ['messageId' => '__id__']))
-                ->where('companion.messages.1.safeActions', ['retry_failed_turn', 'request_human']));
+                ->where('companion.messages.1.safeActions', ['retry_failed_turn', 'request_human'])
+                ->where('companion.messages.1.feedbackAvailable', false)
+                ->where('companion.messages.1.transportLabel', null));
+
+        $this->withSession($portalSession)
+            ->post(route('portal.companion.feedback', ['messageId' => $failureMessageId]), ['value' => 'helpful'])
+            ->assertForbidden();
 
         $this->withSession($portalSession)
             ->post(route('portal.companion.retry', ['messageId' => $failureMessageId]))

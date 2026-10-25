@@ -9,6 +9,7 @@ const { t } = usePortalLocale();
 type SelectedFile = { file: File; key: string; uploaded: boolean; error: string | null };
 const selected = ref<SelectedFile[]>([]);
 const selectionError = ref('');
+const fileInput = ref<HTMLInputElement | null>(null);
 const form = useForm<{ file: File | null; upload_key: string }>({ file: null, upload_key: '' });
 const uploading = ref(false);
 const activeName = ref('');
@@ -48,6 +49,12 @@ function select(event: Event): void {
         return;
     }
     selected.value = files.map((file) => ({ file, key: crypto.randomUUID(), uploaded: false, error: null }));
+}
+
+function openFilePicker(): void {
+    if (!uploading.value && remainingFiles.value > 0) {
+        fileInput.value?.click();
+    }
 }
 
 function upload(): void {
@@ -141,13 +148,23 @@ function send(index: number): void {
     </p>
     <input
       id="medical-files"
+      ref="fileInput"
       type="file"
       multiple
       accept="image/jpeg,image/png,application/pdf"
       :disabled="uploading || remainingFiles === 0"
-      class="portal-input min-w-0 max-w-full"
+      class="medical-attachments__input"
+      :aria-label="t('medical.chooseFiles')"
       @change="select"
     >
+    <button
+      type="button"
+      class="portal-button portal-button--secondary self-start"
+      :disabled="uploading || remainingFiles === 0"
+      @click="openFilePicker"
+    >
+      {{ t('medical.chooseFiles') }}
+    </button>
     <p
       v-if="selectionError"
       class="portal-error"
@@ -185,25 +202,83 @@ function send(index: number): void {
       v-if="selected.some((item) => !item.uploaded)"
       type="button"
       :disabled="uploading || Boolean(selectionError)"
-      class="portal-button portal-button--secondary"
+      class="portal-button portal-button--primary self-start"
       @click="upload"
     >
       {{ t('medical.upload') }}
     </button>
     <ul
       v-if="materials.length"
-      class="portal-stack"
+      class="medical-attachments__list"
     >
       <li
         v-for="material in materials"
         :key="material.id"
-        class="min-w-0"
+        class="medical-attachments__item"
       >
+        <span class="medical-attachments__filename">{{ material.filename }}</span>
         <a
           :href="material.downloadUrl"
-          class="portal-link break-words"
-        >{{ material.filename }}</a>
+          :download="material.filename"
+          class="portal-button portal-button--secondary"
+          :aria-label="t('medical.downloadFile', { name: material.filename })"
+        >
+          {{ t('medical.download') }}
+        </a>
       </li>
     </ul>
   </section>
 </template>
+
+<style scoped>
+.medical-attachments__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.medical-attachments__input:focus-visible + .portal-button {
+    outline: 2px solid var(--portal-color-ink);
+    outline-offset: 3px;
+}
+
+.medical-attachments__list {
+    display: grid;
+    min-width: 0;
+    gap: var(--portal-space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.medical-attachments__item {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: var(--portal-space-3);
+    border: 1px solid var(--portal-color-border);
+    border-radius: var(--portal-radius-md);
+    background: var(--portal-color-surface);
+    padding: var(--portal-space-3);
+}
+
+.medical-attachments__filename {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    color: var(--portal-color-ink);
+    font-weight: 650;
+}
+
+@media (max-width: 40rem) {
+    .medical-attachments__item > .portal-button {
+        width: 100%;
+    }
+}
+</style>

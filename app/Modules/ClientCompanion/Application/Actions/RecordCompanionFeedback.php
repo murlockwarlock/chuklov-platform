@@ -3,6 +3,7 @@
 namespace App\Modules\ClientCompanion\Application\Actions;
 
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionFeedback;
 use App\Modules\ClientCompanion\Domain\Models\CompanionTurn;
 use App\Modules\Conversations\Domain\Enums\ConversationAuthorType;
@@ -39,7 +40,7 @@ final class RecordCompanionFeedback
             ->where('conversation_id', $message->conversation_id)
             ->where('outbound_message_id', $message->getKey())
             ->first();
-        if ($turn === null) {
+        if ($turn === null || $turn->status !== CompanionTurnStatus::Completed) {
             throw new AuthorizationException('The feedback target is not a Companion response.');
         }
 
