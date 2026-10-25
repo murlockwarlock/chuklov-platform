@@ -46,7 +46,6 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Textarea;
-use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Queue;
@@ -184,8 +183,11 @@ final class MessagesWorkspaceTest extends TestCase
             ->set('search', 'Чужая организация')
             ->assertDontSee('Чужая организация');
 
-        $this->expectException(ModelNotFoundException::class);
-        $component->call('selectClient', $foreignClient->getKey())->assertStatus(404);
+        $component
+            ->call('selectClient', $foreignClient->getKey())
+            ->assertStatus(404)
+            ->assertSet('selectedClientId', null)
+            ->assertDontSee('Чужая организация');
     }
 
     public function test_messages_sidebar_shows_human_clinical_summary_and_canonical_workspace_link(): void
@@ -494,9 +496,9 @@ final class MessagesWorkspaceTest extends TestCase
             ->create();
 
         Filament::setCurrentPanel(Filament::getPanel('admin'));
-        $this->expectException(ModelNotFoundException::class);
         Livewire::actingAs($this->admin)
-            ->test(ViewBooking::class, ['record' => $foreignBooking->getKey()]);
+            ->test(ViewBooking::class, ['record' => $foreignBooking->getKey()])
+            ->assertStatus(404);
     }
 
     private function resolveContext(): void
