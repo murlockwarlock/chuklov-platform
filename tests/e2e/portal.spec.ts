@@ -3772,6 +3772,8 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await expect(page.getByRole('heading', { name: 'Члены семьи' })).toBeVisible();
     await expect(page.getByText('Медицинские данные доступны только самому пациенту.', { exact: true })).toBeVisible();
     await expect(page.getByText(/Доступ для представителя не подключён/)).toHaveCount(0);
+    await expect(page.locator('.portal-family-card')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Пока нет добавленных членов семьи.' })).toBeVisible();
     const addFamilyButton = page.getByRole('button', { name: 'Добавить члена семьи' });
     const createDialog = page.getByRole('dialog');
 
@@ -3811,8 +3813,19 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await expect(page.getByRole('status').filter({ hasText: 'Член семьи добавлен.' })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('heading', { name: /Анна/ })).toBeVisible();
+    await expect(page.locator('.portal-family-card')).toHaveCount(1);
+    const patientCard = page.locator('.portal-family-card').filter({ hasText: /Анна/ });
+    await expect(patientCard.getByRole('link', { name: 'Записать на приём: Анна', exact: true })).toBeVisible();
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+        await assertRenderedViewportGeometry(
+            page,
+            ['.portal-family-card__actions > .portal-button--primary'],
+            ['.portal-family-card', '.portal-family-card__identity'],
+        );
+    }
 
-    const patientCard = page.locator('article').filter({ hasText: /Анна/ });
     await patientCard.getByRole('button', { name: 'Редактировать данные' }).click();
     const editDialog = page.getByRole('dialog');
     await editDialog.getByLabel('Имя').fill('Анна обновлена');
@@ -3928,7 +3941,7 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await expect(page.getByText('Приглашение принято', { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Члены семьи' }).click();
-    const linkedPatient = page.locator('article')
+    const linkedPatient = page.locator('.portal-family-card')
         .filter({ hasText: /Анна обновлена/ })
         .filter({ hasText: 'Дочь' });
     await expect(linkedPatient).toHaveCount(1);
@@ -3952,7 +3965,7 @@ test('family profiles persist, invitations retry safely, and linked patients can
 
     await page.context().addCookies([{ name: owner.cookieName, value: owner.cookieValue, url: 'http://127.0.0.1:8000' }]);
     await page.goto('/portal/family');
-    const ownerPatient = page.locator('article').filter({ hasText: /Анна обновлена/ });
+    const ownerPatient = page.locator('.portal-family-card').filter({ hasText: /Анна обновлена/ });
     await ownerPatient.getByRole('button', { name: 'Отвязать' }).click();
     const unlinkDialog = page.getByRole('dialog');
     await expect(unlinkDialog).toBeVisible();

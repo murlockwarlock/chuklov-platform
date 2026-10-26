@@ -2,6 +2,7 @@
 import { Link, router, useForm, useHttp } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import EmptyState from '../../Components/Portal/EmptyState.vue';
 import PatientIdentityFields from '../../Components/Portal/PatientIdentityFields.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import { shareTelegramLink } from '../../runtime/clientRuntime';
@@ -10,6 +11,7 @@ import type { PortalShell } from '../../types/portal';
 
 const props = defineProps<{ portal: PortalShell; patients: { data: PatientSummary[]; prev_page_url: string | null; next_page_url: string | null }; urls: { create: string; profile: string } }>();
 const { t, locale } = usePortalLocale();
+const familyMembers = computed(() => props.patients.data.filter((patient) => patient.relationship !== 'SELF'));
 const form = useForm({ ...emptyPatientIdentity(), creation_key: crypto.randomUUID() });
 const patientError = computed(() => Object.entries(form.errors).find(([key]) => key === 'patient')?.[1]);
 const formError = ref('');
@@ -198,11 +200,14 @@ function revoke(): void {
       <p class="portal-copy">
         {{ t('family.medicalPrivacy') }}
       </p>
-      <div class="portal-stack">
+      <div
+        v-if="familyMembers.length"
+        class="portal-stack"
+      >
         <article
-          v-for="patient in props.patients.data"
+          v-for="patient in familyMembers"
           :key="patient.id"
-          class="portal-family-card portal-stack portal-stack--tight"
+          class="portal-family-card"
         >
           <div class="portal-family-card__identity">
             <h2 class="portal-heading portal-heading--section break-words">
@@ -232,7 +237,7 @@ function revoke(): void {
             <Link
               v-if="patient.canBook"
               :href="patient.bookingUrl"
-              class="portal-button portal-button--secondary"
+              class="portal-button portal-button--primary"
               :aria-label="t('family.bookFor', { name: patient.name })"
             >
               {{ t('family.book') }}
@@ -265,6 +270,10 @@ function revoke(): void {
           </div>
         </article>
       </div>
+      <EmptyState
+        v-else
+        :title="t('family.empty')"
+      />
       <div
         v-if="invitationStatus"
         class="portal-notice portal-notice--success"
@@ -452,7 +461,9 @@ function revoke(): void {
 }
 
 .portal-family-card {
+    display: grid;
     min-width: 0;
+    gap: var(--portal-space-3);
     border: 1px solid var(--portal-color-border);
     border-radius: var(--portal-radius-lg);
     background: var(--portal-color-surface);
@@ -461,7 +472,15 @@ function revoke(): void {
 }
 
 .portal-family-card__identity {
+    display: grid;
     min-width: 0;
+    gap: 0.25rem;
+}
+
+.portal-family-card__identity h2 {
+    margin: 0;
+    font-size: 1.15rem;
+    line-height: 1.3;
 }
 
 .portal-family-card__actions {
@@ -469,7 +488,7 @@ function revoke(): void {
     min-width: 0;
     align-items: center;
     flex-wrap: wrap;
-    gap: var(--portal-space-2);
+    gap: var(--portal-space-2) var(--portal-space-3);
 }
 
 @media (max-width: 40rem) {

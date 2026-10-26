@@ -13,7 +13,6 @@ use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Support\SupportedLocale;
 use Filament\Actions\Action;
 use Filament\Auth\Pages\EditProfile as BaseEditProfile;
-use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -67,9 +66,6 @@ final class EditProfile extends BaseEditProfile
                             ])
                             ->required()
                             ->native(false),
-                        Placeholder::make('telegram_status')
-                            ->label(__('Telegram'))
-                            ->content(fn (): string => $this->telegramConnectionStatus()),
                         Toggle::make('notifications_enabled')
                             ->label(__('Уведомления CRM'))
                             ->required()

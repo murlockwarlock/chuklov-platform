@@ -3,6 +3,7 @@ import type { PortalLocale } from '../types/portal';
 const messages: Record<PortalLocale, Record<string, string>> = {
     ru: {
         'family.title': 'Члены семьи',
+        'family.empty': 'Пока нет добавленных членов семьи.',
         'family.add': 'Добавить члена семьи',
         'family.relationship': 'Кем приходится',
         'family.chooseRelationship': 'Выберите родство',
@@ -776,6 +777,7 @@ const messages: Record<PortalLocale, Record<string, string>> = {
     },
     en: {
         'family.title': 'Family members',
+        'family.empty': 'No family members have been added yet.',
         'family.add': 'Add a family member',
         'family.relationship': 'Relationship',
         'family.chooseRelationship': 'Choose relationship',
