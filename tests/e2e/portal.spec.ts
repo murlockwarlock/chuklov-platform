@@ -28,6 +28,7 @@ type BookingFixtureOptions = {
     medicalService?: boolean;
     withBooking?: boolean;
     confirmedOfficeBooking?: boolean;
+    cancelledOfficeBooking?: boolean;
     bookingWithinCancellationCutoff?: boolean;
     onlineMeeting?: boolean;
     withCompanionMessages?: boolean;
@@ -61,6 +62,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $multipleLocations = getenv('PLAYWRIGHT_MULTIPLE_LOCATIONS') === '1';
         $onlineMeeting = getenv('PLAYWRIGHT_ONLINE_MEETING') === '1';
         $confirmedOfficeBooking = getenv('PLAYWRIGHT_CONFIRMED_OFFICE_BOOKING') === '1';
+        $cancelledOfficeBooking = getenv('PLAYWRIGHT_CANCELLED_OFFICE_BOOKING') === '1';
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withServiceImage = getenv('PLAYWRIGHT_WITH_SERVICE_IMAGE') === '1';
@@ -658,9 +660,12 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     format: \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office,
                     idempotencyKey: 'playwright-'.$suffix,
                 );
-                if ($confirmedOfficeBooking) {
+                if ($confirmedOfficeBooking || $cancelledOfficeBooking) {
                     $booking->forceFill([
-                        'status' => \\App\\Modules\\Scheduling\\Domain\\Enums\\BookingStatus::Confirmed->value,
+                        'status' => $cancelledOfficeBooking
+                            ? \\App\\Modules\\Scheduling\\Domain\\Enums\\BookingStatus::Cancelled->value
+                            : \\App\\Modules\\Scheduling\\Domain\\Enums\\BookingStatus::Confirmed->value,
+                        'cancelled_at' => $cancelledOfficeBooking ? now() : null,
                     ])->save();
                 }
             }
@@ -740,6 +745,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_ROADMAP: normalizedOptions.roadmap ? '1' : '0',
                 PLAYWRIGHT_WITH_BOOKING: normalizedOptions.withBooking ? '1' : '0',
                 PLAYWRIGHT_CONFIRMED_OFFICE_BOOKING: normalizedOptions.confirmedOfficeBooking ? '1' : '0',
+                PLAYWRIGHT_CANCELLED_OFFICE_BOOKING: normalizedOptions.cancelledOfficeBooking ? '1' : '0',
                 PLAYWRIGHT_ONLINE_MEETING: normalizedOptions.onlineMeeting ? '1' : '0',
                 PLAYWRIGHT_BOOKING_WITHIN_CANCELLATION_CUTOFF: normalizedOptions.bookingWithinCancellationCutoff ? '1' : '0',
                 PLAYWRIGHT_MEDICAL_SERVICE: normalizedOptions.medicalService ? '1' : '0',
@@ -1851,7 +1857,7 @@ test('home changes the booking action when an upcoming booking is shown', async 
 test('booking details use one office label and a consistent dotted date', async ({ page }) => {
     const fixture = createBookingFixture({
         withBooking: true,
-        confirmedOfficeBooking: true,
+        cancelledOfficeBooking: true,
         duplicateOfficeLocation: true,
     });
 
@@ -1862,6 +1868,7 @@ test('booking details use one office label and a consistent dotted date', async 
     }]);
 
     await page.goto(`/portal/bookings/${fixture.bookingId}`);
+    await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
     const bookingTime = page.locator('[aria-labelledby="booking-time-heading"] time');
     await expect(bookingTime).toHaveText(/^\d{2}\.\d{2}\.\d{4}$/);
@@ -3815,7 +3822,9 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await expect(page.getByRole('heading', { name: /Анна/ })).toBeVisible();
     await expect(page.locator('.portal-family-card')).toHaveCount(1);
     const patientCard = page.locator('.portal-family-card').filter({ hasText: /Анна/ });
-    await expect(patientCard.getByRole('link', { name: 'Записать на приём: Анна', exact: true })).toBeVisible();
+    const bookForPatient = patientCard.getByRole('link', { name: /Записать на приём: Анна/ });
+    await expect(bookForPatient).toHaveText('Записать на приём');
+    await expect(bookForPatient).toHaveAttribute('aria-label', /Записать на приём: Анна/);
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await assertNoHorizontalOverflow(page);
