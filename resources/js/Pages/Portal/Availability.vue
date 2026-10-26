@@ -33,7 +33,7 @@ const props = defineProps<{
     query: AvailabilityQuery;
 }>();
 
-const { t, formatDate: formatPortalDate } = usePortalLocale();
+const { t, locale, formatDate: formatPortalDate } = usePortalLocale();
 
 function formatDate(date: string): string {
     return formatPortalDate(date);

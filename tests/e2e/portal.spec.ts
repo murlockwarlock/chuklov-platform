@@ -2203,6 +2203,7 @@ test('portal retries a failed Companion turn without duplicating the client mess
         && response.request().headers()['x-inertia-partial-data']?.includes('companion'));
     let retryRequested = false;
     let feedbackRequested = false;
+    let companionPage: object | null = null;
     await page.route('**/portal/companion**', async (route) => {
         const request = route.request();
         if (request.method() !== 'GET' || request.headers()['x-inertia'] !== 'true') {
@@ -2247,11 +2248,33 @@ test('portal retries a failed Companion turn without duplicating the client mess
             }
             companion.messages = messages;
         }
+        companionPage = payload;
         await route.fulfill({ response, body: JSON.stringify(payload) });
     });
     await page.route('**/portal/companion/feedback/**', async (route) => {
         feedbackRequested = true;
-        await route.fulfill({ status: 303, headers: { location: '/portal/companion' } });
+        if (companionPage === null) {
+            await route.abort();
+            return;
+        }
+
+        const pagePayload = companionPage as {
+            props?: {
+                companion?: { messages?: Array<Record<string, unknown>> };
+            };
+        };
+        const messages = pagePayload.props?.companion?.messages ?? [];
+        const retryMessage = messages.find((message) => message.id === 'synthetic-retry-success');
+        if (retryMessage !== undefined) {
+            retryMessage.feedback = 'not_helpful';
+        }
+
+        await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            headers: { 'X-Inertia': 'true' },
+            body: JSON.stringify(companionPage),
+        });
     });
     retryRequested = true;
     await page.getByRole('button', { name: 'Повторить', exact: true }).click();
@@ -2263,10 +2286,8 @@ test('portal retries a failed Companion turn without duplicating the client mess
     await expect(page.getByText('Ответ после повтора.', { exact: true })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('Повторный запрос запущен.', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Полезно', exact: true })).toBeVisible();
-    const feedbackResponse = page.waitForResponse((response) => response.request().method() === 'POST'
-        && response.url().includes('/portal/companion/feedback/'));
     await page.getByRole('button', { name: 'Не помогло', exact: true }).click();
-    expect((await feedbackResponse).status()).toBe(303);
+    await expect.poll(() => feedbackRequested).toBe(true);
     await expect(page.getByRole('button', { name: 'Полезно', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Не помогло', exact: true })).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: 'Спасибо, учтём ваш отзыв.' })).toBeVisible();
