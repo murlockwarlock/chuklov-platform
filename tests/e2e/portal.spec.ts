@@ -3824,7 +3824,7 @@ test('family profiles persist, invitations retry safely, and linked patients can
     const patientCard = page.locator('.portal-family-card').filter({ hasText: /Анна/ });
     const bookForPatient = patientCard.locator('a.portal-button--primary');
     await expect(bookForPatient).toHaveText('Записать на приём');
-    await expect(bookForPatient).toHaveAttribute('aria-label', /Записать на приём: Анна/);
+    await expect(bookForPatient).toHaveAttribute('aria-label', /Записать на приём: QA Family Анна/);
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await assertNoHorizontalOverflow(page);
