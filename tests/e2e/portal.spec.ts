@@ -3822,7 +3822,7 @@ test('family profiles persist, invitations retry safely, and linked patients can
     await expect(page.getByRole('heading', { name: /Анна/ })).toBeVisible();
     await expect(page.locator('.portal-family-card')).toHaveCount(1);
     const patientCard = page.locator('.portal-family-card').filter({ hasText: /Анна/ });
-    const bookForPatient = patientCard.getByRole('link', { name: /Записать на приём: Анна/ });
+    const bookForPatient = patientCard.locator('a.portal-button--primary');
     await expect(bookForPatient).toHaveText('Записать на приём');
     await expect(bookForPatient).toHaveAttribute('aria-label', /Записать на приём: Анна/);
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
