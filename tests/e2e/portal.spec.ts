@@ -18,6 +18,7 @@ type BookingFixture = {
     date: string;
     homeVisitDate: string | null;
     bookingId: number | null;
+    companionFeedbackMessageId: number | null;
 };
 
 type BookingFixtureOptions = {
@@ -31,6 +32,7 @@ type BookingFixtureOptions = {
     onlineMeeting?: boolean;
     withCompanionMessages?: boolean;
     withCompanionFailure?: boolean;
+    withCompanionFeedback?: boolean;
     withServiceCredit?: boolean;
     withPartnerRewards?: boolean;
     withCompanionPending?: boolean;
@@ -67,6 +69,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $withServiceCredit = getenv('PLAYWRIGHT_WITH_SERVICE_CREDIT') === '1';
         $withCompanionPending = getenv('PLAYWRIGHT_WITH_COMPANION_PENDING') === '1';
         $withCompanionFailure = getenv('PLAYWRIGHT_WITH_COMPANION_FAILURE') === '1';
+        $withCompanionFeedback = getenv('PLAYWRIGHT_WITH_COMPANION_FEEDBACK') === '1';
         $confirmedName = getenv('PLAYWRIGHT_CONFIRMED_NAME') === '1';
         $roadmap = getenv('PLAYWRIGHT_ROADMAP') === '1';
         \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationFeatureFlag::query()->upsert([
@@ -371,7 +374,8 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 'timezone' => 'UTC',
             ]);
         }
-        if ($withCompanionMessages || $withCompanionPending || $withCompanionFailure) {
+        $companionFeedbackMessageId = null;
+        if ($withCompanionMessages || $withCompanionPending || $withCompanionFailure || $withCompanionFeedback) {
             config()->set('medical.keys.1', 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=');
             app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
             if ($withCompanionFailure) {
@@ -417,6 +421,55 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     'output_message_id' => $failureMessage->getKey(),
                     'completed_at' => now(),
                 ]);
+            } elseif ($withCompanionFeedback) {
+                $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::factory()
+                    ->forOrganization($organization)
+                    ->forClient($client)
+                    ->create([
+                        'conversation_type' => \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationType::ClientCompanion,
+                    ]);
+                $inboundMessage = app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+                    organizationId: $organization->getKey(),
+                    client: $client,
+                    conversation: $conversation,
+                    channel: 'portal',
+                    direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Inbound,
+                    authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Client,
+                    body: 'Синтетический вопрос для проверки оценки ответа.',
+                    metadata: ['locale' => 'ru', 'transport' => 'portal'],
+                );
+                $turn = \\App\\Modules\\ClientCompanion\\Domain\\Models\\CompanionTurn::query()->create([
+                    'organization_id' => $organization->getKey(),
+                    'client_id' => $client->getKey(),
+                    'conversation_id' => $conversation->getKey(),
+                    'sequence' => 1,
+                    'context_epoch' => $conversation->context_epoch,
+                    'inbound_message_id' => $inboundMessage->getKey(),
+                    'origin_channel' => 'portal',
+                    'origin_external_id' => 'portal:playwright-feedback-'.$suffix,
+                    'idempotency_key' => 'playwright-feedback-'.$suffix,
+                    'request_hash' => hash('sha256', 'playwright-feedback-'.$suffix),
+                    'status' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionTurnStatus::Pending,
+                    'input_modality' => 'text',
+                    'image_reference_mode' => 'none',
+                    'accepted_at' => now(),
+                ]);
+                $feedbackMessage = app(\\App\\Modules\\Conversations\\Application\\RecordCompanionMessage::class)->handle(
+                    organizationId: $organization->getKey(),
+                    client: $client,
+                    conversation: $conversation,
+                    channel: 'portal',
+                    direction: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationDirection::Outbound,
+                    authorType: \\App\\Modules\\Conversations\\Domain\\Enums\\ConversationAuthorType::Ai,
+                    body: 'Ответ для проверки оценки.',
+                    contextEpoch: $turn->context_epoch,
+                );
+                $turn->update([
+                    'status' => \\App\\Modules\\ClientCompanion\\Domain\\Enums\\CompanionTurnStatus::Completed,
+                    'outbound_message_id' => $feedbackMessage->getKey(),
+                    'completed_at' => now(),
+                ]);
+                $companionFeedbackMessageId = $feedbackMessage->getKey();
             } else {
                 $conversation = \\App\\Modules\\Conversations\\Domain\\Models\\Conversation::factory()
                     ->forOrganization($organization)
@@ -662,6 +715,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             'date' => $date,
             'homeVisitDate' => $homeVisitDate,
             'bookingId' => $booking?->getKey(),
+            'companionFeedbackMessageId' => $companionFeedbackMessageId,
         ]);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-${process.pid}`;
@@ -695,6 +749,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_WITH_PARTNER_REWARDS: normalizedOptions.withPartnerRewards ? '1' : '0',
                 PLAYWRIGHT_WITH_COMPANION_PENDING: normalizedOptions.withCompanionPending ? '1' : '0',
                 PLAYWRIGHT_WITH_COMPANION_FAILURE: normalizedOptions.withCompanionFailure ? '1' : '0',
+                PLAYWRIGHT_WITH_COMPANION_FEEDBACK: normalizedOptions.withCompanionFeedback ? '1' : '0',
                 PLAYWRIGHT_WITH_SERVICE_CREDIT: normalizedOptions.withServiceCredit ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_CHOICES: normalizedOptions.multipleChoices ? '1' : '0',
                 PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
@@ -2202,8 +2257,6 @@ test('portal retries a failed Companion turn without duplicating the client mess
         && new URL(response.url()).pathname === '/portal/companion'
         && response.request().headers()['x-inertia-partial-data']?.includes('companion'));
     let retryRequested = false;
-    let feedbackRequested = false;
-    let companionPage: object | null = null;
     await page.route('**/portal/companion**', async (route) => {
         const request = route.request();
         if (request.method() !== 'GET' || request.headers()['x-inertia'] !== 'true') {
@@ -2223,58 +2276,26 @@ test('portal retries a failed Companion turn without duplicating the client mess
             companion.pending = false;
             const messages = companion.messages ?? [];
             const retryMessage = {
-                    type: 'message',
-                    id: 'synthetic-retry-success',
-                    role: 'ai',
-                    roleLabel: 'Чат',
-                    content: 'Ответ после повтора.',
-                    occurredAt: new Date().toISOString(),
-                    transportLabel: null,
-                    feedback: null,
-                    feedbackAvailable: true,
-                    attachmentCount: 0,
-                    traceUrl: null,
-                    safeActions: [],
-                };
+                type: 'message',
+                id: 'synthetic-retry-success',
+                role: 'ai',
+                roleLabel: 'Чат',
+                content: 'Ответ после повтора.',
+                occurredAt: new Date().toISOString(),
+                transportLabel: null,
+                feedback: null,
+                feedbackAvailable: true,
+                attachmentCount: 0,
+                traceUrl: null,
+                safeActions: [],
+            };
             const existingMessage = messages.find((message) => message.id === retryMessage.id);
             if (existingMessage === undefined) {
                 messages.push(retryMessage);
             }
-            if (feedbackRequested) {
-                const savedMessage = messages.find((message) => message.id === retryMessage.id);
-                if (savedMessage !== undefined) {
-                    savedMessage.feedback = 'not_helpful';
-                }
-            }
             companion.messages = messages;
         }
-        companionPage = payload;
         await route.fulfill({ response, body: JSON.stringify(payload) });
-    });
-    await page.route('**/portal/companion/feedback/**', async (route) => {
-        feedbackRequested = true;
-        if (companionPage === null) {
-            await route.abort();
-            return;
-        }
-
-        const pagePayload = companionPage as {
-            props?: {
-                companion?: { messages?: Array<Record<string, unknown>> };
-            };
-        };
-        const messages = pagePayload.props?.companion?.messages ?? [];
-        const retryMessage = messages.find((message) => message.id === 'synthetic-retry-success');
-        if (retryMessage !== undefined) {
-            retryMessage.feedback = 'not_helpful';
-        }
-
-        await route.fulfill({
-            status: 200,
-            contentType: 'application/json',
-            headers: { 'X-Inertia': 'true' },
-            body: JSON.stringify(companionPage),
-        });
     });
     retryRequested = true;
     await page.getByRole('button', { name: 'Повторить', exact: true }).click();
@@ -2285,9 +2306,37 @@ test('portal retries a failed Companion turn without duplicating the client mess
     await expect(page.getByText('Повторите исходный запрос без копирования.', { exact: true })).toHaveCount(1);
     await expect(page.getByText('Ответ после повтора.', { exact: true })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('Повторный запрос запущен.', { exact: true })).toHaveCount(0);
+});
+
+test('portal saves Companion feedback once and preserves it after reload', async ({ page }) => {
+    const fixture = createBookingFixture({ withCompanionFeedback: true });
+
+    if (fixture.companionFeedbackMessageId === null) {
+        throw new Error('The Companion feedback fixture did not create an AI response.');
+    }
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/portal/companion');
+    await expect(page.getByRole('heading', { name: 'Чат', exact: true })).toBeVisible();
+    await expect(page.getByText('Ответ для проверки оценки.', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Полезно', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Не помогло', exact: true })).toBeVisible();
+
+    const feedbackResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+        && new URL(response.url()).pathname === `/portal/companion/feedback/${fixture.companionFeedbackMessageId}`);
     await page.getByRole('button', { name: 'Не помогло', exact: true }).click();
-    await expect.poll(() => feedbackRequested).toBe(true);
+    await assertPortalResponseAccepted(feedbackResponse, 'Companion feedback');
+    await expect(page.getByRole('button', { name: 'Полезно', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Не помогло', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('status').filter({ hasText: 'Спасибо, учтём ваш отзыв.' })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText('Ответ для проверки оценки.', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Полезно', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Не помогло', exact: true })).toHaveCount(0);
     await expect(page.getByRole('status').filter({ hasText: 'Спасибо, учтём ваш отзыв.' })).toBeVisible();
