@@ -52,7 +52,7 @@ type Booking = {
     locationArea: string | null;
     locationSnapshot: {
         name?: string;
-        address?: string;
+        address?: string | null;
         timezone?: string;
         area_name?: string;
         [key: string]: unknown;

@@ -38,7 +38,9 @@ type BookingFixtureOptions = {
     multipleLocations?: boolean;
     longServiceTitle?: boolean;
     homeVisit?: boolean;
-    tracker?: 'empty' | 'task';
+    withServiceImage?: boolean;
+    tracker?: 'empty' | 'task' | 'checkins';
+    duplicateOfficeLocation?: boolean;
 };
 
 type FamilyAcceptanceFixture = {
@@ -59,6 +61,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $confirmedOfficeBooking = getenv('PLAYWRIGHT_CONFIRMED_OFFICE_BOOKING') === '1';
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
+        $withServiceImage = getenv('PLAYWRIGHT_WITH_SERVICE_IMAGE') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
         $withServiceCredit = getenv('PLAYWRIGHT_WITH_SERVICE_CREDIT') === '1';
@@ -229,6 +232,17 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                     \\App\\Modules\\Tracker\\Domain\\Enums\\TrackerTaskFrequency::Daily,
                     \\Carbon\\CarbonImmutable::now('UTC')->startOfDay(),
                 );
+            }
+            if (getenv('PLAYWRIGHT_TRACKER') === 'checkins') {
+                $checkIn = new \\App\\Modules\\Tracker\\Domain\\Models\\TrackerCheckIn;
+                $checkIn->forceFill([
+                    'organization_id' => $organization->getKey(),
+                    'client_id' => $client->getKey(),
+                    'occurred_at' => now()->subDay(),
+                    'note' => 'Синтетическая заметка о самочувствии.',
+                    'source' => 'portal',
+                ]);
+                $checkIn->save();
             }
         }
         $specialist = \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::factory()->forOrganization($organization)->create([
@@ -468,6 +482,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 ? 'Индивидуальная консультация по глубоким и устойчивым изменениям в жизни '.$suffix
                 : 'Playwright Service '.$suffix,
             'formats' => $homeVisit ? ['home'] : (($multipleChoices || $onlineMeeting) ? ['office', 'online'] : ['office']),
+            'image_path' => $withServiceImage ? 'brand/chuklov-designer-logo-ru.jpg' : null,
             'requires_medical_profile' => getenv('PLAYWRIGHT_MEDICAL_SERVICE') === '1',
         ]);
         \\App\\Modules\\Scheduling\\Domain\\Models\\SpecialistServiceAssignment::factory()
@@ -597,6 +612,18 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 }
             }
         }
+        if ($booking !== null && getenv('PLAYWRIGHT_DUPLICATE_OFFICE_LOCATION') === '1') {
+            $booking->forceFill([
+                'visit_format' => \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office->value,
+                'location' => 'Bangkok',
+                'location_snapshot' => [
+                    'type' => \\App\\Modules\\Scheduling\\Domain\\Enums\\VisitFormat::Office->value,
+                    'name' => 'Бангкок',
+                    'address' => 'Bangkok',
+                    'timezone' => 'Asia/Bangkok',
+                ],
+            ])->save();
+        }
         $sessionId = \\Illuminate\\Support\\Str::random(40);
         $sessionData = json_encode([
             '_token' => \\Illuminate\\Support\\Str::random(40),
@@ -673,6 +700,8 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_MULTIPLE_LOCATIONS: normalizedOptions.multipleLocations ? '1' : '0',
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
                 PLAYWRIGHT_HOME_VISIT: normalizedOptions.homeVisit ? '1' : '0',
+                PLAYWRIGHT_WITH_SERVICE_IMAGE: normalizedOptions.withServiceImage ? '1' : '0',
+                PLAYWRIGHT_DUPLICATE_OFFICE_LOCATION: normalizedOptions.duplicateOfficeLocation ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -1550,7 +1579,7 @@ test('home keeps one primary booking action and ordinary referrals remain availa
 });
 
 test('client sees available bonus in the header and can open the service list from its explanation', async ({ page }) => {
-    const fixture = createBookingFixture({ withServiceCredit: true });
+    const fixture = createBookingFixture({ withServiceCredit: true, withServiceImage: true });
 
     await page.context().addCookies([{
         name: fixture.cookieName,
@@ -1584,7 +1613,18 @@ test('client sees available bonus in the header and can open the service list fr
     await page.getByRole('dialog').getByRole('link', { name: 'Записаться', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/services$/);
     await expect(page.getByRole('heading', { name: 'Записаться', exact: true })).toBeVisible();
-    await expect(page.locator('.portal-service-card').filter({ hasText: fixture.serviceName })).toBeVisible();
+    const imageCard = page.locator('.portal-service-card--with-image').filter({ hasText: fixture.serviceName });
+    await expect(imageCard).toBeVisible();
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(imageCard.locator('.portal-service-card__image')).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+        if (width < 768) {
+            const mediaBottom = await imageCard.locator('.portal-service-card__media').evaluate((element) => element.getBoundingClientRect().bottom);
+            const bodyTop = await imageCard.locator('.portal-service-card__body').evaluate((element) => element.getBoundingClientRect().top);
+            expect(bodyTop - mediaBottom).toBeGreaterThanOrEqual(12);
+        }
+    }
     await expect(page.getByRole('dialog')).toBeHidden();
 
     await page.reload();
@@ -1751,6 +1791,36 @@ test('home changes the booking action when an upcoming booking is shown', async 
     await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
+});
+
+test('booking details use one office label and a consistent dotted date', async ({ page }) => {
+    const fixture = createBookingFixture({
+        withBooking: true,
+        confirmedOfficeBooking: true,
+        duplicateOfficeLocation: true,
+    });
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/bookings/${fixture.bookingId}`);
+    await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
+    const bookingTime = page.locator('[aria-labelledby="booking-time-heading"] time');
+    await expect(bookingTime).toHaveText(/^\d{2}\.\d{2}\.\d{4}$/);
+    await expect(page.locator('.portal-booking-location-panel').getByText('Бангкок', { exact: true })).toBeVisible();
+    await expect(page.locator('.portal-booking-location-panel').getByText('Bangkok', { exact: true })).toHaveCount(0);
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(bookingTime).toHaveText(/^\d{2}\.\d{2}\.\d{4}$/);
+        await assertNoHorizontalOverflow(page);
+    }
+    await page.reload();
+    await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
+    await expect(bookingTime).toHaveText(/^\d{2}\.\d{2}\.\d{4}$/);
+    await expect(page.locator('.portal-booking-location-panel').getByText('Бангкок', { exact: true })).toBeVisible();
 });
 
 test('requested booking stays in My bookings while Home keeps the empty schedule state', async ({ page }) => {
@@ -2132,6 +2202,7 @@ test('portal retries a failed Companion turn without duplicating the client mess
         && new URL(response.url()).pathname === '/portal/companion'
         && response.request().headers()['x-inertia-partial-data']?.includes('companion'));
     let retryRequested = false;
+    let feedbackRequested = false;
     await page.route('**/portal/companion**', async (route) => {
         const request = route.request();
         if (request.method() !== 'GET' || request.headers()['x-inertia'] !== 'true') {
@@ -2147,13 +2218,10 @@ test('portal retries a failed Companion turn without duplicating the client mess
             };
         };
         const companion = payload.props?.companion;
-        if (retryRequested
-            && request.headers()['x-inertia-partial-data']?.includes('companion')
-            && companion !== undefined) {
+        if (retryRequested && companion !== undefined) {
             companion.pending = false;
-            companion.messages = [
-                ...(companion.messages ?? []),
-                {
+            const messages = companion.messages ?? [];
+            const retryMessage = {
                     type: 'message',
                     id: 'synthetic-retry-success',
                     role: 'ai',
@@ -2166,10 +2234,24 @@ test('portal retries a failed Companion turn without duplicating the client mess
                     attachmentCount: 0,
                     traceUrl: null,
                     safeActions: [],
-                },
-            ];
+                };
+            const existingMessage = messages.find((message) => message.id === retryMessage.id);
+            if (existingMessage === undefined) {
+                messages.push(retryMessage);
+            }
+            if (feedbackRequested) {
+                const savedMessage = messages.find((message) => message.id === retryMessage.id);
+                if (savedMessage !== undefined) {
+                    savedMessage.feedback = 'not_helpful';
+                }
+            }
+            companion.messages = messages;
         }
         await route.fulfill({ response, body: JSON.stringify(payload) });
+    });
+    await page.route('**/portal/companion/feedback/**', async (route) => {
+        feedbackRequested = true;
+        await route.fulfill({ status: 303, headers: { location: '/portal/companion' } });
     });
     retryRequested = true;
     await page.getByRole('button', { name: 'Повторить', exact: true }).click();
@@ -2181,6 +2263,18 @@ test('portal retries a failed Companion turn without duplicating the client mess
     await expect(page.getByText('Ответ после повтора.', { exact: true })).toBeVisible({ timeout: 10_000 });
     await expect(page.getByText('Повторный запрос запущен.', { exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Полезно', exact: true })).toBeVisible();
+    const feedbackResponse = page.waitForResponse((response) => response.request().method() === 'POST'
+        && response.url().includes('/portal/companion/feedback/'));
+    await page.getByRole('button', { name: 'Не помогло', exact: true }).click();
+    expect((await feedbackResponse).status()).toBe(303);
+    await expect(page.getByRole('button', { name: 'Полезно', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Не помогло', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('status').filter({ hasText: 'Спасибо, учтём ваш отзыв.' })).toBeVisible();
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(page.getByRole('status').filter({ hasText: 'Спасибо, учтём ваш отзыв.' })).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+    }
 });
 
 test('companion shows accessible typing feedback and respects intentional history scrolling', async ({ page }) => {
@@ -2376,6 +2470,11 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.goto('/portal/more');
     await page.getByRole('link', { name: 'Медицинские данные', exact: true }).click();
     await expect(page.getByLabel('Подробно опишите жалобы', { exact: true })).toBeVisible();
+    const complaintsGroup = page.locator('fieldset[data-medical-field="complaints"]');
+    const complaintsLegend = await complaintsGroup.locator('legend').boundingBox();
+    const complaintsChoices = await complaintsGroup.locator('.medical-profile__choice-grid').boundingBox();
+    if (!complaintsLegend || !complaintsChoices) throw new Error('Medical complaint choices are not positioned');
+    expect(complaintsChoices.y - (complaintsLegend.y + complaintsLegend.height)).toBeGreaterThanOrEqual(8);
     await expect(page.getByLabel('Шкала интенсивности боли (ВАШ):', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Задачи по здоровью', { exact: true })).toHaveAttribute('placeholder', 'Опишите конкретные результаты и задачи, которые вы хотите решить с Евгением (например: 1. Убрать тянущую боль в пояснице при наклонах. 2. Избавиться от утренней скованности и отеков)');
     await expect(page.getByLabel('Год операции', { exact: true })).toHaveCount(0);
@@ -2413,6 +2512,9 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.getByLabel('Описание операции или рубца (где находится шрам)', { exact: true }).fill('Synthetic scar location');
     await page.locator('input[name="injuries"][value="true"]').check();
     await expect(page.getByLabel('Год травмы', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('type', 'text');
+    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('inputmode', 'numeric');
+    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('placeholder', 'Например, 2020');
     await page.locator('input[name="injuries"][value="false"]').check();
     await expect(page.getByLabel('Год травмы', { exact: true })).toHaveCount(0);
     await page.locator('input[name="injuries"][value="true"]').check();
@@ -2745,6 +2847,103 @@ test('September 26 paid focus stays on home through completion and correction an
     await page.getByRole('link', { name: 'Открыть трекер', exact: true }).click();
     await expect(page).toHaveURL(/\/portal\/tracker$/);
     await expect(page.getByText('На сегодня задач нет.', { exact: true })).toBeVisible();
+});
+
+test('tracker history separates programme marks from wellbeing notes and keeps the Russian date format', async ({ page }) => {
+    const fixture = createBookingFixture({ tracker: 'checkins' });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+
+    await page.goto('/portal/tracker');
+    await page.getByRole('button', { name: 'История', exact: true }).click();
+
+    await expect(page.getByRole('heading', { name: 'Самочувствие', exact: true })).toBeVisible();
+    await expect(page.getByText('Синтетическая заметка о самочувствии.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Отметок по программе пока нет.', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('Записей пока нет.', { exact: true })).toHaveCount(0);
+    await expect(page.locator('.portal-tracker-history-note time')).toHaveText(/\d{2}\.\d{2}\.\d{4} \d{2}:\d{2}/);
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(page.getByText('Синтетическая заметка о самочувствии.', { exact: true })).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+    }
+});
+
+test('finance page explains an unavailable payment and hides internal test controls', async ({ page }) => {
+    const fixture = createBookingFixture();
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.route('**/portal/finance*', async (route) => {
+        if (route.request().method() !== 'GET' || route.request().headers()['x-inertia'] !== 'true') {
+            await route.continue();
+            return;
+        }
+
+        const response = await route.fetch();
+        const payload = await response.json() as { props?: Record<string, unknown> };
+        if (payload.props !== undefined) {
+            payload.props.obligations = [{
+                available: true,
+                serviceName: 'Индивидуальная консультация',
+                bookingUrl: null,
+                completedAt: '26.10.2026 11:00',
+                obligationMinor: 1500000,
+                paidMinor: 500000,
+                outstandingMinor: 1000000,
+                displayCurrency: 'EUR',
+                originalCurrency: 'EUR',
+                status: 'partially_paid',
+                statusLabel: 'Оплачено частично',
+                history: [{
+                    available: true,
+                    amountMinor: 500000,
+                    currency: 'EUR',
+                    occurredAt: '26.10.2026 10:00',
+                    methodLabel: 'Наличные',
+                    receiptUrl: null,
+                }],
+                referralCredit: null,
+                demoPayment: {
+                    stateLabel: 'Демо-оплата готова к запуску',
+                    canStart: true,
+                    canSucceed: false,
+                    canFail: false,
+                    canRefund: false,
+                    startUrl: '/internal-test-payment',
+                    successUrl: null,
+                    failUrl: null,
+                    refundUrl: null,
+                },
+                lavaPayment: {
+                    stateLabel: 'Онлайн-оплата недоступна',
+                    canStart: false,
+                    canContinue: false,
+                    checkoutUrl: null,
+                    startUrl: '/online-payment',
+                    poll: false,
+                },
+                purchaseFulfillment: null,
+            }];
+            payload.props.totals = [{ amountMinor: 1000000, currency: 'EUR' }];
+            payload.props.hasUnavailableObligations = false;
+        }
+        await route.fulfill({ response, body: JSON.stringify(payload) });
+    });
+
+    await page.goto('/portal/more');
+    await page.getByRole('link', { name: 'Оплата', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Оплата и задолженность', exact: true })).toBeVisible();
+    await expect(page.locator('.portal-finance-status--partially_paid')).toHaveText('Оплачено частично');
+    await expect(page.getByRole('status').filter({ hasText: 'Чтобы оплатить остаток, свяжитесь с клиникой.' })).toBeVisible();
+    await expect(page.getByText(/Демо-оплата|Создать операцию|Вернуть оплату/)).toHaveCount(0);
+    const history = page.locator('.portal-finance-history');
+    await expect(history).toHaveJSProperty('open', false);
+    await history.locator('summary').click();
+    await expect(history.getByText('Наличные', { exact: true })).toBeVisible();
+    await expect(history).toContainText('26.10.2026 10:00');
+    for (const width of [320, 360, 390, 768, 1024, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(page.locator('.portal-finance-status--partially_paid')).toBeVisible();
+        await assertNoHorizontalOverflow(page);
+    }
 });
 
 test('September 26 client selects multiple sessions before the medical editor and can cancel one independently', async ({ page }) => {

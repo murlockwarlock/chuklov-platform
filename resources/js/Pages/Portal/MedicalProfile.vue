@@ -283,13 +283,15 @@ function save(): void {
                   <input
                     :id="field === 'operations' ? 'medical-operation-year' : 'medical-injury-year'"
                     v-model.number="form.answers[field === 'operations' ? 'operation_year' : 'injury_year']"
-                    type="number"
-                    min="1900"
-                    :max="currentYear"
+                    type="text"
+                    inputmode="numeric"
+                    pattern="[0-9]{4}"
+                    maxlength="4"
                     required
                     :aria-invalid="Boolean(clientErrors[field === 'operations' ? 'operation_year' : 'injury_year'])"
                     :aria-describedby="clientErrors[field === 'operations' ? 'operation_year' : 'injury_year'] ? `medical-${field}-year-error` : undefined"
                     class="portal-input"
+                    :placeholder="t('medical.yearPlaceholder')"
                     @input="clearClientError(field === 'operations' ? 'operation_year' : 'injury_year')"
                   >
                   <span

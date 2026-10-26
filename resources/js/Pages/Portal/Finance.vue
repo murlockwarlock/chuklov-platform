@@ -29,7 +29,6 @@ type Obligation = {
     statusLabel: string;
     history: FinanceHistory[];
     referralCredit: ReferralCredit | null;
-    demoPayment: DemoPayment | null;
     lavaPayment: LavaPayment | null;
     purchaseFulfillment: PurchaseFulfillment | null;
 };
@@ -58,18 +57,6 @@ type PurchaseFulfillment = {
     statusLabel: string;
     message: string;
     accessUrl: string | null;
-};
-
-type DemoPayment = {
-    stateLabel: string;
-    canStart: boolean;
-    canSucceed: boolean;
-    canFail: boolean;
-    canRefund: boolean;
-    startUrl: string;
-    successUrl: string | null;
-    failUrl: string | null;
-    refundUrl: string | null;
 };
 
 type Total = { amountMinor: number; currency: string };
@@ -102,19 +89,17 @@ const referralCreditError = computed(() => {
 const referralCreditAmounts = ref<Record<string, string>>({});
 const referralCreditKeys = ref<Record<string, string>>({});
 const applyingReferralCredit = ref<string | null>(null);
+const onlinePaymentUnavailable = computed(() => props.obligations.some((obligation) => obligation.available
+    && (obligation.outstandingMinor ?? 0) > 0
+    && (obligation.lavaPayment === null
+        || (!obligation.lavaPayment.canStart
+            && !obligation.lavaPayment.canContinue
+            && !obligation.lavaPayment.poll))));
 
 const pollingStartedAt = Date.now();
 let pollingTimer: ReturnType<typeof setTimeout> | null = null;
 let pollingInFlight = false;
 let pollingMounted = false;
-
-function demoKey(): string {
-    const value = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID()
-        : Math.random().toString(36).slice(2);
-
-    return `portal-demo-${value}`;
-}
 
 function formatMoney(minor: number, currency: string): string {
     const digits = currency === 'JPY' ? 0 : 2;
@@ -271,17 +256,16 @@ onBeforeUnmount(() => {
       </div>
 
       <div
-        v-if="props.obligations.some((obligation) => obligation.demoPayment !== null)"
-        class="portal-notice min-w-0 max-w-full"
+        v-if="onlinePaymentUnavailable"
+        class="portal-notice portal-notice--warning min-w-0 max-w-full break-words"
         role="status"
       >
-        <strong class="block">{{ t('finance.demoTitle') }}</strong>
-        <span>{{ t('finance.demoDescription') }}</span>
+        {{ t('finance.onlineUnavailableHelp') }}
       </div>
 
       <section
         v-if="props.totals.length"
-        class="portal-content-section portal-stack portal-stack--tight min-w-0 max-w-full"
+        class="portal-panel portal-panel--accent portal-stack portal-stack--tight min-w-0 max-w-full"
         aria-labelledby="finance-total-heading"
       >
         <h2
@@ -290,6 +274,9 @@ onBeforeUnmount(() => {
         >
           {{ t('finance.totalOutstanding') }}
         </h2>
+        <p class="portal-copy portal-copy--small">
+          {{ t('finance.totalDescription') }}
+        </p>
         <dl class="portal-finance-rows min-w-0 max-w-full">
           <div
             v-for="total in props.totals"
@@ -333,7 +320,8 @@ onBeforeUnmount(() => {
             </p>
           </div>
           <span
-            class="inline-flex max-w-full shrink-0 break-words whitespace-normal rounded-full bg-[var(--portal-color-surface-muted)] px-3 py-1 text-left text-xs font-semibold text-[var(--portal-color-ink-soft)]"
+            class="portal-finance-status"
+            :class="`portal-finance-status--${obligation.status}`"
           >
             {{ obligation.statusLabel }}
           </span>
@@ -399,7 +387,7 @@ onBeforeUnmount(() => {
           </div>
           <div
             v-else
-            class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end"
+            class="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end"
           >
             <label class="portal-field min-w-0 flex-1">
               <span class="portal-label">{{ t('finance.referralCreditAmount') }} ({{ obligation.referralCredit.currency }})</span>
@@ -413,7 +401,7 @@ onBeforeUnmount(() => {
             </label>
             <button
               type="button"
-              class="portal-button portal-button--primary max-w-full whitespace-normal break-words"
+              class="portal-button portal-button--primary mt-1 max-w-full whitespace-normal break-words sm:mt-0"
               :disabled="applyingReferralCredit !== null"
               @click="applyReferralCredit(obligation)"
             >
@@ -423,7 +411,7 @@ onBeforeUnmount(() => {
         </section>
 
         <section
-          v-if="obligation.lavaPayment"
+          v-if="obligation.lavaPayment && (obligation.lavaPayment.canStart || obligation.lavaPayment.canContinue || obligation.lavaPayment.poll)"
           class="portal-stack portal-stack--tight min-w-0 max-w-full rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)] bg-[var(--portal-color-surface-muted)] p-4"
           :aria-label="t('finance.onlinePayment')"
         >
@@ -431,7 +419,11 @@ onBeforeUnmount(() => {
             <h3 class="min-w-0 break-words font-semibold text-[var(--portal-color-ink)]">
               {{ t('finance.onlinePayment') }}
             </h3>
-            <span class="min-w-0 max-w-full break-words text-sm text-[var(--portal-color-ink-soft)]">
+            <span
+              class="min-w-0 max-w-full break-words text-sm text-[var(--portal-color-ink-soft)]"
+              :role="obligation.lavaPayment.poll ? 'status' : undefined"
+              :aria-live="obligation.lavaPayment.poll ? 'polite' : undefined"
+            >
               {{ obligation.lavaPayment.stateLabel }}
             </span>
           </div>
@@ -472,69 +464,13 @@ onBeforeUnmount(() => {
           </a>
         </section>
 
-        <section
-          v-if="obligation.demoPayment"
-          class="portal-stack portal-stack--tight min-w-0 max-w-full rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)] bg-[var(--portal-color-surface-muted)] p-4"
-          :aria-label="t('finance.demoTitle')"
-        >
-          <div class="flex min-w-0 max-w-full flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between">
-            <h3 class="min-w-0 break-words font-semibold text-[var(--portal-color-ink)]">
-              {{ t('finance.demoTitle') }}
-            </h3>
-            <span class="min-w-0 max-w-full break-words text-sm text-[var(--portal-color-ink-soft)]">
-              {{ obligation.demoPayment.stateLabel }}
-            </span>
-          </div>
-          <div class="flex min-w-0 flex-wrap gap-2">
-            <Link
-              v-if="obligation.demoPayment.canStart"
-              :href="obligation.demoPayment.startUrl"
-              method="post"
-              as="button"
-              class="portal-button portal-button--primary max-w-full whitespace-normal break-words"
-              :data="{ idempotency_key: demoKey() }"
-            >
-              {{ t('finance.demoStart') }}
-            </Link>
-            <Link
-              v-if="obligation.demoPayment.canSucceed && obligation.demoPayment.successUrl"
-              :href="obligation.demoPayment.successUrl"
-              method="post"
-              as="button"
-              class="portal-button portal-button--secondary max-w-full whitespace-normal break-words"
-            >
-              {{ t('finance.demoSuccess') }}
-            </Link>
-            <Link
-              v-if="obligation.demoPayment.canFail && obligation.demoPayment.failUrl"
-              :href="obligation.demoPayment.failUrl"
-              method="post"
-              as="button"
-              class="portal-button portal-button--secondary max-w-full whitespace-normal break-words"
-            >
-              {{ t('finance.demoFail') }}
-            </Link>
-            <Link
-              v-if="obligation.demoPayment.canRefund && obligation.demoPayment.refundUrl"
-              :href="obligation.demoPayment.refundUrl"
-              method="post"
-              as="button"
-              class="portal-button portal-button--secondary max-w-full whitespace-normal break-words"
-            >
-              {{ t('finance.demoRefund') }}
-            </Link>
-          </div>
-        </section>
-
-        <div
+        <details
           v-if="obligation.history.length"
-          class="min-w-0 overflow-hidden rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)]"
+          class="portal-finance-history min-w-0 overflow-hidden rounded-[var(--portal-radius-md)] border border-[var(--portal-color-border)]"
         >
-          <div class="border-b border-[var(--portal-color-border)] px-4 py-3">
-            <h3 class="font-semibold text-[var(--portal-color-ink)]">
-              {{ t('finance.history') }}
-            </h3>
-          </div>
+          <summary class="cursor-pointer border-b border-transparent px-4 py-3 font-semibold text-[var(--portal-color-ink)] marker:text-[var(--portal-color-brand-strong)]">
+            {{ t('finance.historyCount', { count: obligation.history.length }) }}
+          </summary>
           <ul class="divide-y divide-[var(--portal-color-border)]">
             <li
               v-for="(entry, index) in obligation.history"
@@ -568,7 +504,7 @@ onBeforeUnmount(() => {
               </div>
             </li>
           </ul>
-        </div>
+        </details>
       </section>
     </section>
   </AppShell>

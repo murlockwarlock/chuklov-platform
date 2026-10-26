@@ -15,6 +15,7 @@ use App\Modules\Services\Domain\Models\Service;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Str;
 
 final class ListClientBookings
 {
@@ -97,6 +98,22 @@ final class ListClientBookings
         );
         $ownsBooking = (int) $booking->client_id === (int) $client->getKey();
         $supportsSelfServiceChanges = in_array($booking->status, [BookingStatus::Requested, BookingStatus::Confirmed], true);
+        $location = $booking->location;
+        $locationSnapshot = $booking->locationSnapshot();
+
+        if ($booking->visit_format === VisitFormat::Office) {
+            $name = trim((string) ($locationSnapshot['name'] ?? ''));
+
+            if ($name !== '') {
+                if ($this->normalizeLocationLabel($name) === $this->normalizeLocationLabel((string) ($locationSnapshot['address'] ?? ''))) {
+                    $locationSnapshot['address'] = null;
+                }
+
+                if ($this->normalizeLocationLabel($name) === $this->normalizeLocationLabel((string) $location)) {
+                    $location = null;
+                }
+            }
+        }
 
         return [
             'id' => $booking->getKey(),
@@ -116,10 +133,10 @@ final class ListClientBookings
             'format' => $booking->visit_format->value,
             'statusLabel' => $this->statusLabel($booking->status, $locale),
             'paymentStatusLabel' => $this->paymentStatusLabel($booking->payment_status, $locale),
-            'location' => $booking->location,
+            'location' => $location,
             'workingLocationId' => $booking->working_location_id,
             'locationArea' => $booking->location_area,
-            'locationSnapshot' => $booking->locationSnapshot(),
+            'locationSnapshot' => $locationSnapshot,
             'meetingUrl' => $booking->status === BookingStatus::Confirmed
                 && $booking->visit_format === VisitFormat::Online
                 ? $booking->effectiveMeetingUrl()
@@ -136,6 +153,11 @@ final class ListClientBookings
             'pendingReview' => $pendingHomeVisit,
             'history' => $this->safeHistory($booking, $locale),
         ];
+    }
+
+    private function normalizeLocationLabel(string $value): string
+    {
+        return mb_strtolower((string) preg_replace('/[\p{P}\p{Z}\s]+/u', '', Str::ascii($value)));
     }
 
     /** @return list<array{label: string, oldStartsAt: string|null, newStartsAt: string|null, occurredAt: string}> */

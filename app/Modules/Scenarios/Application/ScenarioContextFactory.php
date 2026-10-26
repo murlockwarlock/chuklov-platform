@@ -47,6 +47,7 @@ use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 use LogicException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -372,7 +373,7 @@ final class ScenarioContextFactory
                 : null;
             $renderContext['sales_call'] = [
                 'id' => (int) $call->getKey(),
-                'local_date' => $localStart->format('d-m-Y'),
+                'local_date' => $localStart->format('d.m.Y'),
                 'local_time' => $localStart->format('H:i'),
                 'timezone' => (string) $call->schedule_timezone,
                 'join_url' => $joinUrl,
@@ -909,11 +910,28 @@ final class ScenarioContextFactory
         }
 
         return match ($booking->visit_format) {
-            VisitFormat::Office => implode("\n", array_values(array_unique(array_filter([$name, $address]), SORT_STRING)))
-                ?: '',
+            VisitFormat::Office => $this->distinctLocationLines($name, $address),
             VisitFormat::HomeVisit => implode("\n", $homeVisitLines),
             VisitFormat::Online => '',
         };
+    }
+
+    private function distinctLocationLines(string $name, string $address): string
+    {
+        if ($name === '') {
+            return $address;
+        }
+
+        if ($address === '' || $this->normalizeLocationLabel($name) === $this->normalizeLocationLabel($address)) {
+            return $name;
+        }
+
+        return $name."\n".$address;
+    }
+
+    private function normalizeLocationLabel(string $value): string
+    {
+        return mb_strtolower((string) preg_replace('/[\p{P}\p{Z}\s]+/u', '', Str::ascii($value)));
     }
 
     /** @param array<string, mixed> $snapshot */

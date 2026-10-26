@@ -43,7 +43,7 @@ const props = defineProps<{
     notices: { retry: string | null; specialistRequested: string | null };
 }>();
 
-const { t, locale } = usePortalLocale();
+const { t, formatDateTime } = usePortalLocale();
 const retryAccepted = computed(() => props.notices.retry === 'accepted' && props.companion.pending);
 const body = ref('');
 const olderLoading = ref(false);
@@ -52,6 +52,9 @@ const historyElement = ref<HTMLElement | null>(null);
 const showNewMessages = ref(false);
 const followNewest = ref(true);
 const actionPendingId = ref<string | null>(null);
+const feedbackPending = ref<Record<string, boolean>>({});
+const feedbackSubmitted = ref<Record<string, 'helpful' | 'not_helpful'>>({});
+const feedbackErrors = ref<Record<string, string>>({});
 const sendForm = useForm<{ body: string; idempotency_key: string; images: File[]; reinspect_recent_images: boolean }>({
     body: '',
     idempotency_key: '',
@@ -164,7 +167,35 @@ function submitFeedback(message: TimelineItem, value: 'helpful' | 'not_helpful')
     if (message.type !== 'message' || message.role !== 'ai' || !message.feedbackAvailable) {
         return;
     }
-    router.post(props.urls.feedback.replace('__id__', String(message.id)), { value }, { preserveScroll: true });
+
+    const messageId = String(message.id);
+    if (message.feedback !== null || feedbackSubmitted.value[messageId] !== undefined || feedbackPending.value[messageId]) {
+        return;
+    }
+
+    feedbackPending.value[messageId] = true;
+    delete feedbackErrors.value[messageId];
+    let saved = false;
+    router.post(props.urls.feedback.replace('__id__', messageId), { value }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            saved = true;
+            feedbackSubmitted.value[messageId] = value;
+        },
+        onError: () => {
+            feedbackErrors.value[messageId] = t('companion.feedbackError');
+        },
+        onFinish: () => {
+            delete feedbackPending.value[messageId];
+            if (!saved && !feedbackErrors.value[messageId]) {
+                feedbackErrors.value[messageId] = t('companion.feedbackError');
+            }
+        },
+    });
+}
+
+function feedbackFor(message: TimelineItem): 'helpful' | 'not_helpful' | null {
+    return message.feedback ?? feedbackSubmitted.value[String(message.id)] ?? null;
 }
 
 function submitSafeAction(message: TimelineItem, action: 'retry_failed_turn' | 'request_human'): void {
@@ -192,7 +223,7 @@ function resetContext(): void {
 }
 
 function formatDate(value: string): string {
-    return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+    return formatDateTime(value);
 }
 
 onMounted(() => {
@@ -313,25 +344,53 @@ watch(messageSignature, async () => {
               </button>
             </div>
             <div
-              v-if="message.type === 'message' && message.role === 'ai' && message.feedbackAvailable"
+              v-if="message.type === 'message' && message.role === 'ai' && (message.feedbackAvailable || feedbackSubmitted[String(message.id)] || feedbackErrors[String(message.id)])"
               class="mt-3 flex flex-wrap gap-2"
             >
               <button
+                v-if="feedbackFor(message) === null && !feedbackPending[String(message.id)]"
                 class="portal-button portal-button--secondary"
                 type="button"
-                :class="{ 'opacity-60': message.feedback === 'helpful' }"
                 @click="submitFeedback(message, 'helpful')"
               >
                 {{ t('companion.feedbackHelpful') }}
               </button>
               <button
+                v-if="feedbackFor(message) === null && !feedbackPending[String(message.id)]"
                 class="portal-button portal-button--secondary"
                 type="button"
-                :class="{ 'opacity-60': message.feedback === 'not_helpful' }"
                 @click="submitFeedback(message, 'not_helpful')"
               >
                 {{ t('companion.feedbackNotHelpful') }}
               </button>
+              <p
+                v-if="feedbackPending[String(message.id)]"
+                class="portal-notice portal-notice--success basis-full"
+                role="status"
+              >
+                {{ t('companion.feedbackSaving') }}
+              </p>
+              <p
+                v-else-if="feedbackFor(message) === 'helpful'"
+                class="portal-notice portal-notice--success basis-full"
+                role="status"
+              >
+                {{ t('companion.feedbackThanksHelpful') }}
+              </p>
+              <p
+                v-else-if="feedbackFor(message) === 'not_helpful'"
+                class="portal-notice portal-notice--success basis-full"
+                role="status"
+              >
+                {{ t('companion.feedbackThanksNotHelpful') }}
+              </p>
+              <p
+                v-if="feedbackErrors[String(message.id)]"
+                class="portal-notice portal-notice--error basis-full"
+                role="alert"
+              >
+                {{ feedbackErrors[String(message.id)] }}
+              </p>
             </div>
           </article>
 

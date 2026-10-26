@@ -6,6 +6,7 @@ use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Resources\LocationDays\Pages\CreateLocationDay;
 use App\Models\User;
 use App\Modules\Channels\Application\HandleTelegramBookingConfirmation;
+use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -25,6 +26,7 @@ use App\Modules\Scheduling\Application\BookingLocationResolver;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Application\CreateWorkingLocation;
+use App\Modules\Scheduling\Application\ListClientBookings;
 use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Application\SaveLocationDay;
@@ -122,8 +124,8 @@ class PhaseOneBookingLocationsTest extends TestCase
         $before = $booking->startsAtUtc()->toIso8601String();
         $formatter = app(BookingDateTimeFormatter::class);
 
-        self::assertSame(['date' => '04-09-2026', 'time' => '09:00', 'timezone' => 'Asia/Almaty'], $formatter->forClient($booking));
-        self::assertSame(['date' => '04-09-2026', 'time' => '06:00', 'timezone' => 'Europe/Berlin'], $formatter->forSpecialist($booking));
+        self::assertSame(['date' => '04.09.2026', 'time' => '09:00', 'timezone' => 'Asia/Almaty'], $formatter->forClient($booking));
+        self::assertSame(['date' => '04.09.2026', 'time' => '06:00', 'timezone' => 'Europe/Berlin'], $formatter->forSpecialist($booking));
         self::assertSame($before, $booking->refresh()->startsAtUtc()->toIso8601String());
 
         $calculator = app(SlotCalculator::class);
@@ -167,6 +169,36 @@ class PhaseOneBookingLocationsTest extends TestCase
             '2026-10-25T01:00:00+00:00',
         ], array_map(static fn ($slot): string => $slot->startsAt->toIso8601String(), array_slice($autumnSlots, 0, 2)));
         self::assertNotSame($autumnSlots[0]->startsAt->toIso8601String(), $autumnSlots[1]->startsAt->toIso8601String());
+    }
+
+    public function test_client_booking_projection_does_not_repeat_a_transliterated_office_location(): void
+    {
+        [$organization, , $client, $specialist, $service] = $this->fixture();
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'visit_format' => VisitFormat::Office,
+                'location' => 'Bangkok',
+                'location_snapshot' => [
+                    'type' => VisitFormat::Office->value,
+                    'name' => 'Бангкок',
+                    'address' => 'Bangkok',
+                    'timezone' => 'Asia/Bangkok',
+                ],
+            ]);
+
+        app(ClientPortalContext::class)->set($client);
+
+        $projection = app(ListClientBookings::class)->projection($booking->fresh(['service', 'specialist']), 'ru');
+
+        self::assertSame('Бангкок', $projection['locationSnapshot']['name']);
+        self::assertNull($projection['locationSnapshot']['address']);
+        self::assertNull($projection['location']);
+        self::assertSame('Bangkok', $booking->refresh()->locationSnapshot()['address']);
+        self::assertSame('Bangkok', $booking->location);
     }
 
     public function test_specialist_device_timezone_is_only_a_suggestion_and_manual_choice_survives_it(): void

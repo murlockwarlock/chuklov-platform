@@ -349,7 +349,7 @@ final class AppointmentReminderTest extends TestCase
         app(ExecuteScenarioAction::class)->handle($hourly->id);
         self::assertCount(2, $this->channel->messages);
         self::assertSame(
-            "Напоминаем: у вас запись к Евгений Чуклов 05-09-2026 в 14:00.\nАдрес: Synthetic office",
+            "Напоминаем: у вас запись к Евгений Чуклов 05.09.2026 в 14:00.\nАдрес: Synthetic office",
             $this->channel->messages[1]->body,
         );
         self::assertNull($this->channel->messages[1]->actionButton);

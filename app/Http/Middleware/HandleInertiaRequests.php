@@ -48,6 +48,7 @@ class HandleInertiaRequests extends Middleware
             'portal' => [
                 'authenticated' => $client !== null,
                 'clientName' => $client?->full_name,
+                'timezone' => $client?->timezone ?: (string) config('app.timezone', 'UTC'),
                 'confirmedFirstName' => $client?->name_confirmed_at !== null ? $client->first_name : null,
                 'availableBonus' => fn (): ?string => $client === null ? null : $bonus->handle($client),
                 'bonusCurrencyUnavailable' => fn (): bool => $client !== null && $bonus->currencyUnavailable($client),

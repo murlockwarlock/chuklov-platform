@@ -21,6 +21,7 @@ use App\Modules\Channels\Domain\ValueObjects\ChannelCapabilities;
 use App\Modules\Channels\Domain\ValueObjects\CompanionOutboundChunk;
 use App\Modules\Channels\Domain\ValueObjects\NotificationDeliveryResult;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
+use App\Modules\ClientCompanion\Application\Actions\RecordCompanionFeedback;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
 use App\Modules\ClientCompanion\Application\Actions\RequestCompanionHandoff;
 use App\Modules\ClientCompanion\Application\Actions\ResolveCompanionHandoff;
@@ -33,6 +34,7 @@ use App\Modules\ClientCompanion\Application\Services\ReadCompanionConversation;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnAttemptStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Enums\RequestCompanionHandoffResult;
@@ -113,6 +115,44 @@ final class ClientCompanionProcessingTest extends TestCase
         self::assertSame(0, ConversationMessage::query()->where('author_type', 'ai')->whereNotNull('body')->count());
         self::assertSame(1, CompanionDelivery::query()->where('turn_id', $turn->getKey())->count());
         self::assertSame(['telegram:chat-1'], $channel->typingRecipients);
+    }
+
+    public function test_companion_feedback_is_saved_once_and_cannot_be_changed_to_a_contradictory_rating(): void
+    {
+        $this->app->instance(AiWorkflowEngine::class, new RecordingCompanionEngine(new AiRunResult(
+            runId: 0,
+            status: AiRunStatus::Succeeded,
+            outputPayload: [
+                'decision' => 'reply',
+                'reply' => 'Ответ для оценки.',
+                'handoff_reason' => '',
+                'suggested_safe_actions' => [],
+            ],
+        )));
+        $this->app->instance(MessagingChannel::class, new RecordingCompanionChannel);
+
+        $turn = $this->accept('Вопрос для оценки');
+        $turn->update(['burst_expires_at' => now()->subSecond()]);
+        app(CompanionTurnProcessor::class)->handle($this->organization->getKey(), $turn->getKey());
+
+        $messageId = (int) $turn->fresh()->outbound_message_id;
+        $first = app(RecordCompanionFeedback::class)->handle(
+            $this->client,
+            $messageId,
+            CompanionFeedbackValue::Helpful,
+        );
+        $second = app(RecordCompanionFeedback::class)->handle(
+            $this->client,
+            $messageId,
+            CompanionFeedbackValue::NotHelpful,
+        );
+
+        self::assertSame($first->getKey(), $second->getKey());
+        self::assertSame(CompanionFeedbackValue::Helpful, $second->fresh()->value);
+        $message = collect(app(ReadCompanionConversation::class)->forClient($this->client)['messages'])
+            ->firstWhere('id', $messageId);
+        self::assertSame('helpful', $message['feedback']);
+        self::assertTrue($message['feedbackAvailable']);
     }
 
     public function test_invalid_structured_result_fails_safely_without_exposing_provider_text(): void

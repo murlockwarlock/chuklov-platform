@@ -29,6 +29,7 @@ export type PortalShell = {
     bonusCurrencyUnavailable?: boolean;
     isPartner: boolean;
     locale: PortalLocale;
+    timezone?: string;
     localeUrl: string;
     urls: PortalUrls;
 };

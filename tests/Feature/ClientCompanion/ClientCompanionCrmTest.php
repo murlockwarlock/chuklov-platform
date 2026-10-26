@@ -21,6 +21,7 @@ use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
@@ -109,6 +110,45 @@ final class ClientCompanionCrmTest extends TestCase
             ->assertSee('Портал')
             ->assertSee('Telegram')
             ->assertSee('Ответить клиенту');
+    }
+
+    public function test_staff_sees_the_clients_companion_feedback_in_history(): void
+    {
+        $turn = app(AcceptCompanionMessage::class)->handle(
+            client: $this->client,
+            channel: 'portal',
+            body: 'Как восстановиться после тренировки?',
+            idempotencyKey: 'crm-feedback-history-0001',
+            originExternalId: 'portal:crm-feedback-history-1',
+            locale: 'ru',
+        );
+        $conversation = Conversation::query()->findOrFail($turn->conversation_id);
+        $message = app(RecordCompanionMessage::class)->handle(
+            organizationId: $this->organization->getKey(),
+            client: $this->client,
+            conversation: $conversation,
+            channel: 'portal',
+            direction: ConversationDirection::Outbound,
+            authorType: ConversationAuthorType::Ai,
+            body: 'После тренировки добавьте лёгкую заминку.',
+            contextEpoch: $turn->context_epoch,
+            metadata: ['message_type' => 'answer', 'locale' => 'ru', 'transport' => 'portal'],
+        );
+        $turn->update([
+            'status' => CompanionTurnStatus::Completed,
+            'outbound_message_id' => $message->getKey(),
+        ]);
+        app(RecordCompanionFeedback::class)->handle(
+            $this->client,
+            $message->getKey(),
+            CompanionFeedbackValue::NotHelpful,
+        );
+
+        $this->actingAs($this->admin)
+            ->get(ClientResource::getUrl('companion', ['record' => $this->client]))
+            ->assertOk()
+            ->assertSee('После тренировки добавьте лёгкую заминку.')
+            ->assertSee('Оценка клиента: не помогло');
     }
 
     public function test_staff_history_is_bounded_and_id_access_is_tenant_and_permission_scoped(): void

@@ -60,7 +60,7 @@ const props = defineProps<{
     urls: { checkIn: string; specialist: string; taskEntry: string; surveys: string };
 }>();
 
-const { t, locale } = usePortalLocale();
+const { t, formatDate, formatDateTime } = usePortalLocale();
 const page = usePage<PortalPageProps>();
 const paymentError = computed(() => {
     const error = page.props.errors?.payment;
@@ -72,8 +72,7 @@ const checkInForm = useForm<{ note: string }>({ note: '' });
 const taskForms = reactive<Record<number, ReturnType<typeof useForm<{ status: string; comment: string }>>>>({});
 const purchaseKeys = new Map<number, string>();
 const hasTests = props.surveys.definitions.length > 0 || props.surveys.attempts.length > 0;
-const formatDate = (value: string): string => new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
-const formatDay = (value: string): string => new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium' }).format(new Date(value));
+const formatDay = (value: string): string => formatDate(value);
 
 function taskForm(task: Task): ReturnType<typeof useForm<{ status: string; comment: string }>> {
     taskForms[task.id] ??= useForm({ status: task.status === 'pending' ? 'completed' : task.status, comment: task.comment ?? '' });
@@ -310,49 +309,58 @@ function purchaseIdempotencyKey(versionId: number): string {
           v-else
           class="portal-stack"
         >
-          <div
+          <section
             v-if="props.tracker.history.length"
-            class="portal-task-list"
+            class="portal-stack portal-stack--tight"
+            aria-labelledby="tracker-task-history-heading"
           >
-            <article
-              v-for="entry in props.tracker.history"
-              :key="`${entry.taskId}-${entry.periodStart}`"
-              class="portal-task-row"
+            <h2
+              id="tracker-task-history-heading"
+              class="portal-heading portal-heading--card"
             >
-              <div class="portal-task-row__content">
-                <span class="portal-copy portal-copy--small">{{ formatDay(entry.periodStart) }}</span>
-                <h2 class="portal-heading portal-heading--card">
-                  {{ entry.title }}
-                </h2>
-                <p class="portal-copy portal-copy--small">
-                  {{ entry.status === 'completed' ? t('tracker.complete') : t('tracker.notComplete') }}<span v-if="entry.comment"> · {{ entry.comment }}</span>
-                </p>
-              </div>
-              <time class="portal-copy portal-copy--small portal-task-row__meta">{{ formatDate(entry.recordedAt) }}</time>
-            </article>
-          </div>
-          <EmptyState
-            v-else
-            :title="t('tracker.emptyHistory')"
-          />
+              {{ t('tracker.taskHistory') }}
+            </h2>
+            <div class="portal-task-list">
+              <article
+                v-for="entry in props.tracker.history"
+                :key="`${entry.taskId}-${entry.periodStart}`"
+                class="portal-task-row"
+              >
+                <div class="portal-task-row__content">
+                  <span class="portal-copy portal-copy--small">{{ formatDay(entry.periodStart) }}</span>
+                  <h2 class="portal-heading portal-heading--card">
+                    {{ entry.title }}
+                  </h2>
+                  <p class="portal-copy portal-copy--small">
+                    {{ entry.status === 'completed' ? t('tracker.complete') : t('tracker.notComplete') }}<span v-if="entry.comment"> · {{ entry.comment }}</span>
+                  </p>
+                </div>
+                <time class="portal-copy portal-copy--small portal-task-row__meta">{{ formatDateTime(entry.recordedAt) }}</time>
+              </article>
+            </div>
+          </section>
           <section
             v-if="props.tracker.checkIns.length"
             class="portal-tracker-history-notes portal-stack portal-stack--tight"
           >
             <h2 class="portal-heading portal-heading--card">
-              {{ t('tracker.checkInTitle') }}
+              {{ t('tracker.checkInHistory') }}
             </h2>
             <article
               v-for="entry in props.tracker.checkIns"
               :key="entry.occurredAt"
               class="portal-tracker-history-note portal-stack portal-stack--tight"
             >
-              <time class="portal-copy portal-copy--small">{{ formatDate(entry.occurredAt) }}</time>
+              <time class="portal-copy portal-copy--small">{{ formatDateTime(entry.occurredAt) }}</time>
               <p class="portal-copy whitespace-pre-wrap">
                 {{ entry.note }}
               </p>
             </article>
           </section>
+          <EmptyState
+            v-if="!props.tracker.history.length && !props.tracker.checkIns.length"
+            :title="t('tracker.emptyHistory')"
+          />
         </section>
 
         <Link

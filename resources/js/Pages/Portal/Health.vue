@@ -80,13 +80,9 @@ const props = defineProps<{
     urls: { tracker: string; surveys: string };
 }>();
 
-const { t, locale } = usePortalLocale();
+const { t, formatDate } = usePortalLocale();
 const hasTests = props.surveys.definitions.length > 0 || props.surveys.attempts.length > 0;
 const trackerUrl = props.urls.tracker;
-
-const formatDate = (value: string | null): string => value
-    ? new Intl.DateTimeFormat(locale.value === 'en' ? 'en-US' : 'ru-RU', { dateStyle: 'medium' }).format(new Date(value))
-    : '';
 
 const comparisonLabel = (comparison: HealthComparison): string => {
     if (comparison.status === 'improved') {

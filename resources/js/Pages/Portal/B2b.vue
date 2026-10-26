@@ -5,6 +5,7 @@ import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
+import { formatPortalDate } from '../../utils/dateTime';
 
 type Specialist = { id: number; displayName: string };
 type Content = { title: string; body: string; media: string | null };
@@ -179,11 +180,7 @@ function submitLead(): void {
 }
 
 function requestDate(value: string, timezone: string): string {
-    return new Intl.DateTimeFormat(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
-        day: 'numeric',
-        month: 'long',
-        timeZone: timezone,
-    }).format(new Date(value));
+    return formatPortalDate(value, timezone, { locale: locale.value === 'ru' ? 'ru-RU' : 'en-GB' });
 }
 
 function requestTime(value: string, timezone: string): string {

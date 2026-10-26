@@ -24,7 +24,7 @@ type Booking = {
     paymentStatusLabel: string;
     location: string | null;
     locationArea: string | null;
-    locationSnapshot: { name?: string; address?: string };
+    locationSnapshot: { name?: string; address?: string | null };
     meetingUrl: string | null;
     meetingPending: boolean;
     canReschedule: boolean;

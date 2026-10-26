@@ -48,7 +48,7 @@ final class RecordCompanionFeedback
             throw ValidationException::withMessages(['reason' => 'Выберите допустимую причину оценки.']);
         }
 
-        return CompanionFeedback::query()->updateOrCreate(
+        return CompanionFeedback::query()->firstOrCreate(
             [
                 'organization_id' => $organizationId,
                 'client_id' => $client->getKey(),

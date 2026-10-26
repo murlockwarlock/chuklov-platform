@@ -34,7 +34,7 @@ final readonly class BookingDateTimeFormatter
         $localStart = CarbonImmutable::instance($booking->startsAtUtc())->setTimezone($timezone);
 
         return [
-            'date' => $localStart->format('d-m-Y'),
+            'date' => $localStart->format('d.m.Y'),
             'time' => $localStart->format('H:i'),
             'timezone' => $timezone,
         ];

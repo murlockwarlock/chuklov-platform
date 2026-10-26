@@ -114,7 +114,7 @@ const props = defineProps<{
     };
 }>();
 
-const { t, locale } = usePortalLocale();
+const { t, locale, formatDateTime } = usePortalLocale();
 const page = usePage<PortalPageProps>();
 const copiedUrl = ref<string | null>(null);
 const copyErrorUrl = ref<string | null>(null);
@@ -240,7 +240,7 @@ function formatDate(value: string | null): string {
         return '—';
     }
 
-    return new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(value));
+    return formatDateTime(value);
 }
 
 async function copyUrl(url: string): Promise<void> {

@@ -14,9 +14,8 @@ const props = defineProps<{
     urls: { start: string };
     notices: { startUnavailable: boolean; resultUnavailable: boolean };
 }>();
-const { t, locale } = usePortalLocale();
+const { t, formatDate } = usePortalLocale();
 const startUrl = (id: number): string => props.urls.start.replace('__id__', String(id));
-const formatDate = (value: string | null): string => value ? new Intl.DateTimeFormat(locale.value, { dateStyle: 'medium' }).format(new Date(value)) : '';
 </script>
 
 <template>
