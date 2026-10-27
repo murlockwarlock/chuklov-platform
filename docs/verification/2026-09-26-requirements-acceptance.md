@@ -5,6 +5,54 @@ Branch: `codex/26-09-full-implementation`. Current PR: #60.
 
 On 2026-10-23, `/Users/ivankorakin/Downloads/Изменения_в_CRM_Чуклов_бот_от_26_09_26_СПИСОК_1.docx` and `/Users/ivankorakin/Downloads/Изменения_в_CRM_Чуклов_бот_от_26_09_26_СПИСОК_2.md` were re-read. LIST 1 SHA-256: `d421c99855a149a4435a590d6d6dd306c51087290cc41760db0ec75395eb2b02`; LIST 2 SHA-256: `20a869450b7c5bac032eecee389d5a240012f434d9a2e462a4c2637926f24e0d`. The ledger contains 29 parent requirements (CR-01–CR-13 and LIST 2 items 1–16) and 226 numbered leaf criteria: 124 CR, 81 L2, and 21 clinical. Parent headings are not double-counted as leaf criteria. The remaining gap is criterion-to-evidence reconciliation, not the denominator.
 
+## Current technical closure checkpoint — 2026-10-28
+
+This checkpoint supersedes the old blocker summary below for current implementation status. Historical sections retain their original wording and evidence. Missing authored content, business dictionaries, provider credentials, or recipient-side observation are not development blockers when the configurable mechanism and safe runtime boundary are implemented.
+
+Candidate: `a9217be45554e9b4967059d3216aa8f404b3f0c5`. Staging is deployed on the same revision and `scripts/staging-smoke.sh` passes. Hosted CI run `40568232273` passes Docker, PostgreSQL foundation/concurrency, RAG, privacy and secret scan, and integration foundations. Quality reports only pre-existing Pint/PHPStan findings outside the changed files and four existing PhpSpreadsheet advisories; candidate-caused failures: 0.
+
+The 37 former blocked leaves are reclassified as follows:
+
+- CR-01.1 — **IMPLEMENTED + VERIFIED / EXTERNAL OBSERVATION NOT RUN**: `/start` removes the legacy vertical menu.
+- CR-01.2 — **IMPLEMENTED + VERIFIED / EXTERNAL OBSERVATION NOT RUN**: one human WebApp CTA and `web_app.url` are produced.
+- CR-01.3 — **IMPLEMENTED + VERIFIED / CONTENT CONFIGURATION REQUIRED**: welcome video/video-note upload, private storage, caption and media-type selection are owner-configurable; no author asset is invented.
+- CR-01.4 — **IMPLEMENTED + VERIFIED / EXTERNAL OBSERVATION NOT RUN**: the system Menu Button payload is a direct WebApp action.
+- CR-02.6 — **IMPLEMENTED + VERIFIED / CONTENT CONFIGURATION REQUIRED**: Story upload, subtitles, ordering, visibility, preview and player behavior use synthetic media; authored media remains replaceable in CRM.
+- CR-05.6 — **IMPLEMENTED + VERIFIED / CONTENT CONFIGURATION REQUIRED**: versioned survey/section/question/option/scoring/publish workflow and Portal completion are exercised with synthetic configuration; approved MSQ content is not fabricated.
+- CR-05.7 — **IMPLEMENTED + VERIFIED / CONTENT CONFIGURATION REQUIRED**: Road Map trigger is an owner setting and report/Road Map content is versioned configuration; activation fails closed without required authored content.
+- CR-07.18 — **IMPLEMENTED + VERIFIED / PROVIDER NOT CONFIGURED**: B2B schema, validation, CRM lifecycle, slot request and Zoom readiness/error/retry paths are complete; real Zoom credentials remain absent.
+- CR-07.19 — **IMPLEMENTED + VERIFIED / CONTENT CONFIGURATION REQUIRED**: communities are editable, ordered, activated/deactivated and rendered from the owner-managed content section.
+- CR-12.1 — **IMPLEMENTED + VERIFIED**: organization-scoped patient/dependent model exists.
+- CR-12.2 — **IMPLEMENTED + VERIFIED**: `patient_profiles` persistence exists with tenant and relationship constraints.
+- CR-12.3 — **IMPLEMENTED + VERIFIED**: the PostgreSQL schema is covered by migrations and integration checks.
+- CR-12.4 — **IMPLEMENTED + VERIFIED**: patient profile table shape is present and additive.
+- CR-12.5 — **IMPLEMENTED + VERIFIED**: identity and foreign-key constraints are enforced.
+- CR-12.6 — **IMPLEMENTED + VERIFIED**: linked account ownership is tenant-scoped.
+- CR-12.7 — **IMPLEMENTED + VERIFIED**: first-name capture/edit/reload works through CRM/Portal flows.
+- CR-12.8 — **IMPLEMENTED + VERIFIED**: last-name capture/edit/reload works through the same flow.
+- CR-12.9 — **IMPLEMENTED + VERIFIED**: optional middle name is persisted without weakening authorization.
+- CR-12.10 — **IMPLEMENTED + VERIFIED**: relationship type is human-labeled and validated.
+- CR-12.11 — **IMPLEMENTED + VERIFIED**: gender is persisted through the patient profile boundary.
+- CR-12.12 — **IMPLEMENTED + VERIFIED**: birth date is persisted and used for adult/minor policy checks.
+- CR-12.13 — **IMPLEMENTED + VERIFIED**: UTC/timestamp fields are migration-backed.
+- CR-12.14 — **IMPLEMENTED + VERIFIED**: the patient schema has additive closeout migrations and rollback-safe definitions.
+- CR-12.15 — **IMPLEMENTED + VERIFIED**: bookings reference the selected patient with organization-scoped foreign keys.
+- CR-12.16 — **IMPLEMENTED + VERIFIED**: medical records resolve through the patient boundary.
+- CR-12.17 — **IMPLEMENTED + VERIFIED**: the Portal exposes the patient choice only to an authorized account.
+- CR-12.18 — **IMPLEMENTED + VERIFIED**: self/family booking choice is persisted and reload-safe.
+- CR-12.19 — **IMPLEMENTED + VERIFIED**: family details use human forms with validation and correction paths.
+- CR-12.20 — **IMPLEMENTED + VERIFIED**: CRM exposes linked patients and booking ownership.
+- CR-12.21 — **IMPLEMENTED + VERIFIED**: booking presentation distinguishes patient from booker.
+- CR-12.22 — **IMPLEMENTED + VERIFIED**: client CRM cards expose the organization-scoped family relation list.
+- L2-04.4 — **IMPLEMENTED + VERIFIED / EXTERNAL OBSERVATION NOT RUN**: invitation/deep-link/account-link/notification adapter lifecycle is implemented and retry-safe; no recipient Telegram UI was available.
+- L2-04.8 — **IMPLEMENTED + VERIFIED**: patient/booker/both notification recipients are a human-labeled CRM setting with a safe default.
+- L2-04.9 — **IMPLEMENTED + VERIFIED / LEGAL CONFIGURATION REQUIRED**: grant/revoke/scope/audit/tenant lifecycle is complete; adult delegated access stays disabled until an approved legal document is published.
+- L2-04.10 — **IMPLEMENTED + VERIFIED / LEGAL CONFIGURATION REQUIRED**: versioned legal-document selection and evidence are integrated; no legal wording is invented.
+- L2-14.9 — **SOURCE TEXT INCOMPLETE; TECHNICAL BEHAVIOR IMPLEMENTED SAFELY**: the incomplete anchor is not silently guessed; current schedule placement is preserved and regression-protected.
+- L2-16.2 — **IMPLEMENTED + VERIFIED / EXTERNAL OBSERVATION NOT RUN**: media edit/save/reopen/preview/provider-send/retry/reload is covered; independent recipient chat rendering was unavailable.
+
+Current technical status: 0 technical blockers, 0 candidate-caused failures. Remaining labels describe only content/configuration, legal wording, provider readiness, incomplete source text, or external observation.
+
 ## Final candidate staging acceptance — 2026-10-25
 
 **Staging functional acceptance: PASS. Overall requirements acceptance remains FAIL / INCOMPLETE because 37 objective BLOCKED criteria remain; owner acceptance is NOT RUN. PR #60 remains Draft/Open and unmerged.** The requested candidate `aff9798e02083fc9086b105b79f9739aa886d40d` was advanced by test-only commit `9e4f78c61731a9714dddbb35beea7d1e13643df8` after Livewire 4.4.8 returned the correct tenant-denial HTTP 404 while two existing tests still expected an exception. The corrected tests assert 404 and unchanged selection/visibility; focused local tests passed. No runtime code changed in that correction.
