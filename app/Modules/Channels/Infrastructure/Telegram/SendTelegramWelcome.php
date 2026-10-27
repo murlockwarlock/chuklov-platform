@@ -52,7 +52,11 @@ final readonly class SendTelegramWelcome
         $statusMessages = [];
         if ($media['videoUrl'] !== null) {
             try {
-                $video = $bot->sendVideo($media['videoUrl'], supports_streaming: true);
+                $video = $bot->sendVideo(
+                    $media['videoUrl'],
+                    caption: $media['caption'],
+                    supports_streaming: true,
+                );
                 if ($video === null) {
                     $this->recordOutcome($bot, 'telegram.welcome.video_send', 'video_delivery_unconfirmed', 'unknown', 1);
                     $statusMessages[] = $this->notice($locale, 'video_failed');

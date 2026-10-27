@@ -19,7 +19,7 @@ final readonly class GetClientEntryMedia
 
     public function __construct(private OrganizationContext $context, private ContentMediaStorageInterface $storage) {}
 
-    /** @return array<string, array{key: string, title: string, videoUrl: ?string, previewUrl: ?string, subtitlesUrl: ?string}> */
+    /** @return array<string, array{key: string, title: string, videoUrl: ?string, previewUrl: ?string, subtitlesUrl: ?string, caption: ?string}> */
     public function handle(string $locale): array
     {
         try {
@@ -41,6 +41,7 @@ final readonly class GetClientEntryMedia
                 ?? $sections->first(fn (ContentSection $section): bool => $section->section_key === $key);
             $image = $section?->media['image'] ?? null;
             $subtitles = $section?->media['subtitles'] ?? null;
+            $caption = $section?->media['caption'] ?? null;
             $result[$key] = [
                 'key' => $key, 'title' => $section?->title ?? $title,
                 'videoUrl' => $section !== null ? app(ContentVideoUrlResolver::class)->resolve($section) : null,
@@ -48,6 +49,7 @@ final readonly class GetClientEntryMedia
                 'subtitlesUrl' => is_string($subtitles) && $organizationId !== null && str_ends_with($subtitles, '.vtt') && $this->storage->isManagedPath($organizationId, $subtitles)
                     ? $this->storage->url($subtitles)
                     : (is_string($subtitles) && filter_var($subtitles, FILTER_VALIDATE_URL) !== false && str_starts_with($subtitles, 'https://') ? $subtitles : null),
+                'caption' => $key === 'telegram_welcome' && is_string($caption) && trim($caption) !== '' ? trim($caption) : null,
             ];
             $order[$key] = $section?->sort_order ?? PHP_INT_MAX;
         }

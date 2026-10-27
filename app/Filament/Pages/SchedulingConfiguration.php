@@ -10,6 +10,7 @@ use App\Modules\B2B\Application\GetB2bSalesCallDuration;
 use App\Modules\B2B\Application\GetB2bSalesCallReadiness;
 use App\Modules\B2B\Application\GetB2bZoomConfiguration;
 use App\Modules\B2B\Application\SaveB2bZoomConfiguration;
+use App\Modules\ClientPortal\Domain\Enums\RoadMapAvailabilityMode;
 use App\Modules\Organizations\Application\ClearOrganizationSetting;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -122,6 +123,9 @@ class SchedulingConfiguration extends LocalizedPage
             'patient_notification_recipients' => $organization->settings()
                 ->where('setting_key', OrganizationSettingKey::PatientNotificationRecipients->value)
                 ->value('string_value') ?? PatientNotificationRecipientPolicy::Both->value,
+            'road_map_availability_mode' => $organization->settings()
+                ->where('setting_key', OrganizationSettingKey::RoadMapAvailabilityMode->value)
+                ->value('string_value') ?? RoadMapAvailabilityMode::ReviewedCourseReport->value,
             'client_reminders' => $this->reminderRows('client'),
             'specialist_reminders' => $this->reminderRows('specialist'),
             'zoom_enabled' => $zoom['enabled'],
@@ -184,6 +188,12 @@ class SchedulingConfiguration extends LocalizedPage
                     ->required()
                     ->native(false)
                     ->helperText(__('Настройка применяется к уведомлениям о записи пациента и связанных с ней изменениях.')),
+                Select::make('road_map_availability_mode')
+                    ->label(__('Когда открывать Дорожную карту'))
+                    ->options(collect(RoadMapAvailabilityMode::cases())->mapWithKeys(fn (RoadMapAvailabilityMode $mode): array => [$mode->value => $mode->label()])->all())
+                    ->required()
+                    ->native(false)
+                    ->helperText(__('Сама Дорожная карта появляется только после принятого отчёта специалиста; этот параметр задаёт дополнительное условие готовности.')),
                 Section::make(__('Напоминания о записи'))
                     ->description(__('Выберите, кому и за сколько до визита отправлять напоминание. Напоминания строятся от времени начала записи и отправляются автоматически. Если время уже прошло, уведомление задним числом не отправляется. Для ранее созданных записей сохраните настройки ещё раз.'))
                     ->schema([
@@ -299,6 +309,11 @@ class SchedulingConfiguration extends LocalizedPage
                     $actor,
                     OrganizationSettingKey::PatientNotificationRecipients,
                     (string) ($data['patient_notification_recipients'] ?? PatientNotificationRecipientPolicy::Both->value),
+                );
+                app(SetOrganizationSetting::class)->handle(
+                    $actor,
+                    OrganizationSettingKey::RoadMapAvailabilityMode,
+                    (string) ($data['road_map_availability_mode'] ?? RoadMapAvailabilityMode::ReviewedCourseReport->value),
                 );
                 app(SetOrganizationSetting::class)->handle(
                     $actor,

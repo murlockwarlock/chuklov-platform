@@ -5,8 +5,11 @@ namespace App\Modules\ClientPortal\Application;
 use App\Modules\AI\Application\Services\FindLatestReviewedAiRun;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
+use App\Modules\ClientPortal\Domain\Enums\RoadMapAvailabilityMode;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
+use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Tracker\Application\ResolveTrackerAccess;
 use App\Modules\Tracker\Domain\Enums\TrackerEntitlementSource;
 use Illuminate\Support\Facades\Log;
@@ -14,7 +17,12 @@ use Throwable;
 
 final readonly class GetClientHomeHealthAction
 {
-    public function __construct(private ResolveTrackerAccess $trackerAccess, private FindLatestReviewedAiRun $reports, private MedicalEncryptorInterface $encryptor) {}
+    public function __construct(
+        private ResolveTrackerAccess $trackerAccess,
+        private FindLatestReviewedAiRun $reports,
+        private MedicalEncryptorInterface $encryptor,
+        private GetRoadMapAvailabilityMode $roadMapMode,
+    ) {}
 
     /**
      * @param  array<string, mixed>  $tracker
@@ -64,6 +72,10 @@ final readonly class GetClientHomeHealthAction
                 return $diagnostics;
             }
 
+            if (! $this->roadMapIsAvailable($client)) {
+                return $diagnostics;
+            }
+
             return [
                 'kind' => 'roadmap', 'titleKey' => 'home.roadmap', 'summaryKey' => 'home.roadmapDescription',
                 'url' => route('portal.health').'#course-report', 'actionKey' => 'home.openPlan', 'badgeKey' => 'home.ready',
@@ -75,6 +87,29 @@ final readonly class GetClientHomeHealthAction
         }
 
         return $diagnostics;
+    }
+
+    private function roadMapIsAvailable(Client $client): bool
+    {
+        $mode = $this->roadMapMode->handle();
+
+        if ($mode === RoadMapAvailabilityMode::ReviewedCourseReport) {
+            return true;
+        }
+
+        $status = $mode === RoadMapAvailabilityMode::ConfirmedBooking
+            ? BookingStatus::Confirmed
+            : BookingStatus::Completed;
+
+        return Booking::query()
+            ->where('organization_id', $client->organization_id)
+            ->where(fn ($query) => $query
+                ->where('client_id', $client->getKey())
+                ->orWhereHas('patientProfile', fn ($patient) => $patient
+                    ->where('organization_id', $client->organization_id)
+                    ->where('linked_account_client_id', $client->getKey())))
+            ->where('status', $status->value)
+            ->exists();
     }
 
     private function recordUnavailableReport(Client $client, int $runId, string $errorCode, ?Throwable $exception = null): void

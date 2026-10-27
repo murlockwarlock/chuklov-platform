@@ -12,11 +12,18 @@ use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\ClientPortal\Application\GetClientHomeHealthAction;
+use App\Modules\ClientPortal\Domain\Enums\RoadMapAvailabilityMode;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Security\Domain\Models\AuditEvent;
+use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Tracker\Application\AssignTrackerTask;
 use App\Modules\Tracker\Application\GrantPaidTrackerAccess;
 use App\Modules\Tracker\Application\GrantTrackerAccess;
@@ -147,6 +154,23 @@ final class September26HealthActionTest extends TestCase
         self::assertSame('home.ready', $healthAction['badgeKey']);
         self::assertSame('home.openPlan', $healthAction['actionKey']);
         self::assertSame(route('portal.health').'#course-report', $healthAction['url']);
+    }
+
+    public function test_roadmap_trigger_can_be_switched_to_a_confirmed_booking_without_exposing_an_unready_report(): void
+    {
+        [$organization, $admin, $client] = $this->actors();
+        $this->createAcceptedCourseReport($organization, $client);
+        app(SetOrganizationSetting::class)->handle($admin, OrganizationSettingKey::RoadMapAvailabilityMode, RoadMapAvailabilityMode::ConfirmedBooking->value);
+
+        $this->assertDiagnosticAction();
+
+        $service = Service::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        Booking::factory()->forClient($client)->forService($service)->forSpecialist($specialist)->create(['status' => BookingStatus::Confirmed]);
+
+        $this->get(route('portal.home'))->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('healthAction.kind', 'roadmap')
+            ->where('healthAction.url', route('portal.health').'#course-report'));
     }
 
     public function test_paid_renewal_of_manual_access_updates_its_source_without_replacing_the_entitlement(): void
@@ -291,6 +315,37 @@ final class September26HealthActionTest extends TestCase
             ->where('healthAction.actionKey', 'home.startTest')
             ->where('healthAction.badgeKey', 'home.new')
             ->where('healthAction.url', route('portal.surveys.index')));
+    }
+
+    private function createAcceptedCourseReport(Organization $organization, Client $client): AiRun
+    {
+        $run = AiRun::create([
+            'organization_id' => $organization->getKey(),
+            'capability' => AiCapability::ClinicalSynthesizer,
+            'workflow_key' => ClinicalSynthesizerWorkflow::CourseReport->value,
+            'origin' => AiRunOrigin::User,
+            'execution_mode' => AiExecutionMode::Async,
+            'client_id' => $client->getKey(),
+            'status' => AiRunStatus::Succeeded,
+            'human_review_status' => HumanReviewStatus::Accepted,
+            'input_references' => [],
+            'context_provenance' => [],
+            'token_usage' => [],
+            'finished_at' => now(),
+        ]);
+        $encryptor = app(MedicalEncryptorInterface::class);
+        AiRunPayload::create([
+            'organization_id' => $organization->getKey(),
+            'ai_run_id' => $run->getKey(),
+            'encryption_key_version' => 1,
+            'encrypted_output_payload' => $encryptor->encryptField(
+                $organization->getKey(),
+                json_encode(['course_summary' => 'Synthetic reviewed course report.'], JSON_THROW_ON_ERROR),
+                1,
+            ),
+        ]);
+
+        return $run;
     }
 
     /** @return array{Organization, User, Client} */

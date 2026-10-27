@@ -37,7 +37,11 @@ final class September26ContentVideoTest extends TestCase
         config(['content_media.disk' => 'content-video-test', 'portal.telegram.portal_url' => 'https://mini.example.test', 'nutgram.token' => FakeNutgram::TOKEN]);
         Storage::fake('content-video-test');
         $actor = User::factory()->forOrganization($organization)->create();
-        $section = ContentSection::factory()->forOrganization($organization)->create(['section_key' => 'telegram_welcome', 'locale' => 'ru']);
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'telegram_welcome',
+            'locale' => 'ru',
+            'media' => ['caption' => 'Синтетическое видео-приветствие'],
+        ]);
         $file = UploadedFile::fake()->createWithContent('welcome.mp4', pack('N', 24).'ftypmp42'.pack('N', 0).'mp42isom');
         app(AttachContentVideo::class)->handle($actor, $section, $file);
         $section->refresh();
@@ -45,6 +49,7 @@ final class September26ContentVideoTest extends TestCase
         $media = app(GetClientEntryMedia::class)->handle('ru');
         self::assertCount(5, $media);
         self::assertNotNull($media['telegram_welcome']['videoUrl']);
+        self::assertSame('Синтетическое видео-приветствие', $media['telegram_welcome']['caption']);
         self::assertSame(array_keys(GetClientEntryMedia::STORIES), array_keys(array_slice($media, 1)));
         app()->forgetInstance(Nutgram::class);
         $bot = app(Nutgram::class);
@@ -67,7 +72,9 @@ final class September26ContentVideoTest extends TestCase
             self::assertSame(1, preg_match('/name="video"\r\n(?:[^\r\n]+\r\n)*\r\n([^\r\n]+)/', $videoBody, $parts));
             self::assertSame($media['telegram_welcome']['videoUrl'], $parts[1]);
         } else {
-            self::assertSame($media['telegram_welcome']['videoUrl'], json_decode($videoBody, true, flags: JSON_THROW_ON_ERROR)['video']);
+            $videoPayload = json_decode($videoBody, true, flags: JSON_THROW_ON_ERROR);
+            self::assertSame($media['telegram_welcome']['videoUrl'], $videoPayload['video']);
+            self::assertSame('Синтетическое видео-приветствие', $videoPayload['caption']);
         }
         self::assertCount(1, $message['reply_markup']['inline_keyboard']);
         $button = $message['reply_markup']['inline_keyboard'][0][0];

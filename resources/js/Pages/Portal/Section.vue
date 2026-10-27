@@ -10,8 +10,9 @@ import type { PortalShell } from '../../types/portal';
 type Locale = 'en' | 'ru';
 
 type ContentMedia = {
-    image: string;
+    image?: string;
     alt?: string;
+    communities?: Array<{ title: string; url: string; description: string | null }>;
 };
 
 type ContentItem = {
@@ -62,7 +63,7 @@ const pageTitle = computed(() => props.title);
           </h2>
         </div>
         <img
-          v-if="item.media"
+          v-if="item.media?.image"
           :src="item.media.image"
           :alt="item.media.alt || item.title"
           class="max-w-full rounded-xl"
@@ -71,6 +72,28 @@ const pageTitle = computed(() => props.title);
           :content="item.body"
           :content-html="item.bodyHtml"
         />
+        <ul
+          v-if="item.media?.communities?.length"
+          class="portal-list portal-stack portal-stack--tight"
+        >
+          <li
+            v-for="community in item.media.communities"
+            :key="community.url"
+            class="portal-list__item"
+          >
+            <a
+              :href="community.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="portal-link"
+            >
+              <strong>{{ community.title }}</strong>
+            </a>
+            <p v-if="community.description">
+              {{ community.description }}
+            </p>
+          </li>
+        </ul>
       </article>
       <EmptyState
         v-if="!props.content.length"

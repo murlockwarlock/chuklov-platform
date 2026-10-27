@@ -29,6 +29,7 @@ final class ClearOrganizationSetting
                 OrganizationSettingKey::DefaultTimezone,
                 OrganizationSettingKey::OnlineConsultationServiceId,
                 OrganizationSettingKey::PatientNotificationRecipients,
+                OrganizationSettingKey::RoadMapAvailabilityMode,
             ], true)
                 ? OrganizationPermission::ManageScheduling
                 : OrganizationPermission::ManageSettings,

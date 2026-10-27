@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 final readonly class ContentSectionData
 {
-    /** @param array<string, string>|null $media */
+    /** @param array<string, mixed>|null $media */
     private function __construct(
         public string $sectionKey,
         public string $locale,
@@ -119,7 +119,7 @@ final readonly class ContentSectionData
         throw new InvalidArgumentException($message);
     }
 
-    /** @return array<string, string>|null */
+    /** @return array<string, mixed>|null */
     private static function media(mixed $value): ?array
     {
         if ($value === null || $value === []) {
@@ -141,6 +141,15 @@ final readonly class ContentSectionData
                 continue;
             }
 
+            if ($key === 'communities') {
+                $communities = self::communities($item);
+                if ($communities !== []) {
+                    $media[$key] = $communities;
+                }
+
+                continue;
+            }
+
             if (! is_string($item) || mb_strlen($item) > 2000) {
                 throw new InvalidArgumentException('The content media metadata is invalid.');
             }
@@ -153,5 +162,43 @@ final readonly class ContentSectionData
         }
 
         return $media === [] ? null : $media;
+    }
+
+    /** @return list<array{title: string, url: string, description: string|null, sort_order: int, is_visible: bool}> */
+    private static function communities(mixed $value): array
+    {
+        if (! is_array($value) || ! array_is_list($value) || count($value) > 50) {
+            throw new InvalidArgumentException('The community list is invalid.');
+        }
+
+        $communities = [];
+        foreach ($value as $item) {
+            if (! is_array($item)) {
+                throw new InvalidArgumentException('The community list is invalid.');
+            }
+
+            $title = self::stringValue($item['title'] ?? null, 'The community title is invalid.', 160);
+            $url = self::stringValue($item['url'] ?? null, 'The community URL is invalid.', 2000);
+            if (! str_starts_with($url, 'https://') || filter_var($url, FILTER_VALIDATE_URL) === false) {
+                throw new InvalidArgumentException('The community URL is invalid.');
+            }
+
+            $description = $item['description'] ?? null;
+            if ($description !== null && (! is_string($description) || mb_strlen(trim($description)) > 500)) {
+                throw new InvalidArgumentException('The community description is invalid.');
+            }
+
+            $communities[] = [
+                'title' => $title,
+                'url' => $url,
+                'description' => is_string($description) && trim($description) !== '' ? trim($description) : null,
+                'sort_order' => self::nonNegativeInteger($item['sort_order'] ?? 0, 'The community order is invalid.'),
+                'is_visible' => (bool) ($item['is_visible'] ?? true),
+            ];
+        }
+
+        usort($communities, static fn (array $left, array $right): int => $left['sort_order'] <=> $right['sort_order']);
+
+        return $communities;
     }
 }

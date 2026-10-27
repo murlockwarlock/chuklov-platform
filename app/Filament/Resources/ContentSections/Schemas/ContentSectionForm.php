@@ -18,7 +18,9 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Actions;
@@ -107,6 +109,13 @@ class ContentSectionForm
                                 'url' => __('Укажите корректную ссылку на файл WebVTT.'),
                                 'starts_with' => __('Ссылка на файл субтитров должна начинаться с https://.'),
                             ]),
+                        Textarea::make('media.caption')
+                            ->label(__('Подпись к видео приветствия'))
+                            ->helperText(__('Необязательная подпись, которая отправляется вместе с видео в Telegram.'))
+                            ->rows(3)
+                            ->maxLength(1024)
+                            ->nullable()
+                            ->visible(fn (Get $get): bool => $get('section_key') === 'telegram_welcome'),
                         Placeholder::make('current_video')->label(__('Загруженное видео'))
                             ->content(function (?ContentSection $record): HtmlString|string {
                                 if ($record === null) {
@@ -117,6 +126,43 @@ class ContentSectionForm
                                 return $url === null ? (string) __('Видео не загружено') : new HtmlString('<video controls preload="metadata" style="max-width:100%;max-height:320px" src="'.e($url).'"></video>');
                             }),
                     ])->columnSpanFull(),
+                Section::make(__('Официальные сообщества'))
+                    ->description(__('Добавьте ссылки на официальные каналы и группы. Неактивные записи не показываются клиентам.'))
+                    ->schema([
+                        Repeater::make('media.communities')
+                            ->label(__('Список сообществ'))
+                            ->schema([
+                                TextInput::make('title')
+                                    ->label(__('Название'))
+                                    ->required()
+                                    ->maxLength(160),
+                                TextInput::make('url')
+                                    ->label(__('Ссылка Telegram или сайта'))
+                                    ->required()
+                                    ->url()
+                                    ->startsWith('https://')
+                                    ->maxLength(2000),
+                                Textarea::make('description')
+                                    ->label(__('Описание'))
+                                    ->rows(2)
+                                    ->maxLength(500)
+                                    ->nullable(),
+                                TextInput::make('sort_order')
+                                    ->label(__('Порядок'))
+                                    ->integer()
+                                    ->minValue(0)
+                                    ->default(0),
+                                Toggle::make('is_visible')
+                                    ->label(__('Показывать'))
+                                    ->default(true),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->addActionLabel(__('Добавить сообщество'))
+                            ->visible(fn (Get $get): bool => $get('section_key') === 'communities'),
+                    ])
+                    ->columnSpanFull(),
                 Section::make(__('Изображение'))
                     ->description(__('Можно загрузить изображение или указать готовую ссылку. Новая загрузка или ссылка заменит текущее изображение после сохранения.'))
                     ->schema([
