@@ -31,6 +31,7 @@ final readonly class PublishB2bFormConfiguration
         $fields = $this->validator->handle((array) $configuration->getAttribute('fields'));
 
         return DB::transaction(function () use ($actor, $organization, $configuration, $fields): B2bFormConfiguration {
+            $organization = $organization->newQuery()->whereKey($organization->getKey())->lockForUpdate()->firstOrFail();
             $locked = B2bFormConfiguration::query()->where('organization_id', $organization->getKey())->whereKey($configuration->getKey())->lockForUpdate()->firstOrFail();
             B2bFormConfiguration::query()->where('organization_id', $organization->getKey())->where('status', B2bFormConfigurationStatus::Published->value)->update([
                 'status' => B2bFormConfigurationStatus::Retired->value,

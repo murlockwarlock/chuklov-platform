@@ -28,6 +28,7 @@ final readonly class SaveB2bFormDraft
         $fields = $this->validator->handle($fields);
 
         return DB::transaction(function () use ($actor, $organization, $fields): B2bFormConfiguration {
+            $organization = $organization->newQuery()->whereKey($organization->getKey())->lockForUpdate()->firstOrFail();
             $draft = B2bFormConfiguration::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('status', B2bFormConfigurationStatus::Draft->value)
