@@ -83,6 +83,41 @@ final class September26ContentVideoTest extends TestCase
         self::assertArrayNotHasKey('url', $button);
     }
 
+    public function test_owner_can_configure_a_welcome_video_note_without_exposing_private_path(): void
+    {
+        $organization = Organization::factory()->create();
+        app(OrganizationContext::class)->set($organization);
+        config(['content_media.disk' => 'content-video-test', 'portal.telegram.portal_url' => 'https://mini.example.test', 'nutgram.token' => FakeNutgram::TOKEN]);
+        Storage::fake('content-video-test');
+        $actor = User::factory()->forOrganization($organization)->create();
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'telegram_welcome',
+            'locale' => 'ru',
+            'media' => ['telegram_media_type' => 'video_note'],
+        ]);
+        app(AttachContentVideo::class)->handle($actor, $section, UploadedFile::fake()->createWithContent('welcome.mp4', pack('N', 24).'ftypmp42'.pack('N', 0).'mp42isom'));
+
+        $publicMedia = app(GetClientEntryMedia::class)->handle('ru');
+        self::assertSame('video_note', data_get($publicMedia, 'telegram_welcome.telegramMediaType'));
+        self::assertArrayNotHasKey('videoPath', $publicMedia['telegram_welcome']);
+
+        app()->forgetInstance(Nutgram::class);
+        $bot = app(Nutgram::class);
+        $bot->setCommonChat(Chat::make(id: 990027, type: 'private'));
+        $bot->setCommonUser(\SergiX44\Nutgram\Telegram\Types\User\User::make(id: 990027, is_bot: false, first_name: 'Synthetic QA', language_code: 'ru'));
+        config(['tenancy.default_organization_id' => $organization->id]);
+        $bot->willReceive(['message_id' => 1, 'date' => 1, 'chat' => ['id' => 990027, 'type' => 'private']]);
+        $bot->willReceive(['message_id' => 2, 'date' => 1, 'chat' => ['id' => 990027, 'type' => 'private']]);
+        $bot->willReceive(true);
+        $bot->hearText('/start')->reply();
+
+        $bot->assertCalled('sendVideoNote');
+        $bot->assertCalled('sendVideo', 0);
+        $history = array_values($bot->getRequestHistory());
+        $videoRequest = array_values($history[0])[0];
+        self::assertStringContainsString('multipart/form-data', $videoRequest->getHeaderLine('Content-Type'));
+    }
+
     public function test_non_video_upload_does_not_replace_the_current_media(): void
     {
         $organization = Organization::factory()->create();

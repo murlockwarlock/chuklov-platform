@@ -3,6 +3,7 @@
 namespace App\Modules\Content\Application;
 
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
+use App\Modules\Content\Domain\Enums\ContentTelegramMediaType;
 use App\Support\RichText\RichTextDocument;
 use InvalidArgumentException;
 
@@ -146,6 +147,17 @@ final readonly class ContentSectionData
                 if ($communities !== []) {
                     $media[$key] = $communities;
                 }
+
+                continue;
+            }
+
+            if ($key === 'telegram_media_type') {
+                $mediaType = ContentTelegramMediaType::tryFrom((string) $item);
+                if (! $mediaType instanceof ContentTelegramMediaType) {
+                    throw new InvalidArgumentException('The Telegram media type is invalid.');
+                }
+
+                $media[$key] = $mediaType->value;
 
                 continue;
             }

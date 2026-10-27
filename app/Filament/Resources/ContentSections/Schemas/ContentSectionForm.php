@@ -12,6 +12,7 @@ use App\Modules\Content\Application\ContentImageUrlResolver;
 use App\Modules\Content\Application\ContentVideoUrlResolver;
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
+use App\Modules\Content\Domain\Enums\ContentTelegramMediaType;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Support\RichText\RichTextDocument;
 use Filament\Actions\Action;
@@ -109,6 +110,16 @@ class ContentSectionForm
                                 'url' => __('Укажите корректную ссылку на файл WebVTT.'),
                                 'starts_with' => __('Ссылка на файл субтитров должна начинаться с https://.'),
                             ]),
+                        Select::make('media.telegram_media_type')
+                            ->label(__('Формат приветствия в Telegram'))
+                            ->options([
+                                ContentTelegramMediaType::Video->value => __('Обычное видео'),
+                                ContentTelegramMediaType::VideoNote->value => __('Видео-кружок'),
+                            ])
+                            ->default(ContentTelegramMediaType::Video->value)
+                            ->helperText(__('Для видео-кружка Telegram не поддерживает подпись; подпись используется для обычного видео.'))
+                            ->visible(fn (Get $get): bool => $get('section_key') === 'telegram_welcome')
+                            ->nullable(),
                         Textarea::make('media.caption')
                             ->label(__('Подпись к видео приветствия'))
                             ->helperText(__('Необязательная подпись, которая отправляется вместе с видео в Telegram.'))

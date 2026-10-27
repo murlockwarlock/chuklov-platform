@@ -4,6 +4,8 @@ namespace App\Modules\Channels\Infrastructure\Telegram;
 
 use App\Modules\Channels\Application\ResolveTelegramMiniAppEntry;
 use App\Modules\Content\Application\GetClientEntryMedia;
+use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
+use App\Modules\Content\Domain\Enums\ContentTelegramMediaType;
 use App\Modules\Organizations\Application\OrganizationContext;
 use GuzzleHttp\Exception\GuzzleException;
 use Illuminate\Support\Facades\Log;
@@ -12,6 +14,7 @@ use RuntimeException;
 use SergiX44\Nutgram\Nutgram;
 use SergiX44\Nutgram\Telegram\Exceptions\TelegramException;
 use SergiX44\Nutgram\Telegram\Types\Command\MenuButtonWebApp;
+use SergiX44\Nutgram\Telegram\Types\Internal\InputFile;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardButton;
 use SergiX44\Nutgram\Telegram\Types\Keyboard\InlineKeyboardMarkup;
 use SergiX44\Nutgram\Telegram\Types\WebApp\WebAppInfo;
@@ -22,6 +25,7 @@ final readonly class SendTelegramWelcome
     public function __construct(
         private ResolveTelegramMiniAppEntry $entries,
         private GetClientEntryMedia $media,
+        private ContentMediaStorageInterface $storage,
         private OrganizationContext $organizationContext,
     ) {}
 
@@ -48,22 +52,54 @@ final readonly class SendTelegramWelcome
         $buttonLabel = $locale === 'ru' ? '🚀 Открыть приложение' : 'Open app';
         $menuLabel = $locale === 'ru' ? 'Открыть приложение' : 'Open app';
         $keyboard = InlineKeyboardMarkup::make()->addRow(InlineKeyboardButton::make(text: $buttonLabel, web_app: WebAppInfo::make($url)));
-        $media = $this->media->handle($locale)['telegram_welcome'];
+        $media = $this->media->handle($locale, includePrivateMedia: true)['telegram_welcome'];
         $statusMessages = [];
-        if ($media['videoUrl'] !== null) {
+        $mediaType = ContentTelegramMediaType::tryFrom((string) ($media['telegramMediaType'] ?? ''))
+            ?? ContentTelegramMediaType::Video;
+        $videoUrl = is_string($media['videoUrl'] ?? null) ? $media['videoUrl'] : null;
+        $videoPath = is_string($media['videoPath'] ?? null) ? $media['videoPath'] : null;
+        $videoReady = $mediaType === ContentTelegramMediaType::Video
+            ? $videoUrl !== null
+            : $videoPath !== null && $videoPath !== '';
+        if ($videoReady) {
+            $stream = null;
             try {
-                $video = $bot->sendVideo(
-                    $media['videoUrl'],
-                    caption: $media['caption'],
-                    supports_streaming: true,
-                );
-                if ($video === null) {
-                    $this->recordOutcome($bot, 'telegram.welcome.video_send', 'video_delivery_unconfirmed', 'unknown', 1);
-                    $statusMessages[] = $this->notice($locale, 'video_failed');
+                if ($mediaType === ContentTelegramMediaType::VideoNote) {
+                    $organizationId = $this->organizationContext->id();
+                    $stream = $videoPath === null ? null : $this->storage->readStream($organizationId, $videoPath);
+                    if (! is_resource($stream)) {
+                        $this->recordOutcome($bot, 'telegram.welcome.video', 'welcome_video_unavailable', 'unavailable', 0);
+                        $statusMessages[] = $this->notice($locale, 'video_unavailable');
+                    } else {
+                        $video = $bot->sendVideoNote(InputFile::make($stream, basename($videoPath)));
+                        if ($video === null) {
+                            $this->recordOutcome($bot, 'telegram.welcome.video_send', 'video_delivery_unconfirmed', 'unknown', 1);
+                            $statusMessages[] = $this->notice($locale, 'video_failed');
+                        }
+                    }
+                } else {
+                    if ($videoUrl === null) {
+                        $this->recordOutcome($bot, 'telegram.welcome.video', 'welcome_video_unavailable', 'unavailable', 0);
+                        $statusMessages[] = $this->notice($locale, 'video_unavailable');
+                    } else {
+                        $video = $bot->sendVideo(
+                            $videoUrl,
+                            caption: $media['caption'],
+                            supports_streaming: true,
+                        );
+                        if ($video === null) {
+                            $this->recordOutcome($bot, 'telegram.welcome.video_send', 'video_delivery_unconfirmed', 'unknown', 1);
+                            $statusMessages[] = $this->notice($locale, 'video_failed');
+                        }
+                    }
                 }
             } catch (TelegramException|GuzzleException $exception) {
                 $this->recordOutcome($bot, 'telegram.welcome.video_send', 'video_send_failed', 'failed', 1, $exception);
                 $statusMessages[] = $this->notice($locale, 'video_failed');
+            } finally {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
             }
         } else {
             $this->recordOutcome($bot, 'telegram.welcome.video', 'welcome_video_unavailable', 'unavailable', 0);

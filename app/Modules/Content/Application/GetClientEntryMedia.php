@@ -4,6 +4,7 @@ namespace App\Modules\Content\Application;
 
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
+use App\Modules\Content\Domain\Enums\ContentTelegramMediaType;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,8 +20,8 @@ final readonly class GetClientEntryMedia
 
     public function __construct(private OrganizationContext $context, private ContentMediaStorageInterface $storage) {}
 
-    /** @return array<string, array{key: string, title: string, videoUrl: ?string, previewUrl: ?string, subtitlesUrl: ?string, caption: ?string}> */
-    public function handle(string $locale): array
+    /** @return array<string, array{key: string, title: string, videoUrl: ?string, previewUrl: ?string, subtitlesUrl: ?string, caption: ?string, telegramMediaType?: string, videoPath?: string}> */
+    public function handle(string $locale, bool $includePrivateMedia = false): array
     {
         try {
             $organizationId = $this->context->id();
@@ -43,15 +44,26 @@ final readonly class GetClientEntryMedia
             $image = $media['image'] ?? null;
             $subtitles = $media['subtitles'] ?? null;
             $caption = $media['caption'] ?? null;
+            $videoPath = $media['video'] ?? null;
+            $videoUrl = $section !== null ? app(ContentVideoUrlResolver::class)->resolve($section) : null;
             $result[$key] = [
                 'key' => $key, 'title' => $section instanceof ContentSection ? $section->title : $title,
-                'videoUrl' => $section !== null ? app(ContentVideoUrlResolver::class)->resolve($section) : null,
+                'videoUrl' => $videoUrl,
                 'previewUrl' => $organizationId !== null && is_string($image) && $this->storage->isManagedPath($organizationId, $image) ? $this->storage->url($image) : null,
                 'subtitlesUrl' => is_string($subtitles) && $organizationId !== null && str_ends_with($subtitles, '.vtt') && $this->storage->isManagedPath($organizationId, $subtitles)
                     ? $this->storage->url($subtitles)
                     : (is_string($subtitles) && filter_var($subtitles, FILTER_VALIDATE_URL) !== false && str_starts_with($subtitles, 'https://') ? $subtitles : null),
                 'caption' => $key === 'telegram_welcome' && is_string($caption) && trim($caption) !== '' ? trim($caption) : null,
             ];
+            if ($key === 'telegram_welcome') {
+                $telegramMediaType = ContentTelegramMediaType::tryFrom((string) ($media['telegram_media_type'] ?? ''));
+                $result[$key]['telegramMediaType'] = $telegramMediaType instanceof ContentTelegramMediaType
+                    ? $telegramMediaType->value
+                    : ContentTelegramMediaType::Video->value;
+                if ($includePrivateMedia && is_string($videoPath) && $organizationId !== null && $this->storage->isManagedPath($organizationId, $videoPath)) {
+                    $result[$key]['videoPath'] = $videoPath;
+                }
+            }
             $order[$key] = $section instanceof ContentSection ? $section->sort_order : PHP_INT_MAX;
         }
 
