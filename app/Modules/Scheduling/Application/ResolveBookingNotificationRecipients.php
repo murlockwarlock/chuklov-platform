@@ -16,8 +16,8 @@ final readonly class ResolveBookingNotificationRecipients
     {
         $booking->loadMissing('patientProfile');
         $bookerId = (int) $booking->client_id;
-        $patientId = (int) ($booking->patientProfile?->linked_account_client_id ?? $booking->client_id);
-        $recipientIds = match ($this->policy->handle()) {
+        $patientId = (int) (data_get($booking->patientProfile, 'linked_account_client_id') ?? $booking->client_id);
+        $recipientIds = match ($this->policy->handle((int) $booking->organization_id)) {
             PatientNotificationRecipientPolicy::PatientOnly => [$patientId],
             PatientNotificationRecipientPolicy::BookerOnly => [$bookerId],
             PatientNotificationRecipientPolicy::Both => [$bookerId, $patientId],

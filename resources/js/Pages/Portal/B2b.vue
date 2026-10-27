@@ -71,12 +71,12 @@ const leadForm = useForm<{
     specialist_id: number | null;
     starts_at: string;
     submission_key: string;
-  form_answers: Record<string, string | boolean | null>;
+    form_answers: Record<string, string | boolean | null>;
 }>({
     specialist_id: props.selectedSpecialistId,
     starts_at: '',
     submission_key: crypto.randomUUID(),
-  form_answers: Object.fromEntries(props.formConfiguration.fields.map((field) => [field.key, field.type === 'checkbox' ? false : ''])),
+    form_answers: Object.fromEntries(props.formConfiguration.fields.map((field) => [field.key, field.type === 'checkbox' ? false : ''])),
 });
 const selectedStart = ref<string | null>(null);
 const selectedDate = ref<string | null>(null);
@@ -191,6 +191,28 @@ function submitLead(): void {
 
 function formError(key: string): string | undefined {
   return (leadForm.errors as Record<string, string | undefined>)[`form_answers.${key}`];
+}
+
+function formAnswerText(key: string): string {
+    const value = leadForm.form_answers[key];
+
+    return typeof value === 'string' ? value : '';
+}
+
+function formAnswerChecked(key: string): boolean {
+    return leadForm.form_answers[key] === true;
+}
+
+function updateFormAnswer(key: string, value: string | boolean): void {
+    leadForm.form_answers[key] = value;
+}
+
+function eventValue(event: Event): string {
+    return (event.target as HTMLInputElement).value;
+}
+
+function eventChecked(event: Event): boolean {
+    return (event.target as HTMLInputElement).checked;
 }
 
 function requestDate(value: string, timezone: string): string {
@@ -412,19 +434,21 @@ function requestTime(value: string, timezone: string): string {
             <textarea
               v-if="field.type === 'textarea'"
               :id="`b2b-field-${field.key}`"
-              v-model="leadForm.form_answers[field.key]"
+              :value="formAnswerText(field.key)"
               class="portal-input"
               rows="3"
               :required="field.required"
               :aria-invalid="Boolean(formError(field.key))"
+              @input="updateFormAnswer(field.key, eventValue($event))"
             />
             <select
               v-else-if="field.type === 'select'"
               :id="`b2b-field-${field.key}`"
-              v-model="leadForm.form_answers[field.key]"
+              :value="formAnswerText(field.key)"
               class="portal-input portal-select"
               :required="field.required"
               :aria-invalid="Boolean(formError(field.key))"
+              @change="updateFormAnswer(field.key, eventValue($event))"
             >
               <option value="">
                 {{ t('b2b.chooseOption') }}
@@ -443,20 +467,22 @@ function requestTime(value: string, timezone: string): string {
             >
               <input
                 :id="`b2b-field-${field.key}`"
-                v-model="leadForm.form_answers[field.key]"
+                :checked="formAnswerChecked(field.key)"
                 type="checkbox"
                 class="portal-checkbox"
+                @change="updateFormAnswer(field.key, eventChecked($event))"
               >
               <span>{{ field.label }}<span v-if="field.required"> *</span></span>
             </label>
             <input
               v-else
               :id="`b2b-field-${field.key}`"
-              v-model="leadForm.form_answers[field.key]"
+              :value="formAnswerText(field.key)"
               type="text"
               class="portal-input"
               :required="field.required"
               :aria-invalid="Boolean(formError(field.key))"
+              @input="updateFormAnswer(field.key, eventValue($event))"
             >
             <p
               v-if="formError(field.key)"
