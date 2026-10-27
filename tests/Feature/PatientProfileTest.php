@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Identity\Application\AcceptPatientInvitation;
 use App\Modules\Identity\Application\BindPatientInvitationToAccount;
@@ -19,7 +20,9 @@ use App\Modules\Identity\Domain\Models\PatientInvitation;
 use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
@@ -27,6 +30,7 @@ use App\Modules\Scenarios\Application\MedicalProfileReminderPresentation;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Scheduling\Domain\Enums\PatientNotificationRecipientPolicy;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Services\Domain\Models\Service;
@@ -470,6 +474,43 @@ final class PatientProfileTest extends TestCase
         self::assertSame($scenarioActions, ScenarioAction::query()->where('scenario_event_id', $event->getKey())
             ->where('client_id', $adult->getKey())->count());
         self::assertSame($reminderActions, ScenarioAction::query()->where('booking_id', $booking->getKey())
+            ->where('client_id', $adult->getKey())->where('kind', 'appointment_reminder')->count());
+    }
+
+    public function test_linked_patient_materialization_respects_booking_notification_policy(): void
+    {
+        $owner = $this->account();
+        $admin = User::factory()->forOrganization($owner->organization)->create();
+        $patient = $this->patient($owner);
+        $specialist = Specialist::factory()->forOrganization($owner->organization)->create();
+        $service = Service::factory()->forOrganization($owner->organization)->create(['requires_medical_profile' => false]);
+        $booking = Booking::factory()->forClient($owner)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'patient_profile_id' => $patient->getKey(),
+                'status' => BookingStatus::Requested,
+                'starts_at' => CarbonImmutable::now()->addDays(4),
+                'ends_at' => CarbonImmutable::now()->addDays(4)->addHour(),
+                'blocking_ends_at' => CarbonImmutable::now()->addDays(4)->addHour(),
+            ]);
+        app(ScenarioNotificationSeeder::class)->run();
+        $event = app(RecordScenarioEvent::class)->bookingCreated($booking, 'family-policy-booking', CarbonImmutable::now());
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        app(SetOrganizationSetting::class)->handle(
+            $admin,
+            OrganizationSettingKey::PatientNotificationRecipients,
+            PatientNotificationRecipientPolicy::BookerOnly->value,
+        );
+
+        $adult = Client::factory()->forOrganization($owner->organization)->create(array_diff_key($this->details(), ['relationship' => true]));
+        $invitation = app(IssuePatientInvitation::class)->handle($owner, $patient, '00000000-0000-4000-8000-000000000010');
+        app(BindPatientInvitationToAccount::class)->handle($invitation->encrypted_token, $adult);
+        app(AcceptPatientInvitation::class)->handle($adult, (int) $invitation->getKey(), true);
+
+        self::assertSame(0, ScenarioAction::query()->where('scenario_event_id', $event->getKey())
+            ->where('client_id', $adult->getKey())->count());
+        self::assertSame(0, ScenarioAction::query()->where('booking_id', $booking->getKey())
             ->where('client_id', $adult->getKey())->where('kind', 'appointment_reminder')->count());
     }
 

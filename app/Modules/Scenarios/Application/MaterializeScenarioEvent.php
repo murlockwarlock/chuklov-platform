@@ -17,6 +17,7 @@ use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioIdempotencyKey;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scheduling\Application\BookingPatientAccounts;
+use App\Modules\Scheduling\Application\ResolveBookingNotificationRecipients;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Support\SupportedLocale;
@@ -37,6 +38,7 @@ final class MaterializeScenarioEvent
         private readonly BookingChangedGuard $bookingChangedGuard,
         private readonly AppointmentReminderScheduler $reminders,
         private readonly BookingPatientAccounts $bookingPatients,
+        private readonly ResolveBookingNotificationRecipients $bookingRecipients,
     ) {}
 
     public function handleForLinkedPatient(int $organizationId, int $patientProfileId, int $clientId): void
@@ -57,6 +59,10 @@ final class MaterializeScenarioEvent
             ->orderBy('id')
             ->get()
             ->each(function (Booking $booking) use ($organizationId, $client): void {
+                if (! $this->bookingRecipients->handle($booking)->contains('id', $client->getKey())) {
+                    return;
+                }
+
                 $event = ScenarioEvent::query()
                     ->where('organization_id', $organizationId)
                     ->whereIn('event_name', [
