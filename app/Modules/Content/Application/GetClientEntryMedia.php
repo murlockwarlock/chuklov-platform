@@ -39,11 +39,12 @@ final readonly class GetClientEntryMedia
         foreach (['telegram_welcome' => 'Приветствие', ...self::STORIES] as $key => $title) {
             $section = $sections->first(fn (ContentSection $section): bool => $section->section_key === $key && $section->locale === $locale)
                 ?? $sections->first(fn (ContentSection $section): bool => $section->section_key === $key);
-            $image = $section?->media['image'] ?? null;
-            $subtitles = $section?->media['subtitles'] ?? null;
-            $caption = $section?->media['caption'] ?? null;
+            $media = $section instanceof ContentSection && is_array($section->media) ? $section->media : [];
+            $image = $media['image'] ?? null;
+            $subtitles = $media['subtitles'] ?? null;
+            $caption = $media['caption'] ?? null;
             $result[$key] = [
-                'key' => $key, 'title' => $section?->title ?? $title,
+                'key' => $key, 'title' => $section instanceof ContentSection ? $section->title : $title,
                 'videoUrl' => $section !== null ? app(ContentVideoUrlResolver::class)->resolve($section) : null,
                 'previewUrl' => $organizationId !== null && is_string($image) && $this->storage->isManagedPath($organizationId, $image) ? $this->storage->url($image) : null,
                 'subtitlesUrl' => is_string($subtitles) && $organizationId !== null && str_ends_with($subtitles, '.vtt') && $this->storage->isManagedPath($organizationId, $subtitles)
@@ -51,7 +52,7 @@ final readonly class GetClientEntryMedia
                     : (is_string($subtitles) && filter_var($subtitles, FILTER_VALIDATE_URL) !== false && str_starts_with($subtitles, 'https://') ? $subtitles : null),
                 'caption' => $key === 'telegram_welcome' && is_string($caption) && trim($caption) !== '' ? trim($caption) : null,
             ];
-            $order[$key] = $section?->sort_order ?? PHP_INT_MAX;
+            $order[$key] = $section instanceof ContentSection ? $section->sort_order : PHP_INT_MAX;
         }
 
         $welcome = $result['telegram_welcome'];

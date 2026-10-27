@@ -35,8 +35,8 @@ final class B2bLeadInfolist
                 TextEntry::make('salesCall.specialist.display_name')
                     ->label(__('Специалист'))
                     ->placeholder('—')
-                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist))
-                    ->color(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall?->specialist) === null ? null : 'primary'),
+                    ->url(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall->specialist))
+                    ->color(fn (B2bLead $record): ?string => CrmEntityLinks::specialistUrl($record->salesCall->specialist) === null ? null : 'primary'),
                 TextEntry::make('salesCall.starts_at')->label(__('Начало'))->dateTime('d.m.Y H:i')->timezone(fn (B2bLead $record): string => (string) $record->salesCall->schedule_timezone),
                 TextEntry::make('salesCall.ends_at')->label(__('Окончание'))->dateTime('d.m.Y H:i')->timezone(fn (B2bLead $record): string => (string) $record->salesCall->schedule_timezone),
                 TextEntry::make('salesCall.meeting_mode')->label(__('Режим'))->formatStateUsing(static fn ($state): string => $state instanceof VideoMeetingMode ? (CrmLabel::enum($state) ?? $state->value) : (string) $state),

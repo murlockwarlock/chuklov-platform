@@ -49,9 +49,7 @@ final class ClientPatientsRelationManager extends LocalizedRelationManager
         $canManage = app(OrganizationAuthorizer::class)->allows($actor, app(OrganizationContext::class)->organization(), OrganizationPermission::ManageClients);
 
         return $table->stackedOnMobile()
-            ->modifyQueryUsing(fn (Builder $query) => app(ListPatientProfilesForCrm::class)->apply($actor, $client, $query)->with([
-                'accessGrants' => fn (Builder $grants) => $grants->whereNull('revoked_at')->with('grantee:id,organization_id,full_name'),
-            ]))
+            ->modifyQueryUsing(fn (Builder $query) => app(ListPatientProfilesForCrm::class)->apply($actor, $client, $query)->with('activeAccessGrants.grantee:id,organization_id,full_name'))
             ->columns([
                 TextColumn::make('clinicalClient.full_name')->label(__('Пациент'))->wrap()
                     ->url(fn (PatientProfile $record): ?string => CrmEntityLinks::clientUrl($record->clinicalClient)),
@@ -60,8 +58,8 @@ final class ClientPatientsRelationManager extends LocalizedRelationManager
                 })->wrap(),
                 TextColumn::make('birth_date')->label(__('Дата рождения'))->date('d.m.Y'),
                 TextColumn::make('owner_revoked_at')->label(__('Отвязано'))->dateTime('d.m.Y H:i')->placeholder(__('Связь активна')),
-                TextColumn::make('accessGrants')->label(__('Делегированный доступ'))->state(fn (PatientProfile $record): string => $record->accessGrants
-                    ->map(fn ($grant): string => (string) ($grant->grantee?->full_name ?? __('Клиент')))
+                TextColumn::make('activeAccessGrants')->label(__('Делегированный доступ'))->state(fn (PatientProfile $record): string => $record->activeAccessGrants
+                    ->map(fn ($grant): string => $grant->grantee instanceof Client ? (string) $grant->grantee->full_name : __('Клиент'))
                     ->implode(', ') ?: __('Нет')),
             ])
             ->headerActions([
@@ -95,14 +93,14 @@ final class ClientPatientsRelationManager extends LocalizedRelationManager
                         app(GrantPatientAccess::class)->handle($actor, $record, $grantee, (int) $data['legal_document_id'], (string) $data['request_key']);
                     }),
                 Action::make('revokeMedicalAccess')->label(__('Отозвать медицинский доступ'))->color('danger')->requiresConfirmation()
-                    ->visible(fn (PatientProfile $record): bool => $canManage && $record->accessGrants->isNotEmpty())
+                    ->visible(fn (PatientProfile $record): bool => $canManage && $record->activeAccessGrants->isNotEmpty())
                     ->authorize($canManage)
                     ->schema([
-                        Select::make('grant_id')->label(__('Доступ'))->options(fn (PatientProfile $record): array => $record->accessGrants
-                            ->mapWithKeys(fn ($grant): array => [(int) $grant->getKey() => (string) ($grant->grantee?->full_name ?? __('Клиент'))])->all())->required()->native(false),
+                        Select::make('grant_id')->label(__('Доступ'))->options(fn (PatientProfile $record): array => $record->activeAccessGrants
+                            ->mapWithKeys(fn ($grant): array => [(int) $grant->getKey() => $grant->grantee instanceof Client ? (string) $grant->grantee->full_name : __('Клиент')])->all())->required()->native(false),
                     ])
                     ->action(function (PatientProfile $record, array $data) use ($actor): void {
-                        $grant = $record->accessGrants->firstWhere('id', (int) $data['grant_id']);
+                        $grant = $record->activeAccessGrants->firstWhere('id', (int) $data['grant_id']);
                         abort_unless($grant !== null, 404);
                         app(RevokePatientAccess::class)->handle($actor, $grant);
                     }),

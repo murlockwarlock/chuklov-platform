@@ -27,14 +27,16 @@ final class CreateLegalDocument extends LocalizedCreateRecord
             throw ValidationException::withMessages(['document_type' => __('Выберите тип документа.')]);
         }
 
+        $documentType = (string) ($data['document_type'] ?? '');
+
         return app(CreatePlatformLegalDocumentDraft::class)->handle(
             organization: app(OrganizationContext::class)->organization(),
-            documentType: $subject->value,
+            documentType: $documentType,
             purpose: (string) ($data['purpose'] ?? ''),
             locale: (string) ($data['locale'] ?? ''),
             version: (string) ($data['version'] ?? ''),
             content: (string) ($data['content'] ?? ''),
-            isRequired: $subject?->isRequired() ?? false,
+            isRequired: $subject instanceof ConsentSubject && $subject->isRequired(),
         );
     }
 }

@@ -74,7 +74,7 @@ final readonly class GrantPatientAccess
             if ($existingRequest instanceof PatientAccessGrant) {
                 if ((int) $existingRequest->patient_profile_id !== (int) $lockedPatient->getKey()
                     || (int) $existingRequest->grantee_client_id !== (int) $lockedGrantee->getKey()
-                    || $existingRequest->scope !== $scope) {
+                    || (string) $existingRequest->getRawOriginal('scope') !== $scope->value) {
                     throw ValidationException::withMessages(['request_key' => __('Этот запрос уже использован для другой связи.')]);
                 }
 

@@ -32,6 +32,12 @@ class PatientProfile extends Model
         return $this->hasMany(PatientAccessGrant::class, 'patient_profile_id');
     }
 
+    /** @return HasMany<PatientAccessGrant, $this> */
+    public function activeAccessGrants(): HasMany
+    {
+        return $this->accessGrants()->whereNull('revoked_at');
+    }
+
     public function isAdult(): bool
     {
         return $this->birth_date !== null && $this->birth_date->lessThanOrEqualTo(CarbonImmutable::today('UTC')->subYears(18));

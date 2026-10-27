@@ -5,6 +5,7 @@ namespace App\Modules\Identity\Application;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\PatientAccessGrant;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -25,10 +26,14 @@ final readonly class RevokePatientAccess
             ->whereKey($grant->getKey())
             ->with('patient')
             ->firstOrFail();
+        $patient = $grant->patient;
+        if (! $patient instanceof PatientProfile) {
+            throw new AuthorizationException;
+        }
         if ($actor instanceof User) {
-            $this->access->authorizeOwner($actor, $grant->patient);
+            $this->access->authorizeOwner($actor, $patient);
         } elseif ((int) $grant->grantee_client_id !== (int) $actor->getKey()) {
-            $this->access->authorizeOwner($actor, $grant->patient);
+            $this->access->authorizeOwner($actor, $patient);
         }
 
         DB::transaction(function () use ($actor, $grant): void {
