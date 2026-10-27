@@ -23,6 +23,7 @@ class SubmitB2bLeadRequest extends FormRequest
                 'regex:/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:Z|[+-]\\d{2}:\\d{2})$/',
             ],
             'submission_key' => ['required', 'string', 'max:128'],
+            'form_answers' => ['sometimes', 'array'],
         ];
     }
 }

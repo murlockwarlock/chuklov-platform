@@ -49,6 +49,14 @@ final class B2bLeadInfolist
                     ->placeholder(__('Ссылка пока не готова')),
                 TextEntry::make('salesCall.manual_meeting_url')->label(__('Ручная ссылка'))->url(fn (B2bLead $record): ?string => $record->salesCall->manual_meeting_url)->openUrlInNewTab()->placeholder('—'),
             ])->columns(2),
+            Section::make(__('Ответы из заявки'))->schema([
+                TextEntry::make('form_answers')
+                    ->label(__('Поля формы'))
+                    ->state(fn (B2bLead $record): string => self::formAnswers($record))
+                    ->placeholder(__('Дополнительных полей не было'))
+                    ->columnSpanFull(),
+            ])->visible(fn (B2bLead $record): bool => $record->form_answers !== null && $record->form_answers !== [])
+                ->columnSpanFull(),
         ]);
     }
 
@@ -85,5 +93,19 @@ final class B2bLeadInfolist
         }
 
         return $call->meeting_mode === VideoMeetingMode::Manual ? $call->manual_meeting_url : $call->provider_join_url;
+    }
+
+    private static function formAnswers(B2bLead $record): string
+    {
+        $labels = collect($record->form_schema ?? [])->keyBy('key');
+        $lines = [];
+        foreach ((array) $record->form_answers as $key => $value) {
+            $field = $labels->get($key);
+            $label = is_array($field) ? (string) ($field['label'] ?? $key) : $key;
+            $display = is_bool($value) ? ($value ? __('Да') : __('Нет')) : trim((string) $value);
+            $lines[] = $label.': '.($display === '' ? '—' : $display);
+        }
+
+        return implode("\n", $lines);
     }
 }

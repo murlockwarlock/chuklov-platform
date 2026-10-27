@@ -35,6 +35,13 @@ type CurrentRequest = {
     meetingStatus: 'ready' | 'automatic_pending' | 'manual_pending' | 'needs_sync';
     meetingUrl: string | null;
 };
+type B2bFormField = {
+  key: string;
+  label: string;
+  type: 'text' | 'textarea' | 'select' | 'checkbox';
+  required: boolean;
+  options: Array<{ value: string; label: string }>;
+};
 
 const props = defineProps<{
     portal: PortalShell;
@@ -48,6 +55,7 @@ const props = defineProps<{
     configurationReady: boolean;
     configurationIssue: 'missing_duration' | 'zoom_duration_exceeds_capability' | null;
     currentRequest: CurrentRequest | null;
+  formConfiguration: { version: number | null; fields: B2bFormField[] };
     urls: { answer: string; page: string; submit: string; login: string };
 }>();
 
@@ -63,10 +71,12 @@ const leadForm = useForm<{
     specialist_id: number | null;
     starts_at: string;
     submission_key: string;
+  form_answers: Record<string, string | boolean | null>;
 }>({
     specialist_id: props.selectedSpecialistId,
     starts_at: '',
     submission_key: crypto.randomUUID(),
+  form_answers: Object.fromEntries(props.formConfiguration.fields.map((field) => [field.key, field.type === 'checkbox' ? false : ''])),
 });
 const selectedStart = ref<string | null>(null);
 const selectedDate = ref<string | null>(null);
@@ -177,6 +187,10 @@ function selectSlot(slot: AvailabilitySlot): void {
 
 function submitLead(): void {
     leadForm.post(props.urls.submit, { preserveScroll: true });
+}
+
+function formError(key: string): string | undefined {
+  return (leadForm.errors as Record<string, string | undefined>)[`form_answers.${key}`];
 }
 
 function requestDate(value: string, timezone: string): string {
@@ -384,6 +398,72 @@ function requestTime(value: string, timezone: string): string {
                 {{ specialist.displayName }}
               </option>
             </select>
+          </div>
+          <div
+            v-for="field in props.formConfiguration.fields"
+            :key="field.key"
+            class="portal-field"
+          >
+            <label
+              v-if="field.type !== 'checkbox'"
+              :for="`b2b-field-${field.key}`"
+              class="portal-label"
+            >{{ field.label }}<span v-if="field.required"> *</span></label>
+            <textarea
+              v-if="field.type === 'textarea'"
+              :id="`b2b-field-${field.key}`"
+              v-model="leadForm.form_answers[field.key]"
+              class="portal-input"
+              rows="3"
+              :required="field.required"
+              :aria-invalid="Boolean(formError(field.key))"
+            />
+            <select
+              v-else-if="field.type === 'select'"
+              :id="`b2b-field-${field.key}`"
+              v-model="leadForm.form_answers[field.key]"
+              class="portal-input portal-select"
+              :required="field.required"
+              :aria-invalid="Boolean(formError(field.key))"
+            >
+              <option value="">
+                {{ t('b2b.chooseOption') }}
+              </option>
+              <option
+                v-for="option in field.options"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+            <label
+              v-else-if="field.type === 'checkbox'"
+              class="portal-confirm"
+            >
+              <input
+                :id="`b2b-field-${field.key}`"
+                v-model="leadForm.form_answers[field.key]"
+                type="checkbox"
+                class="portal-checkbox"
+              >
+              <span>{{ field.label }}<span v-if="field.required"> *</span></span>
+            </label>
+            <input
+              v-else
+              :id="`b2b-field-${field.key}`"
+              v-model="leadForm.form_answers[field.key]"
+              type="text"
+              class="portal-input"
+              :required="field.required"
+              :aria-invalid="Boolean(formError(field.key))"
+            >
+            <p
+              v-if="formError(field.key)"
+              class="portal-error"
+            >
+              {{ formError(field.key) }}
+            </p>
           </div>
           <p
             v-if="!props.configurationReady"
