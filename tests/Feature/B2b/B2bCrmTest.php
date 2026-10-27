@@ -2,10 +2,14 @@
 
 namespace Tests\Feature\B2b;
 
+use App\Filament\Pages\B2bFormConfiguration as B2bFormConfigurationPage;
 use App\Filament\Resources\B2bLeads\Pages\ListB2bLeads;
 use App\Filament\Resources\B2bLeads\Pages\ViewB2bLead;
 use App\Models\User;
+use App\Modules\B2B\Application\GetPublishedB2bForm;
 use App\Modules\B2B\Application\ListB2bLeadsForCrm;
+use App\Modules\B2B\Domain\Enums\B2bFormConfigurationStatus;
+use App\Modules\B2B\Domain\Models\B2bFormConfiguration;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\Identity\Domain\Models\Client;
@@ -76,6 +80,41 @@ final class B2bCrmTest extends TestCase
         } catch (AuthorizationException) {
             self::assertTrue(true);
         }
+    }
+
+    public function test_authorized_admin_can_save_reopen_and_publish_human_business_form_fields(): void
+    {
+        [$organization, $admin] = $this->leadFixture();
+        $this->setOrganization($organization);
+        $panel = Filament::getPanel('admin');
+        self::assertNotNull($panel);
+        Filament::setCurrentPanel($panel);
+
+        $fields = [[
+            'key' => 'consultation_goal',
+            'label' => 'Цель консультации',
+            'type' => 'text',
+            'required' => true,
+            'active' => true,
+            'sort_order' => 0,
+            'options' => [],
+        ]];
+
+        Livewire::actingAs($admin)
+            ->test(B2bFormConfigurationPage::class)
+            ->set('data.fields', $fields)
+            ->call('save')
+            ->assertNotified('Черновик полей сохранён')
+            ->call('publish')
+            ->assertNotified('Поля заявки опубликованы');
+
+        $published = B2bFormConfiguration::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('status', B2bFormConfigurationStatus::Published->value)
+            ->sole();
+        self::assertSame('Цель консультации', $published->fields[0]['label']);
+        self::assertSame($fields[0]['key'], $published->fields[0]['key']);
+        self::assertSame($fields, app(GetPublishedB2bForm::class)->handle()['fields']);
     }
 
     public function test_view_record_actions_refresh_new_state_and_keep_lead_close_separate_from_call_cancel(): void
