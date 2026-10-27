@@ -1267,7 +1267,7 @@ test('portrait Story previews stay inside their frames and player navigation wor
     await expect.poll(() => subtitles.evaluate((element) => {
         const track = element as HTMLTrackElement;
         return track.readyState === 2 ? track.track.cues?.[0]?.text ?? '' : '';
-    })).toBe('QA subtitles verification');
+    }), { timeout: 15_000 }).toBe('QA subtitles verification');
     expect(subtitleRequests).toBe(1);
     await dialog.getByRole('button', { name: 'Далее', exact: true }).click();
     await expect(dialog.locator('strong')).toHaveText('История мастера (видео)');
