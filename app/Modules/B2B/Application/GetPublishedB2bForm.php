@@ -19,12 +19,15 @@ final readonly class GetPublishedB2bForm
             ->latest('version')
             ->first();
 
+        $fields = $configuration === null ? [] : (array) $configuration->getAttribute('fields');
+        $activeFields = array_filter(
+            $fields,
+            static fn (mixed $field): bool => is_array($field) && ($field['active'] ?? true) === true,
+        );
+
         return [
             'version' => $configuration?->version,
-            'fields' => array_values(array_filter(
-                $configuration?->fields ?? [],
-                static fn (mixed $field): bool => is_array($field) && ($field['active'] ?? true) === true,
-            )),
+            'fields' => array_values($activeFields),
         ];
     }
 }

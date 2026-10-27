@@ -28,7 +28,7 @@ final readonly class PublishB2bFormConfiguration
         if ((int) $configuration->organization_id !== (int) $organization->getKey()) {
             throw ValidationException::withMessages(['configuration' => 'Конфигурация принадлежит другой организации.']);
         }
-        $fields = $this->validator->handle($configuration->fields ?? []);
+        $fields = $this->validator->handle((array) $configuration->getAttribute('fields'));
 
         return DB::transaction(function () use ($actor, $organization, $configuration, $fields): B2bFormConfiguration {
             $locked = B2bFormConfiguration::query()->where('organization_id', $organization->getKey())->whereKey($configuration->getKey())->lockForUpdate()->firstOrFail();

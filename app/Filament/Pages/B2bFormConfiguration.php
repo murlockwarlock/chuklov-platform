@@ -74,7 +74,8 @@ final class B2bFormConfiguration extends LocalizedPage
             ->whereIn('status', [B2bFormConfigurationStatus::Draft->value, B2bFormConfigurationStatus::Published->value])
             ->latest('version')
             ->first();
-        $this->form->fill(['fields' => $configuration?->fields ?? []]);
+        $fields = $configuration === null ? [] : (array) $configuration->getAttribute('fields');
+        $this->form->fill(['fields' => $fields]);
     }
 
     public function form(Schema $schema): Schema

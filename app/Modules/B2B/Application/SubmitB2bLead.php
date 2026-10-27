@@ -47,6 +47,9 @@ final class SubmitB2bLead
         private readonly RecordAuditEvent $audit,
     ) {}
 
+    /**
+     * @param  array<string, mixed>|null  $formAnswers
+     */
     public function handle(
         User|Client $actor,
         Client $client,
@@ -366,6 +369,7 @@ final class SubmitB2bLead
         return $url;
     }
 
+    /** @param array<string, mixed> $formAnswers */
     private function requestHash(
         int $clientId,
         int $specialistId,

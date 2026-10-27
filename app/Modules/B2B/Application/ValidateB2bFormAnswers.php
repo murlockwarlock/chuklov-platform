@@ -7,10 +7,13 @@ use Illuminate\Validation\ValidationException;
 
 final readonly class ValidateB2bFormAnswers
 {
-    /** @param array<string, mixed> $answers @return array<string, mixed> */
+    /**
+     * @param  array<string, mixed>  $answers
+     * @return array<string, mixed>
+     */
     public function handle(B2bFormConfiguration $configuration, array $answers): array
     {
-        $fields = app(ValidateB2bFormDefinition::class)->handle($configuration->fields ?? []);
+        $fields = app(ValidateB2bFormDefinition::class)->handle((array) $configuration->getAttribute('fields'));
         $allowed = [];
         foreach ($fields as $field) {
             if (($field['active'] ?? true) !== true) {

@@ -6,7 +6,10 @@ use Illuminate\Validation\ValidationException;
 
 final class ValidateB2bFormDefinition
 {
-    /** @param array<int, mixed> $fields */
+    /**
+     * @param  array<int, mixed>  $fields
+     * @return array<int, array<string, mixed>>
+     */
     public function handle(array $fields): array
     {
         if (count($fields) > 30) {
