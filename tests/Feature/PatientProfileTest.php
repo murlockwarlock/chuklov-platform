@@ -7,10 +7,14 @@ use App\Modules\Identity\Application\AcceptPatientInvitation;
 use App\Modules\Identity\Application\BindPatientInvitationToAccount;
 use App\Modules\Identity\Application\CreatePatientProfile;
 use App\Modules\Identity\Application\EnsureSelfPatientProfile;
+use App\Modules\Identity\Application\GrantPatientAccess;
 use App\Modules\Identity\Application\IssuePatientInvitation;
 use App\Modules\Identity\Application\ResolvePatientClinicalClient;
+use App\Modules\Identity\Application\RevokePatientAccess;
 use App\Modules\Identity\Application\RevokePatientRelationship;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\LegalDocument;
+use App\Modules\Identity\Domain\Models\PatientAccessGrant;
 use App\Modules\Identity\Domain\Models\PatientInvitation;
 use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
@@ -276,6 +280,66 @@ final class PatientProfileTest extends TestCase
         $patient = $this->patient($owner, ['birth_date' => now()->subYears(7)->toDateString(), 'relationship' => 'CHILD']);
         $this->expectException(ValidationException::class);
         app(IssuePatientInvitation::class)->handle($owner, $patient, '00000000-0000-4000-8000-000000000002');
+    }
+
+    public function test_delegated_medical_access_requires_published_policy_is_idempotent_and_revokes_cleanly(): void
+    {
+        $owner = $this->account();
+        $patient = $this->patient($owner);
+        $delegate = Client::factory()->forOrganization($owner->organization)->create([
+            'birth_date' => '1988-03-04',
+            'first_name' => 'Delegate',
+            'last_name' => 'Account',
+        ]);
+        $policy = LegalDocument::factory()->forOrganization($owner->organization)->create([
+            'document_type' => 'delegated_medical_access',
+            'purpose' => 'delegated_medical_access_policy',
+            'is_required' => false,
+            'status' => 'published',
+            'published_at' => now(),
+            'effective_at' => now(),
+            'version' => 'qa-2026-10-27',
+        ]);
+
+        $grant = app(GrantPatientAccess::class)->handle(
+            actor: $owner,
+            patient: $patient,
+            grantee: $delegate,
+            legalDocumentId: (int) $policy->getKey(),
+            requestKey: '00000000-0000-4000-8000-000000000021',
+        );
+        $replayed = app(GrantPatientAccess::class)->handle(
+            actor: $owner,
+            patient: $patient->refresh(),
+            grantee: $delegate,
+            legalDocumentId: (int) $policy->getKey(),
+            requestKey: '00000000-0000-4000-8000-000000000021',
+        );
+        self::assertSame($grant->getKey(), $replayed->getKey());
+        self::assertSame($patient->clinical_client_id, app(ResolvePatientClinicalClient::class)->handle($delegate, (int) $patient->getKey())->getKey());
+        self::assertSame(1, PatientAccessGrant::query()->count());
+        self::assertSame(1, AuditEvent::query()->where('action', 'patient.access.granted')->count());
+
+        app(RevokePatientAccess::class)->handle($owner, $grant->refresh());
+        app(RevokePatientAccess::class)->handle($owner, $grant->refresh());
+        $this->expectException(AuthorizationException::class);
+        app(ResolvePatientClinicalClient::class)->handle($delegate, (int) $patient->getKey());
+    }
+
+    public function test_delegated_medical_access_without_published_policy_is_fail_closed(): void
+    {
+        $owner = $this->account();
+        $patient = $this->patient($owner);
+        $delegate = Client::factory()->forOrganization($owner->organization)->create(['birth_date' => '1988-03-04']);
+
+        $this->expectException(ValidationException::class);
+        app(GrantPatientAccess::class)->handle(
+            actor: $owner,
+            patient: $patient,
+            grantee: $delegate,
+            legalDocumentId: 999999,
+            requestKey: '00000000-0000-4000-8000-000000000022',
+        );
     }
 
     public function test_foreign_account_cannot_manage_profile_or_consume_bound_invitation(): void

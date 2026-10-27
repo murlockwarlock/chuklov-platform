@@ -7,10 +7,12 @@ use App\Modules\Identity\Domain\Models\PatientProfile;
 
 final class PatientProfileProjection
 {
+    public function __construct(private readonly PatientProfileAccess $access) {}
+
     /** @return array<string, mixed> */
     public function handle(PatientProfile $patient, Client $viewer): array
     {
-        $isSubject = (int) $patient->linked_account_client_id === (int) $viewer->getKey();
+        $isSubject = $this->access->allowsClinicalSubject($viewer, $patient);
         $isOwner = (int) $patient->owner_client_id === (int) $viewer->getKey();
         $relationship = match ($patient->relationship) {
             'SELF' => __('Вы'),

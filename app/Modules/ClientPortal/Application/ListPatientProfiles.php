@@ -6,6 +6,7 @@ use App\Modules\Identity\Application\EnsureSelfPatientProfile;
 use App\Modules\Identity\Application\PatientProfileAccess;
 use App\Modules\Identity\Application\PatientProfileProjection;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\PatientAccessGrant;
 use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
@@ -56,10 +57,23 @@ final readonly class ListPatientProfiles
     {
         $this->access->authorizeAccount($account);
         $this->selfProfiles->handle($account);
+        $patientTable = (new PatientProfile)->getTable();
+        $grantTable = (new PatientAccessGrant)->getTable();
 
-        return PatientProfile::query()->where('organization_id', $this->context->id())
+        return PatientProfile::query()->where($patientTable.'.organization_id', $this->context->id())
             ->where(fn (Builder $query) => $query->where(fn (Builder $query) => $query->where('owner_client_id', $account->getKey())->when(! $includeRevoked, fn (Builder $owned) => $owned->whereNull('owner_revoked_at')))
-                ->orWhere('linked_account_client_id', $account->getKey()))
-            ->with('clinicalClient:id,organization_id,full_name');
+                ->orWhere('linked_account_client_id', $account->getKey())
+                ->orWhereExists(fn ($grants): mixed => $grants
+                    ->from($grantTable)
+                    ->whereColumn($grantTable.'.patient_profile_id', $patientTable.'.id')
+                    ->where($grantTable.'.organization_id', $this->context->id())
+                    ->where($grantTable.'.grantee_client_id', $account->getKey())
+                    ->where($grantTable.'.scope', 'medical_records')
+                    ->whereNull($grantTable.'.revoked_at')
+                    ->whereNull($patientTable.'.owner_revoked_at')))
+            ->with(['clinicalClient:id,organization_id,full_name', 'accessGrants' => fn ($grants) => $grants
+                ->where('grantee_client_id', $account->getKey())
+                ->whereNull('revoked_at')
+                ->with('grantee:id,organization_id,full_name')]);
     }
 }

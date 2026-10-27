@@ -12,7 +12,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipientStrategy;
-use App\Modules\Scheduling\Application\BookingPatientAccounts;
+use App\Modules\Scheduling\Application\ResolveBookingNotificationRecipients;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Support\SupportedLocale;
@@ -20,7 +20,7 @@ use Illuminate\Database\Eloquent\Collection;
 
 final class OrganizationScenarioRecipientResolver implements ScenarioRecipientResolver
 {
-    public function __construct(private readonly ScenarioEventPermissionPolicy $permissions) {}
+    public function __construct(private readonly ScenarioEventPermissionPolicy $permissions, private readonly ResolveBookingNotificationRecipients $bookingRecipients) {}
 
     /** @return list<ScenarioRecipient> */
     public function resolve(ScenarioRule $rule, ScenarioEvent $event): array
@@ -47,7 +47,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
                 return [];
             }
 
-            return array_values(app(BookingPatientAccounts::class)->handle($booking)->map(fn (Client $account): ScenarioRecipient => new ScenarioRecipient(
+            return array_values($this->bookingRecipients->handle($booking)->map(fn (Client $account): ScenarioRecipient => new ScenarioRecipient(
                 type: 'client', clientId: (int) $account->getKey(), userId: null, locale: $this->locale($account->language),
             ))->values()->all());
         }

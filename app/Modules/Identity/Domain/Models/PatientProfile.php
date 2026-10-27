@@ -5,6 +5,7 @@ namespace App\Modules\Identity\Domain\Models;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property CarbonImmutable|null $birth_date
@@ -23,6 +24,12 @@ class PatientProfile extends Model
     public function owner(): BelongsTo
     {
         return $this->belongsTo(Client::class, 'owner_client_id');
+    }
+
+    /** @return HasMany<PatientAccessGrant, $this> */
+    public function accessGrants(): HasMany
+    {
+        return $this->hasMany(PatientAccessGrant::class, 'patient_profile_id');
     }
 
     public function isAdult(): bool

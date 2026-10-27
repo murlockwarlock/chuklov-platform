@@ -174,6 +174,7 @@ final class LegalDocumentResource extends LocalizedResource
     {
         return collect(ConsentSubject::cases())
             ->mapWithKeys(fn (ConsentSubject $subject): array => [$subject->value => $subject->label(app()->getLocale())])
+            ->put('delegated_medical_access', __('Делегированный медицинский доступ'))
             ->all();
     }
 
@@ -181,9 +182,14 @@ final class LegalDocumentResource extends LocalizedResource
     {
         $subject = is_string($documentType) ? ConsentSubject::tryFrom($documentType) : null;
 
-        return $subject?->isRequired() === true
-            ? __('Да — требуется при создании записи')
-            : __('Нет — отдельное необязательное согласие');
+        if ($subject?->isRequired() === true) {
+            return __('Да — требуется при создании записи');
+        }
+        if ($documentType === 'delegated_medical_access') {
+            return __('Нет — подтверждается отдельным доступом');
+        }
+
+        return __('Нет — отдельное необязательное согласие');
     }
 
     private static function statusLabel(LegalDocumentStatus $status): string

@@ -3,7 +3,9 @@
 namespace App\Modules\Identity\Application;
 
 use App\Models\User;
+use App\Modules\Identity\Domain\Enums\PatientAccessGrantScope;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\PatientAccessGrant;
 use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -57,10 +59,28 @@ final readonly class PatientProfileAccess
     public function authorizeClinicalSubject(Client $actor, PatientProfile $patient): void
     {
         $this->authorizeAccount($actor);
-        if ((int) $patient->organization_id !== $this->context->id()
-            || (int) $patient->linked_account_client_id !== (int) $actor->getKey()) {
+        if (! $this->allowsClinicalSubject($actor, $patient)) {
             throw new AuthorizationException;
         }
+    }
+
+    public function allowsClinicalSubject(Client $actor, PatientProfile $patient): bool
+    {
+        if ((int) $patient->organization_id !== $this->context->id()
+            || $patient->owner_revoked_at !== null) {
+            return false;
+        }
+        if ((int) $patient->linked_account_client_id === (int) $actor->getKey()) {
+            return true;
+        }
+
+        return PatientAccessGrant::query()
+            ->where('organization_id', $this->context->id())
+            ->where('patient_profile_id', $patient->getKey())
+            ->where('grantee_client_id', $actor->getKey())
+            ->where('scope', PatientAccessGrantScope::MedicalRecords)
+            ->whereNull('revoked_at')
+            ->exists();
     }
 
     public function authorizeClinicalClient(Client $actor, Client $subject): void

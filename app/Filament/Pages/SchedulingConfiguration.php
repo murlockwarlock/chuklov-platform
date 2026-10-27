@@ -27,6 +27,7 @@ use App\Modules\Scheduling\Application\SetBookingCancellationCutoff;
 use App\Modules\Scheduling\Application\SetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetOnlineConsultationService;
 use App\Modules\Scheduling\Application\UpdateWorkingLocation;
+use App\Modules\Scheduling\Domain\Enums\PatientNotificationRecipientPolicy;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
@@ -118,6 +119,9 @@ class SchedulingConfiguration extends LocalizedPage
             'office_location' => $organization->settings()
                 ->where('setting_key', OrganizationSettingKey::OfficeLocation->value)
                 ->value('string_value'),
+            'patient_notification_recipients' => $organization->settings()
+                ->where('setting_key', OrganizationSettingKey::PatientNotificationRecipients->value)
+                ->value('string_value') ?? PatientNotificationRecipientPolicy::Both->value,
             'client_reminders' => $this->reminderRows('client'),
             'specialist_reminders' => $this->reminderRows('specialist'),
             'zoom_enabled' => $zoom['enabled'],
@@ -174,6 +178,12 @@ class SchedulingConfiguration extends LocalizedPage
                     ->label(__('Адрес приёма по умолчанию'))
                     ->helperText(__('Подставляется в новые записи в кабинете. Адрес уже созданных записей не изменится.'))
                     ->maxLength(500),
+                Select::make('patient_notification_recipients')
+                    ->label(__('Кому отправлять уведомления о записи'))
+                    ->options(collect(PatientNotificationRecipientPolicy::cases())->mapWithKeys(fn (PatientNotificationRecipientPolicy $policy): array => [$policy->value => $policy->label()])->all())
+                    ->required()
+                    ->native(false)
+                    ->helperText(__('Настройка применяется к уведомлениям о записи пациента и связанных с ней изменениях.')),
                 Section::make(__('Напоминания о записи'))
                     ->description(__('Выберите, кому и за сколько до визита отправлять напоминание. Напоминания строятся от времени начала записи и отправляются автоматически. Если время уже прошло, уведомление задним числом не отправляется. Для ранее созданных записей сохраните настройки ещё раз.'))
                     ->schema([
@@ -284,6 +294,11 @@ class SchedulingConfiguration extends LocalizedPage
                     $actor,
                     OrganizationSettingKey::DefaultTimezone,
                     (string) $data['default_timezone'],
+                );
+                app(SetOrganizationSetting::class)->handle(
+                    $actor,
+                    OrganizationSettingKey::PatientNotificationRecipients,
+                    (string) ($data['patient_notification_recipients'] ?? PatientNotificationRecipientPolicy::Both->value),
                 );
                 app(SetOrganizationSetting::class)->handle(
                     $actor,
