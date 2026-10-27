@@ -10,4 +10,4 @@ Draft saves and completion validate answer types and bound free-text payloads be
 
 Repeat comparison requires the same non-empty `metric_schema_key` and an explicit `no_decrease` configuration with named metric keys. Missing or incompatible schemas create `not_comparable`; no judgment event is emitted. Compatible attempts emit `TEST_STAGNATION_DETECTED` once only when none of the configured metrics decreased. Message tone and recipients remain Scenario configuration.
 
-The approved local v2.2 source names “9 systems” and MSQ but refers their omitted questionnaire bodies to separate documents that are not present. OQ-015 blocks activation of those initial definitions, not the engine or import contract.
+The approved local v2.2 source names “9 systems” and MSQ but refers their omitted questionnaire bodies to separate documents that are not present. OQ-015 keeps activation of the approved authored definitions fail-closed until that content is supplied; it does not block the engine, CRM configuration, import contract, Portal completion, or report lifecycle.

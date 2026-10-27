@@ -27,5 +27,5 @@ The binary DOCX files remain outside the repository. The normalized Markdown and
 | --- | --- | --- |
 | Appendix 1 onboarding source | FOUND | Normalized in `appendix-1-normalized.md` |
 | Appendix 2 specialized-agent prompt source | FOUND | Normalized in `appendix-2-normalized.md` |
-| 9 systems/MSQ questionnaire bodies, scoring, thresholds, tags, result text, and locale/licensing rules | MISSING SOURCE | OQ-015 remains open and is the only reason that source question remains blocked |
-| Appendix 2 posture “JSON vector shifts” schema | MISSING SOURCE | The appendix names the concept but does not define a complete authoritative schema; no permanent schema is invented |
+| 9 systems/MSQ questionnaire bodies, scoring, thresholds, tags, result text, and locale/licensing rules | CONTENT NOT PROVIDED | OQ-015 remains open for replacing synthetic/configured definitions and activating approved authored content; the engine and owner configuration path are implementation-ready |
+| Appendix 2 posture “JSON vector shifts” schema | SEMANTIC SCHEMA NOT PROVIDED | The appendix names the concept but does not define a complete authoritative schema; no permanent schema is invented, while surrounding storage/configuration seams remain available |

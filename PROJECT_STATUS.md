@@ -1,12 +1,16 @@
 # Project Status
 
+## Current implementation policy — 2026-10-27
+
+Missing authored business data or content is not a development blocker. The M8 survey engine, CRM builder, versioning, scoring, import boundary, Portal completion, and report lifecycle are implementation-ready and must be verified with synthetic configuration; OQ-015 tracks only replacement/activation of the approved 9-systems/MSQ content. Historical entries below retain their original status wording.
+
 ## 2026-09-09 — M15 Production Hardening / Release Candidate
 
 - Chuklov v2.2 expects Tracker daily/weekly follow-up over Road Map items and monthly practice content. M12 currently supports entitlement, free mode, check-ins, and Scenario access; the full source-backed Road Map/9-systems/MSQ methodology is unavailable. This candidate preserves the Scenario Engine extension point and does not invent exercises, hydration targets, scores, percentages, or clinical recommendations; generic CRM-configurable daily/weekly tasks remain an owner decision.
 
 - M15 is `IN_PROGRESS` from starting main SHA `d88bd56fbbc3287a9a4cfe936f95f665332f2a94` on branch `codex/m15-production-hardening`. This candidate is limited to production hardening, concrete release-blocking fixes, critical-journey verification, security and recovery evidence, and one Draft PR; no new product scope is planned.
 - M12 core — tracker plans, entitlements, and free mode — is `OWNER ACCEPTED / MERGED` at the starting SHA. Recurring billing and real payment adapters remain deferred; M13 is `BLOCKED` pending payment-provider selection.
-- M8 remains `BLOCKED` by the missing source-backed 9-systems/MSQ definitions. M14 optional MAX/Instagram channels are out of the current release scope.
+- M8 authored 9-systems/MSQ content is not configured; implementation is configuration-ready and activation remains fail-closed until approved content exists. M14 optional MAX/Instagram channels are out of the current release scope.
 - M15 hardening, PostgreSQL, backup/restore, and staging evidence is being recorded in this candidate. Owner acceptance and merge remain unclaimed, and production remains `NOT DEPLOYED`.
 
 ## 2026-09-06 — PR #33 audit remediation candidate
@@ -374,7 +378,7 @@
 - Last updated: 2026-08-29
 - Current phase: Phase 1 foundation
 - Current milestone: M11D — B2B lead funnel / Zoom sales handoff (implementation candidate)
-- Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS; M11A, M11B, and M11C are merged and preserved, while M11D remains pending independent re-review, PostgreSQL verification, hosted gates, staging/manual acceptance, and owner acceptance. M8 remains BLOCKED by OQ-015, OQ-007 remains OPEN, and M12 remains NOT_STARTED.
+- Status: M0–M7, M9–M10, Stage 10.1, and Stage 10.2 are CLOSED / ACCEPTED. M11 is IN_PROGRESS; M11A, M11B, and M11C are merged and preserved, while M11D remains pending independent re-review, PostgreSQL verification, hosted gates, staging/manual acceptance, and owner acceptance. M8 implementation is configuration-ready; OQ-015 tracks authored content replacement/activation only. OQ-007 remains OPEN, and M12 remains NOT_STARTED.
 
 ## Milestone 7 Final Slice — Session Files + Longitudinal Dynamics — CLOSED / ACCEPTED — 2026-08-16
 

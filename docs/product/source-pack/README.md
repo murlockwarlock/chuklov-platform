@@ -13,4 +13,4 @@ Contents:
 - [onboarding acceptance matrix](onboarding-acceptance-matrix.md) — Appendix 1 against current product behavior.
 - [prompt drafts](ai-prompt-bundles/) — safe draft bundles for the existing prompt/version import path.
 
-The complete 9 systems/MSQ questionnaire body and scoring source is not part of either recovered appendix and remains blocked by OQ-015.
+The complete 9 systems/MSQ questionnaire body and scoring source is not part of either recovered appendix. OQ-015 records the content required to replace synthetic/configured definitions and activate the approved authored material; the survey implementation and configuration workflow are not blocked.

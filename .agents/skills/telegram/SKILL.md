@@ -12,4 +12,4 @@ description: Implement Telegram transport and Mini App integration through Nutgr
 5. Do not log tokens, raw sensitive updates, payment data, or health data.
 6. Design idempotency for retried updates before enabling external delivery.
 7. Fake transport in tests and avoid live Telegram calls in CI.
-8. Keep MAX, Instagram, and other channel work deferred until their milestone.
+8. Keep MAX, Instagram, and other channel work deferred only while the latest owner instruction and current authoritative requirements do not include that capability. If the current scope explicitly includes it, older milestone wording does not block implementation; use the existing channel boundary and safe provider/configuration defaults.
