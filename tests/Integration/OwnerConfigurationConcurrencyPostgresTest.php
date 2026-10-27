@@ -56,7 +56,8 @@ final class OwnerConfigurationConcurrencyPostgresTest extends TestCase
         $owner = Client::factory()->forOrganization($organization)->create();
         $clinicalClient = Client::factory()->forOrganization($organization)->create();
         $delegate = Client::factory()->forOrganization($organization)->create(['birth_date' => '1988-03-04']);
-        $patient = PatientProfile::query()->create([
+        $patient = new PatientProfile;
+        $patient->forceFill([
             'organization_id' => $organization->getKey(),
             'owner_client_id' => $owner->getKey(),
             'clinical_client_id' => $clinicalClient->getKey(),
@@ -66,6 +67,7 @@ final class OwnerConfigurationConcurrencyPostgresTest extends TestCase
             'gender' => 'MALE',
             'birth_date' => '2015-03-04',
         ]);
+        $patient->save();
         $policy = LegalDocument::factory()->forOrganization($organization)->published()->create([
             'document_type' => 'delegated_medical_access',
             'purpose' => 'delegated_medical_access_policy',
