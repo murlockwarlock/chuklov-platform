@@ -15,7 +15,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioDelivery;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
-use App\Modules\Scheduling\Application\BookingPatientAccounts;
+use App\Modules\Scheduling\Application\ResolveBookingNotificationRecipients;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Support\SupportedLocale;
@@ -29,6 +29,7 @@ final class AppointmentReminderScheduler
         private readonly ScenarioContextFactory $contextFactory,
         private readonly EnsureAppointmentReminderDefaults $defaults,
         private readonly MedicalProfileReminderPresentation $medicalProfile,
+        private readonly ResolveBookingNotificationRecipients $bookingRecipients,
     ) {}
 
     public function schedule(Booking $booking, ScenarioEvent $event): void
@@ -325,7 +326,7 @@ final class AppointmentReminderScheduler
     private function recipients(Booking $booking, string $recipientType): array
     {
         if ($recipientType === 'client') {
-            return array_values(app(BookingPatientAccounts::class)->handle($booking)
+            return array_values($this->bookingRecipients->handle($booking)
                 ->map(fn (Client $account): ScenarioRecipient => new ScenarioRecipient(type: 'client', clientId: (int) $account->getKey(),
                     userId: null, locale: $this->locale((string) $account->language)))->values()->all());
         }

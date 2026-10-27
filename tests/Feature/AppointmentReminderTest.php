@@ -5,14 +5,17 @@ namespace Tests\Feature;
 use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationDeliveryOutcome;
+use App\Modules\Identity\Application\CreatePatientProfile;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
 use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\AppointmentReminderScheduler;
 use App\Modules\Scenarios\Application\EnsureAppointmentReminderDefaults;
@@ -31,6 +34,7 @@ use App\Modules\Scheduling\Application\CancelBooking;
 use App\Modules\Scheduling\Application\ConfirmBooking;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
+use App\Modules\Scheduling\Domain\Enums\PatientNotificationRecipientPolicy;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
@@ -117,6 +121,74 @@ final class AppointmentReminderTest extends TestCase
                 ->all(),
         );
         self::assertSame(ScenarioActionStatus::Scheduled, $actions->first()->status);
+    }
+
+    public function test_booking_reminder_recipients_follow_the_owner_policy_and_reload_idempotently(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $patient = app(CreatePatientProfile::class)->handle($client, [
+            'first_name' => 'Synthetic',
+            'last_name' => 'Patient',
+            'middle_name' => null,
+            'gender' => 'FEMALE',
+            'birth_date' => '1990-01-01',
+            'relationship' => 'SPOUSE',
+        ], '00000000-0000-4000-8000-000000000011');
+        $linked = Client::factory()->forOrganization($organization)->create([
+            'birth_date' => '1990-01-01',
+            'language' => 'ru',
+            'timezone' => 'UTC',
+        ]);
+        $patient->forceFill(['linked_account_client_id' => $linked->getKey()])->save();
+
+        app(SetOrganizationSetting::class)->handle(
+            $admin,
+            OrganizationSettingKey::PatientNotificationRecipients,
+            PatientNotificationRecipientPolicy::PatientOnly->value,
+        );
+        $patientBooking = $this->booking(
+            $organization,
+            $client,
+            $specialist,
+            $service,
+            VisitFormat::Office,
+            CarbonImmutable::now()->addDays(3),
+            'Synthetic office',
+        );
+        $patientBooking->forceFill(['patient_profile_id' => $patient->getKey()])->save();
+        $patientEvent = app(RecordScenarioEvent::class)->bookingConfirmed($patientBooking, 'recipient-policy-patient', CarbonImmutable::now());
+        app(AppointmentReminderScheduler::class)->schedule($patientBooking, $patientEvent);
+        app(AppointmentReminderScheduler::class)->schedule($patientBooking, $patientEvent);
+
+        $patientActions = ScenarioAction::query()->where('booking_id', $patientBooking->getKey())->where('kind', 'appointment_reminder')->get();
+        self::assertGreaterThan(0, $patientActions->count());
+        self::assertSame([$linked->getKey()], $patientActions->pluck('client_id')->filter()->unique()->values()->all());
+
+        app(SetOrganizationSetting::class)->handle(
+            $admin,
+            OrganizationSettingKey::PatientNotificationRecipients,
+            PatientNotificationRecipientPolicy::BookerOnly->value,
+        );
+        $bookerBooking = $this->booking(
+            $organization,
+            $client,
+            $specialist,
+            $service,
+            VisitFormat::Office,
+            CarbonImmutable::now()->addDays(4),
+            'Synthetic office',
+        );
+        $bookerBooking->forceFill(['patient_profile_id' => $patient->getKey()])->save();
+        $bookerEvent = app(RecordScenarioEvent::class)->bookingConfirmed($bookerBooking, 'recipient-policy-booker', CarbonImmutable::now());
+        app(AppointmentReminderScheduler::class)->schedule($bookerBooking, $bookerEvent);
+
+        $bookerActions = ScenarioAction::query()->where('booking_id', $bookerBooking->getKey())->where('kind', 'appointment_reminder')->get();
+        self::assertGreaterThan(0, $bookerActions->count());
+        self::assertSame([$client->getKey()], $bookerActions->pluck('client_id')->filter()->unique()->values()->all());
+        self::assertSame(
+            $patientActions->count(),
+            ScenarioAction::query()->where('booking_id', $patientBooking->getKey())->where('kind', 'appointment_reminder')->count(),
+        );
     }
 
     public function test_expired_offsets_are_not_scheduled_as_catch_up_messages_and_retries_are_idempotent(): void
