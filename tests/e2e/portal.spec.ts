@@ -1183,10 +1183,16 @@ test('portrait Story previews stay inside their frames and player navigation wor
     const fixture = createBookingFixture();
     execFileSync('php', ['artisan', 'tinker', '--execute', `
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->findOrFail(${fixture.clientId});
+        $titles = [
+            'story_author' => 'Кто такой Евгений Чуклов (видео)',
+            'story_history' => 'История мастера (видео)',
+            'story_method' => 'Авторский метод (видео)',
+            'story_details' => 'Подробно о методике (видео)',
+        ];
         foreach (array_keys(\\App\\Modules\\Content\\Application\\GetClientEntryMedia::STORIES) as $key) {
             \\App\\Modules\\Content\\Domain\\Models\\ContentSection::factory()->create([
                 'organization_id' => $client->organization_id,
-                'section_key' => $key, 'locale' => 'ru', 'is_visible' => true, 'delivery_mode' => 'mini_app',
+                'section_key' => $key, 'locale' => 'ru', 'title' => $titles[$key], 'is_visible' => true, 'delivery_mode' => 'mini_app',
                 'media' => [
                     'image' => 'content/'.$client->organization_id.'/'.\\Illuminate\\Support\\Str::uuid().'.png',
                     'video' => 'content/'.$client->organization_id.'/'.\\Illuminate\\Support\\Str::uuid().'.mp4',
@@ -1774,8 +1780,11 @@ test('new client can open personal diagnostics and gets a clear empty tests resu
     await expect(page).toHaveURL(/\/portal\/surveys$/);
     const emptyState = page.getByTestId('surveys-empty-state');
     await expect(emptyState.getByText('Пока нет доступных тестов. Вернитесь позже.', { exact: true })).toBeVisible();
-    await expect(emptyState.getByRole('link', { name: 'На главную', exact: true })).toHaveAttribute('href', '/');
-    await emptyState.getByRole('link', { name: 'На главную', exact: true }).click();
+    const homeLink = emptyState.getByRole('link', { name: 'На главную', exact: true });
+    const homeHref = await homeLink.getAttribute('href');
+    expect(homeHref).not.toBeNull();
+    expect(new URL(homeHref as string, page.url()).pathname).toBe('/');
+    await homeLink.click();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.getByTestId('home-health-action')).toBeVisible();
 });
