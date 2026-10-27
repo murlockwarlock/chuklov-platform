@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use App\Modules\Channels\Infrastructure\Telegram\SendTelegramWelcome;
+use App\Modules\Content\Application\AttachContentSubtitles;
 use App\Modules\Content\Application\AttachContentVideo;
 use App\Modules\Content\Application\GetClientEntryMedia;
 use App\Modules\Content\Domain\Models\ContentSection;
@@ -315,6 +316,52 @@ final class September26ContentVideoTest extends TestCase
 
         $this->expectException(TelegramException::class);
         app(SendTelegramWelcome::class)->handle($bot, 'ru');
+    }
+
+    public function test_story_subtitles_can_be_uploaded_and_invalid_files_do_not_replace_them(): void
+    {
+        $organization = Organization::factory()->create();
+        app(OrganizationContext::class)->set($organization);
+        config(['content_media.disk' => 'content-video-test']);
+        Storage::fake('content-video-test');
+        $actor = User::factory()->forOrganization($organization)->create();
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'story_author', 'locale' => 'ru', 'delivery_mode' => 'mini_app', 'is_visible' => true,
+        ]);
+        app(AttachContentSubtitles::class)->handle($actor, $section, UploadedFile::fake()->createWithContent('story.vtt', "WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nПривет\n"));
+        $path = $section->refresh()->media['subtitles'];
+        Storage::disk('content-video-test')->assertExists($path);
+        self::assertSame(Storage::disk('content-video-test')->url($path), app(GetClientEntryMedia::class)->handle('ru')['story_author']['subtitlesUrl']);
+
+        try {
+            app(AttachContentSubtitles::class)->handle($actor, $section, UploadedFile::fake()->createWithContent('bad.vtt', 'invalid'));
+            self::fail('Invalid subtitles must be rejected.');
+        } catch (ValidationException) {
+            self::assertSame($path, $section->refresh()->media['subtitles']);
+        }
+    }
+
+    public function test_story_order_and_titles_follow_the_published_locale_configuration(): void
+    {
+        $organization = Organization::factory()->create();
+        app(OrganizationContext::class)->set($organization);
+        $first = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'story_author', 'locale' => 'ru', 'delivery_mode' => 'mini_app',
+            'title' => 'Первое название', 'sort_order' => 20, 'is_visible' => true,
+        ]);
+        ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'story_method', 'locale' => 'ru', 'delivery_mode' => 'mini_app',
+            'title' => 'Второе название', 'sort_order' => 10, 'is_visible' => true,
+        ]);
+
+        $stories = array_slice(app(GetClientEntryMedia::class)->handle('ru'), 1, preserve_keys: true);
+        self::assertSame(['story_method', 'story_author'], array_slice(array_keys($stories), 0, 2));
+        self::assertSame('Первое название', $stories['story_author']['title']);
+
+        $first->update(['sort_order' => 1, 'title' => 'Новое название']);
+        $stories = array_slice(app(GetClientEntryMedia::class)->handle('ru'), 1, preserve_keys: true);
+        self::assertSame('story_author', array_key_first($stories));
+        self::assertSame('Новое название', $stories['story_author']['title']);
     }
 
     public function test_entry_media_respects_publication_and_the_selected_delivery_channel(): void

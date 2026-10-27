@@ -10,6 +10,7 @@ use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Content\Application\ContentImageUrlResolver;
 use App\Modules\Content\Application\ContentVideoUrlResolver;
+use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Support\RichText\RichTextDocument;
@@ -96,6 +97,8 @@ class ContentSectionForm
                     ->schema([
                         TextInput::make('media.subtitles')
                             ->label(__('Ссылка на субтитры WebVTT'))
+                            ->helperText(__('Или загрузите файл кнопкой «Загрузить субтитры» после сохранения раздела.'))
+                            ->dehydrated(fn (?ContentSection $record, mixed $state): bool => filled($state) || $record === null || ! app(ContentMediaStorageInterface::class)->isManagedPath((int) $record->organization_id, $record->media['subtitles'] ?? null))
                             ->url()
                             ->startsWith('https://')
                             ->nullable()
