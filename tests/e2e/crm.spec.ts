@@ -2731,7 +2731,10 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
     await page.getByLabel('Название причины*', { exact: true }).last().fill(causeName);
     await page.getByLabel('Группа', { exact: true }).last().fill('E2E причины');
-    const catalogSaveResponsePromise = page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/livewire'));
+    const catalogSaveResponsePromise = page.waitForResponse((response) => {
+        const postData = response.request().postData() ?? '';
+        return response.request().method() === 'POST' && response.url().includes('/livewire') && !postData.includes('"method":"$refresh"');
+    }, { timeout: 15_000 });
     await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
     const catalogSaveResponse = await catalogSaveResponsePromise;
     const catalogSaveResponseBody = await catalogSaveResponse.text();
