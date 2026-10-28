@@ -134,8 +134,8 @@ final class SessionForm
                             ->itemLabel(fn (array $state): string => filled($state['test_id'] ?? null) ? __('Выбранный тест') : __('Новый тест'))
                             ->addActionLabel(__('Добавить тест'))
                             ->columnSpanFull(),
-                        Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
-                        Textarea::make('observations')->label(__('Наблюдения'))->rows(3)->placeholder(__('Дополнительные наблюдения')),
+                        Hidden::make('tests')->dehydrated()->nullable(),
+                        Hidden::make('observations')->dehydrated()->nullable(),
                         Repeater::make('root_causes')
                             ->label(__('Первопричина нарушений'))
                             ->schema([

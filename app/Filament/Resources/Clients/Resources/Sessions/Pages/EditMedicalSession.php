@@ -87,7 +87,7 @@ class EditMedicalSession extends LocalizedEditRecord
                                 Select::make('frequency_mode')->label(__('Частота'))->options([
                                     'permanent' => __('Постоянно'),
                                     'count' => __('Количество раз за период'),
-                                ])->required()->live(),
+                                ])->default('permanent')->live(),
                                 TextInput::make('frequency_count')->label(__('Количество'))->integer()->minValue(1)->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count'),
                                 Select::make('frequency_period_unit')->label(__('Период'))->options(fn (Get $get): array => app(MedicalFrequencyPeriodCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), $get('frequency_period_unit')))->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count')->searchable(),
                                 CheckboxList::make('time_of_day')->label(__('Время суток'))->options([
@@ -96,7 +96,7 @@ class EditMedicalSession extends LocalizedEditRecord
                                     'day' => __('День'),
                                     'evening' => __('Вечер'),
                                     'night' => __('Ночь'),
-                                ])->columns(2)->default(['all'])->required(),
+                                ])->columns(2)->default(['all']),
                                 Slider::make('before_score')->label(__('До сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
                                 Slider::make('after_score')->label(__('После сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
                                 Placeholder::make('previous_after_score')
@@ -131,8 +131,8 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->collapsible()
                             ->addActionLabel(__('Добавить тест'))
                             ->columnSpanFull(),
-                        Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
-                        Textarea::make('observations')->label(__('Наблюдения'))->rows(3)->placeholder(__('Субъективные и объективные наблюдения')),
+                        Hidden::make('tests')->dehydrated()->nullable(),
+                        Hidden::make('observations')->dehydrated()->nullable(),
                         Repeater::make('root_causes')
                             ->label(__('Первопричина нарушений'))
                             ->schema([

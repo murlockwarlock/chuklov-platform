@@ -154,18 +154,6 @@ final class SessionInfolist
                             ->placeholder(__('Не заполнено'))
                             ->columnSpanFull()
                             ->wrap(),
-                        TextEntry::make('tests')
-                            ->label(__('Тесты'))
-                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->tests)
-                            ->placeholder(__('Не заполнено'))
-                            ->columnSpanFull()
-                            ->wrap(),
-                        TextEntry::make('observations')
-                            ->label(__('Наблюдения'))
-                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->observations)
-                            ->placeholder(__('Не заполнено'))
-                            ->columnSpanFull()
-                            ->wrap(),
                         TextEntry::make('protocol')
                             ->label(__('Алгоритм / протокол сеанса'))
                             ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->protocol)
@@ -355,8 +343,6 @@ final class SessionInfolist
 
         return $data instanceof MedicalSessionData
             && ($data->rootCauseHypothesis !== null
-                || $data->tests !== null
-                || $data->observations !== null
                 || $data->protocol !== null
                 || $data->subjectiveFeelings !== null
                 || $data->visualPostureDiagnostics !== null
