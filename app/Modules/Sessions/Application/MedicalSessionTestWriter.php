@@ -9,6 +9,7 @@ use App\Modules\Sessions\Domain\Models\MedicalSessionRootCause;
 use App\Modules\Sessions\Domain\Models\MedicalSessionTestResult;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\ValidationException;
 
 final readonly class MedicalSessionTestWriter
@@ -22,7 +23,22 @@ final readonly class MedicalSessionTestWriter
     public function replace(MedicalSession $session, array $tests, array $rootCauses, int $keyVersion): void
     {
         $organizationId = (int) $session->organization_id;
-        $normalizedTests = $this->normalizeTests($organizationId, $tests);
+        $existing = $session->testResults()->with('causes')->get()->keyBy('medical_test_definition_id');
+        $preservedTestIds = $existing->keys()->map(static fn (mixed $id): int => (int) $id)->all();
+        $preservedValueIds = $existing
+            ->flatMap(static fn (MedicalSessionTestResult $result): array => [$result->before_value_id, $result->after_value_id])
+            ->filter(static fn (mixed $id): bool => $id !== null && (int) $id > 0)
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        $preservedCauseIds = $existing
+            ->flatMap(static fn (MedicalSessionTestResult $result): Collection => $result->causes->pluck('id'))
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        $normalizedTests = $this->normalizeTests($organizationId, $tests, $preservedTestIds, $preservedValueIds, $preservedCauseIds);
         $existingRootCauseIds = $session->rootCauses()
             ->whereNotNull('medical_cause_definition_id')
             ->pluck('medical_cause_definition_id')
@@ -35,7 +51,6 @@ final readonly class MedicalSessionTestWriter
         $availableRootCauseIds = array_values(array_unique([...$testCauseIds, ...$existingRootCauseIds]));
         $normalizedRoots = $this->normalizeRootCauses($rootCauses, $availableRootCauseIds);
 
-        $existing = $session->testResults()->get()->keyBy('medical_test_definition_id');
         $kept = [];
         foreach ($normalizedTests as $test) {
             $definitionId = $test['test_id'];
@@ -76,9 +91,12 @@ final readonly class MedicalSessionTestWriter
 
     /**
      * @param  array<int, mixed>  $tests
+     * @param  array<int, int>  $preservedTestIds
+     * @param  array<int, int>  $preservedValueIds
+     * @param  array<int, int>  $preservedCauseIds
      * @return array<int, array{test_id:int,before_value_id:int|null,after_value_id:int|null,cause_ids:array<int, int>}>
      */
-    private function normalizeTests(int $organizationId, array $tests): array
+    private function normalizeTests(int $organizationId, array $tests, array $preservedTestIds, array $preservedValueIds, array $preservedCauseIds): array
     {
         $normalized = [];
         $seen = [];
@@ -91,11 +109,11 @@ final readonly class MedicalSessionTestWriter
                 throw ValidationException::withMessages(['test_results' => 'Каждый тест можно добавить только один раз.']);
             }
             $definition = MedicalTestDefinition::query()->where('organization_id', $organizationId)->whereKey($testId)->first();
-            if ($definition === null) {
+            if ($definition === null || (! $definition->is_active && ! in_array($testId, $preservedTestIds, true))) {
                 throw ValidationException::withMessages(['test_results' => 'Выбранный тест недоступен.']);
             }
-            $before = $this->value($organizationId, $definition, $raw['before_value_id'] ?? null);
-            $after = $this->value($organizationId, $definition, $raw['after_value_id'] ?? null);
+            $before = $this->value($organizationId, $definition, $raw['before_value_id'] ?? null, $preservedValueIds);
+            $after = $this->value($organizationId, $definition, $raw['after_value_id'] ?? null, $preservedValueIds);
             $causeIds = collect(is_array($raw['cause_ids'] ?? null) ? $raw['cause_ids'] : [])
                 ->map(static fn (mixed $id): int => (int) $id)
                 ->filter(static fn (int $id): bool => $id > 0)
@@ -105,7 +123,11 @@ final readonly class MedicalSessionTestWriter
             if ($causeIds !== [] && ! ($before !== null && $before->is_abnormal) && ! ($after !== null && $after->is_abnormal)) {
                 throw ValidationException::withMessages(['test_results' => 'Причины можно указать только для теста с отклонением.']);
             }
-            if ($causeIds !== [] && MedicalCauseDefinition::query()->where('organization_id', $organizationId)->whereIn('id', $causeIds)->count() !== count($causeIds)) {
+            $causes = $causeIds === [] ? collect() : MedicalCauseDefinition::query()
+                ->where('organization_id', $organizationId)
+                ->whereIn('id', $causeIds)
+                ->get(['id', 'is_active']);
+            if ($causes->count() !== count($causeIds) || $causes->contains(static fn (MedicalCauseDefinition $cause): bool => ! $cause->is_active && ! in_array((int) $cause->getKey(), $preservedCauseIds, true))) {
                 throw ValidationException::withMessages(['test_results' => 'Одна из причин недоступна.']);
             }
             $seen[$testId] = true;
@@ -151,7 +173,8 @@ final readonly class MedicalSessionTestWriter
         return array_map(fn (mixed $raw, int $index): array => $this->normalizeRootCause($raw, $index, $availableCauseIds), array_values($roots), array_keys(array_values($roots)));
     }
 
-    private function value(int $organizationId, MedicalTestDefinition $definition, mixed $valueId): ?MedicalTestValue
+    /** @param array<int, int> $preservedValueIds */
+    private function value(int $organizationId, MedicalTestDefinition $definition, mixed $valueId, array $preservedValueIds): ?MedicalTestValue
     {
         if ($valueId === null || $valueId === '') {
             return null;
@@ -161,7 +184,7 @@ final readonly class MedicalSessionTestWriter
             ->where('medical_test_definition_id', $definition->getKey())
             ->whereKey((int) $valueId)
             ->first();
-        if ($value === null) {
+        if ($value === null || (! $value->is_active && ! in_array((int) $value->getKey(), $preservedValueIds, true))) {
             throw ValidationException::withMessages(['test_results' => 'Выбранное значение теста недоступно.']);
         }
 

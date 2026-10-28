@@ -120,10 +120,10 @@ class EditMedicalSession extends LocalizedEditRecord
                         Repeater::make('test_results')
                             ->label(__('Кинезиологические и мануальные тесты'))
                             ->schema([
-                                Select::make('test_id')->label(__('Тест'))->options(fn (): array => app(MedicalClinicalCatalog::class)->testOptions(app(OrganizationContext::class)->id()))->required()->searchable()->live(),
-                                Select::make('before_value_id')->label(__('До сеанса'))->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptions(app(OrganizationContext::class)->id(), (int) $get('test_id')))->nullable()->searchable(),
-                                Select::make('after_value_id')->label(__('После сеанса'))->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptions(app(OrganizationContext::class)->id(), (int) $get('test_id')))->nullable()->searchable(),
-                                Select::make('cause_ids')->label(__('Причины нарушений'))->options(fn (): array => app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id()))->multiple()->searchable(),
+                                Select::make('test_id')->label(__('Тест'))->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->testOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id')))->required()->searchable()->live(),
+                                Select::make('before_value_id')->label(__('До сеанса'))->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('before_value_id')]))->nullable()->searchable(),
+                                Select::make('after_value_id')->label(__('После сеанса'))->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('after_value_id')]))->nullable()->searchable(),
+                                Select::make('cause_ids')->label(__('Причины нарушений'))->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->causeOptionsForSelection(app(OrganizationContext::class)->id(), (array) $get('cause_ids')))->multiple()->searchable(),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
@@ -250,7 +250,6 @@ class EditMedicalSession extends LocalizedEditRecord
     /** @return array<int, string> */
     private function rootCauseOptions(Get $get): array
     {
-        $causeOptions = app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id());
         $testResults = $get('../../test_results');
         $causeIds = collect(is_array($testResults) ? $testResults : [])
             ->flatMap(static fn (mixed $test): array => is_array($test) && is_array($test['cause_ids'] ?? null)
@@ -263,6 +262,8 @@ class EditMedicalSession extends LocalizedEditRecord
         if ($currentCauseId > 0) {
             $causeIds[] = $currentCauseId;
         }
+
+        $causeOptions = app(MedicalClinicalCatalog::class)->causeOptionsForSelection(app(OrganizationContext::class)->id(), $causeIds);
 
         return array_intersect_key($causeOptions, array_flip($causeIds));
     }

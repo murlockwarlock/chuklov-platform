@@ -21,6 +21,7 @@ use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GenerateSessionResult;
 use App\Modules\Sessions\Application\GetSession;
+use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
@@ -511,6 +512,92 @@ final class MedicalPainFlowTest extends TestCase
                 'cause_ids' => [$currentCause->getKey()],
             ]],
             rootCauses: [['cause_id' => $foreignCause->getKey(), 'free_text' => null]],
+        ));
+    }
+
+    public function test_deactivated_clinical_catalog_entries_remain_editable_only_when_already_used(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'historical_test',
+            'name' => 'Исторический тест',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $normal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'normal',
+            'label' => 'Норма',
+            'is_abnormal' => false,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $abnormal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'abnormal',
+            'label' => 'Отклонение',
+            'is_abnormal' => true,
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+        $cause = MedicalCauseDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Историческая причина',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-25 09:00:00', 'UTC'),
+            testResults: [[
+                'test_id' => $test->getKey(),
+                'before_value_id' => $abnormal->getKey(),
+                'after_value_id' => $normal->getKey(),
+                'cause_ids' => [$cause->getKey()],
+            ]],
+            rootCauses: [['cause_id' => $cause->getKey(), 'free_text' => null]],
+        ));
+
+        $test->update(['is_active' => false]);
+        $normal->update(['is_active' => false]);
+        $abnormal->update(['is_active' => false]);
+        $cause->update(['is_active' => false]);
+
+        $catalog = app(MedicalClinicalCatalog::class);
+        self::assertStringContainsString('неактивен', $catalog->testOptionsForSelection((int) $organization->getKey(), (int) $test->getKey())[(int) $test->getKey()]);
+        self::assertStringContainsString('неактивно', $catalog->valueOptionsForSelection((int) $organization->getKey(), (int) $test->getKey(), [(int) $abnormal->getKey()])[(int) $abnormal->getKey()]);
+        self::assertStringContainsString('неактивна', $catalog->causeOptionsForSelection((int) $organization->getKey(), [(int) $cause->getKey()])[(int) $cause->getKey()]);
+
+        app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($session->id), UpdateSessionCommand::fromArray([
+            'pain' => null,
+            'tests' => null,
+            'observations' => null,
+            'root_cause_hypothesis' => null,
+            'protocol' => null,
+            'result' => null,
+            'test_results' => [[
+                'test_id' => $test->getKey(),
+                'before_value_id' => $abnormal->getKey(),
+                'after_value_id' => $normal->getKey(),
+                'cause_ids' => [$cause->getKey()],
+            ]],
+            'root_causes' => [['cause_id' => $cause->getKey(), 'free_text' => null]],
+        ]));
+
+        $this->expectException(ValidationException::class);
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-25 10:00:00', 'UTC'),
+            testResults: [[
+                'test_id' => $test->getKey(),
+                'before_value_id' => $abnormal->getKey(),
+                'after_value_id' => $normal->getKey(),
+                'cause_ids' => [$cause->getKey()],
+            ]],
         ));
     }
 

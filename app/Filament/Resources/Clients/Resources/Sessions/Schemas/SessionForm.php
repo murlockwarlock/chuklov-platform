@@ -107,23 +107,23 @@ final class SessionForm
                             ->schema([
                                 Select::make('test_id')
                                     ->label(__('Тест'))
-                                    ->options(fn (): array => app(MedicalClinicalCatalog::class)->testOptions(app(OrganizationContext::class)->id()))
+                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->testOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id')))
                                     ->required()
                                     ->searchable()
                                     ->live(),
                                 Select::make('before_value_id')
                                     ->label(__('До сеанса'))
-                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptions(app(OrganizationContext::class)->id(), (int) $get('test_id')))
+                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('before_value_id')]))
                                     ->nullable()
                                     ->searchable(),
                                 Select::make('after_value_id')
                                     ->label(__('После сеанса'))
-                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptions(app(OrganizationContext::class)->id(), (int) $get('test_id')))
+                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('after_value_id')]))
                                     ->nullable()
                                     ->searchable(),
                                 Select::make('cause_ids')
                                     ->label(__('Причины нарушений'))
-                                    ->options(fn (): array => app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id()))
+                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->causeOptionsForSelection(app(OrganizationContext::class)->id(), (array) $get('cause_ids')))
                                     ->multiple()
                                     ->searchable(),
                             ])
