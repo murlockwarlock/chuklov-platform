@@ -99,7 +99,9 @@ class EditMedicalSession extends LocalizedEditRecord
                                 ])->columns(2)->default(['all'])->required(),
                                 Slider::make('before_score')->label(__('До сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
                                 Slider::make('after_score')->label(__('После сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
-                                Placeholder::make('previous_after_score')->label(__('После предыдущего сеанса'))->content(fn (Get $get): string => self::scoreDisplay($get('previous_after_score'))),
+                                Placeholder::make('previous_after_score')
+                                    ->label(__('После предыдущего сеанса'))
+                                    ->content(fn (Get $get): string => self::scoreDisplay(self::previousAfterScore($get))),
                                 Select::make('tag_ids')
                                     ->label(__('Категория проблемы'))
                                     ->options(fn (): array => app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id()))
@@ -281,6 +283,13 @@ class EditMedicalSession extends LocalizedEditRecord
         return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
             ? __(':value / 10', ['value' => (int) $value])
             : __('Нет данных');
+    }
+
+    private static function previousAfterScore(Get $get): mixed
+    {
+        $state = $get('');
+
+        return is_array($state) ? ($state['previous_after_score'] ?? null) : null;
     }
 
     private static function legacyPainVasDisplay(mixed $value): string

@@ -289,7 +289,7 @@ final class ClientWorkspaceInfolist
                             ->placeholder(__('Не заполнен'))
                             ->columnSpanFull()
                             ->wrap(),
-                        Section::make(__('Жалобы и шкала боли (ВАШ)'))
+                        Section::make(__('Жалобы и историческое значение ВАШ'))
                             ->schema([
                                 TextEntry::make('complaints')
                                     ->label(__('Жалобы'))
@@ -306,7 +306,7 @@ final class ClientWorkspaceInfolist
                                             array_values(array_filter($symptoms, static fn (mixed $key): bool => is_string($key) && isset(MedicalProfileForm::SYMPTOMS[$key]))),
                                         )) : null;
                                     })->placeholder(__('Не указаны'))->wrap(),
-                                TextEntry::make('profile_pain_vas')->label(__('Шкала боли (ВАШ)'))
+                                TextEntry::make('profile_pain_vas')->label(__('Историческое значение ВАШ'))
                                     ->state(function (Client $record): ?string {
                                         $value = MedicalProfileForm::answers(self::medicalProfile($record))['pain_vas'] ?? null;
 

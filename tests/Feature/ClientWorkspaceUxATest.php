@@ -426,7 +426,7 @@ final class ClientWorkspaceUxATest extends TestCase
         $complaintsAndPainSections = array_values(array_filter(
             $children,
             static fn (mixed $component): bool => $component instanceof Section
-                && (string) $component->getHeading() === 'Жалобы и шкала боли (ВАШ)',
+                && (string) $component->getHeading() === 'Жалобы и историческое значение ВАШ',
         ));
         $goalSections = array_values(array_filter(
             $children,
@@ -448,7 +448,7 @@ final class ClientWorkspaceUxATest extends TestCase
         );
         self::assertSame([
             'anamnesis',
-            'Жалобы и шкала боли (ВАШ)',
+            'Жалобы и историческое значение ВАШ',
             'profile_no_chronic_conditions',
             'profile_had_operations',
             'profile_operation_year',

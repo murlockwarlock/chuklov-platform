@@ -848,6 +848,52 @@ final class SessionCockpitTest extends TestCase
         self::assertTrue($expectedOccurredAt->equalTo($actualOccurredAt));
     }
 
+    public function test_filament_session_result_action_fills_deterministic_summary_and_confirms_replacement(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $created = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-08-16 10:00:00', 'UTC'),
+            pains: [[
+                'name' => 'Шея',
+                'before_score' => 7,
+                'after_score' => 3,
+            ]],
+            subjectiveFeelings: 'Двигаться стало легче',
+            visualPostureDiagnostics: 'Плечи выровнены',
+        ));
+        $session = MedicalSession::query()->whereKey($created->id)->firstOrFail();
+
+        Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client])
+            ->assertSuccessful();
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->assertActionExists('fillResult')
+            ->callAction('fillResult')
+            ->assertNotified('Результат заполнен')
+            ->assertSet('data.result', "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены");
+
+        $component
+            ->fillForm(['result' => 'Ручная правка специалиста'])
+            ->mountAction('fillResult')
+            ->assertActionMounted('fillResult');
+        self::assertSame('Заменить текст результата?', $component->instance()->getMountedAction()?->getModalHeading());
+        $component
+            ->callMountedAction()
+            ->assertNotified('Результат заполнен')
+            ->assertSet('data.result', "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены");
+
+        $component->call('save')->assertHasNoErrors();
+        self::assertSame(
+            "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены",
+            app(GetSession::class)->handle($admin, $session->fresh(), $client)?->result,
+        );
+    }
+
     public function test_filament_edit_session_rejects_forged_same_organization_other_client_record(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
