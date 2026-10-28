@@ -8,12 +8,14 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
  * @property int $organization_id
  * @property int $client_id
+ * @property int|null $patient_profile_id
  * @property string|null $anamnesis
  * @property string|null $complaints_goals
  * @property string|null $operations_injuries
@@ -46,6 +48,14 @@ class MedicalProfile extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    /** @return HasMany<MedicalProfilePain, $this> */
+    public function pains(): HasMany
+    {
+        return $this->hasMany(MedicalProfilePain::class, 'medical_profile_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
     }
 
     protected function casts(): array

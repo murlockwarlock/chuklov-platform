@@ -17,6 +17,7 @@ final class GetMedicalProfile
     public function __construct(
         private readonly MedicalProfileAuthorization $authorization,
         private readonly MedicalEncryptorInterface $encryptor,
+        private readonly MedicalProfilePainReader $painReader,
     ) {}
 
     public function handle(User $actor, Client $client): ?MedicalProfileData
@@ -69,6 +70,7 @@ final class GetMedicalProfile
             injuries: $data->injuries,
             chronicConditions: $data->chronicConditions,
             clinicalAnswers: $data->clinicalAnswers,
+            pains: $this->painReader->forProfile($profile),
         );
     }
 

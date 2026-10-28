@@ -16,6 +16,9 @@ final readonly class UpdateSessionCommand
         public ?string $expectedSnapshot = null,
         public ?int $painVas = null,
         public ?bool $painVasProvided = null,
+        /** @var array<int, mixed>|null */
+        public ?array $pains = null,
+        public bool $painsProvided = false,
     ) {}
 
     /**
@@ -55,6 +58,8 @@ final readonly class UpdateSessionCommand
             expectedSnapshot: isset($data['expected_snapshot']) && is_string($data['expected_snapshot']) ? $data['expected_snapshot'] : null,
             painVas: self::normalizePainVas($data),
             painVasProvided: array_key_exists('pain_vas', $data),
+            pains: array_key_exists('pains', $data) && is_array($data['pains']) ? array_values($data['pains']) : null,
+            painsProvided: array_key_exists('pains', $data),
         );
     }
 

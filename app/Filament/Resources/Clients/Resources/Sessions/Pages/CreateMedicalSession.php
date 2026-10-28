@@ -9,6 +9,7 @@ use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
+use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
@@ -43,6 +44,14 @@ class CreateMedicalSession extends LocalizedCreateRecord
             ->where('organization_id', $result->organizationId)
             ->where('id', $result->id)
             ->firstOrFail();
+    }
+
+    /** @param array<string, mixed> $data */
+    protected function mutateFormDataBeforeFill(array $data): array
+    {
+        $data['pains'] = app(MedicalSessionPainInitializer::class)->defaultsForClient($this->parentClient());
+
+        return $data;
     }
 
     protected function getRedirectUrl(): string

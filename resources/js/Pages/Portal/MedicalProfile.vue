@@ -16,9 +16,15 @@ type Answers = {
     had_injuries: boolean | null;
     injury_year: number | null;
 };
+type Pain = {
+    id?: number;
+    lineage_key?: string;
+    name: string;
+    score: number | null;
+};
 const props = defineProps<{
     portal: PortalShell;
-    profile: { available: boolean; readFailed: boolean; expectedSnapshot: string; fields: Record<string, string | null>; answers: Partial<Answers>; legacyFields: Record<string, string> };
+    profile: { available: boolean; readFailed: boolean; expectedSnapshot: string; fields: Record<string, string | null>; answers: Partial<Answers>; legacyFields: Record<string, string>; pains: Pain[] };
     urls: { update: string; upload: string };
     materials: { id: number; filename: string; downloadUrl: string }[];
     saved: boolean;
@@ -32,6 +38,7 @@ const uploading = ref(false);
 const currentYear = new Date().getFullYear();
 const requestError = ref('');
 const clientErrors = ref<Record<string, string>>({});
+const pains = ref<Pain[]>(props.profile.pains.map((pain) => ({ ...pain })));
 const medicalForm = ref<HTMLFormElement | null>(null);
 const fields = ['complaints', 'goals', 'chronic_conditions', 'operations', 'injuries', 'medicines', 'supplements'] as const;
 const symptoms = ['headache', 'neck', 'back', 'joints', 'swelling', 'digestion', 'weakness', 'insomnia', 'stress'];
@@ -58,7 +65,21 @@ const form = useForm({
         had_operations: null, operation_year: null, had_injuries: null, injury_year: null,
         ...props.profile.answers,
     } as Answers,
+    pains: pains.value.map((pain) => ({ ...pain })),
 });
+function addPain(): void {
+    pains.value.push({ name: '', score: null });
+    syncPains();
+}
+
+function removePain(index: number): void {
+    pains.value.splice(index, 1);
+    syncPains();
+}
+
+function syncPains(): void {
+    form.pains = pains.value.map((pain) => ({ ...pain }));
+}
 function clearClientError(...keys: string[]): void {
     for (const key of keys) {
         delete clientErrors.value[key];
@@ -229,6 +250,76 @@ function save(): void {
               </div>
             </fieldset>
             <PainScale v-model="form.answers.pain_vas" />
+          </section>
+          <section class="portal-panel portal-panel--compact portal-stack">
+            <div class="flex items-center justify-between gap-3">
+              <h2 class="portal-label">
+                {{ t('medical.pains') }}
+              </h2>
+              <button
+                type="button"
+                class="portal-button portal-button--secondary"
+                @click="addPain"
+              >
+                {{ t('medical.addPain') }}
+              </button>
+            </div>
+            <p class="portal-copy">
+              {{ t('medical.painsDescription') }}
+            </p>
+            <div
+              v-if="pains.length"
+              class="portal-stack"
+            >
+              <div
+                v-for="(pain, index) in pains"
+                :key="pain.lineage_key || index"
+                class="portal-panel portal-panel--compact portal-stack"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <label
+                    :for="`medical-pain-${index}`"
+                    class="portal-label"
+                  >{{ t('medical.painName') }}</label>
+                  <button
+                    type="button"
+                    class="portal-button portal-button--secondary"
+                    @click="removePain(index)"
+                  >
+                    {{ t('medical.removePain') }}
+                  </button>
+                </div>
+                <input
+                  :id="`medical-pain-${index}`"
+                  v-model="pain.name"
+                  type="text"
+                  maxlength="1000"
+                  class="portal-input"
+                  @input="syncPains"
+                >
+                <label
+                  :for="`medical-pain-score-${index}`"
+                  class="portal-label"
+                >{{ t('medical.painScore') }}</label>
+                <input
+                  :id="`medical-pain-score-${index}`"
+                  v-model.number="pain.score"
+                  type="range"
+                  min="0"
+                  max="10"
+                  step="1"
+                  class="w-full"
+                  @input="syncPains"
+                >
+                <span class="portal-copy">{{ pain.score === null ? t('medical.notSpecified') : `${pain.score} / 10` }}</span>
+              </div>
+            </div>
+            <p
+              v-else
+              class="portal-copy"
+            >
+              {{ t('medical.noPains') }}
+            </p>
           </section>
           <div
             v-for="field in fields"
@@ -423,6 +514,30 @@ function save(): void {
                 {{ t('medical.' + symptom) }}
               </span>
             </div>
+          </section>
+          <section class="portal-panel portal-panel--compact portal-stack">
+            <h2 class="portal-label">
+              {{ t('medical.pains') }}
+            </h2>
+            <div
+              v-if="profile.pains.length"
+              class="portal-stack"
+            >
+              <div
+                v-for="pain in profile.pains"
+                :key="pain.lineage_key || pain.id"
+                class="flex items-center justify-between gap-3"
+              >
+                <span class="portal-copy break-words">{{ pain.name }}</span>
+                <span class="portal-copy whitespace-nowrap">{{ pain.score === null ? t('medical.notSpecified') : `${pain.score} / 10` }}</span>
+              </div>
+            </div>
+            <p
+              v-else
+              class="portal-copy"
+            >
+              {{ t('medical.noPains') }}
+            </p>
           </section>
           <dl class="portal-stack">
             <div

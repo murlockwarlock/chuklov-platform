@@ -28,6 +28,8 @@ final readonly class UpdateMedicalProfile
         private GetMedicalProfile $getProfile,
         private MedicalProfileSnapshotHasher $snapshotHasher,
         private ClinicalQuestionnaire $questionnaire,
+        private MedicalProfilePainWriter $painWriter,
+        private MedicalProfilePainReader $painReader,
     ) {}
 
     public function handle(User|Client $actor, Client $client, UpdateMedicalProfileCommand $command): MedicalProfileData
@@ -127,6 +129,10 @@ final readonly class UpdateMedicalProfile
             }
             $profile->save();
 
+            $pains = $command->painsProvided
+                ? $this->painWriter->replace($profile, $command->pains ?? [], $keyVersion)
+                : ($existing instanceof MedicalProfile ? $this->painReader->forProfile($profile) : []);
+
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor instanceof User ? $actor : null,
@@ -154,6 +160,7 @@ final readonly class UpdateMedicalProfile
                 injuries: $plainData->injuries,
                 chronicConditions: $plainData->chronicConditions,
                 clinicalAnswers: $plainData->clinicalAnswers,
+                pains: $pains,
             );
         });
 

@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $organization_id
  * @property int $client_id
+ * @property int|null $patient_profile_id
  * @property int $specialist_id
  * @property int|null $booking_id
  * @property string|null $pain
@@ -67,6 +68,14 @@ class MedicalSession extends Model
     public function attachmentLinks(): HasMany
     {
         return $this->hasMany(MedicalSessionAttachment::class, 'medical_session_id');
+    }
+
+    /** @return HasMany<MedicalSessionPain, $this> */
+    public function pains(): HasMany
+    {
+        return $this->hasMany(MedicalSessionPain::class, 'medical_session_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
     }
 
     protected function casts(): array

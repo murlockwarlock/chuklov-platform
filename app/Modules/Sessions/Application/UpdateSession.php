@@ -25,6 +25,8 @@ final readonly class UpdateSession
         private RecordAuditEvent $audit,
         private GetSession $getSession,
         private MedicalSessionSnapshotHasher $snapshotHasher,
+        private MedicalSessionPainWriter $painWriter,
+        private MedicalSessionPainReader $painReader,
     ) {}
 
     public function handle(User $actor, MedicalSession $session, UpdateSessionCommand $command, ?Client $expectedClient = null): MedicalSessionData
@@ -109,6 +111,10 @@ final readonly class UpdateSession
             ]);
             $existing->save();
 
+            if ($command->painsProvided) {
+                $this->painWriter->replace($existing, $command->pains ?? [], $keyVersion);
+            }
+
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
@@ -139,6 +145,7 @@ final readonly class UpdateSession
                 createdAt: $existing->created_at,
                 updatedAt: $existing->updated_at,
                 painVas: $painVas,
+                pains: $this->painReader->forSession($existing),
             );
         });
 
@@ -199,6 +206,9 @@ final readonly class UpdateSession
         }
         if ($previous['pain_vas'] !== $painVas) {
             $fields[] = 'pain_vas';
+        }
+        if ($command->painsProvided) {
+            $fields[] = 'pains';
         }
 
         return $fields;

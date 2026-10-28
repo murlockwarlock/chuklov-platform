@@ -16,6 +16,7 @@ final class GetSession
     public function __construct(
         private readonly MedicalSessionAuthorization $authorization,
         private readonly MedicalEncryptorInterface $encryptor,
+        private readonly MedicalSessionPainReader $painReader,
     ) {}
 
     public function handle(User $actor, MedicalSession $session, ?Client $expectedClient = null): ?MedicalSessionData
@@ -57,6 +58,7 @@ final class GetSession
             occurredAt: $persisted->occurred_at,
             createdAt: $persisted->created_at,
             updatedAt: $persisted->updated_at,
+            pains: $this->painReader->forSession($persisted),
         );
 
         return $this->resolved[$cacheKey] = $data;

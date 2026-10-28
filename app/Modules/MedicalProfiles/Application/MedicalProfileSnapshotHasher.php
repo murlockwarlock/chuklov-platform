@@ -3,6 +3,7 @@
 namespace App\Modules\MedicalProfiles\Application;
 
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
 
 final class MedicalProfileSnapshotHasher
 {
@@ -32,6 +33,14 @@ final class MedicalProfileSnapshotHasher
             'medicines' => $profile->getRawOriginal('medicines'),
             'supplements' => $profile->getRawOriginal('supplements'),
             'encryption_key_version' => (int) $profile->encryption_key_version,
+            'pains' => MedicalProfilePain::query()
+                ->where('organization_id', $profile->organization_id)
+                ->where('medical_profile_id', $profile->getKey())
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get(['id', 'lineage_key', 'name', 'frequency_mode', 'frequency_count', 'frequency_period_unit', 'time_of_day', 'score', 'encryption_key_version'])
+                ->map(static fn (MedicalProfilePain $pain): array => $pain->getAttributes())
+                ->all(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 }

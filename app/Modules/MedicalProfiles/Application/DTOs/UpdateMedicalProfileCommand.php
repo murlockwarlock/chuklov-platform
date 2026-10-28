@@ -29,6 +29,9 @@ final readonly class UpdateMedicalProfileCommand
         public bool $chronicConditionsProvided = false,
         public bool $clinicalAnswersProvided = false,
         public bool $confirmCurrentData = false,
+        /** @var array<int, mixed>|null */
+        public ?array $pains = null,
+        public bool $painsProvided = false,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -58,6 +61,8 @@ final readonly class UpdateMedicalProfileCommand
             chronicConditionsProvided: array_key_exists('chronic_conditions', $data),
             clinicalAnswers: is_string($data['clinical_answers'] ?? null) ? $data['clinical_answers'] : null,
             clinicalAnswersProvided: array_key_exists('clinical_answers', $data),
+            pains: array_key_exists('pains', $data) && is_array($data['pains']) ? array_values($data['pains']) : null,
+            painsProvided: array_key_exists('pains', $data),
         );
     }
 

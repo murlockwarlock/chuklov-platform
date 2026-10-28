@@ -8,6 +8,7 @@ use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -35,6 +36,11 @@ final class MedicalProfileForm
             'chronic_conditions' => $profile?->chronicConditions,
             'medicines' => $profile?->medicines,
             'supplements' => $profile?->supplements,
+            'pains' => array_map(static fn ($pain): array => [
+                'lineage_key' => $pain->lineageKey,
+                'name' => $pain->name,
+                'score' => $pain->score,
+            ], $profile?->pains ?? []),
             'pain_not_measured' => (self::answers($profile)['pain_vas'] ?? null) === null,
             'answers' => self::answers($profile) ?? [
                 'symptoms' => [], 'pain_vas' => null, 'no_chronic_conditions' => false,
@@ -81,6 +87,21 @@ final class MedicalProfileForm
             Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
             CheckboxList::make('answers.symptoms')->label(__('Главные жалобы (симптомы)'))
                 ->options(array_map(static fn (string $label): string => __($label), self::SYMPTOMS))->columns(2),
+            Repeater::make('pains')
+                ->label(__('Боли и оценка клиента'))
+                ->schema([
+                    Hidden::make('lineage_key')->dehydrated()->nullable(),
+                    TextInput::make('name')->label(__('Название или описание боли'))->required()->maxLength(1000),
+                    Slider::make('score')->label(__('Оценка боли'))->range(minValue: 0, maxValue: 10)->step(1)->nullable()
+                        ->helperText(__('Можно оставить без оценки.')),
+                ])
+                ->columns(2)
+                ->defaultItems(0)
+                ->reorderable()
+                ->collapsible()
+                ->itemLabel(fn (array $state): string => (string) ($state['name'] ?? __('Новая боль')))
+                ->addActionLabel(__('Добавить боль'))
+                ->columnSpanFull(),
             Checkbox::make('pain_not_measured')->label(__('Боль не оценивалась'))->live(),
             Slider::make('answers.pain_vas')->label(__('Шкала боли (ВАШ)'))
                 ->range(minValue: 0, maxValue: 10)->step(1)->nullable()->default(null)

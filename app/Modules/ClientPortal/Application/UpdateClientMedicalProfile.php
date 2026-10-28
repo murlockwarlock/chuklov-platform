@@ -31,6 +31,7 @@ final readonly class UpdateClientMedicalProfile
             'medicines' => ['nullable', 'string', 'max:10000'],
             'supplements' => ['nullable', 'string', 'max:10000'],
             'answers' => ['required', 'array'],
+            'pains' => ['sometimes', 'array', 'max:50'],
         ], [], [
             'complaints' => __('Жалобы'), 'goals' => __('Задачи по здоровью'), 'chronic_conditions' => __('Хронические заболевания'),
             'operations' => __('Операции'), 'injuries' => __('Травмы'), 'medicines' => __('Лекарственные препараты'), 'supplements' => __('Нутрицевтики и БАДы'),
@@ -74,6 +75,8 @@ final readonly class UpdateClientMedicalProfile
             chronicConditionsProvided: true,
             clinicalAnswersProvided: true,
             confirmCurrentData: true,
+            pains: array_key_exists('pains', $fields) ? $fields['pains'] : null,
+            painsProvided: array_key_exists('pains', $fields),
         ));
     }
 }

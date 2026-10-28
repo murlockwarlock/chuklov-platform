@@ -9,12 +9,14 @@ use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Identity\Domain\Enums\ClientRestrictionType;
 use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
 use App\Modules\Tracker\Domain\Models\TrackerEntitlement;
@@ -180,6 +182,18 @@ class Client extends Model
     public function sessions(): HasMany
     {
         return $this->hasMany(MedicalSession::class);
+    }
+
+    /** @return HasMany<MedicalProfilePain, $this> */
+    public function medicalProfilePains(): HasMany
+    {
+        return $this->hasMany(MedicalProfilePain::class);
+    }
+
+    /** @return HasMany<MedicalSessionPain, $this> */
+    public function medicalSessionPains(): HasMany
+    {
+        return $this->hasMany(MedicalSessionPain::class);
     }
 
     /** @return HasMany<SurveyAttempt, $this> */

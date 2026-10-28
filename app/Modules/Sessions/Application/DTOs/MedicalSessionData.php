@@ -2,6 +2,7 @@
 
 namespace App\Modules\Sessions\Application\DTOs;
 
+use App\Modules\MedicalProfiles\Application\DTOs\MedicalPainData;
 use DateTimeInterface;
 
 final readonly class MedicalSessionData
@@ -23,6 +24,8 @@ final readonly class MedicalSessionData
         public ?DateTimeInterface $createdAt = null,
         public ?DateTimeInterface $updatedAt = null,
         public ?int $painVas = null,
+        /** @var list<MedicalPainData> */
+        public array $pains = [],
     ) {}
 
     public function occurredAtAtom(): ?string
@@ -41,6 +44,7 @@ final readonly class MedicalSessionData
             'booking_id' => $this->bookingId,
             'pain' => $this->pain,
             'pain_vas' => $this->painVas,
+            'pains' => array_map(static fn (MedicalPainData $pain): array => $pain->toArray(), $this->pains),
             'tests' => $this->tests,
             'observations' => $this->observations,
             'root_cause_hypothesis' => $this->rootCauseHypothesis,

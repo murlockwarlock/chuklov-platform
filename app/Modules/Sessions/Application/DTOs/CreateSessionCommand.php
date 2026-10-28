@@ -21,6 +21,8 @@ final readonly class CreateSessionCommand
         public ?string $protocol = null,
         public ?string $result = null,
         public ?int $painVas = null,
+        /** @var array<int, mixed>|null */
+        public ?array $pains = null,
     ) {}
 
     /**
@@ -48,6 +50,7 @@ final readonly class CreateSessionCommand
             protocol: self::optionalTrimmedString($data, 'protocol'),
             result: self::optionalTrimmedString($data, 'result'),
             painVas: self::optionalPainVas($data),
+            pains: array_key_exists('pains', $data) && is_array($data['pains']) ? array_values($data['pains']) : null,
         );
     }
 

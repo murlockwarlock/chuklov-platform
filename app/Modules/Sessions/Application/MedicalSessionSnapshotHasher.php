@@ -3,6 +3,7 @@
 namespace App\Modules\Sessions\Application;
 
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 
 final class MedicalSessionSnapshotHasher
 {
@@ -22,6 +23,14 @@ final class MedicalSessionSnapshotHasher
             'protocol' => $session->getRawOriginal('protocol'),
             'result' => $session->getRawOriginal('result'),
             'encryption_key_version' => (int) $session->encryption_key_version,
+            'pains' => MedicalSessionPain::query()
+                ->where('organization_id', $session->organization_id)
+                ->where('medical_session_id', $session->getKey())
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->get(['id', 'lineage_key', 'name', 'frequency_mode', 'frequency_count', 'frequency_period_unit', 'time_of_day', 'before_score', 'after_score', 'encryption_key_version'])
+                ->map(static fn (MedicalSessionPain $pain): array => $pain->getAttributes())
+                ->all(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 }

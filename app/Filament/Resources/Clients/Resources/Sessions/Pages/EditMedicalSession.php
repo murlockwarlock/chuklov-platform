@@ -106,6 +106,7 @@ class EditMedicalSession extends LocalizedEditRecord
             'root_cause_hypothesis' => $decrypted->rootCauseHypothesis,
             'protocol' => $decrypted->protocol,
             'result' => $decrypted->result,
+            'pains' => array_map(static fn ($pain): array => $pain->toArray(), $decrypted->pains),
             'expected_snapshot' => app(MedicalSessionSnapshotHasher::class)->forSession($record),
         ];
     }
@@ -190,6 +191,7 @@ class EditMedicalSession extends LocalizedEditRecord
             'root_cause_hypothesis',
             'protocol',
             'result',
+            'pains',
         ];
 
         $normalized = [];

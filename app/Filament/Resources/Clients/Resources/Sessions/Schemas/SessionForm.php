@@ -3,15 +3,20 @@
 namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DateTimePicker;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -53,6 +58,40 @@ final class SessionForm
                     ])->columns(2)->columnSpanFull(),
                 Section::make(__('Клинические заметки (опционально)'))
                     ->schema([
+                        Repeater::make('pains')
+                            ->label(__('Боли'))
+                            ->schema([
+                                Hidden::make('lineage_key')->dehydrated()->nullable(),
+                                TextInput::make('name')->label(__('Название или описание боли'))->required()->maxLength(1000),
+                                Select::make('frequency_mode')->label(__('Частота'))->options([
+                                    'permanent' => __('Постоянно'),
+                                    'count' => __('Количество раз за период'),
+                                ])->required()->default('permanent')->live(),
+                                TextInput::make('frequency_count')->label(__('Количество'))->integer()->minValue(1)
+                                    ->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')
+                                    ->required(fn (Get $get): bool => $get('frequency_mode') === 'count'),
+                                Select::make('frequency_period_unit')->label(__('Период'))->options(fn (): array => app(MedicalFrequencyPeriodCatalog::class)->options(app(OrganizationContext::class)->id()))
+                                    ->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')
+                                    ->required(fn (Get $get): bool => $get('frequency_mode') === 'count')
+                                    ->searchable(),
+                                CheckboxList::make('time_of_day')->label(__('Время суток'))->options([
+                                    'all' => __('Весь день'),
+                                    'morning' => __('Утро'),
+                                    'day' => __('День'),
+                                    'evening' => __('Вечер'),
+                                    'night' => __('Ночь'),
+                                ])->columns(2)->default(['all'])->required(),
+                                Slider::make('before_score')->label(__('До сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
+                                Slider::make('after_score')->label(__('После сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
+                                Placeholder::make('previous_after_score')->label(__('После предыдущего сеанса'))->content(fn (Get $get): string => self::scoreDisplay($get('previous_after_score'))),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->reorderable()
+                            ->collapsible()
+                            ->itemLabel(fn (array $state): string => (string) ($state['name'] ?? __('Новая боль')))
+                            ->addActionLabel(__('Добавить боль'))
+                            ->columnSpanFull(),
                         Checkbox::make('pain_not_measured')
                             ->label(__('Боль не измерена'))
                             ->default(true)
@@ -85,6 +124,13 @@ final class SessionForm
         return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
             ? __(':value / 10', ['value' => (int) $value])
             : __('Не указана');
+    }
+
+    private static function scoreDisplay(mixed $value): string
+    {
+        return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
+            ? __(':value / 10', ['value' => (int) $value])
+            : __('Нет данных');
     }
 
     private static function parentClient(Select $component): Client

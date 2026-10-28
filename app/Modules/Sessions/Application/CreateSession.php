@@ -26,6 +26,9 @@ final readonly class CreateSession
         private MedicalEncryptorInterface $encryptor,
         private MedicalKeyResolverInterface $keyResolver,
         private RecordAuditEvent $audit,
+        private MedicalSessionPainWriter $painWriter,
+        private MedicalSessionPainInitializer $painInitializer,
+        private MedicalSessionPainReader $painReader,
     ) {}
 
     public function handle(User $actor, Client $client, CreateSessionCommand $command): MedicalSessionData
@@ -87,6 +90,12 @@ final readonly class CreateSession
             ]);
             $session->save();
 
+            if ($command->pains !== null) {
+                $this->painWriter->replace($session, $command->pains, $keyVersion);
+            } else {
+                $this->painInitializer->initialize($session, $keyVersion);
+            }
+
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
@@ -119,6 +128,7 @@ final readonly class CreateSession
                 createdAt: $session->created_at,
                 updatedAt: $session->updated_at,
                 painVas: $command->painVas,
+                pains: $this->painReader->forSession($session),
             );
         });
     }
