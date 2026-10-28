@@ -2448,13 +2448,16 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Специалист').click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
-    await page.getByRole('textbox', { name: 'Описание боли', exact: true }).fill('Первичная запись о боли');
+    await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    await page.getByRole('textbox', { name: 'Название или описание боли', exact: true }).fill('Первичная боль');
+    await page.getByRole('textbox', { name: 'Особые жалобы', exact: true }).fill('Первичная запись о боли');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
     const sessionRow = page.getByRole('row').filter({ hasText: '18.08.2026' });
     await expect(sessionRow).toBeVisible();
     await sessionRow.getByRole('link', { name: 'Открыть', exact: true }).click();
+    await expect(page.getByText('Первичная боль', { exact: true })).toBeVisible();
     await expect(page.getByText('Первичная запись о боли', { exact: true })).toBeVisible();
     await expect(page.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
     await expect(page.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
@@ -2467,12 +2470,13 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Описание боли', exact: true }).fill('Обновлённая запись о боли');
+    await page.getByRole('textbox', { name: 'Название или описание боли', exact: true }).fill('Обновлённая боль');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
     await page.getByRole('row').filter({ hasText: '18.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).click();
-    await expect(page.getByText('Обновлённая запись о боли', { exact: true })).toBeVisible();
+    await expect(page.getByText('Обновлённая боль', { exact: true })).toBeVisible();
+    await expect(page.getByText('Первичная запись о боли', { exact: true })).toBeVisible();
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'К истории сеансов', exact: true }).click();
