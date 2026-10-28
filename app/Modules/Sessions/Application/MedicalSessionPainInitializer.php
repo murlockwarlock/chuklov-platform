@@ -3,6 +3,7 @@
 namespace App\Modules\Sessions\Application;
 
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\DTOs\MedicalPainData;
 use App\Modules\MedicalProfiles\Application\MedicalProfilePainReader;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
@@ -20,18 +21,22 @@ final readonly class MedicalSessionPainInitializer
     /** @return list<array<string, mixed>> */
     public function defaultsForClient(Client $client, ?MedicalSession $exclude = null): array
     {
-        $previous = MedicalSession::query()
+        $previousQuery = MedicalSession::query()
             ->where('organization_id', $client->organization_id)
-            ->where('client_id', $client->getKey())
-            ->when($exclude instanceof MedicalSession, function ($query) use ($exclude): void {
-                $query->where('id', '<>', $exclude->getKey())
-                    ->where(function ($nested) use ($exclude): void {
-                        $nested->where('occurred_at', '<', $exclude->occurred_at)
-                            ->orWhere(function ($tie) use ($exclude): void {
-                                $tie->where('occurred_at', $exclude->occurred_at)->where('id', '<', $exclude->getKey());
-                            });
-                    });
-            })
+            ->where('client_id', $client->getKey());
+
+        if ($exclude instanceof MedicalSession) {
+            $previousQuery
+                ->where('id', '<>', $exclude->getKey())
+                ->where(function ($nested) use ($exclude): void {
+                    $nested->where('occurred_at', '<', $exclude->occurred_at)
+                        ->orWhere(function ($tie) use ($exclude): void {
+                            $tie->where('occurred_at', $exclude->occurred_at)->where('id', '<', $exclude->getKey());
+                        });
+                });
+        }
+
+        $previous = $previousQuery
             ->orderByDesc('occurred_at')
             ->orderByDesc('id')
             ->first();
@@ -39,22 +44,22 @@ final readonly class MedicalSessionPainInitializer
         if ($previous instanceof MedicalSession && $previous->pains()->exists()) {
             $previousData = collect($this->sessionPains->forSession($previous))->keyBy('lineageKey');
 
-            return $previous->pains()->orderBy('sort_order')->orderBy('id')->get()->map(function (MedicalSessionPain $pain) use ($previousData): array {
+            return array_values($previous->pains()->orderBy('sort_order')->orderBy('id')->get()->map(function (MedicalSessionPain $pain) use ($previousData): array {
                 $data = $previousData->get((string) $pain->lineage_key);
 
                 return [
                     'lineage_key' => (string) $pain->lineage_key,
-                    'name' => $data?->name ?? '',
+                    'name' => $data instanceof MedicalPainData ? $data->name : '',
                     'frequency_mode' => $pain->frequency_mode,
                     'frequency_count' => $pain->frequency_count,
                     'frequency_period_unit' => $pain->frequency_period_unit,
                     'time_of_day' => $pain->time_of_day ?: ['all'],
                     'before_score' => null,
                     'after_score' => null,
-                    'previous_after_score' => $data?->afterScore,
-                    'tag_ids' => $data?->tagIds ?? [],
+                    'previous_after_score' => $data instanceof MedicalPainData ? $data->afterScore : null,
+                    'tag_ids' => $data instanceof MedicalPainData ? $data->tagIds : [],
                 ];
-            })->all();
+            })->all());
         }
 
         $profile = $client->medicalProfile()->first();
@@ -62,7 +67,7 @@ final readonly class MedicalSessionPainInitializer
             return [];
         }
 
-        return collect($this->profilePains->forProfile($profile))->map(static fn ($pain): array => [
+        return array_values(collect($this->profilePains->forProfile($profile))->map(static fn (MedicalPainData $pain): array => [
             'lineage_key' => $pain->lineageKey ?: Str::uuid()->toString(),
             'name' => $pain->name,
             'frequency_mode' => 'permanent',
@@ -73,7 +78,7 @@ final readonly class MedicalSessionPainInitializer
             'after_score' => null,
             'previous_after_score' => null,
             'tag_ids' => $pain->tagIds,
-        ])->all();
+        ])->all());
     }
 
     public function initialize(MedicalSession $session, int $keyVersion): void
@@ -94,7 +99,7 @@ final readonly class MedicalSessionPainInitializer
                 return;
             }
 
-            $this->writer->replace($lockedSession, $defaults, $keyVersion);
+            $this->writer->replace($lockedSession, $defaults, $keyVersion, allowInactiveFrequencyPeriods: true);
         });
     }
 }

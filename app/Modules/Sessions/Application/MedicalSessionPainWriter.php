@@ -20,8 +20,9 @@ final readonly class MedicalSessionPainWriter
     ) {}
 
     /** @param array<int, mixed> $rawPains */
-    public function replace(MedicalSession $session, array $rawPains, int $keyVersion): void
+    public function replace(MedicalSession $session, array $rawPains, int $keyVersion, bool $allowInactiveFrequencyPeriods = false): void
     {
+        $existing = $session->pains()->lockForUpdate()->get()->keyBy('lineage_key');
         $inputs = [];
         $lineages = [];
         foreach ($rawPains as $rawPain) {
@@ -35,12 +36,18 @@ final readonly class MedicalSessionPainWriter
             }
             $lineages[$lineage] = true;
             if ($input->frequencyMode === 'count' && $input->frequencyPeriodUnit !== null) {
-                $this->periods->assertActive((int) $session->organization_id, $input->frequencyPeriodUnit);
+                $existingPain = $existing->get($lineage);
+                $canKeepInactivePeriod = $allowInactiveFrequencyPeriods
+                    || ($existingPain instanceof MedicalSessionPain
+                        && $existingPain->frequency_mode === 'count'
+                        && $existingPain->frequency_period_unit === $input->frequencyPeriodUnit);
+                if (! $canKeepInactivePeriod && ! $this->periods->isActive((int) $session->organization_id, $input->frequencyPeriodUnit)) {
+                    $this->periods->assertActive((int) $session->organization_id, $input->frequencyPeriodUnit);
+                }
             }
             $inputs[] = [$input, $lineage, $this->tags->assertKnown((int) $session->organization_id, $input->tagIds)];
         }
 
-        $existing = $session->pains()->lockForUpdate()->get()->keyBy('lineage_key');
         foreach ($existing as $lineage => $pain) {
             if (! isset($lineages[$lineage])) {
                 $pain->delete();

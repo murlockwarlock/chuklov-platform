@@ -43,9 +43,19 @@ final class MedicalFrequencyPeriodCatalog
 
     public function assertActive(int $organizationId, string $key): void
     {
-        $this->ensureDefaults($organizationId);
-        if (! MedicalFrequencyPeriodUnit::query()->where('organization_id', $organizationId)->where('key', $key)->where('is_active', true)->exists()) {
+        if (! $this->isActive($organizationId, $key)) {
             throw ValidationException::withMessages(['pains' => 'Выбранный период частоты недоступен.']);
         }
+    }
+
+    public function isActive(int $organizationId, string $key): bool
+    {
+        $this->ensureDefaults($organizationId);
+
+        return MedicalFrequencyPeriodUnit::query()
+            ->where('organization_id', $organizationId)
+            ->where('key', $key)
+            ->where('is_active', true)
+            ->exists();
     }
 }

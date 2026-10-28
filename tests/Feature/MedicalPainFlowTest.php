@@ -133,6 +133,67 @@ final class MedicalPainFlowTest extends TestCase
         self::assertSame('fortnight', $session->pains[0]->frequencyPeriodUnit);
     }
 
+    public function test_deactivated_frequency_period_is_preserved_when_carrying_forward_session_pain(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+
+        app(SaveMedicalFrequencyPeriods::class)->handle($admin, [
+            ['key' => 'fortnight', 'label' => 'Две недели', 'is_active' => true, 'sort_order' => 1],
+        ]);
+
+        $first = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-20 09:00:00', 'UTC'),
+            pains: [[
+                'name' => 'Плечо',
+                'frequency_mode' => 'count',
+                'frequency_count' => 2,
+                'frequency_period_unit' => 'fortnight',
+                'time_of_day' => ['morning', 'evening'],
+                'before_score' => 6,
+            ]],
+        ));
+
+        app(SaveMedicalFrequencyPeriods::class)->handle($admin, [
+            ['key' => 'fortnight', 'label' => 'Две недели', 'is_active' => false, 'sort_order' => 1],
+        ]);
+
+        $next = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-27 09:00:00', 'UTC'),
+        ));
+
+        self::assertSame('fortnight', $next->pains[0]->frequencyPeriodUnit);
+        self::assertSame(2, $next->pains[0]->frequencyCount);
+        self::assertSame(['morning', 'evening'], $next->pains[0]->timeOfDay);
+        self::assertNull($next->pains[0]->beforeScore);
+        self::assertSame($organization->getKey(), $client->organization_id);
+    }
+
+    public function test_new_session_pain_cannot_select_a_deactivated_frequency_period(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+
+        app(SaveMedicalFrequencyPeriods::class)->handle($admin, [
+            ['key' => 'fortnight', 'label' => 'Две недели', 'is_active' => false, 'sort_order' => 1],
+        ]);
+
+        $this->expectException(ValidationException::class);
+
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-20 09:00:00', 'UTC'),
+            pains: [[
+                'name' => 'Плечо',
+                'frequency_mode' => 'count',
+                'frequency_count' => 2,
+                'frequency_period_unit' => 'fortnight',
+                'time_of_day' => ['morning'],
+                'before_score' => 6,
+            ]],
+        ));
+    }
+
     public function test_profile_pains_keep_frequency_and_session_scores_out_of_the_profile_boundary(): void
     {
         [$organization, $admin, $client] = $this->fixture();
