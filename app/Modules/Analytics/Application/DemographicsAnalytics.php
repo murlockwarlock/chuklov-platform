@@ -10,6 +10,7 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Carbon\CarbonImmutable;
+use DateTimeZone;
 use Illuminate\Support\Facades\DB;
 
 final readonly class DemographicsAnalytics
@@ -37,7 +38,7 @@ final readonly class DemographicsAnalytics
             ->orderBy('id')
             ->get();
 
-        $referenceDate = $period->endUtc->setTimezone('UTC')->startOfDay();
+        $referenceDate = $period->endUtc->setTimezone($period->timezone)->subDay()->startOfDay();
         $ageCounts = [];
         $sexCounts = [];
         $countryCounts = [];
@@ -93,7 +94,7 @@ final readonly class DemographicsAnalytics
             return 'Не указано';
         }
         try {
-            $age = CarbonImmutable::parse($birthDate, 'UTC')->diffInYears($referenceDate);
+            $age = CarbonImmutable::parse($birthDate, new DateTimeZone($referenceDate->getTimezone()->getName()))->diffInYears($referenceDate);
         } catch (\Throwable) {
             return 'Не указано';
         }

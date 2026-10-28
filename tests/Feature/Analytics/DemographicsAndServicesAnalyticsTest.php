@@ -65,6 +65,27 @@ final class DemographicsAndServicesAnalyticsTest extends TestCase
         self::assertSame(1, $services->services[0]['client_count']);
     }
 
+    public function test_age_buckets_use_the_organization_timezone_end_date(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $organization->forceFill(['timezone' => 'America/Los_Angeles'])->save();
+        Client::factory()->forOrganization($organization)->create([
+            'birth_date' => '2008-11-02',
+            'gender' => 'FEMALE',
+            'created_at' => '2026-11-01 10:00:00',
+        ]);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-11-01', 'end_date' => '2026-11-01'],
+            'America/Los_Angeles',
+            CarbonImmutable::parse('2026-11-02 00:30:00', 'UTC'),
+        );
+
+        $demographics = app(DemographicsAnalytics::class)->handle($admin, $period);
+
+        self::assertSame(1, $demographics->clientCount);
+        self::assertSame('Дети', $demographics->age[0]['label']);
+    }
+
     /** @return array{0: Organization, 1: User, 2: Specialist} */
     private function fixture(): array
     {
