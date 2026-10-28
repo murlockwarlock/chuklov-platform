@@ -127,7 +127,6 @@ final class AnalyticsConsole extends LocalizedPage
                             ])
                             ->multiple()
                             ->searchable()
-                            ->preload()
                             ->required()
                             ->default(['pain']),
                         Select::make('client_id')
