@@ -86,6 +86,7 @@
                             <div><dt class="text-gray-500">{{ __('Доход') }}</dt><dd class="font-semibold">{{ $results['finance']['revenue_minor'] }} {{ $results['finance']['currency'] }}</dd></div>
                             <div><dt class="text-gray-500">{{ __('Платежи') }}</dt><dd class="font-semibold">{{ $results['finance']['receipt_count'] }}</dd></div>
                             <div><dt class="text-gray-500">{{ __('Долг') }}</dt><dd class="font-semibold">{{ $results['finance']['debt_minor'] }} {{ $results['finance']['currency'] }}</dd></div>
+                            <div><dt class="text-gray-500">{{ __('LTV') }}</dt><dd class="font-semibold">{{ $results['finance']['realized_ltv_minor'] ?? '—' }} {{ $results['finance']['currency'] }}</dd></div>
                         </dl>
                     @endif
                 </section>
@@ -128,6 +129,35 @@
                             @endforeach
                         </ul>
                     @endif
+                </section>
+            @endif
+
+            @if (isset($results['demographics']))
+                <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-gray-900">
+                    <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Демография клиентов') }}</h2>
+                    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ __('Клиентов: :count', ['count' => $results['demographics']['client_count']]) }}</p>
+                    @foreach (['age' => 'Возраст', 'sex' => 'Пол', 'country' => 'Страна'] as $key => $label)
+                        <div class="mt-4">
+                            <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ __($label) }}</h3>
+                            <ul class="mt-2 space-y-1 text-sm">
+                                @foreach ($results['demographics'][$key] as $item)
+                                    <li class="flex justify-between gap-3"><span class="min-w-0 break-words">{{ $item['label'] }}</span><span>{{ $item['count'] }} · {{ $item['percent'] }}%</span></li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endforeach
+                </section>
+            @endif
+
+            @if (isset($results['services']))
+                <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-gray-900">
+                    <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Услуги и визиты') }}</h2>
+                    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ __('Завершённых визитов: :count', ['count' => $results['services']['visit_count']]) }}</p>
+                    <ul class="mt-4 space-y-2 text-sm">
+                        @foreach ($results['services']['services'] as $service)
+                            <li class="flex flex-wrap justify-between gap-3"><span class="min-w-0 break-words">{{ $service['name'] }}</span><span>{{ $service['visit_count'] }} · {{ $service['client_count'] }} {{ __('клиентов') }}</span></li>
+                        @endforeach
+                    </ul>
                 </section>
             @endif
         </div>

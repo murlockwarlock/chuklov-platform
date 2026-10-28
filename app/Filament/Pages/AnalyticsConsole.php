@@ -7,11 +7,13 @@ use App\Models\User;
 use App\Modules\Analytics\Application\AcquisitionAnalytics;
 use App\Modules\Analytics\Application\AnalyticsReportExport;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Analytics\Application\DemographicsAnalytics;
 use App\Modules\Analytics\Application\FeedbackAnalytics;
 use App\Modules\Analytics\Application\FinanceAnalytics;
 use App\Modules\Analytics\Application\GoalAnalytics;
 use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Analytics\Application\SchedulingAnalytics;
+use App\Modules\Analytics\Application\ServiceVisitAnalytics;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -97,6 +99,8 @@ final class AnalyticsConsole extends LocalizedPage
                                 'finance' => __('Финансы'),
                                 'feedback' => __('Удовлетворённость и обратная связь'),
                                 'goals' => __('Цели и задачи'),
+                                'demographics' => __('Демография клиентов'),
+                                'services' => __('Услуги и визиты'),
                             ])
                             ->multiple()
                             ->searchable()
@@ -173,6 +177,8 @@ final class AnalyticsConsole extends LocalizedPage
                     'finance' => $this->finance($actor, $period),
                     'feedback' => $this->feedback($actor, $period),
                     'goals' => $this->goals($actor, $period),
+                    'demographics' => $this->demographics($actor, $period),
+                    'services' => $this->services($actor, $period),
                     default => null,
                 };
             } catch (Throwable) {
@@ -201,6 +207,8 @@ final class AnalyticsConsole extends LocalizedPage
                     'finance' => $this->finance($actor, $period),
                     'feedback' => $this->feedback($actor, $period),
                     'goals' => $this->goals($actor, $period),
+                    'demographics' => $this->demographics($actor, $period),
+                    'services' => $this->services($actor, $period),
                     default => null,
                 };
             } catch (Throwable) {
@@ -247,6 +255,7 @@ final class AnalyticsConsole extends LocalizedPage
             'revenue_minor' => $data->revenueMinor,
             'receipt_count' => $data->receiptCount,
             'debt_minor' => $data->debtMinor,
+            'realized_ltv_minor' => $data->realizedLtvMinor,
         ];
     }
 
@@ -258,5 +267,15 @@ final class AnalyticsConsole extends LocalizedPage
     private function goals(User $actor, DashboardPeriod $period): array
     {
         return app(GoalAnalytics::class)->handle($actor, $period)->toArray();
+    }
+
+    private function demographics(User $actor, DashboardPeriod $period): array
+    {
+        return app(DemographicsAnalytics::class)->handle($actor, $period)->toArray();
+    }
+
+    private function services(User $actor, DashboardPeriod $period): array
+    {
+        return app(ServiceVisitAnalytics::class)->handle($actor, $period)->toArray();
     }
 }

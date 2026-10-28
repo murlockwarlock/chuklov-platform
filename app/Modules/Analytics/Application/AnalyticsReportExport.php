@@ -65,6 +65,20 @@ final readonly class AnalyticsReportExport
             }
         }
 
+        if (isset($results['demographics']) && is_array($results['demographics'])) {
+            foreach (['age' => 'Возраст', 'sex' => 'Пол', 'country' => 'Страна'] as $key => $label) {
+                foreach ((array) ($results['demographics'][$key] ?? []) as $item) {
+                    $sheet->fromArray([['Демография клиентов', $label.': '.(string) ($item['label'] ?? '—'), (int) ($item['count'] ?? 0), null, null, $item['percent'] ?? null, null]], null, 'A'.$row++);
+                }
+            }
+        }
+
+        if (isset($results['services']) && is_array($results['services'])) {
+            foreach ((array) ($results['services']['services'] ?? []) as $service) {
+                $sheet->fromArray([['Услуги и визиты', (string) ($service['name'] ?? '—'), (int) ($service['visit_count'] ?? 0), null, (int) ($service['client_count'] ?? 0), null, null]], null, 'A'.$row++);
+            }
+        }
+
         foreach (['scheduling' => 'Записи и визиты', 'finance' => 'Финансы'] as $key => $label) {
             if (! isset($results[$key]) || ! is_array($results[$key])) {
                 continue;
@@ -104,6 +118,7 @@ final readonly class AnalyticsReportExport
             'revenue_minor' => 'Доход (минимальные единицы)',
             'receipt_count' => 'Количество платежей',
             'debt_minor' => 'Долг (минимальные единицы)',
+            'realized_ltv_minor' => 'LTV (минимальные единицы)',
             default => $metric,
         };
     }
