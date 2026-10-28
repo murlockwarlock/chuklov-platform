@@ -2722,7 +2722,7 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
     const testNameInput = page.getByLabel('Название теста*', { exact: true }).last();
     await testNameInput.fill(testName);
-    const configuredTestItem = page.getByDisplayValue(testName).locator('xpath=ancestor::li[1]');
+    const configuredTestItem = testNameInput.locator('xpath=ancestor::li[1]');
     await configuredTestItem.getByLabel('Раздел', { exact: true }).fill('E2E раздел');
     const valueLabels = configuredTestItem.getByLabel('Название значения*', { exact: true });
     await valueLabels.last().fill('Норма');
@@ -2743,8 +2743,9 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     }
 
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
-    await page.getByLabel('Название причины*', { exact: true }).last().fill(causeName);
-    const configuredCauseItem = page.getByDisplayValue(causeName).locator('xpath=ancestor::li[1]');
+    const causeNameInput = page.getByLabel('Название причины*', { exact: true }).last();
+    await causeNameInput.fill(causeName);
+    const configuredCauseItem = causeNameInput.locator('xpath=ancestor::li[1]');
     await configuredCauseItem.getByLabel('Группа', { exact: true }).fill('E2E причины');
     const activeCauseToggle = configuredCauseItem.getByLabel('Активна', { exact: true });
     if (! await activeCauseToggle.isChecked()) {
@@ -2754,8 +2755,8 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
 
     await page.reload();
-    await expect(page.getByDisplayValue(testName)).toBeVisible();
-    await expect(page.getByDisplayValue(causeName)).toBeVisible();
+    await expect(page.getByLabel('Название теста*', { exact: true }).last()).toHaveValue(testName);
+    await expect(page.getByLabel('Название причины*', { exact: true }).last()).toHaveValue(causeName);
 
     await page.goto(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create`);
     await expect(page.getByRole('heading', { name: 'Новый сеанс', exact: true })).toBeVisible();
