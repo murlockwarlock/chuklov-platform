@@ -51,6 +51,8 @@ class EditMedicalSession extends LocalizedEditRecord
 
     protected static ?string $breadcrumb = 'Редактирование';
 
+    public int $resultFormVersion = 0;
+
     protected function getHeaderActions(): array
     {
         return [
@@ -66,6 +68,7 @@ class EditMedicalSession extends LocalizedEditRecord
                     abort_unless($record instanceof MedicalSession, 404);
                     $result = app(GenerateSessionResult::class)->handle($actor, $record, $this->parentClient());
                     $this->data['result'] = $result;
+                    $this->resultFormVersion++;
                     $this->form->fillPartially(['result' => $result], ['result']);
                     Notification::make()->title(__('Результат заполнен'))->success()->send();
                 }),
@@ -176,7 +179,11 @@ class EditMedicalSession extends LocalizedEditRecord
                         SessionForm::protocolActions(),
                         Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->rows(3)->placeholder(__('Что клиент почувствовал после сеанса')),
                         Textarea::make('visual_posture_diagnostics')->label(__('Визуальная диагностика осанки'))->rows(3)->placeholder(__('Изменения линии плеч, таза и позвоночника')),
-                        Textarea::make('result')->label(__('Результат после сеанса'))->rows(3)->placeholder(__('Эффект после процедур/до следующего сеанса')),
+                        Textarea::make('result')
+                            ->label(__('Результат после сеанса'))
+                            ->rows(3)
+                            ->placeholder(__('Эффект после процедур/до следующего сеанса'))
+                            ->key(fn (): string => 'session-result-'.$this->resultFormVersion),
                     ])
                     ->columnSpanFull(),
             ]);
