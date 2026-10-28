@@ -29,7 +29,7 @@ final readonly class SuggestAnalyticsTags
         private RecordAuditEvent $audit,
     ) {}
 
-    /** @param list<array{id: int, label: string}> $availableTags */
+    /** @param list<array<string, mixed>> $availableTags */
     public function handle(
         User $actor,
         string $taxonomy,
@@ -87,7 +87,7 @@ final readonly class SuggestAnalyticsTags
                 inputVariables: [
                     'classification_taxonomy' => $taxonomy,
                     'source_text' => mb_substr($sourceText, 0, 4000),
-                    'allowed_tags' => array_values(array_map(static fn (array $tag): string => $tag['label'], $availableTags)),
+                    'allowed_tags' => array_map(static fn (array $tag): string => $tag['label'], $availableTags),
                 ],
                 idempotencyKey: 'analytics-classification:'.$organizationId.':'.$taxonomy.':'.$sourceType.':'.$sourceId.':'.$digest,
                 actor: $actor,
@@ -172,7 +172,8 @@ final readonly class SuggestAnalyticsTags
         }
     }
 
-    /** @param list<array{id: int, label: string}> $availableTags
+    /** @param array<string, mixed>|null $payload
+     * @param list<array{id: int, label: string}> $availableTags
      * @return list<array{id: int, label: string}>
      */
     private function validateOutput(?array $payload, array $availableTags): ?array
@@ -197,7 +198,7 @@ final readonly class SuggestAnalyticsTags
         return array_values($result);
     }
 
-    /** @param list<array{id: int, label: string}> $availableTags
+    /** @param list<array<string, mixed>> $availableTags
      * @return list<array{id: int, label: string}>
      */
     private function normalizeTags(array $availableTags): array

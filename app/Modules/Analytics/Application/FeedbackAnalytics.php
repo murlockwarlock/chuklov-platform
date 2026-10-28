@@ -26,12 +26,13 @@ final readonly class FeedbackAnalytics
         if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
             abort(404);
         }
+        $clientId = $client?->getKey();
 
         $base = DB::table('feedback_submissions')
             ->where('organization_id', $organizationId)
             ->where('submitted_at', '>=', $period->startUtc)
             ->where('submitted_at', '<', $period->endUtc)
-            ->when($client instanceof Client, fn ($query) => $query->where('client_id', $client->getKey()));
+            ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId));
         $summary = (clone $base)
             ->selectRaw('COUNT(*) as submission_count')
             ->selectRaw('AVG(score) as average_score')
@@ -49,7 +50,7 @@ final readonly class FeedbackAnalytics
             ->where('links.organization_id', $organizationId)
             ->where('submissions.submitted_at', '>=', $period->startUtc)
             ->where('submissions.submitted_at', '<', $period->endUtc)
-            ->when($client instanceof Client, fn ($query) => $query->where('submissions.client_id', $client->getKey()))
+            ->when($clientId !== null, fn ($query) => $query->where('submissions.client_id', $clientId))
             ->select('themes.id', 'themes.name', 'themes.group_name')
             ->selectRaw('COUNT(DISTINCT links.client_id) as client_count')
             ->selectRaw('COUNT(DISTINCT links.feedback_submission_id) as submission_count')
@@ -65,6 +66,7 @@ final readonly class FeedbackAnalytics
                 'submission_count' => (int) $row->submission_count,
                 'average_score' => $row->average_score === null ? null : round((float) $row->average_score, 2),
             ])
+            ->values()
             ->all();
 
         return new FeedbackAnalyticsData(

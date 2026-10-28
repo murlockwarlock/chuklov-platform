@@ -27,15 +27,16 @@ final readonly class PainAnalytics
         if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
             abort(404);
         }
+        $clientId = $client?->getKey();
 
-        $sessionClientFilter = $client instanceof Client ? ' AND sessions.client_id = :client_id' : '';
+        $sessionClientFilter = $clientId !== null ? ' AND sessions.client_id = :client_id' : '';
         $bindings = [
             'organization_id' => $organizationId,
             'start_at' => $period->startUtc,
             'end_at' => $period->endUtc,
         ];
-        if ($client instanceof Client) {
-            $bindings['client_id'] = (int) $client->getKey();
+        if ($clientId !== null) {
+            $bindings['client_id'] = (int) $clientId;
         }
 
         $rows = DB::select(
@@ -103,35 +104,39 @@ final readonly class PainAnalytics
             ->where('organization_id', $organizationId)
             ->where('occurred_at', '>=', $period->startUtc)
             ->where('occurred_at', '<', $period->endUtc)
-            ->when($client instanceof Client, fn ($query) => $query->where('client_id', $client->getKey()))
+            ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId))
             ->count();
         $clientCount = DB::table('medical_sessions')
             ->where('organization_id', $organizationId)
             ->where('occurred_at', '>=', $period->startUtc)
             ->where('occurred_at', '<', $period->endUtc)
-            ->when($client instanceof Client, fn ($query) => $query->where('client_id', $client->getKey()))
+            ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId))
             ->distinct('client_id')
             ->count('client_id');
 
         return new PainAnalyticsData(
             clientCount: $clientCount,
             sessionCount: $sessionCount,
-            problems: array_map(static fn (object $row): array => [
-                'tag_id' => (int) $row->tag_id,
-                'name' => (string) $row->tag_name,
-                'group' => $row->tag_group !== null ? (string) $row->tag_group : null,
-                'client_count' => (int) $row->client_count,
-                'pain_count' => (int) $row->pain_count,
-                'average_before' => self::nullableFloat($row->average_before),
-                'average_after' => self::nullableFloat($row->average_after),
-                'average_reduction' => self::nullableFloat($row->average_reduction),
-                'session_1_before' => self::nullableFloat($row->session_one_before),
-                'session_1_after' => self::nullableFloat($row->session_one_after),
-                'session_2_before' => self::nullableFloat($row->session_two_before),
-                'session_2_after' => self::nullableFloat($row->session_two_after),
-                'session_3_before' => self::nullableFloat($row->session_three_before),
-                'session_3_after' => self::nullableFloat($row->session_three_after),
-            ], $rows),
+            problems: array_values(array_map(static function (object $row): array {
+                $values = get_object_vars($row);
+
+                return [
+                    'tag_id' => (int) ($values['tag_id'] ?? 0),
+                    'name' => (string) ($values['tag_name'] ?? ''),
+                    'group' => isset($values['tag_group']) ? (string) $values['tag_group'] : null,
+                    'client_count' => (int) ($values['client_count'] ?? 0),
+                    'pain_count' => (int) ($values['pain_count'] ?? 0),
+                    'average_before' => self::nullableFloat($values['average_before'] ?? null),
+                    'average_after' => self::nullableFloat($values['average_after'] ?? null),
+                    'average_reduction' => self::nullableFloat($values['average_reduction'] ?? null),
+                    'session_1_before' => self::nullableFloat($values['session_one_before'] ?? null),
+                    'session_1_after' => self::nullableFloat($values['session_one_after'] ?? null),
+                    'session_2_before' => self::nullableFloat($values['session_two_before'] ?? null),
+                    'session_2_after' => self::nullableFloat($values['session_two_after'] ?? null),
+                    'session_3_before' => self::nullableFloat($values['session_three_before'] ?? null),
+                    'session_3_after' => self::nullableFloat($values['session_three_after'] ?? null),
+                ];
+            }, $rows)),
         );
     }
 

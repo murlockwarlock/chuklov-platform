@@ -7,7 +7,7 @@ use Carbon\CarbonImmutable;
 final readonly class ClientAnalyticsInsightsData
 {
     /** @param list<string> $segments
-     * @param  list<array{name: string, visit_count: int}>  $services
+     * @param  array<int, array{name: string, visit_count: int}>  $services
      */
     public function __construct(
         public array $segments,

@@ -11,7 +11,10 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-/** @property ClassificationRunStatus $status */
+/**
+ * @property ClassificationRunStatus $status
+ * @property array<int, array{id: int, label: string}>|null $suggestions
+ */
 #[Fillable([])]
 class AnalyticsClassificationRun extends Model
 {

@@ -4,7 +4,7 @@ namespace App\Modules\Analytics\Application\Data;
 
 final readonly class PainAnalyticsData
 {
-    /** @param list<array<string, mixed>> $problems */
+    /** @param array<int, array<string, mixed>> $problems */
     public function __construct(
         public int $clientCount,
         public int $sessionCount,

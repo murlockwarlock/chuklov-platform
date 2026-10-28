@@ -17,7 +17,11 @@ final readonly class ClientSegmentConfiguration
             ->where('setting_key', $key->value)
             ->first();
 
-        return $setting?->integer_value ?? $fallback;
+        if ($setting === null || $setting->integer_value === null) {
+            return $fallback;
+        }
+
+        return $setting->integer_value;
     }
 
     /** @return array<string, int> */

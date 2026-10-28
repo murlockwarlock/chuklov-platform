@@ -61,6 +61,7 @@ final readonly class ClientAnalyticsInsights
                 'name' => (string) $row->name,
                 'visit_count' => (int) $row->visit_count,
             ])
+            ->values()
             ->all();
 
         $segments = [];

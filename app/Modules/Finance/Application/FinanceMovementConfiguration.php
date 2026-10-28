@@ -22,7 +22,7 @@ final class FinanceMovementConfiguration
         private readonly RecordAuditEvent $audit,
     ) {}
 
-    /** @return array{accounts: list<array<string, mixed>>, categories: list<array<string, mixed>>} */
+    /** @return array{accounts: array<int, array<string, mixed>>, categories: array<int, array<string, mixed>>} */
     public function values(): array
     {
         $organizationId = $this->context->id();
@@ -41,6 +41,7 @@ final class FinanceMovementConfiguration
                     'is_active' => (bool) $account->getRawOriginal('is_active'),
                     'sort_order' => (int) $account->getRawOriginal('sort_order'),
                 ])
+                ->values()
                 ->all(),
             'categories' => FinanceExpenseCategory::query()
                 ->where('organization_id', $organizationId)
@@ -53,6 +54,7 @@ final class FinanceMovementConfiguration
                     'is_active' => (bool) $category->getRawOriginal('is_active'),
                     'sort_order' => (int) $category->getRawOriginal('sort_order'),
                 ])
+                ->values()
                 ->all(),
         ];
     }
@@ -159,7 +161,10 @@ final class FinanceMovementConfiguration
             ->all();
     }
 
-    /** @return list<array{id: int|null, name: string, account_type: string, currency: string, is_active: bool, sort_order: int}> */
+    /**
+     * @param array<int, mixed> $values
+     * @return list<array{id: int|null, name: string, account_type: string, currency: string, is_active: bool, sort_order: int}>
+     */
     private function accounts(array $values): array
     {
         $normalized = [];
@@ -196,7 +201,10 @@ final class FinanceMovementConfiguration
         return $normalized;
     }
 
-    /** @return list<array{id: int|null, name: string, is_active: bool, sort_order: int}> */
+    /**
+     * @param array<int, mixed> $values
+     * @return list<array{id: int|null, name: string, is_active: bool, sort_order: int}>
+     */
     private function categories(array $values): array
     {
         $normalized = [];

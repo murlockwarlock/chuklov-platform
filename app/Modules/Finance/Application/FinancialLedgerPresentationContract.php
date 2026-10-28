@@ -34,6 +34,7 @@ final class FinancialLedgerPresentationContract
             FinancialLedgerEntryType::GatewaySettlement,
             FinancialLedgerEntryType::ReferralCredit,
             FinancialLedgerEntryType::GiftCertificateRedemption => $amount->isPositive(),
+            FinancialLedgerEntryType::Expense => $amount->isNegative(),
             FinancialLedgerEntryType::Correction => $amount->isNegative(),
         };
 

@@ -4,7 +4,7 @@ namespace App\Modules\Analytics\Application\Data;
 
 final readonly class FeedbackAnalyticsData
 {
-    /** @param list<array<string, int|float|null|string>> $themes */
+    /** @param array<int, array<string, int|float|null|string>> $themes */
     public function __construct(
         public int $submissionCount,
         public ?float $averageScore,

@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\FinanceAnalytics;
 use App\Modules\Finance\Application\FinanceMovementConfiguration;
+use App\Modules\Finance\Application\FinancialLedgerPresentationContract;
 use App\Modules\Finance\Application\RecordExpense;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Finance\Domain\Models\FinanceAccount;
@@ -66,6 +67,7 @@ final class FinanceMovementAnalyticsTest extends TestCase
         self::assertSame('2500', $data->expensesMinor);
         self::assertSame('-2500', $data->cashMovementMinor);
         self::assertSame('-2500', $data->accounts[0]['movement_minor']);
+        self::assertSame(-2500, app(FinancialLedgerPresentationContract::class)->validatePaymentAmount($first)->minorUnits());
     }
 
     public function test_finance_movement_configuration_is_tenant_scoped(): void

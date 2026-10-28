@@ -26,6 +26,7 @@ final readonly class GoalAnalytics
         if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
             abort(404);
         }
+        $clientId = $client?->getKey();
 
         $goals = DB::table('tracker_task_goal_tags as links')
             ->join('tracker_tasks as tasks', function ($join): void {
@@ -39,7 +40,7 @@ final readonly class GoalAnalytics
             ->where('links.organization_id', $organizationId)
             ->where('tasks.created_at', '>=', $period->startUtc)
             ->where('tasks.created_at', '<', $period->endUtc)
-            ->when($client instanceof Client, fn ($query) => $query->where('tasks.client_id', $client->getKey()))
+            ->when($clientId !== null, fn ($query) => $query->where('tasks.client_id', $clientId))
             ->select('tags.name', 'tags.group_name')
             ->selectRaw('COUNT(DISTINCT tasks.client_id) as client_count')
             ->selectRaw('COUNT(DISTINCT tasks.id) as task_count')
@@ -53,6 +54,7 @@ final readonly class GoalAnalytics
                 'client_count' => (int) $row->client_count,
                 'task_count' => (int) $row->task_count,
             ])
+            ->values()
             ->all();
 
         return new GoalAnalyticsData($goals);

@@ -6,7 +6,7 @@ use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
 
 final readonly class ClassificationResultData
 {
-    /** @param list<array{id: int, label: string}> $suggestions */
+    /** @param array<int, array{id: int, label: string}> $suggestions */
     public function __construct(
         public int $runId,
         public ClassificationRunStatus $status,
