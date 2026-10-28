@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
 type CrmFixture = {
     email: string;
@@ -98,7 +98,7 @@ async function uploadCrmMedicalReport(page: Page, filename: string, expectedOutc
     await expect(page.getByText('Файл загружен', { exact: true })).toBeVisible();
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -134,6 +134,15 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'CRM Клиент '.$suffix,
         ]);
+        if (${options.taxonomyFlow ? 'true' : 'false'}) {
+            \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => 'E2E проблема '.$suffix,
+                'group_name' => 'E2E группа '.$suffix,
+                'is_active' => true,
+                'sort_order' => 0,
+            ]);
+        }
         $telegramUsername = null;
         if ($telegramLinkFlow) {
             $telegramUsername = 'crm_'.$suffix;
@@ -587,6 +596,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 PLAYWRIGHT_TELEGRAM_LINK_FLOW: options.telegramLinkFlow ? '1' : '0',
                 PLAYWRIGHT_MESSAGES_FLOW: options.messagesFlow ? '1' : '0',
                 PLAYWRIGHT_GIFT_SALE_FLOW: options.giftSaleFlow ? '1' : '0',
+                PLAYWRIGHT_TAXONOMY_FLOW: options.taxonomyFlow ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -2664,8 +2674,8 @@ test('staff can analyze several dimensions and download a filtered Excel report'
 
 test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => {
     test.setTimeout(90_000);
-    const fixture = createCrmFixture();
-    const groupName = `E2E группа ${fixture.clientName}`;
+    const fixture = createCrmFixture({ taxonomyFlow: true });
+    const groupName = `E2E группа ${fixture.clientName.replace(/^CRM Клиент /, '')}`;
     const renamedGroupName = `${groupName} обновлена`;
 
     await login(page, fixture);
@@ -2673,34 +2683,17 @@ test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => 
     await expect(page.getByRole('heading', { name: 'Группы аналитики', exact: true })).toBeVisible();
 
     const problemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
-    await problemSection.getByRole('button', { name: 'Добавить группу', exact: true }).click();
     const groupNameInputs = problemSection.getByRole('textbox', { name: 'Название группы*', exact: true });
-    let blankInputCount = 0;
-    for (let index = 0; index < await groupNameInputs.count(); index += 1) {
-        const input = groupNameInputs.nth(index);
-        if ((await input.inputValue()) === '') {
-            await input.fill(blankInputCount === 0 ? groupName : `${groupName} ${blankInputCount + 1}`);
-            blankInputCount += 1;
-        }
-    }
-    expect(blankInputCount).toBeGreaterThan(0);
-    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
-    await expect(page.getByText('Группы аналитики сохранены', { exact: true })).toBeVisible();
-
-    await page.reload();
-    const reopenedProblemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
-    const reopenedNameInputs = reopenedProblemSection.getByRole('textbox', { name: 'Название группы*', exact: true });
     let groupIndex = -1;
-    for (let index = 0; index < await reopenedNameInputs.count(); index += 1) {
-        if ((await reopenedNameInputs.nth(index).inputValue()) === groupName) {
+    for (let index = 0; index < await groupNameInputs.count(); index += 1) {
+        if ((await groupNameInputs.nth(index).inputValue()) === groupName) {
             groupIndex = index;
             break;
         }
     }
     expect(groupIndex).toBeGreaterThanOrEqual(0);
-    const reopenedNameInput: Locator = reopenedNameInputs.nth(groupIndex);
-    await reopenedNameInput.fill(renamedGroupName);
-    const activeToggle = reopenedProblemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(groupIndex);
+    await groupNameInputs.nth(groupIndex).fill(renamedGroupName);
+    const activeToggle = problemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(groupIndex);
     if (await activeToggle.isChecked()) {
         await activeToggle.uncheck();
     }
@@ -2708,17 +2701,17 @@ test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => 
     await expect(page.getByText('Группы аналитики сохранены', { exact: true })).toBeVisible();
 
     await page.reload();
-    const finalProblemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
-    const finalNameInputs = finalProblemSection.getByRole('textbox', { name: 'Название группы*', exact: true });
-    let finalGroupIndex = -1;
-    for (let index = 0; index < await finalNameInputs.count(); index += 1) {
-        if ((await finalNameInputs.nth(index).inputValue()) === renamedGroupName) {
-            finalGroupIndex = index;
+    const reopenedProblemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
+    const reopenedNameInputs = reopenedProblemSection.getByRole('textbox', { name: 'Название группы*', exact: true });
+    let reopenedGroupIndex = -1;
+    for (let index = 0; index < await reopenedNameInputs.count(); index += 1) {
+        if ((await reopenedNameInputs.nth(index).inputValue()) === renamedGroupName) {
+            reopenedGroupIndex = index;
             break;
         }
     }
-    expect(finalGroupIndex).toBeGreaterThanOrEqual(0);
-    await expect(finalProblemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(finalGroupIndex)).not.toBeChecked();
+    expect(reopenedGroupIndex).toBeGreaterThanOrEqual(0);
+    await expect(reopenedProblemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(reopenedGroupIndex)).not.toBeChecked();
     await expect(page.locator('html')).toBeVisible();
     await assertNoHorizontalOverflow(page);
 });
