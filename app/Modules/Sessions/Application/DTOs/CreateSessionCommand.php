@@ -23,6 +23,8 @@ final readonly class CreateSessionCommand
         public ?int $painVas = null,
         /** @var array<int, mixed>|null */
         public ?array $pains = null,
+        public ?string $subjectiveFeelings = null,
+        public ?string $visualPostureDiagnostics = null,
     ) {}
 
     /**
@@ -51,6 +53,8 @@ final readonly class CreateSessionCommand
             result: self::optionalTrimmedString($data, 'result'),
             painVas: self::optionalPainVas($data),
             pains: array_key_exists('pains', $data) && is_array($data['pains']) ? array_values($data['pains']) : null,
+            subjectiveFeelings: self::optionalTrimmedString($data, 'subjective_feelings'),
+            visualPostureDiagnostics: self::optionalTrimmedString($data, 'visual_posture_diagnostics'),
         );
     }
 

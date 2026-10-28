@@ -24,6 +24,8 @@ use Illuminate\Support\Carbon;
  * @property string|null $pain_vas
  * @property string|null $tests
  * @property string|null $observations
+ * @property string|null $subjective_feelings
+ * @property string|null $visual_posture_diagnostics
  * @property string|null $root_cause_hypothesis
  * @property string|null $protocol
  * @property string|null $result
@@ -37,7 +39,7 @@ use Illuminate\Support\Carbon;
  * @property-read Booking|null $booking
  * @property-read Collection<int, MedicalSessionAttachment> $attachmentLinks
  */
-#[Fillable(['pain', 'pain_vas', 'tests', 'observations', 'root_cause_hypothesis', 'protocol', 'result', 'encryption_key_version'])]
+#[Fillable(['pain', 'pain_vas', 'tests', 'observations', 'subjective_feelings', 'visual_posture_diagnostics', 'root_cause_hypothesis', 'protocol', 'result', 'encryption_key_version'])]
 class MedicalSession extends Model
 {
     /** @return BelongsTo<Organization, $this> */

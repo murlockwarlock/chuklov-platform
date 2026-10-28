@@ -15,12 +15,14 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
+use App\Modules\Sessions\Application\GenerateSessionResult;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 final class MedicalPainFlowTest extends TestCase
@@ -116,6 +118,45 @@ final class MedicalPainFlowTest extends TestCase
         ));
 
         self::assertSame('fortnight', $session->pains[0]->frequencyPeriodUnit);
+    }
+
+    public function test_profile_history_rows_and_session_observation_fields_are_encrypted_and_reloadable(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+
+        $profile = app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            historyEntries: [
+                ['type' => 'operation', 'year' => 2019, 'description' => 'Артроскопия колена'],
+                ['type' => 'injury', 'year' => 2022, 'description' => 'Растяжение голеностопа'],
+            ],
+            historyEntriesProvided: true,
+        ));
+
+        self::assertSame(['operation', 'injury'], array_map(static fn ($entry): string => $entry->type, $profile->historyEntries));
+        self::assertSame(['Артроскопия колена', 'Растяжение голеностопа'], array_map(static fn ($entry): string => $entry->description, $profile->historyEntries));
+
+        $rawHistory =
+            DB::table('medical_profile_history_entries')->where('organization_id', $organization->getKey())->get();
+        self::assertCount(2, $rawHistory);
+        self::assertStringNotContainsString('Артроскопия', (string) $rawHistory[0]->description);
+
+        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-22 09:00:00', 'UTC'),
+            subjectiveFeelings: 'Стало легче двигаться',
+            visualPostureDiagnostics: 'Плечи выровнены',
+        ));
+
+        self::assertSame('Стало легче двигаться', $session->subjectiveFeelings);
+        self::assertSame('Плечи выровнены', $session->visualPostureDiagnostics);
+        $reloaded = app(GetSession::class)->handle($admin, MedicalSession::findOrFail($session->id), $client);
+        self::assertSame('Стало легче двигаться', $reloaded?->subjectiveFeelings);
+        self::assertSame('Плечи выровнены', $reloaded?->visualPostureDiagnostics);
+
+        $generated = app(GenerateSessionResult::class)->handle($admin, MedicalSession::findOrFail($session->id), $client);
+        self::assertStringContainsString('Боли: нет заполненных оценок', $generated);
+        self::assertStringContainsString('Субъективные ощущения: Стало легче двигаться', $generated);
+        self::assertStringContainsString('Визуальная диагностика осанки: Плечи выровнены', $generated);
     }
 
     /** @return array{Organization, User, Client, Specialist} */

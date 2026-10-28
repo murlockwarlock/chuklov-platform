@@ -19,6 +19,10 @@ final readonly class UpdateSessionCommand
         /** @var array<int, mixed>|null */
         public ?array $pains = null,
         public bool $painsProvided = false,
+        public ?string $subjectiveFeelings = null,
+        public ?string $visualPostureDiagnostics = null,
+        public ?bool $subjectiveFeelingsProvided = null,
+        public ?bool $visualPostureDiagnosticsProvided = null,
     ) {}
 
     /**
@@ -60,6 +64,10 @@ final readonly class UpdateSessionCommand
             painVasProvided: array_key_exists('pain_vas', $data),
             pains: array_key_exists('pains', $data) && is_array($data['pains']) ? array_values($data['pains']) : null,
             painsProvided: array_key_exists('pains', $data),
+            subjectiveFeelings: self::normalizeOptionalValue($data['subjective_feelings'] ?? null, 'subjective_feelings'),
+            visualPostureDiagnostics: self::normalizeOptionalValue($data['visual_posture_diagnostics'] ?? null, 'visual_posture_diagnostics'),
+            subjectiveFeelingsProvided: array_key_exists('subjective_feelings', $data),
+            visualPostureDiagnosticsProvided: array_key_exists('visual_posture_diagnostics', $data),
         );
     }
 
@@ -81,6 +89,16 @@ final readonly class UpdateSessionCommand
     public function shouldUpdatePainVas(): bool
     {
         return $this->painVasProvided ?? $this->painVas !== null;
+    }
+
+    public function shouldUpdateSubjectiveFeelings(): bool
+    {
+        return $this->subjectiveFeelingsProvided ?? $this->subjectiveFeelings !== null;
+    }
+
+    public function shouldUpdateVisualPostureDiagnostics(): bool
+    {
+        return $this->visualPostureDiagnosticsProvided ?? $this->visualPostureDiagnostics !== null;
     }
 
     /** @param array<string, mixed> $data */

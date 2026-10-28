@@ -57,6 +57,8 @@ final readonly class CreateSession
             encryptedPain: $this->encryptor->encryptField($orgId, $command->pain, $keyVersion),
             encryptedTests: $this->encryptor->encryptField($orgId, $command->tests, $keyVersion),
             encryptedObservations: $this->encryptor->encryptField($orgId, $command->observations, $keyVersion),
+            encryptedSubjectiveFeelings: $this->encryptor->encryptField($orgId, $command->subjectiveFeelings, $keyVersion),
+            encryptedVisualPostureDiagnostics: $this->encryptor->encryptField($orgId, $command->visualPostureDiagnostics, $keyVersion),
             encryptedRootCauseHypothesis: $this->encryptor->encryptField($orgId, $command->rootCauseHypothesis, $keyVersion),
             encryptedProtocol: $this->encryptor->encryptField($orgId, $command->protocol, $keyVersion),
             encryptedResult: $this->encryptor->encryptField($orgId, $command->result, $keyVersion),
@@ -82,6 +84,8 @@ final readonly class CreateSession
                 'pain_vas' => $encrypted->encryptedPainVas,
                 'tests' => $encrypted->encryptedTests,
                 'observations' => $encrypted->encryptedObservations,
+                'subjective_feelings' => $encrypted->encryptedSubjectiveFeelings,
+                'visual_posture_diagnostics' => $encrypted->encryptedVisualPostureDiagnostics,
                 'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
                 'protocol' => $encrypted->encryptedProtocol,
                 'result' => $encrypted->encryptedResult,
@@ -129,6 +133,8 @@ final readonly class CreateSession
                 updatedAt: $session->updated_at,
                 painVas: $command->painVas,
                 pains: $this->painReader->forSession($session),
+                subjectiveFeelings: $command->subjectiveFeelings,
+                visualPostureDiagnostics: $command->visualPostureDiagnostics,
             );
         });
     }
@@ -178,6 +184,8 @@ final readonly class CreateSession
             'pain' => $command->pain,
             'tests' => $command->tests,
             'observations' => $command->observations,
+            'subjective_feelings' => $command->subjectiveFeelings,
+            'visual_posture_diagnostics' => $command->visualPostureDiagnostics,
             'root_cause_hypothesis' => $command->rootCauseHypothesis,
             'protocol' => $command->protocol,
             'result' => $command->result,

@@ -51,6 +51,8 @@ final class GetSession
             painVas: $this->painVas($this->encryptor->decryptField($orgId, $persisted->pain_vas, $keyVersion)),
             tests: $this->encryptor->decryptField($orgId, $persisted->tests, $keyVersion),
             observations: $this->encryptor->decryptField($orgId, $persisted->observations, $keyVersion),
+            subjectiveFeelings: $persisted->subjective_feelings === null ? null : $this->encryptor->decryptField($orgId, $persisted->subjective_feelings, $keyVersion),
+            visualPostureDiagnostics: $persisted->visual_posture_diagnostics === null ? null : $this->encryptor->decryptField($orgId, $persisted->visual_posture_diagnostics, $keyVersion),
             rootCauseHypothesis: $this->encryptor->decryptField($orgId, $persisted->root_cause_hypothesis, $keyVersion),
             protocol: $this->encryptor->decryptField($orgId, $persisted->protocol, $keyVersion),
             result: $this->encryptor->decryptField($orgId, $persisted->result, $keyVersion),

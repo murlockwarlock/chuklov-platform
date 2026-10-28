@@ -18,6 +18,7 @@ final class GetMedicalProfile
         private readonly MedicalProfileAuthorization $authorization,
         private readonly MedicalEncryptorInterface $encryptor,
         private readonly MedicalProfilePainReader $painReader,
+        private readonly MedicalProfileHistoryReader $historyReader,
     ) {}
 
     public function handle(User $actor, Client $client): ?MedicalProfileData
@@ -71,6 +72,7 @@ final class GetMedicalProfile
             chronicConditions: $data->chronicConditions,
             clinicalAnswers: $data->clinicalAnswers,
             pains: $this->painReader->forProfile($profile),
+            historyEntries: $this->historyReader->forProfile($profile),
         );
     }
 

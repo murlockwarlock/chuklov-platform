@@ -30,6 +30,8 @@ final readonly class UpdateMedicalProfile
         private ClinicalQuestionnaire $questionnaire,
         private MedicalProfilePainWriter $painWriter,
         private MedicalProfilePainReader $painReader,
+        private MedicalProfileHistoryWriter $historyWriter,
+        private MedicalProfileHistoryReader $historyReader,
     ) {}
 
     public function handle(User|Client $actor, Client $client, UpdateMedicalProfileCommand $command): MedicalProfileData
@@ -132,6 +134,9 @@ final readonly class UpdateMedicalProfile
             $pains = $command->painsProvided
                 ? $this->painWriter->replace($profile, $command->pains ?? [], $keyVersion)
                 : ($existing instanceof MedicalProfile ? $this->painReader->forProfile($profile) : []);
+            $historyEntries = $command->historyEntriesProvided
+                ? $this->historyWriter->replace($profile, $command->historyEntries ?? [], $keyVersion)
+                : ($existing instanceof MedicalProfile ? $this->historyReader->forProfile($profile) : []);
 
             $this->audit->handle(
                 organization: $organization,
@@ -161,6 +166,7 @@ final readonly class UpdateMedicalProfile
                 chronicConditions: $plainData->chronicConditions,
                 clinicalAnswers: $plainData->clinicalAnswers,
                 pains: $pains,
+                historyEntries: $historyEntries,
             );
         });
 

@@ -13,5 +13,7 @@ final readonly class EncryptedSessionPayload
         public ?string $encryptedResult,
         public int $keyVersion = 1,
         public ?string $encryptedPainVas = null,
+        public ?string $encryptedSubjectiveFeelings = null,
+        public ?string $encryptedVisualPostureDiagnostics = null,
     ) {}
 }

@@ -26,6 +26,8 @@ final readonly class MedicalSessionData
         public ?int $painVas = null,
         /** @var list<MedicalPainData> */
         public array $pains = [],
+        public ?string $subjectiveFeelings = null,
+        public ?string $visualPostureDiagnostics = null,
     ) {}
 
     public function occurredAtAtom(): ?string
@@ -45,6 +47,8 @@ final readonly class MedicalSessionData
             'pain' => $this->pain,
             'pain_vas' => $this->painVas,
             'pains' => array_map(static fn (MedicalPainData $pain): array => $pain->toArray(), $this->pains),
+            'subjective_feelings' => $this->subjectiveFeelings,
+            'visual_posture_diagnostics' => $this->visualPostureDiagnostics,
             'tests' => $this->tests,
             'observations' => $this->observations,
             'root_cause_hypothesis' => $this->rootCauseHypothesis,

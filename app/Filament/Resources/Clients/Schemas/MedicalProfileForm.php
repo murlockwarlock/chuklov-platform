@@ -9,6 +9,7 @@ use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -41,6 +42,12 @@ final class MedicalProfileForm
                 'name' => $pain->name,
                 'score' => $pain->score,
             ], $profile?->pains ?? []),
+            'history_entries' => array_map(static fn ($entry): array => [
+                'lineage_key' => $entry->lineageKey,
+                'type' => $entry->type,
+                'year' => $entry->year,
+                'description' => $entry->description,
+            ], $profile?->historyEntries ?? []),
             'pain_not_measured' => (self::answers($profile)['pain_vas'] ?? null) === null,
             'answers' => self::answers($profile) ?? [
                 'symptoms' => [], 'pain_vas' => null, 'no_chronic_conditions' => false,
@@ -116,6 +123,24 @@ final class MedicalProfileForm
                 ->nullable()->required(fn (Get $get): bool => $get('answers.had_operations') === true)
                 ->validationMessages(['required' => __('Укажите год операции.')]),
             Textarea::make('operations')->label(__('Операции'))->rows(3)->maxLength(10000),
+            Repeater::make('history_entries')
+                ->label(__('Операции и травмы по годам'))
+                ->schema([
+                    Hidden::make('lineage_key')->dehydrated()->nullable(),
+                    Select::make('type')->label(__('Тип'))->options([
+                        'operation' => __('Операция'),
+                        'injury' => __('Травма'),
+                    ])->required(),
+                    TextInput::make('year')->label(__('Год'))->integer()->minValue(1800)->maxValue(2200)->required(),
+                    Textarea::make('description')->label(__('Описание'))->rows(2)->maxLength(10000)->required(),
+                ])
+                ->columns(2)
+                ->defaultItems(0)
+                ->reorderable()
+                ->collapsible()
+                ->itemLabel(fn (array $state): string => (string) ($state['description'] ?? __('Новая запись')))
+                ->addActionLabel(__('Добавить запись'))
+                ->columnSpanFull(),
             Checkbox::make('answers.had_injuries')->label(__('Были травмы'))->live(),
             TextInput::make('answers.injury_year')->label(__('Год травмы'))->integer()->minValue(1900)->maxValue(now()->year)
                 ->nullable()->required(fn (Get $get): bool => $get('answers.had_injuries') === true)
