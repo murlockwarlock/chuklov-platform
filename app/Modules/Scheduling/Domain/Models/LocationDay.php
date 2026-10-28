@@ -5,6 +5,7 @@ namespace App\Modules\Scheduling\Domain\Models;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\ValueObjects\LocalDate;
 use App\Modules\Scheduling\Domain\ValueObjects\WallClockInterval;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Database\Factories\LocationDayFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -33,6 +34,12 @@ class LocationDay extends Model
         return $this->belongsTo(Organization::class);
     }
 
+    /** @return BelongsTo<Specialist, $this> */
+    public function specialist(): BelongsTo
+    {
+        return $this->belongsTo(Specialist::class);
+    }
+
     public function appliesTo(LocalDate $date): bool
     {
         return ($this->specific_date !== null && CarbonImmutable::parse((string) $this->specific_date)->toDateString() === $date->value)
@@ -52,6 +59,7 @@ class LocationDay extends Model
     protected function casts(): array
     {
         return [
+            'specialist_id' => 'integer',
             'weekday' => 'integer',
             'specific_date' => 'date:Y-m-d',
             'is_active' => 'boolean',

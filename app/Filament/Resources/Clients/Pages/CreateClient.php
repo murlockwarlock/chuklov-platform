@@ -6,6 +6,7 @@ use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Identity\Application\CreateClient as CreateClientAction;
+use App\Modules\Identity\Application\NormalizeClientDemographics;
 use Illuminate\Database\Eloquent\Model;
 
 class CreateClient extends LocalizedCreateRecord
@@ -22,13 +23,14 @@ class CreateClient extends LocalizedCreateRecord
 
         return app(CreateClientAction::class)->handle(
             actor: $actor,
-            fullName: $data['full_name'],
+            fullName: implode(' ', array_filter([$data['last_name'] ?? null, $data['first_name'] ?? null, $data['middle_name'] ?? null])),
             email: $data['email'] ?? null,
             phone: $data['phone'] ?? null,
             language: $data['language'],
             timezone: $data['timezone'],
             leadSource: $data['lead_source'] ?? null,
             referralCode: $data['referral_code'] ?? null,
+            demographics: array_intersect_key($data, array_flip(NormalizeClientDemographics::FIELDS)),
         );
     }
 }

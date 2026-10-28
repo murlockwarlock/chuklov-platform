@@ -337,7 +337,9 @@ final class CustomizableCopySafetyTest extends TestCase
         self::assertSame($version->getKey(), $this->latestVersion($template->fresh())->getKey());
         self::assertSame(NotificationMessageMode::ImageWithCaption, $version->fresh()->delivery_mode);
         self::assertSame('above', $version->fresh()->caption_position);
-        self::assertSame(['image' => 'organizations/custom/booking.jpg', 'alt' => 'Моя картинка'], $version->fresh()->media);
+        self::assertCount(2, $version->fresh()->media);
+        self::assertSame('organizations/custom/booking.jpg', $version->fresh()->media['image']);
+        self::assertSame('Моя картинка', $version->fresh()->media['alt']);
         self::assertSame(1, $template->fresh()->versions()->count());
     }
 

@@ -355,6 +355,7 @@ final class ScenarioRuleForm
         return [
             'booking.source' => __('Источник записи'),
             'booking.status' => __('Статус записи'),
+            'booking.needs_medical_profile' => __('Нужно заполнить карту здоровья'),
             'booking.has_qualifying_next_booking' => __('Есть следующая запись'),
             'client.language' => __('Язык клиента'),
             'client.marketing_consent' => __('Согласие на сообщения'),
@@ -390,6 +391,7 @@ final class ScenarioRuleForm
                 'en' => __('Английский'),
             ],
             'booking.has_qualifying_next_booking',
+            'booking.needs_medical_profile',
             'onboarding.completed',
             'client.marketing_consent',
             'finance.has_outstanding_debt',
@@ -429,6 +431,7 @@ final class ScenarioRuleForm
             'booking.status' => __('Статус записи'),
             'client.language' => __('Язык'),
             'booking.has_qualifying_next_booking',
+            'booking.needs_medical_profile',
             'onboarding.completed',
             'client.marketing_consent',
             'finance.has_outstanding_debt',

@@ -37,6 +37,18 @@ final class ClientWorkspaceInfolist
             ->components([
                 Section::make(__('Клиент'))
                     ->schema([
+                        TextEntry::make('last_name')->label(__('Фамилия'))->placeholder(__('Не указана'))->wrap(),
+                        TextEntry::make('first_name')->label(__('Имя'))->placeholder(__('Не указано'))->wrap(),
+                        TextEntry::make('middle_name')->label(__('Отчество'))->placeholder(__('Не указано'))->wrap(),
+                        TextEntry::make('gender')->label(__('Пол'))
+                            ->formatStateUsing(fn (?string $state): string => match ($state) {
+                                'MALE' => __('Мужской'),
+                                'FEMALE' => __('Женский'),
+                                default => __('Не указан'),
+                            })->placeholder(__('Не указан')),
+                        TextEntry::make('birth_date')->label(__('Дата рождения'))->date('d.m.Y')->placeholder(__('Не указана')),
+                        TextEntry::make('country')->label(__('Страна'))->placeholder(__('Не указана'))->wrap(),
+                        TextEntry::make('city')->label(__('Город'))->placeholder(__('Не указан'))->wrap(),
                         TextEntry::make('phone')
                             ->label(__('Телефон'))
                             ->placeholder(__('Не указан'))
@@ -127,7 +139,7 @@ final class ClientWorkspaceInfolist
 
                                 return $name !== '' ? $name : ($referrer instanceof Client
                                     ? __('Клиент без имени')
-                                    : ($relationship === null ? __('Не указан') : __('Клиент недоступен')));
+                                    : ($relationship === null ? self::text('Не указан') : self::text('Клиент недоступен')));
                             })
                             ->url(function (Client $record): ?string {
                                 $relationship = $record->getRelationValue('referralRelationship');
@@ -145,15 +157,15 @@ final class ClientWorkspaceInfolist
                                 $relationship = $record->getRelationValue('referralRelationship');
 
                                 return $relationship === null ? null : match ($relationship->establishment_method?->value) {
-                                    'manual_crm' => __('Указан в CRM'),
+                                    'manual_crm' => self::text('Указан в CRM'),
                                     'automatic_referral_link' => $relationship->referral_campaign_link_id === null
-                                        ? __('Персональная ссылка')
-                                        : __('Кампания: :name', [
+                                        ? self::text('Персональная ссылка')
+                                        : self::text('Кампания: :name', [
                                             'name' => ($campaign = $relationship->getRelationValue('referralCampaignLink')) instanceof ReferralCampaignLink
-                                                ? ($campaign->name ?: __('не указана'))
-                                                : __('не указана'),
+                                                ? ($campaign->name ?: self::text('не указана'))
+                                                : self::text('не указана'),
                                         ]),
-                                    default => __('Источник зафиксирован'),
+                                    default => self::text('Источник зафиксирован'),
                                 };
                             })
                             ->wrap(),
@@ -196,7 +208,7 @@ final class ClientWorkspaceInfolist
                             ->badge()
                             ->color(fn (string $state): string => $state === 'allowed' ? 'success' : 'danger')
                             ->helperText(fn (Client $record): ?string => $record->activeBookingRestriction?->reason
-                                ? __('Причина: :reason', ['reason' => $record->activeBookingRestriction->reason])
+                                ? self::text('Причина: :reason', ['reason' => $record->activeBookingRestriction->reason])
                                 : null)
                             ->wrap(),
                         TextEntry::make('blacklist_status')
@@ -270,14 +282,44 @@ final class ClientWorkspaceInfolist
                             ->placeholder(__('Не заполнен'))
                             ->columnSpanFull()
                             ->wrap(),
-                        TextEntry::make('complaints')
-                            ->label(__('Жалобы'))
-                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'complaints'))
-                            ->placeholder(__('Не указаны'))
-                            ->wrap(),
-                        TextEntry::make('goals')
-                            ->label(__('Цели'))
-                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'goals'))
+                        Section::make(__('Жалобы и шкала боли (ВАШ)'))
+                            ->schema([
+                                TextEntry::make('complaints')
+                                    ->label(__('Жалобы'))
+                                    ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'complaints'))
+                                    ->placeholder(__('Не указаны'))
+                                    ->wrap(),
+                                TextEntry::make('profile_symptoms')
+                                    ->label(__('Главные жалобы (симптомы)'))
+                                    ->state(function (Client $record): ?string {
+                                        $symptoms = MedicalProfileForm::answers(self::medicalProfile($record))['symptoms'] ?? null;
+
+                                        return is_array($symptoms) ? implode(', ', array_map(
+                                            static fn (string $key): string => __(MedicalProfileForm::SYMPTOMS[$key]),
+                                            array_values(array_filter($symptoms, static fn (mixed $key): bool => is_string($key) && isset(MedicalProfileForm::SYMPTOMS[$key]))),
+                                        )) : null;
+                                    })->placeholder(__('Не указаны'))->wrap(),
+                                TextEntry::make('profile_pain_vas')->label(__('Шкала боли (ВАШ)'))
+                                    ->state(function (Client $record): ?string {
+                                        $value = MedicalProfileForm::answers(self::medicalProfile($record))['pain_vas'] ?? null;
+
+                                        return is_int($value) && $value >= 0 && $value <= 10 ? self::text(':value / 10', ['value' => $value]) : null;
+                                    })->placeholder(__('Не указана')),
+                            ])
+                            ->columns(1),
+                        ...ClinicalProfileInfolist::answers(),
+                        Section::make(__('Задачи по здоровью'))
+                            ->schema([
+                                TextEntry::make('goals')
+                                    ->label(__('Задачи по здоровью'))
+                                    ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'goals'))
+                                    ->placeholder(__('Не указаны'))
+                                    ->wrap(),
+                            ])
+                            ->columns(1),
+                        TextEntry::make('chronic_conditions')
+                            ->label(__('Хронические заболевания'))
+                            ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'chronicConditions'))
                             ->placeholder(__('Не указаны'))
                             ->wrap(),
                         TextEntry::make('operations')
@@ -321,6 +363,14 @@ final class ClientWorkspaceInfolist
             ]);
     }
 
+    /** @param array<string, scalar> $replace */
+    private static function text(string $key, array $replace = []): string
+    {
+        $translated = __($key, $replace);
+
+        return is_string($translated) ? $translated : $key;
+    }
+
     private static function marketingConsentEvidenceLabel(string $evidence): string
     {
         return match ($evidence) {
@@ -358,6 +408,7 @@ final class ClientWorkspaceInfolist
             'goals' => $profile?->goals,
             'operations' => $profile?->operations,
             'injuries' => $profile?->injuries,
+            'chronicConditions' => $profile?->chronicConditions,
             'complaintsGoals' => $profile?->complaintsGoals,
             'operationsInjuries' => $profile?->operationsInjuries,
             'medicines' => $profile?->medicines,

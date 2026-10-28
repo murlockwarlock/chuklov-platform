@@ -15,6 +15,7 @@ use App\Modules\Services\Domain\Contracts\ServiceMediaStorageInterface;
 use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Services\Domain\ValueObjects\ServiceConfiguration;
+use BackedEnum;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -88,6 +89,11 @@ class UpdateService
             'payment_requirement' => $paymentRequirement,
         ];
         $expectedSnapshot = $attributes['expected_snapshot'] ?? null;
+        foreach (['buffer_office_minutes', 'buffer_home_minutes', 'buffer_online_minutes', 'requires_medical_profile'] as $field) {
+            if (! array_key_exists($field, $attributes)) {
+                $attributes[$field] = $service->getAttribute($field);
+            }
+        }
         unset($attributes['expected_snapshot']);
         $uploadedFile = $this->uploadedFile($attributes);
         $removeImage = (bool) ($attributes['remove_image'] ?? false);
@@ -157,7 +163,12 @@ class UpdateService
                 $changedFields = [];
 
                 foreach ($finalConfiguration->attributes() as $field => $value) {
-                    if ($lockedService->getAttribute($field) !== $value) {
+                    $currentValue = $lockedService->getAttribute($field);
+                    if ($currentValue instanceof BackedEnum) {
+                        $currentValue = $currentValue->value;
+                    }
+
+                    if ($currentValue !== $value) {
                         $changedFields[] = $field;
                     }
                 }

@@ -4,6 +4,8 @@ namespace App\Modules\Identity\Application;
 
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\PatientInvitation;
+use App\Modules\Identity\Domain\Models\PatientProfile;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
@@ -47,6 +49,28 @@ final class ResetStagingClientAccount
                 ->firstOrFail();
 
             $purge = $this->purger->handle($organization, $lockedClient);
+
+            foreach ($purge['patient_invitation_profile_ids'] as $invitationId => $patientProfileId) {
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'patient.invitation.removed',
+                    targetType: PatientInvitation::class,
+                    targetId: (string) $invitationId,
+                    metadata: ['patient_profile_id' => $patientProfileId],
+                );
+            }
+
+            foreach ($purge['patient_profile_ids'] as $patientProfileId) {
+                $this->audit->handle(
+                    organization: $organization,
+                    actor: $actor,
+                    action: 'patient.profile.deleted',
+                    targetType: PatientProfile::class,
+                    targetId: (string) $patientProfileId,
+                    metadata: ['patient_profile_id' => $patientProfileId],
+                );
+            }
 
             if (! $lockedClient->delete()) {
                 throw new RuntimeException('The staging client account could not be deleted.');

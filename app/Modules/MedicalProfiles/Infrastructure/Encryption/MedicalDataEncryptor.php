@@ -63,6 +63,8 @@ final readonly class MedicalDataEncryptor implements MedicalEncryptorInterface
             encryptedGoals: $this->encryptField($organizationId, $data->goals, $version),
             encryptedOperations: $this->encryptField($organizationId, $data->operations, $version),
             encryptedInjuries: $this->encryptField($organizationId, $data->injuries, $version),
+            encryptedChronicConditions: $this->encryptField($organizationId, $data->chronicConditions, $version),
+            encryptedClinicalAnswers: $this->encryptField($organizationId, $data->clinicalAnswers, $version),
         );
     }
 
@@ -79,6 +81,8 @@ final readonly class MedicalDataEncryptor implements MedicalEncryptorInterface
             goals: $this->decryptField($organizationId, $payload->encryptedGoals, $keyVersion),
             operations: $this->decryptField($organizationId, $payload->encryptedOperations, $keyVersion),
             injuries: $this->decryptField($organizationId, $payload->encryptedInjuries, $keyVersion),
+            chronicConditions: $this->decryptField($organizationId, $payload->encryptedChronicConditions, $keyVersion),
+            clinicalAnswers: $this->decryptField($organizationId, $payload->encryptedClinicalAnswers, $keyVersion),
         );
     }
 

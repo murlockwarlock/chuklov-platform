@@ -24,7 +24,12 @@ final class ReconcileFakeGatewayTransaction
             throw new \UnexpectedValueException('The selected payment gateway is not available.');
         }
 
-        $result = $this->gateway->reconcile($transaction->provider_reference, (int) $organization->getKey());
+        $providerReference = $transaction->provider_reference;
+        if ($providerReference === null || $providerReference === '') {
+            throw new \UnexpectedValueException('The transaction has no provider reference.');
+        }
+
+        $result = $this->gateway->reconcile($providerReference, (int) $organization->getKey());
         if ($result->amountMinor !== $transaction->amount_minor || $result->currency !== $transaction->currency) {
             throw new \UnexpectedValueException('Fake gateway reconciliation detected an amount mismatch.');
         }

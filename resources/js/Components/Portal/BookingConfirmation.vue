@@ -27,6 +27,7 @@ const props = defineProps<{
     serviceName: string | null;
     specialistName: string | null;
     selectedStart: string | null;
+    startsAtList?: string[];
     timezone: string;
     locale: PortalLocale;
     format: VisitFormat;
@@ -38,6 +39,7 @@ const props = defineProps<{
     hasLocationDayRules: boolean;
     locationAreaOptions: string[];
     processing: boolean;
+    waitingForCityLookup: boolean;
     error: string | undefined;
     legalDocuments: LegalDocument[];
     consentValues: Record<number, boolean>;
@@ -88,6 +90,7 @@ const location = computed({
       </h2>
     </header>
 
+    <slot name="personal-data" />
     <dl class="portal-booking-summary">
       <div>
         <dt>{{ t('booking.service') }}</dt>
@@ -97,20 +100,21 @@ const location = computed({
         <dt>{{ t('booking.specialist') }}</dt>
         <dd>{{ props.specialistName }}</dd>
       </div>
-      <div>
+      <div
+        v-for="start in (props.startsAtList?.length ? props.startsAtList : props.selectedStart ? [props.selectedStart] : [])"
+        :key="start"
+      >
         <dt>{{ t('booking.dateTime') }}</dt>
         <dd>
           <PortalDateTime
-            v-if="props.selectedStart"
-            :value="props.selectedStart"
+            :value="start"
             :time-zone="props.timezone"
             :locale="props.locale"
             mode="date"
           />
-          <span v-if="props.selectedStart"> · </span>
+          <span> · </span>
           <PortalDateTime
-            v-if="props.selectedStart"
-            :value="props.selectedStart"
+            :value="start"
             :time-zone="props.timezone"
             :locale="props.locale"
             mode="time"
@@ -276,6 +280,13 @@ const location = computed({
     </p>
 
     <div class="portal-action-row">
+      <p
+        v-if="props.waitingForCityLookup"
+        class="portal-copy portal-copy--small"
+        role="status"
+      >
+        {{ t('profile.cityLoading') }}
+      </p>
       <button
         type="button"
         class="portal-button portal-button--secondary"
@@ -286,7 +297,7 @@ const location = computed({
       <button
         type="button"
         class="portal-button portal-button--primary"
-        :disabled="props.processing"
+        :disabled="props.processing || props.waitingForCityLookup"
         @click="emit('confirm')"
       >
         {{ props.processing ? t('booking.creating') : t('booking.create') }}

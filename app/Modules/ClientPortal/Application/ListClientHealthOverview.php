@@ -9,7 +9,6 @@ use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
-use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
@@ -28,7 +27,7 @@ final readonly class ListClientHealthOverview
         private MedicalEncryptorInterface $encryptor,
         private FindLatestReviewedAiRun $reviewedRuns,
         private GetClientMedicalProfile $medicalProfile,
-        private GetClientTemporaryAttachmentUrl $attachmentUrls,
+        private ListClientMedicalMaterials $medicalMaterials,
         private SurveyComparisonPresentation $comparisonPresentation,
     ) {}
 
@@ -42,7 +41,7 @@ final readonly class ListClientHealthOverview
 
         return [
             'profile' => $this->medicalProfile->handle(),
-            'materials' => $this->materials($organizationId, (int) $client->getKey()),
+            'materials' => $this->medicalMaterials->handle(),
             'history' => $sessions,
             'comparisons' => $this->comparisons($organizationId, (int) $client->getKey(), $locale),
             'postureProgress' => $this->postureProgress($organizationId, (int) $client->getKey(), $locale),
@@ -52,35 +51,6 @@ final readonly class ListClientHealthOverview
                 || SurveyComparison::query()->where('organization_id', $organizationId)->where('client_id', $client->getKey())->exists()
                 || $this->hasReviewedClinicalData($organizationId, (int) $client->getKey()),
         ];
-    }
-
-    /** @return list<array<string, mixed>> */
-    private function materials(int $organizationId, int $clientId): array
-    {
-        return MedicalAttachment::query()
-            ->where('organization_id', $organizationId)
-            ->where('client_id', $clientId)
-            ->whereIn('attachment_type', [AttachmentType::MedicalReport->value, AttachmentType::PosturePhoto->value])
-            ->orderByDesc('created_at')
-            ->limit(100)
-            ->get(['id', 'uuid', 'organization_id', 'client_id', 'attachment_type', 'original_filename', 'mime_type', 'size_bytes', 'created_at'])
-            ->map(fn (MedicalAttachment $attachment): array => [
-                'id' => (int) $attachment->getKey(),
-                'type' => $attachment->attachment_type->value,
-                'filename' => $attachment->original_filename,
-                'mimeType' => $attachment->mime_type,
-                'sizeBytes' => (int) $attachment->size_bytes,
-                'createdAt' => $attachment->created_at?->toIso8601String(),
-                'downloadUrl' => $this->attachmentUrls->handle($attachment),
-                'previewUrl' => $this->previewUrl($attachment),
-            ])
-            ->values()
-            ->all();
-    }
-
-    private function previewUrl(MedicalAttachment $attachment): ?string
-    {
-        return $this->attachmentUrls->handle($attachment, mode: 'preview');
     }
 
     /** @return list<array<string, mixed>> */

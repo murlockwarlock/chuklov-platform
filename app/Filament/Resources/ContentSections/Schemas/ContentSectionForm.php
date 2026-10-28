@@ -9,14 +9,19 @@ use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMedia;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Content\Application\ContentImageUrlResolver;
+use App\Modules\Content\Application\ContentVideoUrlResolver;
+use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
+use App\Modules\Content\Domain\Enums\ContentTelegramMediaType;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Support\RichText\RichTextDocument;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Schemas\Components\Actions;
@@ -27,6 +32,7 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\HtmlString;
 
 class ContentSectionForm
 {
@@ -45,6 +51,11 @@ class ContentSectionForm
                                 'partner' => __('Партнёрам'),
                                 'communities' => __('Сообщества'),
                                 'hidden' => __('Скрытый раздел'),
+                                'telegram_welcome' => __('Приветствие Telegram'),
+                                'story_author' => __('Кто такой Евгений Чуклов (видео)'),
+                                'story_history' => __('История мастера (видео)'),
+                                'story_method' => __('Авторский метод (видео)'),
+                                'story_details' => __('Подробно о методике (видео)'),
                             ])
                             ->searchable()
                             ->required(),
@@ -82,6 +93,85 @@ class ContentSectionForm
                         Actions::make([
                             TelegramPreviewAction::make(fn (Get $get, ?Model $record): NotificationMessage => self::previewMessage($get, $record)),
                         ])->columnSpanFull(),
+                    ])
+                    ->columnSpanFull(),
+                Section::make(__('Видео'))
+                    ->description(__('Сохраните раздел, затем загрузите MP4 через кнопку «Загрузить видео». Для приветствия — до 60 секунд.'))
+                    ->schema([
+                        TextInput::make('media.subtitles')
+                            ->label(__('Ссылка на субтитры WebVTT'))
+                            ->helperText(__('Или загрузите файл кнопкой «Загрузить субтитры» после сохранения раздела.'))
+                            ->dehydrated(fn (?ContentSection $record, mixed $state): bool => filled($state) || $record === null || ! app(ContentMediaStorageInterface::class)->isManagedPath((int) $record->organization_id, $record->media['subtitles'] ?? null))
+                            ->url()
+                            ->startsWith('https://')
+                            ->nullable()
+                            ->maxLength(2000)
+                            ->validationMessages([
+                                'url' => __('Укажите корректную ссылку на файл WebVTT.'),
+                                'starts_with' => __('Ссылка на файл субтитров должна начинаться с https://.'),
+                            ]),
+                        Select::make('media.telegram_media_type')
+                            ->label(__('Формат приветствия в Telegram'))
+                            ->options([
+                                ContentTelegramMediaType::Video->value => __('Обычное видео'),
+                                ContentTelegramMediaType::VideoNote->value => __('Видео-кружок'),
+                            ])
+                            ->default(ContentTelegramMediaType::Video->value)
+                            ->helperText(__('Для видео-кружка Telegram не поддерживает подпись; подпись используется для обычного видео.'))
+                            ->visible(fn (Get $get): bool => $get('section_key') === 'telegram_welcome')
+                            ->nullable(),
+                        Textarea::make('media.caption')
+                            ->label(__('Подпись к видео приветствия'))
+                            ->helperText(__('Необязательная подпись, которая отправляется вместе с видео в Telegram.'))
+                            ->rows(3)
+                            ->maxLength(1024)
+                            ->nullable()
+                            ->visible(fn (Get $get): bool => $get('section_key') === 'telegram_welcome'),
+                        Placeholder::make('current_video')->label(__('Загруженное видео'))
+                            ->content(function (?ContentSection $record): HtmlString|string {
+                                if ($record === null) {
+                                    return (string) __('Сначала сохраните раздел.');
+                                }
+                                $url = app(ContentVideoUrlResolver::class)->resolve($record);
+
+                                return $url === null ? (string) __('Видео не загружено') : new HtmlString('<video controls preload="metadata" style="max-width:100%;max-height:320px" src="'.e($url).'"></video>');
+                            }),
+                    ])->columnSpanFull(),
+                Section::make(__('Официальные сообщества'))
+                    ->description(__('Добавьте ссылки на официальные каналы и группы. Неактивные записи не показываются клиентам.'))
+                    ->schema([
+                        Repeater::make('media.communities')
+                            ->label(__('Список сообществ'))
+                            ->schema([
+                                TextInput::make('title')
+                                    ->label(__('Название'))
+                                    ->required()
+                                    ->maxLength(160),
+                                TextInput::make('url')
+                                    ->label(__('Ссылка Telegram или сайта'))
+                                    ->required()
+                                    ->url()
+                                    ->startsWith('https://')
+                                    ->maxLength(2000),
+                                Textarea::make('description')
+                                    ->label(__('Описание'))
+                                    ->rows(2)
+                                    ->maxLength(500)
+                                    ->nullable(),
+                                TextInput::make('sort_order')
+                                    ->label(__('Порядок'))
+                                    ->integer()
+                                    ->minValue(0)
+                                    ->default(0),
+                                Toggle::make('is_visible')
+                                    ->label(__('Показывать'))
+                                    ->default(true),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->reorderable(false)
+                            ->addActionLabel(__('Добавить сообщество'))
+                            ->visible(fn (Get $get): bool => $get('section_key') === 'communities'),
                     ])
                     ->columnSpanFull(),
                 Section::make(__('Изображение'))
@@ -241,7 +331,10 @@ class ContentSectionForm
         $webAppUrl = $deliveryMode === 'both'
             ? app(ResolveTelegramMiniAppEntry::class)->launchUrl((string) $get('section_key'))
             : null;
-        $webAppButtonText = $webAppUrl === null ? null : __('Открыть полностью');
+        $translatedWebAppButtonText = __('Открыть полностью');
+        $webAppButtonText = $webAppUrl === null
+            ? null
+            : (is_string($translatedWebAppButtonText) ? $translatedWebAppButtonText : 'Открыть полностью');
 
         return new NotificationMessage(
             recipientExternalId: 'preview',

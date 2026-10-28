@@ -18,6 +18,7 @@ use App\Modules\Identity\Domain\Models\OrganizationChannelIdentity;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Application\BookingChangedGuard;
 use App\Modules\Scenarios\Application\CreateNotificationTemplate;
 use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
@@ -357,13 +358,13 @@ final class MilestoneFiveScenarioTest extends TestCase
                 ],
             ],
             VisitFormat::Office->value => [
-                'location' => 'Alexanderplatz 1',
+                'location' => 'Bangkok',
                 'location_area' => null,
                 'location_snapshot' => [
                     'type' => VisitFormat::Office->value,
-                    'name' => 'Berlin Mitte',
-                    'address' => 'Alexanderplatz 1',
-                    'timezone' => 'Europe/Berlin',
+                    'name' => 'Бангкок',
+                    'address' => 'Bangkok',
+                    'timezone' => 'Asia/Bangkok',
                 ],
             ],
             VisitFormat::HomeVisit->value => [
@@ -415,8 +416,11 @@ final class MilestoneFiveScenarioTest extends TestCase
 
             if ($format === VisitFormat::Office->value) {
                 self::assertStringContainsString('В клинике', $clientMessage->body);
-                self::assertStringContainsString('Berlin Mitte', $clientMessage->body);
-                self::assertStringContainsString('Alexanderplatz 1', $specialistMessage->body);
+                self::assertStringContainsString("В клинике\nБангкок", $clientMessage->body);
+                self::assertStringNotContainsString("Бангкок\nBangkok", $clientMessage->body);
+                self::assertSame(1, substr_count($clientMessage->body, 'Бангкок'));
+                self::assertStringContainsString('Бангкок', $specialistMessage->body);
+                self::assertStringNotContainsString("Бангкок\nBangkok", $specialistMessage->body);
             }
 
             if ($format === VisitFormat::HomeVisit->value) {
@@ -568,8 +572,7 @@ final class MilestoneFiveScenarioTest extends TestCase
         app(ExecuteScenarioAction::class)->handle($rescheduledAction->getKey());
 
         self::assertSame(ScenarioActionStatus::Delivered, $rescheduledAction->fresh()->status);
-        self::assertStringContainsString('04-09-2026 · 12:00 (Asia/Bangkok)', $this->channel->messages[0]->body);
-        self::assertStringContainsString('At the clinic', $this->channel->messages[0]->body);
+        self::assertStringContainsString('04.09.2026 · 12:00 (Asia/Bangkok)', $this->channel->messages[0]->body);
 
         $cancelled = Booking::factory()
             ->forOrganization($organization)
@@ -578,11 +581,19 @@ final class MilestoneFiveScenarioTest extends TestCase
             ->forService($service)
             ->create([
                 'status' => BookingStatus::Cancelled,
+                'visit_format' => VisitFormat::Office,
                 'starts_at' => CarbonImmutable::create(2026, 9, 5, 5, 0, 0, 'UTC'),
                 'ends_at' => CarbonImmutable::create(2026, 9, 5, 6, 0, 0, 'UTC'),
                 'blocking_ends_at' => CarbonImmutable::create(2026, 9, 5, 6, 0, 0, 'UTC'),
                 'schedule_timezone' => 'Asia/Bangkok',
                 'client_timezone' => 'Asia/Bangkok',
+                'location' => 'Bangkok',
+                'location_snapshot' => [
+                    'type' => VisitFormat::Office->value,
+                    'name' => 'Бангкок',
+                    'address' => 'Bangkok',
+                    'timezone' => 'Asia/Bangkok',
+                ],
             ]);
         $cancelledEvent = app(RecordScenarioEvent::class)->bookingCancelled($cancelled, 'booking-cancelled-test', CarbonImmutable::now());
 
@@ -592,8 +603,9 @@ final class MilestoneFiveScenarioTest extends TestCase
         app(ExecuteScenarioAction::class)->handle($cancelledAction->getKey());
 
         self::assertSame(ScenarioActionStatus::Delivered, $cancelledAction->fresh()->status);
-        self::assertStringContainsString('05-09-2026 · 12:00 (Asia/Bangkok)', $this->channel->messages[1]->body);
-        self::assertStringContainsString('At the clinic', $this->channel->messages[1]->body);
+        self::assertStringContainsString('05.09.2026 · 12:00 (Asia/Bangkok)', $this->channel->messages[1]->body);
+        self::assertSame(1, substr_count($this->channel->messages[1]->body, 'Бангкок'));
+        self::assertNotContains('Bangkok', preg_split('/\R/', $this->channel->messages[1]->body));
     }
 
     public function test_auto_rescheduled_notification_waits_for_the_ready_meeting_link(): void
@@ -630,9 +642,16 @@ final class MilestoneFiveScenarioTest extends TestCase
             'provider_sync_status' => 'ready',
             'provider_join_url' => 'https://zoom.us/j/rescheduled-ready',
         ])->save();
-        $event->forceFill(['available_at' => now()->subSecond()])->save();
+        self::assertTrue(app(BookingChangedGuard::class)->allows($event->fresh(), $booking->fresh()));
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        self::assertSame(ScenarioEventStatus::Pending, $event->fresh()->status);
+        self::assertSame(0, ScenarioAction::query()->where('scenario_event_id', $event->getKey())->count());
+        CarbonImmutable::setTestNow(CarbonImmutable::parse((string) $event->fresh()->available_at)->addSecond());
+        self::assertTrue(CarbonImmutable::parse((string) $event->fresh()->available_at)->lessThanOrEqualTo(CarbonImmutable::now()));
 
         app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        self::assertNull($event->fresh()->last_error_code);
+        self::assertSame(ScenarioEventStatus::Processed, $event->fresh()->status);
         $action = ScenarioAction::query()->where('scenario_event_id', $event->getKey())->sole();
         $this->makeDue($action);
         app(ExecuteScenarioAction::class)->handle($action->getKey());

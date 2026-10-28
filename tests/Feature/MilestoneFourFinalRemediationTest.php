@@ -3,9 +3,13 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Pages\WorkingIntervals;
+use App\Filament\Resources\ScheduleExceptions\Pages\CreateScheduleException as CreateScheduleExceptionPage;
 use App\Filament\Resources\ScheduleExceptions\Pages\ListScheduleExceptions;
+use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
 use App\Filament\Resources\Services\Pages\EditService;
 use App\Filament\Resources\Specialists\Pages\ListSpecialists;
+use App\Filament\Resources\UnavailablePeriods\Pages\CreateUnavailablePeriod as CreateUnavailablePeriodPage;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
@@ -23,7 +27,9 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\ScheduleExceptionType;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
+use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Scheduling\Domain\ValueObjects\SpecialistScheduleDefinition;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -106,7 +112,7 @@ class MilestoneFourFinalRemediationTest extends TestCase
         $this->resolveFilamentContext($admin, $organization);
 
         $component = Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm([
                 'specialist_id' => $specialist->getKey(),
                 'lead_time_minutes' => 0,
@@ -201,7 +207,7 @@ class MilestoneFourFinalRemediationTest extends TestCase
             'impact_digest' => null,
         ];
         $component = Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm($payload)
             ->call('save')
             ->assertHasErrors('schedule_impact');
@@ -264,7 +270,7 @@ class MilestoneFourFinalRemediationTest extends TestCase
         $this->resolveFilamentContext($admin, $organization);
 
         Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->assertSet('data.specialist_id', $specialist->getKey())
             ->assertSet('data.viewer_timezone', null)
             ->set('data.viewer_timezone', 'Asia/Bangkok')
@@ -277,7 +283,7 @@ class MilestoneFourFinalRemediationTest extends TestCase
         self::assertSame('manual', $specialist->fresh()->viewer_timezone_source);
 
         Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->assertSet('data.specialist_id', $specialist->getKey())
             ->assertSet('data.viewer_timezone', 'Asia/Bangkok');
     }
@@ -296,7 +302,7 @@ class MilestoneFourFinalRemediationTest extends TestCase
         $specialist->forceFill(['staff_user_id' => $admin->getKey()])->save();
         $this->resolveFilamentContext($admin, $organization);
 
-        $component = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+        $component = Livewire::actingAs($admin)->test(WorkingIntervals::class);
         $component->assertSet('data.specialist_id', $specialist->getKey());
         self::assertSame(1, (int) array_values($component->instance()->data['working_hours'])[0]['weekday']);
 
@@ -312,12 +318,23 @@ class MilestoneFourFinalRemediationTest extends TestCase
         self::assertSame(1, $secondSpecialist->workingHours()->count());
     }
 
+    public function test_missing_working_hours_snapshot_cannot_bypass_stale_protection(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        Livewire::actingAs($admin)->test(WorkingIntervals::class)
+            ->fillForm(['working_hours' => [['weekday' => 1, 'start_time' => '11:00', 'end_time' => '17:00']]])
+            ->set('data.working_hours_digest', null)
+            ->call('save')->assertHasErrors(['data.working_hours_digest']);
+        self::assertSame('09:00', substr((string) $specialist->workingHours()->sole()->start_time, 0, 5));
+    }
+
     public function test_explicit_clear_requires_the_clear_schedule_control(): void
     {
         [$organization, $admin, , $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
         $component = Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm([
                 'specialist_id' => $specialist->getKey(),
                 'working_hours' => [],
@@ -408,6 +425,154 @@ class MilestoneFourFinalRemediationTest extends TestCase
 
         self::assertModelMissing($exception);
         self::assertModelExists($booking->fresh());
+    }
+
+    public function test_unavailable_time_is_created_and_deleted_from_the_unified_schedule_changes_surface(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateScheduleExceptionPage::class)
+            ->fillForm([
+                'change_type' => 'unavailable',
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => '2026-04-06 12:00',
+                'ends_at' => '2026-04-06 13:30',
+                'reason' => 'Unified unavailable time',
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $period = UnavailablePeriod::query()->where('organization_id', $organization->getKey())->sole();
+        self::assertSame($specialist->getKey(), $period->specialist_id);
+        $rows = ScheduleExceptionResource::getEloquentQuery()->get();
+        $row = $rows->first(fn ($record): bool => $record->getAttribute('change_kind') === 'unavailable');
+        self::assertNotNull($row);
+        self::assertSame($period->getKey(), (int) $row->getAttribute('source_id'));
+
+        Livewire::actingAs($admin)
+            ->test(ListScheduleExceptions::class)
+            ->assertTableColumnFormattedStateSet('change_kind', 'Недоступное время', (string) $row->getKey())
+            ->mountTableAction('delete', (string) $row->getKey())
+            ->callMountedTableAction()
+            ->assertHasNoErrors();
+
+        self::assertModelMissing($period);
+    }
+
+    public function test_unavailable_time_form_shows_actionable_required_errors_without_writing(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateScheduleExceptionPage::class)
+            ->fillForm(['change_type' => 'unavailable'])
+            ->call('create')
+            ->assertHasErrors([
+                'data.specialist_id' => 'required',
+                'data.starts_at' => 'required',
+                'data.ends_at' => 'required',
+            ])
+            ->assertSee('Выберите специалиста.')
+            ->assertSee('Укажите дату и время начала недоступности.')
+            ->assertSee('Укажите дату и время окончания недоступности.')
+            ->assertDontSee('validation.required');
+
+        self::assertStringContainsString('novalidate="novalidate"', $component->html());
+        self::assertSame(0, UnavailablePeriod::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_unavailable_time_form_rejects_an_end_before_its_start_without_writing(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateScheduleExceptionPage::class)
+            ->fillForm([
+                'change_type' => 'unavailable',
+                'specialist_id' => $specialist->getKey(),
+                'starts_at' => '2026-04-06 13:30',
+                'ends_at' => '2026-04-06 12:00',
+            ])
+            ->call('create')
+            ->assertHasErrors(['data.ends_at'])
+            ->assertSee('Окончание периода должно быть позже начала.')
+            ->assertDontSee('validation.after');
+
+        self::assertSame(0, UnavailablePeriod::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_custom_schedule_window_requires_valid_start_and_end_times(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateScheduleExceptionPage::class)
+            ->fillForm([
+                'change_type' => 'working_intervals',
+                'specialist_id' => $specialist->getKey(),
+                'exception_date' => '2026-04-06',
+                'exception_type' => ScheduleExceptionType::CustomWindow->value,
+            ])
+            ->call('create')
+            ->assertHasErrors([
+                'data.start_time' => 'required',
+                'data.end_time' => 'required',
+            ])
+            ->assertSee('Укажите время начала.')
+            ->assertSee('Укажите время окончания.')
+            ->assertDontSee('validation.required');
+
+        self::assertSame(0, ScheduleException::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_custom_schedule_window_rejects_end_before_start(): void
+    {
+        [$organization, $admin, , $specialist] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateScheduleExceptionPage::class)
+            ->fillForm([
+                'change_type' => 'working_intervals',
+                'specialist_id' => $specialist->getKey(),
+                'exception_date' => '2026-04-06',
+                'exception_type' => ScheduleExceptionType::CustomWindow->value,
+                'start_time' => '13:30',
+                'end_time' => '12:00',
+            ])
+            ->call('create')
+            ->assertHasErrors(['data.end_time'])
+            ->assertSee('Окончание должно быть позже начала.')
+            ->assertDontSee('validation.after');
+
+        self::assertSame(0, ScheduleException::query()->where('organization_id', $organization->getKey())->count());
+    }
+
+    public function test_legacy_unavailable_period_form_has_the_same_localized_required_validation(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateUnavailablePeriodPage::class)
+            ->call('create')
+            ->assertHasErrors([
+                'data.specialist_id' => 'required',
+                'data.starts_at' => 'required',
+                'data.ends_at' => 'required',
+            ])
+            ->assertSee('Выберите специалиста.')
+            ->assertSee('Укажите дату и время начала недоступности.')
+            ->assertSee('Укажите дату и время окончания недоступности.')
+            ->assertDontSee('validation.required');
+
+        self::assertStringContainsString('novalidate="novalidate"', $component->html());
+        self::assertSame(0, UnavailablePeriod::query()->where('organization_id', $organization->getKey())->count());
     }
 
     public function test_display_local_availability_accepts_dates_with_midnight_transitions(): void

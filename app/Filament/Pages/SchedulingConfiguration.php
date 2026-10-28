@@ -10,6 +10,7 @@ use App\Modules\B2B\Application\GetB2bSalesCallDuration;
 use App\Modules\B2B\Application\GetB2bSalesCallReadiness;
 use App\Modules\B2B\Application\GetB2bZoomConfiguration;
 use App\Modules\B2B\Application\SaveB2bZoomConfiguration;
+use App\Modules\ClientPortal\Domain\Enums\RoadMapAvailabilityMode;
 use App\Modules\Organizations\Application\ClearOrganizationSetting;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -26,22 +27,18 @@ use App\Modules\Scheduling\Application\GetHomeVisitOccupiedBuffer;
 use App\Modules\Scheduling\Application\SetBookingCancellationCutoff;
 use App\Modules\Scheduling\Application\SetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetOnlineConsultationService;
-use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
-use App\Modules\Scheduling\Application\UpdateSpecialistViewerTimezone;
-use App\Modules\Scheduling\Domain\Models\SpecialistWorkingHour;
+use App\Modules\Scheduling\Application\UpdateWorkingLocation;
+use App\Modules\Scheduling\Domain\Enums\PatientNotificationRecipientPolicy;
+use App\Modules\Scheduling\Domain\Models\WorkingLocation;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use App\Modules\Services\Domain\Models\Service;
-use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
-use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\TimePicker;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Component;
@@ -49,7 +46,6 @@ use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
-use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Arrayable;
@@ -68,18 +64,16 @@ class SchedulingConfiguration extends LocalizedPage
 
     protected static ?string $navigationLabel = 'Настройки расписания';
 
-    protected ?string $subheading = 'Здесь настраиваются B2B-разговоры и рабочее время специалиста. Исключения и недоступное время — в разделе «Записи».';
+    protected ?string $subheading = 'Здесь настраиваются общие параметры для всего расписания';
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClock;
 
     protected static string|UnitEnum|null $navigationGroup = 'Записи';
 
-    protected static ?int $navigationSort = 2;
+    protected static ?int $navigationSort = 99;
 
     /** @var array<string, mixed>|null */
     public ?array $data = null;
-
-    public ?string $deviceTimezone = null;
 
     protected string $view = 'filament.pages.scheduling-configuration';
 
@@ -109,21 +103,9 @@ class SchedulingConfiguration extends LocalizedPage
             app(EnsureAppointmentReminderDefaults::class)->handle($organization);
         }
 
-        $viewerSpecialist = $this->currentViewerSpecialist();
-        $specialistId = $viewerSpecialist?->getKey() ?? Specialist::query()
-            ->where('organization_id', app(OrganizationContext::class)->id())
-            ->where('is_active', true)
-            ->orderBy('display_name')
-            ->orderBy('id')
-            ->value('id');
-        $selectedSpecialist = $specialistId === null ? null : Specialist::query()
-            ->where('organization_id', app(OrganizationContext::class)->id())
-            ->find((int) $specialistId);
-        $viewerSpecialist ??= $selectedSpecialist;
         $zoom = app(GetB2bZoomConfiguration::class)->handle();
 
         $this->form->fill([
-            'specialist_id' => $specialistId,
             'lead_time_minutes' => app(GetBookingLeadTime::class)->handle(),
             'cancellation_cutoff_minutes' => app(GetBookingCancellationCutoff::class)->handle(),
             'b2b_sales_call_duration_minutes' => app(GetB2bSalesCallDuration::class)->handle(),
@@ -131,8 +113,6 @@ class SchedulingConfiguration extends LocalizedPage
                 ->where('setting_key', OrganizationSettingKey::OnlineConsultationServiceId->value)
                 ->value('integer_value'),
             'default_timezone' => $organization->defaultTimezone(),
-            'viewer_timezone' => $viewerSpecialist?->viewer_timezone,
-            'viewer_timezone_suggestion' => $viewerSpecialist?->viewer_timezone_suggestion,
             'home_visit_occupied_buffer_minutes' => app(GetHomeVisitOccupiedBuffer::class)->handle(),
             'b2b_zoom_host_licensed' => (bool) $organization->settings()
                 ->where('setting_key', OrganizationSettingKey::B2bZoomHostLicensed->value)
@@ -140,6 +120,12 @@ class SchedulingConfiguration extends LocalizedPage
             'office_location' => $organization->settings()
                 ->where('setting_key', OrganizationSettingKey::OfficeLocation->value)
                 ->value('string_value'),
+            'patient_notification_recipients' => $organization->settings()
+                ->where('setting_key', OrganizationSettingKey::PatientNotificationRecipients->value)
+                ->value('string_value') ?? PatientNotificationRecipientPolicy::Both->value,
+            'road_map_availability_mode' => $organization->settings()
+                ->where('setting_key', OrganizationSettingKey::RoadMapAvailabilityMode->value)
+                ->value('string_value') ?? RoadMapAvailabilityMode::ReviewedCourseReport->value,
             'client_reminders' => $this->reminderRows('client'),
             'specialist_reminders' => $this->reminderRows('specialist'),
             'zoom_enabled' => $zoom['enabled'],
@@ -147,11 +133,6 @@ class SchedulingConfiguration extends LocalizedPage
             'zoom_client_id' => $zoom['clientId'],
             'zoom_client_secret' => null,
             'zoom_host_user_id' => $zoom['hostUserId'],
-            'working_hours' => $specialistId === null ? [] : $this->workingHours((int) $specialistId),
-            'working_hours_digest' => $selectedSpecialist instanceof Specialist
-                ? app(SetSpecialistWorkingHours::class)->digest($selectedSpecialist)
-                : null,
-            'clear_working_hours' => false,
         ]);
     }
 
@@ -159,42 +140,6 @@ class SchedulingConfiguration extends LocalizedPage
     {
         return $schema
             ->components([
-                Select::make('specialist_id')
-                    ->label(__('Специалист'))
-                    ->options(fn (): array => $this->specialists())
-                    ->required()
-                    ->searchable()
-                    ->live()
-                    ->afterStateUpdated(function (Set $set, mixed $state): void {
-                        $specialist = $state === null ? null : Specialist::query()
-                            ->where('organization_id', app(OrganizationContext::class)->id())
-                            ->find((int) $state);
-                        $set('working_hours', $specialist instanceof Specialist ? $this->workingHours((int) $state) : []);
-                        $set(
-                            'working_hours_digest',
-                            $specialist instanceof Specialist ? app(SetSpecialistWorkingHours::class)->digest($specialist) : null,
-                        );
-                        $set('clear_working_hours', false);
-
-                        if ($this->currentViewerSpecialist() !== null) {
-                            return;
-                        }
-
-                        $specialist = $state === null ? null : Specialist::query()
-                            ->where('organization_id', app(OrganizationContext::class)->id())
-                            ->find((int) $state);
-                        $set('viewer_timezone', $specialist?->viewer_timezone);
-                        $set('viewer_timezone_suggestion', $specialist?->viewer_timezone_suggestion);
-                    }),
-                Select::make('viewer_timezone')
-                    ->label(__('Часовой пояс CRM'))
-                    ->options(fn (Get $get): array => TimezoneOptions::options(
-                        current: $get('viewer_timezone'),
-                        organization: app(OrganizationContext::class)->defaultTimezone(),
-                    ))
-                    ->searchable()
-                    ->nullable()
-                    ->helperText(__('Меняет только отображение времени в CRM и уведомлениях. Уже созданные записи не сдвигаются.')),
                 TextInput::make('home_visit_occupied_buffer_minutes')
                     ->label(__('Буфер выезда после консультации (минуты)'))
                     ->integer()
@@ -237,12 +182,24 @@ class SchedulingConfiguration extends LocalizedPage
                     ->label(__('Адрес приёма по умолчанию'))
                     ->helperText(__('Подставляется в новые записи в кабинете. Адрес уже созданных записей не изменится.'))
                     ->maxLength(500),
+                Select::make('patient_notification_recipients')
+                    ->label(__('Кому отправлять уведомления о записи'))
+                    ->options(collect(PatientNotificationRecipientPolicy::cases())->mapWithKeys(fn (PatientNotificationRecipientPolicy $policy): array => [$policy->value => $policy->label()])->all())
+                    ->required()
+                    ->native(false)
+                    ->helperText(__('Настройка применяется к уведомлениям о записи пациента и связанных с ней изменениях.')),
+                Select::make('road_map_availability_mode')
+                    ->label(__('Когда открывать Дорожную карту'))
+                    ->options(collect(RoadMapAvailabilityMode::cases())->mapWithKeys(fn (RoadMapAvailabilityMode $mode): array => [$mode->value => $mode->label()])->all())
+                    ->required()
+                    ->native(false)
+                    ->helperText(__('Сама Дорожная карта появляется только после принятого отчёта специалиста; этот параметр задаёт дополнительное условие готовности.')),
                 Section::make(__('Напоминания о записи'))
                     ->description(__('Выберите, кому и за сколько до визита отправлять напоминание. Напоминания строятся от времени начала записи и отправляются автоматически. Если время уже прошло, уведомление задним числом не отправляется. Для ранее созданных записей сохраните настройки ещё раз.'))
                     ->schema([
                         Repeater::make('client_reminders')
                             ->label(__('Клиенту'))
-                            ->schema($this->reminderSchema())
+                            ->schema($this->reminderSchema(true))
                             ->columns(3)
                             ->defaultItems(0)
                             ->reorderable(false)
@@ -308,61 +265,6 @@ class SchedulingConfiguration extends LocalizedPage
                     ])
                     ->columns(2)
                     ->columnSpanFull(),
-                Repeater::make('working_hours')
-                    ->label(__('Рабочие интервалы'))
-                    ->schema([
-                        Select::make('weekday')
-                            ->label(__('День недели'))
-                            ->options([
-                                1 => __('Понедельник'),
-                                2 => __('Вторник'),
-                                3 => __('Среда'),
-                                4 => __('Четверг'),
-                                5 => __('Пятница'),
-                                6 => __('Суббота'),
-                                7 => __('Воскресенье'),
-                            ])
-                            ->required(),
-                        TimePicker::make('start_time')
-                            ->label(__('Начало'))
-                            ->seconds(false)
-                            ->required(),
-                        TimePicker::make('end_time')
-                            ->label(__('Окончание'))
-                            ->seconds(false)
-                            ->required(),
-                        DatePicker::make('starts_on')
-                            ->label(__('Действует с'))
-                            ->format('Y-m-d')
-                            ->displayFormat('d.m.Y')
-                            ->native(false)
-                            ->nullable()
-                            ->default(today())
-                            ->helperText(__('Пусто — с самого начала.')),
-                        DatePicker::make('ends_on')
-                            ->label(__('До'))
-                            ->format('Y-m-d')
-                            ->displayFormat('d.m.Y')
-                            ->native(false)
-                            ->nullable()
-                            ->afterOrEqual('starts_on')
-                            ->helperText(__('Пусто — бессрочно.')),
-                    ])
-                    ->columns(5)
-                    ->defaultItems(0)
-                    ->addActionLabel(__('+ Добавить интервал'))
-                    ->reorderable(false)
-                    ->columnSpanFull(),
-                Hidden::make('working_hours_digest')->dehydrated(),
-                Placeholder::make('specialist_schedule_timezone')
-                    ->label(__('Часовой пояс графика'))
-                    ->content(fn (): string => $this->specialistScheduleTimezoneLabel())
-                    ->columnSpanFull(),
-                Checkbox::make('clear_working_hours')
-                    ->label(__('Удалить всё рабочее расписание'))
-                    ->helperText(__('Отметьте и сохраните, только если действительно нужно удалить все рабочие часы выбранного специалиста.'))
-                    ->columnSpanFull(),
-                ...ScheduleImpactPreview::components(),
             ])
             ->statePath('data');
     }
@@ -380,7 +282,7 @@ class SchedulingConfiguration extends LocalizedPage
             ->footer([
                 Actions::make([
                     Action::make('save')
-                        ->label(__('Сохранить расписание'))
+                        ->label(__('Сохранить настройки'))
                         ->submit('save'),
                 ]),
             ]);
@@ -394,17 +296,24 @@ class SchedulingConfiguration extends LocalizedPage
 
         try {
             $data = $this->form->getState();
-            $specialist = Specialist::query()
-                ->where('organization_id', app(OrganizationContext::class)->id())
-                ->findOrFail((int) $data['specialist_id']);
 
-            DB::transaction(function () use ($actor, $data, $specialist): void {
+            DB::transaction(function () use ($actor, $data): void {
                 app(SetBookingLeadTime::class)->handle($actor, (int) $data['lead_time_minutes']);
                 app(SetBookingCancellationCutoff::class)->handle($actor, (int) $data['cancellation_cutoff_minutes']);
                 app(SetOrganizationSetting::class)->handle(
                     $actor,
                     OrganizationSettingKey::DefaultTimezone,
                     (string) $data['default_timezone'],
+                );
+                app(SetOrganizationSetting::class)->handle(
+                    $actor,
+                    OrganizationSettingKey::PatientNotificationRecipients,
+                    (string) ($data['patient_notification_recipients'] ?? PatientNotificationRecipientPolicy::Both->value),
+                );
+                app(SetOrganizationSetting::class)->handle(
+                    $actor,
+                    OrganizationSettingKey::RoadMapAvailabilityMode,
+                    (string) ($data['road_map_availability_mode'] ?? RoadMapAvailabilityMode::ReviewedCourseReport->value),
                 );
                 app(SetOrganizationSetting::class)->handle(
                     $actor,
@@ -437,11 +346,34 @@ class SchedulingConfiguration extends LocalizedPage
                     );
                 }
                 if (isset($data['office_location']) && trim((string) $data['office_location']) !== '') {
+                    $officeAddress = trim((string) $data['office_location']);
                     app(SetOrganizationSetting::class)->handle(
                         $actor,
                         OrganizationSettingKey::OfficeLocation,
-                        trim((string) $data['office_location']),
+                        $officeAddress,
                     );
+
+                    $defaultLocation = WorkingLocation::query()
+                        ->where('organization_id', app(OrganizationContext::class)->id())
+                        ->where('is_active', true)
+                        ->orderByDesc('is_default_office')
+                        ->orderBy('name')
+                        ->first();
+
+                    if ($defaultLocation instanceof WorkingLocation) {
+                        app(UpdateWorkingLocation::class)->handle(
+                            actor: $actor,
+                            location: $defaultLocation,
+                            name: $defaultLocation->name,
+                            address: $officeAddress,
+                            timezone: $defaultLocation->timezone,
+                            latitude: $defaultLocation->latitude === null ? null : (float) $defaultLocation->latitude,
+                            longitude: $defaultLocation->longitude === null ? null : (float) $defaultLocation->longitude,
+                            mapUrl: $defaultLocation->map_url,
+                            isActive: true,
+                            isDefaultOffice: true,
+                        );
+                    }
                 } else {
                     app(ClearOrganizationSetting::class)->handle(
                         $actor,
@@ -449,29 +381,6 @@ class SchedulingConfiguration extends LocalizedPage
                     );
                 }
                 app(UpdateAppointmentReminders::class)->handle($actor, $data);
-                $workingHours = $data['working_hours'] ?? [];
-                $clearWorkingHours = (bool) ($data['clear_working_hours'] ?? false);
-                if ($clearWorkingHours || $workingHours !== []) {
-                    app(SetSpecialistWorkingHours::class)->handle(
-                        $actor,
-                        $specialist,
-                        $clearWorkingHours ? [] : $workingHours,
-                        (bool) ($data['acknowledge_impact'] ?? false),
-                        isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
-                        isset($data['working_hours_digest']) && trim((string) $data['working_hours_digest']) !== ''
-                            ? (string) $data['working_hours_digest']
-                            : null,
-                    );
-                }
-                $viewerSpecialist = $this->currentViewerSpecialist() ?? $specialist;
-                app(UpdateSpecialistViewerTimezone::class)->handle(
-                    actor: $actor,
-                    specialist: $viewerSpecialist,
-                    timezone: isset($data['viewer_timezone']) && $data['viewer_timezone'] !== ''
-                        ? (string) $data['viewer_timezone']
-                        : null,
-                    source: isset($data['viewer_timezone']) && $data['viewer_timezone'] !== '' ? 'manual' : 'organization',
-                );
                 $zoom = app(GetB2bZoomConfiguration::class)->handle();
                 $hasZoomInput = $zoom['exists']
                     || filled($data['zoom_account_id'] ?? null)
@@ -490,14 +399,13 @@ class SchedulingConfiguration extends LocalizedPage
                     );
                 }
             });
-            $this->data['working_hours_digest'] = app(SetSpecialistWorkingHours::class)->digest($specialist);
         } catch (ValidationException $exception) {
             $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($this->safeFormState($data), $exception));
 
             throw $exception;
         } catch (InvalidArgumentException $exception) {
             throw ValidationException::withMessages([
-                'working_hours' => [$this->humanScheduleError($exception->getMessage())],
+                'schedule' => [$exception->getMessage()],
             ]);
         } finally {
             $this->scrubZoomClientSecret();
@@ -529,75 +437,6 @@ class SchedulingConfiguration extends LocalizedPage
             ->all();
     }
 
-    public function useDeviceTimezone(?string $timezone = null): void
-    {
-        $actor = auth()->user();
-        abort_unless($actor instanceof User, 403);
-        if ($timezone !== null) {
-            $this->deviceTimezone = $timezone;
-        }
-        if ($this->deviceTimezone === null || $this->deviceTimezone === '') {
-            return;
-        }
-
-        $specialist = $this->currentViewerSpecialist() ?? $this->selectedSpecialist();
-        if (! $specialist instanceof Specialist) {
-            return;
-        }
-
-        app(UpdateSpecialistViewerTimezone::class)->handle(
-            actor: $actor,
-            specialist: $specialist,
-            timezone: $this->deviceTimezone,
-            source: 'device',
-        );
-        $this->data['viewer_timezone'] = $this->deviceTimezone;
-        $this->data['viewer_timezone_suggestion'] = null;
-        $this->deviceTimezone = null;
-    }
-
-    public function dismissDeviceTimezone(): void
-    {
-        $this->data['viewer_timezone_suggestion'] = null;
-        $this->deviceTimezone = null;
-    }
-
-    public function currentViewerTimezone(): string
-    {
-        $specialist = $this->currentViewerSpecialist() ?? $this->selectedSpecialist();
-
-        return $specialist instanceof Specialist && $specialist->viewer_timezone !== null
-            ? $specialist->viewer_timezone
-            : app(OrganizationContext::class)->defaultTimezone();
-    }
-
-    private function selectedSpecialist(): ?Specialist
-    {
-        $specialistId = $this->data['specialist_id'] ?? null;
-
-        return $specialistId === null
-            ? null
-            : Specialist::query()
-                ->where('organization_id', app(OrganizationContext::class)->id())
-                ->find((int) $specialistId);
-    }
-
-    private function currentViewerSpecialist(): ?Specialist
-    {
-        $actor = auth()->user();
-        if (! $actor instanceof User) {
-            return null;
-        }
-
-        return Specialist::query()
-            ->where('organization_id', app(OrganizationContext::class)->id())
-            ->where('staff_user_id', $actor->getKey())
-            ->where('is_active', true)
-            ->orderBy('display_name')
-            ->orderBy('id')
-            ->first();
-    }
-
     /** @param array<string, mixed>|null $data
      * @return array<string, mixed>
      */
@@ -620,18 +459,6 @@ class SchedulingConfiguration extends LocalizedPage
         }
     }
 
-    /** @return array<int, string> */
-    private function specialists(): array
-    {
-        return Specialist::query()
-            ->where('organization_id', app(OrganizationContext::class)->id())
-            ->where('is_active', true)
-            ->orderBy('display_name')
-            ->orderBy('id')
-            ->pluck('display_name', 'id')
-            ->all();
-    }
-
     /** @return list<array{is_enabled: bool, offset_value: int, offset_unit: string}> */
     private function reminderRows(string $recipientType): array
     {
@@ -645,6 +472,7 @@ class SchedulingConfiguration extends LocalizedPage
                 'is_enabled' => $reminder->is_enabled,
                 'offset_value' => $reminder->offset_value,
                 'offset_unit' => $reminder->offset_unit->value,
+                'medical_profile_prompt' => $reminder->medical_profile_prompt,
             ])
             ->values()
             ->all();
@@ -653,7 +481,7 @@ class SchedulingConfiguration extends LocalizedPage
     }
 
     /** @return list<Component> */
-    private function reminderSchema(): array
+    private function reminderSchema(bool $client = false): array
     {
         return [
             Checkbox::make('is_enabled')->label(__('Включено'))->default(true),
@@ -670,47 +498,12 @@ class SchedulingConfiguration extends LocalizedPage
                     ScenarioDelayUnit::Days->value => __('дней'),
                 ])
                 ->required(),
+            Checkbox::make('medical_profile_prompt')
+                ->label(__('Предложить заполнить карту здоровья, если она нужна'))
+                ->default(false)
+                ->visible($client)
+                ->dehydrated($client)
+                ->columnSpanFull(),
         ];
-    }
-
-    public function specialistScheduleTimezoneLabel(): string
-    {
-        $specialist = $this->selectedSpecialist();
-        $timezone = $specialist?->timezone ?? app(OrganizationContext::class)->defaultTimezone();
-        $offsetHours = now($timezone)->getOffset() / 3600;
-        $offset = $offsetHours === 0.0
-            ? 'UTC'
-            : 'UTC'.($offsetHours > 0 ? '+' : '').rtrim(rtrim(number_format($offsetHours, 2, '.', ''), '0'), '.');
-
-        return __('График задан по времени: ').TimezoneOptions::label($timezone).' ('.$offset.') · '.$timezone;
-    }
-
-    private function humanScheduleError(string $message): string
-    {
-        return str_contains(mb_strtolower($message), 'overlap')
-            ? __('Рабочие интервалы не должны пересекаться.')
-            : $message;
-    }
-
-    /** @return list<array{weekday: int, start_time: string, end_time: string, starts_on: string|null, ends_on: string|null}> */
-    private function workingHours(int $specialistId): array
-    {
-        $hours = SpecialistWorkingHour::query()
-            ->where('organization_id', app(OrganizationContext::class)->id())
-            ->where('specialist_id', $specialistId)
-            ->orderBy('weekday')
-            ->orderBy('start_time')
-            ->get()
-            ->map(fn (SpecialistWorkingHour $hour): array => [
-                'weekday' => $hour->weekday,
-                'start_time' => substr((string) $hour->start_time, 0, 5),
-                'end_time' => substr((string) $hour->end_time, 0, 5),
-                'starts_on' => $hour->starts_on?->toDateString(),
-                'ends_on' => $hour->ends_on?->toDateString(),
-            ])
-            ->values()
-            ->all();
-
-        return array_values($hours);
     }
 }

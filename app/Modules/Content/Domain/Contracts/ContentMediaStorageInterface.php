@@ -8,6 +8,10 @@ interface ContentMediaStorageInterface
 {
     public function store(int $organizationId, UploadedFile $file): string;
 
+    public function storeVideo(int $organizationId, UploadedFile $file): string;
+
+    public function storeSubtitles(int $organizationId, UploadedFile $file): string;
+
     public function isManagedPath(int $organizationId, ?string $path): bool;
 
     public function readStream(int $organizationId, string $path): mixed;

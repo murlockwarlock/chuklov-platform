@@ -8,6 +8,7 @@ use App\Http\Requests\VerifyClientEmailCodeRequest;
 use App\Modules\ClientPortal\Application\ApplyClientPortalLocale;
 use App\Modules\ClientPortal\Application\PortalClientMessages;
 use App\Modules\Identity\Application\AuthenticateClientWithEmailVerificationCode;
+use App\Modules\Identity\Application\EmailVerificationCodeDeliveryFailed;
 use App\Modules\Identity\Application\InvalidEmailAuthenticationCode;
 use App\Modules\Identity\Application\RequestClientEmailVerificationCode;
 use App\Modules\Identity\Domain\Models\Client;
@@ -15,14 +16,26 @@ use App\Modules\Referrals\Application\FinalizeClientAcquisition;
 use Illuminate\Http\Request;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\RedirectResponse;
+use Symfony\Component\HttpKernel\Exception\TooManyRequestsHttpException;
 
 class EmailAuthenticationController extends Controller
 {
     public function requestCode(
         RequestClientEmailCodeRequest $request,
         RequestClientEmailVerificationCode $requestCode,
+        PortalClientMessages $messages,
     ): RedirectResponse {
-        $requestCode->handle($request->validated('email'));
+        try {
+            $requestCode->handle($request->validated('email'));
+        } catch (EmailVerificationCodeDeliveryFailed) {
+            throw ValidationException::withMessages([
+                'email' => $messages->message('email_code_delivery_failed'),
+            ]);
+        } catch (TooManyRequestsHttpException) {
+            throw ValidationException::withMessages([
+                'email' => $messages->message('email_code_rate_limited'),
+            ]);
+        }
 
         return to_route('portal.home')->with('email_code_sent', true);
     }

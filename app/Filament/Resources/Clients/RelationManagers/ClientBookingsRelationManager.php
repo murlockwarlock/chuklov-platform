@@ -34,9 +34,7 @@ final class ClientBookingsRelationManager extends LocalizedRelationManager
         return BookingsTable::configure($table, includeAttention: false, includeClient: false)
             ->heading(__('Записи на приём'))
             ->stackedOnMobile()
-            ->modifyQueryUsing(
-                fn (Builder $query): Builder => app(ListClientBookingsForCrm::class)->apply($actor, $client, $query),
-            )
+            ->query(fn (): Builder => app(ListClientBookingsForCrm::class)->query($actor, $client))
             ->paginated([10, 25])
             ->emptyStateHeading(__('Записей на приём пока нет'))
             ->emptyStateDescription(__('Записи этого клиента появятся здесь.'));

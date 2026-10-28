@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Pages\WorkingIntervals;
+use App\Filament\Pages\WorkSchedule;
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
 use App\Filament\Resources\SpecialistServiceAssignments\SpecialistServiceAssignmentResource;
@@ -25,6 +27,7 @@ use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scheduling\Application\ApproveHomeVisitBooking;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
 use App\Modules\Scheduling\Application\CalculateAvailability;
+use App\Modules\Scheduling\Application\CancelBooking;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Application\CreateScheduleException;
 use App\Modules\Scheduling\Application\CreateUnavailablePeriod;
@@ -48,6 +51,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 class MilestoneFourSchedulingTest extends TestCase
@@ -94,6 +98,97 @@ class MilestoneFourSchedulingTest extends TestCase
             '2026-03-30T08:15:00+00:00',
         ], array_map(fn ($slot): string => $slot->startsAt->toIso8601String(), $result->slots));
         self::assertSame('2026-03-30T12:00:00+05:00', $result->toArray()['slots'][0]['displayStartsAt']);
+    }
+
+    public function test_per_format_buffers_change_authoritative_availability_and_persisted_occupancy(): void
+    {
+        [, $admin, $specialist, $service] = $this->fixture('UTC');
+        $service->update([
+            'buffer_minutes' => 0,
+            'buffer_office_minutes' => 30,
+            'buffer_home_minutes' => 20,
+            'buffer_online_minutes' => 0,
+        ]);
+        $service->refresh();
+        self::assertSame([
+            VisitFormat::Office->value => 30,
+            VisitFormat::HomeVisit->value => 20,
+            VisitFormat::Online->value => 0,
+        ], [
+            VisitFormat::Office->value => $service->bufferMinutesForFormat(VisitFormat::Office->value),
+            VisitFormat::HomeVisit->value => $service->bufferMinutesForFormat(VisitFormat::HomeVisit->value),
+            VisitFormat::Online->value => $service->bufferMinutesForFormat(VisitFormat::Online->value),
+        ]);
+        self::assertSame([30, 20, 0], array_map(
+            static fn (string $field): int => (int) DB::table('services')->where('id', $service->getKey())->value($field),
+            ['buffer_office_minutes', 'buffer_home_minutes', 'buffer_online_minutes'],
+        ));
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [['weekday' => 1, 'start_time' => '09:00', 'end_time' => '12:00']]);
+
+        foreach ([
+            VisitFormat::Office->value => [VisitFormat::Office, 30],
+            VisitFormat::HomeVisit->value => [VisitFormat::HomeVisit, 20],
+            VisitFormat::Online->value => [VisitFormat::Online, 0],
+        ] as [$format, $bufferMinutes]) {
+            $result = app(CalculateAvailability::class)->forStaff($admin, $specialist->id, $service->id, '2026-03-30', '2026-03-30', $format, 'UTC');
+            self::assertSame('2026-03-30T09:00:00+00:00', $result->slots[0]->startsAt->toIso8601String());
+            self::assertSame(
+                CarbonImmutable::create(2026, 3, 30, 10, 0, 0, 'UTC')->addMinutes($bufferMinutes)->toIso8601String(),
+                $result->slots[0]->blockingEndsAt->toIso8601String(),
+            );
+
+            $client = Client::factory()->forOrganization($specialist->organization)->create();
+            $booking = app(CreateBooking::class)->handle(
+                actor: $admin,
+                client: $client,
+                specialist: $specialist,
+                service: $service,
+                startsAt: CarbonImmutable::parse('2026-03-30T09:00:00Z'),
+                format: $format,
+                location: $format === VisitFormat::HomeVisit ? 'Client destination' : null,
+                locationArea: $format === VisitFormat::HomeVisit ? 'Almaty' : null,
+                idempotencyKey: 'per-format-buffer-'.$format->value,
+            );
+            self::assertSame(
+                CarbonImmutable::create(2026, 3, 30, 10, 0, 0, 'UTC')->addMinutes($bufferMinutes)->toIso8601String(),
+                $booking->refresh()->blockingEndsAtUtc()->toIso8601String(),
+            );
+            self::assertSame(
+                CarbonImmutable::create(2026, 3, 30, 10, 0, 0, 'UTC')->addMinutes($bufferMinutes)->toIso8601String(),
+                CarbonImmutable::parse((string) DB::table('bookings')->where('id', $booking->getKey())->value('blocking_ends_at'), 'UTC')->toIso8601String(),
+            );
+
+            if ($format === VisitFormat::HomeVisit) {
+                $booking = app(ApproveHomeVisitBooking::class)->handle($admin, $booking);
+                self::assertSame(BookingStatus::Confirmed, $booking->status);
+            }
+
+            $afterBooking = app(CalculateAvailability::class)->forStaff(
+                $admin,
+                $specialist->id,
+                $service->id,
+                '2026-03-30',
+                '2026-03-30',
+                $format,
+                'UTC',
+            );
+            self::assertSame(
+                CarbonImmutable::create(2026, 3, 30, 10, 0, 0, 'UTC')->addMinutes($bufferMinutes)->toIso8601String(),
+                $afterBooking->slots[0]->startsAt->toIso8601String(),
+            );
+
+            app(CancelBooking::class)->handle($admin, $booking, 'Synthetic buffer acceptance');
+            $afterCancellation = app(CalculateAvailability::class)->forStaff(
+                $admin,
+                $specialist->id,
+                $service->id,
+                '2026-03-30',
+                '2026-03-30',
+                $format,
+                'UTC',
+            );
+            self::assertSame('2026-03-30T09:00:00+00:00', $afterCancellation->slots[0]->startsAt->toIso8601String());
+        }
     }
 
     public function test_day_off_and_custom_window_exceptions_have_explicit_precedence(): void
@@ -447,7 +542,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'start_time' => '09:00',
             'end_time' => '12:00',
         ]]);
-        $client = Client::factory()->forOrganization($organization)->create(['timezone' => 'Europe/Berlin']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'timezone' => 'Europe/Berlin']);
         $documents = $this->publishPortalLegalDocuments($organization);
 
         $this->withSession(['client_portal.client_id' => $client->id])
@@ -524,7 +619,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'start_time' => '09:00',
             'end_time' => '12:00',
         ]]);
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
         $documents = [];
 
         foreach (['offer', 'privacy', 'medical_disclaimer', 'marketing'] as $documentType) {
@@ -599,7 +694,7 @@ class MilestoneFourSchedulingTest extends TestCase
                 isRequired: false,
             ),
         );
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
 
         $this->withSession(['client_portal.client_id' => $client->id])
             ->post(route('portal.bookings.store'), [
@@ -630,7 +725,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'end_time' => '12:00',
         ]]);
         $documents = $this->publishPortalLegalDocuments($organization);
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
         $attributes = [
             'client' => $client,
             'specialist' => $specialist,
@@ -676,7 +771,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'start_time' => '09:00',
             'end_time' => '12:00',
         ]]);
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
 
         $response = $this->withSession(['client_portal.client_id' => $client->id])
             ->post(route('portal.bookings.store'), [
@@ -705,7 +800,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'start_time' => '09:00',
             'end_time' => '12:00',
         ]]);
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
         $documents = $this->publishPortalLegalDocuments($organization, ['offer', 'privacy']);
 
         $response = $this->withSession(['client_portal.client_id' => $client->id])
@@ -736,7 +831,7 @@ class MilestoneFourSchedulingTest extends TestCase
         ]]);
         $documents = $this->publishPortalLegalDocuments($organization);
         $consents = $this->portalConsentPayload($documents);
-        $manualClient = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $manualClient = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
 
         $this->withSession(['client_portal.client_id' => $manualClient->id])
             ->post(route('portal.bookings.store'), [
@@ -753,7 +848,7 @@ class MilestoneFourSchedulingTest extends TestCase
         self::assertSame('manual', $manualAttribution->source_type);
         self::assertSame('social', $manualAttribution->source);
 
-        $automaticClient = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $automaticClient = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
         ClientAttribution::query()->forceCreate([
             'organization_id' => $organization->id,
             'client_id' => $automaticClient->id,
@@ -791,7 +886,7 @@ class MilestoneFourSchedulingTest extends TestCase
             'end_time' => '12:00',
         ]]);
         $documents = $this->publishPortalLegalDocuments($organization);
-        $client = Client::factory()->forOrganization($organization)->create(['language' => 'en']);
+        $client = Client::factory()->forOrganization($organization)->create([...$this->completeClientAttributes(), 'language' => 'en']);
 
         try {
             app(CreatePortalBooking::class)->handle(
@@ -1052,6 +1147,45 @@ class MilestoneFourSchedulingTest extends TestCase
             ->assertOk();
     }
 
+    public function test_schedule_pages_show_the_accepted_labels_copy_and_separated_fields(): void
+    {
+        [, $admin] = $this->fixture('UTC');
+        $originalLocale = app()->getLocale();
+        app()->setLocale('ru');
+
+        try {
+            $settings = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+            self::assertSame('Настройки расписания', (string) $settings->instance()->getHeading());
+            self::assertSame(
+                'Здесь настраиваются общие параметры для всего расписания',
+                (string) $settings->instance()->getSubheading(),
+            );
+            self::assertSame('Настройки расписания', SchedulingConfiguration::getNavigationLabel());
+            self::assertSame(99, SchedulingConfiguration::getNavigationSort());
+            $settings->assertSee('Минимальный срок до записи')
+                ->assertDontSee('День недели');
+
+            $intervals = Livewire::actingAs($admin)->test(WorkingIntervals::class);
+            self::assertSame('Рабочие интервалы', (string) $intervals->instance()->getHeading());
+            self::assertSame(
+                'Здесь настраиваются регулярные рабочие интервалы выбранного специалиста.',
+                (string) $intervals->instance()->getSubheading(),
+            );
+            self::assertSame('Рабочие интервалы', WorkingIntervals::getNavigationLabel());
+            self::assertSame(3, WorkingIntervals::getNavigationSort());
+            $intervals->assertSee('Добавить интервал')
+                ->assertDontSee('Минимальный срок до записи');
+
+            $workSchedule = Livewire::actingAs($admin)->test(WorkSchedule::class);
+            self::assertSame('График работы специалиста', (string) $workSchedule->instance()->getHeading());
+            self::assertSame('График работы', WorkSchedule::getNavigationLabel());
+            self::assertSame(2, WorkSchedule::getNavigationSort());
+            $workSchedule->assertSee('Календарь конкретных дат. Регулярный график задаётся в «Настройках расписания».');
+        } finally {
+            app()->setLocale($originalLocale);
+        }
+    }
+
     /** @return array{Organization, User, Specialist, Service} */
     private function fixture(string $timezone): array
     {
@@ -1080,6 +1214,20 @@ class MilestoneFourSchedulingTest extends TestCase
     private function idempotencyKey(int $number): string
     {
         return 'test-key-'.$number;
+    }
+
+    /** @return array<string, string> */
+    private function completeClientAttributes(): array
+    {
+        return [
+            'first_name' => 'Test',
+            'last_name' => 'Client',
+            'gender' => 'FEMALE',
+            'birth_date' => '1990-01-01',
+            'country' => 'Kazakhstan',
+            'city' => 'Almaty',
+            'phone' => '+77001234567',
+        ];
     }
 
     private function enableFeature(Organization $organization, OrganizationFeature $feature): void

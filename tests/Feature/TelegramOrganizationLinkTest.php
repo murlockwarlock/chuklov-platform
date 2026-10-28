@@ -88,7 +88,8 @@ final class TelegramOrganizationLinkTest extends TestCase
 
         $profile = Livewire::actingAs($admin)->test(EditProfile::class)
             ->assertActionVisible('telegramConnection')
-            ->assertSee('Не подключён');
+            ->assertDontSee('Не подключён')
+            ->assertDontSee('Подключён');
 
         $profile
             ->fillForm([
@@ -117,7 +118,10 @@ final class TelegramOrganizationLinkTest extends TestCase
             $this->tokenFromUrl($firstLink),
             new VerifiedChannelIdentity('telegram', 'profile-first-id', $admin->name, 'ru'),
         );
-        $profile->unmountAction()->call('$refresh')->assertSee('Подключён');
+        $profile->unmountAction()->call('$refresh')
+            ->assertActionVisible('telegramConnection')
+            ->assertDontSee('Подключён')
+            ->assertSee('Перепривязать Telegram');
 
         $secondLink = '';
         $profile

@@ -33,9 +33,10 @@ class CreatePlatformLegalDocumentDraft
         $content = trim($content);
 
         $subject = ConsentSubject::tryFrom($documentType);
+        $isDelegatedAccessPolicy = $documentType === 'delegated_medical_access';
 
-        if (! $subject instanceof ConsentSubject
-            || $isRequired !== $subject->isRequired()
+        if ((! $subject instanceof ConsentSubject && ! $isDelegatedAccessPolicy)
+            || ($subject instanceof ConsentSubject && $isRequired !== $subject->isRequired())
             || $documentType === '' || mb_strlen($documentType) > 64 || preg_match('/^[a-z0-9._-]+$/', $documentType) !== 1
             || $purpose === '' || mb_strlen($purpose) > 120
             || preg_match('/^[a-z]{2}(?:-[A-Z]{2})?$/', $locale) !== 1

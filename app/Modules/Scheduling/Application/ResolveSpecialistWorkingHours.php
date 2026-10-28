@@ -51,7 +51,7 @@ final readonly class ResolveSpecialistWorkingHours
      */
     public function intervalsForDate(Collection $workingHours, LocalDate $date): array
     {
-        return $workingHours
+        return array_values($workingHours
             ->filter(fn (SpecialistWorkingHour $workingHour): bool => (int) $workingHour->weekday === $date->weekday()
                 && $workingHour->appliesOn($date))
             ->sortBy(fn (SpecialistWorkingHour $workingHour): string => sprintf(
@@ -62,6 +62,6 @@ final readonly class ResolveSpecialistWorkingHours
             ))
             ->map(fn (SpecialistWorkingHour $workingHour): WallClockInterval => $workingHour->wallClockInterval())
             ->values()
-            ->all();
+            ->all());
     }
 }

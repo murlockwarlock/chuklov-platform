@@ -49,6 +49,8 @@ final class GetMedicalProfile
             encryptedGoals: $profile->goals,
             encryptedOperations: $profile->operations,
             encryptedInjuries: $profile->injuries,
+            encryptedChronicConditions: $profile->chronic_conditions,
+            encryptedClinicalAnswers: $profile->clinical_answers,
         );
 
         $data = $this->encryptor->decryptProfile($orgId, $profile->encryption_key_version, $payload);
@@ -65,6 +67,8 @@ final class GetMedicalProfile
             goals: $data->goals,
             operations: $data->operations,
             injuries: $data->injuries,
+            chronicConditions: $data->chronicConditions,
+            clinicalAnswers: $data->clinicalAnswers,
         );
     }
 

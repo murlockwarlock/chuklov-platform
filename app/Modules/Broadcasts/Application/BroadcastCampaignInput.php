@@ -6,6 +6,7 @@ use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
 use App\Modules\Content\Domain\ValueObjects\ContentExternalImageUrl;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Application\NotificationTemplateMedia;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
@@ -24,6 +25,7 @@ final readonly class BroadcastCampaignInput
         private SegmentDefinition $segments,
         private BroadcastSegmentSummary $summaries,
         private NotificationTemplateRenderer $renderer,
+        private NotificationTemplateMedia $templateMedia,
     ) {}
 
     /**
@@ -78,6 +80,15 @@ final readonly class BroadcastCampaignInput
             ? $this->messageBody($attributes['message_body'] ?? null, $deliveryMode)
             : null;
         $media = $this->mediaInput($attributes);
+        if ($messageMode === 'saved_template' && $deliveryMode->includesImage()) {
+            $templateMedia = $this->savedTemplateMedia($ru, $en);
+            $derivedMedia = $this->isTemplateMedia($media);
+            if ($templateMedia !== null && ($media === null || $derivedMedia)) {
+                $media = ['existing' => $templateMedia];
+            } elseif ($derivedMedia) {
+                $media = null;
+            }
+        }
 
         if ($deliveryMode->includesImage()
             && ($media === null || ($media['remove'] ?? false) === true)) {
@@ -387,6 +398,50 @@ final readonly class BroadcastCampaignInput
             'existing' => is_array($existing) ? $existing : null,
             'alt_provided' => array_key_exists('media_alt', $attributes),
         ];
+    }
+
+    /** @param array<string, mixed>|null $media */
+    private function isTemplateMedia(?array $media): bool
+    {
+        $existing = $media['existing'] ?? null;
+
+        return is_array($existing) && is_array($existing['source_template_version_ids'] ?? null);
+    }
+
+    /** @return array<string, mixed>|null */
+    private function savedTemplateMedia(?NotificationTemplateVersion $ru, ?NotificationTemplateVersion $en): ?array
+    {
+        $versions = array_values(array_filter([$ru, $en], static fn (mixed $version): bool => $version instanceof NotificationTemplateVersion));
+        $media = null;
+        $versionIds = [];
+
+        foreach ($versions as $version) {
+            if (! is_array($version->media)) {
+                continue;
+            }
+            try {
+                $items = $this->templateMedia->items($version->media);
+            } catch (\InvalidArgumentException) {
+                throw ValidationException::withMessages(['media_image' => 'Сохранённый шаблон содержит недоступное медиа.']);
+            }
+            if ($items === []) {
+                continue;
+            }
+            $candidate = ['items' => $items];
+            if ($media !== null && $media !== $candidate) {
+                throw ValidationException::withMessages(['media_image' => 'Выберите одинаковое медиа для языковых шаблонов или загрузите его в рассылку.']);
+            }
+            $media = $candidate;
+            $versionIds[] = (int) $version->getKey();
+        }
+
+        if ($media === null) {
+            return null;
+        }
+
+        $media['source_template_version_ids'] = $versionIds;
+
+        return $media;
     }
 
     private function validMediaState(mixed $media): bool

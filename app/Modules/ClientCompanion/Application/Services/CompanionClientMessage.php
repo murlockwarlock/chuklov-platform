@@ -23,7 +23,7 @@ final class CompanionClientMessage
         return $isRussian
             ? new self(
                 locale: 'ru',
-                failure: 'Не получилось подготовить ответ.',
+                failure: 'Не получилось подготовить ответ. Попробуйте ещё раз или позовите специалиста.',
                 unavailable: 'Помощник сейчас недоступен. Попробуйте позже.',
                 specialistNotified: 'Специалист уведомлён. Пока он не подключился, помощник продолжит отвечать.',
                 humanTakeover: 'К диалогу подключился специалист. AI-помощник временно не отвечает.',
@@ -32,7 +32,7 @@ final class CompanionClientMessage
             )
             : new self(
                 locale: 'en',
-                failure: 'I could not prepare a response.',
+                failure: 'I could not prepare a response. Please retry or ask a specialist for help.',
                 unavailable: 'The assistant is temporarily unavailable. Please try again later.',
                 specialistNotified: 'A specialist has been notified. The assistant will keep responding until they join.',
                 humanTakeover: 'A specialist has joined the conversation. The AI assistant is temporarily paused.',
@@ -46,6 +46,13 @@ final class CompanionClientMessage
         return $this->locale === 'ru'
             ? 'Не удалось безопасно обработать одно или несколько изображений. Отправьте их ещё раз или выберите меньше изображений.'
             : 'One or more images could not be processed safely. Please send them again or choose fewer images.';
+    }
+
+    public function invalidOutputFailure(): string
+    {
+        return $this->locale === 'ru'
+            ? 'Ответ не удалось проверить. Попробуйте ещё раз или позовите специалиста.'
+            : 'The response could not be verified. Please retry or ask a specialist for help.';
     }
 
     public function imageLimitFailure(): string

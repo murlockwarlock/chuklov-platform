@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Portal;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\SubmitB2bLeadRequest;
 use App\Modules\B2B\Application\GetPortalB2bRequest;
+use App\Modules\B2B\Application\GetPublishedB2bForm;
 use App\Modules\B2B\Application\ListB2bSalesCallAvailability;
 use App\Modules\B2B\Application\SubmitB2bLead;
 use App\Modules\B2B\Domain\Enums\B2bLeadSource;
@@ -35,6 +36,7 @@ final class B2bController extends Controller
         ContentImageUrlResolver $imageResolver,
         ListB2bSalesCallAvailability $availability,
         GetPortalB2bRequest $currentRequest,
+        GetPublishedB2bForm $formConfiguration,
     ): Response {
         try {
             $client = $clientContext->client();
@@ -80,6 +82,7 @@ final class B2bController extends Controller
             'configurationReady' => $projection['configurationReady'] ?? false,
             'configurationIssue' => $projection['configurationIssue'] ?? null,
             'currentRequest' => $client === null ? null : $currentRequest->handle($client),
+            'formConfiguration' => $formConfiguration->handle(),
             'urls' => [
                 'answer' => route('portal.profile.b2b-answer'),
                 'page' => route('portal.b2b'),
@@ -126,6 +129,7 @@ final class B2bController extends Controller
             requestedTimezone: (string) $client->timezone,
             idempotencyKey: (string) $validated['submission_key'],
             source: B2bLeadSource::Portal,
+            formAnswers: is_array($validated['form_answers'] ?? null) ? $validated['form_answers'] : [],
         );
 
         return to_route('portal.b2b');

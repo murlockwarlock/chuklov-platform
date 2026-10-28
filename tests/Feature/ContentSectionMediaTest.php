@@ -1050,6 +1050,31 @@ final class ContentSectionMediaTest extends TestCase
         self::assertSame($legacyImage, $this->imagePath($section->refresh()->media));
     }
 
+    public function test_filament_shows_actionable_subtitle_url_validation_without_changing_saved_value(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $existingSubtitles = 'https://cdn.example.test/content/story.vtt';
+        $section = ContentSection::factory()->forOrganization($organization)->create([
+            'section_key' => 'story_author',
+            'locale' => 'ru',
+            'title' => 'История мастера',
+            'body' => 'Текст раздела.',
+            'media' => ['subtitles' => $existingSubtitles],
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()]);
+
+        $component
+            ->fillForm(['media' => ['subtitles' => 'http://cdn.example.test/content/story.vtt']])
+            ->call('save')
+            ->assertHasFormErrors(['media.subtitles' => ['starts_with']])
+            ->assertSee('Ссылка на файл субтитров должна начинаться с https://.', false)
+            ->assertDontSee('validation.starts_with');
+
+        self::assertSame($existingSubtitles, $section->refresh()->media['subtitles'] ?? null);
+    }
+
     /** @return array{0: Organization, 1: User} */
     private function organizationAndAdmin(): array
     {

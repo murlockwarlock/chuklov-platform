@@ -33,6 +33,7 @@ use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioEvaluationContext;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
+use App\Modules\Scheduling\Application\BookingPatientAccounts;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
@@ -46,6 +47,7 @@ use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use InvalidArgumentException;
 use LogicException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
@@ -95,6 +97,16 @@ final class ScenarioContextFactory
         ScenarioRecipient $recipient,
         bool $includeFeedbackUrl = false,
     ): array {
+        if ($recipient->type === 'client' && $context->booking !== null && $recipient->clientId !== null
+            && (int) $context->booking->client_id !== $recipient->clientId) {
+            $account = app(BookingPatientAccounts::class)->handle($context->booking)
+                ->firstWhere('id', $recipient->clientId);
+            if (! $account instanceof Client) {
+                throw (new ModelNotFoundException)->setModel(Client::class);
+            }
+            $context = new ScenarioEvaluationContext(event: $context->event, booking: $context->booking, client: $account,
+                evaluationEndsAt: $context->evaluationEndsAt);
+        }
         if ($context->client === null && ! $this->allowsClientlessOperationalEvent($context->event->event_name)) {
             throw (new ModelNotFoundException)->setModel(Client::class);
         }
@@ -230,14 +242,25 @@ final class ScenarioContextFactory
         }
 
         if ($context->booking !== null) {
-            $bookingDateTime = $recipient->type === 'internal'
-                ? $this->bookingDateTime->forSpecialist($context->booking)
-                : $this->bookingDateTime->forClient($context->booking);
+            if ($recipient->type === 'internal') {
+                $bookingDateTime = $this->bookingDateTime->forSpecialist($context->booking);
+            } else {
+                $client = $context->client;
+                if (! $client instanceof Client) {
+                    throw (new ModelNotFoundException)->setModel(Client::class);
+                }
+                $bookingDateTime = (int) $client->getKey() === (int) $context->booking->client_id
+                    ? $this->bookingDateTime->forClient($context->booking)
+                    : $this->bookingDateTime->format($context->booking, (string) $client->timezone);
+            }
             $locationSnapshot = $context->booking->locationSnapshot();
             $renderContext['booking'] = [
                 'id' => (int) $context->booking->getKey(),
                 'event_version' => (int) $context->booking->event_version,
                 'status' => $context->booking->status->value,
+                'confirmation_title' => $context->booking->status->value === 'confirmed'
+                    ? ($this->isRussian($recipient->locale) ? 'Бронирование подтверждено!' : 'Your booking is confirmed!')
+                    : ($this->isRussian($recipient->locale) ? 'Запись создана!' : 'Your booking has been created!'),
                 'visit_format' => $context->booking->visit_format->value,
                 'visit_format_label' => $this->visitFormatLabel($context->booking->visit_format->value, $recipient->locale),
                 'service_name' => $context->booking->service->name,
@@ -350,7 +373,7 @@ final class ScenarioContextFactory
                 : null;
             $renderContext['sales_call'] = [
                 'id' => (int) $call->getKey(),
-                'local_date' => $localStart->format('d-m-Y'),
+                'local_date' => $localStart->format('d.m.Y'),
                 'local_time' => $localStart->format('H:i'),
                 'timezone' => (string) $call->schedule_timezone,
                 'join_url' => $joinUrl,
@@ -887,11 +910,28 @@ final class ScenarioContextFactory
         }
 
         return match ($booking->visit_format) {
-            VisitFormat::Office => implode("\n", array_values(array_unique(array_filter([$name, $address]), SORT_STRING)))
-                ?: '',
+            VisitFormat::Office => $this->distinctLocationLines($name, $address),
             VisitFormat::HomeVisit => implode("\n", $homeVisitLines),
             VisitFormat::Online => '',
         };
+    }
+
+    private function distinctLocationLines(string $name, string $address): string
+    {
+        if ($name === '') {
+            return $address;
+        }
+
+        if ($address === '' || $this->normalizeLocationLabel($name) === $this->normalizeLocationLabel($address)) {
+            return $name;
+        }
+
+        return $name."\n".$address;
+    }
+
+    private function normalizeLocationLabel(string $value): string
+    {
+        return mb_strtolower((string) preg_replace('/[\p{P}\p{Z}\s]+/u', '', Str::ascii($value)));
     }
 
     /** @param array<string, mixed> $snapshot */

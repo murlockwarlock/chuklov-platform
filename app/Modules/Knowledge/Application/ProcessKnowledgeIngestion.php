@@ -52,7 +52,8 @@ final class ProcessKnowledgeIngestion
                 ->where('knowledge_source_id', $sourceId)
                 ->whereKey($revisionId)
                 ->firstOrFail();
-            if ($revision->extraction_status !== null && $revision->extraction_status !== KnowledgeExtractionStatus::Ready->value) {
+            $extractionStatus = $revision->getRawOriginal('extraction_status');
+            if (is_string($extractionStatus) && $extractionStatus !== KnowledgeExtractionStatus::Ready->value) {
                 throw new RuntimeException('extraction_not_ready');
             }
             $text = $revision->content;

@@ -53,6 +53,8 @@ Before a potentially billable call reserve a conservative local upper bound for 
 ## Tenant, protected-data, and production fail-closed boundaries
 `organization_id` is a security boundary: derive it server-side, scope every read/write/job reference, validate referenced ownership, and add composite tenant FKs when relational integrity requires them. Generic logs, errors, audit metadata, and AI provenance contain only safe structured metadata, digests, and references; protected traces remain encrypted and separately authorized. Evaluation fixtures are synthetic or explicitly approved non-protected data. Production versioned execution fails closed when the required prompt, model, template, rule, or content version is missing or unusable; never invent hidden business fallback text.
 
+Fail-closed activation is not permission to defer implementation. Missing production content or configuration requires the complete storage, versioning, validation, owner/admin UI, synthetic fixture, and verification path, with only activation disabled until the authoritative value exists.
+
 ## RAG is one security and cost boundary
 Initial and model-triggered retrieval use the same organization predicate, allowed-scope authorization, bounded query/top-K/result limits, immutable embedding compatibility, threshold policy, budget reservation, and safe source/revision/chunk/configuration provenance. Retrieved instructions, URLs, code, templates, and prompt-like text are inert data; model input may narrow retrieval policy but never expand it. Historical provenance survives normal content retirement according to the retention contract and never stores plaintext chunks in generic AI records.
 

@@ -8,6 +8,7 @@ import type { PortalShell } from '../../types/portal';
 
 type Booking = {
     id: number;
+    patientName: string | null;
     service: { name: string };
     specialist: { displayName: string };
     startsAt: string;
@@ -74,6 +75,10 @@ const { locale, t } = usePortalLocale();
           >
             <span class="portal-kicker">{{ booking.statusLabel }}</span>
             <span class="portal-heading portal-heading--card">{{ booking.service.name }}</span>
+            <span
+              v-if="booking.patientName"
+              class="portal-card__summary"
+            >{{ t('family.forWhom') }}: {{ booking.patientName }}</span>
             <span class="portal-card__summary">{{ booking.specialist.displayName }} · {{ booking.formatLabel }}</span>
             <span class="portal-card__summary">
               <PortalDateTime
@@ -106,6 +111,10 @@ const { locale, t } = usePortalLocale();
           >
             <span class="portal-kicker">{{ booking.statusLabel }}</span>
             <span class="portal-heading portal-heading--card">{{ booking.service.name }}</span>
+            <span
+              v-if="booking.patientName"
+              class="portal-card__summary"
+            >{{ t('family.forWhom') }}: {{ booking.patientName }}</span>
             <span class="portal-card__summary">{{ booking.specialist.displayName }} · {{ booking.formatLabel }}</span>
             <span class="portal-card__summary">
               <PortalDateTime

@@ -9,6 +9,10 @@ const props = defineProps<{
     serviceName: string | null;
     specialistName: string | null;
     selectedStart: string | null;
+    startsAtList?: string[];
+    patientName?: string | null;
+    familyUrl?: string | null;
+    requiresPatientMedicalProfile?: boolean;
     timezone: string;
     locale: PortalLocale;
     formatLabel: string;
@@ -34,6 +38,10 @@ const { t } = usePortalLocale();
     </header>
 
     <dl class="portal-booking-summary">
+      <div v-if="props.patientName">
+        <dt>{{ t('family.forWhom') }}</dt>
+        <dd>{{ props.patientName }}</dd>
+      </div>
       <div>
         <dt>{{ t('booking.service') }}</dt>
         <dd>{{ props.serviceName }}</dd>
@@ -42,18 +50,21 @@ const { t } = usePortalLocale();
         <dt>{{ t('booking.specialist') }}</dt>
         <dd>{{ props.specialistName }}</dd>
       </div>
-      <div v-if="props.selectedStart">
+      <div
+        v-for="start in (props.startsAtList?.length ? props.startsAtList : props.selectedStart ? [props.selectedStart] : [])"
+        :key="start"
+      >
         <dt>{{ t('booking.dateTime') }}</dt>
         <dd>
           <PortalDateTime
-            :value="props.selectedStart"
+            :value="start"
             :time-zone="props.timezone"
             :locale="props.locale"
             mode="date"
           />
           <span> · </span>
           <PortalDateTime
-            :value="props.selectedStart"
+            :value="start"
             :time-zone="props.timezone"
             :locale="props.locale"
             mode="time"
@@ -67,6 +78,13 @@ const { t } = usePortalLocale();
     </dl>
 
     <div class="portal-booking-success__actions">
+      <Link
+        v-if="props.familyUrl && props.requiresPatientMedicalProfile"
+        :href="props.familyUrl"
+        class="portal-button portal-button--primary"
+      >
+        {{ t('family.invite') }}
+      </Link>
       <Link
         :href="props.urls.bookings"
         class="portal-button portal-button--primary"

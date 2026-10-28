@@ -11,12 +11,24 @@ on:
         options:
           - full
           - quality
+          - static
+          - focused
           - integration
           - integration-foundation
           - integration-rag
           - integration-concurrency
           - privacy
           - docker
+      test_filter:
+        description: Required PHPUnit filter for the focused scope only
+        required: false
+        default: ''
+        type: string
+      verification_ref:
+        description: Optional exact source SHA for a static-only baseline comparison
+        required: false
+        default: ''
+        type: string
 
 concurrency:
   group: ci-${{ github.ref }}-${{ inputs.scope || 'full' }}
@@ -27,7 +39,7 @@ permissions:
 
 jobs:
   quality:
-    if: ${{ inputs.scope == 'full' || inputs.scope == 'quality' }}
+    if: ${{ inputs.scope == 'full' || inputs.scope == 'quality' || inputs.scope == 'static' || inputs.scope == 'focused' }}
     name: Quality
     runs-on: ubuntu-latest
     services:
@@ -69,6 +81,18 @@ jobs:
       DEFAULT_ORGANIZATION_ID: 1
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.verification_ref || github.sha }}
+      - name: Verify checked-out source identity
+        env:
+          VERIFICATION_REF: ${{ inputs.verification_ref }}
+          VERIFICATION_SCOPE: ${{ inputs.scope }}
+        run: |
+          if [ -n "$VERIFICATION_REF" ]; then
+            [[ "$VERIFICATION_SCOPE" == static && "$VERIFICATION_REF" =~ ^[0-9a-f]{40}$ ]]
+            test "$(git rev-parse HEAD)" = "$VERIFICATION_REF"
+          fi
+          git rev-parse HEAD
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.5'
@@ -96,11 +120,49 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
       - name: Migrate foundation schema
+        id: quality-schema
         run: php artisan migrate --seed --force
       - name: Verify repeatable key initialization
         run: make check-app-key
-      - name: Run quality suite
-        run: make quality
+      - name: Run unit tests
+        if: ${{ inputs.scope != 'static' && inputs.scope != 'focused' }}
+        run: make test-unit
+      - name: Run feature tests
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' && inputs.scope != 'static' }}
+        env:
+          CI_SCOPE: ${{ inputs.scope }}
+          PHPUNIT_FILTER: ${{ inputs.test_filter }}
+        run: |
+          if [ "$CI_SCOPE" = focused ]; then
+            if [ -z "$PHPUNIT_FILTER" ]; then
+              echo 'Focused checks require an explicit test filter.'
+              exit 1
+            fi
+            php artisan test tests/Feature --filter "$PHPUNIT_FILTER"
+          else
+            make test-feature
+          fi
+      - name: Run PHP format checks
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: composer lint
+      - name: Run frontend lint checks
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: npm run lint
+      - name: Run PHP static checks
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: composer static -- --error-format=raw
+      - name: Run frontend type checks
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: npm run typecheck
+      - name: Build frontend
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: npm run build
+      - name: Audit backend dependencies
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: composer audit --locked --no-interaction
+      - name: Audit frontend dependencies
+        if: ${{ !cancelled() && steps.quality-schema.outcome == 'success' }}
+        run: npm audit --audit-level=high
 
   integration-foundation:
     if: ${{ inputs.scope == 'full' || inputs.scope == 'integration' || inputs.scope == 'integration-foundation' }}

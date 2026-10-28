@@ -1,13 +1,19 @@
 <script setup lang="ts">
-import { Link, router, useForm } from '@inertiajs/vue3';
-import { computed, ref, watch } from 'vue';
+import { Link, router, useForm, useRemember } from '@inertiajs/vue3';
+import { computed, ref, unref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import BookingChoiceList from '../../Components/Portal/BookingChoiceList.vue';
 import BookingConfirmation from '../../Components/Portal/BookingConfirmation.vue';
 import BookingSuccess from '../../Components/Portal/BookingSuccess.vue';
+import BookingSessionSelection from '../../Components/Portal/BookingSessionSelection.vue';
+import PersonalDataFields from '../../Components/Portal/PersonalDataFields.vue';
+import BookingPatientSelector from '../../Components/Portal/BookingPatientSelector.vue';
+import type { PatientSummary } from '../../types/patients';
+import { useBookingSessions } from '../../composables/useBookingSessions';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
+import { personalData, type PersonalData, type PersonalProfile } from '../../types/personalData';
 import { formatMajorPrice } from '../../utils/formatMajorPrice';
 
 type VisitFormat = 'office' | 'home' | 'online';
@@ -79,6 +85,11 @@ type BookingResult = {
     message: string;
     bookingId: number;
     startsAt: string;
+    medicalProfileUrl: string | null;
+    familyUrl: string | null;
+    patientName: string | null;
+    requiresPatientMedicalProfile: boolean;
+    startsAtList?: string[];
 } | null;
 
 type LegalDocument = {
@@ -92,6 +103,8 @@ type LegalDocument = {
 };
 
 type Props = {
+    patients: { items: PatientSummary[]; hasMore: boolean; enabled: boolean };
+    selectedPatientId: number | null;
     portal: PortalShell;
     services: ServiceOption[];
     specialists: SpecialistOption[];
@@ -101,9 +114,10 @@ type Props = {
     query: BookingQuery;
     timezoneOptions: Array<{ value: string; label: string }>;
     bookingResult: BookingResult;
+    profile: PersonalProfile;
     legalDocuments: LegalDocument[];
     attribution: { needsManualSource: boolean; url: string; sources: string[] };
-    urls: { create: string; store: string; services: string; bookings: string };
+    urls: { create: string; store: string; services: string; bookings: string; cities: string; family: string; createPatient: string };
 };
 
 type ProgressStep = {
@@ -118,15 +132,26 @@ const selectedSpecialistId = ref<number | null>(props.query.specialistId);
 const selectedFormat = ref<VisitFormat | null>(props.query.formatSelected ? props.query.format : null);
 const selectedDate = ref<string | null>(props.query.dateFrom);
 const selectedStart = ref<string | null>(props.bookingResult?.startsAt ?? null);
+const { queuedStarts, startsAtList, canAdd, add: addSession, remove: removeQueuedSession, keyFor } = useBookingSessions(selectedStart);
+const selectionAvailability = computed(() => props.availability === null ? null : {
+    ...props.availability,
+    slots: props.availability.slots.filter((slot) => !queuedStarts.value.includes(slot.startsAt)),
+});
 const selectedClientTimezone = ref<string>(props.query.displayTimezone);
 const selectedWorkingLocationId = ref<number | null>(props.query.workingLocationId);
 const selectedLocationArea = ref<string | null>(props.query.locationArea);
 const timezoneEditorOpen = ref(false);
 const bookingStep = ref<BookingStep>('time');
+const cityLookupLoading = ref(false);
+const confirmationForm = ref<HTMLFormElement | null>(null);
 const bookingForm = useForm<{
+    patient_profile_id: number | null;
+    personal_data: PersonalData;
     service_id: number | null;
     specialist_id: number | null;
     starts_at: string | null;
+    additional_starts_at: string[];
+    idempotency_key: string | null;
     format: VisitFormat;
     party_size: number;
     location: string | null;
@@ -141,9 +166,13 @@ const bookingForm = useForm<{
     attribution_source: string | null;
     attribution_source_detail: string;
 }>({
+    patient_profile_id: props.selectedPatientId,
+    personal_data: personalData(props.profile),
     service_id: props.query.serviceId,
     specialist_id: props.query.specialistId,
     starts_at: null,
+    additional_starts_at: [],
+    idempotency_key: null,
     format: props.query.format,
     party_size: 1,
     location: null,
@@ -160,6 +189,8 @@ const bookingForm = useForm<{
     attribution_source: null,
     attribution_source_detail: '',
 });
+const personalErrors = computed(() => Object.fromEntries(Object.entries(bookingForm.errors)
+    .filter(([key]) => key.startsWith('personal_data.')).map(([key, message]) => [key.slice('personal_data.'.length), message])));
 
 const consentValues = ref<Record<number, boolean>>(Object.fromEntries(
     bookingForm.consents.map((consent) => [consent.legal_document_id, consent.granted]),
@@ -173,7 +204,10 @@ const requiredConsentsAccepted = computed(() => props.legalDocuments
     .every((document) => consentValues.value[document.id] === true) && hasPublishedRequiredDocuments.value);
 const requiredConsentAttempted = ref(false);
 
-const acknowledgedBookingId = ref<number | null>(null);
+const rememberedBookingNavigation = unref(useRemember(
+    { acknowledgedBookingId: null as number | null },
+    'Portal/BookingCreate:medical-profile-navigation',
+));
 
 watch(
     () => [
@@ -217,11 +251,15 @@ watch(
 watch(
     () => props.bookingResult?.bookingId ?? null,
     (bookingId) => {
-        if (bookingId === null || bookingId === acknowledgedBookingId.value) {
+        if (bookingId === null || bookingId === rememberedBookingNavigation.acknowledgedBookingId) {
             return;
         }
 
-        acknowledgedBookingId.value = bookingId;
+        rememberedBookingNavigation.acknowledgedBookingId = bookingId;
+        if (props.bookingResult?.medicalProfileUrl) {
+            router.visit(props.bookingResult.medicalProfileUrl);
+            return;
+        }
         selectedStart.value = props.bookingResult?.startsAt ?? null;
         bookingStep.value = 'success';
     },
@@ -344,6 +382,8 @@ const bookingError = computed(() => {
         ?? errors.location_area
         ?? errors.client_timezone
         ?? errors.consents
+        ?? errors.additional_starts_at
+        ?? errors.idempotency_key
         ?? errors.marketing_consent;
 });
 
@@ -429,12 +469,16 @@ function bookingQuery(
         query.location_area = selectedLocationArea.value;
     }
 
+    if (bookingForm.patient_profile_id !== null) {
+        query.patient_profile_id = bookingForm.patient_profile_id;
+    }
+
     return query;
 }
 
-function visitBooking(query: Record<string, string | number>, preserveScroll = true): void {
+function visitBooking(query: Record<string, string | number>, preserveScroll = true, preserveSessions = false): void {
     router.get(props.urls.create, query, {
-        preserveState: false,
+        preserveState: preserveSessions,
         preserveScroll,
         replace: true,
     });
@@ -526,18 +570,32 @@ function changeSpecialist(): void {
 }
 
 function changeMonth(dateFrom: string, dateTo: string): void {
-    visitBooking(bookingQuery(dateFrom, dateTo));
+    visitBooking(bookingQuery(dateFrom, dateTo), true, true);
+}
+
+function clearSlotErrors(): void {
+    bookingForm.clearErrors('starts_at', 'additional_starts_at', 'idempotency_key');
 }
 
 function selectDate(date: string): void {
+    if (selectedDate.value !== date) {
+        clearSlotErrors();
+    }
+
     selectedDate.value = date;
     selectedStart.value = null;
     bookingForm.starts_at = null;
 }
 
 function selectSlot(slot: AvailabilitySlot): void {
+    clearSlotErrors();
     selectedStart.value = slot.startsAt;
     bookingForm.starts_at = slot.startsAt;
+}
+
+function removeSession(start: string): void {
+    removeQueuedSession(start);
+    clearSlotErrors();
 }
 
 function changeClientTimezone(timezone: string): void {
@@ -572,7 +630,8 @@ function changeLocationArea(value: string): void {
 }
 
 function continueToConfirmation(): void {
-    if (selectedStart.value !== null) {
+    if (startsAtList.value.length > 0) {
+        selectedStart.value ??= startsAtList.value[0];
         bookingStep.value = 'confirmation';
     }
 }
@@ -582,7 +641,9 @@ function returnToTime(): void {
 }
 
 function submitBooking(): void {
-    if (selectedStart.value === null || props.query.serviceId === null || props.query.specialistId === null) {
+    if (cityLookupLoading.value || bookingForm.processing) return;
+    if (confirmationForm.value && !confirmationForm.value.reportValidity()) return;
+    if (startsAtList.value.length === 0 || props.query.serviceId === null || props.query.specialistId === null) {
         return;
     }
 
@@ -596,11 +657,21 @@ function submitBooking(): void {
     bookingForm.service_id = props.query.serviceId;
     bookingForm.specialist_id = props.query.specialistId;
     bookingForm.format = props.query.format;
-    bookingForm.starts_at = selectedStart.value;
+    bookingForm.starts_at = startsAtList.value[0];
+    bookingForm.additional_starts_at = startsAtList.value.slice(1);
     bookingForm.client_timezone = selectedClientTimezone.value;
     bookingForm.working_location_id = selectedWorkingLocationId.value;
     bookingForm.location_area = selectedLocationArea.value;
-    bookingForm.post(props.urls.store, { preserveScroll: false });
+    bookingForm.idempotency_key = keyFor({ ...bookingForm.data(), idempotency_key: undefined });
+    bookingForm.post(props.urls.store, {
+        preserveScroll: false,
+        onError: (errors) => {
+            if (Object.keys(errors).some((key) => key.startsWith('personal_data.'))) {
+                selectedStart.value = bookingForm.starts_at;
+                bookingStep.value = 'confirmation';
+            }
+        },
+    });
 }
 </script>
 
@@ -633,6 +704,18 @@ function submitBooking(): void {
             </h1>
           </div>
         </header>
+
+        <BookingPatientSelector
+          v-if="!bookingCompleted && props.patients.enabled"
+          v-model="bookingForm.patient_profile_id"
+          :patients="props.patients.items"
+          :has-more="props.patients.hasMore"
+          :create-url="props.urls.createPatient"
+          :family-url="props.urls.family"
+          :service-id="props.query.serviceId"
+          :specialist-id="props.query.specialistId"
+          :format="props.query.format"
+        />
 
         <nav
           v-if="!bookingCompleted"
@@ -668,6 +751,10 @@ function submitBooking(): void {
           :service-name="selectedService?.name ?? null"
           :specialist-name="selectedSpecialist?.displayName ?? null"
           :selected-start="selectedStart"
+          :starts-at-list="props.bookingResult.startsAtList"
+          :patient-name="props.bookingResult.patientName"
+          :family-url="props.bookingResult.familyUrl"
+          :requires-patient-medical-profile="props.bookingResult.requiresPatientMedicalProfile"
           :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
           :locale="locale"
           :format-label="formatLabel(props.query.format)"
@@ -924,9 +1011,10 @@ function submitBooking(): void {
           </section>
 
           <BookingCalendar
-            :availability="props.availability"
+            :availability="selectionAvailability"
             :date-from="props.query.dateFrom"
             :date-to="props.query.dateTo"
+            :display-timezone="selectedClientTimezone"
             :locale="locale"
             :selected-date="selectedDate"
             :selected-start="selectedStart"
@@ -947,53 +1035,80 @@ function submitBooking(): void {
             {{ bookingError }}
           </p>
 
+          <BookingSessionSelection
+            :starts="queuedStarts"
+            :timezone="selectedClientTimezone"
+            :locale="locale"
+            :can-add="canAdd"
+            @add="addSession"
+            @remove="removeSession"
+          />
+
           <button
             type="button"
             class="portal-button portal-button--primary portal-booking-flow__cta"
-            :disabled="selectedStart === null"
+            :disabled="startsAtList.length === 0"
             @click="continueToConfirmation"
           >
             {{ t('booking.continue') }}
           </button>
         </template>
 
-        <BookingConfirmation
+        <form
           v-else-if="bookingStep === 'confirmation'"
-          :service-name="selectedService?.name ?? null"
-          :specialist-name="selectedSpecialist?.displayName ?? null"
-          :selected-start="selectedStart"
-          :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
-          :locale="locale"
-          :format="props.query.format"
-          :format-label="formatLabel(props.query.format)"
-          :party-size="bookingForm.party_size"
-          :location="bookingForm.location"
-          :working-location="selectedWorkingLocation"
-          :location-area="selectedLocationArea"
-          :has-location-day-rules="hasLocationDayRules"
-          :location-area-options="locationAreaOptions"
-          :processing="bookingForm.processing"
-          :error="bookingError"
-          :legal-documents="props.legalDocuments"
-          :consent-values="consentValues"
-          :marketing-consent="bookingForm.marketing_consent"
-          :show-marketing="props.legalDocuments.some((document) => document.documentType === 'marketing')"
-          :attribution-sources="props.attribution.sources"
-          :attribution-source="bookingForm.attribution_source"
-          :attribution-source-detail="bookingForm.attribution_source_detail"
-          :attribution-detail-error="bookingForm.errors.attribution_source_detail"
-          :attribution-needs-manual-source="props.attribution.needsManualSource"
-          :required-acceptance-error="requiredConsentAttempted && hasPublishedRequiredDocuments ? t('legal.requiredError') : undefined"
-          @update:party-size="bookingForm.party_size = $event"
-          @update:location="bookingForm.location = $event"
-          @update:consent="setConsent"
-          @update:required-consent="setRequiredConsent"
-          @update:marketing-consent="setMarketingConsent"
-          @update:attribution-source="bookingForm.attribution_source = $event; bookingForm.attribution_source_detail = ''"
-          @update:attribution-source-detail="bookingForm.attribution_source_detail = $event"
-          @change="returnToTime"
-          @confirm="submitBooking"
-        />
+          ref="confirmationForm"
+          @submit.prevent="submitBooking"
+        >
+          <BookingConfirmation
+            :service-name="selectedService?.name ?? null"
+            :specialist-name="selectedSpecialist?.displayName ?? null"
+            :selected-start="selectedStart"
+            :starts-at-list="startsAtList"
+            :timezone="props.availability?.displayTimezone ?? props.query.displayTimezone"
+            :locale="locale"
+            :format="props.query.format"
+            :format-label="formatLabel(props.query.format)"
+            :party-size="bookingForm.party_size"
+            :location="bookingForm.location"
+            :working-location="selectedWorkingLocation"
+            :location-area="selectedLocationArea"
+            :has-location-day-rules="hasLocationDayRules"
+            :location-area-options="locationAreaOptions"
+            :processing="bookingForm.processing"
+            :waiting-for-city-lookup="cityLookupLoading"
+            :error="bookingError"
+            :legal-documents="props.legalDocuments"
+            :consent-values="consentValues"
+            :marketing-consent="bookingForm.marketing_consent"
+            :show-marketing="props.legalDocuments.some((document) => document.documentType === 'marketing')"
+            :attribution-sources="props.attribution.sources"
+            :attribution-source="bookingForm.attribution_source"
+            :attribution-source-detail="bookingForm.attribution_source_detail"
+            :attribution-detail-error="bookingForm.errors.attribution_source_detail"
+            :attribution-needs-manual-source="props.attribution.needsManualSource"
+            :required-acceptance-error="requiredConsentAttempted && hasPublishedRequiredDocuments ? t('legal.requiredError') : undefined"
+            @update:party-size="bookingForm.party_size = $event"
+            @update:location="bookingForm.location = $event"
+            @update:consent="setConsent"
+            @update:required-consent="setRequiredConsent"
+            @update:marketing-consent="setMarketingConsent"
+            @update:attribution-source="bookingForm.attribution_source = $event; bookingForm.attribution_source_detail = ''"
+            @update:attribution-source-detail="bookingForm.attribution_source_detail = $event"
+            @change="returnToTime"
+            @confirm="submitBooking"
+          >
+            <template #personal-data>
+              <PersonalDataFields
+                v-model="bookingForm.personal_data"
+                id-prefix="booking-profile"
+                :cities-url="props.urls.cities"
+                :email-editable="props.profile.emailEditable"
+                :errors="personalErrors"
+                @city-lookup-loading="cityLookupLoading = $event"
+              />
+            </template>
+          </BookingConfirmation>
+        </form>
       </section>
     </section>
   </AppShell>

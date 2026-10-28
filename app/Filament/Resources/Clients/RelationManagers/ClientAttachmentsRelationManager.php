@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Clients\RelationManagers;
 
+use App\Filament\Support\ClientAttachmentUploadFailureReporter;
 use App\Filament\Support\ClinicalAiPresentation;
 use App\Filament\Support\ClinicalAiResultAction;
 use App\Filament\Support\CrmLabel;
@@ -21,6 +22,8 @@ use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
 use App\Modules\Attachments\Application\ListClientAttachments;
 use App\Modules\Attachments\Application\UploadMedicalAttachment;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Exceptions\InvalidAttachmentException;
+use App\Modules\Attachments\Domain\Exceptions\UnsupportedDicomException;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -34,9 +37,11 @@ use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Throwable;
 
@@ -137,15 +142,36 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                     ->action(function (array $data) use ($actor, $client): void {
                         abort_unless($data['file'] instanceof UploadedFile, 422);
 
-                        $attachment = app(UploadMedicalAttachment::class)->handle(
-                            actor: $actor,
-                            command: new AttachmentUploadCommand(
-                                file: $data['file'],
-                                attachmentType: AttachmentType::from((string) $data['attachment_type']),
-                                clientId: (int) $client->getKey(),
-                            ),
-                        );
+                        try {
+                            app(UploadMedicalAttachment::class)->handle(
+                                actor: $actor,
+                                command: new AttachmentUploadCommand(
+                                    file: $data['file'],
+                                    attachmentType: AttachmentType::from((string) $data['attachment_type']),
+                                    clientId: (int) $client->getKey(),
+                                ),
+                            );
+                        } catch (ValidationException $exception) {
+                            if (! app(ClientAttachmentUploadFailureReporter::class)->handle($exception, $actor, $client)) {
+                                throw $exception;
+                            }
 
+                            return;
+                        } catch (AuthorizationException $exception) {
+                            app(ClientAttachmentUploadFailureReporter::class)->handle($exception, $actor, $client);
+
+                            return;
+                        } catch (InvalidAttachmentException|UnsupportedDicomException $exception) {
+                            app(ClientAttachmentUploadFailureReporter::class)->handle($exception, $actor, $client);
+
+                            return;
+                        } catch (Throwable $exception) {
+                            app(ClientAttachmentUploadFailureReporter::class)->handle($exception, $actor, $client);
+
+                            return;
+                        }
+
+                        $this->flushCachedTableRecords();
                         self::sendUploadNotification();
                     })
                     ->visible(fn (): bool => app(AttachmentAuthorization::class)->allowsUpload($actor, $client)),

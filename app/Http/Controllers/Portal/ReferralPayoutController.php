@@ -51,13 +51,18 @@ final class ReferralPayoutController extends Controller
             ? '—'
             : Money::ofMinor((int) $payout->amount_minor, $currency)->toDecimalString().' '.$currency->value;
 
+        $status = $payout->status;
+        $message = $status === ReferralPayoutRequestStatus::Requested
+            ? $messages->message('referral_payout_requested')
+            : $messages->message('referral_payout_already_exists');
+
         return back()
-            ->with('success', $messages->message('referral_payout_requested'))
+            ->with('success', $message)
             ->with('payout_feedback', [
-                'message' => $messages->message('referral_payout_requested'),
+                'message' => $message,
                 'amount' => $amount,
                 'currency' => $currency?->value,
-                'status' => $messages->message('referral_payout_requested'),
+                'status' => $status->label(app()->getLocale()),
                 'requested_at' => $payout->requested_at->toIso8601String(),
             ]);
     }

@@ -17,6 +17,7 @@ use App\Modules\Scenarios\Jobs\ProcessScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
@@ -78,9 +79,7 @@ final class RequestReferralPayout
 
             if ($existing instanceof ReferralPayoutRequest) {
                 if (! hash_equals((string) $existing->request_hash, $requestHash)) {
-                    throw ValidationException::withMessages([
-                        'idempotency_key' => 'Этот запрос уже использован для другой суммы или валюты.',
-                    ]);
+                    $this->throwIdempotencyConflict($beneficiary, $idempotencyKey, $existing);
                 }
 
                 return $existing;
@@ -119,9 +118,7 @@ final class RequestReferralPayout
 
             if ($inserted === 0) {
                 if (! hash_equals((string) $request->request_hash, $requestHash)) {
-                    throw ValidationException::withMessages([
-                        'idempotency_key' => 'Этот запрос уже использован для другой суммы или валюты.',
-                    ]);
+                    $this->throwIdempotencyConflict($beneficiary, $idempotencyKey, $request);
                 }
 
                 return $request;
@@ -182,6 +179,24 @@ final class RequestReferralPayout
     private function requestHash(Client $client, Money $money): string
     {
         return hash('sha256', $client->getKey().'|'.$money->minorUnitsString().'|'.$money->currency()->value);
+    }
+
+    private function throwIdempotencyConflict(Client $client, string $idempotencyKey, ReferralPayoutRequest $request): never
+    {
+        Log::warning('referral.payout.idempotency_conflict', [
+            'operation' => 'request_referral_payout',
+            'organization_id' => $this->context->id(),
+            'actor_client_id' => $client->getKey(),
+            'entity_type' => ReferralPayoutRequest::class,
+            'entity_id' => (string) $request->getKey(),
+            'error_code' => 'idempotency_payload_mismatch',
+            'occurred_at' => CarbonImmutable::now('UTC')->toIso8601String(),
+            'outcome' => 'rejected',
+        ]);
+
+        throw ValidationException::withMessages([
+            'idempotency_conflict' => 'The idempotency key was already used for a different payout request.',
+        ]);
     }
 
     private function recordEvent(

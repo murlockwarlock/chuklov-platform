@@ -376,18 +376,28 @@ final class TelegramNotificationChannel implements NotificationChannel
         $keyboard = InlineKeyboardMarkup::make();
 
         foreach ($message->actionButtons as $actionButton) {
+            if ($actionButton->webAppUrl !== null && ! $this->validWebAppUrl($actionButton->webAppUrl)) {
+                return null;
+            }
+
             $keyboard->addRow(InlineKeyboardButton::make(
                 text: $actionButton->text,
-                url: $actionButton->url,
+                url: $actionButton->webAppUrl !== null || $actionButton->url === null ? null : $actionButton->url,
                 callback_data: $actionButton->callbackData,
+                web_app: $actionButton->webAppUrl === null ? null : WebAppInfo::make($actionButton->webAppUrl),
             ));
         }
 
         if ($message->actionButton !== null) {
+            if ($message->actionButton->webAppUrl !== null && ! $this->validWebAppUrl($message->actionButton->webAppUrl)) {
+                return null;
+            }
+
             $keyboard->addRow(InlineKeyboardButton::make(
                 text: $message->actionButton->text,
-                url: $message->actionButton->url,
+                url: $message->actionButton->webAppUrl !== null || $message->actionButton->url === null ? null : $message->actionButton->url,
                 callback_data: $message->actionButton->callbackData,
+                web_app: $message->actionButton->webAppUrl === null ? null : WebAppInfo::make($message->actionButton->webAppUrl),
             ));
         }
 

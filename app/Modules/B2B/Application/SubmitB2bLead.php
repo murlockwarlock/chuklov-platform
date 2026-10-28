@@ -9,6 +9,7 @@ use App\Modules\B2B\Domain\Enums\B2bSalesCallStatus;
 use App\Modules\B2B\Domain\Enums\VideoMeetingMode;
 use App\Modules\B2B\Domain\Enums\VideoMeetingOperation;
 use App\Modules\B2B\Domain\Enums\VideoMeetingSyncStatus;
+use App\Modules\B2B\Domain\Models\B2bFormConfiguration;
 use App\Modules\B2B\Domain\Models\B2bLead;
 use App\Modules\B2B\Domain\Models\B2bSalesCall;
 use App\Modules\B2B\Domain\ValueObjects\B2bSalesCallDuration;
@@ -46,6 +47,9 @@ final class SubmitB2bLead
         private readonly RecordAuditEvent $audit,
     ) {}
 
+    /**
+     * @param  array<string, mixed>|null  $formAnswers
+     */
     public function handle(
         User|Client $actor,
         Client $client,
@@ -56,6 +60,7 @@ final class SubmitB2bLead
         B2bLeadSource $source,
         VideoMeetingMode $meetingMode = VideoMeetingMode::Automatic,
         ?string $manualMeetingUrl = null,
+        ?array $formAnswers = null,
     ): B2bLead {
         $organization = $this->context->organization();
 
@@ -81,6 +86,16 @@ final class SubmitB2bLead
         }
 
         $manualMeetingUrl = $this->manualUrl($meetingMode, $manualMeetingUrl);
+        $formConfiguration = B2bFormConfiguration::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('status', 'published')
+            ->latest('version')
+            ->first();
+        $validatedFormAnswers = $formConfiguration === null
+            ? []
+            : app(ValidateB2bFormAnswers::class)->handle($formConfiguration, $formAnswers ?? []);
+        $formSchemaJson = $formConfiguration === null ? null : json_encode($formConfiguration->fields, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
+        $formAnswersJson = json_encode($validatedFormAnswers, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE);
         $requestedStart = CarbonImmutable::instance($startsAt)->utc();
 
         if ($requestedStart->second !== 0 || $requestedStart->microsecond !== 0) {
@@ -94,6 +109,8 @@ final class SubmitB2bLead
             requestedTimezone: $requestedTimezone,
             meetingMode: $meetingMode,
             manualMeetingUrl: $manualMeetingUrl,
+            formVersion: $formConfiguration?->version,
+            formAnswers: $validatedFormAnswers,
         );
 
         try {
@@ -108,6 +125,9 @@ final class SubmitB2bLead
                 $source,
                 $meetingMode,
                 $manualMeetingUrl,
+                $formConfiguration,
+                $formSchemaJson,
+                $formAnswersJson,
                 $organization,
             ): B2bLead {
                 $lockedClient = Client::query()
@@ -148,6 +168,9 @@ final class SubmitB2bLead
                     'request_hash' => $requestHash,
                     'status' => B2bLeadStatus::New->value,
                     'event_version' => 1,
+                    'form_version' => $formConfiguration?->version,
+                    'form_schema' => $formSchemaJson,
+                    'form_answers' => $formAnswersJson,
                     'submitted_at' => now(),
                     'created_at' => now(),
                     'updated_at' => now(),
@@ -346,6 +369,7 @@ final class SubmitB2bLead
         return $url;
     }
 
+    /** @param array<string, mixed> $formAnswers */
     private function requestHash(
         int $clientId,
         int $specialistId,
@@ -353,6 +377,8 @@ final class SubmitB2bLead
         string $requestedTimezone,
         VideoMeetingMode $meetingMode,
         ?string $manualMeetingUrl,
+        ?int $formVersion,
+        array $formAnswers,
     ): string {
         return hash('sha256', json_encode([
             'client_id' => $clientId,
@@ -361,6 +387,8 @@ final class SubmitB2bLead
             'requested_timezone' => $requestedTimezone,
             'meeting_mode' => $meetingMode->value,
             'manual_meeting_url' => $manualMeetingUrl,
+            'form_version' => $formVersion,
+            'form_answers' => $formAnswers,
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }
 

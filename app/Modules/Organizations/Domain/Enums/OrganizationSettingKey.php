@@ -19,6 +19,8 @@ enum OrganizationSettingKey: string
     case TrackerFreeMode = 'tracker_free_mode';
     case TrackerEnabled = 'tracker_enabled';
     case OnlineConsultationServiceId = 'online_consultation_service_id';
+    case PatientNotificationRecipients = 'patient_notification_recipients';
+    case RoadMapAvailabilityMode = 'road_map_availability_mode';
 
     public function type(): OrganizationSettingType
     {

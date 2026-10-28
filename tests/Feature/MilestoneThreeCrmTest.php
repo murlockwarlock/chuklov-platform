@@ -28,10 +28,12 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
+use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Services\Application\CreateService;
 use App\Modules\Services\Application\ServiceSnapshotHasher;
 use App\Modules\Services\Application\UpdateService;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
+use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Application\CreateSpecialist;
 use App\Modules\Specialists\Application\SetSpecialistActive;
@@ -114,6 +116,7 @@ class MilestoneThreeCrmTest extends TestCase
         $organization = Organization::factory()->create();
         $admin = User::factory()->forOrganization($organization)->create();
         $service = Service::factory()->forOrganization($organization)->create();
+        $service->refresh();
         $this->enableFeature($organization, OrganizationFeature::ServiceCatalog);
         $this->setOrganization($organization);
         $snapshot = app(ServiceSnapshotHasher::class)->forService($service);
@@ -147,6 +150,34 @@ class MilestoneThreeCrmTest extends TestCase
         }
 
         self::assertSame('Изменение из вкладки A', $service->refresh()->name);
+    }
+
+    public function test_service_update_audit_omits_unchanged_enum_cast_fields(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create([
+            'price_matrix' => [],
+        ]);
+        $this->enableFeature($organization, OrganizationFeature::ServiceCatalog);
+        $this->setOrganization($organization);
+        $attributes = $service->attributesToArray();
+        $attributes['is_active'] = false;
+        $attributes['requires_medical_profile'] = false;
+
+        app(UpdateService::class)->handle($admin, $service, $attributes);
+
+        $audit = AuditEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('action', 'service.updated')
+            ->sole();
+        $updatedService = $service->fresh();
+
+        self::assertEqualsCanonicalizing(['is_active', 'requires_medical_profile'], explode(',', $audit->metadata['fields']));
+        self::assertFalse($updatedService->is_active);
+        self::assertFalse($updatedService->requires_medical_profile);
+        self::assertSame(CatalogItemType::Service, $updatedService->catalog_type);
+        self::assertSame(ServicePaymentRequirement::Postpay, $updatedService->payment_requirement);
     }
 
     public function test_service_catalog_entitlement_is_enforced_by_actions(): void

@@ -5,6 +5,7 @@ import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
+import { formatPortalDate } from '../../utils/dateTime';
 
 type Specialist = { id: number; displayName: string };
 type Content = { title: string; body: string; media: string | null };
@@ -34,6 +35,13 @@ type CurrentRequest = {
     meetingStatus: 'ready' | 'automatic_pending' | 'manual_pending' | 'needs_sync';
     meetingUrl: string | null;
 };
+type B2bFormField = {
+  key: string;
+  label: string;
+  type: 'text' | 'textarea' | 'select' | 'checkbox';
+  required: boolean;
+  options: Array<{ value: string; label: string }>;
+};
 
 const props = defineProps<{
     portal: PortalShell;
@@ -47,6 +55,7 @@ const props = defineProps<{
     configurationReady: boolean;
     configurationIssue: 'missing_duration' | 'zoom_duration_exceeds_capability' | null;
     currentRequest: CurrentRequest | null;
+  formConfiguration: { version: number | null; fields: B2bFormField[] };
     urls: { answer: string; page: string; submit: string; login: string };
 }>();
 
@@ -62,10 +71,12 @@ const leadForm = useForm<{
     specialist_id: number | null;
     starts_at: string;
     submission_key: string;
+    form_answers: Record<string, string | boolean | null>;
 }>({
     specialist_id: props.selectedSpecialistId,
     starts_at: '',
     submission_key: crypto.randomUUID(),
+    form_answers: Object.fromEntries(props.formConfiguration.fields.map((field) => [field.key, field.type === 'checkbox' ? false : ''])),
 });
 const selectedStart = ref<string | null>(null);
 const selectedDate = ref<string | null>(null);
@@ -178,12 +189,34 @@ function submitLead(): void {
     leadForm.post(props.urls.submit, { preserveScroll: true });
 }
 
+function formError(key: string): string | undefined {
+  return (leadForm.errors as Record<string, string | undefined>)[`form_answers.${key}`];
+}
+
+function formAnswerText(key: string): string {
+    const value = leadForm.form_answers[key];
+
+    return typeof value === 'string' ? value : '';
+}
+
+function formAnswerChecked(key: string): boolean {
+    return leadForm.form_answers[key] === true;
+}
+
+function updateFormAnswer(key: string, value: string | boolean): void {
+    leadForm.form_answers[key] = value;
+}
+
+function eventValue(event: Event): string {
+    return (event.target as HTMLInputElement).value;
+}
+
+function eventChecked(event: Event): boolean {
+    return (event.target as HTMLInputElement).checked;
+}
+
 function requestDate(value: string, timezone: string): string {
-    return new Intl.DateTimeFormat(locale.value === 'ru' ? 'ru-RU' : 'en-US', {
-        day: 'numeric',
-        month: 'long',
-        timeZone: timezone,
-    }).format(new Date(value));
+    return formatPortalDate(value, timezone, { locale: locale.value === 'ru' ? 'ru-RU' : 'en-GB' });
 }
 
 function requestTime(value: string, timezone: string): string {
@@ -387,6 +420,76 @@ function requestTime(value: string, timezone: string): string {
                 {{ specialist.displayName }}
               </option>
             </select>
+          </div>
+          <div
+            v-for="field in props.formConfiguration.fields"
+            :key="field.key"
+            class="portal-field"
+          >
+            <label
+              v-if="field.type !== 'checkbox'"
+              :for="`b2b-field-${field.key}`"
+              class="portal-label"
+            >{{ field.label }}<span v-if="field.required"> *</span></label>
+            <textarea
+              v-if="field.type === 'textarea'"
+              :id="`b2b-field-${field.key}`"
+              :value="formAnswerText(field.key)"
+              class="portal-input"
+              rows="3"
+              :required="field.required"
+              :aria-invalid="Boolean(formError(field.key))"
+              @input="updateFormAnswer(field.key, eventValue($event))"
+            />
+            <select
+              v-else-if="field.type === 'select'"
+              :id="`b2b-field-${field.key}`"
+              :value="formAnswerText(field.key)"
+              class="portal-input portal-select"
+              :required="field.required"
+              :aria-invalid="Boolean(formError(field.key))"
+              @change="updateFormAnswer(field.key, eventValue($event))"
+            >
+              <option value="">
+                {{ t('b2b.chooseOption') }}
+              </option>
+              <option
+                v-for="option in field.options"
+                :key="option.value"
+                :value="option.value"
+              >
+                {{ option.label }}
+              </option>
+            </select>
+            <label
+              v-else-if="field.type === 'checkbox'"
+              class="portal-confirm"
+            >
+              <input
+                :id="`b2b-field-${field.key}`"
+                :checked="formAnswerChecked(field.key)"
+                type="checkbox"
+                class="portal-checkbox"
+                @change="updateFormAnswer(field.key, eventChecked($event))"
+              >
+              <span>{{ field.label }}<span v-if="field.required"> *</span></span>
+            </label>
+            <input
+              v-else
+              :id="`b2b-field-${field.key}`"
+              :value="formAnswerText(field.key)"
+              type="text"
+              class="portal-input"
+              :required="field.required"
+              :aria-invalid="Boolean(formError(field.key))"
+              @input="updateFormAnswer(field.key, eventValue($event))"
+            >
+            <p
+              v-if="formError(field.key)"
+              class="portal-error"
+            >
+              {{ formError(field.key) }}
+            </p>
           </div>
           <p
             v-if="!props.configurationReady"

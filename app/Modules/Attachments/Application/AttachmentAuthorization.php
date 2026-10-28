@@ -3,10 +3,14 @@
 namespace App\Modules\Attachments\Application;
 
 use App\Models\User;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
+use App\Modules\Identity\Application\PatientProfileAccess;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\OrganizationFeatureGate;
+use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -17,6 +21,7 @@ final class AttachmentAuthorization
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly OrganizationFeatureGate $features,
     ) {}
 
     public function organization(): Organization
@@ -24,8 +29,21 @@ final class AttachmentAuthorization
         return $this->context->organization();
     }
 
-    public function authorizeUpload(User $actor, Client $client): Organization
+    public function authorizeUpload(User|Client $actor, Client $client, AttachmentType $type = AttachmentType::MedicalReport): Organization
     {
+        if ($actor instanceof Client) {
+            $organization = $this->organization();
+            $this->features->authorize($organization, OrganizationFeature::ClientRecords);
+            $this->assertClientOwned($actor, $organization);
+            $this->assertClientOwned($client, $organization);
+            if ($type !== AttachmentType::MedicalReport) {
+                throw new AuthorizationException('This client may only upload their own medical reports.');
+            }
+            app(PatientProfileAccess::class)->authorizeClinicalClient($actor, $client);
+
+            return $organization;
+        }
+
         return $this->authorizeManage($actor, $client);
     }
 

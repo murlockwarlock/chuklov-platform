@@ -21,8 +21,9 @@ final class CreateLegalDocumentVersionDraft
         }
 
         $subject = ConsentSubject::tryFrom($source->document_type);
+        $isDelegatedAccessPolicy = $source->document_type === 'delegated_medical_access';
 
-        if (! $subject instanceof ConsentSubject) {
+        if (! $subject instanceof ConsentSubject && ! $isDelegatedAccessPolicy) {
             throw new InvalidArgumentException('The legal document purpose is not configured.');
         }
 
@@ -33,7 +34,7 @@ final class CreateLegalDocumentVersionDraft
             locale: $source->locale,
             version: $version,
             content: $content,
-            isRequired: $subject->isRequired(),
+            isRequired: $subject?->isRequired() ?? false,
         );
     }
 }

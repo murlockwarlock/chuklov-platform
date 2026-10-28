@@ -3,6 +3,7 @@
 namespace App\Modules\Organizations\Application;
 
 use App\Models\User;
+use App\Modules\ClientPortal\Domain\Enums\RoadMapAvailabilityMode;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingType;
@@ -32,6 +33,8 @@ class SetOrganizationSetting
                 OrganizationSettingKey::DefaultTimezone,
                 OrganizationSettingKey::HomeVisitOccupiedBufferMinutes,
                 OrganizationSettingKey::OnlineConsultationServiceId,
+                OrganizationSettingKey::PatientNotificationRecipients,
+                OrganizationSettingKey::RoadMapAvailabilityMode,
             ], true)
                 ? OrganizationPermission::ManageScheduling
                 : OrganizationPermission::ManageSettings,
@@ -125,6 +128,16 @@ class SetOrganizationSetting
         if ($key->value === OrganizationSettingKey::OfficeLocation->value
             && (! is_string($value) || trim($value) === '' || mb_strlen($value) > 500)) {
             throw new InvalidArgumentException('The office location is invalid.');
+        }
+
+        if ($key === OrganizationSettingKey::PatientNotificationRecipients
+            && (! is_string($value) || ! in_array($value, ['patient_only', 'booker_only', 'both'], true))) {
+            throw new InvalidArgumentException('The patient notification recipient policy is invalid.');
+        }
+
+        if ($key === OrganizationSettingKey::RoadMapAvailabilityMode
+            && (! is_string($value) || RoadMapAvailabilityMode::tryFrom($value) === null)) {
+            throw new InvalidArgumentException('The Road Map availability mode is invalid.');
         }
     }
 }

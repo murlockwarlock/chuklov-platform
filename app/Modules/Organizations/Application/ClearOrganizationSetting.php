@@ -28,6 +28,8 @@ final class ClearOrganizationSetting
                 OrganizationSettingKey::B2bZoomHostLicensed,
                 OrganizationSettingKey::DefaultTimezone,
                 OrganizationSettingKey::OnlineConsultationServiceId,
+                OrganizationSettingKey::PatientNotificationRecipients,
+                OrganizationSettingKey::RoadMapAvailabilityMode,
             ], true)
                 ? OrganizationPermission::ManageScheduling
                 : OrganizationPermission::ManageSettings,

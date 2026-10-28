@@ -2,10 +2,12 @@
 
 namespace App\Http\Middleware;
 
+use App\Modules\ClientPortal\Application\GetClientAvailableBonus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Support\SupportedLocale;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 use Inertia\Middleware;
 use LogicException;
 
@@ -23,12 +25,21 @@ class HandleInertiaRequests extends Middleware
             (string) config('portal.default_locale', 'ru'),
         );
 
+        $successMessage = $request->session()->get('success');
+        if (is_string($successMessage) && trim($successMessage) !== '') {
+            Inertia::flash('success', $successMessage);
+        }
+        $errorMessage = $request->session()->get('error');
+        if (is_string($errorMessage) && trim($errorMessage) !== '') {
+            Inertia::flash('error', $errorMessage);
+        }
+
         app()->setLocale($locale);
+        $bonus = app(GetClientAvailableBonus::class);
 
         return [
             ...parent::share($request),
             'flash' => [
-                'success' => fn (): ?string => $request->session()->get('success'),
                 'payout' => fn (): ?array => $this->payoutFeedback($request->session()->get('payout_feedback')),
                 'giftCertificateTransferUrl' => fn (): ?string => is_string($request->session()->get('gift_certificate_transfer_url'))
                     ? $request->session()->get('gift_certificate_transfer_url')
@@ -37,6 +48,10 @@ class HandleInertiaRequests extends Middleware
             'portal' => [
                 'authenticated' => $client !== null,
                 'clientName' => $client?->full_name,
+                'timezone' => $client?->timezone ?: (string) config('app.timezone', 'UTC'),
+                'confirmedFirstName' => $client?->name_confirmed_at !== null ? $client->first_name : null,
+                'availableBonus' => fn (): ?string => $client === null ? null : $bonus->handle($client),
+                'bonusCurrencyUnavailable' => fn (): bool => $client !== null && $bonus->currencyUnavailable($client),
                 'isPartner' => $client?->referralPartnerProfile?->isActive() === true,
                 'locale' => $locale,
                 'localeUrl' => route('portal.locale.update'),
@@ -52,6 +67,8 @@ class HandleInertiaRequests extends Middleware
                     'companion' => route('portal.companion'),
                     'tracker' => route('portal.tracker'),
                     'profile' => route('portal.profile'),
+                    'medicalProfile' => route('portal.medical-profile'),
+                    'communities' => route('portal.section', ['section' => 'communities']),
                     'referrals' => route('portal.referrals'),
                     'feedback' => route('portal.feedback'),
                     'attribution' => route('portal.attribution'),

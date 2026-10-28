@@ -8,6 +8,7 @@ use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Application\CreateClient as CreateClientAction;
+use App\Modules\Identity\Application\ListPatientProfilesForCrm;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -108,6 +109,7 @@ class BookingForm
                     self::preservePrefilledTimeOrClear($get, $set, $multiple);
                 }),
             Select::make('client_id')
+                ->extraFieldWrapperAttributes(['class' => 'booking-client-select-field'])
                 ->label(__('Клиент'))
                 ->options([])
                 ->searchable()
@@ -138,6 +140,7 @@ class BookingForm
                         : null;
                 })
                 ->afterStateUpdated(function (Get $get, Set $set) use ($multiple): void {
+                    $set('patient_profile_id', null);
                     if (! $multiple) {
                         $selectedTime = self::selectedBookingTime($get);
                         if ($selectedTime !== null) {
@@ -215,6 +218,18 @@ class BookingForm
                         ]);
                     }
                 }),
+            Select::make('patient_profile_id')
+                ->label(__('Кого записываем?'))
+                ->placeholder(__('Самого заказчика'))
+                ->nullable()
+                ->searchable()
+                ->options(fn (Get $get): array => auth()->user() instanceof User && (int) $get('client_id') > 0
+                    ? app(ListPatientProfilesForCrm::class)->bookingOptions(auth()->user(), (int) $get('client_id')) : [])
+                ->getSearchResultsUsing(fn (string $search, Get $get): array => auth()->user() instanceof User && (int) $get('client_id') > 0
+                    ? app(ListPatientProfilesForCrm::class)->bookingOptions(auth()->user(), (int) $get('client_id'), $search) : [])
+                ->getOptionLabelUsing(fn (mixed $value, Get $get): ?string => auth()->user() instanceof User && is_numeric($value) && (int) $get('client_id') > 0
+                    ? app(ListPatientProfilesForCrm::class)->bookingLabel(auth()->user(), (int) $get('client_id'), (int) $value) : null)
+                ->disabled(fn (Get $get): bool => (int) $get('client_id') < 1),
             Select::make('visit_format')
                 ->label(__('Формат визита'))
                 ->options([
@@ -226,7 +241,6 @@ class BookingForm
                 ->validationMessages(['required' => __('Выберите формат визита.')])
                 ->live()
                 ->afterStateUpdated(function (Get $get, Set $set, mixed $state) use ($multiple): void {
-                    self::preservePrefilledTimeOrClear($get, $set, $multiple);
                     if (self::positiveInteger($get('party_size')) === null) {
                         $set('party_size', 1);
                     }
@@ -246,6 +260,7 @@ class BookingForm
                         $set('working_location_id', null);
                     }
 
+                    self::preservePrefilledTimeOrClear($get, $set, $multiple);
                     $set('booking_time_prefilled', false);
                 }),
             Select::make('working_location_id')
@@ -335,10 +350,20 @@ class BookingForm
                     $set('blocking_ends_at', null);
                     $set('confirm_backdated', false);
                     $set('booking_time_prefilled', false);
+                    $set('journal_time_unavailable', false);
                 })
                 ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
                 ->validationMessages(['required' => __('Выберите доступное время.')])
                 ->helperText(fn (Get $get): string => self::availableTimeHelper($get)),
+            Hidden::make('journal_time_unavailable')
+                ->default(false)
+                ->dehydrated(false),
+            TextEntry::make('journal_time_unavailable_notice')
+                ->label(__('Время недоступно'))
+                ->state(__('Выбранное время больше недоступно. Выберите другое свободное время.'))
+                ->color('warning')
+                ->visible(fn (Get $get): bool => $get('journal_time_unavailable') === true)
+                ->columnSpanFull(),
             Hidden::make('booking_time_prefilled')
                 ->default(false)
                 ->dehydrated(false),
@@ -363,6 +388,7 @@ class BookingForm
                 ->helperText(__('Оставьте пустым, чтобы занять обычное время услуги.')),
             TextEntry::make('backdated_warning')
                 ->label(__('Внимание'))
+                ->color('danger')
                 ->state(fn (Get $get): string => self::backdatedWarning($get))
                 ->visible(fn (Get $get): bool => self::isBackdated($get))
                 ->columnSpanFull(),
@@ -427,8 +453,23 @@ class BookingForm
             return;
         }
 
-        if ($get('booking_time_prefilled') === true
-            || ($get('booking_date') === null && $get('booking_time') === null)) {
+        if ($get('booking_time_prefilled') === true) {
+            if (! self::hasAvailableTimePrerequisites($get)) {
+                return;
+            }
+
+            $selectedTime = self::selectedBookingTime($get);
+            if ($selectedTime !== null && array_key_exists($selectedTime, self::availableTimeOptions($get))) {
+                return;
+            }
+
+            self::clearAvailableTime($set);
+            $set('journal_time_unavailable', true);
+
+            return;
+        }
+
+        if ($get('booking_date') === null && $get('booking_time') === null) {
             return;
         }
 
@@ -447,6 +488,10 @@ class BookingForm
 
     private static function availableTimeHelper(Get $get): string
     {
+        if (self::prefilledStartsAt($get) instanceof CarbonImmutable) {
+            return __('После выбора услуги и формата визита проверим, свободно ли это время.');
+        }
+
         if (self::positiveInteger($get('specialist_id')) === null
             || self::positiveInteger($get('service_id')) === null) {
             return __('Сначала выберите специалиста и услугу.');
@@ -473,12 +518,15 @@ class BookingForm
         $format = VisitFormat::tryFrom((string) $get('visit_format'));
         $date = self::bookingDate($get('booking_date'));
 
-        if (! $actor instanceof User
-            || $specialistId === null
+        if (! $actor instanceof User) {
+            return [];
+        }
+
+        if ($specialistId === null
             || $serviceId === null
             || ! $format instanceof VisitFormat
             || ! $date instanceof CarbonImmutable) {
-            return [];
+            return self::prefilledTimeOptions($get);
         }
 
         return app(BookingAvailabilityOptions::class)->forDate(
@@ -492,6 +540,31 @@ class BookingForm
             locationArea: self::nullableString($get('location_area')),
             allowHistorical: true,
         );
+    }
+
+    /** @return array<string, string> */
+    private static function prefilledTimeOptions(Get $get): array
+    {
+        $selectedTime = self::selectedBookingTime($get);
+        $startsAt = self::prefilledStartsAt($get);
+
+        if (! is_string($selectedTime) || ! $startsAt instanceof CarbonImmutable) {
+            return [];
+        }
+
+        return [
+            $selectedTime => $startsAt->setTimezone(self::viewerTimezone())->format('H:i')
+                .' — '.__('выбрано в Журнале, доступность не проверена'),
+        ];
+    }
+
+    private static function prefilledStartsAt(Get $get): ?CarbonImmutable
+    {
+        if ($get('booking_time_prefilled') !== true) {
+            return null;
+        }
+
+        return self::startsAt(self::selectedBookingTime($get));
     }
 
     private static function bookingDate(mixed $state): ?CarbonImmutable

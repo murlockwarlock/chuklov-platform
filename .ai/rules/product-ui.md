@@ -12,6 +12,10 @@ Keep idempotency keys, event and revision versions, immutable technical keys, or
 
 The preferred flow is simple business UI → trusted Application action → server-derived technical values → existing Domain guarantees. The frontend or Filament form must not become the source of truth for trusted values.
 
+## Owner-managed business configuration
+
+Business configuration must be editable through ordinary human CRM controls. Do not require owners or staff to edit JSON, SQL, enum keys, config files, internal IDs, or source code. A configurable business feature is incomplete if authorized staff cannot create, edit, archive, reorder, activate, deactivate, preview, publish, and correct its business values through the product where those lifecycle operations apply.
+
 ## User copy
 
 Visible copy exists to help a user act, provide required information, understand a current state, understand an actionable error, or know the next step. Keep it concise and natural. Do not add generic AI/SaaS marketing filler. Translate expected business failures into a useful action; keep exception names, provider errors, SQL details, queue states, stack traces, and diagnostic codes in logs/observability.

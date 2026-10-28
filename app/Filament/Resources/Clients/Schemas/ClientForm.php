@@ -5,10 +5,12 @@ namespace App\Filament\Resources\Clients\Schemas;
 use App\Filament\Support\TimezoneOptions;
 use App\Modules\Broadcasts\Domain\Enums\B2bSpecialistAnswer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 
@@ -19,10 +21,23 @@ class ClientForm
         return $schema
             ->components([
                 Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
-                TextInput::make('full_name')
-                    ->label(__('Имя и фамилия'))
+                Hidden::make('full_name'),
+                TextInput::make('last_name')
+                    ->label(__('Фамилия'))
                     ->required()
-                    ->maxLength(160),
+                    ->maxLength(100),
+                TextInput::make('first_name')
+                    ->label(__('Имя'))
+                    ->required()
+                    ->maxLength(100),
+                TextInput::make('middle_name')->label(__('Отчество'))->maxLength(100),
+                ToggleButtons::make('gender')
+                    ->label(__('Пол'))
+                    ->options(['MALE' => __('Мужской'), 'FEMALE' => __('Женский')])
+                    ->inline(),
+                DatePicker::make('birth_date')->label(__('Дата рождения'))->maxDate(now()),
+                TextInput::make('country')->label(__('Страна'))->maxLength(100),
+                TextInput::make('city')->label(__('Город'))->maxLength(100),
                 TextInput::make('email')
                     ->label('Email')
                     ->email()

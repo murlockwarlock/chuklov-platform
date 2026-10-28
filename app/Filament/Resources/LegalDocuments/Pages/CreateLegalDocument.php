@@ -23,18 +23,20 @@ final class CreateLegalDocument extends LocalizedCreateRecord
         abort_unless($actor instanceof User && LegalDocumentResource::canCreate(), 403);
         $subject = ConsentSubject::tryFrom((string) ($data['document_type'] ?? ''));
 
-        if (! $subject instanceof ConsentSubject) {
+        if (! $subject instanceof ConsentSubject && ($data['document_type'] ?? null) !== 'delegated_medical_access') {
             throw ValidationException::withMessages(['document_type' => __('Выберите тип документа.')]);
         }
 
+        $documentType = (string) ($data['document_type'] ?? '');
+
         return app(CreatePlatformLegalDocumentDraft::class)->handle(
             organization: app(OrganizationContext::class)->organization(),
-            documentType: $subject->value,
+            documentType: $documentType,
             purpose: (string) ($data['purpose'] ?? ''),
             locale: (string) ($data['locale'] ?? ''),
             version: (string) ($data['version'] ?? ''),
             content: (string) ($data['content'] ?? ''),
-            isRequired: $subject->isRequired(),
+            isRequired: $subject instanceof ConsentSubject && $subject->isRequired(),
         );
     }
 }

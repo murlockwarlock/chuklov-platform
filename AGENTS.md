@@ -263,7 +263,15 @@ Do not copy the master plan or source requirements into derived documentation. R
 
 ## Ambiguity and Completion
 
-Make reversible implementation assumptions only when they do not alter business scope; record them in `docs/product/assumptions.md`. Questions affecting money, scope, UX, legal/medical behavior, security, or architecture go to `docs/product/open-questions.md` and block only the dependent work.
+Make reversible implementation assumptions only when they do not alter business scope; record them in `docs/product/assumptions.md`. Questions affecting money, scope, UX, legal/medical behavior, security, or architecture go to `docs/product/open-questions.md`. They may keep a specific business value or activation decision unresolved, but they do not block technical implementation of a configurable, authorized, safe mechanism.
+
+### Missing business data never blocks implementation
+
+Missing business data, content, or configuration is not a development blocker. When questions, options, scoring, thresholds, tags, templates, media, links, catalog entries, categories, mappings, or policy values are absent, implement the complete configurable mechanism, expose it through normal owner/admin CRM controls, verify it end to end with synthetic data, and allow the owner to replace that data later without code changes or deployment.
+
+An open question may leave a real-world meaning, legal wording, authored content, undefined formula, or external credential undecided, but it must not defer the surrounding technical product mechanism. Use a safe disabled or fail-closed runtime default where activation requires that value. Report the remaining value as `CONTENT REQUIRED`, `CONFIGURATION REQUIRED`, `LEGAL TEXT REQUIRED`, `PROVIDER NOT CONFIGURED`, or `EXTERNAL OBSERVATION NOT RUN`, rather than as unfinished development.
+
+If changing business configuration requires a developer, the feature is not done.
 
 A task is complete when the requested user-visible behavior works, relevant architecture and security boundaries are preserved, checks appropriate to the actual risk are green, PostgreSQL is verified where the change is DB-sensitive, owner-visible staging acceptance is successful for user-facing work, and no blocking real defect remains. More green tests are not a substitute for broken staging behavior.
 

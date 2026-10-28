@@ -7,17 +7,20 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\OrganizationMembership;
 use App\Modules\Scenarios\Domain\Contracts\ScenarioRecipientResolver;
 use App\Modules\Scenarios\Domain\Enums\ScenarioAudienceType;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipient;
 use App\Modules\Scenarios\Domain\ValueObjects\ScenarioRecipientStrategy;
+use App\Modules\Scheduling\Application\ResolveBookingNotificationRecipients;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Support\SupportedLocale;
 use Illuminate\Database\Eloquent\Collection;
 
 final class OrganizationScenarioRecipientResolver implements ScenarioRecipientResolver
 {
-    public function __construct(private readonly ScenarioEventPermissionPolicy $permissions) {}
+    public function __construct(private readonly ScenarioEventPermissionPolicy $permissions, private readonly ResolveBookingNotificationRecipients $bookingRecipients) {}
 
     /** @return list<ScenarioRecipient> */
     public function resolve(ScenarioRule $rule, ScenarioEvent $event): array
@@ -35,6 +38,19 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
     /** @return list<ScenarioRecipient> */
     private function clientRecipient(ScenarioEvent $event): array
     {
+        if (in_array($event->event_name, [ScenarioEventType::BookingCreated, ScenarioEventType::BookingConfirmed,
+            ScenarioEventType::BookingRescheduled, ScenarioEventType::BookingCancelled, ScenarioEventType::BookingRejected,
+            ScenarioEventType::HomeVisitChanged], true)) {
+            $booking = Booking::query()->where('organization_id', $event->organization_id)
+                ->whereKey((int) ($event->payload['booking_id'] ?? 0))->with('patientProfile')->first();
+            if ($booking === null) {
+                return [];
+            }
+
+            return array_values($this->bookingRecipients->handle($booking)->map(fn (Client $account): ScenarioRecipient => new ScenarioRecipient(
+                type: 'client', clientId: (int) $account->getKey(), userId: null, locale: $this->locale($account->language),
+            ))->values()->all());
+        }
         $clientId = (int) ($event->payload['client_id'] ?? 0);
         $client = Client::query()
             ->where('organization_id', $event->organization_id)
@@ -53,9 +69,7 @@ final class OrganizationScenarioRecipientResolver implements ScenarioRecipientRe
         )];
     }
 
-    /** @param list<int> $userIds
-     * @return list<ScenarioRecipient>
-     */
+    /** @return list<ScenarioRecipient> */
     private function memberRecipients(ScenarioEvent $event, ScenarioRecipientStrategy $strategy): array
     {
         return array_values($this->memberships($event, $this->memberIds($strategy))

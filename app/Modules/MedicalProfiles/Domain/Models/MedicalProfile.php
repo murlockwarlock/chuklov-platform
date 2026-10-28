@@ -4,6 +4,7 @@ namespace App\Modules\MedicalProfiles\Domain\Models;
 
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -20,6 +21,10 @@ use Illuminate\Support\Carbon;
  * @property string|null $goals
  * @property string|null $operations
  * @property string|null $injuries
+ * @property string|null $chronic_conditions
+ * @property string|null $clinical_answers
+ * @property CarbonImmutable|null $client_confirmed_at
+ * @property CarbonImmutable|null $completed_at
  * @property string|null $medicines
  * @property string|null $supplements
  * @property int $encryption_key_version
@@ -47,6 +52,8 @@ class MedicalProfile extends Model
     {
         return [
             'encryption_key_version' => 'integer',
+            'client_confirmed_at' => 'immutable_datetime',
+            'completed_at' => 'immutable_datetime',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',
         ];

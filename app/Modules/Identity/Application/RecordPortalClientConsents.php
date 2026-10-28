@@ -27,13 +27,25 @@ class RecordPortalClientConsents
     /** @param list<array{legal_document_id: int, granted: bool}> $consents */
     public function handle(Client $client, array $consents): void
     {
+        $this->record($client, $consents, OrganizationFeature::ClientRecords);
+    }
+
+    /** @param list<array{legal_document_id: int, granted: bool}> $consents */
+    public function handleForBooking(Client $client, array $consents): void
+    {
+        $this->record($client, $consents, OrganizationFeature::ServiceCatalog);
+    }
+
+    /** @param list<array{legal_document_id: int, granted: bool}> $consents */
+    private function record(Client $client, array $consents, OrganizationFeature $feature): void
+    {
         $organization = $this->context->organization();
 
         if ((int) $client->organization_id !== $organization->getKey()) {
             throw new AuthorizationException('The client is outside the current organization.');
         }
 
-        $this->features->authorize($organization, OrganizationFeature::ClientRecords);
+        $this->features->authorize($organization, $feature);
 
         $ids = array_map(
             static fn (array $consent): int => (int) $consent['legal_document_id'],

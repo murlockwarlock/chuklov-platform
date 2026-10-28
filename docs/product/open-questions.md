@@ -1,6 +1,6 @@
 # Open Questions
 
-Questions block only their dependent work.
+Open questions do not block technical implementation. They record a real-world value, meaning, legal wording, authored content, formula, or external decision that is not yet authoritative. The product must still provide the configurable mechanism, safe default, owner-facing controls, and verification path needed to supply that value later without code changes or deployment.
 
 | ID | Affects | Question | Needed before |
 |---|---|---|---|
@@ -10,7 +10,7 @@ Questions block only their dependent work.
 | OQ-008 | REQ-RAG-001 | Confirm which method materials may be platform-shared versus organization-only. | Milestone 9 ingestion |
 | OQ-013 | REQ-CLIENT-005 | Confirm jurisdiction, legal basis, retention schedules, consent-withdrawal consequences, deletion/anonymization rules, and records that must be preserved for the client data lifecycle. | M15/M16 legal and security production readiness; earlier support only where M7 medical data requires it |
 | OQ-014 | REQ-NOTIFY-004 | Confirm the business/clinical condition intended by the conditional +72h post-session follow-up. M5B seeds only the supported neutral `booking.status = completed` guard until this is confirmed. | Owner decision before changing the +72h rule condition; generic scenario capability is unblocked |
-| OQ-015 | REQ-SURVEY-002 | Provide the approved full “9 systems” and MSQ questionnaire sources, including exact questions, answer options, scoring rules, thresholds, tags, result text, locale variants, and provenance/licensing constraints. Recovered Appendix 1 is the onboarding specification and recovered Appendix 2 is the specialized-agent prompt specification; neither contains the complete 9 systems/MSQ bodies or scoring. The separate questionnaire source remains absent. | Importing/activating the required initial definitions and closing M8; the generic engine remains unblocked |
+| OQ-015 | REQ-SURVEY-002 | Provide the approved full “9 systems” and MSQ questionnaire sources, including exact questions, answer options, scoring rules, thresholds, tags, result text, locale variants, and provenance/licensing constraints. Recovered Appendix 1 is the onboarding specification and recovered Appendix 2 is the specialized-agent prompt specification; neither contains the complete 9 systems/MSQ bodies or scoring. The separate questionnaire source remains absent. | Replacing synthetic/configured definitions and activating the approved authored content; the generic engine, CRM builder, versioning, scoring, import boundary, Portal completion, and report lifecycle are implementation-ready |
 
 No open question blocks Milestone 0.
 

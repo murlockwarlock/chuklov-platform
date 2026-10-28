@@ -25,6 +25,7 @@ type WorkingLocation = {
 
 type Booking = {
     id: number;
+    patientName: string | null;
     service: { name: string };
     specialist: { displayName: string };
     startsAt: string;
@@ -45,12 +46,13 @@ type Booking = {
     eventVersion: number;
     canCancel: boolean;
     canReschedule: boolean;
+    selfServiceChangesClosed: boolean;
     pendingReview: boolean;
     workingLocationId: number | null;
     locationArea: string | null;
     locationSnapshot: {
         name?: string;
-        address?: string;
+        address?: string | null;
         timezone?: string;
         area_name?: string;
         [key: string]: unknown;
@@ -80,6 +82,7 @@ const selectedDate = ref<string | null>(props.booking.localDate);
 const rescheduleOpen = ref(props.availability !== null);
 const rescheduleLoading = ref(false);
 const rescheduleRequestError = ref<string | null>(null);
+const cancelRequestError = ref<string | null>(null);
 const meetingReloading = ref(false);
 const savedWorkingLocation = props.workingLocations.find((location) => location.id === props.booking.workingLocationId);
 const defaultWorkingLocation = props.workingLocations.find((location) => location.isDefault) ?? props.workingLocations[0] ?? null;
@@ -131,7 +134,7 @@ const rescheduleError = computed(() => {
         ?? errorMessage(errors.reason)
         ?? rescheduleRequestError.value;
 });
-const cancelError = computed(() => (cancelForm.errors as Record<string, string | undefined>).booking);
+const cancelError = computed(() => firstErrorMessage(cancelForm.errors as Record<string, unknown>) ?? cancelRequestError.value);
 let meetingPollTimer: ReturnType<typeof setInterval> | null = null;
 let meetingPollStartedAt: number | null = null;
 const meetingPollTimeoutMs = 120000;
@@ -302,7 +305,36 @@ function changeMonth(dateFrom: string, dateTo: string): void {
 }
 
 function cancelBooking(): void {
-    cancelForm.post(props.urls.cancel, { preserveScroll: true });
+    cancelRequestError.value = null;
+    cancelForm.clearErrors();
+    cancelForm.post(props.urls.cancel, {
+        preserveScroll: true,
+        onSuccess: () => {
+            cancelRequestError.value = null;
+        },
+        onError: (errors) => {
+            cancelRequestError.value = firstErrorMessage(errors as Record<string, unknown>)
+                ?? t('booking.cancelFailed');
+        },
+        onHttpException: (response) => {
+            cancelRequestError.value = response.status === 401 || response.status === 419
+                ? t('booking.cancelSessionExpired')
+                : response.status === 403
+                    ? t('booking.cancelAccessDenied')
+                    : response.status === 404
+                        ? t('booking.cancelUnavailable')
+                        : response.status === 409
+                            ? t('booking.cancelConflict')
+                            : t('booking.cancelHttpError');
+
+            return false;
+        },
+        onNetworkError: () => {
+            cancelRequestError.value = t('booking.cancelNetworkError');
+
+            return false;
+        },
+    });
 }
 
 function rescheduleBooking(): void {
@@ -348,6 +380,12 @@ function rescheduleBooking(): void {
           <h1 class="portal-heading portal-heading--page">
             {{ props.booking.service.name }}
           </h1>
+          <p
+            v-if="props.booking.patientName"
+            class="portal-copy"
+          >
+            {{ t('family.forWhom') }}: {{ props.booking.patientName }}
+          </p>
           <p class="portal-lede">
             {{ props.booking.specialist.displayName }} · {{ props.booking.formatLabel }}
           </p>
@@ -422,6 +460,13 @@ function rescheduleBooking(): void {
           class="portal-notice"
         >
           {{ t('booking.requestSent') }}
+        </p>
+        <p
+          v-if="props.booking.selfServiceChangesClosed"
+          class="portal-notice"
+          role="status"
+        >
+          {{ t('booking.selfServiceChangesClosed') }}
         </p>
         <div
           v-if="props.booking.canReschedule || props.booking.canCancel"

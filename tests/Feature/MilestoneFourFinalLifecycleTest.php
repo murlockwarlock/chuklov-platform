@@ -42,7 +42,9 @@ use Carbon\Carbon;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
+use Mockery;
 use Tests\TestCase;
 
 class MilestoneFourFinalLifecycleTest extends TestCase
@@ -155,6 +157,87 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             ->where('event_name', 'booking.cancelled')
             ->sole()
             ->payload['event_version']);
+    }
+
+    public function test_repeated_cancellation_logs_a_safe_diagnostic_without_changing_the_booking(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $booking = $this->createBooking($admin, $client, $specialist, $service, '2026-04-06 09:00:00');
+        $cancelledBooking = app(CancelBooking::class)->handle($client, $booking);
+        Log::spy();
+
+        try {
+            app(CancelBooking::class)->handle($client, $cancelledBooking);
+            self::fail('A terminal booking must not be cancelled again.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('booking', $exception->errors());
+        }
+
+        self::assertSame(BookingStatus::Cancelled, $booking->fresh()->status);
+        self::assertSame(1, BookingEvent::query()
+            ->where('booking_id', $booking->getKey())
+            ->where('event_type', BookingEventType::Cancelled)
+            ->count());
+        Log::shouldHaveReceived('warning')->once()->with(
+            'booking.cancel_failed',
+            Mockery::on(function (array $context) use ($organization, $client, $booking): bool {
+                $occurredAt = $context['occurred_at'] ?? null;
+
+                return ($context['event_name'] ?? null) === 'booking.cancel_failed'
+                    && ($context['operation'] ?? null) === 'booking.cancel'
+                    && ($context['organization_id'] ?? null) === $organization->getKey()
+                    && ($context['actor_type'] ?? null) === 'client'
+                    && ($context['actor_id'] ?? null) === $client->getKey()
+                    && ($context['entity_type'] ?? null) === 'booking'
+                    && ($context['entity_id'] ?? null) === $booking->getKey()
+                    && ($context['client_id'] ?? null) === $client->getKey()
+                    && ($context['error_code'] ?? null) === 'booking_already_terminal'
+                    && ($context['error_class'] ?? null) === ValidationException::class
+                    && ($context['outcome'] ?? null) === 'rejected'
+                    && is_string($occurredAt)
+                    && CarbonImmutable::parse($occurredAt)->utcOffset() === 0
+                    && ! array_key_exists('reason', $context)
+                    && ! array_key_exists('exception_message', $context)
+                    && ! array_key_exists('client_name', $context);
+            }),
+        );
+    }
+
+    public function test_unauthorized_cancellation_logs_a_safe_diagnostic_without_changing_the_booking(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $otherClient = Client::factory()->forOrganization($organization)->create();
+        $booking = $this->createBooking($admin, $client, $specialist, $service, '2026-04-06 09:00:00');
+        Log::spy();
+
+        try {
+            app(CancelBooking::class)->handle($otherClient, $booking);
+            self::fail('A client must not cancel another client\'s booking.');
+        } catch (AuthorizationException) {
+            self::assertSame(BookingStatus::Requested, $booking->fresh()->status);
+        }
+
+        Log::shouldHaveReceived('warning')->once()->with(
+            'booking.cancel_failed',
+            Mockery::on(function (array $context) use ($organization, $otherClient, $booking): bool {
+                return ($context['event_name'] ?? null) === 'booking.cancel_failed'
+                    && ($context['operation'] ?? null) === 'booking.cancel'
+                    && ($context['organization_id'] ?? null) === $organization->getKey()
+                    && ($context['actor_type'] ?? null) === 'client'
+                    && ($context['actor_id'] ?? null) === $otherClient->getKey()
+                    && ($context['entity_type'] ?? null) === 'booking'
+                    && ($context['entity_id'] ?? null) === $booking->getKey()
+                    && ($context['error_code'] ?? null) === 'authorization_denied'
+                    && ($context['error_class'] ?? null) === AuthorizationException::class
+                    && ($context['outcome'] ?? null) === 'rejected'
+                    && isset($context['occurred_at'])
+                    && ! array_key_exists('reason', $context)
+                    && ! array_key_exists('exception_message', $context)
+                    && ! array_key_exists('client_name', $context);
+            }),
+        );
     }
 
     public function test_reschedule_preserves_booking_identity_and_records_old_and_new_time(): void
@@ -367,6 +450,20 @@ class MilestoneFourFinalLifecycleTest extends TestCase
 
         self::assertSame('https://meet.example.test/room', $updated->meeting_url);
         self::assertSame(BookingEventType::MeetingLinkUpdated, $updated->events()->latest('id')->firstOrFail()->event_type);
+
+        $version = $updated->event_version;
+        $eventCount = $updated->events()->count();
+        $scenarioCount = ScenarioEvent::query()->count();
+        $replayed = app(SetOnlineMeetingUrl::class)->handle($admin, $booking, 'https://meet.example.test/room');
+
+        self::assertSame($version, $replayed->event_version);
+        self::assertSame($eventCount, $replayed->events()->count());
+        self::assertSame($scenarioCount, ScenarioEvent::query()->count());
+
+        $replacement = app(SetOnlineMeetingUrl::class)->handle($admin, $booking, 'https://meet.example.test/replacement');
+        self::assertSame('https://meet.example.test/replacement', $replacement->meeting_url);
+        self::assertSame($version + 1, $replacement->event_version);
+        self::assertSame($eventCount + 1, $replacement->events()->count());
     }
 
     public function test_schedule_mutations_require_acknowledgement_and_preserve_existing_booking(): void

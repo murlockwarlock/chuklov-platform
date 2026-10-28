@@ -8,7 +8,9 @@ use App\Modules\Identity\Application\RecordPortalClientConsents;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\LegalDocument;
+use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Scheduling\Application\CreateBooking;
+use App\Modules\Scheduling\Application\CreateMultipleBookings;
 use App\Modules\Scheduling\Application\UpdateClientTimezonePreference;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -24,11 +26,16 @@ final readonly class CreatePortalBooking
         private ListPublishedLegalDocuments $legalDocuments,
         private RecordPortalClientConsents $recordConsents,
         private CreateBooking $createBooking,
+        private CreateMultipleBookings $createMultipleBookings,
         private AcceptManualAttribution $acceptAttribution,
         private UpdateClientTimezonePreference $timezonePreference,
+        private SaveBookingPersonalData $personalData,
     ) {}
 
-    /** @param list<array{legal_document_id: int, granted: bool}> $consents */
+    /**
+     * @param  list<array{legal_document_id: int, granted: bool}>  $consents
+     * @param  array<string, mixed>|null  $personalData
+     */
     public function handle(
         Client $client,
         Specialist $specialist,
@@ -47,6 +54,8 @@ final readonly class CreatePortalBooking
         ?string $mapUrl = null,
         ?string $attributionSource = null,
         ?string $attributionSourceDetail = null,
+        ?array $personalData = null,
+        ?int $patientProfileId = null,
     ): Booking {
         return $this->createBooking->handle(
             actor: $client,
@@ -65,13 +74,76 @@ final readonly class CreatePortalBooking
             latitude: $latitude,
             longitude: $longitude,
             mapUrl: $mapUrl,
-            beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail): void {
+            additionalIntentHash: $this->personalData->intentHash($personalData),
+            patientProfileId: $patientProfileId,
+            beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail, $personalData): void {
+                $this->personalData->handle($client, $personalData);
                 if ($clientTimezone !== null) {
                     $this->timezonePreference->handle($clientTimezone, $client);
                 }
 
                 $this->recordConsentsForBooking($client, $consents, $marketingConsent);
 
+                if (filled($attributionSource)) {
+                    $this->acceptAttribution->handle($client, $attributionSource, $attributionSourceDetail);
+                }
+            },
+        );
+    }
+
+    /**
+     * @param  list<string>  $startsAt
+     * @param  list<array{legal_document_id: int, granted: bool}>  $consents
+     * @param  array<string, mixed>|null  $personalData
+     * @return list<Booking>
+     */
+    public function handleMultiple(
+        Client $client,
+        Specialist $specialist,
+        Service $service,
+        array $startsAt,
+        VisitFormat $format,
+        array $consents,
+        bool $marketingConsent,
+        ?string $clientTimezone,
+        int $partySize,
+        ?string $location,
+        string $idempotencyKey,
+        ?int $workingLocationId = null,
+        ?string $locationArea = null,
+        ?float $latitude = null,
+        ?float $longitude = null,
+        ?string $mapUrl = null,
+        ?string $attributionSource = null,
+        ?string $attributionSourceDetail = null,
+        ?array $personalData = null,
+        ?int $patientProfileId = null,
+    ): array {
+        try {
+            $timezone = IanaTimezone::from($clientTimezone ?? $client->timezone ?? 'UTC')->value;
+        } catch (\InvalidArgumentException) {
+            throw ValidationException::withMessages(['clientTimezone' => __('Выберите корректный часовой пояс.')]);
+        }
+        $slots = array_map(static function (string $start) use ($timezone): array {
+            $instant = CarbonImmutable::parse($start)->utc();
+
+            return ['date' => $instant->setTimezone($timezone)->toDateString(), 'time' => $instant->toIso8601String()];
+        }, $startsAt);
+
+        return $this->createMultipleBookings->handle(
+            actor: $client, client: $client, specialist: $specialist, service: $service,
+            format: $format, slots: $slots, batchIntentKey: $idempotencyKey,
+            partySize: $partySize, location: $location, workingLocationId: $workingLocationId,
+            locationArea: $locationArea, clientTimezone: $clientTimezone,
+            latitude: $latitude, longitude: $longitude, mapUrl: $mapUrl,
+            additionalIntentHash: $this->personalData->intentHash($personalData),
+            patientProfileId: $patientProfileId,
+            beforeCreate: function () use ($client, $clientTimezone, $consents, $marketingConsent, $attributionSource, $attributionSourceDetail, $personalData): void {
+                $this->personalData->handle($client, $personalData);
+                if ($clientTimezone !== null) {
+                    $this->timezonePreference->handle($clientTimezone, $client);
+                }
+                $this->recordConsentsForBooking($client, $consents, $marketingConsent);
                 if (filled($attributionSource)) {
                     $this->acceptAttribution->handle($client, $attributionSource, $attributionSourceDetail);
                 }
@@ -96,7 +168,7 @@ final readonly class CreatePortalBooking
             }
         }
 
-        $this->recordConsents->handle($client, $answers);
+        $this->recordConsents->handleForBooking($client, $answers);
     }
 
     /** @param Collection<int, LegalDocument> $documents */

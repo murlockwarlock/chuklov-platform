@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Pages\SchedulingConfiguration;
+use App\Filament\Pages\WorkingIntervals;
 use App\Filament\Pages\WorkSchedule;
 use App\Filament\Resources\Bookings\BookingResource;
 use App\Filament\Resources\Bookings\Pages\CreateBooking;
@@ -38,8 +38,10 @@ use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
+use Filament\Infolists\Components\TextEntry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -116,13 +118,24 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ));
     }
 
+    public function test_working_intervals_show_organization_timezone_when_specialist_timezone_is_unset(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture('Asia/Almaty', 'UTC');
+        $specialist->forceFill(['timezone' => null])->save();
+        $this->resolveFilamentContext($admin, $organization);
+
+        Livewire::actingAs($admin)
+            ->test(WorkingIntervals::class)
+            ->assertSee('График задан по времени: Алматы (UTC+5) · Asia/Almaty');
+    }
+
     public function test_settings_save_round_trips_multiple_intervals_and_validity_dates(): void
     {
         [$organization, $admin, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
 
         Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm([
                 'specialist_id' => $specialist->getKey(),
                 'working_hours' => [
@@ -171,7 +184,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
             ])
             ->all());
 
-        $reloaded = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+        $reloaded = Livewire::actingAs($admin)->test(WorkingIntervals::class);
 
         self::assertSame([
             '09:00',
@@ -196,8 +209,8 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ]]);
         $this->resolveFilamentContext($admin, $organization);
 
-        $tabA = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
-        $tabB = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+        $tabA = Livewire::actingAs($admin)->test(WorkingIntervals::class);
+        $tabB = Livewire::actingAs($admin)->test(WorkingIntervals::class);
 
         $tabA
             ->fillForm([
@@ -273,13 +286,28 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ]);
     }
 
+    public function test_schedule_exception_set_rejects_malformed_nested_state(): void
+    {
+        [, $admin, $specialist] = $this->fixture();
+
+        $this->expectException(InvalidArgumentException::class);
+
+        app(SetScheduleExceptionSet::class)->handle(
+            actor: $admin,
+            specialist: $specialist,
+            definitionsByDate: [
+                '2026-10-08' => ['invalid-definition'],
+            ],
+        );
+    }
+
     public function test_settings_shows_a_human_validation_error_for_overlapping_intervals(): void
     {
         [$organization, $admin, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
 
         $component = Livewire::actingAs($admin)
-            ->test(SchedulingConfiguration::class)
+            ->test(WorkingIntervals::class)
             ->fillForm([
                 'specialist_id' => $specialist->getKey(),
                 'working_hours' => [
@@ -301,10 +329,6 @@ final class SchedulingJournalProductionPassTest extends TestCase
     public function test_crm_create_booking_starts_with_specialist_and_allows_inline_client_creation(): void
     {
         [$organization, $admin, $specialist, $service] = $this->fixture('Asia/Almaty');
-        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
-            'feature_key' => OrganizationFeature::ClientRecords->value,
-            'enabled' => true,
-        ]);
         $this->resolveFilamentContext($admin, $organization);
 
         $component = Livewire::actingAs($admin)->test(CreateBooking::class);
@@ -357,10 +381,15 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'staff_user_id' => $admin->getKey(),
             'viewer_timezone' => 'Asia/Bangkok',
         ])->save();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
         $this->resolveFilamentContext($admin, $organization);
 
         $component = Livewire::withQueryParams([
-            'starts_at' => '2026-10-05 14:00',
+            'starts_at' => '2026-10-05 14:15',
             'specialist_id' => $specialist->getKey(),
             'return_to_journal' => '1',
             'week' => '2026-10-05',
@@ -368,9 +397,15 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ])->actingAs($admin)->test(CreateBooking::class);
 
         $startsAt = $component->instance()->data['starts_at'];
-        self::assertSame('2026-10-05 14:00', CarbonImmutable::parse((string) $startsAt)->format('Y-m-d H:i'));
+        self::assertSame('2026-10-05 14:15', CarbonImmutable::parse((string) $startsAt)->format('Y-m-d H:i'));
         self::assertSame('2026-10-05', $component->instance()->data['booking_date']);
-        self::assertSame('2026-10-05T07:00:00+00:00', $component->instance()->data['booking_time']);
+        self::assertSame('2026-10-05T07:15:00+00:00', $component->instance()->data['booking_time']);
+        $bookingTimeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertInstanceOf(Select::class, $bookingTimeField);
+        self::assertSame([
+            '2026-10-05T07:15:00+00:00' => '14:15 — выбрано в Журнале, доступность не проверена',
+        ], $bookingTimeField->getOptions());
+        self::assertTrue($bookingTimeField->isDisabled());
         $startsAtField = $component->instance()->getSchemaComponent('form.starts_at', withHidden: true);
         self::assertInstanceOf(Hidden::class, $startsAtField);
 
@@ -379,8 +414,75 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'visit_format' => VisitFormat::Online->value,
         ]);
 
-        self::assertSame('2026-10-05T07:00:00+00:00', $component->instance()->data['booking_time']);
-        self::assertSame('2026-10-05 14:00', CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->format('Y-m-d H:i'));
+        self::assertSame('2026-10-05T07:15:00+00:00', $component->instance()->data['booking_time']);
+        self::assertSame('2026-10-05 14:15', CarbonImmutable::parse((string) $component->instance()->data['starts_at'])->format('Y-m-d H:i'));
+        $bookingTimeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertStringStartsWith('14:15–', $bookingTimeField->getOptions()['2026-10-05T07:15:00+00:00'] ?? '');
+    }
+
+    public function test_journal_create_prefill_clears_a_time_that_is_not_available_for_the_selected_service(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture('UTC', 'UTC');
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $blockingClient = Client::factory()->forOrganization($organization)->create();
+        Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($blockingClient)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'visit_format' => VisitFormat::Online->value,
+                'status' => BookingStatus::Confirmed->value,
+                'starts_at' => '2026-10-05 10:00:00',
+                'ends_at' => '2026-10-05 11:00:00',
+                'blocking_ends_at' => '2026-10-05 11:15:00',
+                'schedule_timezone' => 'UTC',
+            ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::withQueryParams([
+            'starts_at' => '2026-10-05 10:00',
+            'specialist_id' => $specialist->getKey(),
+            'return_to_journal' => '1',
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(CreateBooking::class);
+
+        $bookingTimeField = $component->instance()->getSchemaComponent('form.booking_time');
+        self::assertSame([
+            '2026-10-05T10:00:00+00:00' => '10:00 — выбрано в Журнале, доступность не проверена',
+        ], $bookingTimeField->getOptions());
+        self::assertTrue($bookingTimeField->isDisabled());
+
+        $component->fillForm(['service_id' => $service->getKey()]);
+        $component->fillForm(['visit_format' => VisitFormat::Online->value]);
+
+        self::assertNull($component->instance()->data['booking_time']);
+        self::assertNull($component->instance()->data['starts_at']);
+        self::assertTrue($component->instance()->data['journal_time_unavailable']);
+        $unavailableNotice = $component->instance()->getSchemaComponent('form.journal_time_unavailable_notice');
+        self::assertInstanceOf(TextEntry::class, $unavailableNotice);
+        self::assertTrue($unavailableNotice->isVisible());
+        self::assertSame('Выбранное время больше недоступно. Выберите другое свободное время.', $unavailableNotice->getState());
+        $bookingTimeOptions = $component->instance()->getSchemaComponent('form.booking_time')->getOptions();
+        self::assertNotEmpty($bookingTimeOptions);
+        self::assertArrayNotHasKey('2026-10-05T10:00:00+00:00', $bookingTimeOptions);
+
+        $component->fillForm(['booking_date' => '2026-10-12']);
+
+        self::assertTrue($component->instance()->data['journal_time_unavailable']);
+        self::assertTrue($component->instance()->getSchemaComponent('form.journal_time_unavailable_notice', withHidden: true)->isVisible());
+
+        $replacementTime = array_key_first($component->instance()->getSchemaComponent('form.booking_time')->getOptions());
+        self::assertIsString($replacementTime);
+        $component->fillForm(['booking_time' => $replacementTime]);
+
+        self::assertFalse($component->instance()->data['journal_time_unavailable']);
+        self::assertFalse($component->instance()->getSchemaComponent('form.journal_time_unavailable_notice', withHidden: true)->isVisible());
     }
 
     public function test_journal_drag_drop_uses_authoritative_reschedule_and_rejects_stale_or_unavailable_drops(): void
@@ -461,7 +563,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
     {
         [$organization, $admin, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
-        $settings = Livewire::actingAs($admin)->test(SchedulingConfiguration::class);
+        $settings = Livewire::actingAs($admin)->test(WorkingIntervals::class);
 
         $settings->fillForm([
             'specialist_id' => $specialist->getKey(),
@@ -743,6 +845,24 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertDatabaseCount('schedule_exceptions', 0);
     }
 
+    public function test_work_schedule_rejects_malformed_custom_interval_without_throwing(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(WorkSchedule::class)
+            ->set('month', '2026-09')
+            ->call('toggleDate', '2026-09-07')
+            ->set('overrideType', ScheduleExceptionType::CustomWindow->value)
+            ->set('overrideIntervals', [['start_time' => '09:00']])
+            ->call('saveOverride')
+            ->assertHasNoErrors();
+
+        self::assertSame('A custom schedule exception requires a time window.', $component->instance()->errorMessage);
+        self::assertDatabaseCount('schedule_exceptions', 0);
+    }
+
     public function test_work_schedule_selects_dates_and_applies_multi_interval_overrides_without_touching_recurring_hours(): void
     {
         [$organization, $admin, $specialist] = $this->fixture();
@@ -926,17 +1046,22 @@ final class SchedulingJournalProductionPassTest extends TestCase
             ->get(BookingResource::getUrl('create').'?'.http_build_query($query))
             ->assertOk();
 
-        Livewire::withQueryParams($query)
+        $component = Livewire::withQueryParams($query)
             ->actingAs($admin)
-            ->test(CreateBooking::class)
+            ->test(CreateBooking::class);
+        $component
             ->fillForm([
-                'client_id' => $client->getKey(),
                 'service_id' => $service->getKey(),
                 'specialist_id' => $specialist->getKey(),
-                'starts_at' => CarbonImmutable::create(2026, 10, 5, 10, 15, 0, 'UTC'),
+                'booking_date' => '2026-10-05',
                 'visit_format' => VisitFormat::Online->value,
                 'party_size' => 1,
             ])
+            ->fillForm([
+                'booking_time' => '2026-10-05T10:15:00+00:00',
+                'client_id' => $client->getKey(),
+            ])
+            ->assertSuccessful()
             ->call('create')
             ->assertHasNoErrors()
             ->assertRedirect(ListBookings::getUrl().'?week=2026-10-05&view=week&specialist_id='.$specialist->getKey());
@@ -968,16 +1093,21 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'view' => 'week',
         ])
             ->actingAs($admin)
-            ->test(CreateBooking::class)
+            ->test(CreateBooking::class);
+        $component
             ->fillForm([
-                'client_id' => $client->getKey(),
                 'service_id' => $service->getKey(),
                 'specialist_id' => $specialist->getKey(),
-                'starts_at' => '2026-10-04 19:00',
+                'booking_date' => '2026-10-04',
                 'visit_format' => VisitFormat::Online->value,
                 'party_size' => 1,
+            ])
+            ->fillForm([
+                'booking_time' => '2026-10-05T02:00:00+00:00',
+                'client_id' => $client->getKey(),
             ]);
         $component
+            ->assertSuccessful()
             ->call('create')
             ->assertHasNoErrors()
             ->assertRedirect();
@@ -999,9 +1129,185 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'view' => 'week',
         ])->actingAs($admin)->test(ListBookings::class);
 
-        self::assertSame($specialist->getKey(), $journal->instance()->selectedSpecialistId);
+        self::assertNull($journal->instance()->selectedSpecialistId);
+        self::assertSame([], $journal->instance()->selectedSpecialistIds);
         parse_str((string) parse_url($journal->instance()->newBookingUrl(), PHP_URL_QUERY), $newBookingQuery);
         self::assertNotSame((string) $foreignSpecialist->getKey(), (string) ($newBookingQuery['specialist_id'] ?? ''));
+    }
+
+    public function test_multi_specialist_journal_keeps_schedule_booking_and_slot_ownership(): void
+    {
+        [$organization, $admin, $first, $service] = $this->fixture();
+        $second = Specialist::factory()->forOrganization($organization)->create([
+            'timezone' => 'UTC',
+            'display_name' => 'Второй специалист',
+        ]);
+        SpecialistServiceAssignment::factory()->create([
+            'organization_id' => $organization->getKey(),
+            'specialist_id' => $second->getKey(),
+            'service_id' => $service->getKey(),
+        ]);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $first, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $second, [[
+            'weekday' => 1,
+            'start_time' => '10:00',
+            'end_time' => '19:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create();
+        $firstBooking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($first)
+            ->forService($service)
+            ->create([
+                'starts_at' => '2026-10-05 10:00:00',
+                'ends_at' => '2026-10-05 11:00:00',
+                'blocking_ends_at' => '2026-10-05 11:15:00',
+            ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $journal = Livewire::withQueryParams([
+            'specialist_ids' => [$first->getKey(), $second->getKey()],
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class);
+        $day = $journal->instance()->getJournalDaysProperty()['2026-10-05'];
+        $firstLane = $day['specialists'][$first->getKey()];
+        $secondLane = $day['specialists'][$second->getKey()];
+
+        self::assertSame(['09:00', '18:00'], [$firstLane['intervals'][0]['start'], $firstLane['intervals'][0]['end']]);
+        self::assertSame(['10:00', '19:00'], [$secondLane['intervals'][0]['start'], $secondLane['intervals'][0]['end']]);
+        self::assertSame([$firstBooking->getKey()], array_column($firstLane['bookings'], 'id'));
+        self::assertSame([], $secondLane['bookings']);
+        self::assertSame($first->getKey(), $firstLane['bookings'][0]['specialist_id']);
+
+        parse_str((string) parse_url($journal->instance()->bookingCreationUrl('2026-10-05', '10:00', $first->getKey()), PHP_URL_QUERY), $firstQuery);
+        parse_str((string) parse_url($journal->instance()->bookingCreationUrl('2026-10-05', '10:00', $second->getKey()), PHP_URL_QUERY), $secondQuery);
+        self::assertSame((string) $first->getKey(), $firstQuery['specialist_id']);
+        self::assertSame((string) $second->getKey(), $secondQuery['specialist_id']);
+
+        $html = $journal->html();
+        self::assertStringContainsString('lg:block', $html);
+        self::assertStringContainsString('lg:hidden', $html);
+        self::assertStringContainsString('wire:key="booking-journal-specialist-filter"', $html);
+        self::assertStringContainsString('wire:ignore.self', $html);
+        self::assertStringContainsString('x-float.placement.bottom-start.flip.shift.offset', $html);
+        self::assertStringContainsString($first->display_name, $html);
+        self::assertStringContainsString($second->display_name, $html);
+        self::assertStringContainsString('specialist_id='.$second->getKey(), $html);
+    }
+
+    public function test_schedule_projection_splits_midnight_once_and_keeps_end_minute_at_day_boundary(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture('Asia/Bangkok', 'America/Los_Angeles');
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '20:00',
+        ]]);
+
+        $calendar = app(GetScheduleCalendar::class)->forSpecialist(
+            specialist: $specialist,
+            dateFrom: '2026-10-19',
+            dateTo: '2026-10-25',
+            displayTimezone: 'Asia/Bangkok',
+        );
+
+        self::assertSame([
+            'start' => '23:00',
+            'end' => '00:00',
+            'start_minutes' => 23 * 60,
+            'end_minutes' => 24 * 60,
+        ], $calendar['2026-10-19']['intervals'][0]);
+        self::assertSame([
+            'start' => '00:00',
+            'end' => '10:00',
+            'start_minutes' => 0,
+            'end_minutes' => 10 * 60,
+        ], $calendar['2026-10-20']['intervals'][0]);
+    }
+
+    public function test_create_from_each_multi_specialist_slot_persists_the_clicked_specialist_after_reload(): void
+    {
+        [$organization, $admin, $first, $service] = $this->fixture();
+        $service->forceFill(['duration_minutes' => 30, 'buffer_minutes' => 0])->save();
+        $second = Specialist::factory()->forOrganization($organization)->create([
+            'timezone' => 'UTC',
+            'display_name' => 'Второй специалист',
+        ]);
+        SpecialistServiceAssignment::factory()->create([
+            'organization_id' => $organization->getKey(),
+            'specialist_id' => $second->getKey(),
+            'service_id' => $service->getKey(),
+        ]);
+        foreach ([$first, $second] as $specialist) {
+            app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+                'weekday' => 1,
+                'start_time' => '09:00',
+                'end_time' => '19:00',
+            ]]);
+        }
+        $clients = [
+            $first->getKey() => Client::factory()->forOrganization($organization)->create(),
+            $second->getKey() => Client::factory()->forOrganization($organization)->create(),
+        ];
+        $this->resolveFilamentContext($admin, $organization);
+        $admin->forceFill(['app_authentication_secret' => 'test-secret'])->save();
+
+        foreach ([$first, $second] as $specialist) {
+            $query = [
+                'starts_at' => '2026-10-05 10:00',
+                'specialist_id' => $specialist->getKey(),
+                'return_to_journal' => '1',
+                'week' => '2026-10-05',
+                'view' => 'week',
+            ];
+            Livewire::withQueryParams($query)
+                ->actingAs($admin)
+                ->test(CreateBooking::class)
+                ->fillForm([
+                    'service_id' => $service->getKey(),
+                    'specialist_id' => $specialist->getKey(),
+                    'booking_date' => '2026-10-05',
+                    'visit_format' => VisitFormat::Online->value,
+                    'party_size' => 1,
+                ])
+                ->fillForm([
+                    'booking_time' => '2026-10-05T10:00:00+00:00',
+                    'client_id' => $clients[$specialist->getKey()]->getKey(),
+                ])
+                ->assertSuccessful()
+                ->call('create')
+                ->assertHasNoErrors();
+        }
+
+        self::assertSame(
+            2,
+            Booking::query()->where('organization_id', $organization->getKey())->where('starts_at', '2026-10-05 10:00:00')->count(),
+        );
+        self::assertSame(
+            1,
+            Booking::query()->where('organization_id', $organization->getKey())->where('specialist_id', $first->getKey())->where('starts_at', '2026-10-05 10:00:00')->count(),
+        );
+        self::assertSame(
+            1,
+            Booking::query()->where('organization_id', $organization->getKey())->where('specialist_id', $second->getKey())->where('starts_at', '2026-10-05 10:00:00')->count(),
+        );
+
+        $journal = Livewire::withQueryParams([
+            'specialist_ids' => [$first->getKey(), $second->getKey()],
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class);
+        $day = $journal->instance()->getJournalDaysProperty()['2026-10-05'];
+        self::assertCount(1, $day['specialists'][$first->getKey()]['bookings']);
+        self::assertCount(1, $day['specialists'][$second->getKey()]['bookings']);
+        self::assertSame($first->getKey(), $day['specialists'][$first->getKey()]['bookings'][0]['specialist_id']);
+        self::assertSame($second->getKey(), $day['specialists'][$second->getKey()]['bookings'][0]['specialist_id']);
     }
 
     public function test_journal_keeps_inactive_specialist_history_but_denies_new_bookings(): void
@@ -1046,6 +1352,45 @@ final class SchedulingJournalProductionPassTest extends TestCase
             startsAt: CarbonImmutable::create(2026, 10, 12, 10, 0, 0, 'UTC'),
             format: VisitFormat::Online,
         );
+    }
+
+    public function test_cancelled_booking_remains_visible_without_blocking_its_journal_slot(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+            'weekday' => 1,
+            'start_time' => '09:00',
+            'end_time' => '18:00',
+        ]]);
+        $client = Client::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Cancelled->value,
+                'starts_at' => '2026-10-05 10:00:00',
+                'ends_at' => '2026-10-05 11:00:00',
+                'blocking_ends_at' => '2026-10-05 11:15:00',
+            ]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $journal = Livewire::withQueryParams([
+            'specialist_id' => $specialist->getKey(),
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class)->assertSuccessful();
+
+        $projection = collect($journal->instance()->journalDays['2026-10-05']['bookings'])
+            ->firstWhere('id', $booking->getKey());
+
+        self::assertIsArray($projection);
+        self::assertFalse($projection['blocks_availability']);
+        self::assertTrue($projection['is_terminal']);
+        self::assertTrue($projection['released_for_rebooking']);
+        self::assertStringContainsString('Добавить запись на 10:00', $journal->html());
+        self::assertStringContainsString('Создать новую запись на 10:00', $journal->html());
     }
 
     public function test_journal_retention_warning_waits_for_completion_window_and_rechecks_next_booking(): void
@@ -1178,6 +1523,10 @@ final class SchedulingJournalProductionPassTest extends TestCase
         ]);
         OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
             'feature_key' => OrganizationFeature::ServiceCatalog->value,
+            'enabled' => true,
+        ]);
+        OrganizationFeatureFlag::factory()->forOrganization($organization)->create([
+            'feature_key' => OrganizationFeature::ClientRecords->value,
             'enabled' => true,
         ]);
         config()->set('tenancy.default_organization_id', $organization->getKey());

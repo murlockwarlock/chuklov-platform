@@ -72,12 +72,48 @@ final class FilesystemContentMediaStorage implements ContentMediaStorageInterfac
         }
 
         $matched = preg_match(
-            '/\Acontent\/(\d+)\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(jpg|png|webp)\z/i',
+            '/\Acontent\/(\d+)\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(jpg|png|webp|mp4|vtt)\z/i',
             $path,
             $matches,
         ) === 1;
 
         return $matched && (int) $matches[1] === $organizationId;
+    }
+
+    public function storeVideo(int $organizationId, UploadedFile $file): string
+    {
+        $realPath = $file->getRealPath();
+        if (! $file->isValid() || $realPath === false || ! is_file($realPath)
+            || $file->getSize() <= 0 || $file->getSize() > (int) config('content_media.max_video_bytes', 10_485_760)
+            || $this->sniffMimeType($realPath) !== 'video/mp4') {
+            throw ValidationException::withMessages(['content_video' => 'Загрузите видео MP4 размером до 10 МБ.']);
+        }
+        $path = 'content/'.$organizationId.'/'.Str::uuid().'.mp4';
+        $stored = Storage::disk($this->disk())->putFileAs(dirname($path), $file, basename($path));
+        if (! is_string($stored)) {
+            throw ValidationException::withMessages(['content_video' => 'Не удалось сохранить видео.']);
+        }
+
+        return $stored;
+    }
+
+    public function storeSubtitles(int $organizationId, UploadedFile $file): string
+    {
+        $path = $file->getRealPath();
+        if (! $file->isValid() || $path === false || ! is_file($path) || $file->getSize() <= 0 || $file->getSize() > 1_048_576) {
+            throw ValidationException::withMessages(['content_subtitles' => 'Загрузите файл WebVTT размером до 1 МБ.']);
+        }
+        $contents = file_get_contents($path);
+        if (! is_string($contents) || ! mb_check_encoding($contents, 'UTF-8') || preg_match('/\A(?:\xEF\xBB\xBF)?WEBVTT(?:[ \t][^\r\n]*)?(?:\r?\n|\z)/', $contents) !== 1 || str_contains($contents, "\0")) {
+            throw ValidationException::withMessages(['content_subtitles' => 'Проверьте формат файла WebVTT.']);
+        }
+        $target = 'content/'.$organizationId.'/'.Str::uuid().'.vtt';
+        $stored = Storage::disk($this->disk())->putFileAs(dirname($target), $file, basename($target));
+        if (! is_string($stored)) {
+            throw ValidationException::withMessages(['content_subtitles' => 'Не удалось сохранить субтитры.']);
+        }
+
+        return $stored;
     }
 
     public function readStream(int $organizationId, string $path): mixed

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Component\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
+use Symfony\Component\Yaml\Yaml;
 use Tests\TestCase;
 
 class StagingDeploymentScriptTest extends TestCase
@@ -28,9 +29,11 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('php artisan portal:validate-configuration', $script);
         self::assertStringContainsString('PlatformSurveySeeder', $script);
         self::assertStringContainsString('db:seed --class=Database\\\\Seeders\\\\ScenarioNotificationSeeder --force', $script);
-        self::assertStringContainsString('--force-recreate app horizon scheduler telegram', $script);
+        self::assertStringContainsString('--force-recreate app horizon scheduler telegram mailpit', $script);
+        self::assertStringContainsString('rollback_services=(app horizon scheduler telegram)', $script);
+        self::assertStringContainsString('rollback_services+=(mailpit)', $script);
         self::assertStringContainsString('php artisan schedule:clear-cache', $script);
-        self::assertSame(2, substr_count($script, '--force-recreate app horizon scheduler telegram < /dev/null'));
+        self::assertSame(1, substr_count($script, '--force-recreate app horizon scheduler telegram mailpit < /dev/null'));
         self::assertStringContainsString('up -d --wait < /dev/null', $script);
         self::assertStringContainsString("'[.services.app, .services.horizon, .services.scheduler, .services.telegram] | all(.image == \$image and .user == \"33:33\")'", $script);
         self::assertStringContainsString('up -d postgres redis', $script);
@@ -106,12 +109,49 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('chown -R 33:33', $script);
         self::assertStringContainsString('prepare_release_permissions', $script);
         self::assertStringContainsString('chown -R root:33', $script);
+        self::assertStringContainsString('candidate_qa_overlay="$root/releases/$revision/$qa_overlay_name"', $script);
+        self::assertStringContainsString('Candidate release is missing the staging QA mail overlay.', $script);
+        self::assertStringContainsString('MP_SMTP_ALLOWED_RECIPIENTS', $script);
+        self::assertStringContainsString('.services.app.environment.MAIL_QA_AUTH_HOST == "127.0.0.1"', $script);
+        self::assertStringContainsString('.services.mailpit.network_mode == "service:app"', $script);
+        self::assertStringContainsString('(.services.mailpit.depends_on | has("app"))', $script);
+        self::assertStringContainsString('.services.mailpit.environment.MP_UI_BIND_ADDR == "127.0.0.1:8025"', $script);
+        self::assertStringContainsString('.services.mailpit.environment.MP_SMTP_BIND_ADDR == "127.0.0.1:1025"', $script);
+        self::assertStringContainsString('.services.mailpit.environment.MP_SMTP_ALLOWED_RECIPIENTS == "@qa\\\\.invalid$$"', $script);
+        self::assertStringContainsString('-f "$STAGING_ROOT/current/docker-compose.staging-qa.yml"', file_get_contents(base_path('scripts/staging-smoke.sh')));
+        self::assertStringContainsString('fsockopen("127.0.0.1", 1025', file_get_contents(base_path('scripts/staging-smoke.sh')));
+        self::assertStringContainsString("ssh \"\${ssh_options[@]}\" \"\$remote\" bash -s -- \"\$STAGING_PROJECT\" \"\$STAGING_ROOT\" <<'REMOTE_QA_MAIL_SMTP'", file_get_contents(base_path('scripts/staging-smoke.sh')));
+        self::assertStringContainsString('for attempt in $(seq 1 10); do', file_get_contents(base_path('scripts/staging-smoke.sh')));
+        self::assertStringContainsString('QA MAIL SMTP', file_get_contents(base_path('scripts/staging-smoke.sh')));
         self::assertStringNotContainsString('down -v', $script);
         self::assertStringNotContainsString('docker system prune', $script);
         self::assertStringNotContainsString('docker volume prune', $script);
         self::assertStringNotContainsString('docker volume rm', $script);
         self::assertStringNotContainsString('redis-cli flush', $script);
         self::assertStringNotContainsString('FLUSHALL', $script);
+    }
+
+    #[Test]
+    public function staging_qa_mail_sink_is_private_domain_limited_and_ephemeral(): void
+    {
+        $overlay = Yaml::parseFile(base_path('docker-compose.staging-qa.yml'));
+        $app = $overlay['services']['app'];
+        $mailpit = $overlay['services']['mailpit'];
+
+        self::assertSame('true', $app['environment']['MAIL_QA_AUTH_ENABLED']);
+        self::assertSame('qa.invalid', $app['environment']['MAIL_QA_AUTH_DOMAIN']);
+        self::assertSame('127.0.0.1', $app['environment']['MAIL_QA_AUTH_HOST']);
+        self::assertSame('ghcr.io/axllent/mailpit:v1.31.3', $mailpit['image']);
+        self::assertSame(['app'], $mailpit['depends_on']);
+        self::assertSame('service:app', $mailpit['network_mode']);
+        self::assertArrayNotHasKey('ports', $mailpit);
+        self::assertArrayNotHasKey('volumes', $mailpit);
+        self::assertArrayNotHasKey('networks', $mailpit);
+        self::assertSame('127.0.0.1:8025', $mailpit['environment']['MP_UI_BIND_ADDR']);
+        self::assertSame('127.0.0.1:1025', $mailpit['environment']['MP_SMTP_BIND_ADDR']);
+        self::assertSame('50', $mailpit['environment']['MP_MAX_MESSAGES']);
+        self::assertSame('24h', $mailpit['environment']['MP_MAX_AGE']);
+        self::assertSame('@qa\\.invalid$', $mailpit['environment']['MP_SMTP_ALLOWED_RECIPIENTS']);
     }
 
     #[Test]
@@ -484,6 +524,34 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertIsString($gitignore);
         self::assertStringContainsString('.env.staging-deploy', $gitignore);
         self::assertFileExists(base_path('.env.staging-deploy.example'));
+    }
+
+    #[Test]
+    public function staging_host_nginx_configuration_deployment_is_hash_guarded_and_reversible(): void
+    {
+        $script = file_get_contents(base_path('scripts/deploy-staging-nginx-config.sh'));
+        $smoke = file_get_contents(base_path('scripts/staging-smoke.sh'));
+        $makefile = file_get_contents(base_path('Makefile'));
+
+        self::assertIsString($script);
+        self::assertIsString($smoke);
+        self::assertIsString($makefile);
+        self::assertStringContainsString('git merge-base --is-ancestor "$revision" "$deployment_ref"', $script);
+        self::assertStringContainsString('git status --porcelain', $script);
+        self::assertStringContainsString("site_target='/etc/nginx/conf.d/chuklov-staging-tls.conf'", $script);
+        self::assertStringContainsString("log_format_target='/etc/nginx/conf.d/00-medical-attachment-log-format.conf'", $script);
+        self::assertStringContainsString('current_site_hash', $script);
+        self::assertStringContainsString('expected_log_format_hash', $script);
+        self::assertStringContainsString('restore_configuration()', $script);
+        self::assertStringContainsString('sudo -n nginx -t', $script);
+        self::assertStringContainsString('sudo -n systemctl reload nginx', $script);
+        self::assertStringContainsString('shared/backups/nginx-config-', $script);
+        self::assertStringContainsString("grep -Fq 'log_format medical_attachment_safe'", $script);
+        self::assertStringContainsString("sudo -n nginx -T 2>&1 | grep -Fq 'log_format medical_attachment_safe'", $smoke);
+        self::assertStringContainsString('NGINX MEDICAL UPLOAD', $smoke);
+        self::assertStringContainsString('deploy-staging-nginx-config:', $makefile);
+        self::assertStringNotContainsString('iptables', $script);
+        self::assertStringNotContainsString('nft', $script);
     }
 
     #[Test]

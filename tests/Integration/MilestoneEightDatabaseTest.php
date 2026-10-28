@@ -48,9 +48,11 @@ final class MilestoneEightDatabaseTest extends TestCase
     public function test_postgresql_composite_foreign_key_rejects_wrong_client_report(): void
     {
         [$organization, $actor, $client] = $this->fixture();
-        $definition = app(CreateSurveyDefinition::class)->handle($actor, $this->definitionData());
+        $definition = app(CreateSurveyDefinition::class)->handle($actor, $this->definitionData(approved: true));
         app(PublishSurveyVersion::class)->handle($actor, $definition->versions()->sole());
-        $attempt = app(StartSurveyAttempt::class)->handle($client, $definition->refresh());
+        $publishedDefinition = $definition->refresh();
+        self::assertSame('approved', $publishedDefinition->activeVersion()->value('approval_status'));
+        $attempt = app(StartSurveyAttempt::class)->handle($client, $publishedDefinition);
         $wrongClient = Client::factory()->forOrganization($organization)->create();
 
         $this->expectException(QueryException::class);
@@ -92,11 +94,12 @@ final class MilestoneEightDatabaseTest extends TestCase
     }
 
     /** @return array<string, mixed> */
-    private function definitionData(): array
+    private function definitionData(bool $approved = false): array
     {
         return [
             'definition_key' => 'database-test',
             'title' => 'Database test',
+            'approval_status' => $approved ? 'approved' : 'draft',
             'definition' => ['sections' => [[
                 'key' => 'general',
                 'title' => 'General',

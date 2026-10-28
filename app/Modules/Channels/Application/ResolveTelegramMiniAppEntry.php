@@ -10,9 +10,13 @@ final class ResolveTelegramMiniAppEntry
 {
     private const ALLOWED_ROUTE_NAMES = [
         'portal.home',
+        'portal.family.invitation',
         'portal.b2b',
         'portal.feedback',
+        'portal.health',
+        'portal.medical-profile',
         'portal.referrals',
+        'portal.surveys.index',
         'portal.tracker',
         'portal.section',
     ];
@@ -36,10 +40,11 @@ final class ResolveTelegramMiniAppEntry
         $path = route('portal.telegram.launch', ['entry' => $key], false);
 
         if ($query !== []) {
-            if (count($query) !== 1
+            $patientInvitation = $key === 'family' && count($query) === 1 && is_int($query['patient_invitation_id'] ?? null) && $query['patient_invitation_id'] > 0;
+            if (! $patientInvitation && (count($query) !== 1
                 || ! array_key_exists('referral_code', $query)
                 || ! is_string($query['referral_code'])
-                || preg_match('/^[A-Za-z0-9_-]{16,128}$/', $query['referral_code']) !== 1) {
+                || preg_match('/^[A-Za-z0-9_-]{16,128}$/', $query['referral_code']) !== 1)) {
                 throw new LogicException('The Telegram Mini App launch query is not allowlisted.');
             }
 
@@ -189,7 +194,7 @@ final class ResolveTelegramMiniAppEntry
             throw new LogicException('The Telegram Mini App route parameters are invalid.');
         }
 
-        if (in_array($routeName, ['portal.home', 'portal.b2b', 'portal.feedback', 'portal.referrals', 'portal.tracker'], true)) {
+        if ($routeName !== 'portal.section' && in_array($routeName, self::ALLOWED_ROUTE_NAMES, true)) {
             if ($parameters !== []) {
                 throw new LogicException('The Telegram Mini App route parameters are not allowlisted.');
             }

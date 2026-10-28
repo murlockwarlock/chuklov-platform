@@ -58,7 +58,8 @@ final class RetryKnowledgeIngestion
             if ($lockedRevision->status !== KnowledgeRevisionStatus::Failed) {
                 throw ValidationException::withMessages(['revision' => 'Повторная обработка доступна после ошибки.']);
             }
-            if ($lockedRevision->extraction_status !== null && $lockedRevision->extraction_status !== KnowledgeExtractionStatus::Ready->value) {
+            $extractionStatus = $lockedRevision->getRawOriginal('extraction_status');
+            if (is_string($extractionStatus) && $extractionStatus !== KnowledgeExtractionStatus::Ready->value) {
                 throw ValidationException::withMessages(['revision' => 'Сначала подтвердите безопасное извлечение материала.']);
             }
 

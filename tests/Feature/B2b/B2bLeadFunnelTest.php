@@ -468,7 +468,7 @@ final class B2bLeadFunnelTest extends TestCase
             ->test(SchedulingConfiguration::class)
             ->fillForm([
                 'specialist_id' => $fixture['specialist']->getKey(),
-                'lead_time_minutes' => 0,
+                'lead_time_minutes' => -1,
                 'zoom_enabled' => true,
                 'zoom_account_id' => 'error-account',
                 'zoom_client_id' => 'error-client',
@@ -483,7 +483,7 @@ final class B2bLeadFunnelTest extends TestCase
                 'impact_digest' => null,
             ])
             ->call('save')
-            ->assertHasErrors('schedule_impact')
+            ->assertHasErrors('data.lead_time_minutes')
             ->assertSet('data.zoom_client_secret', null)
             ->assertDontSee($secret);
     }

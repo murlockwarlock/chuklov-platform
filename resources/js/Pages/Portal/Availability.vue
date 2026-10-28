@@ -33,15 +33,10 @@ const props = defineProps<{
     query: AvailabilityQuery;
 }>();
 
-const { locale, t } = usePortalLocale();
+const { t, locale, formatDate: formatPortalDate } = usePortalLocale();
 
 function formatDate(date: string): string {
-    const [year, month, day] = date.split('-').map(Number);
-
-    return new Intl.DateTimeFormat(locale.value === 'ru' ? 'ru-RU' : 'en-GB', {
-        day: 'numeric',
-        month: 'long',
-    }).format(new Date(year, month - 1, day));
+    return formatPortalDate(date);
 }
 </script>
 

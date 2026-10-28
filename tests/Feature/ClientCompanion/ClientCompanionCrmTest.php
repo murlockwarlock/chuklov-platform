@@ -21,6 +21,7 @@ use App\Modules\ClientCompanion\Domain\Enums\CompanionDeliveryStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationReason;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionEscalationStatus;
 use App\Modules\ClientCompanion\Domain\Enums\CompanionFeedbackValue;
+use App\Modules\ClientCompanion\Domain\Enums\CompanionTurnStatus;
 use App\Modules\ClientCompanion\Domain\Models\CompanionDelivery;
 use App\Modules\ClientCompanion\Domain\Models\CompanionEscalation;
 use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
@@ -93,9 +94,9 @@ final class ClientCompanionCrmTest extends TestCase
         $history = app(ReadCompanionConversation::class)->forStaff($this->admin, $this->client);
         $messages = array_values(array_filter($history['messages'], static fn (array $item): bool => $item['type'] === 'message'));
 
-        self::assertSame(['client', 'client', 'ai', 'system', 'staff'], array_column($messages, 'role'));
-        self::assertSame(['Портал', 'Telegram', 'Telegram', 'Telegram', 'Telegram'], array_column($messages, 'transportLabel'));
-        self::assertSame('helpful', $messages[2]['feedback']);
+        self::assertSame(['client', 'ai', 'client', 'ai', 'system', 'staff'], array_column($messages, 'role'));
+        self::assertSame(['Портал', 'Портал', 'Telegram', 'Telegram', 'Telegram', 'Telegram'], array_column($messages, 'transportLabel'));
+        self::assertSame('helpful', $messages[1]['feedback']);
         self::assertSame('Специалист подключён · AI на паузе', $history['stateLabel']);
         self::assertNotNull($history['openEscalation']);
         self::assertTrue(collect($history['messages'])->contains(fn (array $item): bool => $item['type'] === 'handoff'));
@@ -109,6 +110,45 @@ final class ClientCompanionCrmTest extends TestCase
             ->assertSee('Портал')
             ->assertSee('Telegram')
             ->assertSee('Ответить клиенту');
+    }
+
+    public function test_staff_sees_the_clients_companion_feedback_in_history(): void
+    {
+        $turn = app(AcceptCompanionMessage::class)->handle(
+            client: $this->client,
+            channel: 'portal',
+            body: 'Как восстановиться после тренировки?',
+            idempotencyKey: 'crm-feedback-history-0001',
+            originExternalId: 'portal:crm-feedback-history-1',
+            locale: 'ru',
+        );
+        $conversation = Conversation::query()->findOrFail($turn->conversation_id);
+        $message = app(RecordCompanionMessage::class)->handle(
+            organizationId: $this->organization->getKey(),
+            client: $this->client,
+            conversation: $conversation,
+            channel: 'portal',
+            direction: ConversationDirection::Outbound,
+            authorType: ConversationAuthorType::Ai,
+            body: 'После тренировки добавьте лёгкую заминку.',
+            contextEpoch: $turn->context_epoch,
+            metadata: ['message_type' => 'answer', 'locale' => 'ru', 'transport' => 'portal'],
+        );
+        $turn->update([
+            'status' => CompanionTurnStatus::Completed,
+            'outbound_message_id' => $message->getKey(),
+        ]);
+        app(RecordCompanionFeedback::class)->handle(
+            $this->client,
+            $message->getKey(),
+            CompanionFeedbackValue::NotHelpful,
+        );
+
+        $this->actingAs($this->admin)
+            ->get(ClientResource::getUrl('companion', ['record' => $this->client]))
+            ->assertOk()
+            ->assertSee('После тренировки добавьте лёгкую заминку.')
+            ->assertSee('Оценка клиента: не помогло');
     }
 
     public function test_staff_history_is_bounded_and_id_access_is_tenant_and_permission_scoped(): void
@@ -179,7 +219,7 @@ final class ClientCompanionCrmTest extends TestCase
         $identified = json_decode($export->history($this->admin, $this->client, 'json', 'identified'), true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('client_companion_history_v1', $identified['schema_version']);
         self::assertSame('client_'.$this->client->getKey(), $identified['identity']['label']);
-        self::assertCount(5, $identified['messages']);
+        self::assertCount(6, $identified['messages']);
 
         $pseudonymized = json_decode($export->history($this->admin, $this->client, 'json', 'pseudonymized'), true, 512, JSON_THROW_ON_ERROR);
         self::assertSame('client_1', $pseudonymized['identity']['label']);
@@ -465,6 +505,27 @@ final class ClientCompanionCrmTest extends TestCase
             originExternalId: 'portal:crm-history-1',
             locale: 'ru',
         );
+        $portalConversation = Conversation::query()->whereKey($portalTurn->conversation_id)->firstOrFail();
+        $portalResponse = app(RecordCompanionMessage::class)->handle(
+            organizationId: $this->organization->getKey(),
+            client: $this->client,
+            conversation: $portalConversation,
+            channel: 'portal',
+            direction: ConversationDirection::Outbound,
+            authorType: ConversationAuthorType::Ai,
+            body: 'Ответ Компаньона для оценки.',
+            contextEpoch: $portalTurn->context_epoch,
+            metadata: ['message_type' => 'answer', 'locale' => 'ru', 'transport' => 'portal'],
+        );
+        $portalTurn->update([
+            'status' => CompanionTurnStatus::Completed,
+            'outbound_message_id' => $portalResponse->getKey(),
+        ]);
+        app(RecordCompanionFeedback::class)->handle(
+            $this->client,
+            $portalResponse->getKey(),
+            CompanionFeedbackValue::Helpful,
+        );
         Carbon::setTestNow($baseTime->copy()->addSeconds(2));
         $turn = $accept->handle(
             client: $this->client,
@@ -505,7 +566,6 @@ final class ClientCompanionCrmTest extends TestCase
             'safe_metadata' => ['source' => 'test'],
             'opened_at' => now(),
         ]);
-        app(RecordCompanionFeedback::class)->handle($this->client, $aiMessage->getKey(), CompanionFeedbackValue::Helpful);
         app(TakeOverCompanionConversation::class)->handle($this->admin, $this->client);
         app(ReplyToCompanion::class)->handle($this->admin, $this->client, 'Ответ специалиста из CRM.');
         Carbon::setTestNow();

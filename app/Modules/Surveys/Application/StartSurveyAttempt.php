@@ -5,9 +5,11 @@ namespace App\Modules\Surveys\Application;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Surveys\Domain\Enums\SurveyAttemptStatus;
 use App\Modules\Surveys\Domain\Enums\SurveyVersionStatus;
+use App\Modules\Surveys\Domain\Exceptions\SurveyAttemptUnavailableException;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 final readonly class StartSurveyAttempt
 {
@@ -24,8 +26,19 @@ final readonly class StartSurveyAttempt
                 ->whereKey($definition->getKey())
                 ->lockForUpdate()
                 ->firstOrFail();
-            $version = $lockedDefinition->activeVersion()->where('organization_id', $client->organization_id)->firstOrFail();
-            abort_unless($lockedDefinition->is_available && $version->status === SurveyVersionStatus::Published, 404);
+            $version = $lockedDefinition->activeVersion()->where('organization_id', $client->organization_id)->first();
+            if (! $lockedDefinition->is_available) {
+                $this->rejectUnavailable($client, $lockedDefinition, $version?->getKey(), 'definition_unavailable');
+            }
+            if ($version === null) {
+                $this->rejectUnavailable($client, $lockedDefinition, null, 'active_version_missing');
+            }
+            if ($version->status !== SurveyVersionStatus::Published) {
+                $this->rejectUnavailable($client, $lockedDefinition, (int) $version->getKey(), 'version_unpublished');
+            }
+            if ($version->approval_status !== 'approved') {
+                $this->rejectUnavailable($client, $lockedDefinition, (int) $version->getKey(), 'content_not_approved');
+            }
 
             $existing = SurveyAttempt::query()
                 ->where('organization_id', $client->organization_id)
@@ -51,5 +64,23 @@ final readonly class StartSurveyAttempt
                 'started_at' => now(),
             ]);
         });
+    }
+
+    private function rejectUnavailable(Client $client, SurveyDefinition $definition, ?int $versionId, string $errorCode): never
+    {
+        Log::warning('portal.surveys.start_denied', [
+            'operation' => 'start_survey_attempt',
+            'organization_id' => $client->organization_id,
+            'actor_type' => 'client',
+            'actor_client_id' => $client->getKey(),
+            'entity_type' => 'survey_definition',
+            'entity_id' => $definition->getKey(),
+            'survey_version_id' => $versionId,
+            'safe_error_code' => $errorCode,
+            'outcome' => 'denied',
+            'occurred_at_utc' => now()->utc()->toIso8601String(),
+        ]);
+
+        throw new SurveyAttemptUnavailableException;
     }
 }

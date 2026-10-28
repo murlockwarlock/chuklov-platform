@@ -44,6 +44,7 @@ final class TelegramMiniAppLaunchTest extends TestCase
         parent::setUp();
         CarbonImmutable::setTestNow(CarbonImmutable::create(2026, 8, 27, 10, 0, 0, 'UTC'));
         config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        $this->withServerVariables(['REMOTE_ADDR' => '127.0.0.99']);
         Queue::fake();
     }
 
@@ -97,6 +98,23 @@ final class TelegramMiniAppLaunchTest extends TestCase
         Queue::assertPushedOn(config('b2b.queue'), ProcessB2bProviderSyncEvent::class);
     }
 
+    public function test_health_profile_cta_authenticates_through_the_existing_mini_app_gateway(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        ClientChannelIdentity::factory()->forClient($client)->create(['external_id' => '820099']);
+        $this->useTelegramToken();
+        $this->get(route('portal.telegram.launch', ['entry' => 'medical_profile']))
+            ->assertRedirect(route('portal.home', ['telegram_entry' => 'medical_profile'], false));
+        $this->get(route('portal.medical-profile'))->assertUnauthorized();
+        $this->post(route('portal.telegram.auth'), [
+            'initData' => TelegramInitData::make(820099, now()->timestamp), 'launchEntry' => 'medical_profile',
+        ])->assertRedirect(route('portal.medical-profile', [], false));
+        $this->get(route('portal.medical-profile'))->assertOk()->assertInertia(fn (AssertableInertia $page) => $page->component('Portal/MedicalProfile'));
+        $this->get(route('portal.telegram.launch', ['entry' => 'medical_profile']))
+            ->assertRedirect(route('portal.medical-profile', [], false));
+    }
+
     public function test_authenticated_launches_redirect_directly_to_the_allowlisted_internal_destinations(): void
     {
         $organization = $this->organizationWithClientRecords();
@@ -109,6 +127,8 @@ final class TelegramMiniAppLaunchTest extends TestCase
             'b2b' => route('portal.b2b', [], false),
             'partner' => route('portal.section', ['section' => 'partner'], false),
             'partner_cabinet' => route('portal.referrals', [], false),
+            'health' => route('portal.health', [], false),
+            'surveys' => route('portal.surveys.index', [], false),
         ] as $key => $destination) {
             $this->withSession(['client_portal.client_id' => $client->getKey()])
                 ->get(route('portal.telegram.launch', ['entry' => $key]))
@@ -120,7 +140,7 @@ final class TelegramMiniAppLaunchTest extends TestCase
     {
         $this->organizationWithClientRecords();
 
-        foreach (['portal', 'b2b', 'partner_cabinet'] as $key) {
+        foreach (['portal', 'b2b', 'partner_cabinet', 'health', 'surveys'] as $key) {
             $this->get(route('portal.telegram.launch', ['entry' => $key]))
                 ->assertRedirect(route('portal.home', ['telegram_entry' => $key], false));
 

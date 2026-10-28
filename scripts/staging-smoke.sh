@@ -49,6 +49,7 @@ compose_arguments=(
     --project-name "$STAGING_PROJECT"
     --env-file "$STAGING_ROOT/shared/.env"
     -f "$STAGING_ROOT/compose.yml"
+    -f "$STAGING_ROOT/current/docker-compose.staging-qa.yml"
 )
 
 ok() {
@@ -66,6 +67,24 @@ if [[ "$deployed_revision" != "$expected_revision" ]]; then
 fi
 ok 'STAGING SHA' "${deployed_revision:0:7}"
 
+if ! ssh "${ssh_options[@]}" "$remote" bash -s <<'REMOTE_NGINX_MEDICAL_UPLOAD' > /dev/null 2>&1
+site_configuration='/etc/nginx/conf.d/chuklov-staging-tls.conf'
+sudo -n test -f "$site_configuration"
+sudo -n grep -Eq '^[[:space:]]*client_max_body_size[[:space:]]+24m[[:space:]]*;' "$site_configuration"
+sudo -n awk '
+    /^[[:space:]]*location \^~ \/portal\/medical-attachments \{/ { in_location = 1 }
+    in_location && /access_log \/var\/log\/nginx\/access\.log medical_attachment_safe;/ { found = 1 }
+    in_location && /^[[:space:]]*}/ { in_location = 0 }
+    END { exit !found }
+' "$site_configuration"
+sudo -n nginx -t > /dev/null
+sudo -n nginx -T 2>&1 | grep -Fq 'log_format medical_attachment_safe'
+REMOTE_NGINX_MEDICAL_UPLOAD
+then
+    fail 'NGINX MEDICAL UPLOAD' 'host Nginx upload limit or safe access logging is not active'
+fi
+ok 'NGINX MEDICAL UPLOAD'
+
 health="$(curl --noproxy '*' --fail --silent --show-error "$STAGING_HEALTH_URL")"
 if ! jq -e '.status == "ok" and (.checks | to_entries | all(.value == true))' <<< "$health" > /dev/null; then
     fail 'HEALTH' 'health contract is not fully green'
@@ -73,7 +92,7 @@ fi
 ok 'HEALTH'
 
 running_services="$(ssh "${ssh_options[@]}" "$remote" "${compose_arguments[@]}" ps --status running --services)"
-for service in app horizon scheduler postgres redis telegram; do
+for service in app horizon scheduler postgres redis telegram mailpit; do
     if ! grep -Fxq "$service" <<< "$running_services"; then
         fail "${service^^}" 'container is not running'
     fi
@@ -81,6 +100,26 @@ done
 ok 'APP'
 ok 'SCHEDULER'
 ok 'TELEGRAM'
+
+if ! ssh "${ssh_options[@]}" "$remote" bash -s -- "$STAGING_PROJECT" "$STAGING_ROOT" <<'REMOTE_QA_MAIL_SMTP' > /dev/null 2>&1
+project="$1"
+root="$2"
+compose=(docker compose --project-name "$project" --env-file "$root/shared/.env" -f "$root/compose.yml" -f "$root/current/docker-compose.staging-qa.yml")
+
+for attempt in $(seq 1 10); do
+    if "${compose[@]}" exec -T app php -r '$socket = @fsockopen("127.0.0.1", 1025, $errorCode, $errorMessage, 2); if (!is_resource($socket)) { exit(1); } stream_set_timeout($socket, 1); $banner = fgets($socket); fclose($socket); exit(is_string($banner) && str_starts_with($banner, "220 ") ? 0 : 1);' > /dev/null 2>&1; then
+        exit 0
+    fi
+
+    sleep 1
+done
+
+exit 1
+REMOTE_QA_MAIL_SMTP
+then
+    fail 'QA MAIL SMTP' 'application cannot reach the private staging QA mail sink'
+fi
+ok 'QA MAIL SMTP'
 
 run_telegram_api_check() {
     ssh "${ssh_options[@]}" "$remote" bash -s -- "$STAGING_PROJECT" "$STAGING_ROOT" <<'REMOTE_TELEGRAM_API'

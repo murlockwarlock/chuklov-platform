@@ -16,6 +16,7 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportTesting\Testable;
 use Tests\TestCase;
 
@@ -56,19 +57,117 @@ final class ServiceCatalogFormTest extends TestCase
             ->assertFormFieldVisible('buffer_minutes')
             ->assertFormFieldVisible('formats')
             ->assertFormFieldVisible('payment_requirement')
+            ->assertFormFieldVisible('requires_medical_profile')
             ->assertFormFieldDoesNotExist('payment_policy');
 
         $activeField = $page->getSchemaComponent('form.is_active');
         $paymentRequirementField = $page->getSchemaComponent('form.payment_requirement');
+        $requiresMedicalProfileField = $page->getSchemaComponent('form.requires_medical_profile');
         self::assertInstanceOf(Toggle::class, $activeField);
         self::assertInstanceOf(Select::class, $paymentRequirementField);
+        self::assertInstanceOf(Toggle::class, $requiresMedicalProfileField);
         self::assertSame('Доступна для записи', $activeField->getLabel());
         self::assertSame('Когда клиент оплачивает', $paymentRequirementField->getLabel());
+        self::assertSame('Требуется медицинская анкета', $requiresMedicalProfileField->getLabel());
+        self::assertSame('Перерыв — кабинет, минут', $page->getSchemaComponent('form.buffer_office_minutes')->getLabel());
+        self::assertSame('Перерыв — выезд, минут', $page->getSchemaComponent('form.buffer_home_minutes')->getLabel());
+        self::assertSame('Перерыв — онлайн, минут', $page->getSchemaComponent('form.buffer_online_minutes')->getLabel());
+        $component->assertSet('data.requires_medical_profile', true);
         self::assertSame('Перерыв после приёма, минут', $page->getSchemaComponent('form.buffer_minutes')->getLabel());
         self::assertStringContainsString(
             'Это время блокируется после завершения услуги перед следующей записью.',
             $component->html(),
         );
+    }
+
+    public function test_service_medical_profile_requirement_is_created_and_persisted_through_edit_and_reopen(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Testable::actingAs($admin);
+
+        $defaultServiceForm = Testable::create(CreateService::class);
+        $defaultServiceForm
+            ->assertSet('data.requires_medical_profile', true)
+            ->fillForm([
+                'name' => 'Первичная консультация',
+                'summary' => 'Синтетическая услуга для проверки флага анкеты.',
+                'catalog_type' => CatalogItemType::Service->value,
+                'is_active' => true,
+                'duration_minutes' => 45,
+                'buffer_office_minutes' => 7,
+                'buffer_home_minutes' => 13,
+                'buffer_online_minutes' => 19,
+                'formats' => ['office', 'home', 'online'],
+                'payment_requirement' => ServicePaymentRequirement::Postpay->value,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $defaultService = Service::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('name', 'Первичная консультация')
+            ->sole();
+        self::assertTrue((bool) DB::table('services')->where('id', $defaultService->getKey())->value('requires_medical_profile'));
+        self::assertSame([7, 13, 19], array_map(
+            static fn (string $field): int => (int) DB::table('services')->where('id', $defaultService->getKey())->value($field),
+            ['buffer_office_minutes', 'buffer_home_minutes', 'buffer_online_minutes'],
+        ));
+
+        Testable::create(EditService::class, ['record' => $defaultService->getRouteKey()])
+            ->assertSet('data.requires_medical_profile', true)
+            ->assertSet('data.buffer_office_minutes', 7)
+            ->assertSet('data.buffer_home_minutes', 13)
+            ->assertSet('data.buffer_online_minutes', 19)
+            ->assertFormFieldVisible('buffer_office_minutes')
+            ->assertFormFieldVisible('buffer_home_minutes')
+            ->assertFormFieldVisible('buffer_online_minutes')
+            ->assertFormFieldVisible('requires_medical_profile')
+            ->set('data.requires_medical_profile', false)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        self::assertFalse((bool) DB::table('services')->where('id', $defaultService->getKey())->value('requires_medical_profile'));
+        self::assertSame([7, 13, 19], array_map(
+            static fn (string $field): int => (int) DB::table('services')->where('id', $defaultService->getKey())->value($field),
+            ['buffer_office_minutes', 'buffer_home_minutes', 'buffer_online_minutes'],
+        ));
+        Testable::create(EditService::class, ['record' => $defaultService->getRouteKey()])
+            ->assertSet('data.requires_medical_profile', false)
+            ->assertSet('data.buffer_office_minutes', 7)
+            ->assertSet('data.buffer_home_minutes', 13)
+            ->assertSet('data.buffer_online_minutes', 19)
+            ->assertFormFieldVisible('requires_medical_profile');
+
+        $disabledServiceForm = Testable::create(CreateService::class);
+        $disabledServiceForm
+            ->fillForm([
+                'name' => 'Консультация без анкеты',
+                'summary' => 'Синтетическая услуга без медицинской анкеты.',
+                'catalog_type' => CatalogItemType::Service->value,
+                'is_active' => true,
+                'requires_medical_profile' => false,
+                'duration_minutes' => 45,
+                'formats' => ['office'],
+                'payment_requirement' => ServicePaymentRequirement::Postpay->value,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $disabledService = Service::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('name', 'Консультация без анкеты')
+            ->sole();
+        self::assertFalse((bool) DB::table('services')->where('id', $disabledService->getKey())->value('requires_medical_profile'));
+        Testable::create(EditService::class, ['record' => $disabledService->getRouteKey()])
+            ->assertSet('data.requires_medical_profile', false)
+            ->assertFormFieldVisible('requires_medical_profile')
+            ->set('data.requires_medical_profile', true)
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        self::assertTrue((bool) DB::table('services')->where('id', $disabledService->getKey())->value('requires_medical_profile'));
+        Testable::create(EditService::class, ['record' => $disabledService->getRouteKey()])
+            ->assertSet('data.requires_medical_profile', true);
     }
 
     public function test_service_form_labels_follow_the_english_crm_locale(): void

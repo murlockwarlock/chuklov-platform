@@ -23,6 +23,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property string $idempotency_key
  * @property string $request_hash
  * @property B2bLeadStatus $status
+ * @property int|null $form_version
+ * @property array<string, mixed>|null $form_schema
+ * @property array<string, mixed>|null $form_answers
  * @property int $event_version
  * @property-read Organization $organization
  * @property-read Client $client
@@ -65,6 +68,9 @@ class B2bLead extends Model
             'status' => B2bLeadStatus::class,
             'submitted_at' => 'datetime',
             'event_version' => 'integer',
+            'form_version' => 'integer',
+            'form_schema' => 'array',
+            'form_answers' => 'array',
         ];
     }
 

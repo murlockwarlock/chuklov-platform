@@ -6,11 +6,14 @@ use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\Identity\Application\CreateClientNote;
 use App\Modules\Identity\Application\ListClientNotesForCrm;
+use App\Modules\Identity\Application\UpdateClientNote;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Identity\Domain\Models\ClientNote;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Textarea;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
@@ -78,10 +81,47 @@ final class ClientNotesRelationManager extends LocalizedRelationManager
                     ->dateTime('d.m.Y H:i')
                     ->visibleFrom('md'),
             ])
+            ->recordActions([
+                Action::make('edit')
+                    ->label(__('Изменить'))
+                    ->icon('heroicon-o-pencil-square')
+                    ->modalHeading(__('Изменить заметку'))
+                    ->modalSubmitActionLabel(__('Сохранить'))
+                    ->schema([
+                        Textarea::make('body')
+                            ->label(__('Текст заметки'))
+                            ->rows(5)
+                            ->required()
+                            ->maxLength(5000),
+                        Hidden::make('expected_body_hash')
+                            ->required(),
+                    ])
+                    ->fillForm(fn (ClientNote $record): array => [
+                        'body' => $record->body,
+                        'expected_body_hash' => hash('sha256', $record->body),
+                    ])
+                    ->visible($canManage)
+                    ->authorize($canManage)
+                    ->action(function (array $data, ClientNote $record) use ($actor, $client): void {
+                        app(UpdateClientNote::class)->handle(
+                            $actor,
+                            $client,
+                            $record,
+                            (string) $data['body'],
+                            (string) $data['expected_body_hash'],
+                        );
+
+                        Notification::make()
+                            ->title(__('Заметка сохранена'))
+                            ->success()
+                            ->send();
+                    }),
+            ])
             ->headerActions([
                 Action::make('add')
                     ->label(__('Добавить заметку'))
                     ->icon('heroicon-o-plus')
+                    ->modalSubmitActionLabel(__('Добавить заметку'))
                     ->schema([
                         Textarea::make('body')
                             ->label(__('Текст заметки'))

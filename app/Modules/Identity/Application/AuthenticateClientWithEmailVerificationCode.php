@@ -13,8 +13,10 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\RateLimiter;
 
 class AuthenticateClientWithEmailVerificationCode
@@ -34,6 +36,8 @@ class AuthenticateClientWithEmailVerificationCode
         $code = trim($code);
 
         if (preg_match('/^\d{6}$/', $code) !== 1) {
+            $this->logFailedVerification($organization, 'invalid_code_format', null, 0);
+
             throw new InvalidEmailAuthenticationCode('The verification code is invalid.');
         }
 
@@ -50,7 +54,11 @@ class AuthenticateClientWithEmailVerificationCode
         string $code,
         ?string $acquisitionSessionId,
     ): Client {
-        $client = DB::transaction(function () use ($organization, $email, $code, $acquisitionSessionId): ?Client {
+        $failureCode = null;
+        $failureChallengeId = null;
+        $failureAttempt = 0;
+
+        $client = DB::transaction(function () use ($organization, $email, $code, $acquisitionSessionId, &$failureCode, &$failureChallengeId, &$failureAttempt): ?Client {
             $challenge = ClientEmailAuthChallenge::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('email', $email)
@@ -58,17 +66,26 @@ class AuthenticateClientWithEmailVerificationCode
                 ->first();
             $maxAttempts = max(1, (int) config('portal.email_auth.max_attempts', 5));
 
-            if (! $challenge instanceof ClientEmailAuthChallenge
-                || $challenge->consumed_at !== null
-                || $challenge->expires_at->isPast()
-                || $challenge->attempts >= $maxAttempts
-                || ! Hash::check($code, $challenge->code_hash)) {
-                if ($challenge instanceof ClientEmailAuthChallenge
-                    && $challenge->consumed_at === null
-                    && ! $challenge->expires_at->isPast()
-                    && $challenge->attempts < $maxAttempts) {
-                    $challenge->increment('attempts');
-                }
+            if (! $challenge instanceof ClientEmailAuthChallenge) {
+                $failureCode = 'challenge_missing';
+
+                return null;
+            }
+
+            if ($challenge->consumed_at !== null) {
+                $failureCode = 'challenge_consumed';
+            } elseif ($challenge->expires_at->isPast()) {
+                $failureCode = 'challenge_expired';
+            } elseif ($challenge->attempts >= $maxAttempts) {
+                $failureCode = 'attempt_limit';
+            } elseif (! Hash::check($code, $challenge->code_hash)) {
+                $failureCode = 'code_mismatch';
+                $challenge->increment('attempts');
+            }
+
+            if ($failureCode !== null) {
+                $failureChallengeId = (int) $challenge->getKey();
+                $failureAttempt = (int) $challenge->attempts;
 
                 return null;
             }
@@ -146,12 +163,42 @@ class AuthenticateClientWithEmailVerificationCode
         });
 
         if (! $client instanceof Client) {
+            $this->logFailedVerification(
+                $organization,
+                $failureCode ?? 'challenge_invalid',
+                $failureChallengeId,
+                $failureAttempt,
+            );
+
             throw new InvalidEmailAuthenticationCode('The verification code is invalid.');
         }
 
         RateLimiter::clear($this->rateLimitKey($organization->getKey(), $email));
 
         return $client;
+    }
+
+    private function logFailedVerification(
+        Organization $organization,
+        string $errorCode,
+        ?int $challengeId,
+        int $attempt,
+    ): void {
+        Log::warning('client.email_auth.code_verification_failed', [
+            'event_name' => 'client.email_auth.code_verification_failed',
+            'operation' => 'client.email_auth.code_verification',
+            'organization_id' => (int) $organization->getKey(),
+            'actor_type' => Auth::check() ? 'user' : 'anonymous',
+            'actor_user_id' => Auth::id(),
+            'entity_type' => 'client_email_auth_challenge',
+            'entity_id' => $challengeId,
+            'integration' => 'email_auth',
+            'attempt' => $attempt,
+            'error_code' => $errorCode,
+            'error_class' => InvalidEmailAuthenticationCode::class,
+            'outcome' => 'failed',
+            'occurred_at_utc' => now()->utc()->toIso8601String(),
+        ]);
     }
 
     private function recordVerifiedIdentity(Organization $organization, ClientChannelIdentity $identity): void

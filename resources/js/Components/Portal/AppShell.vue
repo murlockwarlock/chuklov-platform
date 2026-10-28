@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Head, Link, usePage } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
+import PortalIcon from './PortalIcon.vue';
 import LanguageSwitcher from './LanguageSwitcher.vue';
 import MobileBottomNavigation from './MobileBottomNavigation.vue';
 import { portalText } from '../../locales/portal';
@@ -23,6 +24,18 @@ const navigation = [
     { key: 'companion', label: 'shell.companion' },
     { key: 'more', label: 'shell.more' },
 ] as const;
+const page = usePage();
+const successMessage = computed(() => {
+    const message = page.flash.success;
+
+    return typeof message === 'string' && message.trim() !== '' ? message : null;
+});
+const errorMessage = computed(() => {
+    const message = page.flash.error;
+
+    return typeof message === 'string' && message.trim() !== '' ? message : null;
+});
+const bonusDialog = ref<HTMLDialogElement | null>(null);
 
 function navigationHref(key: Exclude<PortalNavKey, null>): string {
     if (key === 'bookings') {
@@ -75,13 +88,87 @@ const brandLogo = computed(() => props.portal.locale === 'en'
           </Link>
         </nav>
 
-        <LanguageSwitcher :portal="portal" />
+        <div class="portal-header-actions">
+          <button
+            v-if="portal.availableBonus"
+            type="button"
+            class="portal-button portal-button--secondary"
+            :aria-label="portalText(portal.locale, 'bonus.title')"
+            @click="bonusDialog?.showModal()"
+          >
+            <PortalIcon name="wallet" />
+            {{ portal.availableBonus }}
+          </button>
+          <LanguageSwitcher :portal="portal" />
+        </div>
       </div>
     </header>
 
     <main class="portal-main">
+      <div
+        v-if="successMessage || errorMessage"
+        class="portal-shell__flash"
+      >
+        <p
+          v-if="successMessage"
+          class="portal-feedback portal-feedback--success"
+          role="status"
+          aria-live="polite"
+        >
+          {{ successMessage }}
+        </p>
+        <p
+          v-if="errorMessage"
+          class="portal-feedback portal-feedback--error"
+          role="alert"
+          aria-live="assertive"
+        >
+          {{ errorMessage }}
+        </p>
+      </div>
       <slot />
     </main>
+    <dialog
+      ref="bonusDialog"
+      class="portal-bonus-dialog"
+    >
+      <div class="portal-stack">
+        <div class="portal-section-heading">
+          <strong>{{ portalText(portal.locale, 'bonus.title') }}</strong>
+          <button
+            type="button"
+            class="portal-button"
+            :aria-label="portalText(portal.locale, 'stories.close')"
+            @click="bonusDialog?.close()"
+          >
+            <PortalIcon name="close" />
+          </button>
+        </div>
+        <p class="portal-copy">
+          {{ portalText(portal.locale, 'bonus.description') }}
+        </p>
+        <p
+          v-if="portal.bonusCurrencyUnavailable"
+          class="portal-copy"
+        >
+          {{ portalText(portal.locale, 'bonus.currencyUnavailable') }}
+          <Link
+            :href="portal.urls.profile"
+            class="portal-link"
+            @click="bonusDialog?.close()"
+          >
+            {{ portalText(portal.locale, 'profile.title') }}
+          </Link>
+        </p>
+        <Link
+          :href="portal.urls.services"
+          class="portal-button portal-button--primary"
+          @click="bonusDialog?.close()"
+        >
+          {{ portalText(portal.locale, 'home.book') }}
+        </Link>
+      </div>
+    </dialog>
 
     <MobileBottomNavigation
       v-if="portal.authenticated && props.bottomNavigation && props.active"
@@ -90,3 +177,15 @@ const brandLogo = computed(() => props.portal.locale === 'en'
     />
   </div>
 </template>
+
+<style scoped>
+.portal-header__inner { flex-wrap: wrap; }
+.portal-header-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; margin-left: auto; }
+.portal-header-actions button { max-width: 100%; overflow-wrap: anywhere; }
+.portal-bonus-dialog { width: min(400px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); padding: 20px; border: 1px solid #e0d3c9; border-radius: 16px; }
+.portal-shell__flash { width: min(100%, var(--portal-content-width)); margin-inline: auto; padding: var(--portal-space-4) var(--portal-space-5) 0; }
+
+@media (min-width: 40rem) {
+    .portal-shell__flash { padding-inline: var(--portal-space-8); }
+}
+</style>

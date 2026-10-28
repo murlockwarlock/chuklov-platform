@@ -86,16 +86,41 @@ class SectionController extends Controller
     }
 
     /**
-     * @param  array<string, string>|null  $media
-     * @return array{image: string, alt?: string}|null
+     * @param  array<string, mixed>|null  $media
+     * @return array{image?: string, alt?: string, communities?: list<array{title: string, url: string, description: string|null}>}|null
      */
     private static function projectMedia(?array $media, ?string $imageUrl): ?array
     {
-        if ($imageUrl === null || trim($imageUrl) === '') {
+        $projected = [];
+        if ($imageUrl !== null && trim($imageUrl) !== '') {
+            $projected['image'] = $imageUrl;
+        }
+
+        $communities = is_array($media['communities'] ?? null) ? array_values(array_filter(
+            $media['communities'],
+            static fn (mixed $community): bool => is_array($community)
+                && ($community['is_visible'] ?? true) === true
+                && is_string($community['title'] ?? null)
+                && trim($community['title']) !== ''
+                && is_string($community['url'] ?? null)
+                && str_starts_with($community['url'], 'https://')
+                && filter_var($community['url'], FILTER_VALIDATE_URL) !== false,
+        )) : [];
+        usort($communities, static fn (array $left, array $right): int => ((int) ($left['sort_order'] ?? 0)) <=> ((int) ($right['sort_order'] ?? 0)));
+        if ($communities !== []) {
+            $projected['communities'] = array_map(static fn (array $community): array => [
+                'title' => trim((string) $community['title']),
+                'url' => trim((string) $community['url']),
+                'description' => is_string($community['description'] ?? null) && trim($community['description']) !== ''
+                    ? trim($community['description'])
+                    : null,
+            ], $communities);
+        }
+
+        if ($projected === []) {
             return null;
         }
 
-        $projected = ['image' => $imageUrl];
         $alt = $media['alt'] ?? null;
 
         if (is_string($alt) && trim($alt) !== '') {

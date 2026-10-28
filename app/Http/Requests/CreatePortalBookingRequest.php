@@ -6,6 +6,7 @@ use App\Modules\ClientPortal\Application\PortalBookingErrorMessages;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 
 class CreatePortalBookingRequest extends FormRequest
 {
@@ -18,9 +19,17 @@ class CreatePortalBookingRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'patient_profile_id' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'personal_data' => ['sometimes', 'array:first_name,last_name,middle_name,gender,birth_date,country,city,phone,email'],
             'service_id' => ['required', 'integer', 'min:1'],
             'specialist_id' => ['required', 'integer', 'min:1'],
             'starts_at' => ['required', 'date'],
+            'additional_starts_at' => ['sometimes', 'array', 'list', 'max:19'],
+            'additional_starts_at.*' => ['required', 'string', 'date', 'distinct:strict'],
+            'idempotency_key' => [
+                Rule::excludeIf(fn (): bool => ! is_array($this->input('additional_starts_at')) || $this->input('additional_starts_at') === []),
+                'required', 'string', 'uuid',
+            ],
             'format' => ['required', 'string', 'in:'.implode(',', array_map(
                 static fn (VisitFormat $format): string => $format->value,
                 VisitFormat::cases(),

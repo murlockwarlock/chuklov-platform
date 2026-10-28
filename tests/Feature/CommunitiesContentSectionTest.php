@@ -84,6 +84,69 @@ final class CommunitiesContentSectionTest extends TestCase
             ->assertSee('Не добавлено');
     }
 
+    public function test_owner_can_manage_structured_community_links_without_editing_rich_text(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        config()->set('portal.telegram.portal_url', 'https://mini.example.test');
+        config()->set('nutgram.token', FakeNutgram::TOKEN);
+        app()->forgetInstance(Nutgram::class);
+        $bot = $this->fakeNutgram();
+
+        Testable::actingAs($admin);
+        Testable::create(CreateContentSectionPage::class)
+            ->fillForm([
+                'section_key' => 'communities',
+                'locale' => 'ru',
+                'title' => 'Наши сообщества',
+                'body' => '<p>Выберите подходящее сообщество.</p>',
+                'delivery_mode' => ContentDeliveryMode::Both->value,
+                'media.communities' => [
+                    ['title' => 'Главный канал', 'url' => 'https://t.me/main_channel', 'description' => 'Новости', 'sort_order' => 2, 'is_visible' => true],
+                    ['title' => 'Скрытый канал', 'url' => 'https://t.me/hidden_channel', 'description' => null, 'sort_order' => 1, 'is_visible' => false],
+                ],
+                'is_visible' => true,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $section = ContentSection::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('section_key', 'communities')
+            ->where('locale', 'ru')
+            ->latest('id')
+            ->firstOrFail();
+        self::assertSame([
+            ['title' => 'Скрытый канал', 'url' => 'https://t.me/hidden_channel', 'description' => null, 'sort_order' => 1, 'is_visible' => false],
+            ['title' => 'Главный канал', 'url' => 'https://t.me/main_channel', 'description' => 'Новости', 'sort_order' => 2, 'is_visible' => true],
+        ], $section->media['communities']);
+
+        config()->set('tenancy.default_organization_id', $organization->getKey());
+        $this->withSession(['portal.locale' => 'ru'])
+            ->get(route('portal.section', ['section' => 'communities']))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('content.0.media.communities', [[
+                    'title' => 'Главный канал',
+                    'url' => 'https://t.me/main_channel',
+                    'description' => 'Новости',
+                ]]))
+            ->assertOk();
+
+        app(SendTelegramContentSection::class)->handle(
+            new VerifiedChannelIdentity('telegram', 'communities-structured-chat', 'Communities client', 'ru'),
+            'communities',
+            'ru',
+        );
+
+        $bot->assertRaw(function (RequestInterface $request): bool {
+            $payload = json_decode((string) $request->getBody(), true);
+            $text = is_array($payload) ? ($payload['text'] ?? '') : '';
+
+            return is_string($text)
+                && str_contains($text, '<a href="https://t.me/main_channel">Главный канал</a>')
+                && ! str_contains($text, 'hidden_channel');
+        }, index: 0);
+    }
+
     public function test_serialized_rich_editor_link_state_survives_content_section_persistence_and_delivery(): void
     {
         [$organization, $admin] = $this->filamentOrganizationAndAdmin();

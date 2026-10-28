@@ -6,6 +6,7 @@ use App\Filament\Resources\LocationDays\LocationDayResource;
 use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Scheduling\Application\SaveLocationDay;
+use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Model;
 
 class CreateLocationDay extends LocalizedCreateRecord
@@ -13,6 +14,11 @@ class CreateLocationDay extends LocalizedCreateRecord
     protected static string $resource = LocationDayResource::class;
 
     protected static ?string $title = 'Добавить день выезда';
+
+    public function getFormContentComponent(): Component
+    {
+        return parent::getFormContentComponent()->extraAttributes(['novalidate' => true]);
+    }
 
     protected function handleRecordCreation(array $data): Model
     {
@@ -30,6 +36,7 @@ class CreateLocationDay extends LocalizedCreateRecord
             timezone: (string) $data['timezone'],
             isActive: (bool) ($data['is_active'] ?? true),
             notes: isset($data['notes']) ? (string) $data['notes'] : null,
+            specialistId: $this->nullableInt($data['specialist_id'] ?? null),
         );
     }
 

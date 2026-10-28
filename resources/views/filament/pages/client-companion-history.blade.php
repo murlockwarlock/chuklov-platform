@@ -84,7 +84,9 @@
                                 @endif
                                 <time class="font-normal opacity-60">{{ $message['occurredAt'] }}</time>
                                 @if ($message['feedback'])
-                                    <span class="font-normal opacity-70">{{ __('Оценка: :feedback', ['feedback' => __($message['feedback'] === 'helpful' ? 'полезно' : 'не помогло')]) }}</span>
+                                    <span class="inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold {{ $message['feedback'] === 'helpful' ? 'bg-success-50 text-success-700 dark:bg-success-950/40 dark:text-success-200' : 'bg-warning-50 text-warning-700 dark:bg-warning-950/40 dark:text-warning-200' }}">
+                                        {{ $message['feedback'] === 'helpful' ? __('Оценка клиента: полезно') : __('Оценка клиента: не помогло') }}
+                                    </span>
                                 @endif
                             </div>
                             <div class="mt-2 break-words text-sm leading-6">{!! \App\Filament\Support\RichTextPresentation::html($message['content']) !!}</div>

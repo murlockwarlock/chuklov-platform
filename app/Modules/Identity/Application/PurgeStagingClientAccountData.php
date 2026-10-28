@@ -8,6 +8,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use RuntimeException;
 
 final class PurgeStagingClientAccountData
@@ -26,13 +27,57 @@ final class PurgeStagingClientAccountData
     ) {}
 
     /**
-     * @return array{deleted_record_count: int, attachment_paths: array<int, string>, receipt_paths: array<int, string>}
+     * @return array{deleted_record_count: int, attachment_paths: array<int, string>, receipt_paths: array<int, string>, patient_profile_ids: array<int, int>, patient_invitation_profile_ids: array<int, int>}
      */
     public function handle(Organization $organization, Client $client): array
     {
+        if (DB::transactionLevel() === 0) {
+            throw new RuntimeException('Client account cleanup requires a transaction.');
+        }
+
         $organizationId = (int) $organization->getKey();
         $clientId = (int) $client->getKey();
+        if (DB::table('patient_profiles')
+            ->where('organization_id', $organizationId)
+            ->where('clinical_client_id', $clientId)
+            ->where('owner_client_id', '<>', $clientId)
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'account' => __('Сначала отзовите связь с профилем пациента другого владельца.'),
+            ]);
+        }
+
+        if (DB::table('patient_profiles')
+            ->where('organization_id', $organizationId)
+            ->where('linked_account_client_id', $clientId)
+            ->where('owner_client_id', '<>', $clientId)
+            ->exists()) {
+            throw ValidationException::withMessages([
+                'account' => __('Сначала отзовите связь с профилем пациента другого владельца.'),
+            ]);
+        }
+
         $bookingIds = $this->idsByClient('bookings', 'id', $organizationId, 'client_id', $clientId);
+        $companionTurnIds = $this->idsByClient('companion_turns', 'id', $organizationId, 'client_id', $clientId);
+        $patientProfileIds = $this->idsByClient('patient_profiles', 'id', $organizationId, 'owner_client_id', $clientId);
+        $patientInvitationIds = $this->mergeIds(
+            $this->idsByClient('patient_invitations', 'id', $organizationId, 'owner_client_id', $clientId),
+            $this->idsByClient('patient_invitations', 'id', $organizationId, 'accepted_by_client_id', $clientId),
+        );
+        $patientInvitationIds = $this->mergeIds(
+            $patientInvitationIds,
+            $this->idsByClient('patient_invitations', 'id', $organizationId, 'intended_client_id', $clientId),
+        );
+        $patientInvitationIds = $this->mergeIds(
+            $patientInvitationIds,
+            $this->idsByValues('patient_invitations', 'id', $organizationId, 'patient_profile_id', $patientProfileIds),
+        );
+        $patientInvitationProfileIds = DB::table('patient_invitations')
+            ->where('organization_id', $organizationId)
+            ->whereIn('id', $patientInvitationIds)
+            ->pluck('patient_profile_id', 'id')
+            ->map(static fn (mixed $patientProfileId): int => (int) $patientProfileId)
+            ->all();
         $b2bLeadIds = $this->idsByClient('b2b_leads', 'id', $organizationId, 'client_id', $clientId);
         $b2bSalesCallIds = $this->idsByClient('b2b_sales_calls', 'id', $organizationId, 'client_id', $clientId);
         $b2bSalesCallIds = $this->mergeIds(
@@ -70,6 +115,13 @@ final class PurgeStagingClientAccountData
             'corrects_ledger_entry_id',
             $financialLedgerEntryIds,
         );
+
+        if ($this->hasCommerceHistory($organizationId, $clientId, $financialObligationIds, $financialLedgerEntryIds)) {
+            throw ValidationException::withMessages([
+                'account' => __('Сброс невозможен: у клиента есть история покупок или подарочных сертификатов, которую нужно сохранить. Используйте новый тестовый аккаунт.'),
+            ]);
+        }
+
         $receiptPaths = $this->pathsByValues(
             'financial_receipts',
             $organizationId,
@@ -178,71 +230,77 @@ final class PurgeStagingClientAccountData
 
         $disabledTriggers = $this->disableMutationTriggers();
 
-        try {
-            $deletedRecordCount = 0;
-            $deletedRecordCount += $this->deleteByValues('unavailable_periods', $organizationId, 'b2b_sales_call_id', $b2bSalesCallIds);
-            $deletedRecordCount += $this->deleteByClientOrValues('booking_events', $organizationId, 'actor_client_id', $clientId, 'booking_id', $bookingIds);
-            $deletedRecordCount += $this->deleteByClientOrValues('booking_idempotency_keys', $organizationId, 'actor_client_id', $clientId, 'booking_id', $bookingIds);
-            $deletedRecordCount += $this->deleteByClientOrValues('scenario_actions', $organizationId, 'client_id', $clientId, 'booking_id', $bookingIds);
-            $deletedRecordCount += $this->deleteByClientOrValues('companion_message_attachments', $organizationId, 'client_id', $clientId, 'medical_attachment_id', $medicalAttachmentIds);
-            $deletedRecordCount += $this->deleteByClientOrValues('medical_session_attachments', $organizationId, 'client_id', $clientId, 'medical_session_id', $medicalSessionIds);
-            $deletedRecordCount += $this->deleteByValues('medical_session_attachments', $organizationId, 'medical_attachment_id', $medicalAttachmentIds);
-            $deletedRecordCount += $this->deleteByClientOrValues('medical_sessions', $organizationId, 'client_id', $clientId, 'booking_id', $bookingIds);
-            $deletedRecordCount += $this->deleteByClient('medical_profiles', $organizationId, 'client_id', $clientId);
-            $deletedRecordCount += $this->deleteByClientOrValues('survey_comparisons', $organizationId, 'client_id', $clientId, 'previous_attempt_id', $this->idsByClient('survey_attempts', 'id', $organizationId, 'client_id', $clientId));
-            $deletedRecordCount += $this->deleteByClient('survey_reports', $organizationId, 'client_id', $clientId);
-            $deletedRecordCount += $this->deleteByClient('survey_attempts', $organizationId, 'client_id', $clientId);
-            $deletedRecordCount += $this->deleteByClientOrValues('tracker_task_entries', $organizationId, 'client_id', $clientId, 'tracker_task_id', $this->idsByClient('tracker_tasks', 'id', $organizationId, 'client_id', $clientId));
-            $deletedRecordCount += $this->deleteByClient('tracker_tasks', $organizationId, 'client_id', $clientId);
-            $deletedRecordCount += $this->deleteByClient('tracker_entitlements', $organizationId, 'client_id', $clientId);
-            $deletedRecordCount += $this->deleteByClient('tracker_check_ins', $organizationId, 'client_id', $clientId);
-            $broadcastRecipientIds = $this->idsByClient('broadcast_recipients', 'id', $organizationId, 'client_id', $clientId);
-            $deletedRecordCount += $this->deleteByValues('broadcast_delivery_attempts', $organizationId, 'recipient_id', $broadcastRecipientIds);
-            $deletedRecordCount += $this->deleteByClient('broadcast_recipients', $organizationId, 'client_id', $clientId);
-            $deletedRecordCount += $this->deleteByClient('client_acquisition_registrations', $organizationId, 'client_id', $clientId);
-            $deletedRecordCount += $this->deleteByClient('client_telegram_authentication_requests', $organizationId, 'client_id', $clientId);
-            $deletedRecordCount += $this->deleteByValues('referral_payout_request_events', $organizationId, 'payout_request_id', $referralPayoutRequestIds);
-            $deletedRecordCount += $this->deleteSelfReferencing('referral_reward_ledger_entries', $organizationId, 'id', 'reverses_entry_id', $referralRewardLedgerEntryIds);
-            $deletedRecordCount += $this->deleteByValues('referral_commercial_evidence', $organizationId, 'id', $referralEvidenceIds);
-            $deletedRecordCount += $this->deleteByValues('integration_events', $organizationId, 'id', $integrationEventIds);
-            $deletedRecordCount += $this->deleteByValues('referral_relationships', $organizationId, 'id', $referralRelationshipIds);
-            $referralLinkVisitIds = $this->idsByValues('referral_link_visits', 'id', $organizationId, 'campaign_link_id', $referralCampaignLinkIds);
-            $deletedRecordCount += $this->deleteByValues('referral_link_visits', $organizationId, 'id', $referralLinkVisitIds);
-            $deletedRecordCount += $this->deleteByValues('referral_campaign_links', $organizationId, 'id', $referralCampaignLinkIds);
-            $deletedRecordCount += DB::table('referral_reward_program_versions')
-                ->where('organization_id', $organizationId)
-                ->whereIn('partner_profile_id', $referralPartnerProfileIds)
-                ->update(['partner_profile_id' => null]);
-            $deletedRecordCount += $this->deleteByValues('referral_payout_requests', $organizationId, 'id', $referralPayoutRequestIds);
-            $deletedRecordCount += $this->deleteByValues('referral_partner_profiles', $organizationId, 'id', $referralPartnerProfileIds);
-            $deletedRecordCount += $this->deleteByValues('client_referral_identities', $organizationId, 'id', $referralIdentityIds);
-            $deletedRecordCount += $this->deleteByValues('financial_receipts', $organizationId, 'ledger_entry_id', $financialLedgerEntryIds);
-            $deletedRecordCount += $this->deleteByValues('payment_gateway_events', $organizationId, 'gateway_transaction_id', $paymentGatewayTransactionIds);
-            $deletedRecordCount += $this->deleteByValues('payment_gateway_transactions', $organizationId, 'id', $paymentGatewayTransactionIds);
-            $deletedRecordCount += $this->deleteFinanceIdempotencyKeys($organizationId, $financialObligationIds, $financialLedgerEntryIds);
-            $deletedRecordCount += $this->deleteSelfReferencing('financial_ledger_entries', $organizationId, 'id', 'corrects_ledger_entry_id', $financialLedgerEntryIds);
-            $deletedRecordCount += $this->deleteByValues('financial_obligations', $organizationId, 'id', $financialObligationIds);
-            $deletedRecordCount += $this->deleteByValues('bookings', $organizationId, 'id', $bookingIds);
-            $deletedRecordCount += $this->deleteByValues('ai_runs', $organizationId, 'id', $this->idsByClient('ai_runs', 'id', $organizationId, 'client_id', $clientId));
-            $deletedRecordCount += $this->deleteByValues('b2b_sales_calls', $organizationId, 'id', $b2bSalesCallIds);
-            $deletedRecordCount += $this->deleteByValues('b2b_leads', $organizationId, 'id', $b2bLeadIds);
-            $deletedRecordCount += $this->deleteByClient('client_attributions', $organizationId, 'client_id', $clientId);
-            $deletedRecordCount += $this->deleteByClient('feedback_submissions', $organizationId, 'client_id', $clientId);
-            $deletedRecordCount += $this->deleteByClient('pre_auth_attributions', $organizationId, 'consumed_client_id', $clientId);
-            $deletedRecordCount += $this->deleteByValues('medical_attachments', $organizationId, 'id', $medicalAttachmentIds);
+        $deletedRecordCount = 0;
+        $deletedRecordCount += $this->deleteByValues('patient_invitations', $organizationId, 'id', $patientInvitationIds);
+        $deletedRecordCount += $this->deleteByValues('unavailable_periods', $organizationId, 'b2b_sales_call_id', $b2bSalesCallIds);
+        $deletedRecordCount += $this->deleteByClientOrValues('booking_events', $organizationId, 'actor_client_id', $clientId, 'booking_id', $bookingIds);
+        $deletedRecordCount += $this->deleteByClientOrValues('booking_idempotency_keys', $organizationId, 'actor_client_id', $clientId, 'booking_id', $bookingIds);
+        $deletedRecordCount += $this->deleteByClientOrValues('scenario_actions', $organizationId, 'client_id', $clientId, 'booking_id', $bookingIds);
+        $deletedRecordCount += $this->deleteByClientOrValues('companion_message_attachments', $organizationId, 'client_id', $clientId, 'medical_attachment_id', $medicalAttachmentIds);
+        $deletedRecordCount += $this->deleteByClientOrValues('medical_session_attachments', $organizationId, 'client_id', $clientId, 'medical_session_id', $medicalSessionIds);
+        $deletedRecordCount += $this->deleteByValues('medical_session_attachments', $organizationId, 'medical_attachment_id', $medicalAttachmentIds);
+        $deletedRecordCount += $this->deleteByClientOrValues('medical_sessions', $organizationId, 'client_id', $clientId, 'booking_id', $bookingIds);
+        $deletedRecordCount += $this->deleteByClient('medical_profiles', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByClientOrValues('survey_comparisons', $organizationId, 'client_id', $clientId, 'previous_attempt_id', $this->idsByClient('survey_attempts', 'id', $organizationId, 'client_id', $clientId));
+        $deletedRecordCount += $this->deleteByClient('survey_reports', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByClient('survey_attempts', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByClientOrValues('tracker_task_entries', $organizationId, 'client_id', $clientId, 'tracker_task_id', $this->idsByClient('tracker_tasks', 'id', $organizationId, 'client_id', $clientId));
+        $deletedRecordCount += $this->deleteByClient('tracker_tasks', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByClient('tracker_entitlements', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByClient('tracker_check_ins', $organizationId, 'client_id', $clientId);
+        $broadcastRecipientIds = $this->idsByClient('broadcast_recipients', 'id', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByValues('broadcast_delivery_attempts', $organizationId, 'recipient_id', $broadcastRecipientIds);
+        $deletedRecordCount += $this->deleteByClient('broadcast_recipients', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByClient('client_acquisition_registrations', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByClient('client_telegram_authentication_requests', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByValues('referral_payout_request_events', $organizationId, 'payout_request_id', $referralPayoutRequestIds);
+        $deletedRecordCount += $this->deleteSelfReferencing('referral_reward_ledger_entries', $organizationId, 'id', 'reverses_entry_id', $referralRewardLedgerEntryIds);
+        $deletedRecordCount += $this->deleteByValues('referral_commercial_evidence', $organizationId, 'id', $referralEvidenceIds);
+        $deletedRecordCount += $this->deleteByValues('integration_events', $organizationId, 'id', $integrationEventIds);
+        $deletedRecordCount += $this->deleteByValues('referral_relationships', $organizationId, 'id', $referralRelationshipIds);
+        $referralLinkVisitIds = $this->idsByValues('referral_link_visits', 'id', $organizationId, 'campaign_link_id', $referralCampaignLinkIds);
+        $deletedRecordCount += $this->deleteByValues('referral_link_visits', $organizationId, 'id', $referralLinkVisitIds);
+        $deletedRecordCount += $this->deleteByValues('referral_campaign_links', $organizationId, 'id', $referralCampaignLinkIds);
+        $deletedRecordCount += DB::table('referral_reward_program_versions')
+            ->where('organization_id', $organizationId)
+            ->whereIn('partner_profile_id', $referralPartnerProfileIds)
+            ->update(['partner_profile_id' => null]);
+        $deletedRecordCount += $this->deleteByValues('referral_payout_requests', $organizationId, 'id', $referralPayoutRequestIds);
+        $deletedRecordCount += $this->deleteByValues('referral_partner_profiles', $organizationId, 'id', $referralPartnerProfileIds);
+        $deletedRecordCount += $this->deleteByValues('client_referral_identities', $organizationId, 'id', $referralIdentityIds);
+        $deletedRecordCount += $this->deleteByValues('financial_receipts', $organizationId, 'ledger_entry_id', $financialLedgerEntryIds);
+        $deletedRecordCount += $this->deleteByValues('payment_gateway_events', $organizationId, 'gateway_transaction_id', $paymentGatewayTransactionIds);
+        $deletedRecordCount += $this->deleteByValues('payment_gateway_transactions', $organizationId, 'id', $paymentGatewayTransactionIds);
+        $deletedRecordCount += $this->deleteFinanceIdempotencyKeys($organizationId, $financialObligationIds, $financialLedgerEntryIds);
+        $deletedRecordCount += $this->deleteSelfReferencing('financial_ledger_entries', $organizationId, 'id', 'corrects_ledger_entry_id', $financialLedgerEntryIds);
+        $deletedRecordCount += $this->deleteByValues('financial_obligations', $organizationId, 'id', $financialObligationIds);
+        $deletedRecordCount += $this->deleteByValues('bookings', $organizationId, 'id', $bookingIds);
+        $deletedRecordCount += $this->deleteByClient('companion_feedback', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByClient('companion_escalations', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByValues('companion_deliveries', $organizationId, 'turn_id', $companionTurnIds);
+        $deletedRecordCount += $this->deleteByClient('companion_turns', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByValues('ai_runs', $organizationId, 'id', $this->idsByClient('ai_runs', 'id', $organizationId, 'client_id', $clientId));
+        $deletedRecordCount += $this->deleteByValues('b2b_sales_calls', $organizationId, 'id', $b2bSalesCallIds);
+        $deletedRecordCount += $this->deleteByValues('b2b_leads', $organizationId, 'id', $b2bLeadIds);
+        $deletedRecordCount += $this->deleteByClient('client_attributions', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByClient('feedback_submissions', $organizationId, 'client_id', $clientId);
+        $deletedRecordCount += $this->deleteByClient('pre_auth_attributions', $organizationId, 'consumed_client_id', $clientId);
+        $deletedRecordCount += $this->deleteByValues('medical_attachments', $organizationId, 'id', $medicalAttachmentIds);
+        $deletedRecordCount += $this->deleteByValues('patient_profiles', $organizationId, 'id', $patientProfileIds);
 
-            return [
-                'deleted_record_count' => $deletedRecordCount,
-                'attachment_paths' => $attachmentPaths,
-                'receipt_paths' => $receiptPaths,
-            ];
-        } finally {
-            $this->enableMutationTriggers($disabledTriggers);
-        }
+        $this->enableMutationTriggers($disabledTriggers);
+
+        return [
+            'deleted_record_count' => $deletedRecordCount,
+            'attachment_paths' => $attachmentPaths,
+            'receipt_paths' => $receiptPaths,
+            'patient_profile_ids' => $patientProfileIds,
+            'patient_invitation_profile_ids' => $patientInvitationProfileIds,
+        ];
     }
 
     /**
-     * @param  array{deleted_record_count: int, attachment_paths: array<int, string>, receipt_paths: array<int, string>}  $purge
+     * @param  array{deleted_record_count: int, attachment_paths: array<int, string>, receipt_paths: array<int, string>, patient_profile_ids: array<int, int>, patient_invitation_profile_ids: array<int, int>}  $purge
      */
     public function deleteStorage(array $purge): void
     {
@@ -439,17 +497,70 @@ final class PurgeStagingClientAccountData
 
         $disabled = [];
 
-        try {
-            foreach (self::MUTATION_TRIGGERS as [$table, $trigger]) {
-                DB::statement("ALTER TABLE {$table} DISABLE TRIGGER {$trigger}");
-                $disabled[] = $table.'|'.$trigger;
-            }
-        } catch (\Throwable $exception) {
-            $this->enableMutationTriggers($disabled);
-            throw $exception;
+        foreach (self::MUTATION_TRIGGERS as [$table, $trigger]) {
+            DB::statement("ALTER TABLE {$table} DISABLE TRIGGER {$trigger}");
+            $disabled[] = $table.'|'.$trigger;
         }
 
         return $disabled;
+    }
+
+    /** @param array<int, int> $obligationIds
+     * @param  array<int, int>  $ledgerEntryIds
+     */
+    private function hasCommerceHistory(int $organizationId, int $clientId, array $obligationIds, array $ledgerEntryIds): bool
+    {
+        if (DB::table('commerce_purchases')
+            ->where('organization_id', $organizationId)
+            ->where('client_id', $clientId)
+            ->exists()) {
+            return true;
+        }
+
+        if (DB::table('gift_certificates')
+            ->where('organization_id', $organizationId)
+            ->where(function (Builder $query) use ($clientId): void {
+                $query->where('purchaser_client_id', $clientId)
+                    ->orWhere('current_holder_client_id', $clientId);
+            })
+            ->exists()) {
+            return true;
+        }
+
+        if (DB::table('gift_certificate_claims')
+            ->where('organization_id', $organizationId)
+            ->where(function (Builder $query) use ($clientId): void {
+                $query->where('initiated_by_client_id', $clientId)
+                    ->orWhere('claimed_client_id', $clientId);
+            })
+            ->exists()) {
+            return true;
+        }
+
+        if (DB::table('gift_certificate_movements')
+            ->where('organization_id', $organizationId)
+            ->where(function (Builder $query) use ($clientId): void {
+                $query->where('from_holder_client_id', $clientId)
+                    ->orWhere('to_holder_client_id', $clientId);
+            })
+            ->exists()) {
+            return true;
+        }
+
+        return DB::table('gift_certificate_redemptions')
+            ->where('organization_id', $organizationId)
+            ->where(function (Builder $query) use ($clientId, $obligationIds, $ledgerEntryIds): void {
+                $query->where('holder_client_id', $clientId);
+
+                if ($obligationIds !== []) {
+                    $query->orWhereIn('financial_obligation_id', $obligationIds);
+                }
+
+                if ($ledgerEntryIds !== []) {
+                    $query->orWhereIn('financial_ledger_entry_id', $ledgerEntryIds);
+                }
+            })
+            ->exists();
     }
 
     /** @param array<int, string> $disabledTriggers */

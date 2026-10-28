@@ -27,6 +27,7 @@ class UpdateClientProfileFromCrm
         'phone',
         'language',
         'timezone',
+        ...NormalizeClientDemographics::FIELDS,
     ];
 
     public function __construct(
@@ -35,6 +36,7 @@ class UpdateClientProfileFromCrm
         private readonly OrganizationFeatureGate $features,
         private readonly RecordAuditEvent $audit,
         private readonly ClientProfileSnapshotHasher $snapshotHasher,
+        private readonly NormalizeClientDemographics $demographics,
     ) {}
 
     /** @param array<string, mixed> $attributes */
@@ -84,6 +86,8 @@ class UpdateClientProfileFromCrm
                     'phone' => 'A verified phone identity cannot be changed here.',
                 ]);
             }
+
+            $normalized = [...$normalized, ...$this->demographics->handle($normalized, $lockedClient)];
 
             $changedFields = [];
 
