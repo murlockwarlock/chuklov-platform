@@ -25,6 +25,8 @@ enum OrganizationSettingKey: string
     case ClientSegmentRegularCompletedVisits = 'client_segment_regular_completed_visits';
     case ClientSegmentDormantDays = 'client_segment_dormant_days';
     case ClientSegmentSleepingDays = 'client_segment_sleeping_days';
+    case AnalyticsTherapyEffectivenessFormulaReference = 'analytics_therapy_effectiveness_formula_reference';
+    case AnalyticsLtvPercentFormulaReference = 'analytics_ltv_percent_formula_reference';
 
     public function type(): OrganizationSettingType
     {

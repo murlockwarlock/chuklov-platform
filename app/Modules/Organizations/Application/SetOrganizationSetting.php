@@ -139,6 +139,13 @@ class SetOrganizationSetting
             throw new InvalidArgumentException('The office location is invalid.');
         }
 
+        if (in_array($key, [
+            OrganizationSettingKey::AnalyticsTherapyEffectivenessFormulaReference,
+            OrganizationSettingKey::AnalyticsLtvPercentFormulaReference,
+        ], true) && (! is_string($value) || mb_strlen($value) > 2000)) {
+            throw new InvalidArgumentException('The analytics formula reference is invalid.');
+        }
+
         if ($key === OrganizationSettingKey::PatientNotificationRecipients
             && (! is_string($value) || ! in_array($value, ['patient_only', 'booker_only', 'both'], true))) {
             throw new InvalidArgumentException('The patient notification recipient policy is invalid.');
