@@ -2708,6 +2708,47 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
 });
 
+test('staff can maintain the clinical test catalog and use it in a new session', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const testName = `E2E настроенный тест ${suffix}`;
+    const causeName = `E2E настроенная причина ${suffix}`;
+
+    await login(page, fixture);
+    await page.goto('/admin/medical-clinical-catalog-configuration');
+    await expect(page.getByRole('heading', { name: 'Тесты и причины нарушений', exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
+    await page.getByLabel('Название теста', { exact: true }).last().fill(testName);
+    await page.getByLabel('Раздел', { exact: true }).last().fill('E2E раздел');
+    await page.getByLabel('Название значения', { exact: true }).last().fill('Норма');
+    await page.getByRole('button', { name: 'Добавить значение', exact: true }).last().click();
+    await page.getByLabel('Название значения', { exact: true }).last().fill('Отклонение');
+    await page.getByLabel('Считать нарушением', { exact: true }).last().check();
+
+    await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
+    await page.getByLabel('Название причины', { exact: true }).last().fill(causeName);
+    await page.getByLabel('Группа', { exact: true }).last().fill('E2E причины');
+    await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
+    await expect(page.getByText('Каталог сохранён', { exact: true })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByLabel('Название теста', { exact: true }).last()).toHaveValue(testName);
+    await expect(page.getByLabel('Название причины', { exact: true }).last()).toHaveValue(causeName);
+
+    await page.goto(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create`);
+    await expect(page.getByRole('heading', { name: 'Новый сеанс', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
+    const testSelect = page.getByRole('combobox', { name: 'Тест*', exact: true });
+    await testSelect.click();
+    await expect(page.getByRole('option', { name: testName, exact: true })).toBeVisible();
+    await page.getByRole('option', { name: testName, exact: true }).click();
+    const beforeTestValue = page.getByRole('combobox', { name: 'До сеанса', exact: true });
+    await beforeTestValue.click();
+    await expect(page.getByRole('option', { name: 'Отклонение', exact: true })).toBeVisible();
+});
+
 test('staff can analyze several dimensions and download a filtered Excel report', async ({ page }) => {
     test.setTimeout(90_000);
     const fixture = createCrmFixture({ financeFlow: true });
