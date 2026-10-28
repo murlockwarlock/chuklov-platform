@@ -2726,7 +2726,7 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await configuredTestItem.getByLabel('Раздел', { exact: true }).fill('E2E раздел');
     const valueLabels = configuredTestItem.getByLabel('Название значения*', { exact: true });
     await valueLabels.last().fill('Норма');
-    await configuredTestItem.getByRole('button', { name: 'Добавить значение', exact: true }).click();
+    await page.getByRole('button', { name: 'Добавить значение', exact: true }).last().click();
     await expect(valueLabels).toHaveCount(2);
     await valueLabels.last().fill('Отклонение');
     await configuredTestItem.getByLabel('Считать нарушением', { exact: true }).last().check();
