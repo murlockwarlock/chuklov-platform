@@ -2363,7 +2363,7 @@ test('staff can manage private client audio recordings', async ({ page }) => {
 
     await page.getByRole('button', { name: 'Загрузить аудиозапись', exact: true }).click();
     const audioDialog = page.getByRole('dialog').last();
-    await audioDialog.getByLabel('Название записи', { exact: true }).fill('Сеанс QA');
+    await audioDialog.getByLabel('Название записи*', { exact: true }).fill('Сеанс QA');
     const audioUploadControl = audioDialog
         .getByRole('group', { name: 'Аудиофайл*', exact: true })
         .locator('label')
