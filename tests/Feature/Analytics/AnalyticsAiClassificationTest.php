@@ -21,6 +21,10 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Tracker\Domain\Enums\TrackerTaskFrequency;
+use App\Modules\Tracker\Domain\Enums\TrackerTaskType;
+use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
+use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -176,6 +180,82 @@ final class AnalyticsAiClassificationTest extends TestCase
         self::assertSame('invalid_output', $result->errorCode);
         self::assertSame([], $result->suggestions);
         self::assertSame(1, $calls);
+    }
+
+    public function test_goal_suggestions_are_reviewed_and_applied_to_the_tenant_task(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $task = new TrackerTask;
+        $task->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'title' => 'Ежедневная практика движения',
+            'task_type' => TrackerTaskType::Practice->value,
+            'frequency' => TrackerTaskFrequency::Daily->value,
+            'starts_on' => '2026-10-01',
+            'ends_on' => null,
+            'active' => true,
+            'display_order' => 1,
+        ])->save();
+        $tag = new TrackerGoalTag;
+        $tag->forceFill([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Подвижность',
+            'group_name' => 'Движение',
+            'is_active' => true,
+            'sort_order' => 1,
+        ])->save();
+        $this->activePrompt($organization);
+        $this->app->instance(AiWorkflowEngine::class, new class implements AiWorkflowEngine
+        {
+            public function run(int $organizationId, AiRunRequest $request): AiRunResult
+            {
+                $aiRun = new AiRun;
+                $aiRun->forceFill([
+                    'organization_id' => $organizationId,
+                    'capability' => $request->capability,
+                    'workflow_key' => $request->workflowKey,
+                    'origin' => $request->origin,
+                    'initiated_by_user_id' => $request->initiatedByUserId,
+                    'client_id' => $request->clientId,
+                    'status' => AiRunStatus::Succeeded,
+                    'execution_mode' => $request->executionMode,
+                    'prompt_version_id' => $request->promptVersionId,
+                    'idempotency_key' => $request->idempotencyKey,
+                ])->save();
+
+                return new AiRunResult(
+                    runId: (int) $aiRun->getKey(),
+                    status: AiRunStatus::Succeeded,
+                    outputPayload: ['tags' => ['Движение: Подвижность']],
+                );
+            }
+
+            public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+            {
+                throw new \LogicException('Not used in classification test.');
+            }
+        });
+        app(OrganizationContext::class)->set($organization);
+
+        $run = app(SuggestAnalyticsTags::class)->handle(
+            actor: $admin,
+            taxonomy: 'goals',
+            sourceType: 'tracker_task',
+            sourceId: (int) $task->getKey(),
+            clientId: (int) $client->getKey(),
+            sourceText: $task->title,
+            availableTags: [['id' => (int) $tag->getKey(), 'label' => 'Движение: Подвижность']],
+        );
+
+        $accepted = app(AcceptAnalyticsClassification::class)->handle(
+            actor: $admin,
+            runId: $run->runId,
+        );
+
+        self::assertSame(ClassificationRunStatus::Succeeded, $accepted->status);
+        self::assertSame([(int) $tag->getKey()], $task->refresh()->goalTags()->pluck('tracker_goal_tags.id')->all());
     }
 
     /** @return array{0: Organization, 1: User} */

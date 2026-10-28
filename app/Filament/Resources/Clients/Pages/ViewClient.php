@@ -10,6 +10,10 @@ use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResourc
 use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
 use App\Modules\Attribution\Application\ManageAttributionSourceDetail;
+use App\Modules\Analytics\Application\AcceptAnalyticsClassification;
+use App\Modules\Analytics\Application\SuggestAnalyticsTags;
+use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
+use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
 use App\Modules\Feedback\Application\FeedbackThemeCatalog;
 use App\Modules\Feedback\Application\RecordNpsSubmission;
 use App\Modules\Identity\Application\BlockClientBlacklist;
@@ -45,6 +49,7 @@ use App\Modules\Tracker\Application\TrackerGoalTagCatalog;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskFrequency;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskType;
 use App\Modules\Tracker\Domain\Models\TrackerPlan;
+use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
@@ -57,6 +62,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Support\Facades\Log;
@@ -171,6 +177,8 @@ class ViewClient extends LocalizedViewRecord
                 ->visible(fn (): bool => MedicalSessionResource::canCreate()),
             ActionGroup::make([
                 $this->assignTrackerTaskAction(),
+                $this->suggestTrackerGoalsAction(),
+                $this->acceptTrackerGoalsAction(),
                 $this->grantTrackerAccessAction(),
                 $this->extendTrackerAccessAction(),
                 $this->endTrackerAccessAction(),
@@ -694,6 +702,148 @@ class ViewClient extends LocalizedViewRecord
                 );
                 Notification::make()->title(__('Задача назначена'))->success()->send();
             });
+    }
+
+    private function suggestTrackerGoalsAction(): Action
+    {
+        return Action::make('suggestTrackerGoals')
+            ->label(__('Предложить категории задач с ИИ'))
+            ->icon('heroicon-o-sparkles')
+            ->schema([
+                Select::make('task_id')
+                    ->label(__('Задача'))
+                    ->options(fn (): array => $this->trackerTaskOptions())
+                    ->searchable()
+                    ->preload()
+                    ->required(),
+            ])
+            ->visible(fn (): bool => $this->canManageClients())
+            ->action(function (array $data): void {
+                $task = $this->trackerTask((int) ($data['task_id'] ?? 0));
+                $options = app(TrackerGoalTagCatalog::class)->options(app(OrganizationContext::class)->id());
+                $result = app(SuggestAnalyticsTags::class)->handle(
+                    actor: $this->actor(),
+                    taxonomy: 'goals',
+                    sourceType: 'tracker_task',
+                    sourceId: (int) $task->getKey(),
+                    clientId: (int) $task->client_id,
+                    sourceText: (string) $task->title,
+                    availableTags: array_map(
+                        static fn (int|string $id, string $label): array => ['id' => (int) $id, 'label' => $label],
+                        array_keys($options),
+                        array_values($options),
+                    ),
+                );
+                $labels = collect($result->suggestions)->pluck('label')->implode(', ');
+                if ($labels !== '') {
+                    Notification::make()->success()->title(__('Предложения категорий готовы'))->body($labels)->send();
+
+                    return;
+                }
+
+                Notification::make()->warning()->title(__('Предложения категорий недоступны'))->body(__('Настройте prompt классификатора или добавьте категории задач.'))->send();
+            });
+    }
+
+    private function acceptTrackerGoalsAction(): Action
+    {
+        return Action::make('acceptTrackerGoals')
+            ->label(__('Принять категории задач'))
+            ->icon('heroicon-o-check-circle')
+            ->schema([
+                Select::make('task_id')
+                    ->label(__('Задача'))
+                    ->options(fn (): array => $this->trackerTaskOptionsWithSuggestions())
+                    ->searchable()
+                    ->preload()
+                    ->live()
+                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                        $run = $this->latestGoalClassificationRun((int) $state);
+                        $set('goal_tag_ids', collect($run?->suggestions ?? [])->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all());
+                    })
+                    ->required(),
+                Select::make('goal_tag_ids')
+                    ->label(__('Категории задачи'))
+                    ->options(fn (): array => app(TrackerGoalTagCatalog::class)->options(app(OrganizationContext::class)->id()))
+                    ->multiple()
+                    ->searchable()
+                    ->preload(),
+            ])
+            ->visible(fn (): bool => $this->canManageClients() && $this->trackerTaskWithSuggestionsExists())
+            ->action(function (array $data): void {
+                $taskId = (int) ($data['task_id'] ?? 0);
+                $run = $this->latestGoalClassificationRun($taskId);
+                abort_unless($run instanceof AnalyticsClassificationRun, 422);
+                app(AcceptAnalyticsClassification::class)->handle(
+                    actor: $this->actor(),
+                    runId: (int) $run->getKey(),
+                    themeIds: is_array($data['goal_tag_ids'] ?? null) ? $data['goal_tag_ids'] : [],
+                );
+                Notification::make()->success()->title(__('Категории задачи сохранены'))->send();
+            });
+    }
+
+    /** @return array<int, string> */
+    private function trackerTaskOptions(): array
+    {
+        return TrackerTask::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('client_id', $this->clientRecord()->getKey())
+            ->orderByDesc('active')
+            ->orderBy('display_order')
+            ->orderBy('id')
+            ->get(['id', 'title', 'active'])
+            ->mapWithKeys(static fn (TrackerTask $task): array => [
+                $task->getKey() => (string) $task->title.($task->active ? '' : ' · '.__('неактивна')),
+            ])
+            ->all();
+    }
+
+    /** @return array<int, string> */
+    private function trackerTaskOptionsWithSuggestions(): array
+    {
+        return TrackerTask::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('client_id', $this->clientRecord()->getKey())
+            ->whereIn('id', AnalyticsClassificationRun::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->where('taxonomy', 'goals')
+                ->where('source_type', 'tracker_task')
+                ->where('status', ClassificationRunStatus::NeedsReview)
+                ->pluck('source_id'))
+            ->orderBy('display_order')
+            ->orderBy('id')
+            ->get(['id', 'title'])
+            ->mapWithKeys(static fn (TrackerTask $task): array => [$task->getKey() => (string) $task->title])
+            ->all();
+    }
+
+    private function trackerTaskWithSuggestionsExists(): bool
+    {
+        return $this->trackerTaskOptionsWithSuggestions() !== [];
+    }
+
+    private function trackerTask(int $taskId): TrackerTask
+    {
+        return TrackerTask::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('client_id', $this->clientRecord()->getKey())
+            ->whereKey($taskId)
+            ->firstOrFail();
+    }
+
+    private function latestGoalClassificationRun(int $taskId): ?AnalyticsClassificationRun
+    {
+        $this->trackerTask($taskId);
+
+        return AnalyticsClassificationRun::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('taxonomy', 'goals')
+            ->where('source_type', 'tracker_task')
+            ->where('source_id', $taskId)
+            ->where('status', ClassificationRunStatus::NeedsReview)
+            ->latest('id')
+            ->first();
     }
 
     private function recordFeedbackAction(): Action

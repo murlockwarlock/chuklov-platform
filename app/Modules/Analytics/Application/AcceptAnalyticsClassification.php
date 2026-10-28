@@ -11,6 +11,8 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
+use App\Modules\Tracker\Application\TrackerGoalTagCatalog;
+use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -20,6 +22,7 @@ final readonly class AcceptAnalyticsClassification
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
         private FeedbackThemeCatalog $themes,
+        private TrackerGoalTagCatalog $goalTags,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -44,25 +47,15 @@ final readonly class AcceptAnalyticsClassification
                     'classification' => 'Предложения недоступны для принятия.',
                 ]);
             }
-            if ($run->taxonomy !== 'feedback' || $run->source_type !== 'feedback_submission') {
+            if ($run->taxonomy === 'feedback' && $run->source_type === 'feedback_submission') {
+                $selectedIds = $this->acceptFeedback($run, (int) $organization->getKey(), $themeIds);
+            } elseif ($run->taxonomy === 'goals' && $run->source_type === 'tracker_task') {
+                $selectedIds = $this->acceptGoalTags($run, (int) $organization->getKey(), $themeIds);
+            } else {
                 throw ValidationException::withMessages([
-                    'classification' => 'Этот тип классификации пока нельзя принять в CRM.',
+                    'classification' => 'Этот тип классификации нельзя принять в CRM.',
                 ]);
             }
-
-            $submission = FeedbackSubmission::query()
-                ->where('organization_id', $organization->getKey())
-                ->whereKey($run->source_id)
-                ->lockForUpdate()
-                ->firstOrFail();
-            $suggestedIds = $this->suggestedIds($run->suggestions);
-            $selectedIds = $themeIds === null ? $suggestedIds : $themeIds;
-            $selectedIds = $this->themes->assertKnown((int) $organization->getKey(), $selectedIds);
-
-            $submission->themes()->syncWithPivotValues($selectedIds, [
-                'organization_id' => $organization->getKey(),
-                'client_id' => $submission->client_id,
-            ]);
             $run->forceFill([
                 'status' => ClassificationRunStatus::Succeeded,
                 'accepted_by_user_id' => $actor->getKey(),
@@ -86,6 +79,51 @@ final readonly class AcceptAnalyticsClassification
 
             return $run->refresh();
         });
+    }
+
+    /** @param array<int, mixed>|null $themeIds */
+    private function acceptFeedback(AnalyticsClassificationRun $run, int $organizationId, ?array $themeIds): array
+    {
+        $submission = FeedbackSubmission::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($run->source_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $suggestedIds = $this->suggestedIds($run->suggestions);
+        $selectedIds = $themeIds === null ? $suggestedIds : $themeIds;
+        $selectedIds = $this->themes->assertKnown($organizationId, $selectedIds);
+
+        $submission->themes()->syncWithPivotValues($selectedIds, [
+            'organization_id' => $organizationId,
+            'client_id' => $submission->client_id,
+        ]);
+
+        return $selectedIds;
+    }
+
+    /** @param array<int, mixed>|null $themeIds */
+    private function acceptGoalTags(AnalyticsClassificationRun $run, int $organizationId, ?array $themeIds): array
+    {
+        $task = TrackerTask::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($run->source_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+        if ($run->client_id !== null && (int) $run->client_id !== (int) $task->client_id) {
+            throw ValidationException::withMessages([
+                'classification' => 'Задача не принадлежит указанному клиенту.',
+            ]);
+        }
+        $suggestedIds = $this->suggestedIds($run->suggestions);
+        $selectedIds = $themeIds === null ? $suggestedIds : $themeIds;
+        $selectedIds = $this->goalTags->assertKnown($organizationId, $selectedIds);
+
+        $task->goalTags()->syncWithPivotValues($selectedIds, [
+            'organization_id' => $organizationId,
+            'client_id' => $task->client_id,
+        ]);
+
+        return $selectedIds;
     }
 
     private function suggestedIds(mixed $suggestions): array
