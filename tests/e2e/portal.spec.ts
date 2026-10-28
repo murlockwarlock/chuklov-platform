@@ -1196,18 +1196,17 @@ test('portrait Story previews stay inside their frames and player navigation wor
                 'media' => [
                     'image' => 'content/'.$client->organization_id.'/'.\\Illuminate\\Support\\Str::uuid().'.png',
                     'video' => 'content/'.$client->organization_id.'/'.\\Illuminate\\Support\\Str::uuid().'.mp4',
-                    'subtitles' => $key === 'story_author' ? 'https://qa-subtitles.invalid/story.vtt' : null,
+                    'subtitles' => $key === 'story_author' ? 'content/'.$client->organization_id.'/'.\\Illuminate\\Support\\Str::uuid().'.vtt' : null,
                 ],
             ]);
         }
     `], { env: { ...process.env, APP_ENV: 'e2e' }, stdio: ['ignore', 'pipe', 'pipe'] });
     let subtitleRequests = 0;
-    await page.route('https://qa-subtitles.invalid/story.vtt', async (route) => {
+    await page.route('**/storage/content/**/*.vtt', async (route) => {
         subtitleRequests += 1;
         await route.fulfill({
             status: 200,
             contentType: 'text/vtt',
-            headers: { 'Access-Control-Allow-Origin': '*' },
             body: 'WEBVTT\n\n00:00:00.000 --> 00:00:03.000\nQA subtitles verification\n',
         });
     });
