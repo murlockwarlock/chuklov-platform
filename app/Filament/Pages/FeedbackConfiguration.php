@@ -73,6 +73,12 @@ final class FeedbackConfiguration extends LocalizedPage
             'review_url_ru' => $settings['reviewLinks']['ru'],
             'review_url_en' => $settings['reviewLinks']['en'],
             'review_destinations' => $settings['reviewDestinations'],
+            'feedback_themes' => array_map(static fn (array $theme): array => [
+                'name' => $theme['name'],
+                'group_name' => $theme['groupName'],
+                'is_active' => $theme['isActive'],
+                'sort_order' => $theme['sortOrder'],
+            ], $settings['feedbackThemes']),
         ]);
     }
 
@@ -120,6 +126,24 @@ final class FeedbackConfiguration extends LocalizedPage
                             ->columnSpanFull(),
                     ])
                     ->columns(['default' => 1, 'sm' => 2]),
+                Section::make(__('Темы обратной связи'))
+                    ->description(__('Названия тем используются для ручной классификации комментариев и статистики. Исходный текст клиента сохраняется отдельно.'))
+                    ->schema([
+                        Repeater::make('feedback_themes')
+                            ->label(__('Темы'))
+                            ->schema([
+                                TextInput::make('name')->label(__('Название темы'))->required()->maxLength(255),
+                                TextInput::make('group_name')->label(__('Группа'))->maxLength(255),
+                                Toggle::make('is_active')->label(__('Активна'))->default(true),
+                                TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                            ])
+                            ->columns(['default' => 1, 'sm' => 2, 'lg' => 4])
+                            ->defaultItems(0)
+                            ->reorderable()
+                            ->addActionLabel(__('Добавить тему'))
+                            ->columnSpanFull(),
+                    ])
+                    ->columnSpanFull(),
             ])
             ->statePath('data');
     }
@@ -154,6 +178,7 @@ final class FeedbackConfiguration extends LocalizedPage
             reviewUrlRu: is_string($data['review_url_ru'] ?? null) ? $data['review_url_ru'] : null,
             reviewUrlEn: is_string($data['review_url_en'] ?? null) ? $data['review_url_en'] : null,
             reviewDestinations: is_array($data['review_destinations'] ?? null) ? $data['review_destinations'] : [],
+            feedbackThemes: is_array($data['feedback_themes'] ?? null) ? $data['feedback_themes'] : [],
         );
 
         Notification::make()->success()->title(__('Настройки обратной связи сохранены'))->send();

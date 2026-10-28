@@ -79,6 +79,15 @@ class SetOrganizationSetting
             throw new InvalidArgumentException('The integer setting value is invalid.');
         }
 
+        if (in_array($key, [
+            OrganizationSettingKey::ClientSegmentNewDays,
+            OrganizationSettingKey::ClientSegmentRegularCompletedVisits,
+            OrganizationSettingKey::ClientSegmentDormantDays,
+            OrganizationSettingKey::ClientSegmentSleepingDays,
+        ], true) && (! is_int($value) || $value < 1 || $value > 3650)) {
+            throw new InvalidArgumentException('The client segment threshold is outside the supported range.');
+        }
+
         if ($key === OrganizationSettingKey::OnlineConsultationServiceId
             && (! is_int($value) || $value < 1)) {
             throw new InvalidArgumentException('The consultation service identifier is invalid.');

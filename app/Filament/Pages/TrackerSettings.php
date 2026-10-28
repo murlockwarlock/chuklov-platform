@@ -13,8 +13,12 @@ use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Tracker\Application\GetTrackerSettings;
+use App\Modules\Tracker\Application\SaveTrackerGoalCatalog;
+use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
@@ -54,7 +58,19 @@ final class TrackerSettings extends LocalizedPage
     public function mount(): void
     {
         $settings = app(GetTrackerSettings::class);
-        $this->form->fill(['enabled' => $settings->enabled(), 'free_mode' => $settings->freeMode()]);
+        $goalTags = TrackerGoalTag::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (TrackerGoalTag $tag): array => [
+                'name' => $tag->name,
+                'group_name' => $tag->group_name,
+                'is_active' => $tag->is_active,
+                'sort_order' => $tag->sort_order,
+            ])
+            ->all();
+        $this->form->fill(['enabled' => $settings->enabled(), 'free_mode' => $settings->freeMode(), 'goal_tags' => $goalTags]);
     }
 
     public function form(Schema $schema): Schema
@@ -78,6 +94,24 @@ final class TrackerSettings extends LocalizedPage
                         ->content(fn (): string => app(KnowledgeSourcePresentation::class)->semanticSearchStatus()),
                 ])
                 ->columns(2)
+                ->columnSpanFull(),
+            Section::make(__('Категории задач'))
+                ->description(__('Категории помогают группировать повторяющиеся задачи клиентов в аналитике.'))
+                ->schema([
+                    Repeater::make('goal_tags')
+                        ->label(__('Категории'))
+                        ->schema([
+                            TextInput::make('name')->label(__('Название'))->required()->maxLength(255),
+                            TextInput::make('group_name')->label(__('Группа'))->maxLength(255),
+                            Toggle::make('is_active')->label(__('Активна'))->default(true),
+                            TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                        ])
+                        ->columns(['default' => 1, 'sm' => 2, 'lg' => 4])
+                        ->defaultItems(0)
+                        ->reorderable()
+                        ->addActionLabel(__('Добавить категорию'))
+                        ->columnSpanFull(),
+                ])
                 ->columnSpanFull(),
         ])->statePath('data');
     }
@@ -103,6 +137,7 @@ final class TrackerSettings extends LocalizedPage
         $setter = app(SetOrganizationSetting::class);
         $setter->handle($actor, OrganizationSettingKey::TrackerEnabled, (bool) ($data['enabled'] ?? false));
         $setter->handle($actor, OrganizationSettingKey::TrackerFreeMode, (bool) ($data['free_mode'] ?? false));
+        app(SaveTrackerGoalCatalog::class)->handle($actor, is_array($data['goal_tags'] ?? null) ? $data['goal_tags'] : []);
         Notification::make()->success()->title(__('Настройки трекера сохранены'))->send();
     }
 

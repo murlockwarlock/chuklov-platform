@@ -10,6 +10,8 @@ use App\Filament\Resources\ReferralPartnerProfiles\ReferralPartnerProfileResourc
 use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
 use App\Modules\Attribution\Application\ManageAttributionSourceDetail;
+use App\Modules\Feedback\Application\FeedbackThemeCatalog;
+use App\Modules\Feedback\Application\RecordNpsSubmission;
 use App\Modules\Identity\Application\BlockClientBlacklist;
 use App\Modules\Identity\Application\BlockClientSelfBooking;
 use App\Modules\Identity\Application\GetLatestClientMarketingConsent;
@@ -39,6 +41,7 @@ use App\Modules\Tracker\Application\EndTrackerAccess;
 use App\Modules\Tracker\Application\ExtendTrackerAccess;
 use App\Modules\Tracker\Application\GrantTrackerAccess;
 use App\Modules\Tracker\Application\ResolveTrackerAccess;
+use App\Modules\Tracker\Application\TrackerGoalTagCatalog;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskFrequency;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskType;
 use App\Modules\Tracker\Domain\Models\TrackerPlan;
@@ -156,6 +159,7 @@ class ViewClient extends LocalizedViewRecord
                         MedicalProfileForm::command($data),
                     );
                 }),
+            $this->recordFeedbackAction(),
             $this->activatePartnerAction(),
             $this->openPartnerWorkspaceAction(),
             $this->deactivatePartnerAction(),
@@ -664,6 +668,12 @@ class ViewClient extends LocalizedViewRecord
                     ->minValue(0)
                     ->default(0)
                     ->required(),
+                Select::make('goal_tag_ids')
+                    ->label(__('Категории задачи'))
+                    ->options(fn (): array => app(TrackerGoalTagCatalog::class)->options(app(OrganizationContext::class)->id()))
+                    ->multiple()
+                    ->searchable()
+                    ->preload(),
             ])
             ->visible(fn (): bool => $this->canManageClients())
             ->action(function (array $data): void {
@@ -680,8 +690,50 @@ class ViewClient extends LocalizedViewRecord
                         : null,
                     weekDay: filled($data['week_day'] ?? null) ? (int) $data['week_day'] : null,
                     displayOrder: (int) $data['display_order'],
+                    goalTagIds: is_array($data['goal_tag_ids'] ?? null) ? $data['goal_tag_ids'] : [],
                 );
                 Notification::make()->title(__('Задача назначена'))->success()->send();
+            });
+    }
+
+    private function recordFeedbackAction(): Action
+    {
+        return Action::make('recordFeedback')
+            ->label(__('Записать обратную связь'))
+            ->icon('heroicon-o-chat-bubble-left-ellipsis')
+            ->schema([
+                Select::make('score')
+                    ->label(__('Оценка клиента'))
+                    ->options(array_combine(range(0, 10), range(0, 10)))
+                    ->native(false)
+                    ->required(),
+                Textarea::make('internal_feedback')
+                    ->label(__('Что можно улучшить'))
+                    ->maxLength(4000)
+                    ->rows(4),
+                Select::make('theme_ids')
+                    ->label(__('Темы комментария'))
+                    ->options(fn (): array => app(FeedbackThemeCatalog::class)->options(app(OrganizationContext::class)->id()))
+                    ->multiple()
+                    ->searchable()
+                    ->preload(),
+            ])
+            ->visible(fn (): bool => $this->canManageClients())
+            ->authorize(fn (): bool => $this->canManageClients())
+            ->action(function (array $data): void {
+                $submission = app(RecordNpsSubmission::class)->handle(
+                    client: $this->clientRecord(),
+                    score: (int) $data['score'],
+                    internalFeedback: is_string($data['internal_feedback'] ?? null) ? $data['internal_feedback'] : null,
+                    idempotencyKey: 'crm-feedback-'.Str::uuid()->toString(),
+                    source: 'crm',
+                    themeIds: is_array($data['theme_ids'] ?? null) ? $data['theme_ids'] : [],
+                );
+                Notification::make()
+                    ->title(__('Обратная связь сохранена'))
+                    ->body(__('Запись :date добавлена в историю клиента.', ['date' => $submission->submitted_at?->format('d.m.Y H:i')]))
+                    ->success()
+                    ->send();
             });
     }
 

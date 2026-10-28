@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
+use App\Modules\Commerce\Domain\Enums\PurchaseStatus;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -33,19 +34,20 @@ final class ClientSegmentQuery
         $completed = fn (Builder $booking): Builder => $booking
             ->whereColumn('bookings.organization_id', 'clients.organization_id')
             ->where('bookings.status', BookingStatus::Completed->value);
+        $thresholds = app(ClientSegmentConfiguration::class)->values();
 
         return match ($resolved) {
             ClientSegment::All => $query,
             ClientSegment::NewClients => $query->where(
                 'clients.created_at',
                 '>=',
-                CarbonImmutable::now('UTC')->subDays((int) config('crm.client_segments.new_days', 30)),
+                CarbonImmutable::now('UTC')->subDays($thresholds['new_days']),
             ),
             ClientSegment::Regular => $query->whereHas(
                 'bookings',
                 $completed,
                 '>=',
-                (int) config('crm.client_segments.regular_completed_visits', 3),
+                $thresholds['regular_completed_visits'],
             ),
             ClientSegment::Dormant => $query
                 ->whereHas('bookings', $completed)
@@ -54,11 +56,36 @@ final class ClientSegmentQuery
                     fn (Builder $booking): Builder => $completed($booking)->where(
                         'bookings.starts_at',
                         '>=',
-                        CarbonImmutable::now('UTC')->subDays((int) config('crm.client_segments.dormant_days', 90)),
+                        CarbonImmutable::now('UTC')->subDays($thresholds['dormant_days']),
                     ),
                 ),
             ClientSegment::NoCompletedVisits => $query->whereDoesntHave('bookings', $completed),
             ClientSegment::Restricted => $query->whereHas('activeBookingRestriction'),
+            ClientSegment::WarmLead => $query
+                ->whereHas('bookings', $completed)
+                ->whereDoesntHave('purchases', fn (Builder $purchase): Builder => $purchase
+                    ->whereColumn('commerce_purchases.organization_id', 'clients.organization_id')
+                    ->where('commerce_purchases.status', PurchaseStatus::Paid->value)),
+            ClientSegment::Sleeping => $query
+                ->where('clients.created_at', '<', CarbonImmutable::now('UTC')->subDays($thresholds['sleeping_days']))
+                ->whereDoesntHave(
+                    'bookings',
+                    fn (Builder $booking): Builder => $completed($booking)->where(
+                        'bookings.starts_at',
+                        '>=',
+                        CarbonImmutable::now('UTC')->subDays($thresholds['sleeping_days']),
+                    ),
+                )
+                ->whereDoesntHave(
+                    'purchases',
+                    fn (Builder $purchase): Builder => $purchase
+                        ->whereColumn('commerce_purchases.organization_id', 'clients.organization_id')
+                        ->where('commerce_purchases.status', PurchaseStatus::Paid->value)
+                        ->where('commerce_purchases.created_at', '>=', CarbonImmutable::now('UTC')->subDays($thresholds['sleeping_days'])),
+                ),
+            ClientSegment::ColdLead => $query->whereHas('bookings', fn (Builder $booking): Builder => $booking
+                ->whereColumn('bookings.organization_id', 'clients.organization_id')
+                ->where('bookings.status', BookingStatus::NoShow->value)),
         };
     }
 

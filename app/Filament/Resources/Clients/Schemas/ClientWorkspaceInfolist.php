@@ -7,6 +7,8 @@ use App\Filament\Support\FinancePresentation;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Analytics\Application\FeedbackAnalytics;
+use App\Modules\Analytics\Application\GoalAnalytics;
 use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Attribution\Application\AttributionSourcePresentation;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
@@ -358,6 +360,69 @@ final class ClientWorkspaceInfolist
                                     ->implode("\n");
                             })
                             ->placeholder(__('Структурированная динамика пока не заполнена'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                        TextEntry::make('feedback_analytics')
+                            ->label(__('Удовлетворённость и темы обратной связи'))
+                            ->state(function (Client $record): ?string {
+                                $actor = auth()->user();
+                                if (! $actor instanceof User) {
+                                    return null;
+                                }
+
+                                $now = CarbonImmutable::now('UTC');
+                                $period = new DashboardPeriod(
+                                    startUtc: CarbonImmutable::create(2000, 1, 1, 0, 0, 0, 'UTC'),
+                                    endUtc: $now->addDay(),
+                                    timezone: app(OrganizationContext::class)->defaultTimezone(),
+                                    startDate: '2000-01-01',
+                                    endDate: $now->setTimezone(app(OrganizationContext::class)->defaultTimezone())->format('Y-m-d'),
+                                    preset: DashboardPeriod::Custom,
+                                    nowUtc: $now,
+                                );
+                                $data = app(FeedbackAnalytics::class)->handle($actor, $period, $record);
+                                if ($data->submissionCount === 0) {
+                                    return null;
+                                }
+
+                                $lines = [__('Средняя оценка: :score / 10', ['score' => $data->averageScore ?? '—'])];
+                                foreach ($data->themes as $theme) {
+                                    $lines[] = ($theme['group'] ? $theme['group'].': ' : '').$theme['name'];
+                                }
+
+                                return implode("\n", $lines);
+                            })
+                            ->placeholder(__('Оценки и темы пока не заполнены'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                        TextEntry::make('goal_analytics')
+                            ->label(__('Категории задач клиента'))
+                            ->state(function (Client $record): ?string {
+                                $actor = auth()->user();
+                                if (! $actor instanceof User) {
+                                    return null;
+                                }
+
+                                $now = CarbonImmutable::now('UTC');
+                                $period = new DashboardPeriod(
+                                    startUtc: CarbonImmutable::create(2000, 1, 1, 0, 0, 0, 'UTC'),
+                                    endUtc: $now->addDay(),
+                                    timezone: app(OrganizationContext::class)->defaultTimezone(),
+                                    startDate: '2000-01-01',
+                                    endDate: $now->setTimezone(app(OrganizationContext::class)->defaultTimezone())->format('Y-m-d'),
+                                    preset: DashboardPeriod::Custom,
+                                    nowUtc: $now,
+                                );
+                                $goals = app(GoalAnalytics::class)->handle($actor, $period, $record)->goals;
+                                if ($goals === []) {
+                                    return null;
+                                }
+
+                                return collect($goals)
+                                    ->map(static fn (array $goal): string => ($goal['group'] ? $goal['group'].': ' : '').$goal['name'].' · '.$goal['task_count'])
+                                    ->implode("\n");
+                            })
+                            ->placeholder(__('Категории задач пока не назначены'))
                             ->columnSpanFull()
                             ->wrap(),
                         TextEntry::make('chronic_conditions')

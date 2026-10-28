@@ -17,6 +17,7 @@ final class RecordNpsSubmission
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly GetFeedbackConfiguration $configuration,
+        private readonly FeedbackThemeCatalog $themes,
         private readonly RecordAuditEvent $audit,
         private readonly FeedbackRequestFingerprint $fingerprint,
         private readonly RecordScenarioEvent $scenarioEvents,
@@ -28,6 +29,7 @@ final class RecordNpsSubmission
         ?string $internalFeedback,
         string $idempotencyKey,
         string $source = 'portal',
+        array $themeIds = [],
     ): FeedbackSubmission {
         $organization = $this->context->organization();
         abort_unless((int) $client->organization_id === (int) $organization->getKey(), 404);
@@ -40,7 +42,7 @@ final class RecordNpsSubmission
         try {
             $band = NpsBand::fromScore($score, $settings['positiveThreshold']);
         } catch (\InvalidArgumentException) {
-            throw ValidationException::withMessages(['score' => 'Оценка должна быть от 1 до 10.']);
+            throw ValidationException::withMessages(['score' => 'Оценка должна быть от 0 до 10.']);
         }
 
         $idempotencyKey = trim($idempotencyKey);
@@ -52,6 +54,8 @@ final class RecordNpsSubmission
         if ($source === '' || mb_strlen($source) > 40 || preg_match('/^[a-z0-9._:-]+$/', $source) !== 1) {
             throw ValidationException::withMessages(['source' => 'Источник отправки указан неверно.']);
         }
+
+        $themeIds = $this->themes->assertKnown((int) $organization->getKey(), $themeIds);
 
         $internalFeedback = $internalFeedback === null ? null : trim($internalFeedback);
         if ($internalFeedback !== null && mb_strlen($internalFeedback) > 4000) {
@@ -71,11 +75,12 @@ final class RecordNpsSubmission
             'score' => $score,
             'internal_feedback' => $internalFeedback,
             'source' => $source,
+            'theme_ids' => $themeIds,
         ]);
 
         for ($attempt = 0; $attempt < 3; $attempt++) {
             try {
-                return DB::transaction(function () use ($organization, $client, $score, $internalFeedback, $idempotencyKey, $requestHash, $source, $band): FeedbackSubmission {
+                return DB::transaction(function () use ($organization, $client, $score, $internalFeedback, $idempotencyKey, $requestHash, $source, $band, $themeIds): FeedbackSubmission {
                     $existing = FeedbackSubmission::query()
                         ->where('organization_id', $organization->getKey())
                         ->where('client_id', $client->getKey())
@@ -103,6 +108,10 @@ final class RecordNpsSubmission
                         'submitted_at' => now(),
                     ]);
                     $submission->save();
+                    $submission->themes()->syncWithPivotValues($themeIds, [
+                        'organization_id' => $organization->getKey(),
+                        'client_id' => $client->getKey(),
+                    ]);
                     $this->audit->handle(
                         organization: $organization,
                         actor: null,
@@ -114,6 +123,7 @@ final class RecordNpsSubmission
                             'band' => $band->value,
                             'source' => $source,
                             'has_internal_feedback' => $internalFeedback !== null && $internalFeedback !== '',
+                            'theme_count' => count($themeIds),
                         ],
                     );
                     $this->scenarioEvents->feedbackSubmitted($submission, $band, now()->toImmutable());

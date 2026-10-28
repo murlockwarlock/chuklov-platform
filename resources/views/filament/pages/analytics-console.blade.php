@@ -90,6 +90,46 @@
                     @endif
                 </section>
             @endif
+
+            @if (isset($results['feedback']))
+                <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-gray-900">
+                    <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Удовлетворённость и обратная связь') }}</h2>
+                    <dl class="mt-4 grid grid-cols-2 gap-4 text-sm">
+                        <div><dt class="text-gray-500">{{ __('Оценок') }}</dt><dd class="font-semibold">{{ $results['feedback']['submission_count'] }}</dd></div>
+                        <div><dt class="text-gray-500">{{ __('Средняя оценка') }}</dt><dd class="font-semibold">{{ $results['feedback']['average_score'] ?? '—' }}</dd></div>
+                    </dl>
+                    @if ($results['feedback']['themes'] === [])
+                        <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('Классифицированных тем нет.') }}</p>
+                    @else
+                        <ul class="mt-4 space-y-2 text-sm">
+                            @foreach ($results['feedback']['themes'] as $theme)
+                                <li class="flex flex-wrap justify-between gap-3">
+                                    <span class="min-w-0 break-words">{{ $theme['group'] ? $theme['group'].': ' : '' }}{{ $theme['name'] }}</span>
+                                    <span>{{ $theme['client_count'] }} {{ __('клиентов') }} · {{ $theme['average_score'] ?? '—' }}</span>
+                                </li>
+                            @endforeach
+                        </ul>
+                    @endif
+                </section>
+            @endif
+
+            @if (isset($results['goals']))
+                <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-gray-900">
+                    <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Цели и задачи') }}</h2>
+                    @if ($results['goals']['goals'] === [])
+                        <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('Категории задач не заполнены.') }}</p>
+                    @else
+                        <ul class="mt-4 space-y-2 text-sm">
+                            @foreach ($results['goals']['goals'] as $goal)
+                                <li class="flex flex-wrap justify-between gap-3">
+                                    <span class="min-w-0 break-words">{{ $goal['group'] ? $goal['group'].': ' : '' }}{{ $goal['name'] }}</span>
+                                    <span>{{ $goal['client_count'] }} {{ __('клиентов') }} · {{ $goal['task_count'] }} {{ __('задач') }}</span>
+                                </li>
+                            @endforeach
+                        </ul>
+                    @endif
+                </section>
+            @endif
         </div>
     @endif
 </x-filament-panels::page>

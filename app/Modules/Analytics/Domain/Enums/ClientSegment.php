@@ -10,6 +10,9 @@ enum ClientSegment: string
     case Dormant = 'dormant';
     case NoCompletedVisits = 'no_visits';
     case Restricted = 'restricted';
+    case WarmLead = 'warm_lead';
+    case Sleeping = 'sleeping';
+    case ColdLead = 'cold_lead';
 
     /** @return array<string, string> */
     public static function labels(): array
@@ -21,6 +24,9 @@ enum ClientSegment: string
             self::Dormant->value => 'Спящие',
             self::NoCompletedVisits->value => 'Не посещали',
             self::Restricted->value => 'Ограничена запись',
+            self::WarmLead->value => 'Тёплые лиды',
+            self::Sleeping->value => 'Спящие',
+            self::ColdLead->value => 'Не явились',
         ];
     }
 

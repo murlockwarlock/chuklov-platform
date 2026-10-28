@@ -5,6 +5,7 @@ namespace App\Modules\Identity\Domain\Models;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
+use App\Modules\Commerce\Domain\Models\Purchase;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Identity\Domain\Enums\ClientRestrictionType;
 use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
@@ -158,6 +159,12 @@ class Client extends Model
     public function bookings(): HasMany
     {
         return $this->hasMany(Booking::class);
+    }
+
+    /** @return HasMany<Purchase, $this> */
+    public function purchases(): HasMany
+    {
+        return $this->hasMany(Purchase::class);
     }
 
     /** @return HasOne<MedicalProfile, $this> */

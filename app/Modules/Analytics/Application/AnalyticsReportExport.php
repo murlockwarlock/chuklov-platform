@@ -51,6 +51,20 @@ final readonly class AnalyticsReportExport
             }
         }
 
+        if (isset($results['feedback']) && is_array($results['feedback'])) {
+            $sheet->fromArray([['Удовлетворённость и обратная связь', 'Оценок', (int) ($results['feedback']['submission_count'] ?? 0), null, null, null, null]], null, 'A'.$row++);
+            $sheet->fromArray([['Удовлетворённость и обратная связь', 'Средняя оценка', $results['feedback']['average_score'] ?? null, null, null, null, null]], null, 'A'.$row++);
+            foreach ((array) ($results['feedback']['themes'] ?? []) as $theme) {
+                $sheet->fromArray([['Темы обратной связи', (string) ($theme['name'] ?? '—'), (int) ($theme['client_count'] ?? 0), $theme['group'] ?? null, null, $theme['average_score'] ?? null, null]], null, 'A'.$row++);
+            }
+        }
+
+        if (isset($results['goals']) && is_array($results['goals'])) {
+            foreach ((array) ($results['goals']['goals'] ?? []) as $goal) {
+                $sheet->fromArray([['Цели и задачи', (string) ($goal['name'] ?? '—'), (int) ($goal['client_count'] ?? 0), $goal['group'] ?? null, (int) ($goal['task_count'] ?? 0), null, null]], null, 'A'.$row++);
+            }
+        }
+
         foreach (['scheduling' => 'Записи и визиты', 'finance' => 'Финансы'] as $key => $label) {
             if (! isset($results[$key]) || ! is_array($results[$key])) {
                 continue;

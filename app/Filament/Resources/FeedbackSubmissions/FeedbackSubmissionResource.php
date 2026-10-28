@@ -8,13 +8,17 @@ use App\Filament\Resources\FeedbackSubmissions\Pages\ViewFeedbackSubmission;
 use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\LocalizedResource;
 use App\Models\User;
+use App\Modules\Feedback\Application\ClassifyFeedbackSubmission;
+use App\Modules\Feedback\Application\FeedbackThemeCatalog;
 use App\Modules\Feedback\Application\ListFeedbackSubmissionsForCrm;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
+use Filament\Forms\Components\Select;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -77,6 +81,10 @@ final class FeedbackSubmissionResource extends LocalizedResource
                     ->disabledClick(fn (FeedbackSubmission $record): bool => CrmEntityLinks::clientUrl($record->client, $canViewClients) === null),
                 TextColumn::make('score')->label(__('Оценка'))->badge()->sortable(),
                 TextColumn::make('source')->label(__('Источник'))->wrap(),
+                TextColumn::make('themes.name')
+                    ->label(__('Темы'))
+                    ->listWithLineBreaks()
+                    ->wrap(),
                 TextColumn::make('internal_feedback_present')
                     ->label(__('Внутренний текст'))
                     ->state(fn (FeedbackSubmission $record): string => $record->getRawOriginal('internal_feedback') === null ? __('Нет') : __('Есть'))
@@ -86,6 +94,32 @@ final class FeedbackSubmissionResource extends LocalizedResource
             ])
             ->recordActions([
                 ViewAction::make()->label(__('Открыть')),
+                Action::make('classify')
+                    ->label(__('Классифицировать'))
+                    ->icon('heroicon-o-tag')
+                    ->schema([
+                        Select::make('theme_ids')
+                            ->label(__('Темы комментария'))
+                            ->options(fn (): array => app(FeedbackThemeCatalog::class)->options(app(OrganizationContext::class)->id()))
+                            ->multiple()
+                            ->searchable()
+                            ->preload(),
+                    ])
+                    ->fillForm(fn (FeedbackSubmission $record): array => ['theme_ids' => $record->themes()->pluck('feedback_themes.id')->all()])
+                    ->visible(fn (): bool => auth()->user() instanceof User && app(OrganizationAuthorizer::class)->allows(
+                        auth()->user(),
+                        app(OrganizationContext::class)->organization(),
+                        OrganizationPermission::ManageClients,
+                    ))
+                    ->action(function (FeedbackSubmission $record, array $data): void {
+                        $actor = auth()->user();
+                        abort_unless($actor instanceof User, 403);
+                        app(ClassifyFeedbackSubmission::class)->handle(
+                            $actor,
+                            $record,
+                            is_array($data['theme_ids'] ?? null) ? $data['theme_ids'] : [],
+                        );
+                    }),
             ])
             ->defaultSort('submitted_at', 'desc')
             ->paginated([10, 25, 50]);
@@ -102,6 +136,7 @@ final class FeedbackSubmissionResource extends LocalizedResource
                         ->color(fn (FeedbackSubmission $record): ?string => CrmEntityLinks::clientUrl($record->client) === null ? null : 'primary'),
                     TextEntry::make('score')->label(__('Оценка')),
                     TextEntry::make('source')->label(__('Источник')),
+                    TextEntry::make('themes.name')->label(__('Темы'))->listWithLineBreaks()->placeholder(__('Не указаны')),
                     TextEntry::make('submitted_at')->label(__('Отправлено'))->dateTime('d.m.Y H:i'),
                 ])
                 ->columns(2),

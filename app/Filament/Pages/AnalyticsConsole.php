@@ -7,7 +7,9 @@ use App\Models\User;
 use App\Modules\Analytics\Application\AcquisitionAnalytics;
 use App\Modules\Analytics\Application\AnalyticsReportExport;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Analytics\Application\FeedbackAnalytics;
 use App\Modules\Analytics\Application\FinanceAnalytics;
+use App\Modules\Analytics\Application\GoalAnalytics;
 use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Analytics\Application\SchedulingAnalytics;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -93,6 +95,8 @@ final class AnalyticsConsole extends LocalizedPage
                                 'acquisition' => __('Источники клиентов'),
                                 'scheduling' => __('Записи и визиты'),
                                 'finance' => __('Финансы'),
+                                'feedback' => __('Удовлетворённость и обратная связь'),
+                                'goals' => __('Цели и задачи'),
                             ])
                             ->multiple()
                             ->searchable()
@@ -167,6 +171,8 @@ final class AnalyticsConsole extends LocalizedPage
                     'acquisition' => $this->acquisition($actor, $period),
                     'scheduling' => $this->scheduling($actor, $period),
                     'finance' => $this->finance($actor, $period),
+                    'feedback' => $this->feedback($actor, $period),
+                    'goals' => $this->goals($actor, $period),
                     default => null,
                 };
             } catch (Throwable) {
@@ -193,6 +199,8 @@ final class AnalyticsConsole extends LocalizedPage
                     'acquisition' => $this->acquisition($actor, $period),
                     'scheduling' => $this->scheduling($actor, $period),
                     'finance' => $this->finance($actor, $period),
+                    'feedback' => $this->feedback($actor, $period),
+                    'goals' => $this->goals($actor, $period),
                     default => null,
                 };
             } catch (Throwable) {
@@ -240,5 +248,15 @@ final class AnalyticsConsole extends LocalizedPage
             'receipt_count' => $data->receiptCount,
             'debt_minor' => $data->debtMinor,
         ];
+    }
+
+    private function feedback(User $actor, DashboardPeriod $period): array
+    {
+        return app(FeedbackAnalytics::class)->handle($actor, $period)->toArray();
+    }
+
+    private function goals(User $actor, DashboardPeriod $period): array
+    {
+        return app(GoalAnalytics::class)->handle($actor, $period)->toArray();
     }
 }

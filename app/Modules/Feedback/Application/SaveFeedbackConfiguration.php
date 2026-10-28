@@ -5,6 +5,7 @@ namespace App\Modules\Feedback\Application;
 use App\Models\User;
 use App\Modules\Feedback\Domain\Models\FeedbackConfiguration;
 use App\Modules\Feedback\Domain\Models\FeedbackReviewDestination;
+use App\Modules\Feedback\Domain\Models\FeedbackTheme;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -21,6 +22,7 @@ final class SaveFeedbackConfiguration
     ) {}
 
     /** @param array<array-key, mixed> $reviewDestinations */
+    /** @param array<array-key, mixed>|null $feedbackThemes */
     public function handle(
         User $actor,
         bool $enabled,
@@ -29,6 +31,7 @@ final class SaveFeedbackConfiguration
         ?string $reviewUrlRu,
         ?string $reviewUrlEn,
         array $reviewDestinations = [],
+        ?array $feedbackThemes = null,
     ): FeedbackConfiguration {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSettings);
@@ -40,8 +43,9 @@ final class SaveFeedbackConfiguration
         $reviewUrlRu = $this->url($reviewUrlRu, 'review_url_ru');
         $reviewUrlEn = $this->url($reviewUrlEn, 'review_url_en');
         $reviewDestinations = $this->destinations($reviewDestinations);
+        $feedbackThemes = $feedbackThemes === null ? null : $this->themes($feedbackThemes);
 
-        return DB::transaction(function () use ($organization, $actor, $enabled, $positiveThreshold, $lowScoreFeedbackRequired, $reviewUrlRu, $reviewUrlEn, $reviewDestinations): FeedbackConfiguration {
+        return DB::transaction(function () use ($organization, $actor, $enabled, $positiveThreshold, $lowScoreFeedbackRequired, $reviewUrlRu, $reviewUrlEn, $reviewDestinations, $feedbackThemes): FeedbackConfiguration {
             $configuration = FeedbackConfiguration::query()
                 ->where('organization_id', $organization->getKey())
                 ->lockForUpdate()
@@ -72,6 +76,28 @@ final class SaveFeedbackConfiguration
                     'sort_order' => $destination['sort_order'],
                 ])->save();
             }
+            if ($feedbackThemes !== null) {
+                $themeNames = [];
+                foreach ($feedbackThemes as $theme) {
+                    $model = FeedbackTheme::query()
+                        ->where('organization_id', $organization->getKey())
+                        ->where('name', $theme['name'])
+                        ->lockForUpdate()
+                        ->first() ?? new FeedbackTheme;
+                    $model->forceFill([
+                        'organization_id' => $organization->getKey(),
+                        'name' => $theme['name'],
+                        'group_name' => $theme['group_name'],
+                        'is_active' => $theme['is_active'],
+                        'sort_order' => $theme['sort_order'],
+                    ])->save();
+                    $themeNames[] = $theme['name'];
+                }
+                FeedbackTheme::query()
+                    ->where('organization_id', $organization->getKey())
+                    ->when($themeNames !== [], fn ($query) => $query->whereNotIn('name', $themeNames))
+                    ->update(['is_active' => false]);
+            }
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
@@ -85,6 +111,7 @@ final class SaveFeedbackConfiguration
                     'review_url_ru_set' => $reviewUrlRu !== null,
                     'review_url_en_set' => $reviewUrlEn !== null,
                     'review_destinations_count' => count($reviewDestinations),
+                    'feedback_theme_count' => $feedbackThemes === null ? null : count($feedbackThemes),
                 ],
             );
 
@@ -152,5 +179,36 @@ final class SaveFeedbackConfiguration
         }
 
         return $destinations;
+    }
+
+    /** @param array<array-key, mixed> $values
+     * @return list<array{name: string, group_name: string|null, is_active: bool, sort_order: int}>
+     */
+    private function themes(array $values): array
+    {
+        $themes = [];
+        $names = [];
+        foreach (array_values($values) as $index => $value) {
+            if (! is_array($value)) {
+                throw ValidationException::withMessages(['feedback_themes' => 'Проверьте темы обратной связи.']);
+            }
+            $name = trim((string) ($value['name'] ?? ''));
+            if ($name === '' || mb_strlen($name) > 255 || isset($names[$name])) {
+                throw ValidationException::withMessages(['feedback_themes' => 'Названия тем должны быть заполнены и уникальны.']);
+            }
+            $names[$name] = true;
+            $sortOrder = filter_var($value['sort_order'] ?? $value['sortOrder'] ?? $index, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+            if ($sortOrder === false) {
+                throw ValidationException::withMessages(['feedback_themes' => 'Порядок темы указан неверно.']);
+            }
+            $themes[] = [
+                'name' => $name,
+                'group_name' => filled($value['group_name'] ?? $value['groupName'] ?? null) ? trim((string) ($value['group_name'] ?? $value['groupName'])) : null,
+                'is_active' => (bool) ($value['is_active'] ?? $value['isActive'] ?? true),
+                'sort_order' => (int) $sortOrder,
+            ];
+        }
+
+        return $themes;
     }
 }

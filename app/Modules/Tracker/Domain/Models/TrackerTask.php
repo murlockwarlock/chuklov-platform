@@ -11,6 +11,7 @@ use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -51,6 +52,17 @@ class TrackerTask extends Model
     public function entries(): HasMany
     {
         return $this->hasMany(TrackerTaskEntry::class);
+    }
+
+    /** @return BelongsToMany<TrackerGoalTag, $this> */
+    public function goalTags(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            TrackerGoalTag::class,
+            'tracker_task_goal_tags',
+            'tracker_task_id',
+            'tracker_goal_tag_id',
+        )->withPivot(['organization_id', 'client_id']);
     }
 
     protected function casts(): array
