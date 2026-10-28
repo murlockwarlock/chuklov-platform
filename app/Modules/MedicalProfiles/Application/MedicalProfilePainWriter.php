@@ -13,7 +13,6 @@ final readonly class MedicalProfilePainWriter
 {
     public function __construct(
         private MedicalEncryptorInterface $encryptor,
-        private MedicalFrequencyPeriodCatalog $periods,
         private MedicalProblemTagCatalog $tags,
     ) {}
 
@@ -27,15 +26,21 @@ final readonly class MedicalProfilePainWriter
             if (! is_array($rawPain)) {
                 throw ValidationException::withMessages(['pains' => 'Проверьте список болей.']);
             }
-            $input = MedicalPainInput::fromArray($rawPain);
+            $profilePain = $rawPain;
+            unset(
+                $profilePain['frequency_mode'],
+                $profilePain['frequency_count'],
+                $profilePain['frequency_period_unit'],
+                $profilePain['time_of_day'],
+                $profilePain['before_score'],
+                $profilePain['after_score'],
+            );
+            $input = MedicalPainInput::fromArray($profilePain);
             $lineage = $input->lineageKey ?? Str::uuid()->toString();
             if (isset($lineages[$lineage])) {
                 throw ValidationException::withMessages(['pains' => 'Каждая боль должна быть указана только один раз.']);
             }
             $lineages[$lineage] = true;
-            if ($input->frequencyMode === 'count' && $input->frequencyPeriodUnit !== null) {
-                $this->periods->assertActive((int) $profile->organization_id, $input->frequencyPeriodUnit);
-            }
             $inputs[] = [$input, $lineage, $this->tags->assertKnown((int) $profile->organization_id, $input->tagIds)];
         }
 

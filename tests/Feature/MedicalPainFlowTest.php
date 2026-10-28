@@ -133,6 +133,40 @@ final class MedicalPainFlowTest extends TestCase
         self::assertSame('fortnight', $session->pains[0]->frequencyPeriodUnit);
     }
 
+    public function test_profile_pains_keep_frequency_and_session_scores_out_of_the_profile_boundary(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+
+        $profile = app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            pains: [[
+                'name' => 'Шея',
+                'score' => 6,
+                'frequency_mode' => 'count',
+                'frequency_count' => 4,
+                'frequency_period_unit' => 'week',
+                'time_of_day' => ['morning', 'evening'],
+                'before_score' => 9,
+                'after_score' => 2,
+            ]],
+            painsProvided: true,
+        ));
+
+        self::assertSame('permanent', $profile->pains[0]->frequencyMode);
+        self::assertNull($profile->pains[0]->frequencyCount);
+        self::assertNull($profile->pains[0]->frequencyPeriodUnit);
+        self::assertSame(['all'], $profile->pains[0]->timeOfDay);
+        self::assertSame(6, $profile->pains[0]->score);
+        self::assertNull($profile->pains[0]->beforeScore);
+        self::assertNull($profile->pains[0]->afterScore);
+
+        $raw = DB::table('medical_profile_pains')->where('organization_id', $organization->getKey())->sole();
+        self::assertSame('permanent', $raw->frequency_mode);
+        self::assertNull($raw->frequency_count);
+        self::assertNull($raw->frequency_period_unit);
+        self::assertSame(['all'], is_string($raw->time_of_day) ? json_decode($raw->time_of_day, true, 512, JSON_THROW_ON_ERROR) : $raw->time_of_day);
+        self::assertSame($client->getKey(), $raw->client_id);
+    }
+
     public function test_profile_complaints_are_loaded_as_special_complaints_only_for_the_first_session(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
