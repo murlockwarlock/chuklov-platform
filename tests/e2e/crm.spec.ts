@@ -2487,11 +2487,11 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
 
-    await expect(page.getByLabel('Проблемы и динамика боли', { exact: true })).toBeChecked();
-    await page.getByLabel('Источники клиентов', { exact: true }).check();
-    await page.getByLabel('Финансы', { exact: true }).check();
-    await expect(page.getByLabel('Источники клиентов', { exact: true })).toBeChecked();
-    await expect(page.getByLabel('Финансы', { exact: true })).toBeChecked();
+    await expect(page.getByRole('checkbox', { name: 'Проблемы и динамика боли', exact: true })).toBeChecked();
+    await page.getByRole('checkbox', { name: 'Источники клиентов', exact: true }).check();
+    await page.getByRole('checkbox', { name: 'Финансы', exact: true }).check();
+    await expect(page.getByRole('checkbox', { name: 'Источники клиентов', exact: true })).toBeChecked();
+    await expect(page.getByRole('checkbox', { name: 'Финансы', exact: true })).toBeChecked();
 
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
