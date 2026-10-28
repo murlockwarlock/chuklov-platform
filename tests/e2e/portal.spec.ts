@@ -2447,6 +2447,9 @@ test('companion shows accessible typing feedback and respects intentional histor
     console.log('Companion DOM state', await page.evaluate(() => {
         const history = document.querySelector('[data-testid="companion-history"]');
         return {
+            url: window.location.href,
+            title: document.title,
+            body: document.body.textContent?.trim().slice(0, 240) ?? '',
             messages: document.querySelectorAll('.portal-companion__message').length,
             synthetic: document.body.textContent?.includes('Новый синтетический ответ.') ?? false,
             indicator: document.querySelector('[data-testid="companion-new-messages"]') !== null,
