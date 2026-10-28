@@ -2674,7 +2674,7 @@ test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => 
 
     const problemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
     await problemSection.getByRole('button', { name: 'Добавить группу', exact: true }).click();
-    const groupNameInput = problemSection.getByRole('textbox', { name: 'Название группы', exact: true }).last();
+    const groupNameInput = problemSection.getByRole('textbox', { name: 'Название группы*', exact: true }).last();
     await groupNameInput.fill(groupName);
     await problemSection.getByLabel('Порядок', { exact: true }).last().fill('9999');
     await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
