@@ -2443,6 +2443,7 @@ test('companion shows accessible typing feedback and respects intentional histor
 
     const pollResponse = await pollResponsePromise;
     expect(pollResponse.status()).toBe(200);
+    console.log('Companion browser response headers', await pollResponse.allHeaders());
     const pollPayload = await pollResponse.json() as {
         props?: { companion?: { pending?: boolean; messages?: Array<{ id?: string }> } };
     };
