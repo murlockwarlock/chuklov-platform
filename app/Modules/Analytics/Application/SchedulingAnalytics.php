@@ -30,6 +30,9 @@ final class SchedulingAnalytics
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
 
         $organizationId = (int) $organization->getKey();
+        if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
         $clientId = $client?->getKey();
         $bookingTable = (new Booking)->getTable();
         $eventTable = (new BookingEvent)->getTable();

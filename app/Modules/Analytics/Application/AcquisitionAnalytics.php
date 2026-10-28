@@ -47,6 +47,9 @@ final class AcquisitionAnalytics
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
 
         $organizationId = (int) $organization->getKey();
+        if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
         $clientTable = (new Client)->getTable();
         $clientId = $client?->getKey();
 

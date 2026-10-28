@@ -32,6 +32,10 @@ final class PurchaseAnalytics
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewFinance);
+        $organizationId = (int) $organization->getKey();
+        if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
         $clientId = $client?->getKey();
 
         $rows = DB::table((new Purchase)->getTable().' as purchases')
@@ -40,7 +44,7 @@ final class PurchaseAnalytics
                     ->on('items.organization_id', '=', 'purchases.organization_id')
                     ->on('items.purchase_id', '=', 'purchases.id');
             })
-            ->where('purchases.organization_id', (int) $organization->getKey())
+            ->where('purchases.organization_id', $organizationId)
             ->where('purchases.created_at', '>=', $period->startUtc)
             ->where('purchases.created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('purchases.client_id', $clientId))

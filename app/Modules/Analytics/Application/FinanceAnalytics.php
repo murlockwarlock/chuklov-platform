@@ -34,6 +34,9 @@ final class FinanceAnalytics
     {
         $organization = $this->authorization->authorizeView($actor);
         $organizationId = (int) $organization->getKey();
+        if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
 
         try {
             $configuration = $this->configuration->configuration($organization);

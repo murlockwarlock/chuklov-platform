@@ -31,6 +31,10 @@ final class BookingStatusAnalytics
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
+        $organizationId = (int) $organization->getKey();
+        if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
         $clientId = $client?->getKey();
 
         $rows = DB::table((new BookingEvent)->getTable().' as events')
@@ -39,7 +43,7 @@ final class BookingStatusAnalytics
                     ->on('bookings.organization_id', '=', 'events.organization_id')
                     ->on('bookings.id', '=', 'events.booking_id');
             })
-            ->where('events.organization_id', (int) $organization->getKey())
+            ->where('events.organization_id', $organizationId)
             ->where('events.occurred_at', '>=', $period->startUtc)
             ->where('events.occurred_at', '<', $period->endUtc)
             ->whereIn('events.event_type', array_keys(self::Labels))

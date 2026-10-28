@@ -24,6 +24,9 @@ final readonly class ServiceVisitAnalytics
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
         $organizationId = (int) $organization->getKey();
+        if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
         $clientId = $client?->getKey();
         $rows = DB::table('bookings')
             ->join('services', function ($join): void {

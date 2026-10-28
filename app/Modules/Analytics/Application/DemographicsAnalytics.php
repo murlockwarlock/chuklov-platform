@@ -23,9 +23,13 @@ final readonly class DemographicsAnalytics
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
+        $organizationId = (int) $organization->getKey();
+        if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
         $clientId = $client?->getKey();
         $clients = DB::table('clients')
-            ->where('organization_id', $organization->getKey())
+            ->where('organization_id', $organizationId)
             ->where('created_at', '>=', $period->startUtc)
             ->where('created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('id', $clientId))
