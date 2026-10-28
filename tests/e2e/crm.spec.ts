@@ -2728,6 +2728,7 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     const sectionInput = configuredTestItem.getByLabel('Раздел', { exact: true });
     await sectionInput.fill('E2E раздел');
     await sectionInput.press('Tab');
+    await page.waitForLoadState('networkidle');
     const addValueButton = configuredTestItem.getByRole('button', { name: 'Добавить значение', exact: true });
     await expect(addValueButton).toBeVisible();
     await addValueButton.click();
