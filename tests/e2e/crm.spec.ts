@@ -2730,20 +2730,21 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
     await page.getByLabel('Название причины*', { exact: true }).last().fill(causeName);
     await page.getByLabel('Группа', { exact: true }).last().fill('E2E причины');
+    const livewireRequests: Array<{ url: string; postData: string }> = [];
     page.on('request', (request) => {
         if (request.method() === 'POST' && request.url().includes('/livewire')) {
-            console.log(`E2E_LIVEWIRE ${request.url()} ${(request.postData() ?? '').slice(0, 500)}`);
+            livewireRequests.push({ url: request.url(), postData: (request.postData() ?? '').slice(0, 500) });
         }
     });
     const saveCatalogButton = page.getByRole('button', { name: 'Сохранить каталог', exact: true });
-    const saveCatalogMetadata = await saveCatalogButton.evaluate((element) => ({
-        outerHTML: element.outerHTML,
-        formId: element.getAttribute('form'),
-        closestFormId: element.closest('form')?.id ?? null,
-        disabled: (element as HTMLButtonElement).disabled,
-    }));
-    throw new Error(`CATALOG_SAVE_BUTTON ${JSON.stringify(saveCatalogMetadata)}`);
     await saveCatalogButton.click();
+    await page.waitForTimeout(3_000);
+    const invalidFields = await page.locator('[aria-invalid="true"]').evaluateAll((elements) => elements.map((element) => ({
+        tag: element.tagName,
+        ariaLabel: element.getAttribute('aria-label'),
+        value: (element as HTMLInputElement).value,
+    })));
+    throw new Error(`CATALOG_SAVE_DEBUG ${JSON.stringify({ livewireRequests, invalidFields })}`);
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
 
     await page.reload();
