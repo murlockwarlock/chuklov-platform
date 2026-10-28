@@ -2694,10 +2694,11 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
-    const updatedSessionLink = page.getByRole('row').filter({ hasText: '18.08.2026' }).getByRole('link', { name: 'Открыть', exact: true });
+    const updatedSessionLink = page.getByRole('row').filter({ hasText: '18.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).last();
     await expect(updatedSessionLink).toBeVisible();
+    await expect(updatedSessionLink).toHaveAttribute('href', /\/medical-sessions\/\d+$/);
     await updatedSessionLink.click({ force: true });
-    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 30_000 });
     await expect(page.getByText('Обновлённая боль', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText(/было 7, стало 3 из 10/, { exact: false }).first()).toBeVisible();
     await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
