@@ -2436,22 +2436,7 @@ test('staff can manage private client audio recordings', async ({ page }) => {
         await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
     }
 
-    if (test.info().project.name === 'mobile') {
-        console.log('audio-e2e: restored row html', (await audioRow.evaluate((row) => row.outerHTML)).slice(0, 6000));
-        console.log('audio-e2e: page action labels', await page.locator('button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()).filter(Boolean).slice(-30)));
-        console.log('audio-e2e: restored row buttons', await audioRow.locator('button').evaluateAll((buttons) => buttons.map((button) => ({
-            text: button.textContent?.trim(),
-            ariaLabel: button.getAttribute('aria-label'),
-            title: button.getAttribute('title'),
-            dataAction: button.getAttribute('data-action'),
-        }))));
-        await audioRow.getByRole('button', { name: 'Действия', exact: true }).click();
-        const audioActionsMenu = page.locator('.fi-dropdown-panel:visible').last();
-        await expect(audioActionsMenu).toBeVisible();
-        await audioActionsMenu.getByRole('button', { name: 'Удалить', exact: true }).click();
-    } else {
-        await audioRow.getByRole('button', { name: 'Удалить', exact: true }).click();
-    }
+    await audioRow.getByRole('button', { name: 'Удалить', exact: true }).click();
     const deleteConfirmation = page
         .getByRole('alertdialog', { name: 'Удалить', exact: true })
         .getByRole('button', { name: 'Подтвердить', exact: true });
