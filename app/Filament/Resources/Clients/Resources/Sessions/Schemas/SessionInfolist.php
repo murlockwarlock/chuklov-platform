@@ -13,6 +13,8 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalProfileAuthorization;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
+use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
+use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\GetSessionDynamics;
 use App\Modules\Sessions\Application\ListSessionAttachments;
 use App\Modules\Sessions\Application\MedicalSessionAuthorization;
@@ -82,6 +84,35 @@ final class SessionInfolist
                             ->columnSpanFull(),
                     ])
                     ->visible(fn (MedicalSession $record, Section $section): bool => self::clinicalSummary($record, $section) !== null),
+                Section::make(__('Тесты и причины нарушений'))
+                    ->schema([
+                        RepeatableEntry::make('test_results')
+                            ->label(__('Проведённые тесты'))
+                            ->schema([
+                                TextEntry::make('test')->label(__('Тест')),
+                                TextEntry::make('before')->label(__('До сеанса')),
+                                TextEntry::make('after')->label(__('После сеанса')),
+                                TextEntry::make('causes')->label(__('Причины нарушений'))->placeholder(__('Не указаны'))->columnSpanFull(),
+                            ])
+                            ->columns(3)
+                            ->state(fn (MedicalSession $record, RepeatableEntry $entry): array => self::testResults($record, $entry))
+                            ->columnSpanFull(),
+                        TextEntry::make('causes')
+                            ->label(__('Все причины нарушений'))
+                            ->listWithLineBreaks()
+                            ->placeholder(__('Не указаны'))
+                            ->state(fn (MedicalSession $record, TextEntry $entry): array => self::causes($record, $entry)),
+                        RepeatableEntry::make('root_causes')
+                            ->label(__('Первопричины'))
+                            ->schema([
+                                TextEntry::make('cause')->label(__('Причина'))->placeholder(__('Свободное описание')),
+                                TextEntry::make('free_text')->label(__('Комментарий'))->placeholder(__('Нет комментария'))->columnSpanFull(),
+                            ])
+                            ->columns(2)
+                            ->state(fn (MedicalSession $record, RepeatableEntry $entry): array => self::rootCauses($record, $entry))
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn (MedicalSession $record, Section $section): bool => self::hasTestsOrCauses($record, $section)),
                 Section::make(__('Динамика подтверждённых фактов'))
                     ->schema([
                         RepeatableEntry::make('comparison')
@@ -175,6 +206,70 @@ final class SessionInfolist
         }
 
         return app(ReadClinicalAiClientSummary::class)->handle($actor, $client);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function testResults(MedicalSession $record, Component $component): array
+    {
+        $data = self::sessionData($record, $component);
+        if (! $data instanceof MedicalSessionData) {
+            return [];
+        }
+
+        return array_map(static fn ($test): array => [
+            'test' => $test->testName,
+            'before' => $test->beforeLabel ?? __('Не указано'),
+            'after' => $test->afterLabel ?? __('Не указано'),
+            'causes' => collect($test->causes)->pluck('name')->implode(', '),
+        ], $data->testResults);
+    }
+
+    /** @return list<string> */
+    private static function causes(MedicalSession $record, Component $component): array
+    {
+        $data = self::sessionData($record, $component);
+        if (! $data instanceof MedicalSessionData) {
+            return [];
+        }
+
+        return collect($data->testResults)
+            ->flatMap(static fn ($test): array => collect($test->causes)->pluck('name')->all())
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function rootCauses(MedicalSession $record, Component $component): array
+    {
+        $data = self::sessionData($record, $component);
+        if (! $data instanceof MedicalSessionData) {
+            return [];
+        }
+
+        return array_map(static fn ($cause): array => [
+            'cause' => $cause->causeName,
+            'free_text' => $cause->freeText,
+        ], $data->rootCauses);
+    }
+
+    private static function hasTestsOrCauses(MedicalSession $record, Component $component): bool
+    {
+        $data = self::sessionData($record, $component);
+
+        return $data instanceof MedicalSessionData && ($data->testResults !== [] || $data->rootCauses !== []);
+    }
+
+    private static function sessionData(MedicalSession $record, Component $component): ?MedicalSessionData
+    {
+        $actor = auth()->user();
+        $client = self::parentClient($record, $component);
+
+        if (! $actor instanceof User || ! $client instanceof Client) {
+            return null;
+        }
+
+        return app(GetSession::class)->handle($actor, $record, $client);
     }
 
     private static function parentClient(MedicalSession $record, Component $component): ?Client
