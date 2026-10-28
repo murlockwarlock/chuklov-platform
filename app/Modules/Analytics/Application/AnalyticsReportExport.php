@@ -101,6 +101,25 @@ final readonly class AnalyticsReportExport
             if (! isset($results[$key]) || ! is_array($results[$key])) {
                 continue;
             }
+
+            if ($key === 'finance') {
+                foreach ((array) ($results[$key]['accounts'] ?? []) as $account) {
+                    if (! is_array($account)) {
+                        continue;
+                    }
+
+                    $sheet->fromArray([[
+                        $label,
+                        (string) ($account['label'] ?? '—'),
+                        $account['movement_minor'] ?? null,
+                        self::humanAccountType((string) ($account['account_type'] ?? '')),
+                        $account['currency'] ?? null,
+                        null,
+                        null,
+                    ]], null, 'A'.$row++);
+                }
+            }
+
             foreach ($results[$key] as $metric => $value) {
                 if (is_array($value)) {
                     continue;
@@ -140,6 +159,16 @@ final readonly class AnalyticsReportExport
             'expenses_minor' => 'Расходы (минимальные единицы)',
             'cash_movement_minor' => 'Движение денежных средств (минимальные единицы)',
             default => $metric,
+        };
+    }
+
+    private static function humanAccountType(string $type): string
+    {
+        return match ($type) {
+            'cash' => 'Касса',
+            'bank' => 'Банковский счёт',
+            'other' => 'Другое',
+            default => 'Счёт',
         };
     }
 }
