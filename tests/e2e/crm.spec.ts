@@ -2623,7 +2623,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     }
     await page.getByLabel('Особые жалобы', { exact: true }).fill('Первичная запись о боли');
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
-    const testSelect = page.getByRole('combobox', { name: 'Тест', exact: true });
+    const testSelect = page.getByRole('combobox', { name: 'Тест*', exact: true });
     await testSelect.click();
     await page.getByRole('option', { name: testName, exact: true }).click();
     const beforeTestValue = page.getByRole('combobox', { name: 'До сеанса', exact: true });
