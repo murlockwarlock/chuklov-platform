@@ -1046,12 +1046,12 @@ class ViewClient extends LocalizedViewRecord
             ->visible(fn (): bool => $this->canManageClients())
             ->authorize(fn (): bool => $this->canManageClients())
             ->action(function (array $data): void {
-                $submission = app(RecordNpsSubmission::class)->handle(
+                $submission = app(RecordNpsSubmission::class)->handleForStaff(
+                    actor: $this->actor(),
                     client: $this->clientRecord(),
                     score: (int) $data['score'],
                     internalFeedback: is_string($data['internal_feedback'] ?? null) ? $data['internal_feedback'] : null,
                     idempotencyKey: 'crm-feedback-'.Str::uuid()->toString(),
-                    source: 'crm',
                     themeIds: is_array($data['theme_ids'] ?? null) ? $data['theme_ids'] : [],
                 );
                 Notification::make()
