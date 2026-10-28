@@ -2479,6 +2479,51 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
 });
 
+test('staff can analyze several dimensions and download a filtered Excel report', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ financeFlow: true });
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+
+    const dimensions = page.getByRole('combobox', { name: 'Показатели', exact: true });
+    await dimensions.click();
+    await page.locator('.fi-select-input-option:visible').filter({ hasText: 'Источники клиентов' }).click();
+    await dimensions.click();
+    await page.locator('.fi-select-input-option:visible').filter({ hasText: 'Финансы' }).click();
+    await expect(dimensions).toContainText('Проблемы и динамика боли');
+    await expect(dimensions).toContainText('Источники клиентов');
+    await expect(dimensions).toContainText('Финансы');
+
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Источники клиентов', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Финансы', exact: true })).toBeVisible();
+
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('Analytics export did not produce a file.');
+    }
+    const workbookBytes = readFileSync(downloadPath);
+    expect(workbookBytes.subarray(0, 2).toString()).toBe('PK');
+    const workbookXml = execFileSync('unzip', ['-p', downloadPath, 'xl/sharedStrings.xml'], { encoding: 'utf8' });
+    expect(workbookXml).toContain('Показатель');
+    expect(workbookXml).toContain('Финансы');
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Финансы', exact: true })).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+    await expect(page.getByRole('button', { name: 'Анализировать', exact: true })).toBeVisible();
+});
+
 test('crm sidebar navigation operates via SPA mode without full page reloads', async ({ page }) => {
     const fixture = createCrmFixture();
 
