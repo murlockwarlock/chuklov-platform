@@ -2731,6 +2731,12 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
     await page.getByLabel('Название причины*', { exact: true }).last().fill(causeName);
     await page.getByLabel('Группа', { exact: true }).last().fill('E2E причины');
+    await page.locator('#medical-clinical-catalog-form').evaluate((element) => {
+        (window as Window & { catalogSubmitState?: { fired: boolean; defaultPrevented: boolean } }).catalogSubmitState = { fired: false, defaultPrevented: false };
+        element.addEventListener('submit', (event) => {
+            (window as Window & { catalogSubmitState?: { fired: boolean; defaultPrevented: boolean } }).catalogSubmitState = { fired: true, defaultPrevented: event.defaultPrevented };
+        }, { capture: true, once: true });
+    });
     const catalogSaveResponsePromise = page.waitForResponse((response) => {
         const postData = response.request().postData() ?? '';
         return response.request().method() === 'POST' && response.url().includes('/livewire') && !postData.includes('"method":"$refresh"');
@@ -2741,6 +2747,11 @@ test('staff can maintain the clinical test catalog and use it in a new session',
             checkValidity: (element as HTMLFormElement).checkValidity(),
             closestWireId: element.closest('[wire\\:id]')?.getAttribute('wire:id') ?? null,
             closestWireName: element.closest('[wire\\:name]')?.getAttribute('wire:name') ?? null,
+            forms: Array.from(document.querySelectorAll('form')).map((form) => ({ id: form.id, wireSubmit: form.getAttribute('wire:submit') })),
+            catalogSubmitState: (window as Window & { catalogSubmitState?: unknown }).catalogSubmitState ?? null,
+            livewireComponents: typeof (window as Window & { Livewire?: { all?: () => Array<{ id?: string; name?: string; el?: HTMLElement }> } }).Livewire?.all === 'function'
+                ? (window as Window & { Livewire?: { all: () => Array<{ id?: string; name?: string; el?: HTMLElement }> } }).Livewire?.all().map((component) => ({ id: component.id, name: component.name, rootTag: component.el?.tagName, rootContainsForm: component.el?.contains(element) }))
+                : [],
             livewirePresent: Boolean((window as Window & { Livewire?: unknown }).Livewire),
         }));
         throw new Error(`CATALOG_SAVE_NO_RESPONSE ${JSON.stringify(formMetadata)}`);
