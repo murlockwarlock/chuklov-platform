@@ -2437,6 +2437,12 @@ test('staff can manage private client audio recordings', async ({ page }) => {
     }
 
     if (test.info().project.name === 'mobile') {
+        console.log('audio-e2e: restored row buttons', await audioRow.locator('button').evaluateAll((buttons) => buttons.map((button) => ({
+            text: button.textContent?.trim(),
+            ariaLabel: button.getAttribute('aria-label'),
+            title: button.getAttribute('title'),
+            dataAction: button.getAttribute('data-action'),
+        }))));
         await audioRow.getByRole('button', { name: 'Действия', exact: true }).click();
         const audioActionsMenu = page.locator('.fi-dropdown-panel:visible').last();
         await expect(audioActionsMenu).toBeVisible();
