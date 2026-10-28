@@ -388,6 +388,12 @@ final class SessionInfolist
         }
 
         $periods = app(MedicalFrequencyPeriodCatalog::class)->options(app(OrganizationContext::class)->id());
+        foreach (collect($data->pains)->pluck('frequencyPeriodUnit')->filter(static fn (mixed $key): bool => is_string($key))->unique() as $periodKey) {
+            $periods = [
+                ...$periods,
+                ...app(MedicalFrequencyPeriodCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (string) $periodKey),
+            ];
+        }
         $timeLabels = [
             'all' => __('Весь день'),
             'morning' => __('Утро'),

@@ -20,6 +20,7 @@ use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalFrequencyPeriodUnit;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -434,6 +435,10 @@ final class SessionCockpitTest extends TestCase
             ]],
         ));
         $session = MedicalSession::query()->whereKey($result->id)->firstOrFail();
+        MedicalFrequencyPeriodUnit::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('key', 'week')
+            ->update(['is_active' => false]);
 
         $this->actingAs($admin)
             ->get($this->relativeUrl(ViewMedicalSession::getUrl([
@@ -443,7 +448,7 @@ final class SessionCockpitTest extends TestCase
             ->assertSuccessful()
             ->assertSee('Боли')
             ->assertSee('Шея')
-            ->assertSee('3 раз за неделя')
+            ->assertSee('3 раз за неделя (неактивен)')
             ->assertSee('Утро, Вечер')
             ->assertSee('6/10')
             ->assertSee('2/10');
