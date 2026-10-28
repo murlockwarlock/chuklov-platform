@@ -2759,11 +2759,14 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
     const testSelect = page.getByRole('combobox', { name: 'Тест*', exact: true });
     await testSelect.click();
-    await expect(page.getByRole('option', { name: testName, exact: true })).toBeVisible();
-    await page.getByRole('option', { name: testName, exact: true }).click();
+    const testOption = page.getByRole('option').filter({ hasText: testName }).last();
+    await expect(testOption).toBeVisible();
+    await testOption.click();
     const beforeTestValue = page.getByRole('combobox', { name: 'До сеанса', exact: true });
     await beforeTestValue.click();
-    await expect(page.getByRole('option', { name: 'Отклонение', exact: true })).toBeVisible();
+    const abnormalValueOption = page.getByRole('option').filter({ hasText: 'Отклонение' }).last();
+    await expect(abnormalValueOption).toBeVisible();
+    await abnormalValueOption.click();
 });
 
 test('staff can analyze several dimensions and download a filtered Excel report', async ({ page }) => {
