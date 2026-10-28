@@ -2363,9 +2363,12 @@ test('staff can manage private client audio recordings', async ({ page }) => {
     test.setTimeout(90_000);
     const fixture = createCrmFixture();
 
+    console.log('audio-e2e: fixture');
     await login(page, fixture);
+    console.log('audio-e2e: logged in');
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
+    console.log('audio-e2e: panel');
     const audioPanel = page.getByRole('tabpanel', { name: /Аудиозаписи/ });
     const audioTable = page.getByRole('table', { name: 'Аудиозаписи' });
     await expect(audioPanel.getByRole('heading', { name: 'Аудиозаписи', exact: true })).toBeVisible();
@@ -2390,9 +2393,11 @@ test('staff can manage private client audio recordings', async ({ page }) => {
     const selectedAudio = audioDialog.getByRole('group', { name: 'qa-session.wav', exact: true });
     await expect(selectedAudio).toBeVisible({ timeout: 15_000 });
     await expect(selectedAudio.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
+    console.log('audio-e2e: upload ready');
     await audioDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(audioDialog).toBeHidden();
     await expect(page.getByText('Аудиозапись загружена', { exact: true })).toBeVisible();
+    console.log('audio-e2e: uploaded');
 
     const audioRow = audioTable.getByRole('row').filter({ hasText: 'Сеанс QA' });
     await expect(audioRow).toHaveCount(1);
@@ -2403,6 +2408,7 @@ test('staff can manage private client audio recordings', async ({ page }) => {
     const playbackSource = await playbackDialog.locator('audio').getAttribute('src');
     expect(playbackSource).toMatch(/\/admin\/attachments\//);
     await playbackDialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
+    console.log('audio-e2e: playback');
 
     const downloadResponseMatcher = (response: { status(): number; url(): string }): boolean => {
         const url = new URL(response.url());
@@ -2432,6 +2438,7 @@ test('staff can manage private client audio recordings', async ({ page }) => {
         expect(response.headers()['content-type']).toContain('audio');
         expect(Number(response.headers()['content-length'])).toBeGreaterThan(0);
     }
+    console.log('audio-e2e: download');
 
     await audioRow.getByRole('button', { name: 'Удалить', exact: true }).click();
     const deleteConfirmation = page
@@ -2443,6 +2450,7 @@ test('staff can manage private client audio recordings', async ({ page }) => {
     await page.reload();
     await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
     await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA' })).toHaveCount(0);
+    console.log('audio-e2e: deleted');
 
     if (playbackSource === null) {
         throw new Error('The authorized audio preview did not expose a private URL.');
@@ -2453,6 +2461,7 @@ test('staff can manage private client audio recordings', async ({ page }) => {
         { maxRedirects: 0, timeout: 10_000 },
     );
     expect([302, 401, 403]).toContain(unauthorizedResponse.status());
+    console.log('audio-e2e: unauthorized');
 });
 
 test('staff can complete the clinical AI workflow from the client cockpit', async ({ page }) => {
