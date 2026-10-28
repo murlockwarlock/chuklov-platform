@@ -66,7 +66,7 @@ class EditMedicalSession extends LocalizedEditRecord
                     abort_unless($record instanceof MedicalSession, 404);
                     $result = app(GenerateSessionResult::class)->handle($actor, $record, $this->parentClient());
                     $this->data['result'] = $result;
-                    $this->form->fill($this->data);
+                    $this->form->fillPartially(['result' => $result], ['result']);
                     Notification::make()->title(__('Результат заполнен'))->success()->send();
                 }),
             $this->suggestSessionPainTagsAction(),
