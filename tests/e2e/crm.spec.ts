@@ -98,7 +98,7 @@ async function uploadCrmMedicalReport(page: Page, filename: string, expectedOutc
     await expect(page.getByText('Файл загружен', { exact: true })).toBeVisible();
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -139,6 +139,34 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 'organization_id' => $organization->getKey(),
                 'name' => 'E2E проблема '.$suffix,
                 'group_name' => 'E2E группа '.$suffix,
+                'is_active' => true,
+                'sort_order' => 0,
+            ]);
+        }
+        if (${options.clinicalCatalogFlow ? 'true' : 'false'}) {
+            $test = \\App\\Modules\\Sessions\\Domain\\Models\\MedicalTestDefinition::query()->create([
+                'organization_id' => $organization->getKey(),
+                'key' => 'e2e_test_'.$suffix,
+                'name' => 'E2E тест '.$suffix,
+                'section' => 'E2E раздел',
+                'is_active' => true,
+                'sort_order' => 0,
+            ]);
+            foreach ([['normal', 'Норма', false], ['abnormal', 'Отклонение', true]] as [$key, $label, $isAbnormal]) {
+                \\App\\Modules\\Sessions\\Domain\\Models\\MedicalTestValue::query()->create([
+                    'organization_id' => $organization->getKey(),
+                    'medical_test_definition_id' => $test->getKey(),
+                    'key' => $key,
+                    'label' => $label,
+                    'is_abnormal' => $isAbnormal,
+                    'is_active' => true,
+                    'sort_order' => $isAbnormal ? 1 : 0,
+                ]);
+            }
+            \\App\\Modules\\Sessions\\Domain\\Models\\MedicalCauseDefinition::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => 'E2E причина '.$suffix,
+                'group_name' => 'E2E причины',
                 'is_active' => true,
                 'sort_order' => 0,
             ]);
@@ -2555,7 +2583,10 @@ test('staff can complete the clinical AI workflow from the client cockpit', asyn
 
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
     test.setTimeout(60_000);
-    const fixture = createCrmFixture();
+    const fixture = createCrmFixture({ clinicalCatalogFlow: true });
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const testName = `E2E раздел: E2E тест ${suffix}`;
+    const causeName = `E2E причины: E2E причина ${suffix}`;
 
     await login(page, fixture);
 
@@ -2580,7 +2611,31 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
     await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
     await page.getByLabel('Название или описание боли*', { exact: true }).fill('Первичная боль');
+    await page.getByRole('slider', { name: 'До сеанса', exact: true }).fill('7');
+    await page.getByRole('slider', { name: 'После сеанса', exact: true }).fill('3');
     await page.getByLabel('Особые жалобы', { exact: true }).fill('Первичная запись о боли');
+    await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
+    const testSelect = page.getByRole('combobox', { name: 'Тест', exact: true });
+    await testSelect.click();
+    await page.getByRole('option', { name: testName, exact: true }).click();
+    const beforeTestValue = page.getByRole('combobox', { name: 'До сеанса', exact: true });
+    await beforeTestValue.click();
+    await page.getByRole('option', { name: 'Норма', exact: true }).click();
+    const afterTestValue = page.getByRole('combobox', { name: 'После сеанса', exact: true });
+    await afterTestValue.click();
+    await page.getByRole('option', { name: 'Отклонение · нарушение', exact: true }).click();
+    const testCauseSelect = page.getByRole('combobox', { name: 'Причины нарушений', exact: true }).first();
+    await testCauseSelect.click();
+    await page.getByRole('option', { name: causeName, exact: true }).click();
+    await page.getByRole('button', { name: 'Добавить первопричину', exact: true }).click();
+    const rootCauseSelect = page.getByRole('combobox', { name: 'Причина из сеанса', exact: true });
+    await rootCauseSelect.click();
+    await page.getByRole('option', { name: causeName, exact: true }).click();
+    await page.getByLabel('Дополнительное описание', { exact: true }).fill('E2E описание первопричины');
+    await page.getByLabel('Гипотеза первопричины', { exact: true }).fill('E2E гипотеза');
+    await page.getByLabel('Алгоритм / протокол сеанса', { exact: true }).fill('E2E протокол');
+    await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill('E2E стало легче');
+    await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill('E2E плечи ровнее');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
@@ -2592,6 +2647,12 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
     await expect(page.getByText('Первичная боль', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
+    await expect(page.getByText(testName, { exact: true })).toBeVisible();
+    await expect(page.getByText(causeName, { exact: true })).toBeVisible();
+    await expect(page.getByText('E2E описание первопричины', { exact: true })).toBeVisible();
+    await expect(page.getByText('E2E протокол', { exact: true })).toBeVisible();
+    await expect(page.getByText('E2E стало легче', { exact: true })).toBeVisible();
+    await expect(page.getByText('E2E плечи ровнее', { exact: true })).toBeVisible();
     const dynamics = page.getByLabel('Динамика подтверждённых фактов');
     await expect(dynamics.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
     await expect(dynamics.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
@@ -2605,6 +2666,9 @@ test('staff can create, view, and edit a client session from the CRM client flow
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
     await page.getByLabel('Название или описание боли*', { exact: true }).fill('Обновлённая боль');
+    await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
+    await expect(page.getByText('Результат заполнен', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Результат после сеанса', { exact: true })).toContainText('было 7, стало 3');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
@@ -2615,6 +2679,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await updatedSessionLink.click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
     await expect(page.getByText('Обновлённая боль', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText('было 7, стало 3 из 10', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
