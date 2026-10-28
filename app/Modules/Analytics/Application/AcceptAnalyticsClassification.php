@@ -99,14 +99,15 @@ final readonly class AcceptAnalyticsClassification
             ->firstOrFail();
         $suggestedIds = $this->suggestedIds($run->suggestions);
         $selectedIds = $themeIds === null ? $suggestedIds : $themeIds;
-        $selectedIds = $this->themes->assertKnown($organizationId, $selectedIds);
+        $preservedIds = $submission->themes()->pluck('feedback_themes.id')->all();
+        $selectedIds = $this->themes->assertKnown($organizationId, $selectedIds, $preservedIds);
 
         $submission->themes()->syncWithPivotValues($selectedIds, [
             'organization_id' => $organizationId,
             'client_id' => $submission->client_id,
         ]);
 
-        return array_values(array_map(static fn (mixed $id): int => (int) $id, $selectedIds));
+        return $selectedIds;
     }
 
     /**
@@ -127,14 +128,15 @@ final readonly class AcceptAnalyticsClassification
         }
         $suggestedIds = $this->suggestedIds($run->suggestions);
         $selectedIds = $themeIds === null ? $suggestedIds : $themeIds;
-        $selectedIds = $this->goalTags->assertKnown($organizationId, $selectedIds);
+        $preservedIds = $task->goalTags()->pluck('tracker_goal_tags.id')->all();
+        $selectedIds = $this->goalTags->assertKnown($organizationId, $selectedIds, $preservedIds);
 
         $task->goalTags()->syncWithPivotValues($selectedIds, [
             'organization_id' => $organizationId,
             'client_id' => $task->client_id,
         ]);
 
-        return array_values(array_map(static fn (mixed $id): int => (int) $id, $selectedIds));
+        return $selectedIds;
     }
 
     /**
@@ -155,14 +157,15 @@ final readonly class AcceptAnalyticsClassification
         }
         $suggestedIds = $this->suggestedIds($run->suggestions);
         $selectedIds = $themeIds === null ? $suggestedIds : $themeIds;
-        $selectedIds = $this->problemTags->assertKnown($organizationId, $selectedIds);
+        $preservedIds = $pain->problemTags()->pluck('medical_problem_tags.id')->all();
+        $selectedIds = $this->problemTags->assertKnown($organizationId, $selectedIds, $preservedIds);
 
         $pain->problemTags()->syncWithPivotValues($selectedIds, [
             'organization_id' => $organizationId,
             'client_id' => $pain->client_id,
         ]);
 
-        return array_values(array_map(static fn (mixed $id): int => (int) $id, $selectedIds));
+        return $selectedIds;
     }
 
     /** @return list<int> */

@@ -683,7 +683,7 @@ class ViewClient extends LocalizedViewRecord
                     ->required(),
                 Select::make('goal_tag_ids')
                     ->label(__('Категории задачи'))
-                    ->options(fn (): array => app(TrackerGoalTagCatalog::class)->options(app(OrganizationContext::class)->id()))
+                    ->options(fn (Get $get): array => app(TrackerGoalTagCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (array) $get('goal_tag_ids')))
                     ->multiple()
                     ->searchable()
                     ->preload(),
@@ -770,7 +770,7 @@ class ViewClient extends LocalizedViewRecord
                     ->required(),
                 Select::make('goal_tag_ids')
                     ->label(__('Категории задачи'))
-                    ->options(fn (): array => app(TrackerGoalTagCatalog::class)->options(app(OrganizationContext::class)->id()))
+                    ->options(fn (Get $get): array => app(TrackerGoalTagCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (array) $get('goal_tag_ids')))
                     ->multiple()
                     ->searchable()
                     ->preload(),
@@ -863,7 +863,7 @@ class ViewClient extends LocalizedViewRecord
                     ->required(),
                 Select::make('tag_ids')
                     ->label(__('Категории проблемы'))
-                    ->options(fn (): array => app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id()))
+                    ->options(fn (Get $get): array => app(MedicalProblemTagCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (array) $get('tag_ids')))
                     ->multiple()
                     ->searchable()
                     ->preload(),

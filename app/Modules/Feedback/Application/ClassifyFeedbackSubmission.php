@@ -26,7 +26,8 @@ final readonly class ClassifyFeedbackSubmission
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
         abort_unless((int) $submission->organization_id === (int) $organization->getKey(), 404);
 
-        $themeIds = $this->themes->assertKnown((int) $organization->getKey(), $themeIds);
+        $preservedThemeIds = $submission->themes()->pluck('feedback_themes.id')->all();
+        $themeIds = $this->themes->assertKnown((int) $organization->getKey(), $themeIds, $preservedThemeIds);
 
         return DB::transaction(function () use ($organization, $actor, $submission, $themeIds): FeedbackSubmission {
             $locked = FeedbackSubmission::query()

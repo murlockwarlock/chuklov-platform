@@ -30,6 +30,7 @@ use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
@@ -148,7 +149,7 @@ final class FeedbackSubmissionResource extends LocalizedResource
                     ->schema([
                         Select::make('theme_ids')
                             ->label(__('Темы комментария'))
-                            ->options(fn (): array => app(FeedbackThemeCatalog::class)->options(app(OrganizationContext::class)->id()))
+                            ->options(fn (Get $get): array => app(FeedbackThemeCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (array) $get('theme_ids')))
                             ->multiple()
                             ->searchable()
                             ->preload(),
@@ -209,7 +210,7 @@ final class FeedbackSubmissionResource extends LocalizedResource
                     ->schema([
                         Select::make('theme_ids')
                             ->label(__('Темы комментария'))
-                            ->options(fn (): array => app(FeedbackThemeCatalog::class)->options(app(OrganizationContext::class)->id()))
+                            ->options(fn (Get $get): array => app(FeedbackThemeCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (array) $get('theme_ids')))
                             ->multiple()
                             ->searchable()
                             ->preload(),
