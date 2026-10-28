@@ -2613,16 +2613,31 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
 
-    await expect(page.getByRole('checkbox', { name: 'Проблемы и динамика боли', exact: true })).toBeChecked();
-    await page.getByRole('checkbox', { name: 'Источники клиентов', exact: true }).check();
-    await page.getByRole('checkbox', { name: 'Финансы', exact: true }).check();
-    await expect(page.getByRole('checkbox', { name: 'Источники клиентов', exact: true })).toBeChecked();
-    await expect(page.getByRole('checkbox', { name: 'Финансы', exact: true })).toBeChecked();
+    const dimensions = [
+        'Проблемы и динамика боли',
+        'Источники клиентов',
+        'Записи и визиты',
+        'Финансы',
+        'Удовлетворённость и обратная связь',
+        'Цели и задачи',
+        'Демография клиентов',
+        'Услуги и визиты',
+        'Типы покупок',
+        'Статусы записей',
+        'Категории клиентов',
+    ];
+    for (const dimension of dimensions) {
+        const checkbox = page.getByRole('checkbox', { name: dimension, exact: true });
+        await expect(checkbox).toBeVisible();
+        if (! await checkbox.isChecked()) {
+            await checkbox.check();
+        }
+    }
 
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Источники клиентов', exact: true })).toBeVisible();
-    await expect(page.getByRole('heading', { name: 'Финансы', exact: true })).toBeVisible();
+    for (const dimension of dimensions) {
+        await expect(page.getByRole('heading', { name: dimension, exact: true })).toBeVisible();
+    }
 
     const [download] = await Promise.all([
         page.waitForEvent('download'),
