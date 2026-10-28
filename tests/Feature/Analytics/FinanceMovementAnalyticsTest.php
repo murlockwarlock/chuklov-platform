@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Analytics;
 
+use App\Filament\Pages\FinanceExpenseEntry;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\FinanceAnalytics;
@@ -15,8 +16,10 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Carbon\CarbonImmutable;
+use Filament\Facades\Filament;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class FinanceMovementAnalyticsTest extends TestCase
@@ -80,6 +83,41 @@ final class FinanceMovementAnalyticsTest extends TestCase
         app(FinanceMovementConfiguration::class)->save($otherAdmin, [
             ['id' => $foreignAccount->getKey(), 'name' => 'Чужая касса', 'account_type' => 'cash', 'currency' => 'USD', 'is_active' => true, 'sort_order' => 1],
         ], []);
+    }
+
+    public function test_crm_expense_form_records_a_movement_using_configured_account_and_category(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'USD',
+            'display_currency' => 'USD',
+            'allowed_currencies' => ['USD'],
+            'force_single_currency' => true,
+            'rounding_mode' => 'half_up',
+        ]);
+        app(FinanceMovementConfiguration::class)->save($admin, [
+            ['name' => 'Касса', 'account_type' => 'cash', 'currency' => 'USD', 'is_active' => true, 'sort_order' => 1],
+        ], [
+            ['name' => 'Аренда', 'is_active' => true, 'sort_order' => 1],
+        ]);
+        $account = FinanceAccount::query()->where('organization_id', $organization->getKey())->sole();
+        $category = FinanceExpenseCategory::query()->where('organization_id', $organization->getKey())->sole();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(FinanceExpenseEntry::class)
+            ->fillForm([
+                'account_id' => $account->getKey(),
+                'category_id' => $category->getKey(),
+                'amount' => '12.50',
+                'occurred_at' => '2026-10-10 10:00',
+                'note' => 'Аренда кабинета',
+            ])
+            ->assertHasNoFormErrors()
+            ->call('save');
+        $component->assertNotified('Расход записан');
+
+        self::assertSame(-1250, FinancialLedgerEntry::query()->where('organization_id', $organization->getKey())->sole()->amount_minor);
     }
 
     /** @return array{0: Organization, 1: User} */

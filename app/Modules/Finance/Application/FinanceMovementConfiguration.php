@@ -132,6 +132,33 @@ final class FinanceMovementConfiguration
         return $this->catalog->options();
     }
 
+    /** @return array<int, string> */
+    public function activeAccountOptions(): array
+    {
+        return FinanceAccount::query()
+            ->where('organization_id', $this->context->id())
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get()
+            ->mapWithKeys(static fn (FinanceAccount $account): array => [
+                $account->getKey() => $account->name.' ('.(string) $account->getRawOriginal('currency').')',
+            ])
+            ->all();
+    }
+
+    /** @return array<int, string> */
+    public function activeCategoryOptions(): array
+    {
+        return FinanceExpenseCategory::query()
+            ->where('organization_id', $this->context->id())
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->pluck('name', 'id')
+            ->all();
+    }
+
     /** @return list<array{id: int|null, name: string, account_type: string, currency: string, is_active: bool, sort_order: int}> */
     private function accounts(array $values): array
     {
