@@ -2682,7 +2682,7 @@ test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => 
 
     await page.reload();
     const reopenedProblemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
-    const reopenedNameInput = reopenedProblemSection.getByRole('textbox', { name: 'Название группы', exact: true }).filter({ hasValue: groupName });
+    const reopenedNameInput = reopenedProblemSection.getByDisplayValue(groupName, { exact: true });
     await expect(reopenedNameInput).toHaveCount(1);
     await reopenedNameInput.fill(renamedGroupName);
     const activeToggle = reopenedProblemSection.getByLabel('Активна', { exact: true }).last();
@@ -2694,7 +2694,7 @@ test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => 
 
     await page.reload();
     const finalProblemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
-    await expect(finalProblemSection.getByRole('textbox', { name: 'Название группы', exact: true }).filter({ hasValue: renamedGroupName })).toHaveCount(1);
+    await expect(finalProblemSection.getByDisplayValue(renamedGroupName, { exact: true })).toHaveCount(1);
     await expect(finalProblemSection.getByLabel('Активна', { exact: true }).last()).not.toBeChecked();
     await expect(page.locator('html')).toBeVisible();
     await assertNoHorizontalOverflow(page);
