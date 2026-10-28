@@ -149,6 +149,7 @@ final class FeedbackSubmissionResource extends LocalizedResource
                                 array_keys($options),
                                 array_values($options),
                             ),
+                            force: true,
                         );
                         $labels = collect($result->suggestions)->pluck('label')->implode(', ');
                         if ($labels !== '') {

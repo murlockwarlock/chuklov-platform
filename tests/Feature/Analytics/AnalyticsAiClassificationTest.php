@@ -120,6 +120,21 @@ final class AnalyticsAiClassificationTest extends TestCase
         self::assertSame(ClassificationRunStatus::Succeeded, $accepted->status);
         self::assertSame([$theme->getKey()], $submission->refresh()->themes()->pluck('feedback_themes.id')->all());
 
+        $reprocessed = app(SuggestAnalyticsTags::class)->handle(
+            actor: $admin,
+            taxonomy: 'feedback',
+            sourceType: 'feedback_submission',
+            sourceId: (int) $submission->getKey(),
+            clientId: (int) $client->getKey(),
+            sourceText: (string) $submission->internal_feedback,
+            availableTags: [['id' => (int) $theme->getKey(), 'label' => 'Процесс: Время восстановления']],
+            force: true,
+        );
+
+        self::assertSame($run->runId, $reprocessed->runId);
+        self::assertSame(ClassificationRunStatus::NeedsReview, $reprocessed->status);
+        self::assertSame(2, $calls);
+
         $replayed = app(SuggestAnalyticsTags::class)->handle(
             actor: $admin,
             taxonomy: 'feedback',
@@ -131,7 +146,7 @@ final class AnalyticsAiClassificationTest extends TestCase
         );
 
         self::assertSame($run->runId, $replayed->runId);
-        self::assertSame(1, $calls);
+        self::assertSame(2, $calls);
         self::assertSame(1, AnalyticsClassificationRun::query()->where('organization_id', $organization->getKey())->count());
 
         $acceptedAgain = app(AcceptAnalyticsClassification::class)->handle(
@@ -141,6 +156,21 @@ final class AnalyticsAiClassificationTest extends TestCase
         );
 
         self::assertSame(ClassificationRunStatus::Succeeded, $acceptedAgain->status);
+
+        $changed = app(SuggestAnalyticsTags::class)->handle(
+            actor: $admin,
+            taxonomy: 'feedback',
+            sourceType: 'feedback_submission',
+            sourceId: (int) $submission->getKey(),
+            clientId: (int) $client->getKey(),
+            sourceText: 'После курса хотелось больше времени на восстановление и сна.',
+            availableTags: [['id' => (int) $theme->getKey(), 'label' => 'Процесс: Время восстановления']],
+        );
+
+        self::assertNotSame($run->runId, $changed->runId);
+        self::assertSame(ClassificationRunStatus::NeedsReview, $changed->status);
+        self::assertSame(ClassificationRunStatus::Stale, AnalyticsClassificationRun::query()->findOrFail($run->runId)->status);
+        self::assertSame(3, $calls);
     }
 
     public function test_invalid_ai_output_fails_without_assigning_tags_and_can_retry(): void

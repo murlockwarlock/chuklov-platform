@@ -38,6 +38,7 @@ final readonly class SuggestAnalyticsTags
         ?int $clientId,
         string $sourceText,
         array $availableTags,
+        bool $force = false,
     ): ClassificationResultData {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
@@ -60,7 +61,7 @@ final readonly class SuggestAnalyticsTags
             'source_text' => mb_substr($sourceText, 0, 4000),
             'tags' => $availableTags,
         ], JSON_THROW_ON_ERROR));
-        [$run, $shouldExecute] = $this->claim($organizationId, $taxonomy, $sourceType, $sourceId, $clientId, $digest);
+        [$run, $shouldExecute] = $this->claim($organizationId, $taxonomy, $sourceType, $sourceId, $clientId, $digest, $force);
         if (! $shouldExecute) {
             return $this->result($run);
         }
@@ -89,7 +90,7 @@ final readonly class SuggestAnalyticsTags
                     'source_text' => mb_substr($sourceText, 0, 4000),
                     'allowed_tags' => array_map(static fn (array $tag): string => $tag['label'], $availableTags),
                 ],
-                idempotencyKey: 'analytics-classification:'.$organizationId.':'.$taxonomy.':'.$sourceType.':'.$sourceId.':'.$digest,
+                idempotencyKey: 'analytics-classification:'.$organizationId.':'.$taxonomy.':'.$sourceType.':'.$sourceId.':'.$digest.':attempt:'.$run->attempt_count,
                 actor: $actor,
             ));
             $suggestions = $this->validateOutput($result->outputPayload, $availableTags);
@@ -118,10 +119,27 @@ final readonly class SuggestAnalyticsTags
     }
 
     /** @return array{0: AnalyticsClassificationRun, 1: bool} */
-    private function claim(int $organizationId, string $taxonomy, string $sourceType, int $sourceId, ?int $clientId, string $digest): array
+    private function claim(int $organizationId, string $taxonomy, string $sourceType, int $sourceId, ?int $clientId, string $digest, bool $force): array
     {
         try {
-            return DB::transaction(function () use ($organizationId, $taxonomy, $sourceType, $sourceId, $clientId, $digest): array {
+            return DB::transaction(function () use ($organizationId, $taxonomy, $sourceType, $sourceId, $clientId, $digest, $force): array {
+                AnalyticsClassificationRun::query()
+                    ->where('organization_id', $organizationId)
+                    ->where('taxonomy', $taxonomy)
+                    ->where('source_type', $sourceType)
+                    ->where('source_id', $sourceId)
+                    ->where('source_digest', '!=', $digest)
+                    ->where('status', '!=', ClassificationRunStatus::Stale->value)
+                    ->lockForUpdate()
+                    ->get()
+                    ->each(function (AnalyticsClassificationRun $stale): void {
+                        $stale->forceFill([
+                            'status' => ClassificationRunStatus::Stale,
+                            'error_code' => 'source_changed',
+                            'error_message_sanitized' => 'Источник классификации изменился.',
+                            'updated_at' => now(),
+                        ])->save();
+                    });
                 $run = AnalyticsClassificationRun::query()
                     ->where('organization_id', $organizationId)
                     ->where('taxonomy', $taxonomy)
@@ -131,12 +149,14 @@ final readonly class SuggestAnalyticsTags
                     ->lockForUpdate()
                     ->first();
                 if ($run instanceof AnalyticsClassificationRun) {
-                    if ($run->status !== ClassificationRunStatus::Failed) {
+                    if ($run->status === ClassificationRunStatus::Processing
+                        || (! $force && ! in_array($run->status, [ClassificationRunStatus::Failed, ClassificationRunStatus::Stale], true))) {
                         return [$run, false];
                     }
                     $run->forceFill([
                         'status' => ClassificationRunStatus::Processing,
                         'attempt_count' => $run->attempt_count + 1,
+                        'suggestions' => null,
                         'error_code' => null,
                         'error_message_sanitized' => null,
                         'updated_at' => now(),
@@ -173,7 +193,7 @@ final readonly class SuggestAnalyticsTags
     }
 
     /** @param array<string, mixed>|null $payload
-     * @param list<array{id: int, label: string}> $availableTags
+     * @param  list<array{id: int, label: string}>  $availableTags
      * @return list<array{id: int, label: string}>
      */
     private function validateOutput(?array $payload, array $availableTags): ?array

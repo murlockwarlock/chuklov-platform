@@ -8,4 +8,5 @@ enum ClassificationRunStatus: string
     case NeedsReview = 'needs_review';
     case Succeeded = 'succeeded';
     case Failed = 'failed';
+    case Stale = 'stale';
 }
