@@ -22,6 +22,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
 use LogicException;
 use UnitEnum;
 
@@ -82,7 +83,7 @@ final class AttributionSourceSettings extends LocalizedPage
                         Repeater::make('sources')
                             ->label(__('Источники'))
                             ->schema([
-                                Hidden::make('source_key'),
+                                Hidden::make('source_key')->default(fn (): string => 'source_'.Str::lower(Str::random(12))),
                                 TextInput::make('label')->label(__('Название'))->required()->maxLength(160),
                                 Repeater::make('aliases')
                                     ->label(__('Синонимы и ключи из рекламы'))

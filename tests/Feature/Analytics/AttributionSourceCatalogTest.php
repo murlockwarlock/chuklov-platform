@@ -83,6 +83,23 @@ final class AttributionSourceCatalogTest extends TestCase
         ]);
     }
 
+    public function test_new_owner_mapping_gets_a_hidden_stable_key_without_developer_input(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+
+        app(AttributionSourceCatalog::class)->save($admin, [[
+            'label' => 'Новый канал',
+            'aliases' => [['value' => 'new_channel']],
+            'is_active' => true,
+            'sort_order' => 0,
+        ]]);
+
+        $mapping = app(AttributionSourceCatalog::class)->rows($organization->getKey())[0];
+        self::assertMatchesRegularExpression('/^source_[a-z0-9]{12}$/', $mapping['source_key']);
+        self::assertSame('Новый канал', $mapping['label']);
+    }
+
     /** @return array{0: Organization, 1: User} */
     private function organizationWithAdmin(): array
     {

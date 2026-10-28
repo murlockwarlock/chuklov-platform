@@ -9,6 +9,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 final readonly class AttributionSourceCatalog
@@ -22,7 +23,7 @@ final readonly class AttributionSourceCatalog
     /** @return list<array{source_key: string, label: string, aliases: list<string>, is_active: bool, sort_order: int}> */
     public function rows(int $organizationId): array
     {
-        return AttributionSourceMapping::query()
+        $rows = AttributionSourceMapping::query()
             ->where('organization_id', $organizationId)
             ->orderBy('sort_order')
             ->orderBy('label')
@@ -30,14 +31,13 @@ final readonly class AttributionSourceCatalog
             ->map(static fn (AttributionSourceMapping $mapping): array => [
                 'source_key' => (string) $mapping->source_key,
                 'label' => (string) $mapping->label,
-                'aliases' => array_values(array_filter(array_map(
-                    static fn (mixed $alias): string => is_string($alias) ? trim($alias) : '',
-                    is_array($mapping->aliases) ? $mapping->aliases : [],
-                ))),
+                'aliases' => self::normalizeAliases($mapping->aliases),
                 'is_active' => (bool) $mapping->is_active,
                 'sort_order' => (int) $mapping->sort_order,
             ])
             ->all();
+
+        return array_values($rows);
     }
 
     /** @param array<int, mixed> $rows */
@@ -101,7 +101,10 @@ final readonly class AttributionSourceCatalog
             $sourceKey = is_string($row['source_key'] ?? null) ? trim($row['source_key']) : '';
             $label = is_string($row['label'] ?? null) ? trim($row['label']) : '';
             $sortOrder = filter_var($row['sort_order'] ?? $index, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
-            if ($sourceKey === '' || preg_match('/^[a-z][a-z0-9_]{1,119}$/', $sourceKey) !== 1) {
+            if ($sourceKey === '') {
+                $sourceKey = 'source_'.Str::lower(Str::random(12));
+            }
+            if (preg_match('/^[a-z][a-z0-9_]{1,119}$/', $sourceKey) !== 1) {
                 throw ValidationException::withMessages(['sources' => 'Укажите корректный идентификатор источника.']);
             }
             if ($label === '' || mb_strlen($label) > 160) {
@@ -137,6 +140,28 @@ final readonly class AttributionSourceCatalog
                 'is_active' => (bool) ($row['is_active'] ?? true),
                 'sort_order' => (int) $sortOrder,
             ];
+        }
+
+        return $normalized;
+    }
+
+    /** @return list<string> */
+    private static function normalizeAliases(mixed $aliases): array
+    {
+        if (! is_array($aliases)) {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($aliases as $alias) {
+            if (! is_string($alias)) {
+                continue;
+            }
+
+            $value = trim($alias);
+            if ($value !== '') {
+                $normalized[] = $value;
+            }
         }
 
         return $normalized;
