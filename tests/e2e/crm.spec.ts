@@ -2420,14 +2420,18 @@ test('staff can manage private client audio recordings', async ({ page }) => {
         await audioRow.getByRole('button', { name: 'Скачать', exact: true }).click();
         const response = await downloadResponse;
         expect(response.headers()['content-type']).toContain('audio');
-        expect(await response.body()).toEqual(validWavBuffer());
+        const downloadedFile = await page.request.get(response.url());
+        expect(downloadedFile.status()).toBe(200);
+        expect(downloadedFile.headers()['content-type']).toContain('audio');
+        expect(await downloadedFile.body()).toEqual(validWavBuffer());
     }
 
     await audioRow.getByRole('button', { name: 'Удалить', exact: true }).click();
-    const deleteConfirmation = page.getByRole('button', { name: 'Подтвердить', exact: true });
-    if (await deleteConfirmation.isVisible()) {
-        await deleteConfirmation.click();
-    }
+    const deleteConfirmation = page
+        .getByRole('alertdialog', { name: 'Удалить', exact: true })
+        .getByRole('button', { name: 'Подтвердить', exact: true });
+    await expect(deleteConfirmation).toBeVisible();
+    await deleteConfirmation.click();
     await expect(audioRow).toHaveCount(0, { timeout: 15_000 });
     await page.reload();
     await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
