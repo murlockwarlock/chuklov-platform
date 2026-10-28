@@ -171,7 +171,7 @@
                             @foreach ($results['feedback']['themes'] as $theme)
                                 <li class="flex flex-wrap justify-between gap-3">
                                     <span class="min-w-0 break-words">{{ $theme['group'] ? $theme['group'].': ' : '' }}{{ $theme['name'] }}</span>
-                                    <span>{{ $theme['client_count'] }} {{ __('клиентов') }} · {{ $theme['average_score'] ?? '—' }}</span>
+                                    <span>{{ $theme['client_count'] }} {{ __('клиентов') }} · {{ $theme['submission_count'] }} {{ __('упоминаний') }} · {{ $theme['average_score'] ?? '—' }}</span>
                                 </li>
                             @endforeach
                         </ul>

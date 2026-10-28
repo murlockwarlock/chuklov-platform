@@ -69,6 +69,7 @@ final class FeedbackThemesAnalyticsTest extends TestCase
         self::assertSame(0.0, $data->averageScore);
         self::assertSame('Больше времени на вопросы', $data->themes[0]['name']);
         self::assertSame(1, $data->themes[0]['client_count']);
+        self::assertSame(1, $data->themes[0]['submission_count']);
         $clientData = app(FeedbackAnalytics::class)->handle($admin, $period, $client);
         self::assertSame(1, $clientData->submissionCount);
         self::assertSame(0.0, $clientData->averageScore);

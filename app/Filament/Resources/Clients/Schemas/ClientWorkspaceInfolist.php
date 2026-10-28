@@ -409,7 +409,10 @@ final class ClientWorkspaceInfolist
 
                                 $lines = [__('Средняя оценка: :score / 10', ['score' => $data->averageScore ?? '—'])];
                                 foreach ($data->themes as $theme) {
-                                    $lines[] = ($theme['group'] ? $theme['group'].': ' : '').$theme['name'];
+                                    $lines[] = __(':theme · :count упоминаний', [
+                                        'theme' => ($theme['group'] ? $theme['group'].': ' : '').$theme['name'],
+                                        'count' => $theme['submission_count'],
+                                    ]);
                                 }
 
                                 return implode("\n", $lines);
