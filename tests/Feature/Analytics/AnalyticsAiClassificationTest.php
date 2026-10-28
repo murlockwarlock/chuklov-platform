@@ -115,6 +115,10 @@ final class AnalyticsAiClassificationTest extends TestCase
         self::assertSame(ClassificationRunStatus::NeedsReview, $run->status);
         self::assertSame([['id' => $theme->getKey(), 'label' => 'Процесс: Время восстановления']], $run->suggestions);
         self::assertSame(1, $calls);
+        self::assertLessThanOrEqual(
+            120,
+            mb_strlen((string) AiRun::query()->where('organization_id', $organization->getKey())->latest('id')->value('idempotency_key')),
+        );
 
         $accepted = app(AcceptAnalyticsClassification::class)->handle(
             actor: $admin,
