@@ -5,6 +5,7 @@ namespace App\Modules\Analytics\Application;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\DemographicsAnalyticsData;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -18,14 +19,16 @@ final readonly class DemographicsAnalytics
         private OrganizationAuthorizer $authorizer,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period): DemographicsAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): DemographicsAnalyticsData
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
+        $clientId = $client?->getKey();
         $clients = DB::table('clients')
             ->where('organization_id', $organization->getKey())
             ->where('created_at', '>=', $period->startUtc)
             ->where('created_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('id', $clientId))
             ->select(['birth_date', 'gender', 'country'])
             ->orderBy('id')
             ->get();
@@ -65,7 +68,7 @@ final readonly class DemographicsAnalytics
     {
         arsort($counts);
 
-        return array_values(array_map(
+        return array_map(
             static fn (string $label, int $count): array => [
                 'label' => $label,
                 'count' => $count,
@@ -73,7 +76,7 @@ final readonly class DemographicsAnalytics
             ],
             array_keys($counts),
             array_values($counts),
-        ));
+        );
     }
 
     private function ageLabel(mixed $birthDate, CarbonImmutable $referenceDate): string

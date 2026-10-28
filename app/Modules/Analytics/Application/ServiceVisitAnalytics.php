@@ -5,6 +5,7 @@ namespace App\Modules\Analytics\Application;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\ServiceVisitAnalyticsData;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -18,11 +19,12 @@ final readonly class ServiceVisitAnalytics
         private OrganizationAuthorizer $authorizer,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period): ServiceVisitAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): ServiceVisitAnalyticsData
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
         $organizationId = (int) $organization->getKey();
+        $clientId = $client?->getKey();
         $rows = DB::table('bookings')
             ->join('services', function ($join): void {
                 $join->on('services.organization_id', '=', 'bookings.organization_id')
@@ -32,6 +34,7 @@ final readonly class ServiceVisitAnalytics
             ->where('bookings.status', BookingStatus::Completed->value)
             ->where('bookings.starts_at', '>=', $period->startUtc)
             ->where('bookings.starts_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('bookings.client_id', $clientId))
             ->select('services.name')
             ->selectRaw('COUNT(*) as visit_count')
             ->selectRaw('COUNT(DISTINCT bookings.client_id) as client_count')
@@ -48,7 +51,7 @@ final readonly class ServiceVisitAnalytics
 
         return new ServiceVisitAnalyticsData(
             visitCount: array_sum(array_column($rows, 'visit_count')),
-            services: $rows,
+            services: array_values($rows),
         );
     }
 }

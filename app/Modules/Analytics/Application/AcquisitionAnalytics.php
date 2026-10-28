@@ -41,30 +41,33 @@ final class AcquisitionAnalytics
         private readonly AttributionSourceCatalog $sourceCatalog,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period): AcquisitionAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): AcquisitionAnalyticsData
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
 
         $organizationId = (int) $organization->getKey();
         $clientTable = (new Client)->getTable();
+        $clientId = $client?->getKey();
 
         $newClients = DB::table($clientTable)
             ->where('organization_id', $organizationId)
             ->where('created_at', '>=', $period->startUtc)
             ->where('created_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('id', $clientId))
             ->count();
 
         return new AcquisitionAnalyticsData(
             newClients: $newClients,
-            sources: $this->sourceBuckets($organizationId, $period, $clientTable),
+            sources: $this->sourceBuckets($organizationId, $period, $clientTable, $client),
         );
     }
 
     /** @return list<SourceBucket> */
-    private function sourceBuckets(int $organizationId, DashboardPeriod $period, string $clientTable): array
+    private function sourceBuckets(int $organizationId, DashboardPeriod $period, string $clientTable, ?Client $client = null): array
     {
         $attributionTable = (new ClientAttribution)->getTable();
+        $clientId = $client?->getKey();
         $directSourceCondition = "attribution.source_type IN ('legacy', 'source', 'manual')
             AND NULLIF(TRIM(attribution.source), '') IS NOT NULL";
         $utmSourceCondition = "attribution.source_type = 'utm'
@@ -90,6 +93,7 @@ final class AcquisitionAnalytics
             ->where('clients.organization_id', $organizationId)
             ->where('clients.created_at', '>=', $period->startUtc)
             ->where('clients.created_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('clients.id', $clientId))
             ->select(DB::raw($semanticKind.' as semantic_kind, '.$semanticValue.' as semantic_value'));
 
         $grouped = DB::query()
@@ -147,11 +151,11 @@ final class AcquisitionAnalytics
 
         arsort($buckets);
 
-        return array_values(array_map(
+        return array_map(
             static fn (string $label, int $count): SourceBucket => new SourceBucket(label: $label, count: $count),
             array_keys($buckets),
             array_values($buckets),
-        ));
+        );
     }
 
     /** @param list<array{source_key: string, label: string, aliases: list<string>, is_active: bool, sort_order: int}> $configured */
@@ -171,7 +175,7 @@ final class AcquisitionAnalytics
             }
         }
 
-        return (string) $row->source_label;
+        return (string) data_get($row, 'source_label');
     }
 
     /** @return literal-string */

@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\PurchaseAnalyticsData;
 use App\Modules\Commerce\Domain\Models\Purchase;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -27,10 +28,11 @@ final class PurchaseAnalytics
         private readonly OrganizationAuthorizer $authorizer,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period): PurchaseAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): PurchaseAnalyticsData
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewFinance);
+        $clientId = $client?->getKey();
 
         $rows = DB::table((new Purchase)->getTable().' as purchases')
             ->join('commerce_purchase_items as items', function ($join): void {
@@ -41,6 +43,7 @@ final class PurchaseAnalytics
             ->where('purchases.organization_id', (int) $organization->getKey())
             ->where('purchases.created_at', '>=', $period->startUtc)
             ->where('purchases.created_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('purchases.client_id', $clientId))
             ->select('items.product_snapshot', 'purchases.client_id')
             ->get();
 

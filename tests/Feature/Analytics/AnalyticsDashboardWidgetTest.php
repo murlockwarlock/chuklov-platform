@@ -20,6 +20,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
@@ -95,6 +96,56 @@ final class AnalyticsDashboardWidgetTest extends TestCase
         self::assertArrayHasKey('acquisition', $component->instance()->results);
         self::assertArrayHasKey('scheduling', $component->instance()->results);
         self::assertSame(['pain', 'acquisition', 'scheduling'], $component->instance()->data['dimensions']);
+    }
+
+    public function test_analytics_console_applies_the_selected_client_to_each_requested_dimension(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $selected = Client::factory()->forOrganization($organization)->create(['full_name' => 'Selected client']);
+        $other = Client::factory()->forOrganization($organization)->create(['full_name' => 'Other client']);
+        DB::table('clients')->whereIn('id', [$selected->getKey(), $other->getKey()])->update([
+            'created_at' => '2026-10-10 10:00:00',
+            'updated_at' => '2026-10-10 10:00:00',
+        ]);
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        foreach ([$selected, $other] as $client) {
+            $booking = Booking::factory()
+                ->forClient($client)
+                ->forSpecialist($specialist)
+                ->forService($service)
+                ->create([
+                    'status' => 'completed',
+                    'starts_at' => '2026-10-10 12:00:00',
+                    'created_at' => '2026-10-10 10:00:00',
+                    'updated_at' => '2026-10-10 10:00:00',
+                ]);
+            BookingEvent::factory()->forBooking($booking)->create([
+                'event_type' => 'completed',
+                'occurred_at' => '2026-10-10 12:30:00',
+            ]);
+        }
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition', 'scheduling', 'demographics', 'services', 'booking_statuses'],
+                'client_id' => $selected->getKey(),
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-11',
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame($selected->getKey(), $component->instance()->data['client_id']);
+        self::assertSame(1, $component->instance()->results['acquisition']['new_clients']);
+        self::assertSame(1, $component->instance()->results['scheduling']['bookings']);
+        self::assertSame(1, $component->instance()->results['demographics']['client_count']);
+        self::assertSame(1, $component->instance()->results['services']['visit_count']);
+        self::assertSame(1, $component->instance()->results['booking_statuses']['statuses'][0]['count']);
     }
 
     public function test_analytics_widgets_render_without_replacing_upcoming_widget(): void

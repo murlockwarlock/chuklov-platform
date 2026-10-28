@@ -16,6 +16,7 @@ use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Analytics\Application\PurchaseAnalytics;
 use App\Modules\Analytics\Application\SchedulingAnalytics;
 use App\Modules\Analytics\Application\ServiceVisitAnalytics;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -80,6 +81,7 @@ final class AnalyticsConsole extends LocalizedPage
     {
         $this->form->fill([
             'dimensions' => ['pain'],
+            'client_id' => null,
             'period' => DashboardPeriod::DefaultPreset,
             'start_date' => null,
             'end_date' => null,
@@ -111,6 +113,13 @@ final class AnalyticsConsole extends LocalizedPage
                             ->preload()
                             ->required()
                             ->default(['pain']),
+                        Select::make('client_id')
+                            ->label(__('Клиент'))
+                            ->options(fn (): array => $this->clientOptions())
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->placeholder(__('Все клиенты')),
                         Select::make('period')
                             ->label(__('Период'))
                             ->options(DashboardPeriod::options())
@@ -168,6 +177,7 @@ final class AnalyticsConsole extends LocalizedPage
         abort_unless($actor instanceof User, 403);
         $state = $this->form->getState();
         $dimensions = is_array($state['dimensions'] ?? null) ? array_values($state['dimensions']) : [];
+        $client = $this->selectedClient($state);
         $organization = app(OrganizationContext::class)->organization();
         $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
         $results = [];
@@ -175,16 +185,16 @@ final class AnalyticsConsole extends LocalizedPage
         foreach ($dimensions as $dimension) {
             try {
                 $results[(string) $dimension] = match ((string) $dimension) {
-                    'pain' => app(PainAnalytics::class)->handle($actor, $period)->toArray(),
-                    'acquisition' => $this->acquisition($actor, $period),
-                    'scheduling' => $this->scheduling($actor, $period),
-                    'finance' => $this->finance($actor, $period),
-                    'feedback' => $this->feedback($actor, $period),
-                    'goals' => $this->goals($actor, $period),
-                    'demographics' => $this->demographics($actor, $period),
-                    'services' => $this->services($actor, $period),
-                    'purchases' => $this->purchases($actor, $period),
-                    'booking_statuses' => $this->bookingStatuses($actor, $period),
+                    'pain' => app(PainAnalytics::class)->handle($actor, $period, $client)->toArray(),
+                    'acquisition' => $this->acquisition($actor, $period, $client),
+                    'scheduling' => $this->scheduling($actor, $period, $client),
+                    'finance' => $this->finance($actor, $period, $client),
+                    'feedback' => $this->feedback($actor, $period, $client),
+                    'goals' => $this->goals($actor, $period, $client),
+                    'demographics' => $this->demographics($actor, $period, $client),
+                    'services' => $this->services($actor, $period, $client),
+                    'purchases' => $this->purchases($actor, $period, $client),
+                    'booking_statuses' => $this->bookingStatuses($actor, $period, $client),
                     default => null,
                 };
             } catch (Throwable) {
@@ -203,20 +213,21 @@ final class AnalyticsConsole extends LocalizedPage
         $state = $this->form->getState();
         $organization = app(OrganizationContext::class)->organization();
         $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
+        $client = $this->selectedClient($state);
         $results = [];
         foreach ((array) ($state['dimensions'] ?? []) as $dimension) {
             try {
                 $results[(string) $dimension] = match ((string) $dimension) {
-                    'pain' => app(PainAnalytics::class)->handle($actor, $period)->toArray(),
-                    'acquisition' => $this->acquisition($actor, $period),
-                    'scheduling' => $this->scheduling($actor, $period),
-                    'finance' => $this->finance($actor, $period),
-                    'feedback' => $this->feedback($actor, $period),
-                    'goals' => $this->goals($actor, $period),
-                    'demographics' => $this->demographics($actor, $period),
-                    'services' => $this->services($actor, $period),
-                    'purchases' => $this->purchases($actor, $period),
-                    'booking_statuses' => $this->bookingStatuses($actor, $period),
+                    'pain' => app(PainAnalytics::class)->handle($actor, $period, $client)->toArray(),
+                    'acquisition' => $this->acquisition($actor, $period, $client),
+                    'scheduling' => $this->scheduling($actor, $period, $client),
+                    'finance' => $this->finance($actor, $period, $client),
+                    'feedback' => $this->feedback($actor, $period, $client),
+                    'goals' => $this->goals($actor, $period, $client),
+                    'demographics' => $this->demographics($actor, $period, $client),
+                    'services' => $this->services($actor, $period, $client),
+                    'purchases' => $this->purchases($actor, $period, $client),
+                    'booking_statuses' => $this->bookingStatuses($actor, $period, $client),
                     default => null,
                 };
             } catch (Throwable) {
@@ -227,9 +238,10 @@ final class AnalyticsConsole extends LocalizedPage
         return app(AnalyticsReportExport::class)->download($actor, array_filter($results, static fn (mixed $result): bool => is_array($result)));
     }
 
-    private function acquisition(User $actor, DashboardPeriod $period): array
+    /** @return array<string, mixed> */
+    private function acquisition(User $actor, DashboardPeriod $period, ?Client $client = null): array
     {
-        $data = app(AcquisitionAnalytics::class)->handle($actor, $period);
+        $data = app(AcquisitionAnalytics::class)->handle($actor, $period, $client);
 
         return [
             'new_clients' => $data->newClients,
@@ -240,9 +252,10 @@ final class AnalyticsConsole extends LocalizedPage
         ];
     }
 
-    private function scheduling(User $actor, DashboardPeriod $period): array
+    /** @return array<string, mixed> */
+    private function scheduling(User $actor, DashboardPeriod $period, ?Client $client = null): array
     {
-        $data = app(SchedulingAnalytics::class)->handle($actor, $period);
+        $data = app(SchedulingAnalytics::class)->handle($actor, $period, $client);
 
         return [
             'bookings' => $data->bookings,
@@ -253,9 +266,10 @@ final class AnalyticsConsole extends LocalizedPage
         ];
     }
 
-    private function finance(User $actor, DashboardPeriod $period): array
+    /** @return array<string, mixed> */
+    private function finance(User $actor, DashboardPeriod $period, ?Client $client = null): array
     {
-        $data = app(FinanceAnalytics::class)->handle($actor, $period);
+        $data = app(FinanceAnalytics::class)->handle($actor, $period, $client);
 
         return [
             'available' => $data->available,
@@ -270,33 +284,82 @@ final class AnalyticsConsole extends LocalizedPage
         ];
     }
 
-    private function feedback(User $actor, DashboardPeriod $period): array
+    /** @return array<string, mixed> */
+    private function feedback(User $actor, DashboardPeriod $period, ?Client $client = null): array
     {
-        return app(FeedbackAnalytics::class)->handle($actor, $period)->toArray();
+        return app(FeedbackAnalytics::class)->handle($actor, $period, $client)->toArray();
     }
 
-    private function goals(User $actor, DashboardPeriod $period): array
+    /** @return array<string, mixed> */
+    private function goals(User $actor, DashboardPeriod $period, ?Client $client = null): array
     {
-        return app(GoalAnalytics::class)->handle($actor, $period)->toArray();
+        return app(GoalAnalytics::class)->handle($actor, $period, $client)->toArray();
     }
 
-    private function demographics(User $actor, DashboardPeriod $period): array
+    /** @return array<string, mixed> */
+    private function demographics(User $actor, DashboardPeriod $period, ?Client $client = null): array
     {
-        return app(DemographicsAnalytics::class)->handle($actor, $period)->toArray();
+        return app(DemographicsAnalytics::class)->handle($actor, $period, $client)->toArray();
     }
 
-    private function services(User $actor, DashboardPeriod $period): array
+    /** @return array<string, mixed> */
+    private function services(User $actor, DashboardPeriod $period, ?Client $client = null): array
     {
-        return app(ServiceVisitAnalytics::class)->handle($actor, $period)->toArray();
+        return app(ServiceVisitAnalytics::class)->handle($actor, $period, $client)->toArray();
     }
 
-    private function purchases(User $actor, DashboardPeriod $period): array
+    /** @return array<string, mixed> */
+    private function purchases(User $actor, DashboardPeriod $period, ?Client $client = null): array
     {
-        return app(PurchaseAnalytics::class)->handle($actor, $period)->toArray();
+        return app(PurchaseAnalytics::class)->handle($actor, $period, $client)->toArray();
     }
 
-    private function bookingStatuses(User $actor, DashboardPeriod $period): array
+    /** @return array<string, mixed> */
+    private function bookingStatuses(User $actor, DashboardPeriod $period, ?Client $client = null): array
     {
-        return app(BookingStatusAnalytics::class)->handle($actor, $period)->toArray();
+        return app(BookingStatusAnalytics::class)->handle($actor, $period, $client)->toArray();
+    }
+
+    /** @return array<int, string> */
+    private function clientOptions(): array
+    {
+        $organizationId = app(OrganizationContext::class)->id();
+
+        return Client::query()
+            ->where('organization_id', $organizationId)
+            ->orderBy('full_name')
+            ->orderBy('id')
+            ->limit(1000)
+            ->get(['id', 'full_name', 'email', 'phone'])
+            ->mapWithKeys(static function (Client $client): array {
+                $label = trim((string) $client->full_name);
+                if ($label === '') {
+                    $label = trim((string) ($client->email ?? ''));
+                }
+                if ($label === '') {
+                    $label = trim((string) ($client->phone ?? ''));
+                }
+
+                return [(int) $client->getKey() => $label !== '' ? $label : __('Клиент без имени')];
+            })
+            ->all();
+    }
+
+    /** @param array<string, mixed> $state */
+    private function selectedClient(array $state): ?Client
+    {
+        $rawClientId = $state['client_id'] ?? null;
+        if ($rawClientId === null || $rawClientId === '') {
+            return null;
+        }
+
+        $clientId = filter_var($rawClientId, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($clientId === false) {
+            return null;
+        }
+
+        return Client::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->findOrFail($clientId);
     }
 }
