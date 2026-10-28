@@ -4,6 +4,7 @@ namespace App\Modules\Sessions\Application;
 
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalPainInput;
+use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
@@ -15,6 +16,7 @@ final readonly class MedicalSessionPainWriter
     public function __construct(
         private MedicalEncryptorInterface $encryptor,
         private MedicalFrequencyPeriodCatalog $periods,
+        private MedicalProblemTagCatalog $tags,
     ) {}
 
     /** @param array<int, mixed> $rawPains */
@@ -35,7 +37,7 @@ final readonly class MedicalSessionPainWriter
             if ($input->frequencyMode === 'count' && $input->frequencyPeriodUnit !== null) {
                 $this->periods->assertActive((int) $session->organization_id, $input->frequencyPeriodUnit);
             }
-            $inputs[] = [$input, $lineage];
+            $inputs[] = [$input, $lineage, $this->tags->assertKnown((int) $session->organization_id, $input->tagIds)];
         }
 
         $existing = $session->pains()->lockForUpdate()->get()->keyBy('lineage_key');
@@ -45,7 +47,7 @@ final readonly class MedicalSessionPainWriter
             }
         }
 
-        foreach ($inputs as $sortOrder => [$input, $lineage]) {
+        foreach ($inputs as $sortOrder => [$input, $lineage, $tagIds]) {
             $pain = $existing->get($lineage) ?? new MedicalSessionPain;
             $pain->forceFill([
                 'organization_id' => $session->organization_id,
@@ -64,6 +66,10 @@ final readonly class MedicalSessionPainWriter
                 'encryption_key_version' => $keyVersion,
             ]);
             $pain->save();
+            $pain->problemTags()->syncWithPivotValues($tagIds, [
+                'organization_id' => $session->organization_id,
+                'client_id' => $session->client_id,
+            ]);
         }
     }
 }

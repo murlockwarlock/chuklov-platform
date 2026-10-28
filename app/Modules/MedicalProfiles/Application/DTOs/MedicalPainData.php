@@ -17,6 +17,8 @@ final readonly class MedicalPainData
         public ?int $beforeScore = null,
         public ?int $afterScore = null,
         public ?int $previousAfterScore = null,
+        /** @var list<int> */
+        public array $tagIds = [],
     ) {}
 
     /** @return array<string, mixed> */
@@ -34,6 +36,7 @@ final readonly class MedicalPainData
             'before_score' => $this->beforeScore,
             'after_score' => $this->afterScore,
             'previous_after_score' => $this->previousAfterScore,
+            'tag_ids' => $this->tagIds,
         ];
     }
 }

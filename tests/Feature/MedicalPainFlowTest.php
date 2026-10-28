@@ -7,8 +7,11 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
+use App\Modules\MedicalProfiles\Application\MedicalProfilePainReader;
 use App\Modules\MedicalProfiles\Application\SaveMedicalFrequencyPeriods;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -121,6 +124,43 @@ final class MedicalPainFlowTest extends TestCase
         ));
 
         self::assertSame('fortnight', $session->pains[0]->frequencyPeriodUnit);
+    }
+
+    public function test_problem_tags_are_preserved_from_profile_to_session_and_next_session(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $tag = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Шейный отдел',
+            'group_name' => 'Синтетика',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $updatedProfile = app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            pains: [['name' => 'Шея', 'score' => 6, 'tag_ids' => [$tag->getKey()]]],
+            painsProvided: true,
+        ));
+        self::assertSame([(int) $tag->getKey()], $updatedProfile->pains[0]->tagIds);
+        self::assertDatabaseHas('medical_profile_pain_tags', ['medical_problem_tag_id' => $tag->getKey()]);
+        $persistedPain = MedicalProfilePain::query()->where('organization_id', $organization->getKey())->sole();
+        self::assertSame(1, $persistedPain->problemTags()->count());
+        self::assertSame([(int) $tag->getKey()], $persistedPain->problemTags()->get()->modelKeys());
+        $persistedPain->load('problemTags');
+        self::assertSame([(int) $tag->getKey()], $persistedPain->problemTags->modelKeys());
+        self::assertSame([(int) $tag->getKey()], app(MedicalProfilePainReader::class)->forProfile($client->medicalProfile()->firstOrFail())[0]->tagIds);
+
+        $first = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-01 09:00:00', 'UTC'),
+        ));
+        self::assertSame([(int) $tag->getKey()], $first->pains[0]->tagIds);
+
+        $next = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-08 09:00:00', 'UTC'),
+        ));
+        self::assertSame([(int) $tag->getKey()], $next->pains[0]->tagIds);
     }
 
     public function test_profile_history_rows_and_session_observation_fields_are_encrypted_and_reloadable(): void

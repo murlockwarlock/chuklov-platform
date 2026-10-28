@@ -14,6 +14,7 @@ final readonly class MedicalProfilePainWriter
     public function __construct(
         private MedicalEncryptorInterface $encryptor,
         private MedicalFrequencyPeriodCatalog $periods,
+        private MedicalProblemTagCatalog $tags,
     ) {}
 
     /** @param array<int, mixed> $rawPains */
@@ -35,7 +36,7 @@ final readonly class MedicalProfilePainWriter
             if ($input->frequencyMode === 'count' && $input->frequencyPeriodUnit !== null) {
                 $this->periods->assertActive((int) $profile->organization_id, $input->frequencyPeriodUnit);
             }
-            $inputs[] = [$input, $lineage];
+            $inputs[] = [$input, $lineage, $this->tags->assertKnown((int) $profile->organization_id, $input->tagIds)];
         }
 
         $existing = $profile->pains()->lockForUpdate()->get()->keyBy('lineage_key');
@@ -46,7 +47,7 @@ final readonly class MedicalProfilePainWriter
         }
 
         $result = [];
-        foreach ($inputs as $sortOrder => [$input, $lineage]) {
+        foreach ($inputs as $sortOrder => [$input, $lineage, $tagIds]) {
             /** @var MedicalProfilePain|null $pain */
             $pain = $existing->get($lineage);
             $pain ??= new MedicalProfilePain;
@@ -66,6 +67,10 @@ final readonly class MedicalProfilePainWriter
                 'encryption_key_version' => $keyVersion,
             ]);
             $pain->save();
+            $pain->problemTags()->syncWithPivotValues($tagIds, [
+                'organization_id' => $profile->organization_id,
+                'client_id' => $profile->client_id,
+            ]);
 
             $result[] = new MedicalPainData(
                 id: (int) $pain->getKey(),
@@ -76,6 +81,7 @@ final readonly class MedicalProfilePainWriter
                 frequencyPeriodUnit: $input->frequencyPeriodUnit,
                 timeOfDay: $input->timeOfDay,
                 score: $input->score,
+                tagIds: $tagIds,
             );
         }
 

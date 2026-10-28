@@ -18,6 +18,8 @@ final readonly class MedicalPainInput
         public ?int $beforeScore,
         public ?int $afterScore,
         public ?string $lineageKey,
+        /** @var list<int> */
+        public array $tagIds = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -76,6 +78,7 @@ final readonly class MedicalPainInput
             beforeScore: self::nullableScore($data['before_score'] ?? null, 'before_score'),
             afterScore: self::nullableScore($data['after_score'] ?? null, 'after_score'),
             lineageKey: $lineageKey,
+            tagIds: self::tagIds($data['tag_ids'] ?? []),
         );
     }
 
@@ -115,5 +118,26 @@ final readonly class MedicalPainInput
         }
 
         return $score;
+    }
+
+    /** @return list<int> */
+    private static function tagIds(mixed $value): array
+    {
+        if ($value === null || $value === '') {
+            return [];
+        }
+        if (! is_array($value)) {
+            throw ValidationException::withMessages(['pains' => 'Выберите корректные категории проблемы.']);
+        }
+
+        $ids = [];
+        foreach ($value as $id) {
+            if (! is_int($id) && ! (is_string($id) && ctype_digit($id))) {
+                throw ValidationException::withMessages(['pains' => 'Выберите корректные категории проблемы.']);
+            }
+            $ids[] = (int) $id;
+        }
+
+        return array_values(array_unique($ids));
     }
 }

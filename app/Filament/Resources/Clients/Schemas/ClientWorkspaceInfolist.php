@@ -6,6 +6,8 @@ use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\FinancePresentation;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Attribution\Application\AttributionSourcePresentation;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Finance\Application\FinanceAuthorization;
@@ -317,6 +319,47 @@ final class ClientWorkspaceInfolist
                                     ->wrap(),
                             ])
                             ->columns(1),
+                        TextEntry::make('pain_analytics')
+                            ->label(__('Динамика проблем и боли'))
+                            ->state(function (Client $record): ?string {
+                                $actor = auth()->user();
+                                if (! $actor instanceof User) {
+                                    return null;
+                                }
+
+                                $now = CarbonImmutable::now('UTC');
+                                $period = new DashboardPeriod(
+                                    startUtc: CarbonImmutable::create(2000, 1, 1, 0, 0, 0, 'UTC'),
+                                    endUtc: $now->addDay(),
+                                    timezone: app(OrganizationContext::class)->defaultTimezone(),
+                                    startDate: '2000-01-01',
+                                    endDate: $now->setTimezone(app(OrganizationContext::class)->defaultTimezone())->format('Y-m-d'),
+                                    preset: DashboardPeriod::Custom,
+                                    nowUtc: $now,
+                                );
+                                $data = app(PainAnalytics::class)->handle($actor, $period, $record);
+                                if ($data->problems === []) {
+                                    return null;
+                                }
+
+                                return collect($data->problems)
+                                    ->map(static function (array $problem): string {
+                                        $before = $problem['average_before'] === null ? '—' : (string) $problem['average_before'];
+                                        $after = $problem['average_after'] === null ? '—' : (string) $problem['average_after'];
+                                        $reduction = $problem['average_reduction'] === null ? '—' : (string) $problem['average_reduction'];
+
+                                        return __(':name · До :before / После :after · Снижение :reduction', [
+                                            'name' => $problem['name'],
+                                            'before' => $before,
+                                            'after' => $after,
+                                            'reduction' => $reduction,
+                                        ]);
+                                    })
+                                    ->implode("\n");
+                            })
+                            ->placeholder(__('Структурированная динамика пока не заполнена'))
+                            ->columnSpanFull()
+                            ->wrap(),
                         TextEntry::make('chronic_conditions')
                             ->label(__('Хронические заболевания'))
                             ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'chronicConditions'))

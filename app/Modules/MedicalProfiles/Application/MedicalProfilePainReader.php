@@ -14,7 +14,7 @@ final readonly class MedicalProfilePainReader
     /** @return list<MedicalPainData> */
     public function forProfile(MedicalProfile $profile): array
     {
-        return $profile->pains()->get()->map(function (MedicalProfilePain $pain) use ($profile): MedicalPainData {
+        return $profile->pains()->with('problemTags')->get()->map(function (MedicalProfilePain $pain) use ($profile): MedicalPainData {
             return new MedicalPainData(
                 id: (int) $pain->getKey(),
                 lineageKey: (string) $pain->lineage_key,
@@ -28,6 +28,7 @@ final readonly class MedicalProfilePainReader
                 frequencyPeriodUnit: $pain->frequency_period_unit !== null ? (string) $pain->frequency_period_unit : null,
                 timeOfDay: is_array($pain->time_of_day) && $pain->time_of_day !== [] ? array_values($pain->time_of_day) : ['all'],
                 score: $pain->score !== null ? (int) $pain->score : null,
+                tagIds: $pain->problemTags->modelKeys(),
             );
         })->all();
     }

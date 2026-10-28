@@ -14,7 +14,7 @@ final readonly class MedicalSessionPainReader
     /** @return list<MedicalPainData> */
     public function forSession(MedicalSession $session): array
     {
-        $rows = $session->pains()->get();
+        $rows = $session->pains()->with('problemTags')->get();
         if ($rows->isEmpty()) {
             return [];
         }
@@ -53,6 +53,7 @@ final readonly class MedicalSessionPainReader
                 beforeScore: $pain->before_score !== null ? (int) $pain->before_score : null,
                 afterScore: $pain->after_score !== null ? (int) $pain->after_score : null,
                 previousAfterScore: array_key_exists((string) $pain->lineage_key, $previousAfter) ? $previousAfter[(string) $pain->lineage_key] : null,
+                tagIds: $pain->problemTags->modelKeys(),
             );
         })->all();
     }

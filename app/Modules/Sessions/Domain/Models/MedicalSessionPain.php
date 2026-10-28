@@ -3,10 +3,12 @@
 namespace App\Modules\Sessions\Domain\Models;
 
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 #[Fillable([
     'organization_id',
@@ -42,6 +44,17 @@ class MedicalSessionPain extends Model
     public function session(): BelongsTo
     {
         return $this->belongsTo(MedicalSession::class, 'medical_session_id');
+    }
+
+    /** @return BelongsToMany<MedicalProblemTag, $this> */
+    public function problemTags(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            MedicalProblemTag::class,
+            'medical_session_pain_tags',
+            'medical_session_pain_id',
+            'medical_problem_tag_id',
+        )->withPivot('organization_id');
     }
 
     protected function casts(): array

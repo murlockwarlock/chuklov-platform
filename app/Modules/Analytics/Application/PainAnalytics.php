@@ -1,0 +1,142 @@
+<?php
+
+namespace App\Modules\Analytics\Application;
+
+use App\Models\User;
+use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Analytics\Application\Data\PainAnalyticsData;
+use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use Illuminate\Support\Facades\DB;
+
+final readonly class PainAnalytics
+{
+    public function __construct(
+        private OrganizationContext $context,
+        private OrganizationAuthorizer $authorizer,
+    ) {}
+
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): PainAnalyticsData
+    {
+        $organization = $this->context->organization();
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
+        $organizationId = (int) $organization->getKey();
+
+        if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
+
+        $sessionClientFilter = $client instanceof Client ? ' AND sessions.client_id = :client_id' : '';
+        $bindings = [
+            'organization_id' => $organizationId,
+            'start_at' => $period->startUtc,
+            'end_at' => $period->endUtc,
+        ];
+        if ($client instanceof Client) {
+            $bindings['client_id'] = (int) $client->getKey();
+        }
+
+        $rows = DB::select(
+            <<<SQL
+            WITH ranked_sessions AS (
+                SELECT
+                    sessions.organization_id,
+                    sessions.client_id,
+                    sessions.id,
+                    sessions.occurred_at,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY sessions.client_id
+                        ORDER BY sessions.occurred_at ASC, sessions.id ASC
+                    ) AS session_number
+                FROM medical_sessions AS sessions
+                WHERE sessions.organization_id = :organization_id
+                    {$sessionClientFilter}
+            ), ranked_pains AS (
+                SELECT
+                    pains.client_id,
+                    pains.before_score,
+                    pains.after_score,
+                    tags.id AS tag_id,
+                    tags.name AS tag_name,
+                    tags.group_name AS tag_group,
+                    ranked_sessions.session_number
+                FROM medical_session_pains AS pains
+                INNER JOIN ranked_sessions
+                    ON ranked_sessions.organization_id = pains.organization_id
+                    AND ranked_sessions.client_id = pains.client_id
+                    AND ranked_sessions.id = pains.medical_session_id
+                INNER JOIN medical_session_pain_tags AS pain_tags
+                    ON pain_tags.organization_id = pains.organization_id
+                    AND pain_tags.client_id = pains.client_id
+                    AND pain_tags.medical_session_pain_id = pains.id
+                INNER JOIN medical_problem_tags AS tags
+                    ON tags.organization_id = pain_tags.organization_id
+                    AND tags.id = pain_tags.medical_problem_tag_id
+                WHERE ranked_sessions.occurred_at >= :start_at
+                    AND ranked_sessions.occurred_at < :end_at
+            )
+            SELECT
+                tag_id,
+                tag_name,
+                tag_group,
+                COUNT(DISTINCT client_id) AS client_count,
+                COUNT(*) AS pain_count,
+                AVG(before_score) AS average_before,
+                AVG(after_score) AS average_after,
+                AVG(CASE WHEN before_score IS NOT NULL AND after_score IS NOT NULL THEN before_score - after_score END) AS average_reduction,
+                AVG(CASE WHEN session_number = 1 THEN before_score END) AS session_one_before,
+                AVG(CASE WHEN session_number = 1 THEN after_score END) AS session_one_after,
+                AVG(CASE WHEN session_number = 2 THEN before_score END) AS session_two_before,
+                AVG(CASE WHEN session_number = 2 THEN after_score END) AS session_two_after,
+                AVG(CASE WHEN session_number = 3 THEN before_score END) AS session_three_before,
+                AVG(CASE WHEN session_number = 3 THEN after_score END) AS session_three_after
+            FROM ranked_pains
+            GROUP BY tag_id, tag_name, tag_group
+            ORDER BY client_count DESC, tag_name ASC
+            SQL,
+            $bindings,
+        );
+
+        $sessionCount = DB::table('medical_sessions')
+            ->where('organization_id', $organizationId)
+            ->where('occurred_at', '>=', $period->startUtc)
+            ->where('occurred_at', '<', $period->endUtc)
+            ->when($client instanceof Client, fn ($query) => $query->where('client_id', $client->getKey()))
+            ->count();
+        $clientCount = DB::table('medical_sessions')
+            ->where('organization_id', $organizationId)
+            ->where('occurred_at', '>=', $period->startUtc)
+            ->where('occurred_at', '<', $period->endUtc)
+            ->when($client instanceof Client, fn ($query) => $query->where('client_id', $client->getKey()))
+            ->distinct('client_id')
+            ->count('client_id');
+
+        return new PainAnalyticsData(
+            clientCount: $clientCount,
+            sessionCount: $sessionCount,
+            problems: array_map(static fn (object $row): array => [
+                'tag_id' => (int) $row->tag_id,
+                'name' => (string) $row->tag_name,
+                'group' => $row->tag_group !== null ? (string) $row->tag_group : null,
+                'client_count' => (int) $row->client_count,
+                'pain_count' => (int) $row->pain_count,
+                'average_before' => self::nullableFloat($row->average_before),
+                'average_after' => self::nullableFloat($row->average_after),
+                'average_reduction' => self::nullableFloat($row->average_reduction),
+                'session_1_before' => self::nullableFloat($row->session_one_before),
+                'session_1_after' => self::nullableFloat($row->session_one_after),
+                'session_2_before' => self::nullableFloat($row->session_two_before),
+                'session_2_after' => self::nullableFloat($row->session_two_after),
+                'session_3_before' => self::nullableFloat($row->session_three_before),
+                'session_3_after' => self::nullableFloat($row->session_three_after),
+            ], $rows),
+        );
+    }
+
+    private static function nullableFloat(mixed $value): ?float
+    {
+        return $value === null ? null : round((float) $value, 2);
+    }
+}

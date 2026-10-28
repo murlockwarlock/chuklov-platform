@@ -3,6 +3,7 @@
 namespace App\Modules\Sessions\Application;
 
 use App\Models\User;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -24,7 +25,8 @@ final readonly class SaveMedicalClinicalCatalog
 
     /** @param array<int, mixed> $tests */
     /** @param array<int, mixed> $causes */
-    public function handle(User $actor, array $tests, array $causes): void
+    /** @param array<int, mixed> $problemTags */
+    public function handle(User $actor, array $tests, array $causes, ?array $problemTags = null): void
     {
         $organization = $this->context->organization();
         if (! $this->authorizer->allows($actor, $organization, OrganizationPermission::ManageSettings)) {
@@ -33,9 +35,10 @@ final readonly class SaveMedicalClinicalCatalog
 
         $normalizedTests = $this->normalizeTests($tests);
         $normalizedCauses = $this->normalizeCauses($causes);
+        $normalizedProblemTags = $problemTags === null ? null : $this->normalizeProblemTags($problemTags);
         $organizationId = (int) $organization->getKey();
 
-        DB::transaction(function () use ($organizationId, $normalizedTests, $normalizedCauses, $organization, $actor): void {
+        DB::transaction(function () use ($organizationId, $normalizedTests, $normalizedCauses, $normalizedProblemTags, $organization, $actor): void {
             $testKeys = [];
             foreach ($normalizedTests as $test) {
                 $definition = MedicalTestDefinition::query()->where('organization_id', $organizationId)->where('key', $test['key'])->lockForUpdate()->first() ?? new MedicalTestDefinition;
@@ -92,13 +95,38 @@ final readonly class SaveMedicalClinicalCatalog
             }
             MedicalCauseDefinition::query()->where('organization_id', $organizationId)->when($causeNames !== [], fn ($query) => $query->whereNotIn('name', $causeNames))->update(['is_active' => false]);
 
+            if ($normalizedProblemTags !== null) {
+                $tagNames = [];
+                foreach ($normalizedProblemTags as $tag) {
+                    $model = MedicalProblemTag::query()
+                        ->where('organization_id', $organizationId)
+                        ->where('name', $tag['name'])
+                        ->lockForUpdate()
+                        ->first() ?? new MedicalProblemTag;
+                    $model->forceFill([
+                        'organization_id' => $organizationId,
+                        'name' => $tag['name'],
+                        'group_name' => $tag['group_name'],
+                        'is_active' => $tag['is_active'],
+                        'sort_order' => $tag['sort_order'],
+                    ]);
+                    $model->save();
+                    $tagNames[] = $tag['name'];
+                }
+                MedicalProblemTag::query()->where('organization_id', $organizationId)->when($tagNames !== [], fn ($query) => $query->whereNotIn('name', $tagNames))->update(['is_active' => false]);
+            }
+
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,
                 action: 'medical.catalog.updated',
                 targetType: MedicalTestDefinition::class,
                 targetId: 'medical-clinical-catalog',
-                metadata: ['test_count' => count($normalizedTests), 'cause_count' => count($normalizedCauses)],
+                metadata: [
+                    'test_count' => count($normalizedTests),
+                    'cause_count' => count($normalizedCauses),
+                    'problem_tag_count' => $normalizedProblemTags === null ? null : count($normalizedProblemTags),
+                ],
             );
         });
     }
@@ -165,6 +193,34 @@ final readonly class SaveMedicalClinicalCatalog
             }
             $names[$name] = true;
             $normalized[] = ['name' => $name, 'group_name' => filled($raw['group_name'] ?? null) ? trim((string) $raw['group_name']) : null, 'is_active' => (bool) ($raw['is_active'] ?? true), 'sort_order' => (int) ($raw['sort_order'] ?? $index)];
+        }
+
+        return $normalized;
+    }
+
+    /** @return list<array{name:string,group_name:?string,is_active:bool,sort_order:int}> */
+    private function normalizeProblemTags(array $tags): array
+    {
+        $normalized = [];
+        $names = [];
+        foreach (array_values($tags) as $index => $raw) {
+            if (! is_array($raw)) {
+                throw ValidationException::withMessages(['problem_tags' => 'Проверьте категории проблем.']);
+            }
+            $name = trim((string) ($raw['name'] ?? ''));
+            if ($name === '' || isset($names[$name])) {
+                throw ValidationException::withMessages(['problem_tags' => 'Названия категорий проблем должны быть заполнены и уникальны.']);
+            }
+            if (mb_strlen($name) > 255) {
+                throw ValidationException::withMessages(['problem_tags' => 'Название категории слишком длинное.']);
+            }
+            $names[$name] = true;
+            $normalized[] = [
+                'name' => $name,
+                'group_name' => filled($raw['group_name'] ?? null) ? trim((string) $raw['group_name']) : null,
+                'is_active' => (bool) ($raw['is_active'] ?? true),
+                'sort_order' => (int) ($raw['sort_order'] ?? $index),
+            ];
         }
 
         return $normalized;

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
 use App\Models\User;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -44,6 +45,12 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
                     'is_active' => true,
                     'sort_order' => 1,
                 ]],
+                'problem_tags' => [[
+                    'name' => 'Синтетическая категория',
+                    'group_name' => 'QA',
+                    'is_active' => true,
+                    'sort_order' => 1,
+                ]],
             ])
             ->call('save')
             ->assertNotified('Каталог сохранён');
@@ -52,16 +59,19 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
         self::assertSame('Синтетический баланс', $test->name);
         self::assertSame(2, MedicalTestValue::query()->where('medical_test_definition_id', $test->getKey())->count());
         self::assertSame('Синтетическая причина', MedicalCauseDefinition::query()->where('organization_id', $organization->getKey())->sole()->name);
+        self::assertSame('Синтетическая категория', MedicalProblemTag::query()->where('organization_id', $organization->getKey())->sole()->name);
 
         $reloaded = Livewire::actingAs($admin)->test(MedicalClinicalCatalogConfiguration::class);
         $state = $reloaded->instance()->data;
         $tests = array_values(is_array($state['tests'] ?? null) ? $state['tests'] : []);
         $causes = array_values(is_array($state['causes'] ?? null) ? $state['causes'] : []);
+        $problemTags = array_values(is_array($state['problem_tags'] ?? null) ? $state['problem_tags'] : []);
         self::assertSame('Синтетический баланс', $tests[0]['name'] ?? null);
         $values = array_values(is_array($tests[0]['values'] ?? null) ? $tests[0]['values'] : []);
         $abnormal = collect($values)->firstWhere('label', 'Отклонение');
         self::assertTrue((bool) ($abnormal['is_abnormal'] ?? false));
         self::assertSame('Синтетическая причина', $causes[0]['name'] ?? null);
+        self::assertSame('Синтетическая категория', $problemTags[0]['name'] ?? null);
     }
 
     /** @return array{Organization, User} */

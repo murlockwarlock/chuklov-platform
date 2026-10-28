@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Analytics;
 
+use App\Filament\Pages\AnalyticsConsole;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Widgets\AnalyticsAcquisitionWidget;
 use App\Filament\Widgets\AnalyticsAiFailuresWidget;
@@ -71,6 +72,28 @@ final class AnalyticsDashboardWidgetTest extends TestCase
             ->assertActionExists('filter')
             ->set('filters', ['period' => DashboardPeriod::Today])
             ->assertSet('filters.period', DashboardPeriod::Today);
+    }
+
+    public function test_analytics_console_keeps_multiple_dimensions_and_runs_analysis(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->assertSuccessful()
+            ->fillForm([
+                'dimensions' => ['pain', 'acquisition', 'scheduling'],
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertArrayHasKey('pain', $component->instance()->results);
+        self::assertArrayHasKey('acquisition', $component->instance()->results);
+        self::assertArrayHasKey('scheduling', $component->instance()->results);
+        self::assertSame(['pain', 'acquisition', 'scheduling'], $component->instance()->data['dimensions']);
     }
 
     public function test_analytics_widgets_render_without_replacing_upcoming_widget(): void

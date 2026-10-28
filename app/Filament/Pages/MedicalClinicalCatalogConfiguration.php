@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Support\LocalizedPage;
 use App\Models\User;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -93,7 +94,18 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                 'is_active' => $cause->is_active,
                 'sort_order' => $cause->sort_order,
             ])->all();
-        $this->form->fill(['tests' => $tests, 'causes' => $causes]);
+        $problemTags = MedicalProblemTag::query()
+            ->where('organization_id', $organizationId)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (MedicalProblemTag $tag): array => [
+                'name' => $tag->name,
+                'group_name' => $tag->group_name,
+                'is_active' => $tag->is_active,
+                'sort_order' => $tag->sort_order,
+            ])->all();
+        $this->form->fill(['tests' => $tests, 'causes' => $causes, 'problem_tags' => $problemTags]);
     }
 
     public function form(Schema $schema): Schema
@@ -132,6 +144,17 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                                 TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
                             ])->columns(2)->defaultItems(0)->reorderable()->addActionLabel(__('Добавить причину'))->columnSpanFull(),
                     ])->columnSpanFull(),
+                Section::make(__('Категории проблем'))
+                    ->description(__('Нормализованные категории используются для статистики боли и не заменяют защищённый текст жалобы.'))
+                    ->schema([
+                        Repeater::make('problem_tags')
+                            ->schema([
+                                TextInput::make('name')->label(__('Название категории'))->required()->maxLength(255),
+                                TextInput::make('group_name')->label(__('Группа'))->maxLength(255),
+                                Toggle::make('is_active')->label(__('Активна'))->default(true),
+                                TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                            ])->columns(2)->defaultItems(0)->reorderable()->addActionLabel(__('Добавить категорию'))->columnSpanFull(),
+                    ])->columnSpanFull(),
             ])
             ->statePath('data');
     }
@@ -158,7 +181,12 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         $state = $this->form->getState();
-        app(SaveMedicalClinicalCatalog::class)->handle($actor, is_array($state['tests'] ?? null) ? $state['tests'] : [], is_array($state['causes'] ?? null) ? $state['causes'] : []);
+        app(SaveMedicalClinicalCatalog::class)->handle(
+            $actor,
+            is_array($state['tests'] ?? null) ? $state['tests'] : [],
+            is_array($state['causes'] ?? null) ? $state['causes'] : [],
+            is_array($state['problem_tags'] ?? null) ? $state['problem_tags'] : [],
+        );
         Notification::make()->success()->title(__('Каталог сохранён'))->send();
     }
 }

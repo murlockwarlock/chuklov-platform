@@ -5,6 +5,8 @@ namespace App\Filament\Resources\Clients\Schemas;
 use App\Modules\MedicalProfiles\Application\ClinicalQuestionnaire;
 use App\Modules\MedicalProfiles\Application\DTOs\MedicalProfileData;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
+use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
+use App\Modules\Organizations\Application\OrganizationContext;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Hidden;
@@ -41,6 +43,7 @@ final class MedicalProfileForm
                 'lineage_key' => $pain->lineageKey,
                 'name' => $pain->name,
                 'score' => $pain->score,
+                'tag_ids' => $pain->tagIds,
             ], $profile?->pains ?? []),
             'history_entries' => array_map(static fn ($entry): array => [
                 'lineage_key' => $entry->lineageKey,
@@ -101,6 +104,13 @@ final class MedicalProfileForm
                     TextInput::make('name')->label(__('Название или описание боли'))->required()->maxLength(1000),
                     Slider::make('score')->label(__('Оценка боли'))->range(minValue: 0, maxValue: 10)->step(1)->nullable()
                         ->helperText(__('Можно оставить без оценки.')),
+                    Select::make('tag_ids')
+                        ->label(__('Категория проблемы'))
+                        ->options(fn (): array => app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id()))
+                        ->multiple()
+                        ->searchable()
+                        ->preload()
+                        ->helperText(__('Выберите одну или несколько категорий для статистики.')),
                 ])
                 ->columns(2)
                 ->defaultItems(0)

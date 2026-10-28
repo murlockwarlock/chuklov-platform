@@ -7,6 +7,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 #[Fillable([
     'organization_id',
@@ -41,6 +42,17 @@ class MedicalProfilePain extends Model
     public function profile(): BelongsTo
     {
         return $this->belongsTo(MedicalProfile::class, 'medical_profile_id');
+    }
+
+    /** @return BelongsToMany<MedicalProblemTag, $this> */
+    public function problemTags(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            MedicalProblemTag::class,
+            'medical_profile_pain_tags',
+            'medical_profile_pain_id',
+            'medical_problem_tag_id',
+        )->withPivot('organization_id');
     }
 
     protected function casts(): array

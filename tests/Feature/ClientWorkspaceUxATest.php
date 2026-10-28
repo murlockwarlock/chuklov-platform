@@ -455,6 +455,7 @@ final class ClientWorkspaceUxATest extends TestCase
             'profile_had_injuries',
             'profile_injury_year',
             'Задачи по здоровью',
+            'pain_analytics',
             'chronic_conditions',
             'operations',
             'injuries',

@@ -32,8 +32,12 @@ final class MedicalSessionSnapshotHasher
                 ->where('medical_session_id', $session->getKey())
                 ->orderBy('sort_order')
                 ->orderBy('id')
+                ->with('problemTags:id,organization_id,name')
                 ->get(['id', 'lineage_key', 'name', 'frequency_mode', 'frequency_count', 'frequency_period_unit', 'time_of_day', 'before_score', 'after_score', 'encryption_key_version'])
-                ->map(static fn (MedicalSessionPain $pain): array => $pain->getAttributes())
+                ->map(static fn (MedicalSessionPain $pain): array => [
+                    ...$pain->getAttributes(),
+                    'tag_ids' => $pain->problemTags->modelKeys(),
+                ])
                 ->all(),
             'test_results' => MedicalSessionTestResult::query()
                 ->where('organization_id', $session->organization_id)

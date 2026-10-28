@@ -51,6 +51,7 @@ final readonly class MedicalSessionPainInitializer
                     'before_score' => null,
                     'after_score' => null,
                     'previous_after_score' => $data?->afterScore,
+                    'tag_ids' => $data?->tagIds ?? [],
                 ];
             })->all();
         }
@@ -70,6 +71,7 @@ final readonly class MedicalSessionPainInitializer
             'before_score' => $pain->score,
             'after_score' => null,
             'previous_after_score' => null,
+            'tag_ids' => $pain->tagIds,
         ])->all();
     }
 

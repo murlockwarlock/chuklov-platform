@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
+use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
@@ -85,6 +86,12 @@ final class SessionForm
                                 Slider::make('before_score')->label(__('До сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
                                 Slider::make('after_score')->label(__('После сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
                                 Placeholder::make('previous_after_score')->label(__('После предыдущего сеанса'))->content(fn (Get $get): string => self::scoreDisplay($get('previous_after_score'))),
+                                Select::make('tag_ids')
+                                    ->label(__('Категория проблемы'))
+                                    ->options(fn (): array => app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id()))
+                                    ->multiple()
+                                    ->searchable()
+                                    ->preload(),
                             ])
                             ->columns(2)
                             ->defaultItems(0)

@@ -8,6 +8,7 @@ use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
+use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
@@ -111,6 +112,12 @@ class EditMedicalSession extends LocalizedEditRecord
                                 Slider::make('before_score')->label(__('До сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
                                 Slider::make('after_score')->label(__('После сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
                                 Placeholder::make('previous_after_score')->label(__('После предыдущего сеанса'))->content(fn (Get $get): string => self::painVasDisplay($get('previous_after_score'))),
+                                Select::make('tag_ids')
+                                    ->label(__('Категория проблемы'))
+                                    ->options(fn (): array => app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id()))
+                                    ->multiple()
+                                    ->searchable()
+                                    ->preload(),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
