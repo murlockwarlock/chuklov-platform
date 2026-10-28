@@ -6,6 +6,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalProfilePainReader;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 final readonly class MedicalSessionPainInitializer
@@ -77,16 +78,23 @@ final readonly class MedicalSessionPainInitializer
 
     public function initialize(MedicalSession $session, int $keyVersion): void
     {
-        if ($session->pains()->exists()) {
-            return;
-        }
+        DB::transaction(function () use ($session, $keyVersion): void {
+            $lockedSession = MedicalSession::query()
+                ->where('organization_id', $session->organization_id)
+                ->whereKey($session->getKey())
+                ->lockForUpdate()
+                ->firstOrFail();
+            if ($lockedSession->pains()->exists()) {
+                return;
+            }
 
-        $client = $session->client()->firstOrFail();
-        $defaults = $this->defaultsForClient($client, $session);
-        if ($defaults === []) {
-            return;
-        }
+            $client = $lockedSession->client()->firstOrFail();
+            $defaults = $this->defaultsForClient($client, $lockedSession);
+            if ($defaults === []) {
+                return;
+            }
 
-        $this->writer->replace($session, $defaults, $keyVersion);
+            $this->writer->replace($lockedSession, $defaults, $keyVersion);
+        });
     }
 }

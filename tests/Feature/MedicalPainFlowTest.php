@@ -20,6 +20,7 @@ use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GenerateSessionResult;
 use App\Modules\Sessions\Application\GetSession;
+use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
@@ -57,6 +58,11 @@ final class MedicalPainFlowTest extends TestCase
             occurredAt: Carbon::parse('2026-10-01 09:00:00', 'UTC'),
         ));
         self::assertSame([7, 3], array_map(static fn ($pain): ?int => $pain->beforeScore, $first->pains));
+        app(MedicalSessionPainInitializer::class)->initialize(
+            MedicalSession::findOrFail($first->id),
+            $first->encryptionKeyVersion,
+        );
+        self::assertSame(2, MedicalSession::findOrFail($first->id)->pains()->count());
 
         $firstPainRows = array_map(static function ($pain): array {
             $row = $pain->toArray();
