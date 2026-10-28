@@ -28,6 +28,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Tracker\Application\TrackerGoalTagCatalog;
 use Filament\Actions\Action;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
@@ -110,7 +111,7 @@ final class AnalyticsConsole extends LocalizedPage
             ->components([
                 Section::make(__('Параметры анализа'))
                     ->schema([
-                        Select::make('dimensions')
+                        CheckboxList::make('dimensions')
                             ->label(__('Показатели'))
                             ->options([
                                 'pain' => __('Проблемы и динамика боли'),
@@ -125,7 +126,7 @@ final class AnalyticsConsole extends LocalizedPage
                                 'booking_statuses' => __('Статусы записей'),
                                 'segments' => __('Категории клиентов'),
                             ])
-                            ->multiple()
+                            ->columns(['default' => 1, 'sm' => 2, 'lg' => 3])
                             ->required()
                             ->default(['pain']),
                         Select::make('client_id')

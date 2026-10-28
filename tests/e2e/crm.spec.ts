@@ -2487,26 +2487,11 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
 
-    const dimensions = page.locator('[data-field-wrapper]').filter({ hasText: 'Показатели' }).locator('button.fi-select-input-btn');
-    await expect(dimensions).toContainText('Проблемы и динамика боли');
-    await dimensions.click();
-    console.log('analytics-static-select-debug', await dimensions.evaluate((element) => {
-        const controls = element.getAttribute('aria-controls');
-        const dropdown = controls === null ? null : document.getElementById(controls);
-        const option = dropdown?.querySelector('[role="option"]');
-        return {
-            expanded: element.getAttribute('aria-expanded'),
-            display: dropdown instanceof HTMLElement ? dropdown.style.display : null,
-            optionCount: dropdown?.querySelectorAll('[role="option"]').length,
-            optionText: option?.textContent,
-        };
-    }));
-    await page.getByRole('option', { name: 'Источники клиентов', exact: true }).click();
-    await dimensions.click();
-    await page.getByRole('option', { name: 'Финансы', exact: true }).click();
-    await expect(dimensions).toContainText('Проблемы и динамика боли');
-    await expect(dimensions).toContainText('Источники клиентов');
-    await expect(dimensions).toContainText('Финансы');
+    await expect(page.getByLabel('Проблемы и динамика боли', { exact: true })).toBeChecked();
+    await page.getByLabel('Источники клиентов', { exact: true }).check();
+    await page.getByLabel('Финансы', { exact: true }).check();
+    await expect(page.getByLabel('Источники клиентов', { exact: true })).toBeChecked();
+    await expect(page.getByLabel('Финансы', { exact: true })).toBeChecked();
 
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
