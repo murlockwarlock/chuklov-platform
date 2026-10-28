@@ -66,7 +66,9 @@
                     <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Источники клиентов') }}</h2>
                     <p class="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{{ $results['acquisition']['new_clients'] }}</p>
                     <p class="text-sm text-gray-500 dark:text-gray-400">{{ __('Новых клиентов') }}</p>
-                    @php($maxSourceCount = max(1, (int) collect($results['acquisition']['sources'])->max('count')))
+                    @php
+                        $maxSourceCount = max(1, (int) collect($results['acquisition']['sources'])->max('count'));
+                    @endphp
                     <ul class="mt-4 space-y-2 text-sm">
                         @foreach ($results['acquisition']['sources'] as $source)
                             <li class="space-y-1">
@@ -110,6 +112,25 @@
                             <div><dt class="text-gray-500">{{ __('Расходы') }}</dt><dd class="font-semibold">{{ $results['finance']['expenses_minor'] ?? '—' }} {{ $results['finance']['currency'] }}</dd></div>
                             <div><dt class="text-gray-500">{{ __('Движение денежных средств') }}</dt><dd class="font-semibold">{{ $results['finance']['cash_movement_minor'] ?? '—' }} {{ $results['finance']['currency'] }}</dd></div>
                         </dl>
+                        @php
+                            $financeRevenue = (float) ($results['finance']['revenue_minor'] ?? 0);
+                            $financeExpenses = (float) ($results['finance']['expenses_minor'] ?? 0);
+                            $financeMovement = (float) ($results['finance']['cash_movement_minor'] ?? 0);
+                            $financeMaximum = max(1, abs($financeRevenue), abs($financeExpenses), abs($financeMovement));
+                            $financeFlows = [
+                                ['label' => __('Доход'), 'value' => $financeRevenue, 'color' => 'bg-emerald-500'],
+                                ['label' => __('Расходы'), 'value' => $financeExpenses, 'color' => 'bg-rose-500'],
+                                ['label' => __('Движение'), 'value' => $financeMovement, 'color' => 'bg-primary-600'],
+                            ];
+                        @endphp
+                        <div class="mt-5 space-y-3" aria-label="{{ __('Сравнение денежных потоков') }}">
+                            @foreach ($financeFlows as $flow)
+                                <div class="space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                                    <div class="flex justify-between gap-3"><span>{{ $flow['label'] }}</span><span>{{ $flow['value'] }} {{ $results['finance']['currency'] }}</span></div>
+                                    <div class="h-2 rounded-full bg-gray-100 dark:bg-white/10"><div class="h-2 rounded-full {{ $flow['color'] }}" style="width: {{ min(100, max(0, abs($flow['value']) / $financeMaximum * 100)) }}%"></div></div>
+                                </div>
+                            @endforeach
+                        </div>
                         @if ($results['finance']['accounts'] !== [])
                             <ul class="mt-4 space-y-2 text-sm">
                                 @foreach ($results['finance']['accounts'] as $account)
