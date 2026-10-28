@@ -15,13 +15,18 @@ final readonly class MedicalSessionTestWriter
 {
     public function __construct(private MedicalEncryptorInterface $encryptor) {}
 
-    /** @param array<int, mixed> $tests */
-    /** @param array<int, mixed> $rootCauses */
+    /**
+     * @param  array<int, mixed>  $tests
+     * @param  array<int, mixed>  $rootCauses
+     */
     public function replace(MedicalSession $session, array $tests, array $rootCauses, int $keyVersion): void
     {
         $organizationId = (int) $session->organization_id;
         $normalizedTests = $this->normalizeTests($organizationId, $tests);
-        $normalizedRoots = $this->normalizeRootCauses($organizationId, $rootCauses);
+        $availableRootCauseIds = array_values(array_unique(array_merge(
+            ...array_map(static fn (array $test): array => $test['cause_ids'], $normalizedTests),
+        )));
+        $normalizedRoots = $this->normalizeRootCauses($rootCauses, $availableRootCauseIds);
 
         $existing = $session->testResults()->get()->keyBy('medical_test_definition_id');
         $kept = [];
@@ -62,7 +67,10 @@ final readonly class MedicalSessionTestWriter
         }
     }
 
-    /** @return list<array{test_id:int,before_value_id:int|null,after_value_id:int|null,cause_ids:list<int>}> */
+    /**
+     * @param  array<int, mixed>  $tests
+     * @return array<int, array{test_id:int,before_value_id:int|null,after_value_id:int|null,cause_ids:array<int, int>}>
+     */
     private function normalizeTests(int $organizationId, array $tests): array
     {
         $normalized = [];
@@ -87,6 +95,9 @@ final readonly class MedicalSessionTestWriter
                 ->unique()
                 ->values()
                 ->all();
+            if ($causeIds !== [] && ! ($before !== null && $before->is_abnormal) && ! ($after !== null && $after->is_abnormal)) {
+                throw ValidationException::withMessages(['test_results' => 'Причины можно указать только для теста с отклонением.']);
+            }
             if ($causeIds !== [] && MedicalCauseDefinition::query()->where('organization_id', $organizationId)->whereIn('id', $causeIds)->count() !== count($causeIds)) {
                 throw ValidationException::withMessages(['test_results' => 'Одна из причин недоступна.']);
             }
@@ -97,15 +108,18 @@ final readonly class MedicalSessionTestWriter
         return $normalized;
     }
 
-    /** @return array{cause_id:int|null,free_text:string|null,sort_order:int} */
-    private function normalizeRootCause(int $organizationId, mixed $raw, int $sortOrder): array
+    /**
+     * @param  list<int>  $availableCauseIds
+     * @return array{cause_id:int|null,free_text:string|null,sort_order:int}
+     */
+    private function normalizeRootCause(mixed $raw, int $sortOrder, array $availableCauseIds): array
     {
         if (! is_array($raw)) {
             throw ValidationException::withMessages(['root_causes' => 'Проверьте первопричины.']);
         }
         $causeId = (int) ($raw['cause_id'] ?? 0);
         $causeId = $causeId > 0 ? $causeId : null;
-        if ($causeId !== null && ! MedicalCauseDefinition::query()->where('organization_id', $organizationId)->whereKey($causeId)->exists()) {
+        if ($causeId !== null && ! in_array($causeId, $availableCauseIds, true)) {
             throw ValidationException::withMessages(['root_causes' => 'Выбранная первопричина недоступна.']);
         }
         $freeText = trim((string) ($raw['free_text'] ?? ''));
@@ -116,14 +130,18 @@ final readonly class MedicalSessionTestWriter
         return ['cause_id' => $causeId, 'free_text' => $freeText === '' ? null : $freeText, 'sort_order' => $sortOrder];
     }
 
-    /** @return list<array{cause_id:int|null,free_text:string|null,sort_order:int}> */
-    private function normalizeRootCauses(int $organizationId, array $roots): array
+    /**
+     * @param  array<int, mixed>  $roots
+     * @param  list<int>  $availableCauseIds
+     * @return array<int, array{cause_id:int|null,free_text:string|null,sort_order:int}>
+     */
+    private function normalizeRootCauses(array $roots, array $availableCauseIds): array
     {
         if (count($roots) > 2) {
             throw ValidationException::withMessages(['root_causes' => 'Можно выбрать не более двух первопричин.']);
         }
 
-        return array_map(fn (mixed $raw, int $index): array => $this->normalizeRootCause($organizationId, $raw, $index), array_values($roots), array_keys(array_values($roots)));
+        return array_map(fn (mixed $raw, int $index): array => $this->normalizeRootCause($raw, $index, $availableCauseIds), array_values($roots), array_keys(array_values($roots)));
     }
 
     private function value(int $organizationId, MedicalTestDefinition $definition, mixed $valueId): ?MedicalTestValue

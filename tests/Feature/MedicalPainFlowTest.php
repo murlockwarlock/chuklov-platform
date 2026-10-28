@@ -30,6 +30,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 final class MedicalPainFlowTest extends TestCase
@@ -292,6 +293,77 @@ final class MedicalPainFlowTest extends TestCase
         $reloaded = app(GetSession::class)->handle($admin, MedicalSession::findOrFail($session->id), $client);
         self::assertSame($session->testResults[0]->toArray(), $reloaded?->testResults[0]->toArray());
         self::assertSame($session->rootCauses[0]->toArray(), $reloaded?->rootCauses[0]->toArray());
+    }
+
+    public function test_causes_require_an_abnormal_test_and_root_causes_require_current_session_causes(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'posture_test',
+            'name' => 'Тест осанки',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $normal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'normal',
+            'label' => 'Норма',
+            'is_abnormal' => false,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $abnormal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'abnormal',
+            'label' => 'Отклонение',
+            'is_abnormal' => true,
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+        $currentCause = MedicalCauseDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Текущая причина',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $foreignCause = MedicalCauseDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Причина вне сеанса',
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+
+        try {
+            app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: Carbon::parse('2026-10-24 08:00:00', 'UTC'),
+                testResults: [[
+                    'test_id' => $test->getKey(),
+                    'before_value_id' => $normal->getKey(),
+                    'after_value_id' => $normal->getKey(),
+                    'cause_ids' => [$currentCause->getKey()],
+                ]],
+            ));
+            self::fail('A cause on a normal test must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Причины можно указать только для теста с отклонением.', $exception->errors()['test_results'][0]);
+        }
+
+        $this->expectException(ValidationException::class);
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-24 09:00:00', 'UTC'),
+            testResults: [[
+                'test_id' => $test->getKey(),
+                'before_value_id' => $abnormal->getKey(),
+                'after_value_id' => $normal->getKey(),
+                'cause_ids' => [$currentCause->getKey()],
+            ]],
+            rootCauses: [['cause_id' => $foreignCause->getKey(), 'free_text' => null]],
+        ));
     }
 
     /** @return array{Organization, User, Client, Specialist} */
