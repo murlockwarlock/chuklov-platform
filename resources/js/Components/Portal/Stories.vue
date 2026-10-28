@@ -101,6 +101,7 @@ function swipe(event: TouchEvent): void {
         crossorigin="anonymous"
         controls
         autoplay
+        muted
         playsinline
         class="portal-story-player__video"
         @error="playbackError = true"
