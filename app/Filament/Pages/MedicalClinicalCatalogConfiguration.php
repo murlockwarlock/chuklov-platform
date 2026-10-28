@@ -8,12 +8,15 @@ use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Sessions\Application\ImportMedicalClinicalCatalogCsv;
 use App\Modules\Sessions\Application\SaveMedicalClinicalCatalog;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use Filament\Actions\Action;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
@@ -24,9 +27,12 @@ use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use LogicException;
+use Throwable;
 use UnitEnum;
 
 /** @property-read Schema $form */
@@ -174,6 +180,52 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                     Action::make('save')->label(__('Сохранить каталог'))->submit('save'),
                 ]),
             ]);
+    }
+
+    protected function getHeaderActions(): array
+    {
+        return [
+            Action::make('importCsv')
+                ->label(__('Импортировать CSV'))
+                ->icon('heroicon-o-arrow-up-tray')
+                ->color('gray')
+                ->authorize(fn (): bool => self::canAccess())
+                ->form([
+                    Select::make('section')
+                        ->label(__('Раздел каталога'))
+                        ->options([
+                            'tests' => __('Тесты и значения'),
+                            'causes' => __('Причины нарушений'),
+                            'problem_tags' => __('Категории проблем'),
+                        ])
+                        ->required(),
+                    FileUpload::make('file')
+                        ->label(__('CSV-файл'))
+                        ->helperText(__('Тесты: «Название теста», «Раздел», «Значение», «Нарушение», «Активен», «Порядок теста», «Порядок значения». Причины и категории: «Название», «Группа», «Активна», «Порядок». До 2 МБ.'))
+                        ->acceptedFileTypes(['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel'])
+                        ->maxSize(2048)
+                        ->storeFiles(false)
+                        ->required(),
+                ])
+                ->action(function (array $data): void {
+                    $actor = Auth::user();
+                    $file = $data['file'] ?? null;
+                    if (! $actor instanceof User || ! $file instanceof UploadedFile) {
+                        abort(422);
+                    }
+
+                    try {
+                        $rows = app(ImportMedicalClinicalCatalogCsv::class)->handle($actor, $file, (string) ($data['section'] ?? ''));
+                        $this->mount();
+                        Notification::make()->success()->title(__('CSV импортирован'))->body(__('Импортировано строк: :count', ['count' => $rows]))->send();
+                    } catch (ValidationException $exception) {
+                        $message = collect($exception->errors())->flatten()->first();
+                        Notification::make()->danger()->title(is_string($message) ? $message : __('Проверьте CSV-файл.'))->send();
+                    } catch (Throwable) {
+                        Notification::make()->danger()->title(__('CSV-файл не удалось импортировать.'))->send();
+                    }
+                }),
+        ];
     }
 
     public function save(): void

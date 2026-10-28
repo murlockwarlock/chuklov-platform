@@ -8,11 +8,13 @@ use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Sessions\Application\ImportMedicalClinicalCatalogCsv;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -27,6 +29,7 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
 
         Livewire::actingAs($admin)
             ->test(MedicalClinicalCatalogConfiguration::class)
+            ->assertActionExists('importCsv')
             ->fillForm([
                 'tests' => [[
                     'key' => 'synthetic_balance',
@@ -72,6 +75,49 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
         self::assertTrue((bool) ($abnormal['is_abnormal'] ?? false));
         self::assertSame('Синтетическая причина', $causes[0]['name'] ?? null);
         self::assertSame('Синтетическая категория', $problemTags[0]['name'] ?? null);
+    }
+
+    public function test_manager_can_import_tests_causes_and_problem_tags_from_human_labelled_csv(): void
+    {
+        [$organization, $admin] = $this->fixture();
+
+        $testRows = app(ImportMedicalClinicalCatalogCsv::class)->handle(
+            $admin,
+            UploadedFile::fake()->createWithContent('tests.csv', implode("\n", [
+                'Название теста;Раздел;Значение;Нарушение;Активен;Порядок теста;Порядок значения',
+                'Баланс;Статика;Норма;нет;да;1;1',
+                'Баланс;Статика;Отклонение;да;да;1;2',
+            ])),
+            'tests',
+        );
+        $causeRows = app(ImportMedicalClinicalCatalogCsv::class)->handle(
+            $admin,
+            UploadedFile::fake()->createWithContent('causes.csv', "Название;Группа;Активна;Порядок\nМышечный дисбаланс;QA;да;1\n"),
+            'causes',
+        );
+        $tagRows = app(ImportMedicalClinicalCatalogCsv::class)->handle(
+            $admin,
+            UploadedFile::fake()->createWithContent('tags.csv', "Название;Группа;Активна;Порядок\nПоясница;QA;да;1\n"),
+            'problem_tags',
+        );
+
+        self::assertSame(2, $testRows);
+        self::assertSame(1, $causeRows);
+        self::assertSame(1, $tagRows);
+        $test = MedicalTestDefinition::query()->where('organization_id', $organization->getKey())->sole();
+        self::assertSame('Баланс', $test->name);
+        self::assertSame(2, $test->values()->count());
+        self::assertTrue((bool) $test->values()->where('label', 'Отклонение')->value('is_abnormal'));
+        self::assertSame('Мышечный дисбаланс', MedicalCauseDefinition::query()->where('organization_id', $organization->getKey())->sole()->name);
+        self::assertSame('Поясница', MedicalProblemTag::query()->where('organization_id', $organization->getKey())->sole()->name);
+
+        $testKey = $test->key;
+        app(ImportMedicalClinicalCatalogCsv::class)->handle(
+            $admin,
+            UploadedFile::fake()->createWithContent('tests.csv', "Название теста;Значение\nБаланс;Норма\nБаланс;Отклонение\n"),
+            'tests',
+        );
+        self::assertSame($testKey, $test->refresh()->key);
     }
 
     /** @return array{Organization, User} */
