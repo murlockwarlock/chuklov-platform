@@ -32,6 +32,12 @@ final class MedicalProfileForm
     {
         $pains = $profile instanceof MedicalProfileData ? $profile->pains : [];
         $historyEntries = $profile instanceof MedicalProfileData ? $profile->historyEntries : [];
+        $historyRows = array_map(static fn ($entry): array => [
+            'lineage_key' => $entry->lineageKey,
+            'type' => $entry->type,
+            'year' => $entry->year,
+            'description' => $entry->description,
+        ], $historyEntries);
 
         return [
             'anamnesis' => $profile?->anamnesis,
@@ -48,12 +54,9 @@ final class MedicalProfileForm
                 'score' => $pain->score,
                 'tag_ids' => $pain->tagIds,
             ], $pains),
-            'history_entries' => array_map(static fn ($entry): array => [
-                'lineage_key' => $entry->lineageKey,
-                'type' => $entry->type,
-                'year' => $entry->year,
-                'description' => $entry->description,
-            ], $historyEntries),
+            'history_entries' => $historyRows,
+            'operation_history' => array_values(array_filter($historyRows, static fn (array $entry): bool => $entry['type'] === 'operation')),
+            'injury_history' => array_values(array_filter($historyRows, static fn (array $entry): bool => $entry['type'] === 'injury')),
             'pain_not_measured' => (self::answers($profile)['pain_vas'] ?? null) === null,
             'answers' => self::answers($profile) ?? [
                 'symptoms' => [], 'pain_vas' => null, 'no_chronic_conditions' => false,
@@ -82,6 +85,27 @@ final class MedicalProfileForm
     /** @param array<string, mixed> $data */
     public static function command(array $data): UpdateMedicalProfileCommand
     {
+        $historyEntries = is_array($data['history_entries'] ?? null) ? array_values($data['history_entries']) : [];
+        foreach (['operation_history' => 'operation', 'injury_history' => 'injury'] as $field => $type) {
+            if (! array_key_exists($field, $data)) {
+                continue;
+            }
+
+            $historyEntries = array_values(array_filter(
+                $historyEntries,
+                static fn (mixed $entry): bool => ! is_array($entry) || ($entry['type'] ?? null) !== $type,
+            ));
+            foreach (array_values(is_array($data[$field]) ? $data[$field] : []) as $entry) {
+                $historyEntries[] = is_array($entry)
+                    ? [...$entry, 'type' => $type]
+                    : $entry;
+            }
+        }
+        if (array_key_exists('history_entries', $data) || array_key_exists('operation_history', $data) || array_key_exists('injury_history', $data)) {
+            $data['history_entries'] = $historyEntries;
+        }
+        unset($data['operation_history'], $data['injury_history']);
+
         $answers = is_array($data['answers'] ?? null) ? $data['answers'] : [];
         if (($data['pain_not_measured'] ?? false) === true) {
             $answers['pain_vas'] = null;
@@ -130,28 +154,9 @@ final class MedicalProfileForm
             Checkbox::make('answers.had_operations')->label(__('Были операции'))->live(),
             Hidden::make('answers.operation_year')->dehydrated()->nullable(),
             Textarea::make('operations')->label(__('Операции'))->rows(3)->maxLength(10000),
-            Repeater::make('history_entries')
-                ->label(__('Операции и травмы по годам'))
-                ->helperText(__('Добавляйте отдельную строку для каждой операции или травмы.'))
-                ->schema([
-                    Hidden::make('lineage_key')->dehydrated()->nullable(),
-                    Select::make('type')->label(__('Тип'))->options([
-                        'operation' => __('Операция'),
-                        'injury' => __('Травма'),
-                    ])->required(),
-                    TextInput::make('year')->label(__('Год'))->integer()->minValue(1800)->maxValue(2200)->required(),
-                    Textarea::make('description')->label(__('Описание'))->rows(2)->maxLength(10000)->required(),
-                ])
-                ->columns(2)
-                ->defaultItems(0)
-                ->reorderable()
-                ->collapsible()
-                ->itemLabel(fn (array $state): string => (string) ($state['description'] ?? __('Новая запись')))
-                ->addActionLabel(__('Добавить запись'))
-                ->visible(fn (Get $get): bool => $get('answers.had_operations') === true
-                    || $get('answers.had_injuries') === true
-                    || is_array($get('history_entries')) && $get('history_entries') !== [])
-                ->columnSpanFull(),
+            Hidden::make('history_entries')->dehydrated()->default([]),
+            self::historyRepeater('operation_history', __('Операции'), 'operation'),
+            self::historyRepeater('injury_history', __('Травмы'), 'injury'),
             Checkbox::make('answers.had_injuries')->label(__('Были травмы'))->live(),
             Hidden::make('answers.injury_year')->dehydrated()->nullable(),
             Textarea::make('injuries')->label(__('Травмы'))->rows(3)->maxLength(10000),
@@ -159,5 +164,28 @@ final class MedicalProfileForm
             Textarea::make('supplements')->label(__('Нутрицевтики и БАДы'))->rows(3)->maxLength(10000),
             Textarea::make('anamnesis')->label(__('Анамнез'))->rows(3)->maxLength(10000),
         ];
+    }
+
+    private static function historyRepeater(string $name, string $label, string $type): Repeater
+    {
+        $toggle = $type === 'operation' ? 'answers.had_operations' : 'answers.had_injuries';
+
+        return Repeater::make($name)
+            ->label($label)
+            ->helperText(__('Добавляйте отдельную строку для каждой записи.'))
+            ->schema([
+                Hidden::make('lineage_key')->dehydrated()->nullable(),
+                TextInput::make('year')->label(__('Год'))->integer()->minValue(1800)->maxValue(2200)->required(),
+                Textarea::make('description')->label(__('Описание'))->rows(2)->maxLength(10000)->required(),
+            ])
+            ->columns(2)
+            ->defaultItems(0)
+            ->reorderable()
+            ->collapsible()
+            ->itemLabel(fn (array $state): string => (string) ($state['description'] ?? __('Новая запись')))
+            ->addActionLabel(__('Добавить запись'))
+            ->visible(fn (Get $get): bool => $get($toggle) === true
+                || is_array($get($name)) && $get($name) !== [])
+            ->columnSpanFull();
     }
 }

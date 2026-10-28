@@ -82,8 +82,10 @@ final class September26MedicalProfileTest extends TestCase
         $data['answers']['had_injuries'] = true;
         $data['operations'] = 'Synthetic operation details';
         $data['injuries'] = 'Synthetic injury details';
-        $data['history_entries'] = [
+        $data['operation_history'] = [
             ['type' => 'operation', 'year' => 2020, 'description' => 'Synthetic operation row'],
+        ];
+        $data['injury_history'] = [
             ['type' => 'injury', 'year' => 2021, 'description' => 'Synthetic injury row'],
         ];
 
