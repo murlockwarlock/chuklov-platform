@@ -2440,13 +2440,18 @@ test('staff can manage private client audio recordings', async ({ page }) => {
     }
     console.log('audio-e2e: download');
 
+    console.log('audio-e2e: delete click');
     await audioRow.getByRole('button', { name: 'Удалить', exact: true }).click();
+    console.log('audio-e2e: delete dialog');
     const deleteConfirmation = page
         .getByRole('alertdialog', { name: 'Удалить', exact: true })
         .getByRole('button', { name: 'Подтвердить', exact: true });
     await expect(deleteConfirmation).toBeVisible();
+    console.log('audio-e2e: delete confirm visible');
     await deleteConfirmation.click();
+    console.log('audio-e2e: delete submitted');
     await expect(audioRow).toHaveCount(0, { timeout: 15_000 });
+    console.log('audio-e2e: row removed');
     await page.reload();
     await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
     await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA' })).toHaveCount(0);
