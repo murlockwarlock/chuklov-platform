@@ -2,6 +2,7 @@
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -37,11 +38,12 @@ return new class extends Migration
                 ->restrictOnDelete();
             $table->index(['organization_id', 'client_id', 'entry_type', 'year']);
 
-            if (Schema::getConnection()->getDriverName() === 'pgsql') {
-                $table->check("entry_type IN ('injury', 'operation')", 'medical_profile_history_entry_type_check');
-                $table->check('year BETWEEN 1800 AND 2200', 'medical_profile_history_year_check');
-            }
         });
+
+        if (Schema::getConnection()->getDriverName() === 'pgsql') {
+            DB::statement("ALTER TABLE medical_profile_history_entries ADD CONSTRAINT medical_profile_history_entry_type_check CHECK (entry_type IN ('injury', 'operation'))");
+            DB::statement('ALTER TABLE medical_profile_history_entries ADD CONSTRAINT medical_profile_history_year_check CHECK (year BETWEEN 1800 AND 2200)');
+        }
     }
 
     public function down(): void
