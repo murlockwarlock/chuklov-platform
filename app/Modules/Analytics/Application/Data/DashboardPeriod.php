@@ -15,6 +15,10 @@ final readonly class DashboardPeriod
 
     public const string LastNinetyDays = 'last_90_days';
 
+    public const string CurrentMonth = 'current_month';
+
+    public const string CurrentYear = 'current_year';
+
     public const string Custom = 'custom';
 
     public const string DefaultPreset = self::LastThirtyDays;
@@ -39,6 +43,8 @@ final readonly class DashboardPeriod
             self::LastSevenDays => 'Последние 7 дней',
             self::LastThirtyDays => 'Последние 30 дней',
             self::LastNinetyDays => 'Последние 90 дней',
+            self::CurrentMonth => 'Текущий месяц',
+            self::CurrentYear => 'Текущий год',
             self::Custom => 'Произвольный период',
         ];
     }
@@ -74,6 +80,8 @@ final readonly class DashboardPeriod
             self::LastSevenDays => $today->subDays(6),
             self::LastThirtyDays => $today->subDays(29),
             self::LastNinetyDays => $today->subDays(89),
+            self::CurrentMonth => $today->startOfMonth(),
+            self::CurrentYear => $today->startOfYear(),
             default => $today->subDays(29),
         };
 

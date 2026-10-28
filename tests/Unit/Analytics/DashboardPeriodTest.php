@@ -51,4 +51,27 @@ final class DashboardPeriodTest extends TestCase
         self::assertSame('2026-01-17', $fallback->startDate);
         self::assertSame('2026-02-15', $fallback->endDate);
     }
+
+    public function test_current_month_and_year_presets_use_organization_timezone_boundaries(): void
+    {
+        $now = CarbonImmutable::parse('2026-10-28 20:15:00', 'UTC');
+
+        $month = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::CurrentMonth],
+            'Asia/Almaty',
+            $now,
+        );
+        $year = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::CurrentYear],
+            'Asia/Almaty',
+            $now,
+        );
+
+        self::assertSame('2026-10-01', $month->startDate);
+        self::assertSame('2026-10-29', $month->endDate);
+        self::assertSame('2026-01-01', $year->startDate);
+        self::assertSame('2026-10-29', $year->endDate);
+        self::assertSame('2026-10-01 00:00:00', $month->startUtc->setTimezone('Asia/Almaty')->format('Y-m-d H:i:s'));
+        self::assertSame('2026-01-01 00:00:00', $year->startUtc->setTimezone('Asia/Almaty')->format('Y-m-d H:i:s'));
+    }
 }
