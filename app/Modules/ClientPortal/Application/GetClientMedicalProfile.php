@@ -90,7 +90,7 @@ final readonly class GetClientMedicalProfile
         return [
             'available' => true,
             'updatedAt' => $profile->updated_at->toIso8601String(),
-            'anamnesis' => $data->anamnesis,
+            'anamnesis' => null,
             'complaintsGoals' => $data->complaintsGoalsForCompatibility(),
             'operationsInjuries' => $data->operationsInjuriesForCompatibility(),
             'medicines' => $data->medicines,
