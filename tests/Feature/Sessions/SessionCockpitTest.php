@@ -909,6 +909,10 @@ final class SessionCockpitTest extends TestCase
         $component = Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
             ->assertActionExists('fillResult')
+            ->assertFormComponentActionExists('protocol_actions', 'fillProtocol')
+            ->callFormComponentAction('protocol_actions', 'fillProtocol')
+            ->assertNotified('Автозаполнение алгоритма пока не настроено')
+            ->assertSet('data.protocol', null)
             ->callAction('fillResult')
             ->assertNotified('Результат заполнен')
             ->assertSet('data.result', "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены");

@@ -9,6 +9,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\DateTimePicker;
 use Filament\Forms\Components\Hidden;
@@ -18,6 +19,8 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -159,7 +162,8 @@ final class SessionForm
                             ->label(__('Историческое значение ВАШ'))
                             ->content(fn (Get $get): string => self::legacyPainVasDisplay($get('pain_vas')))
                             ->columnSpanFull(),
-                        Textarea::make('protocol')->label(__('Протокол'))->rows(3)->placeholder(__('Назначенные процедуры и план')),
+                        Textarea::make('protocol')->label(__('Алгоритм / протокол сеанса'))->rows(3)->placeholder(__('Пошаговый план сеанса')),
+                        self::protocolActions(),
                         Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->rows(3)->placeholder(__('Что клиент почувствовал после сеанса')),
                         Textarea::make('visual_posture_diagnostics')->label(__('Визуальная диагностика осанки'))->rows(3)->placeholder(__('Изменения линии плеч, таза и позвоночника')),
                         Textarea::make('result')->label(__('Результат после сеанса'))->rows(3)->placeholder(__('Эффект после процедур/до следующего сеанса')),
@@ -172,6 +176,23 @@ final class SessionForm
         return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
             ? __(':value / 10', ['value' => (int) $value])
             : __('Нет данных');
+    }
+
+    public static function protocolActions(): Actions
+    {
+        return Actions::make([
+            Action::make('fillProtocol')
+                ->label(__('Заполнить'))
+                ->icon('heroicon-o-sparkles')
+                ->color('gray')
+                ->action(static function (): void {
+                    Notification::make()
+                        ->title(__('Автозаполнение алгоритма пока не настроено'))
+                        ->body(__('Заполните протокол вручную. Введённый текст сохранён.'))
+                        ->warning()
+                        ->send();
+                }),
+        ])->key('protocol_actions')->columnSpanFull();
     }
 
     private static function previousAfterScore(Get $get): mixed
