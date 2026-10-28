@@ -717,6 +717,37 @@ final class SessionCockpitTest extends TestCase
         }
     }
 
+    public function test_session_pain_frequency_and_time_are_optional_with_safe_defaults(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client]);
+
+        $component
+            ->fillForm([
+                'occurred_at' => '2026-08-16 10:00',
+                'specialist_id' => $specialist->getKey(),
+                'pains' => [[
+                    'name' => 'Шея',
+                    'before_score' => 5,
+                ]],
+            ])
+            ->call('create')
+            ->assertHasNoErrors();
+
+        $pain = MedicalSession::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->sole()
+            ->pains()
+            ->sole();
+
+        self::assertSame('permanent', $pain->frequency_mode);
+        self::assertSame(['all'], $pain->time_of_day);
+    }
+
     public function test_filament_create_session_over_livewire_creates_for_fixed_parent_client_and_encrypts_clinical_fields(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

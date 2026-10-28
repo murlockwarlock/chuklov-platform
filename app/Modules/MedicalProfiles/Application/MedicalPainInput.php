@@ -56,7 +56,10 @@ final readonly class MedicalPainInput
         }
         $timeOfDay = array_values(array_unique(array_filter($timeOfDay, static fn (mixed $value): bool => is_string($value))));
         $allowedTime = ['all', 'morning', 'day', 'evening', 'night'];
-        if ($timeOfDay === [] || array_diff($timeOfDay, $allowedTime) !== []) {
+        if ($timeOfDay === []) {
+            $timeOfDay = ['all'];
+        }
+        if (array_diff($timeOfDay, $allowedTime) !== []) {
             throw ValidationException::withMessages(['pains' => 'Выберите корректное время возникновения боли.']);
         }
         if (in_array('all', $timeOfDay, true)) {

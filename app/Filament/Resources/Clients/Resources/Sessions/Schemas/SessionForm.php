@@ -67,7 +67,7 @@ final class SessionForm
                                 Select::make('frequency_mode')->label(__('Частота'))->options([
                                     'permanent' => __('Постоянно'),
                                     'count' => __('Количество раз за период'),
-                                ])->required()->default('permanent')->live(),
+                                ])->default('permanent')->live(),
                                 TextInput::make('frequency_count')->label(__('Количество'))->integer()->minValue(1)
                                     ->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')
                                     ->required(fn (Get $get): bool => $get('frequency_mode') === 'count'),
@@ -81,7 +81,7 @@ final class SessionForm
                                     'day' => __('День'),
                                     'evening' => __('Вечер'),
                                     'night' => __('Ночь'),
-                                ])->columns(2)->default(['all'])->required(),
+                                ])->columns(2)->default(['all']),
                                 Slider::make('before_score')->label(__('До сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
                                 Slider::make('after_score')->label(__('После сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
                                 Placeholder::make('previous_after_score')
