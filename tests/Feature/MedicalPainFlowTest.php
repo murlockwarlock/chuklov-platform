@@ -132,6 +132,29 @@ final class MedicalPainFlowTest extends TestCase
         self::assertSame('fortnight', $session->pains[0]->frequencyPeriodUnit);
     }
 
+    public function test_profile_complaints_are_loaded_as_special_complaints_only_for_the_first_session(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+
+        app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            complaints: 'Нужно учесть старую травму плеча.',
+            complaintsProvided: true,
+        ));
+
+        $first = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-01 09:00:00', 'UTC'),
+        ));
+        $second = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-08 09:00:00', 'UTC'),
+        ));
+
+        self::assertSame('Нужно учесть старую травму плеча.', $first->pain);
+        self::assertNull($second->pain);
+        self::assertSame($organization->getKey(), $client->organization_id);
+    }
+
     public function test_problem_tags_are_preserved_from_profile_to_session_and_next_session(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

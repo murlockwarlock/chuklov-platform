@@ -5,6 +5,7 @@ namespace App\Modules\Sessions\Application;
 use App\Models\User;
 use App\Modules\Identity\Application\EnsureSelfPatientProfile;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -52,11 +53,12 @@ final readonly class CreateSession
         }
 
         $booking = $this->resolveBooking($orgId, $command, $client, $specialist);
+        $specialComplaints = $this->initialSpecialComplaints($actor, $client, $command->pain);
 
         $keyVersion = $this->keyResolver->getCurrentKeyVersion($orgId);
 
         $encrypted = new EncryptedSessionPayload(
-            encryptedPain: $this->encryptor->encryptField($orgId, $command->pain, $keyVersion),
+            encryptedPain: $this->encryptor->encryptField($orgId, $specialComplaints, $keyVersion),
             encryptedTests: $this->encryptor->encryptField($orgId, $command->tests, $keyVersion),
             encryptedObservations: $this->encryptor->encryptField($orgId, $command->observations, $keyVersion),
             encryptedSubjectiveFeelings: $this->encryptor->encryptField($orgId, $command->subjectiveFeelings, $keyVersion),
@@ -74,7 +76,7 @@ final readonly class CreateSession
 
         $occurredAtUtc = $command->occurredAtUtc();
 
-        return DB::transaction(function () use ($actor, $organization, $client, $specialist, $booking, $command, $encrypted, $keyVersion, $occurredAtUtc, $orgId): MedicalSessionData {
+        return DB::transaction(function () use ($actor, $organization, $client, $specialist, $booking, $command, $specialComplaints, $encrypted, $keyVersion, $occurredAtUtc, $orgId): MedicalSessionData {
             $session = new MedicalSession;
             $session->forceFill([
                 'organization_id' => $orgId,
@@ -126,7 +128,7 @@ final readonly class CreateSession
                 clientId: (int) $client->getKey(),
                 specialistId: (int) $specialist->getKey(),
                 bookingId: $booking?->getKey(),
-                pain: $command->pain,
+                pain: $specialComplaints,
                 tests: $command->tests,
                 observations: $command->observations,
                 rootCauseHypothesis: $command->rootCauseHypothesis,
@@ -144,6 +146,18 @@ final readonly class CreateSession
                 rootCauses: $this->testReader->rootCauses($session),
             );
         });
+    }
+
+    private function initialSpecialComplaints(User $actor, Client $client, ?string $pain): ?string
+    {
+        if ($pain !== null || MedicalSession::query()
+            ->where('organization_id', $client->organization_id)
+            ->where('client_id', $client->getKey())
+            ->exists()) {
+            return $pain;
+        }
+
+        return app(GetMedicalProfile::class)->handle($actor, $client)?->complaints;
     }
 
     private function resolveBooking(int $orgId, CreateSessionCommand $command, Client $client, Specialist $specialist): ?Booking
