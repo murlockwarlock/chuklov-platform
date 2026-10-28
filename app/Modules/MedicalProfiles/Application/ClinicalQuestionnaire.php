@@ -39,8 +39,15 @@ final class ClinicalQuestionnaire
      * @param  array<string, mixed>  $answers
      * @return array<string, mixed>
      */
-    public function validate(array $answers): array
+    public function validate(array $answers, bool $requireLegacyYears = true): array
     {
+        $operationYearRules = ['nullable', 'integer', 'between:1900,'.now()->year];
+        $injuryYearRules = ['nullable', 'integer', 'between:1900,'.now()->year];
+        if ($requireLegacyYears) {
+            $operationYearRules[] = 'required_if:answers.had_operations,true';
+            $injuryYearRules[] = 'required_if:answers.had_injuries,true';
+        }
+
         $validated = Validator::make(['answers' => $answers], [
             'answers' => ['required', 'array:symptoms,pain_vas,no_chronic_conditions,had_operations,operation_year,had_injuries,injury_year'],
             'answers.symptoms' => ['present', 'array', 'max:9'],
@@ -48,9 +55,9 @@ final class ClinicalQuestionnaire
             'answers.pain_vas' => ['present', 'nullable', 'integer', 'between:0,10'],
             'answers.no_chronic_conditions' => ['required', 'boolean'],
             'answers.had_operations' => ['required', 'boolean'],
-            'answers.operation_year' => ['nullable', 'integer', 'between:1900,'.now()->year, 'required_if:answers.had_operations,true'],
+            'answers.operation_year' => $operationYearRules,
             'answers.had_injuries' => ['required', 'boolean'],
-            'answers.injury_year' => ['nullable', 'integer', 'between:1900,'.now()->year, 'required_if:answers.had_injuries,true'],
+            'answers.injury_year' => $injuryYearRules,
         ])->validate()['answers'];
         $validated['pain_vas'] = $validated['pain_vas'] === null ? null : (int) $validated['pain_vas'];
         foreach (['no_chronic_conditions', 'had_operations', 'had_injuries'] as $field) {

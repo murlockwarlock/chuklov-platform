@@ -86,7 +86,7 @@ final class MedicalProfileForm
         if (($data['pain_not_measured'] ?? false) === true) {
             $answers['pain_vas'] = null;
         }
-        $data['clinical_answers'] = json_encode(app(ClinicalQuestionnaire::class)->validate($answers), JSON_THROW_ON_ERROR);
+        $data['clinical_answers'] = json_encode(app(ClinicalQuestionnaire::class)->validate($answers, false), JSON_THROW_ON_ERROR);
         unset($data['answers']);
         unset($data['pain_not_measured']);
 
@@ -128,9 +128,7 @@ final class MedicalProfileForm
             Checkbox::make('answers.no_chronic_conditions')->label(__('Хронических заболеваний нет')),
             Textarea::make('chronic_conditions')->label(__('Хронические заболевания'))->rows(3)->maxLength(10000),
             Checkbox::make('answers.had_operations')->label(__('Были операции'))->live(),
-            TextInput::make('answers.operation_year')->label(__('Год операции'))->integer()->minValue(1900)->maxValue(now()->year)
-                ->nullable()->required(fn (Get $get): bool => $get('answers.had_operations') === true)
-                ->validationMessages(['required' => __('Укажите год операции.')]),
+            Hidden::make('answers.operation_year')->dehydrated()->nullable(),
             Textarea::make('operations')->label(__('Операции'))->rows(3)->maxLength(10000),
             Repeater::make('history_entries')
                 ->label(__('Операции и травмы по годам'))
@@ -155,9 +153,7 @@ final class MedicalProfileForm
                     || is_array($get('history_entries')) && $get('history_entries') !== [])
                 ->columnSpanFull(),
             Checkbox::make('answers.had_injuries')->label(__('Были травмы'))->live(),
-            TextInput::make('answers.injury_year')->label(__('Год травмы'))->integer()->minValue(1900)->maxValue(now()->year)
-                ->nullable()->required(fn (Get $get): bool => $get('answers.had_injuries') === true)
-                ->validationMessages(['required' => __('Укажите год травмы.')]),
+            Hidden::make('answers.injury_year')->dehydrated()->nullable(),
             Textarea::make('injuries')->label(__('Травмы'))->rows(3)->maxLength(10000),
             Textarea::make('medicines')->label(__('Лекарственные препараты'))->rows(3)->maxLength(10000),
             Textarea::make('supplements')->label(__('Нутрицевтики и БАДы'))->rows(3)->maxLength(10000),
