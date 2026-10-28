@@ -45,6 +45,26 @@ function validPdfBuffer(): Buffer {
     ].join('\n'));
 }
 
+function validWavBuffer(): Buffer {
+    const data = Buffer.alloc(1600);
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0, 'ascii');
+    header.writeUInt32LE(36 + data.length, 4);
+    header.write('WAVE', 8, 'ascii');
+    header.write('fmt ', 12, 'ascii');
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(1, 22);
+    header.writeUInt32LE(8000, 24);
+    header.writeUInt32LE(16000, 28);
+    header.writeUInt16LE(2, 32);
+    header.writeUInt16LE(16, 34);
+    header.write('data', 36, 'ascii');
+    header.writeUInt32LE(data.length, 40);
+
+    return Buffer.concat([header, data]);
+}
+
 async function uploadCrmMedicalReport(page: Page, filename: string, expectedOutcome: 'uploaded' | 'limit_rejected' = 'uploaded'): Promise<void> {
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).first().click();
     const dialog = page.getByRole('dialog', { name: 'Загрузить файл' });
@@ -2327,6 +2347,89 @@ test('staff can use the client cockpit for medical profile and private files', a
     await uploadCrmMedicalReport(page, 'ux-sixth-report.pdf', 'limit_rejected');
     await expect(attachmentsTable.getByRole('row').filter({ hasText: 'ux-sixth-report.pdf' })).toHaveCount(0);
     await expect(attachmentsTable.getByRole('row').filter({ hasText: /ux-[a-e]-report\.pdf/ })).toHaveCount(5);
+});
+
+test('staff can manage private client audio recordings', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
+    const audioTable = page.getByRole('table', { name: 'Аудиозаписи' });
+    await expect(audioTable).toBeVisible();
+    await expect(audioTable.getByText('Аудиозаписей пока нет', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Загрузить аудиозапись', exact: true }).click();
+    const audioDialog = page.getByRole('dialog').last();
+    await audioDialog.getByLabel('Название записи', { exact: true }).fill('Сеанс QA');
+    const audioUploadControl = audioDialog
+        .getByRole('group', { name: 'Аудиофайл*', exact: true })
+        .locator('label')
+        .filter({ hasText: 'Перетащите файлы или выберите', visible: true });
+    const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser'),
+        audioUploadControl.click(),
+    ]);
+    await fileChooser.setFiles({
+        name: 'qa-session.wav',
+        mimeType: 'audio/x-wav',
+        buffer: validWavBuffer(),
+    });
+    const selectedAudio = audioDialog.getByRole('group', { name: 'qa-session.wav', exact: true });
+    await expect(selectedAudio).toBeVisible({ timeout: 15_000 });
+    await expect(selectedAudio.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await audioDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(audioDialog).toBeHidden();
+    await expect(page.getByText('Аудиозапись загружена', { exact: true })).toBeVisible();
+
+    const audioRow = audioTable.getByRole('row').filter({ hasText: 'Сеанс QA' });
+    await expect(audioRow).toHaveCount(1);
+    await expect(audioRow).toBeVisible();
+    await audioRow.getByRole('button', { name: 'Воспроизвести', exact: true }).click();
+    const playbackDialog = page.locator('.fi-modal-window:visible').last();
+    await expect(playbackDialog.locator('audio')).toBeVisible();
+    const playbackSource = await playbackDialog.locator('audio').getAttribute('src');
+    expect(playbackSource).toMatch(/\/admin\/attachments\//);
+    await playbackDialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
+
+    const [download, downloadResponse] = await Promise.all([
+        page.waitForEvent('download'),
+        page.waitForResponse((response) => {
+            const url = new URL(response.url());
+
+            return response.status() === 200
+                && url.pathname.startsWith('/admin/attachments/')
+                && url.searchParams.get('mode') === 'download';
+        }),
+        audioRow.getByRole('button', { name: 'Скачать', exact: true }).click(),
+    ]);
+    expect(download.suggestedFilename()).toBe('qa-session.wav');
+    expect(downloadResponse.headers()['content-type']).toContain('audio');
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('The authorized audio download did not produce a file.');
+    }
+    expect(readFileSync(downloadPath)).toEqual(validWavBuffer());
+
+    await audioRow.getByRole('button', { name: 'Удалить', exact: true }).click();
+    const deleteConfirmation = page.getByRole('button', { name: 'Подтвердить', exact: true });
+    if (await deleteConfirmation.isVisible()) {
+        await deleteConfirmation.click();
+    }
+    await expect(page.getByText('Аудиозапись удалена', { exact: true })).toBeVisible();
+    await page.reload();
+    await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
+    await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA' })).toHaveCount(0);
+
+    if (playbackSource === null) {
+        throw new Error('The authorized audio preview did not expose a private URL.');
+    }
+    await page.context().clearCookies();
+    const unauthorizedResponse = await page.request.get(playbackSource, { headers: { Accept: 'application/json' } });
+    expect(unauthorizedResponse.status()).toBe(401);
+    expect(JSON.stringify(await unauthorizedResponse.json())).not.toContain('qa-session.wav');
 });
 
 test('staff can complete the clinical AI workflow from the client cockpit', async ({ page }) => {
