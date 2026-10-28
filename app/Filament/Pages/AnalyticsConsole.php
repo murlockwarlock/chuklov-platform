@@ -16,6 +16,7 @@ use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Analytics\Application\PurchaseAnalytics;
 use App\Modules\Analytics\Application\SchedulingAnalytics;
 use App\Modules\Analytics\Application\ServiceVisitAnalytics;
+use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -115,9 +116,11 @@ final class AnalyticsConsole extends LocalizedPage
                             ->default(['pain']),
                         Select::make('client_id')
                             ->label(__('Клиент'))
-                            ->options(fn (): array => $this->clientOptions())
+                            ->options([])
                             ->searchable()
-                            ->preload()
+                            ->optionsLimit(ClientSearch::MAX_RESULTS)
+                            ->getSearchResultsUsing(fn (string $search): array => $this->clientSearchResults($search))
+                            ->getOptionLabelUsing(fn (mixed $value): ?string => $this->clientOptionLabel($value))
                             ->nullable()
                             ->placeholder(__('Все клиенты')),
                         Select::make('period')
@@ -320,29 +323,40 @@ final class AnalyticsConsole extends LocalizedPage
         return app(BookingStatusAnalytics::class)->handle($actor, $period, $client)->toArray();
     }
 
-    /** @return array<int, string> */
-    private function clientOptions(): array
+    /** @return array<int|string, string> */
+    private function clientSearchResults(string $search): array
     {
-        $organizationId = app(OrganizationContext::class)->id();
+        $actor = Auth::user();
+        if (! $actor instanceof User) {
+            return [];
+        }
 
-        return Client::query()
-            ->where('organization_id', $organizationId)
-            ->orderBy('full_name')
-            ->orderBy('id')
-            ->limit(1000)
-            ->get(['id', 'full_name', 'email', 'phone'])
-            ->mapWithKeys(static function (Client $client): array {
-                $label = trim((string) $client->full_name);
-                if ($label === '') {
-                    $label = trim((string) ($client->email ?? ''));
-                }
-                if ($label === '') {
-                    $label = trim((string) ($client->phone ?? ''));
-                }
+        $searcher = app(ClientSearch::class);
+        $query = Client::query()->where('organization_id', app(OrganizationContext::class)->id());
 
-                return [(int) $client->getKey() => $label !== '' ? $label : __('Клиент без имени')];
-            })
-            ->all();
+        return $searcher->formatOptionLabels(
+            $searcher->apply($query, $search)
+                ->orderBy('full_name')
+                ->orderBy('id')
+                ->limit(ClientSearch::MAX_RESULTS)
+                ->get(['id', 'full_name', 'email', 'phone']),
+        );
+    }
+
+    private function clientOptionLabel(mixed $value): ?string
+    {
+        $actor = Auth::user();
+        $clientId = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        if (! $actor instanceof User || $clientId === false) {
+            return null;
+        }
+
+        $client = Client::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->find($clientId);
+
+        return $client instanceof Client ? app(ClientSearch::class)->formatOptionLabel($client) : null;
     }
 
     /** @param array<string, mixed> $state */
