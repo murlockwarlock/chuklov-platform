@@ -2611,8 +2611,16 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
     await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
     await page.getByLabel('Название или описание боли*', { exact: true }).fill('Первичная боль');
-    await page.getByRole('slider', { name: 'До сеанса', exact: true }).fill('7');
-    await page.getByRole('slider', { name: 'После сеанса', exact: true }).fill('3');
+    const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
+    await beforePainScore.press('Home');
+    for (let index = 0; index < 7; index += 1) {
+        await beforePainScore.press('ArrowRight');
+    }
+    const afterPainScore = page.getByRole('slider', { name: 'После сеанса', exact: true });
+    await afterPainScore.press('Home');
+    for (let index = 0; index < 3; index += 1) {
+        await afterPainScore.press('ArrowRight');
+    }
     await page.getByLabel('Особые жалобы', { exact: true }).fill('Первичная запись о боли');
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
     const testSelect = page.getByRole('combobox', { name: 'Тест', exact: true });
