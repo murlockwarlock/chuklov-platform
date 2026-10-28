@@ -2490,6 +2490,17 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     const dimensions = page.locator('[data-field-wrapper]').filter({ hasText: 'Показатели' }).locator('button.fi-select-input-btn');
     await expect(dimensions).toContainText('Проблемы и динамика боли');
     await dimensions.click();
+    console.log('analytics-static-select-debug', await dimensions.evaluate((element) => {
+        const controls = element.getAttribute('aria-controls');
+        const dropdown = controls === null ? null : document.getElementById(controls);
+        const option = dropdown?.querySelector('[role="option"]');
+        return {
+            expanded: element.getAttribute('aria-expanded'),
+            display: dropdown instanceof HTMLElement ? dropdown.style.display : null,
+            optionCount: dropdown?.querySelectorAll('[role="option"]').length,
+            optionText: option?.textContent,
+        };
+    }));
     await page.getByRole('option', { name: 'Источники клиентов', exact: true }).click();
     await dimensions.click();
     await page.getByRole('option', { name: 'Финансы', exact: true }).click();
