@@ -1243,6 +1243,8 @@ async function searchTableFor(page: Page, query: string): Promise<void> {
     await expect(searchInput).toBeVisible();
     await searchInput.fill(query);
     await expect(page.getByRole('row').filter({ hasText: query }).first()).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get('search'), { timeout: 15_000 }).toBe(query);
+    await page.waitForLoadState('networkidle');
 }
 
 async function assertBusinessField(page: Page, label: string, value: string): Promise<void> {
