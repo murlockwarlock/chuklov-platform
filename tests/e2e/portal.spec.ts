@@ -2444,6 +2444,17 @@ test('companion shows accessible typing feedback and respects intentional histor
     };
     expect(pollPayload.props?.companion?.pending).toBe(false);
     expect(pollPayload.props?.companion?.messages?.some((message) => message.id === 'synthetic-new-message')).toBe(true);
+    console.log('Companion DOM state', await page.evaluate(() => {
+        const history = document.querySelector('[data-testid="companion-history"]');
+        return {
+            messages: document.querySelectorAll('.portal-companion__message').length,
+            synthetic: document.body.textContent?.includes('Новый синтетический ответ.') ?? false,
+            indicator: document.querySelector('[data-testid="companion-new-messages"]') !== null,
+            scrollTop: history?.scrollTop ?? null,
+            scrollHeight: history?.scrollHeight ?? null,
+            clientHeight: history?.clientHeight ?? null,
+        };
+    }));
     await expect(page.getByTestId('companion-new-messages')).toBeVisible();
     await expect(page.getByText('Новый синтетический ответ.', { exact: true })).toBeVisible();
     await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => {
