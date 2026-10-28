@@ -2662,6 +2662,44 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     await expect(page.getByRole('button', { name: 'Анализировать', exact: true })).toBeVisible();
 });
 
+test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+    const groupName = `E2E группа ${fixture.clientName}`;
+    const renamedGroupName = `${groupName} обновлена`;
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-taxonomy-groups');
+    await expect(page.getByRole('heading', { name: 'Группы аналитики', exact: true })).toBeVisible();
+
+    const problemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
+    await problemSection.getByRole('button', { name: 'Добавить группу', exact: true }).click();
+    const groupNameInput = problemSection.getByRole('textbox', { name: 'Название группы', exact: true }).last();
+    await groupNameInput.fill(groupName);
+    await problemSection.getByLabel('Порядок', { exact: true }).last().fill('9999');
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('Группы аналитики сохранены', { exact: true })).toBeVisible();
+
+    await page.reload();
+    const reopenedProblemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
+    const reopenedNameInput = reopenedProblemSection.getByRole('textbox', { name: 'Название группы', exact: true }).filter({ hasValue: groupName });
+    await expect(reopenedNameInput).toHaveCount(1);
+    await reopenedNameInput.fill(renamedGroupName);
+    const activeToggle = reopenedProblemSection.getByLabel('Активна', { exact: true }).last();
+    if (await activeToggle.isChecked()) {
+        await activeToggle.uncheck();
+    }
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('Группы аналитики сохранены', { exact: true })).toBeVisible();
+
+    await page.reload();
+    const finalProblemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
+    await expect(finalProblemSection.getByRole('textbox', { name: 'Название группы', exact: true }).filter({ hasValue: renamedGroupName })).toHaveCount(1);
+    await expect(finalProblemSection.getByLabel('Активна', { exact: true }).last()).not.toBeChecked();
+    await expect(page.locator('html')).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+});
+
 test('crm sidebar navigation operates via SPA mode without full page reloads', async ({ page }) => {
     const fixture = createCrmFixture();
 
