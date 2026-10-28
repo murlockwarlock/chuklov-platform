@@ -94,6 +94,26 @@ final readonly class SaveAnalyticsTaxonomyGroups
                 $group->forceFill(['is_active' => false])->save();
             }
         }
+        $known = AnalyticsTaxonomyGroup::query()
+            ->where('organization_id', $organizationId)
+            ->where('taxonomy', $taxonomy->value)
+            ->pluck('name')
+            ->map(static fn (mixed $name): string => mb_strtolower((string) $name))
+            ->all();
+        foreach ($this->legacyReferenceNames($organizationId, $taxonomy) as $legacyName) {
+            $legacyKey = mb_strtolower($legacyName);
+            if (isset($names[$legacyKey]) || in_array($legacyKey, $known, true)) {
+                continue;
+            }
+            AnalyticsTaxonomyGroup::query()->create([
+                'organization_id' => $organizationId,
+                'taxonomy' => $taxonomy->value,
+                'name' => $legacyName,
+                'is_active' => false,
+                'sort_order' => count($known),
+            ]);
+            $known[] = $legacyKey;
+        }
     }
 
     /**
@@ -147,5 +167,29 @@ final readonly class SaveAnalyticsTaxonomyGroups
             ->where('organization_id', $organizationId)
             ->where('group_name', $oldName)
             ->update(['group_name' => $newName, 'updated_at' => now()]);
+    }
+
+    /** @return list<string> */
+    private function legacyReferenceNames(int $organizationId, AnalyticsTaxonomy $taxonomy): array
+    {
+        $table = match ($taxonomy) {
+            AnalyticsTaxonomy::Problems => 'medical_problem_tags',
+            AnalyticsTaxonomy::Causes => 'medical_cause_definitions',
+            AnalyticsTaxonomy::Goals => 'tracker_goal_tags',
+            AnalyticsTaxonomy::Feedback => 'feedback_themes',
+        };
+        $names = DB::table($table)
+            ->where('organization_id', $organizationId)
+            ->whereNotNull('group_name')
+            ->where('group_name', '!=', '')
+            ->distinct()
+            ->orderBy('group_name')
+            ->pluck('group_name')
+            ->map(static fn (mixed $name): string => trim((string) $name))
+            ->filter()
+            ->values()
+            ->all();
+
+        return array_values($names);
     }
 }

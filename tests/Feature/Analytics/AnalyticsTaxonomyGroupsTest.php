@@ -78,6 +78,17 @@ final class AnalyticsTaxonomyGroupsTest extends TestCase
             app(AnalyticsTaxonomyGroupCatalog::class)->options($organization->getKey(), AnalyticsTaxonomy::Problems),
         );
         self::assertSame([], app(AnalyticsTaxonomyGroupCatalog::class)->options($organization->getKey(), AnalyticsTaxonomy::Feedback));
+
+        $state = $component->get('data');
+        $state['problems'] = [];
+        $component->fillForm($state)->call('save')->assertNotified('Группы аналитики сохранены');
+        self::assertDatabaseHas('analytics_taxonomy_groups', [
+            'organization_id' => $organization->getKey(),
+            'taxonomy' => AnalyticsTaxonomy::Problems->value,
+            'name' => 'Опорно-двигательная система',
+            'is_active' => false,
+        ]);
+        self::assertSame([], app(AnalyticsTaxonomyGroupCatalog::class)->options($organization->getKey(), AnalyticsTaxonomy::Problems));
     }
 
     public function test_groups_are_tenant_scoped_and_cannot_be_renamed_into_a_duplicate(): void
