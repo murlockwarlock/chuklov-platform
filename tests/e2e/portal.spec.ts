@@ -2419,7 +2419,10 @@ test('companion shows accessible typing feedback and respects intentional histor
         }
         signalPollIntercepted();
         await userScrolledAway;
-        await route.fulfill({ response, body: JSON.stringify(payload) });
+        const headers = { ...response.headers(), 'x-inertia': 'true', 'content-type': 'text/html; charset=UTF-8' };
+        delete headers['content-length'];
+        delete headers['content-encoding'];
+        await route.fulfill({ status: response.status(), headers, body: JSON.stringify(payload) });
     });
     const pollResponsePromise = page.waitForResponse((response) => response.url().includes('/portal/companion')
         && response.request().method() === 'GET'
@@ -2444,20 +2447,6 @@ test('companion shows accessible typing feedback and respects intentional histor
     };
     expect(pollPayload.props?.companion?.pending).toBe(false);
     expect(pollPayload.props?.companion?.messages?.some((message) => message.id === 'synthetic-new-message')).toBe(true);
-    console.log('Companion DOM state', await page.evaluate(() => {
-        const history = document.querySelector('[data-testid="companion-history"]');
-        return {
-            url: window.location.href,
-            title: document.title,
-            body: document.body.textContent?.trim().slice(0, 240) ?? '',
-            messages: document.querySelectorAll('.portal-companion__message').length,
-            synthetic: document.body.textContent?.includes('Новый синтетический ответ.') ?? false,
-            indicator: document.querySelector('[data-testid="companion-new-messages"]') !== null,
-            scrollTop: history?.scrollTop ?? null,
-            scrollHeight: history?.scrollHeight ?? null,
-            clientHeight: history?.clientHeight ?? null,
-        };
-    }));
     await expect(page.getByTestId('companion-new-messages')).toBeVisible();
     await expect(page.getByText('Новый синтетический ответ.', { exact: true })).toBeVisible();
     await expect.poll(() => page.locator('[data-testid="companion-history"]').evaluate((element) => {

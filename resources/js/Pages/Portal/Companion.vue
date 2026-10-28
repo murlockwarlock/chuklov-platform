@@ -94,6 +94,10 @@ function prepareForIncomingMessages(): void {
     followNewest.value = isNearBottom(historyElement.value);
 }
 
+function messageSignature(): string {
+    return `${props.companion.messages.map((message) => `${message.type}:${message.id}:${message.content}`).join('|')}|${props.companion.pending ? 'pending' : 'idle'}`;
+}
+
 function newIdempotencyKey(): string {
     if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
         return crypto.randomUUID();
@@ -240,17 +244,15 @@ onUnmounted(() => {
     }
 });
 
-watch([() => props.companion.messages, () => props.companion.pending], async () => {
-    const wasFollowing = followNewest.value;
+watch(messageSignature, async () => {
     await nextTick();
-    if (wasFollowing && isNearBottom(historyElement.value)) {
+    if (followNewest.value) {
         scrollToNewest();
         return;
     }
 
-    followNewest.value = false;
     showNewMessages.value = true;
-}, { deep: true });
+});
 </script>
 
 <template>
