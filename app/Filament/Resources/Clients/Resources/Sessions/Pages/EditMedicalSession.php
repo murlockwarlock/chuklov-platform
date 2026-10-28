@@ -28,6 +28,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -133,7 +134,11 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->collapsible()
                             ->addActionLabel(__('Добавить тест'))
                             ->columnSpanFull(),
-                        Hidden::make('causes_manual_override')->dehydrated()->default(false),
+                        Toggle::make('causes_manual_override')
+                            ->label(__('Использовать ручной список причин'))
+                            ->helperText(__('Если выключено, причины собираются из abnormal-тестов.'))
+                            ->live()
+                            ->dehydrated(),
                         Select::make('cause_ids')
                             ->label(__('Причины нарушений'))
                             ->helperText(__('Список собирается из причин у abnormal-тестов; его можно скорректировать вручную.'))

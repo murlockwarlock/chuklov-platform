@@ -80,17 +80,45 @@ final readonly class MedicalSessionTestWriter
 
         $session->rootCauses()->delete();
         foreach ($normalizedRoots as $root) {
-            $model = new MedicalSessionRootCause;
-            $model->forceFill([
-                'organization_id' => $organizationId,
-                'client_id' => $session->client_id,
-                'medical_session_id' => $session->getKey(),
-                'medical_cause_definition_id' => $root['cause_id'],
-                'free_text' => $this->encryptor->encryptField($organizationId, $root['free_text'], $keyVersion),
-                'encryption_key_version' => $keyVersion,
-                'sort_order' => $root['sort_order'],
-            ]);
-            $model->save();
+            $this->persistRootCause($session, $root, $organizationId, $keyVersion);
+        }
+    }
+
+    /**
+     * Replace only the root-cause rows while preserving the session test results.
+     *
+     * @param  array<int, mixed>  $rootCauses
+     * @param  array<int, mixed>  $sessionCauseIds
+     */
+    public function replaceRootCauses(MedicalSession $session, array $rootCauses, int $keyVersion, array $sessionCauseIds = []): void
+    {
+        $organizationId = (int) $session->organization_id;
+        $testCauseIds = $session->testResults()
+            ->with('causes')
+            ->get()
+            ->flatMap(static fn (MedicalSessionTestResult $result): Collection => $result->causes->pluck('id'))
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+        $existingRootCauseIds = $session->rootCauses()
+            ->whereNotNull('medical_cause_definition_id')
+            ->pluck('medical_cause_definition_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+        $availableCauseIds = array_values(array_unique([
+            ...$testCauseIds,
+            ...$existingRootCauseIds,
+            ...collect($sessionCauseIds)
+                ->map(static fn (mixed $id): int => (int) $id)
+                ->filter(static fn (int $id): bool => $id > 0)
+                ->all(),
+        ]));
+        $normalizedRoots = $this->normalizeRootCauses($rootCauses, $availableCauseIds);
+
+        $session->rootCauses()->delete();
+        foreach ($normalizedRoots as $root) {
+            $this->persistRootCause($session, $root, $organizationId, $keyVersion);
         }
     }
 
@@ -176,6 +204,22 @@ final readonly class MedicalSessionTestWriter
         }
 
         return array_map(fn (mixed $raw, int $index): array => $this->normalizeRootCause($raw, $index, $availableCauseIds), array_values($roots), array_keys(array_values($roots)));
+    }
+
+    /** @param array{cause_id:int|null,free_text:string|null,sort_order:int} $root */
+    private function persistRootCause(MedicalSession $session, array $root, int $organizationId, int $keyVersion): void
+    {
+        $model = new MedicalSessionRootCause;
+        $model->forceFill([
+            'organization_id' => $organizationId,
+            'client_id' => $session->client_id,
+            'medical_session_id' => $session->getKey(),
+            'medical_cause_definition_id' => $root['cause_id'],
+            'free_text' => $this->encryptor->encryptField($organizationId, $root['free_text'], $keyVersion),
+            'encryption_key_version' => $keyVersion,
+            'sort_order' => $root['sort_order'],
+        ]);
+        $model->save();
     }
 
     /** @param array<int, int> $preservedValueIds */

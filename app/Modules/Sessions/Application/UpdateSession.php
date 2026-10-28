@@ -130,13 +130,23 @@ final readonly class UpdateSession
             if ($command->painsProvided) {
                 $this->painWriter->replace($existing, $command->pains ?? [], $keyVersion);
             }
-            if ($command->testResultsProvided || $command->rootCausesProvided) {
+            if ($command->testResultsProvided) {
                 $existingSessionCauseIds = $command->causesManualOverrideProvided
                     ? ($command->causesManualOverride ? ($command->causeIds ?? []) : [])
                     : ($existing->causes_manual_override ? $existing->causes()->pluck('medical_cause_definitions.id')->all() : []);
                 $this->testWriter->replace(
                     $existing,
                     $command->testResults ?? [],
+                    $command->rootCauses ?? [],
+                    $keyVersion,
+                    $existingSessionCauseIds,
+                );
+            } elseif ($command->rootCausesProvided) {
+                $existingSessionCauseIds = $command->causesManualOverrideProvided
+                    ? ($command->causesManualOverride ? ($command->causeIds ?? []) : [])
+                    : ($existing->causes_manual_override ? $existing->causes()->pluck('medical_cause_definitions.id')->all() : []);
+                $this->testWriter->replaceRootCauses(
+                    $existing,
                     $command->rootCauses ?? [],
                     $keyVersion,
                     $existingSessionCauseIds,

@@ -19,6 +19,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
@@ -138,7 +139,12 @@ final class SessionForm
                             ->itemLabel(fn (array $state): string => filled($state['test_id'] ?? null) ? __('Выбранный тест') : __('Новый тест'))
                             ->addActionLabel(__('Добавить тест'))
                             ->columnSpanFull(),
-                        Hidden::make('causes_manual_override')->dehydrated()->default(false),
+                        Toggle::make('causes_manual_override')
+                            ->label(__('Использовать ручной список причин'))
+                            ->helperText(__('Если выключено, причины собираются из abnormal-тестов.'))
+                            ->default(false)
+                            ->live()
+                            ->dehydrated(),
                         Select::make('cause_ids')
                             ->label(__('Причины нарушений'))
                             ->helperText(__('Список собирается из причин у abnormal-тестов; его можно скорректировать вручную.'))

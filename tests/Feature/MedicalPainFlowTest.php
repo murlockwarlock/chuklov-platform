@@ -526,6 +526,21 @@ final class MedicalPainFlowTest extends TestCase
 
         self::assertSame([], $cleared->causes);
         self::assertSame([], app(GetSession::class)->handle($admin, MedicalSession::findOrFail($session->id), $client)?->causes);
+
+        $automatic = app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($session->id), UpdateSessionCommand::fromArray([
+            'pain' => null,
+            'tests' => null,
+            'observations' => null,
+            'root_cause_hypothesis' => null,
+            'protocol' => null,
+            'result' => null,
+            'cause_ids' => [],
+            'causes_manual_override' => false,
+            'root_causes' => [],
+        ]));
+
+        self::assertFalse($automatic->causesManualOverride);
+        self::assertSame(['Причина из теста'], array_column($automatic->causes, 'name'));
     }
 
     public function test_causes_require_an_abnormal_test_and_root_causes_require_current_session_causes(): void
