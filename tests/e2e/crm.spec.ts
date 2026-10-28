@@ -2680,7 +2680,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     const resultField = page.getByLabel('Результат после сеанса', { exact: true });
     await resultField.fill('Ручная правка перед заполнением');
     await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
-    const replaceResultDialog = page.getByRole('dialog', { name: 'Заменить текст результата?' });
+    const replaceResultDialog = page.getByRole('alertdialog', { name: 'Заменить текст результата?' });
     await expect(replaceResultDialog).toBeVisible();
     await expect(replaceResultDialog).toContainText('Текущий текст будет заменён сводкой по данным сеанса.');
     await replaceResultDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
