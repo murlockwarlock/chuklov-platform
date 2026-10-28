@@ -61,6 +61,7 @@ final class ClientSegmentQuery
                 ),
             ClientSegment::NoCompletedVisits => $query->whereDoesntHave('bookings', $completed),
             ClientSegment::Restricted => $query->whereHas('activeBookingRestriction'),
+            ClientSegment::Blacklist => $query->whereHas('activeBlacklistRestriction'),
             ClientSegment::WarmLead => $query
                 ->whereHas('bookings', $completed)
                 ->whereDoesntHave('purchases', fn (Builder $purchase): Builder => $purchase

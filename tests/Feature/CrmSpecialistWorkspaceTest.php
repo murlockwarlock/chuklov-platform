@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Modules\Analytics\Application\ClientSegmentQuery;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
 use App\Modules\Identity\Application\ClientSearch;
+use App\Modules\Identity\Domain\Enums\ClientRestrictionType;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientBookingRestriction;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -509,6 +510,11 @@ final class CrmSpecialistWorkspaceTest extends TestCase
             'reason' => 'Тестовое ограничение',
             'blocked_at' => now(),
         ]);
+        ClientBookingRestriction::factory()->forOrganization($organization)->forClient($restricted)->blockedBy($admin)->create([
+            'restriction_type' => ClientRestrictionType::Blacklist,
+            'reason' => 'Тестовый чёрный список.',
+            'blocked_at' => now(),
+        ]);
         $foreignOrganization = Organization::factory()->create();
         Client::factory()->forOrganization($foreignOrganization)->create(['full_name' => 'Новый Иван']);
 
@@ -522,6 +528,7 @@ final class CrmSpecialistWorkspaceTest extends TestCase
         self::assertSame(1, $counts[ClientSegment::Dormant->value]);
         self::assertSame(2, $counts[ClientSegment::NoCompletedVisits->value]);
         self::assertSame(1, $counts[ClientSegment::Restricted->value]);
+        self::assertSame(1, $counts[ClientSegment::Blacklist->value]);
 
         $search = app(ClientSearch::class);
         $query = $segments->query(ClientSegment::NewClients);
