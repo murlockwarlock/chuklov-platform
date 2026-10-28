@@ -23,9 +23,16 @@ final readonly class MedicalSessionTestWriter
     {
         $organizationId = (int) $session->organization_id;
         $normalizedTests = $this->normalizeTests($organizationId, $tests);
-        $availableRootCauseIds = array_values(array_unique(array_merge(
-            ...array_map(static fn (array $test): array => $test['cause_ids'], $normalizedTests),
-        )));
+        $existingRootCauseIds = $session->rootCauses()
+            ->whereNotNull('medical_cause_definition_id')
+            ->pluck('medical_cause_definition_id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+        $testCauseIds = [];
+        foreach ($normalizedTests as $test) {
+            $testCauseIds = [...$testCauseIds, ...$test['cause_ids']];
+        }
+        $availableRootCauseIds = array_values(array_unique([...$testCauseIds, ...$existingRootCauseIds]));
         $normalizedRoots = $this->normalizeRootCauses($rootCauses, $availableRootCauseIds);
 
         $existing = $session->testResults()->get()->keyBy('medical_test_definition_id');

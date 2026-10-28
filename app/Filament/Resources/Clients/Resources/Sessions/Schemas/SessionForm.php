@@ -136,7 +136,7 @@ final class SessionForm
                             ->schema([
                                 Select::make('cause_id')
                                     ->label(__('Причина из сеанса'))
-                                    ->options(fn (): array => app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id()))
+                                    ->options(fn (Get $get): array => self::rootCauseOptions($get))
                                     ->searchable()
                                     ->nullable(),
                                 Textarea::make('free_text')->label(__('Дополнительное описание'))->rows(2)->maxLength(10000),
@@ -177,6 +177,26 @@ final class SessionForm
         return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
             ? __(':value / 10', ['value' => (int) $value])
             : __('Не указана');
+    }
+
+    /** @return array<int, string> */
+    private static function rootCauseOptions(Get $get): array
+    {
+        $causeOptions = app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id());
+        $testResults = $get('../../test_results');
+        $causeIds = collect(is_array($testResults) ? $testResults : [])
+            ->flatMap(static fn (mixed $test): array => is_array($test) && is_array($test['cause_ids'] ?? null)
+                ? array_map(static fn (mixed $id): int => (int) $id, $test['cause_ids'])
+                : [])
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->all();
+        $currentCauseId = (int) $get('cause_id');
+        if ($currentCauseId > 0) {
+            $causeIds[] = $currentCauseId;
+        }
+
+        return array_intersect_key($causeOptions, array_flip($causeIds));
     }
 
     private static function parentClient(Select $component): Client

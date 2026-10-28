@@ -131,7 +131,7 @@ class EditMedicalSession extends LocalizedEditRecord
                         Repeater::make('root_causes')
                             ->label(__('Первопричина нарушений'))
                             ->schema([
-                                Select::make('cause_id')->label(__('Причина из сеанса'))->options(fn (): array => app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id()))->searchable()->nullable(),
+                                Select::make('cause_id')->label(__('Причина из сеанса'))->options(fn (Get $get): array => $this->rootCauseOptions($get))->searchable()->nullable(),
                                 Textarea::make('free_text')->label(__('Дополнительное описание'))->rows(2)->maxLength(10000),
                             ])
                             ->columns(2)
@@ -245,6 +245,26 @@ class EditMedicalSession extends LocalizedEditRecord
         return $actor;
     }
 
+    /** @return array<int, string> */
+    private function rootCauseOptions(Get $get): array
+    {
+        $causeOptions = app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id());
+        $testResults = $get('../../test_results');
+        $causeIds = collect(is_array($testResults) ? $testResults : [])
+            ->flatMap(static fn (mixed $test): array => is_array($test) && is_array($test['cause_ids'] ?? null)
+                ? array_map(static fn (mixed $id): int => (int) $id, $test['cause_ids'])
+                : [])
+            ->filter(static fn (int $id): bool => $id > 0)
+            ->unique()
+            ->all();
+        $currentCauseId = (int) $get('cause_id');
+        if ($currentCauseId > 0) {
+            $causeIds[] = $currentCauseId;
+        }
+
+        return array_intersect_key($causeOptions, array_flip($causeIds));
+    }
+
     private function parentClient(): Client
     {
         $parent = $this->getParentRecord();
@@ -256,7 +276,6 @@ class EditMedicalSession extends LocalizedEditRecord
         return $parent;
     }
 
-    /** @param array<string, list<string>> $messages */
     private static function scoreDisplay(mixed $value): string
     {
         return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
@@ -271,6 +290,7 @@ class EditMedicalSession extends LocalizedEditRecord
             : __('Не указана');
     }
 
+    /** @param array<string, list<string>> $messages */
     private static function throwValidation(array $messages): never
     {
         throw ValidationException::withMessages($messages);
