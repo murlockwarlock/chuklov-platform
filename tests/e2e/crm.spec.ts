@@ -2682,8 +2682,8 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(resultField).toHaveValue(/было 7, стало 3/);
     await resultField.fill('Ручная правка перед заполнением');
     await Promise.all([
-        page.waitForResponse((response) => response.request().method() === 'POST' && response.url().includes('/livewire/update') && response.ok()),
-        resultField.blur(),
+        page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok()),
+        resultField.press('Tab'),
     ]);
     await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
     const replaceResultDialog = page.getByRole('alertdialog', { name: 'Заменить текст результата?' });
