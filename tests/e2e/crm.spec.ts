@@ -2748,6 +2748,18 @@ test('staff can maintain the clinical test catalog and use it in a new session',
         outerHTML: element.outerHTML.slice(0, 4_000),
         wireSubmit: element.getAttribute('wire:submit'),
         wireSubmitPrevent: element.getAttribute('wire:submit.prevent'),
+        noValidate: (element as HTMLFormElement).noValidate,
+        checkValidity: (element as HTMLFormElement).checkValidity(),
+        invalidControls: Array.from((element as HTMLFormElement).elements).flatMap((control) => {
+            const input = control as HTMLInputElement;
+            return input.validity.valid ? [] : [{
+                name: input.name,
+                ariaLabel: input.getAttribute('aria-label'),
+                value: input.value,
+                required: input.required,
+                validationMessage: input.validationMessage,
+            }];
+        }),
     }));
     throw new Error(`CATALOG_SAVE_DEBUG ${JSON.stringify({ livewireRequests, invalidFields, formMetadata })}`);
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
