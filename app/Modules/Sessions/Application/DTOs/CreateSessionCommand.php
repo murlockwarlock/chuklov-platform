@@ -25,6 +25,10 @@ final readonly class CreateSessionCommand
         public ?array $pains = null,
         public ?string $subjectiveFeelings = null,
         public ?string $visualPostureDiagnostics = null,
+        /** @var array<int, mixed>|null */
+        public ?array $testResults = null,
+        /** @var array<int, mixed>|null */
+        public ?array $rootCauses = null,
     ) {}
 
     /**
@@ -55,6 +59,8 @@ final readonly class CreateSessionCommand
             pains: array_key_exists('pains', $data) && is_array($data['pains']) ? array_values($data['pains']) : null,
             subjectiveFeelings: self::optionalTrimmedString($data, 'subjective_feelings'),
             visualPostureDiagnostics: self::optionalTrimmedString($data, 'visual_posture_diagnostics'),
+            testResults: array_key_exists('test_results', $data) && is_array($data['test_results']) ? array_values($data['test_results']) : null,
+            rootCauses: array_key_exists('root_causes', $data) && is_array($data['root_causes']) ? array_values($data['root_causes']) : null,
         );
     }
 

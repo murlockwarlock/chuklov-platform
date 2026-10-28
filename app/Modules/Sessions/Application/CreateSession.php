@@ -29,6 +29,8 @@ final readonly class CreateSession
         private MedicalSessionPainWriter $painWriter,
         private MedicalSessionPainInitializer $painInitializer,
         private MedicalSessionPainReader $painReader,
+        private MedicalSessionTestWriter $testWriter,
+        private MedicalSessionTestReader $testReader,
     ) {}
 
     public function handle(User $actor, Client $client, CreateSessionCommand $command): MedicalSessionData
@@ -99,6 +101,9 @@ final readonly class CreateSession
             } else {
                 $this->painInitializer->initialize($session, $keyVersion);
             }
+            if ($command->testResults !== null || $command->rootCauses !== null) {
+                $this->testWriter->replace($session, $command->testResults ?? [], $command->rootCauses ?? [], $keyVersion);
+            }
 
             $this->audit->handle(
                 organization: $organization,
@@ -135,6 +140,8 @@ final readonly class CreateSession
                 pains: $this->painReader->forSession($session),
                 subjectiveFeelings: $command->subjectiveFeelings,
                 visualPostureDiagnostics: $command->visualPostureDiagnostics,
+                testResults: $this->testReader->tests($session),
+                rootCauses: $this->testReader->rootCauses($session),
             );
         });
     }

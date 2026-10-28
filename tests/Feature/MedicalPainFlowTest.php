@@ -18,7 +18,10 @@ use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GenerateSessionResult;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\UpdateSession;
+use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
+use App\Modules\Sessions\Domain\Models\MedicalTestValue;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -157,6 +160,69 @@ final class MedicalPainFlowTest extends TestCase
         self::assertStringContainsString('Боли: нет заполненных оценок', $generated);
         self::assertStringContainsString('Субъективные ощущения: Стало легче двигаться', $generated);
         self::assertStringContainsString('Визуальная диагностика осанки: Плечи выровнены', $generated);
+    }
+
+    public function test_configured_tests_values_causes_and_root_causes_round_trip_per_session(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'step_test',
+            'name' => 'Патрон шага',
+            'section' => 'Ноги',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $normal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'normal',
+            'label' => 'Нормотонус',
+            'is_abnormal' => false,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $high = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'high',
+            'label' => 'Гипертонус',
+            'is_abnormal' => true,
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+        $cause = MedicalCauseDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Мышечный дисбаланс',
+            'group_name' => 'Мышцы',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-23 09:00:00', 'UTC'),
+            testResults: [[
+                'test_id' => $test->getKey(),
+                'before_value_id' => $high->getKey(),
+                'after_value_id' => $normal->getKey(),
+                'cause_ids' => [$cause->getKey()],
+            ]],
+            rootCauses: [['cause_id' => $cause->getKey(), 'free_text' => 'Подтверждено на осмотре']],
+        ));
+
+        self::assertSame('Гипертонус', $session->testResults[0]->beforeLabel);
+        self::assertTrue($session->testResults[0]->beforeAbnormal);
+        self::assertFalse($session->testResults[0]->afterAbnormal);
+        self::assertSame('Мышечный дисбаланс', $session->testResults[0]->causes[0]['name']);
+        self::assertSame('Подтверждено на осмотре', $session->rootCauses[0]->freeText);
+
+        $generated = app(GenerateSessionResult::class)->handle($admin, MedicalSession::findOrFail($session->id), $client);
+        self::assertStringContainsString('Нарушения по тестам: было 1, стало 0.', $generated);
+
+        $reloaded = app(GetSession::class)->handle($admin, MedicalSession::findOrFail($session->id), $client);
+        self::assertSame($session->testResults[0]->toArray(), $reloaded?->testResults[0]->toArray());
+        self::assertSame($session->rootCauses[0]->toArray(), $reloaded?->rootCauses[0]->toArray());
     }
 
     /** @return array{Organization, User, Client, Specialist} */

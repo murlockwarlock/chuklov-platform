@@ -6,6 +6,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
@@ -91,6 +92,54 @@ final class SessionForm
                             ->collapsible()
                             ->itemLabel(fn (array $state): string => (string) ($state['name'] ?? __('Новая боль')))
                             ->addActionLabel(__('Добавить боль'))
+                            ->columnSpanFull(),
+                        Repeater::make('test_results')
+                            ->label(__('Кинезиологические и мануальные тесты'))
+                            ->schema([
+                                Select::make('test_id')
+                                    ->label(__('Тест'))
+                                    ->options(fn (): array => app(MedicalClinicalCatalog::class)->testOptions(app(OrganizationContext::class)->id()))
+                                    ->required()
+                                    ->searchable()
+                                    ->live(),
+                                Select::make('before_value_id')
+                                    ->label(__('До сеанса'))
+                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptions(app(OrganizationContext::class)->id(), (int) $get('test_id')))
+                                    ->nullable()
+                                    ->searchable(),
+                                Select::make('after_value_id')
+                                    ->label(__('После сеанса'))
+                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptions(app(OrganizationContext::class)->id(), (int) $get('test_id')))
+                                    ->nullable()
+                                    ->searchable(),
+                                Select::make('cause_ids')
+                                    ->label(__('Причины нарушений'))
+                                    ->options(fn (): array => app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id()))
+                                    ->multiple()
+                                    ->searchable(),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->reorderable()
+                            ->collapsible()
+                            ->itemLabel(fn (array $state): string => filled($state['test_id'] ?? null) ? __('Выбранный тест') : __('Новый тест'))
+                            ->addActionLabel(__('Добавить тест'))
+                            ->columnSpanFull(),
+                        Repeater::make('root_causes')
+                            ->label(__('Первопричина нарушений'))
+                            ->schema([
+                                Select::make('cause_id')
+                                    ->label(__('Причина из сеанса'))
+                                    ->options(fn (): array => app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id()))
+                                    ->searchable()
+                                    ->nullable(),
+                                Textarea::make('free_text')->label(__('Дополнительное описание'))->rows(2)->maxLength(10000),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->maxItems(2)
+                            ->reorderable()
+                            ->addActionLabel(__('Добавить первопричину'))
                             ->columnSpanFull(),
                         Checkbox::make('pain_not_measured')
                             ->label(__('Боль не измерена'))

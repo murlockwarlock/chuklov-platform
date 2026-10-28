@@ -39,6 +39,11 @@ final readonly class GenerateSessionResult
         if (filled($data->visualPostureDiagnostics)) {
             $summary[] = 'Визуальная диагностика осанки: '.$data->visualPostureDiagnostics;
         }
+        if ($data->testResults !== []) {
+            $beforeAbnormal = count(array_filter($data->testResults, static fn ($test): bool => $test->beforeAbnormal));
+            $afterAbnormal = count(array_filter($data->testResults, static fn ($test): bool => $test->afterAbnormal));
+            $summary[] = 'Нарушения по тестам: было '.$beforeAbnormal.', стало '.$afterAbnormal.'.';
+        }
 
         return implode("\n", $summary);
     }

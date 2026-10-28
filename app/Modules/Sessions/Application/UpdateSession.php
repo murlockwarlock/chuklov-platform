@@ -27,6 +27,8 @@ final readonly class UpdateSession
         private MedicalSessionSnapshotHasher $snapshotHasher,
         private MedicalSessionPainWriter $painWriter,
         private MedicalSessionPainReader $painReader,
+        private MedicalSessionTestWriter $testWriter,
+        private MedicalSessionTestReader $testReader,
     ) {}
 
     public function handle(User $actor, MedicalSession $session, UpdateSessionCommand $command, ?Client $expectedClient = null): MedicalSessionData
@@ -124,6 +126,9 @@ final readonly class UpdateSession
             if ($command->painsProvided) {
                 $this->painWriter->replace($existing, $command->pains ?? [], $keyVersion);
             }
+            if ($command->testResultsProvided || $command->rootCausesProvided) {
+                $this->testWriter->replace($existing, $command->testResults ?? [], $command->rootCauses ?? [], $keyVersion);
+            }
 
             $this->audit->handle(
                 organization: $organization,
@@ -158,6 +163,8 @@ final readonly class UpdateSession
                 pains: $this->painReader->forSession($existing),
                 subjectiveFeelings: $subjectiveFeelings,
                 visualPostureDiagnostics: $visualPostureDiagnostics,
+                testResults: $this->testReader->tests($existing),
+                rootCauses: $this->testReader->rootCauses($existing),
             );
         });
 
@@ -229,6 +236,12 @@ final readonly class UpdateSession
         }
         if ($command->painsProvided) {
             $fields[] = 'pains';
+        }
+        if ($command->testResultsProvided) {
+            $fields[] = 'test_results';
+        }
+        if ($command->rootCausesProvided) {
+            $fields[] = 'root_causes';
         }
 
         return $fields;

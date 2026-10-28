@@ -17,6 +17,7 @@ final class GetSession
         private readonly MedicalSessionAuthorization $authorization,
         private readonly MedicalEncryptorInterface $encryptor,
         private readonly MedicalSessionPainReader $painReader,
+        private readonly MedicalSessionTestReader $testReader,
     ) {}
 
     public function handle(User $actor, MedicalSession $session, ?Client $expectedClient = null): ?MedicalSessionData
@@ -61,6 +62,8 @@ final class GetSession
             createdAt: $persisted->created_at,
             updatedAt: $persisted->updated_at,
             pains: $this->painReader->forSession($persisted),
+            testResults: $this->testReader->tests($persisted),
+            rootCauses: $this->testReader->rootCauses($persisted),
         );
 
         return $this->resolved[$cacheKey] = $data;

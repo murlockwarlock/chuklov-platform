@@ -7,19 +7,26 @@ use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
+use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GenerateSessionResult;
 use App\Modules\Sessions\Application\GetSession;
+use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Checkbox;
+use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
+use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -83,6 +90,61 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->label(__('Текущее значение'))
                             ->content(fn (Get $get): string => $get('pain_not_measured') === true ? __('Не указана') : self::painVasDisplay($get('pain_vas')))
                             ->columnSpanFull(),
+                        Repeater::make('pains')
+                            ->label(__('Боли'))
+                            ->schema([
+                                Hidden::make('lineage_key')->dehydrated()->nullable(),
+                                Textarea::make('name')->label(__('Название или описание боли'))->rows(2)->required()->maxLength(1000),
+                                Select::make('frequency_mode')->label(__('Частота'))->options([
+                                    'permanent' => __('Постоянно'),
+                                    'count' => __('Количество раз за период'),
+                                ])->required()->live(),
+                                TextInput::make('frequency_count')->label(__('Количество'))->integer()->minValue(1)->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count'),
+                                Select::make('frequency_period_unit')->label(__('Период'))->options(fn (): array => app(MedicalFrequencyPeriodCatalog::class)->options(app(OrganizationContext::class)->id()))->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count')->searchable(),
+                                CheckboxList::make('time_of_day')->label(__('Время суток'))->options([
+                                    'all' => __('Весь день'),
+                                    'morning' => __('Утро'),
+                                    'day' => __('День'),
+                                    'evening' => __('Вечер'),
+                                    'night' => __('Ночь'),
+                                ])->columns(2)->default(['all'])->required(),
+                                Slider::make('before_score')->label(__('До сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
+                                Slider::make('after_score')->label(__('После сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
+                                Placeholder::make('previous_after_score')->label(__('После предыдущего сеанса'))->content(fn (Get $get): string => self::painVasDisplay($get('previous_after_score'))),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->reorderable()
+                            ->collapsible()
+                            ->itemLabel(fn (array $state): string => (string) ($state['name'] ?? __('Новая боль')))
+                            ->addActionLabel(__('Добавить боль'))
+                            ->columnSpanFull(),
+                        Repeater::make('test_results')
+                            ->label(__('Кинезиологические и мануальные тесты'))
+                            ->schema([
+                                Select::make('test_id')->label(__('Тест'))->options(fn (): array => app(MedicalClinicalCatalog::class)->testOptions(app(OrganizationContext::class)->id()))->required()->searchable()->live(),
+                                Select::make('before_value_id')->label(__('До сеанса'))->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptions(app(OrganizationContext::class)->id(), (int) $get('test_id')))->nullable()->searchable(),
+                                Select::make('after_value_id')->label(__('После сеанса'))->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptions(app(OrganizationContext::class)->id(), (int) $get('test_id')))->nullable()->searchable(),
+                                Select::make('cause_ids')->label(__('Причины нарушений'))->options(fn (): array => app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id()))->multiple()->searchable(),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->reorderable()
+                            ->collapsible()
+                            ->addActionLabel(__('Добавить тест'))
+                            ->columnSpanFull(),
+                        Repeater::make('root_causes')
+                            ->label(__('Первопричина нарушений'))
+                            ->schema([
+                                Select::make('cause_id')->label(__('Причина из сеанса'))->options(fn (): array => app(MedicalClinicalCatalog::class)->causeOptions(app(OrganizationContext::class)->id()))->searchable()->nullable(),
+                                Textarea::make('free_text')->label(__('Дополнительное описание'))->rows(2)->maxLength(10000),
+                            ])
+                            ->columns(2)
+                            ->defaultItems(0)
+                            ->maxItems(2)
+                            ->reorderable()
+                            ->addActionLabel(__('Добавить первопричину'))
+                            ->columnSpanFull(),
                         Textarea::make('pain')->label(__('Описание боли'))->rows(3)->placeholder(__('Что беспокоит клиента и где')),
                         Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
                         Textarea::make('observations')->label(__('Наблюдения'))->rows(3)->placeholder(__('Субъективные и объективные наблюдения')),
@@ -135,6 +197,16 @@ class EditMedicalSession extends LocalizedEditRecord
             'protocol' => $decrypted->protocol,
             'result' => $decrypted->result,
             'pains' => array_map(static fn ($pain): array => $pain->toArray(), $decrypted->pains),
+            'test_results' => array_map(static fn ($test): array => [
+                'test_id' => $test->testId,
+                'before_value_id' => $test->beforeValueId,
+                'after_value_id' => $test->afterValueId,
+                'cause_ids' => array_map(static fn (array $cause): int => $cause['id'], $test->causes),
+            ], $decrypted->testResults),
+            'root_causes' => array_map(static fn ($cause): array => [
+                'cause_id' => $cause->causeId,
+                'free_text' => $cause->freeText,
+            ], $decrypted->rootCauses),
             'expected_snapshot' => app(MedicalSessionSnapshotHasher::class)->forSession($record),
         ];
     }
@@ -222,6 +294,8 @@ class EditMedicalSession extends LocalizedEditRecord
             'protocol',
             'result',
             'pains',
+            'test_results',
+            'root_causes',
         ];
 
         $normalized = [];

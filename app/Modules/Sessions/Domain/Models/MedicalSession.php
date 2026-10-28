@@ -38,6 +38,8 @@ use Illuminate\Support\Carbon;
  * @property-read Specialist $specialist
  * @property-read Booking|null $booking
  * @property-read Collection<int, MedicalSessionAttachment> $attachmentLinks
+ * @property-read Collection<int, MedicalSessionTestResult> $testResults
+ * @property-read Collection<int, MedicalSessionRootCause> $rootCauses
  */
 #[Fillable(['pain', 'pain_vas', 'tests', 'observations', 'subjective_feelings', 'visual_posture_diagnostics', 'root_cause_hypothesis', 'protocol', 'result', 'encryption_key_version'])]
 class MedicalSession extends Model
@@ -76,6 +78,20 @@ class MedicalSession extends Model
     public function pains(): HasMany
     {
         return $this->hasMany(MedicalSessionPain::class, 'medical_session_id')
+            ->orderBy('sort_order')
+            ->orderBy('id');
+    }
+
+    /** @return HasMany<MedicalSessionTestResult, $this> */
+    public function testResults(): HasMany
+    {
+        return $this->hasMany(MedicalSessionTestResult::class, 'medical_session_id');
+    }
+
+    /** @return HasMany<MedicalSessionRootCause, $this> */
+    public function rootCauses(): HasMany
+    {
+        return $this->hasMany(MedicalSessionRootCause::class, 'medical_session_id')
             ->orderBy('sort_order')
             ->orderBy('id');
     }

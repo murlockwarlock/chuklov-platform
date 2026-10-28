@@ -23,6 +23,12 @@ final readonly class UpdateSessionCommand
         public ?string $visualPostureDiagnostics = null,
         public ?bool $subjectiveFeelingsProvided = null,
         public ?bool $visualPostureDiagnosticsProvided = null,
+        /** @var array<int, mixed>|null */
+        public ?array $testResults = null,
+        public bool $testResultsProvided = false,
+        /** @var array<int, mixed>|null */
+        public ?array $rootCauses = null,
+        public bool $rootCausesProvided = false,
     ) {}
 
     /**
@@ -68,6 +74,10 @@ final readonly class UpdateSessionCommand
             visualPostureDiagnostics: self::normalizeOptionalValue($data['visual_posture_diagnostics'] ?? null, 'visual_posture_diagnostics'),
             subjectiveFeelingsProvided: array_key_exists('subjective_feelings', $data),
             visualPostureDiagnosticsProvided: array_key_exists('visual_posture_diagnostics', $data),
+            testResults: array_key_exists('test_results', $data) && is_array($data['test_results']) ? array_values($data['test_results']) : null,
+            testResultsProvided: array_key_exists('test_results', $data),
+            rootCauses: array_key_exists('root_causes', $data) && is_array($data['root_causes']) ? array_values($data['root_causes']) : null,
+            rootCausesProvided: array_key_exists('root_causes', $data),
         );
     }
 
