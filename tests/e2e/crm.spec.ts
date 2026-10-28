@@ -2735,7 +2735,9 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     const valueLabels = configuredTestItem.getByLabel('Название значения*', { exact: true });
     await expect(valueLabels).toHaveCount(2);
     await valueLabels.first().fill('Норма');
+    await valueLabels.first().press('Tab');
     await valueLabels.last().fill('Отклонение');
+    await valueLabels.last().press('Tab');
     await configuredTestItem.getByLabel('Считать нарушением', { exact: true }).last().check();
     const activeTestToggle = configuredTestItem.getByLabel('Активен', { exact: true });
     if (! await activeTestToggle.isChecked()) {
@@ -2752,12 +2754,15 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
     const causeNameInput = page.getByLabel('Название причины*', { exact: true }).last();
     await causeNameInput.fill(causeName);
+    await causeNameInput.press('Tab');
     const configuredCauseItem = causeNameInput.locator('xpath=ancestor::li[1]');
     await configuredCauseItem.getByLabel('Группа', { exact: true }).fill('E2E причины');
+    await configuredCauseItem.getByLabel('Группа', { exact: true }).press('Tab');
     const activeCauseToggle = configuredCauseItem.getByLabel('Активна', { exact: true });
     if (! await activeCauseToggle.isChecked()) {
         await activeCauseToggle.check();
     }
+    await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
 
