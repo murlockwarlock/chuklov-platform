@@ -18,6 +18,11 @@ on:
         required: false
         default: false
         type: boolean
+      project:
+        description: Optional Playwright project (desktop, mobile, or webkit)
+        required: false
+        default: ''
+        type: string
   schedule:
     - cron: '15 2 * * *'
 
@@ -93,13 +98,18 @@ jobs:
         env:
           E2E_TEST_FILTER: ${{ inputs.test_filter }}
           E2E_TEST_PATH: ${{ inputs.test_path }}
+          E2E_PLAYWRIGHT_PROJECT: ${{ inputs.project }}
         run: |
+          PLAYWRIGHT_PROJECT_ARGS=()
+          if [ -n "$E2E_PLAYWRIGHT_PROJECT" ]; then
+            PLAYWRIGHT_PROJECT_ARGS+=(--project "$E2E_PLAYWRIGHT_PROJECT")
+          fi
           if [ -n "$E2E_TEST_FILTER" ]; then
-            npx playwright test "${E2E_TEST_PATH:-tests/e2e/crm.spec.ts}" -g "$E2E_TEST_FILTER"
+            npx playwright test "${E2E_TEST_PATH:-tests/e2e/crm.spec.ts}" -g "$E2E_TEST_FILTER" "${PLAYWRIGHT_PROJECT_ARGS[@]}"
           elif [ -n "$E2E_TEST_PATH" ]; then
-            npx playwright test "$E2E_TEST_PATH"
+            npx playwright test "$E2E_TEST_PATH" "${PLAYWRIGHT_PROJECT_ARGS[@]}"
           else
-            npm run test:e2e
+            npx playwright test "${PLAYWRIGHT_PROJECT_ARGS[@]}"
           fi
       - if: failure()
         name: Print safe portal reschedule diagnostics
