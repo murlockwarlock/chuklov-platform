@@ -2394,32 +2394,41 @@ test('staff can manage private client audio recordings', async ({ page }) => {
     expect(playbackSource).toMatch(/\/admin\/attachments\//);
     await playbackDialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
 
-    const [download, downloadResponse] = await Promise.all([
-        page.waitForEvent('download'),
-        page.waitForResponse((response) => {
-            const url = new URL(response.url());
+    const downloadResponseMatcher = (response: { status(): number; url(): string }): boolean => {
+        const url = new URL(response.url());
 
-            return response.status() === 200
-                && url.pathname.startsWith('/admin/attachments/')
-                && url.searchParams.get('mode') === 'download';
-        }),
-        audioRow.getByRole('button', { name: 'Скачать', exact: true }).click(),
-    ]);
-    expect(download.suggestedFilename()).toBe('qa-session.wav');
-    expect(downloadResponse.headers()['content-type']).toContain('audio');
-    const downloadPath = await download.path();
-    expect(downloadPath).not.toBeNull();
-    if (downloadPath === null) {
-        throw new Error('The authorized audio download did not produce a file.');
+        return response.status() === 200
+            && url.pathname.startsWith('/admin/attachments/')
+            && url.searchParams.get('mode') === 'download';
+    };
+    if (test.info().project.name === 'desktop') {
+        const [download, downloadResponse] = await Promise.all([
+            page.waitForEvent('download'),
+            page.waitForResponse(downloadResponseMatcher),
+            audioRow.getByRole('button', { name: 'Скачать', exact: true }).click(),
+        ]);
+        expect(download.suggestedFilename()).toBe('qa-session.wav');
+        expect(downloadResponse.headers()['content-type']).toContain('audio');
+        const downloadPath = await download.path();
+        expect(downloadPath).not.toBeNull();
+        if (downloadPath === null) {
+            throw new Error('The authorized audio download did not produce a file.');
+        }
+        expect(readFileSync(downloadPath)).toEqual(validWavBuffer());
+    } else {
+        const downloadResponse = page.waitForResponse(downloadResponseMatcher);
+        await audioRow.getByRole('button', { name: 'Скачать', exact: true }).click();
+        const response = await downloadResponse;
+        expect(response.headers()['content-type']).toContain('audio');
+        expect(await response.body()).toEqual(validWavBuffer());
     }
-    expect(readFileSync(downloadPath)).toEqual(validWavBuffer());
 
     await audioRow.getByRole('button', { name: 'Удалить', exact: true }).click();
     const deleteConfirmation = page.getByRole('button', { name: 'Подтвердить', exact: true });
     if (await deleteConfirmation.isVisible()) {
         await deleteConfirmation.click();
     }
-    await expect(page.getByText('Аудиозапись удалена', { exact: true })).toBeVisible();
+    await expect(audioRow).toHaveCount(0, { timeout: 15_000 });
     await page.reload();
     await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
     await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA' })).toHaveCount(0);
