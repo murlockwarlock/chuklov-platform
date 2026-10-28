@@ -2431,14 +2431,11 @@ test('staff can manage private client audio recordings', async ({ page }) => {
         const response = await downloadResponse;
         expect(response.headers()['content-type']).toContain('audio');
         expect(Number(response.headers()['content-length'])).toBeGreaterThan(0);
+        await page.goto(`/admin/clients/${fixture.clientId}`);
+        await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
     }
 
     if (test.info().project.name === 'mobile') {
-        console.log('audio-e2e: mobile row buttons', await audioRow.locator('button').evaluateAll((buttons) => buttons.map((button) => ({
-            text: button.textContent?.trim(),
-            ariaLabel: button.getAttribute('aria-label'),
-            title: button.getAttribute('title'),
-        }))));
         await audioRow.getByRole('button', { name: 'Действия', exact: true }).click();
         const audioActionsMenu = page.locator('.fi-dropdown-panel:visible').last();
         await expect(audioActionsMenu).toBeVisible();
