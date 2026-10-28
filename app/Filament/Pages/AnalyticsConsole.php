@@ -17,6 +17,7 @@ use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Analytics\Application\PurchaseAnalytics;
 use App\Modules\Analytics\Application\SchedulingAnalytics;
 use App\Modules\Analytics\Application\ServiceVisitAnalytics;
+use App\Modules\Feedback\Application\FeedbackThemeCatalog;
 use App\Modules\Finance\Application\FinancialReconciliationContract;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
@@ -24,6 +25,7 @@ use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Tracker\Application\TrackerGoalTagCatalog;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Select;
@@ -90,6 +92,8 @@ final class AnalyticsConsole extends LocalizedPage
             'dimensions' => ['pain'],
             'client_id' => null,
             'problem_tag_id' => null,
+            'feedback_theme_id' => null,
+            'goal_tag_id' => null,
             'period' => DashboardPeriod::DefaultPreset,
             'start_date' => null,
             'end_date' => null,
@@ -150,6 +154,44 @@ final class AnalyticsConsole extends LocalizedPage
                             ->nullable()
                             ->placeholder(__('Все категории'))
                             ->visible(fn (Get $get): bool => in_array('pain', (array) $get('dimensions'), true)),
+                        Select::make('feedback_theme_id')
+                            ->label(__('Тема обратной связи'))
+                            ->options(function (Get $get): array {
+                                $selectedThemeId = filter_var(
+                                    $get('feedback_theme_id'),
+                                    FILTER_VALIDATE_INT,
+                                    ['options' => ['min_range' => 1]],
+                                );
+
+                                return app(FeedbackThemeCatalog::class)->optionsForSelection(
+                                    app(OrganizationContext::class)->id(),
+                                    $selectedThemeId === false ? [] : [(int) $selectedThemeId],
+                                );
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->placeholder(__('Все темы'))
+                            ->visible(fn (Get $get): bool => in_array('feedback', (array) $get('dimensions'), true)),
+                        Select::make('goal_tag_id')
+                            ->label(__('Категория задачи'))
+                            ->options(function (Get $get): array {
+                                $selectedGoalTagId = filter_var(
+                                    $get('goal_tag_id'),
+                                    FILTER_VALIDATE_INT,
+                                    ['options' => ['min_range' => 1]],
+                                );
+
+                                return app(TrackerGoalTagCatalog::class)->optionsForSelection(
+                                    app(OrganizationContext::class)->id(),
+                                    $selectedGoalTagId === false ? [] : [(int) $selectedGoalTagId],
+                                );
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->placeholder(__('Все категории'))
+                            ->visible(fn (Get $get): bool => in_array('goals', (array) $get('dimensions'), true)),
                         Select::make('period')
                             ->label(__('Период'))
                             ->options(DashboardPeriod::options())
@@ -210,6 +252,8 @@ final class AnalyticsConsole extends LocalizedPage
         $dimensions = is_array($state['dimensions'] ?? null) ? array_values($state['dimensions']) : [];
         $client = $this->selectedClient($state);
         $problemTagId = $this->selectedProblemTagId($state);
+        $feedbackThemeId = $this->selectedFeedbackThemeId($state);
+        $goalTagId = $this->selectedGoalTagId($state);
         $organization = app(OrganizationContext::class)->organization();
         $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
         $results = [];
@@ -221,8 +265,8 @@ final class AnalyticsConsole extends LocalizedPage
                     'acquisition' => $this->acquisition($actor, $period, $client),
                     'scheduling' => $this->scheduling($actor, $period, $client),
                     'finance' => $this->finance($actor, $period, $client),
-                    'feedback' => $this->feedback($actor, $period, $client),
-                    'goals' => $this->goals($actor, $period, $client),
+                    'feedback' => $this->feedback($actor, $period, $client, $feedbackThemeId),
+                    'goals' => $this->goals($actor, $period, $client, $goalTagId),
                     'demographics' => $this->demographics($actor, $period, $client),
                     'services' => $this->services($actor, $period, $client),
                     'purchases' => $this->purchases($actor, $period, $client),
@@ -248,6 +292,8 @@ final class AnalyticsConsole extends LocalizedPage
         $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
         $client = $this->selectedClient($state);
         $problemTagId = $this->selectedProblemTagId($state);
+        $feedbackThemeId = $this->selectedFeedbackThemeId($state);
+        $goalTagId = $this->selectedGoalTagId($state);
         $results = [];
         foreach ((array) ($state['dimensions'] ?? []) as $dimension) {
             try {
@@ -256,8 +302,8 @@ final class AnalyticsConsole extends LocalizedPage
                     'acquisition' => $this->acquisition($actor, $period, $client),
                     'scheduling' => $this->scheduling($actor, $period, $client),
                     'finance' => $this->finance($actor, $period, $client),
-                    'feedback' => $this->feedback($actor, $period, $client),
-                    'goals' => $this->goals($actor, $period, $client),
+                    'feedback' => $this->feedback($actor, $period, $client, $feedbackThemeId),
+                    'goals' => $this->goals($actor, $period, $client, $goalTagId),
                     'demographics' => $this->demographics($actor, $period, $client),
                     'services' => $this->services($actor, $period, $client),
                     'purchases' => $this->purchases($actor, $period, $client),
@@ -350,15 +396,15 @@ final class AnalyticsConsole extends LocalizedPage
     }
 
     /** @return array<string, mixed> */
-    private function feedback(User $actor, DashboardPeriod $period, ?Client $client = null): array
+    private function feedback(User $actor, DashboardPeriod $period, ?Client $client = null, ?int $themeId = null): array
     {
-        return app(FeedbackAnalytics::class)->handle($actor, $period, $client)->toArray();
+        return app(FeedbackAnalytics::class)->handle($actor, $period, $client, $themeId)->toArray();
     }
 
     /** @return array<string, mixed> */
-    private function goals(User $actor, DashboardPeriod $period, ?Client $client = null): array
+    private function goals(User $actor, DashboardPeriod $period, ?Client $client = null, ?int $goalTagId = null): array
     {
-        return app(GoalAnalytics::class)->handle($actor, $period, $client)->toArray();
+        return app(GoalAnalytics::class)->handle($actor, $period, $client, $goalTagId)->toArray();
     }
 
     /** @return array<string, mixed> */
@@ -460,6 +506,22 @@ final class AnalyticsConsole extends LocalizedPage
     private function selectedProblemTagId(array $state): ?int
     {
         $value = filter_var($state['problem_tag_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        return $value === false ? null : (int) $value;
+    }
+
+    /** @param array<string, mixed> $state */
+    private function selectedFeedbackThemeId(array $state): ?int
+    {
+        $value = filter_var($state['feedback_theme_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        return $value === false ? null : (int) $value;
+    }
+
+    /** @param array<string, mixed> $state */
+    private function selectedGoalTagId(array $state): ?int
+    {
+        $value = filter_var($state['goal_tag_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
         return $value === false ? null : (int) $value;
     }

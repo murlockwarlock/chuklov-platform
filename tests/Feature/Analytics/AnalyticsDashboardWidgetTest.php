@@ -13,6 +13,7 @@ use App\Filament\Widgets\AnalyticsSchedulingWidget;
 use App\Filament\Widgets\UpcomingBookingsWidget;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Feedback\Domain\Models\FeedbackTheme;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -24,6 +25,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -175,6 +177,41 @@ final class AnalyticsDashboardWidgetTest extends TestCase
 
         self::assertSame($tag->getKey(), $component->instance()->data['problem_tag_id']);
         self::assertArrayHasKey('pain', $component->instance()->results);
+    }
+
+    public function test_analytics_console_preserves_taxonomy_filters_for_multiple_dimensions(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $theme = FeedbackTheme::query()->forceCreate([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Восстановление',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $goal = TrackerGoalTag::query()->forceCreate([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Сон',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['feedback', 'goals'],
+                'feedback_theme_id' => $theme->getKey(),
+                'goal_tag_id' => $goal->getKey(),
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame($theme->getKey(), $component->instance()->data['feedback_theme_id']);
+        self::assertSame($goal->getKey(), $component->instance()->data['goal_tag_id']);
+        self::assertArrayHasKey('feedback', $component->instance()->results);
+        self::assertArrayHasKey('goals', $component->instance()->results);
     }
 
     public function test_analytics_console_reports_a_dimension_error_without_rendering_partial_result_shape(): void

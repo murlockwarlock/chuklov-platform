@@ -9,6 +9,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
 use Illuminate\Support\Facades\DB;
 
 final readonly class GoalAnalytics
@@ -18,12 +19,22 @@ final readonly class GoalAnalytics
         private OrganizationAuthorizer $authorizer,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): GoalAnalyticsData
-    {
+    public function handle(
+        User $actor,
+        DashboardPeriod $period,
+        ?Client $client = null,
+        ?int $goalTagId = null,
+    ): GoalAnalyticsData {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
         $organizationId = (int) $organization->getKey();
         if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
+        if ($goalTagId !== null && ! TrackerGoalTag::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($goalTagId)
+            ->exists()) {
             abort(404);
         }
         $clientId = $client?->getKey();
@@ -41,6 +52,7 @@ final readonly class GoalAnalytics
             ->where('tasks.created_at', '>=', $period->startUtc)
             ->where('tasks.created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('tasks.client_id', $clientId))
+            ->when($goalTagId !== null, fn ($query) => $query->where('links.tracker_goal_tag_id', $goalTagId))
             ->select('tags.name', 'tags.group_name')
             ->selectRaw('COUNT(DISTINCT tasks.client_id) as client_count')
             ->selectRaw('COUNT(DISTINCT tasks.id) as task_count')

@@ -5,6 +5,7 @@ namespace App\Modules\Analytics\Application;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\FeedbackAnalyticsData;
+use App\Modules\Feedback\Domain\Models\FeedbackTheme;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -18,12 +19,22 @@ final readonly class FeedbackAnalytics
         private OrganizationAuthorizer $authorizer,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): FeedbackAnalyticsData
-    {
+    public function handle(
+        User $actor,
+        DashboardPeriod $period,
+        ?Client $client = null,
+        ?int $themeId = null,
+    ): FeedbackAnalyticsData {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
         $organizationId = (int) $organization->getKey();
         if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
+        if ($themeId !== null && ! FeedbackTheme::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($themeId)
+            ->exists()) {
             abort(404);
         }
         $clientId = $client?->getKey();
@@ -32,7 +43,17 @@ final readonly class FeedbackAnalytics
             ->where('organization_id', $organizationId)
             ->where('submitted_at', '>=', $period->startUtc)
             ->where('submitted_at', '<', $period->endUtc)
-            ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId));
+            ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId))
+            ->when($themeId !== null, function ($query) use ($organizationId, $themeId): void {
+                $query->whereExists(function ($subquery) use ($organizationId, $themeId): void {
+                    $subquery
+                        ->selectRaw('1')
+                        ->from('feedback_submission_themes as selected_links')
+                        ->whereColumn('selected_links.feedback_submission_id', 'feedback_submissions.id')
+                        ->where('selected_links.organization_id', $organizationId)
+                        ->where('selected_links.feedback_theme_id', $themeId);
+                });
+            });
         $summary = (clone $base)
             ->selectRaw('COUNT(*) as submission_count')
             ->selectRaw('AVG(score) as average_score')
@@ -51,6 +72,7 @@ final readonly class FeedbackAnalytics
             ->where('submissions.submitted_at', '>=', $period->startUtc)
             ->where('submissions.submitted_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('submissions.client_id', $clientId))
+            ->when($themeId !== null, fn ($query) => $query->where('links.feedback_theme_id', $themeId))
             ->select('themes.id', 'themes.name', 'themes.group_name')
             ->selectRaw('COUNT(DISTINCT links.client_id) as client_count')
             ->selectRaw('COUNT(DISTINCT links.feedback_submission_id) as submission_count')
