@@ -86,7 +86,10 @@ final readonly class AcceptAnalyticsClassification
         });
     }
 
-    /** @param array<int, mixed>|null $themeIds */
+    /**
+     * @param array<int, mixed>|null $themeIds
+     * @return list<int>
+     */
     private function acceptFeedback(AnalyticsClassificationRun $run, int $organizationId, ?array $themeIds): array
     {
         $submission = FeedbackSubmission::query()
@@ -103,10 +106,13 @@ final readonly class AcceptAnalyticsClassification
             'client_id' => $submission->client_id,
         ]);
 
-        return $selectedIds;
+        return array_values(array_map(static fn (mixed $id): int => (int) $id, $selectedIds));
     }
 
-    /** @param array<int, mixed>|null $themeIds */
+    /**
+     * @param array<int, mixed>|null $themeIds
+     * @return list<int>
+     */
     private function acceptGoalTags(AnalyticsClassificationRun $run, int $organizationId, ?array $themeIds): array
     {
         $task = TrackerTask::query()
@@ -128,10 +134,13 @@ final readonly class AcceptAnalyticsClassification
             'client_id' => $task->client_id,
         ]);
 
-        return $selectedIds;
+        return array_values(array_map(static fn (mixed $id): int => (int) $id, $selectedIds));
     }
 
-    /** @param array<int, mixed>|null $themeIds */
+    /**
+     * @param array<int, mixed>|null $themeIds
+     * @return list<int>
+     */
     private function acceptProblemTags(AnalyticsClassificationRun $run, int $organizationId, ?array $themeIds): array
     {
         $pain = MedicalProfilePain::query()
@@ -153,9 +162,10 @@ final readonly class AcceptAnalyticsClassification
             'client_id' => $pain->client_id,
         ]);
 
-        return $selectedIds;
+        return array_values(array_map(static fn (mixed $id): int => (int) $id, $selectedIds));
     }
 
+    /** @return list<int> */
     private function suggestedIds(mixed $suggestions): array
     {
         if (! is_array($suggestions)) {

@@ -27,6 +27,7 @@ use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
+use App\Modules\MedicalProfiles\Application\DTOs\MedicalPainData;
 use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProfileSnapshotHasher;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
@@ -763,7 +764,7 @@ class ViewClient extends LocalizedViewRecord
                     ->live()
                     ->afterStateUpdated(function (Set $set, mixed $state): void {
                         $run = $this->latestGoalClassificationRun((int) $state);
-                        $set('goal_tag_ids', collect($run?->suggestions ?? [])->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all());
+                        $set('goal_tag_ids', $this->classificationSuggestionIds($run));
                     })
                     ->required(),
                 Select::make('goal_tag_ids')
@@ -804,7 +805,13 @@ class ViewClient extends LocalizedViewRecord
             ->action(function (array $data): void {
                 $pain = $this->medicalProfilePain((int) ($data['pain_id'] ?? 0));
                 $profile = app(GetMedicalProfile::class)->handle($this->actor(), $this->clientRecord());
-                $sourceText = collect($profile?->pains ?? [])->firstWhere('id', (int) $pain->getKey())?->name;
+                $sourceText = null;
+                foreach ($profile !== null ? $profile->pains : [] as $profilePain) {
+                    if ((int) $profilePain->id === (int) $pain->getKey()) {
+                        $sourceText = $profilePain->name;
+                        break;
+                    }
+                }
                 if (! is_string($sourceText) || trim($sourceText) === '') {
                     Notification::make()->warning()->title(__('Не удалось прочитать боль'))->send();
 
@@ -849,7 +856,7 @@ class ViewClient extends LocalizedViewRecord
                     ->live()
                     ->afterStateUpdated(function (Set $set, mixed $state): void {
                         $run = $this->latestComplaintClassificationRun((int) $state);
-                        $set('tag_ids', collect($run?->suggestions ?? [])->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all());
+                        $set('tag_ids', $this->classificationSuggestionIds($run));
                     })
                     ->required(),
                 Select::make('tag_ids')
@@ -941,7 +948,13 @@ class ViewClient extends LocalizedViewRecord
     {
         $profile = app(GetMedicalProfile::class)->handle($this->actor(), $this->clientRecord());
 
-        return collect($profile?->pains ?? [])->mapWithKeys(static fn ($pain): array => [(int) $pain->id => $pain->name])->all();
+        $pains = $profile !== null ? $profile->pains : [];
+
+        return array_reduce($pains, static function (array $options, MedicalPainData $pain): array {
+            $options[(int) $pain->id] = $pain->name;
+
+            return $options;
+        }, []);
     }
 
     /** @return array<int, string> */
@@ -954,11 +967,15 @@ class ViewClient extends LocalizedViewRecord
             ->where('status', ClassificationRunStatus::NeedsReview)
             ->pluck('source_id');
         $profile = app(GetMedicalProfile::class)->handle($this->actor(), $this->clientRecord());
+        $pains = $profile !== null ? $profile->pains : [];
 
-        return collect($profile?->pains ?? [])
-            ->filter(static fn ($pain): bool => $profilePainIds->contains($pain->id))
-            ->mapWithKeys(static fn ($pain): array => [(int) $pain->id => $pain->name])
-            ->all();
+        return array_reduce($pains, static function (array $options, MedicalPainData $pain) use ($profilePainIds): array {
+            if ($profilePainIds->contains($pain->id)) {
+                $options[(int) $pain->id] = $pain->name;
+            }
+
+            return $options;
+        }, []);
     }
 
     private function medicalProfilePainWithSuggestionsExists(): bool
@@ -987,6 +1004,19 @@ class ViewClient extends LocalizedViewRecord
             ->where('status', ClassificationRunStatus::NeedsReview)
             ->latest('id')
             ->first();
+    }
+
+    /** @return list<int> */
+    private function classificationSuggestionIds(?AnalyticsClassificationRun $run): array
+    {
+        if (! $run instanceof AnalyticsClassificationRun || ! is_array($run->suggestions)) {
+            return [];
+        }
+
+        return array_values(array_map(
+            static fn (mixed $id): int => (int) $id,
+            array_column($run->suggestions, 'id'),
+        ));
     }
 
     private function recordFeedbackAction(): Action
