@@ -2730,7 +2730,10 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
     await page.getByLabel('Название причины*', { exact: true }).last().fill(causeName);
     await page.getByLabel('Группа', { exact: true }).last().fill('E2E причины');
-    await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
+    await Promise.all([
+        page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok()),
+        page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click(),
+    ]);
 
     await page.reload();
     await expect(page.getByLabel('Название теста*', { exact: true }).last()).toHaveValue(testName);
