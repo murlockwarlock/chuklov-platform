@@ -40,6 +40,21 @@ final readonly class AttributionSourceCatalog
         return array_values($rows);
     }
 
+    /** @return array<string, string> */
+    public function optionsForSelection(int $organizationId, ?string $selectedKey = null): array
+    {
+        $options = [];
+        foreach ($this->rows($organizationId) as $row) {
+            if (! $row['is_active'] && $row['source_key'] !== $selectedKey) {
+                continue;
+            }
+
+            $options[$row['source_key']] = $row['label'].($row['is_active'] ? '' : ' ('.__('неактивен').')');
+        }
+
+        return $options;
+    }
+
     /** @param array<int, mixed> $rows */
     public function save(User $actor, array $rows): void
     {

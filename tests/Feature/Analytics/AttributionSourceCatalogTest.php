@@ -83,6 +83,68 @@ final class AttributionSourceCatalogTest extends TestCase
         ]);
     }
 
+    public function test_selected_source_filters_new_clients_and_buckets_by_owner_mapping(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $socialClient = Client::factory()->forOrganization($organization)->create();
+        $telegramClient = Client::factory()->forOrganization($organization)->create();
+        $attribution = new ClientAttribution;
+        $attribution->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $socialClient->getKey(),
+            'source_type' => 'source',
+            'source' => 'instagram_ads',
+            'capture_channel' => 'portal',
+            'capture_context' => 'test',
+            'captured_at' => now(),
+            'accepted_at' => now(),
+        ])->save();
+        $attribution = new ClientAttribution;
+        $attribution->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $telegramClient->getKey(),
+            'source_type' => 'source',
+            'source' => 'telegram',
+            'capture_channel' => 'portal',
+            'capture_context' => 'test',
+            'captured_at' => now(),
+            'accepted_at' => now(),
+        ])->save();
+        app(OrganizationContext::class)->set($organization);
+
+        app(AttributionSourceCatalog::class)->save($admin, [
+            [
+                'source_key' => 'social_media',
+                'label' => 'Социальные сети',
+                'aliases' => [['value' => 'instagram_ads']],
+                'is_active' => true,
+                'sort_order' => 1,
+            ],
+            [
+                'source_key' => 'telegram',
+                'label' => 'Telegram',
+                'aliases' => [],
+                'is_active' => true,
+                'sort_order' => 2,
+            ],
+        ]);
+
+        $analytics = app(AcquisitionAnalytics::class)->handle(
+            $admin,
+            DashboardPeriod::fromFilters(
+                ['period' => DashboardPeriod::Custom, 'start_date' => '2000-01-01', 'end_date' => '2100-01-01'],
+                'UTC',
+                CarbonImmutable::parse('2026-10-28 12:00:00', 'UTC'),
+            ),
+            sourceKey: 'social_media',
+        );
+
+        self::assertSame(1, $analytics->newClients);
+        self::assertCount(1, $analytics->sources);
+        self::assertSame('Социальные сети', $analytics->sources[0]->label);
+        self::assertSame(1, $analytics->sources[0]->count);
+    }
+
     public function test_new_owner_mapping_gets_a_hidden_stable_key_without_developer_input(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();

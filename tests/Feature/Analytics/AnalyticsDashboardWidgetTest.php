@@ -13,6 +13,8 @@ use App\Filament\Widgets\AnalyticsSchedulingWidget;
 use App\Filament\Widgets\UpcomingBookingsWidget;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Attribution\Application\AttributionSourceCatalog;
+use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Feedback\Domain\Models\FeedbackTheme;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
@@ -212,6 +214,55 @@ final class AnalyticsDashboardWidgetTest extends TestCase
         self::assertSame($goal->getKey(), $component->instance()->data['goal_tag_id']);
         self::assertArrayHasKey('feedback', $component->instance()->results);
         self::assertArrayHasKey('goals', $component->instance()->results);
+    }
+
+    public function test_analytics_console_preserves_and_applies_source_filter(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $selected = Client::factory()->forOrganization($organization)->create();
+        $other = Client::factory()->forOrganization($organization)->create();
+        DB::table('clients')->whereIn('id', [$selected->getKey(), $other->getKey()])->update([
+            'created_at' => '2026-10-10 10:00:00',
+            'updated_at' => '2026-10-10 10:00:00',
+        ]);
+        foreach ([[$selected, 'instagram_ads'], [$other, 'telegram']] as [$client, $source]) {
+            $attribution = new ClientAttribution;
+            $attribution->forceFill([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $client->getKey(),
+                'source_type' => 'source',
+                'source' => $source,
+                'capture_channel' => 'portal',
+                'capture_context' => 'test',
+                'captured_at' => now(),
+                'accepted_at' => now(),
+            ])->save();
+        }
+        app(OrganizationContext::class)->set($organization);
+        app(AttributionSourceCatalog::class)->save($admin, [[
+            'source_key' => 'social_media',
+            'label' => 'Социальные сети',
+            'aliases' => [['value' => 'instagram_ads']],
+            'is_active' => true,
+            'sort_order' => 1,
+        ]]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition'],
+                'source_key' => 'social_media',
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-11',
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame('social_media', $component->instance()->data['source_key']);
+        self::assertSame(1, $component->instance()->results['acquisition']['new_clients']);
+        self::assertSame('Социальные сети', $component->instance()->results['acquisition']['sources'][0]['label']);
     }
 
     public function test_analytics_console_reports_a_dimension_error_without_rendering_partial_result_shape(): void

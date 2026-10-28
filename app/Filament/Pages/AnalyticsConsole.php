@@ -17,6 +17,7 @@ use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Analytics\Application\PurchaseAnalytics;
 use App\Modules\Analytics\Application\SchedulingAnalytics;
 use App\Modules\Analytics\Application\ServiceVisitAnalytics;
+use App\Modules\Attribution\Application\AttributionSourceCatalog;
 use App\Modules\Feedback\Application\FeedbackThemeCatalog;
 use App\Modules\Finance\Application\FinancialReconciliationContract;
 use App\Modules\Identity\Application\ClientSearch;
@@ -94,6 +95,7 @@ final class AnalyticsConsole extends LocalizedPage
             'problem_tag_id' => null,
             'feedback_theme_id' => null,
             'goal_tag_id' => null,
+            'source_key' => null,
             'period' => DashboardPeriod::DefaultPreset,
             'start_date' => null,
             'end_date' => null,
@@ -192,6 +194,21 @@ final class AnalyticsConsole extends LocalizedPage
                             ->nullable()
                             ->placeholder(__('Все категории'))
                             ->visible(fn (Get $get): bool => in_array('goals', (array) $get('dimensions'), true)),
+                        Select::make('source_key')
+                            ->label(__('Источник клиента'))
+                            ->options(function (Get $get): array {
+                                $selectedSourceKey = $get('source_key');
+
+                                return app(AttributionSourceCatalog::class)->optionsForSelection(
+                                    app(OrganizationContext::class)->id(),
+                                    is_string($selectedSourceKey) ? $selectedSourceKey : null,
+                                );
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->placeholder(__('Все источники'))
+                            ->visible(fn (Get $get): bool => in_array('acquisition', (array) $get('dimensions'), true)),
                         Select::make('period')
                             ->label(__('Период'))
                             ->options(DashboardPeriod::options())
@@ -254,6 +271,7 @@ final class AnalyticsConsole extends LocalizedPage
         $problemTagId = $this->selectedProblemTagId($state);
         $feedbackThemeId = $this->selectedFeedbackThemeId($state);
         $goalTagId = $this->selectedGoalTagId($state);
+        $sourceKey = $this->selectedSourceKey($state);
         $organization = app(OrganizationContext::class)->organization();
         $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
         $results = [];
@@ -262,7 +280,7 @@ final class AnalyticsConsole extends LocalizedPage
             try {
                 $results[(string) $dimension] = match ((string) $dimension) {
                     'pain' => app(PainAnalytics::class)->handle($actor, $period, $client, $problemTagId)->toArray(),
-                    'acquisition' => $this->acquisition($actor, $period, $client),
+                    'acquisition' => $this->acquisition($actor, $period, $client, $sourceKey),
                     'scheduling' => $this->scheduling($actor, $period, $client),
                     'finance' => $this->finance($actor, $period, $client),
                     'feedback' => $this->feedback($actor, $period, $client, $feedbackThemeId),
@@ -294,12 +312,13 @@ final class AnalyticsConsole extends LocalizedPage
         $problemTagId = $this->selectedProblemTagId($state);
         $feedbackThemeId = $this->selectedFeedbackThemeId($state);
         $goalTagId = $this->selectedGoalTagId($state);
+        $sourceKey = $this->selectedSourceKey($state);
         $results = [];
         foreach ((array) ($state['dimensions'] ?? []) as $dimension) {
             try {
                 $results[(string) $dimension] = match ((string) $dimension) {
                     'pain' => app(PainAnalytics::class)->handle($actor, $period, $client, $problemTagId)->toArray(),
-                    'acquisition' => $this->acquisition($actor, $period, $client),
+                    'acquisition' => $this->acquisition($actor, $period, $client, $sourceKey),
                     'scheduling' => $this->scheduling($actor, $period, $client),
                     'finance' => $this->finance($actor, $period, $client),
                     'feedback' => $this->feedback($actor, $period, $client, $feedbackThemeId),
@@ -320,9 +339,9 @@ final class AnalyticsConsole extends LocalizedPage
     }
 
     /** @return array<string, mixed> */
-    private function acquisition(User $actor, DashboardPeriod $period, ?Client $client = null): array
+    private function acquisition(User $actor, DashboardPeriod $period, ?Client $client = null, ?string $sourceKey = null): array
     {
-        $data = app(AcquisitionAnalytics::class)->handle($actor, $period, $client);
+        $data = app(AcquisitionAnalytics::class)->handle($actor, $period, $client, $sourceKey);
 
         return [
             'new_clients' => $data->newClients,
@@ -524,5 +543,18 @@ final class AnalyticsConsole extends LocalizedPage
         $value = filter_var($state['goal_tag_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
         return $value === false ? null : (int) $value;
+    }
+
+    /** @param array<string, mixed> $state */
+    private function selectedSourceKey(array $state): ?string
+    {
+        $value = $state['source_key'] ?? null;
+        if (! is_string($value)) {
+            return null;
+        }
+
+        $value = trim($value);
+
+        return preg_match('/^[a-z][a-z0-9_]{1,119}$/D', $value) === 1 ? $value : null;
     }
 }

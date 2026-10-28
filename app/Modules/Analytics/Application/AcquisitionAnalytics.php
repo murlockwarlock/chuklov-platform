@@ -12,6 +12,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Database\Query\JoinClause;
 use Illuminate\Support\Facades\DB;
 
@@ -41,7 +42,7 @@ final class AcquisitionAnalytics
         private readonly AttributionSourceCatalog $sourceCatalog,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): AcquisitionAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null, ?string $sourceKey = null): AcquisitionAnalyticsData
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
@@ -50,25 +51,44 @@ final class AcquisitionAnalytics
         if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
             abort(404);
         }
+        $sourceMapping = $this->sourceMapping($organizationId, $sourceKey);
         $clientTable = (new Client)->getTable();
         $clientId = $client?->getKey();
 
-        $newClients = DB::table($clientTable)
-            ->where('organization_id', $organizationId)
-            ->where('created_at', '>=', $period->startUtc)
-            ->where('created_at', '<', $period->endUtc)
-            ->when($clientId !== null, fn ($query) => $query->where('id', $clientId))
-            ->count();
+        $newClientsQuery = DB::table($clientTable.' as clients')
+            ->where('clients.organization_id', $organizationId)
+            ->where('clients.created_at', '>=', $period->startUtc)
+            ->where('clients.created_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('clients.id', $clientId));
+        if ($sourceMapping !== null) {
+            $newClientsQuery->whereExists(function (Builder $query) use ($organizationId, $sourceMapping): void {
+                $query
+                    ->selectRaw('1')
+                    ->from('client_attributions as attribution')
+                    ->whereColumn('attribution.client_id', 'clients.id')
+                    ->where('attribution.organization_id', $organizationId);
+                $this->applySourceFilter($query, $sourceMapping);
+            });
+        }
+        $newClients = $newClientsQuery->count();
 
         return new AcquisitionAnalyticsData(
             newClients: $newClients,
-            sources: $this->sourceBuckets($organizationId, $period, $clientTable, $client),
+            sources: $this->sourceBuckets($organizationId, $period, $clientTable, $client, $sourceMapping),
         );
     }
 
-    /** @return list<SourceBucket> */
-    private function sourceBuckets(int $organizationId, DashboardPeriod $period, string $clientTable, ?Client $client = null): array
-    {
+    /**
+     * @param  array{source_key: string, label: string, aliases: list<string>, is_active: bool, sort_order: int}|null  $sourceMapping
+     * @return list<SourceBucket>
+     */
+    private function sourceBuckets(
+        int $organizationId,
+        DashboardPeriod $period,
+        string $clientTable,
+        ?Client $client = null,
+        ?array $sourceMapping = null,
+    ): array {
         $attributionTable = (new ClientAttribution)->getTable();
         $clientId = $client?->getKey();
         $directSourceCondition = "attribution.source_type IN ('legacy', 'source', 'manual')
@@ -96,8 +116,11 @@ final class AcquisitionAnalytics
             ->where('clients.organization_id', $organizationId)
             ->where('clients.created_at', '>=', $period->startUtc)
             ->where('clients.created_at', '<', $period->endUtc)
-            ->when($clientId !== null, fn ($query) => $query->where('clients.id', $clientId))
-            ->select(DB::raw($semanticKind.' as semantic_kind, '.$semanticValue.' as semantic_value'));
+            ->when($clientId !== null, fn ($query) => $query->where('clients.id', $clientId));
+        if ($sourceMapping !== null) {
+            $this->applySourceFilter($classified, $sourceMapping);
+        }
+        $classified->select(DB::raw($semanticKind.' as semantic_kind, '.$semanticValue.' as semantic_value'));
 
         $grouped = DB::query()
             ->fromSub($classified, 'classified_sources')
@@ -159,6 +182,60 @@ final class AcquisitionAnalytics
             array_keys($buckets),
             array_values($buckets),
         );
+    }
+
+    /** @param array{source_key: string, label: string, aliases: list<string>, is_active: bool, sort_order: int} $mapping */
+    private function applySourceFilter(Builder $query, array $mapping): void
+    {
+        $values = array_values(array_unique(array_filter(array_map(
+            static fn (string $value): string => mb_strtolower(trim($value)),
+            [$mapping['source_key'], $mapping['label'], ...$mapping['aliases']],
+        ), static fn (string $value): bool => $value !== '')));
+        $isReferral = in_array('referral', $values, true) || in_array('referrals', $values, true);
+
+        $query->where(function (Builder $filter) use ($values, $isReferral): void {
+            if ($isReferral) {
+                $filter->where('attribution.source_type', 'referral');
+            }
+            if ($values !== []) {
+                $filter->when($isReferral, fn (Builder $branch): Builder => $branch->orWhere(function (Builder $raw) use ($values): void {
+                    $this->applyRawSourceValues($raw, $values);
+                }), function (Builder $branch) use ($values): void {
+                    $branch->where(function (Builder $raw) use ($values): void {
+                        $this->applyRawSourceValues($raw, $values);
+                    });
+                });
+            }
+        });
+    }
+
+    /** @param list<string> $values */
+    private function applyRawSourceValues(Builder $query, array $values): void
+    {
+        $query->whereIn('attribution.source_type', ['legacy', 'source', 'manual', 'utm'])
+            ->where(function (Builder $matches) use ($values): void {
+                foreach ($values as $value) {
+                    $matches
+                        ->orWhereRaw('LOWER(COALESCE(attribution.source, \'\')) = ?', [$value])
+                        ->orWhereRaw('LOWER(COALESCE(attribution.utm_source, \'\')) = ?', [$value]);
+                }
+            });
+    }
+
+    /** @return array{source_key: string, label: string, aliases: list<string>, is_active: bool, sort_order: int}|null */
+    private function sourceMapping(int $organizationId, ?string $sourceKey): ?array
+    {
+        if ($sourceKey === null || trim($sourceKey) === '') {
+            return null;
+        }
+
+        foreach ($this->sourceCatalog->rows($organizationId) as $mapping) {
+            if ($mapping['source_key'] === trim($sourceKey)) {
+                return $mapping;
+            }
+        }
+
+        abort(404);
     }
 
     /** @param list<array{source_key: string, label: string, aliases: list<string>, is_active: bool, sort_order: int}> $configured */
