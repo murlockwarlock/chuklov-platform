@@ -2449,8 +2449,8 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
     await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Название или описание боли', exact: true }).fill('Первичная боль');
-    await page.getByRole('textbox', { name: 'Особые жалобы', exact: true }).fill('Первичная запись о боли');
+    await page.getByLabel('Название или описание боли', { exact: true }).fill('Первичная боль');
+    await page.getByLabel('Особые жалобы', { exact: true }).fill('Первичная запись о боли');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
@@ -2470,7 +2470,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Название или описание боли', exact: true }).fill('Обновлённая боль');
+    await page.getByLabel('Название или описание боли', { exact: true }).fill('Обновлённая боль');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
