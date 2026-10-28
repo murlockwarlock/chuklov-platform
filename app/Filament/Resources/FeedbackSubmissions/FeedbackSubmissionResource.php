@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\FeedbackSubmissions;
 
 use App\Filament\Resources\Clients\ClientResource;
+use App\Filament\Resources\FeedbackSubmissions\Pages\CreateFeedbackSubmission;
 use App\Filament\Resources\FeedbackSubmissions\Pages\ListFeedbackSubmissions;
 use App\Filament\Resources\FeedbackSubmissions\Pages\ViewFeedbackSubmission;
 use App\Filament\Support\CrmEntityLinks;
@@ -16,6 +17,8 @@ use App\Modules\Feedback\Application\ClassifyFeedbackSubmission;
 use App\Modules\Feedback\Application\FeedbackThemeCatalog;
 use App\Modules\Feedback\Application\ListFeedbackSubmissionsForCrm;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
+use App\Modules\Identity\Application\ClientSearch;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -23,6 +26,7 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Textarea;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Section;
@@ -62,12 +66,51 @@ final class FeedbackSubmissionResource extends LocalizedResource
 
     public static function canCreate(): bool
     {
-        return false;
+        $actor = auth()->user();
+
+        return $actor instanceof User && app(OrganizationAuthorizer::class)->allows(
+            $actor,
+            app(OrganizationContext::class)->organization(),
+            OrganizationPermission::ManageClients,
+        );
     }
 
     public static function form(Schema $schema): Schema
     {
-        return $schema->components([]);
+        return $schema->components([
+            Section::make(__('Ручная оценка клиента'))
+                ->description(__('Используйте эту форму, если оценку и комментарий записывает специалист.'))
+                ->schema([
+                    Select::make('client_id')
+                        ->label(__('Клиент'))
+                        ->required()
+                        ->searchable()
+                        ->optionsLimit(ClientSearch::MAX_RESULTS)
+                        ->getSearchResultsUsing(fn (string $search): array => self::clientSearchResults($search))
+                        ->getOptionLabelUsing(fn (mixed $value): ?string => self::clientOptionLabel($value)),
+                    Select::make('score')
+                        ->label(__('Оценка удовлетворённости'))
+                        ->options(array_combine(
+                            range(0, 10),
+                            array_map(static fn (int $score): string => (string) $score, range(0, 10)),
+                        ))
+                        ->required()
+                        ->native(false),
+                    Textarea::make('internal_feedback')
+                        ->label(__('Что можно улучшить'))
+                        ->rows(4)
+                        ->maxLength(4000)
+                        ->helperText(__('Комментарий доступен только сотрудникам с доступом к клиенту.')),
+                    Select::make('theme_ids')
+                        ->label(__('Темы комментария'))
+                        ->options(fn (): array => app(FeedbackThemeCatalog::class)->options(app(OrganizationContext::class)->id()))
+                        ->multiple()
+                        ->searchable()
+                        ->preload(),
+                ])
+                ->columns(2)
+                ->columnSpanFull(),
+        ]);
     }
 
     public static function table(Table $table): Table
@@ -263,7 +306,37 @@ final class FeedbackSubmissionResource extends LocalizedResource
     {
         return [
             'index' => ListFeedbackSubmissions::route('/'),
+            'create' => CreateFeedbackSubmission::route('/create'),
             'view' => ViewFeedbackSubmission::route('/{record}'),
         ];
+    }
+
+    /** @return array<int|string, string> */
+    private static function clientSearchResults(string $search): array
+    {
+        $query = Client::query()->where('organization_id', app(OrganizationContext::class)->id());
+        $searcher = app(ClientSearch::class);
+
+        return $searcher->formatOptionLabels(
+            $searcher->apply($query, $search)
+                ->orderBy('full_name')
+                ->orderBy('id')
+                ->limit(ClientSearch::MAX_RESULTS)
+                ->get(['id', 'full_name', 'email', 'phone']),
+        );
+    }
+
+    private static function clientOptionLabel(mixed $value): ?string
+    {
+        $clientId = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($clientId === false) {
+            return null;
+        }
+
+        $client = Client::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->find($clientId);
+
+        return $client instanceof Client ? app(ClientSearch::class)->formatOptionLabel($client) : null;
     }
 }

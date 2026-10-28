@@ -2,10 +2,13 @@
 
 namespace App\Modules\Feedback\Application;
 
+use App\Models\User;
 use App\Modules\Feedback\Domain\Enums\NpsBand;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -21,8 +24,10 @@ final class RecordNpsSubmission
         private readonly RecordAuditEvent $audit,
         private readonly FeedbackRequestFingerprint $fingerprint,
         private readonly RecordScenarioEvent $scenarioEvents,
+        private readonly OrganizationAuthorizer $authorizer,
     ) {}
 
+    /** @param array<int, mixed> $themeIds */
     public function handle(
         Client $client,
         int $score,
@@ -30,6 +35,53 @@ final class RecordNpsSubmission
         string $idempotencyKey,
         string $source = 'portal',
         array $themeIds = [],
+    ): FeedbackSubmission {
+        return $this->record(
+            client: $client,
+            score: $score,
+            internalFeedback: $internalFeedback,
+            idempotencyKey: $idempotencyKey,
+            source: $source,
+            themeIds: $themeIds,
+            auditActor: null,
+            dispatchScenario: true,
+        );
+    }
+
+    /** @param array<int, mixed> $themeIds */
+    public function handleForStaff(
+        User $actor,
+        Client $client,
+        int $score,
+        ?string $internalFeedback,
+        string $idempotencyKey,
+        array $themeIds = [],
+    ): FeedbackSubmission {
+        $organization = $this->context->organization();
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
+
+        return $this->record(
+            client: $client,
+            score: $score,
+            internalFeedback: $internalFeedback,
+            idempotencyKey: $idempotencyKey,
+            source: 'crm',
+            themeIds: $themeIds,
+            auditActor: $actor,
+            dispatchScenario: false,
+        );
+    }
+
+    /** @param array<int, mixed> $themeIds */
+    private function record(
+        Client $client,
+        int $score,
+        ?string $internalFeedback,
+        string $idempotencyKey,
+        string $source,
+        array $themeIds,
+        ?User $auditActor,
+        bool $dispatchScenario,
     ): FeedbackSubmission {
         $organization = $this->context->organization();
         abort_unless((int) $client->organization_id === (int) $organization->getKey(), 404);
@@ -80,7 +132,7 @@ final class RecordNpsSubmission
 
         for ($attempt = 0; $attempt < 3; $attempt++) {
             try {
-                return DB::transaction(function () use ($organization, $client, $score, $internalFeedback, $idempotencyKey, $requestHash, $source, $band, $themeIds): FeedbackSubmission {
+                return DB::transaction(function () use ($organization, $client, $score, $internalFeedback, $idempotencyKey, $requestHash, $source, $band, $themeIds, $auditActor, $dispatchScenario): FeedbackSubmission {
                     $existing = FeedbackSubmission::query()
                         ->where('organization_id', $organization->getKey())
                         ->where('client_id', $client->getKey())
@@ -114,7 +166,7 @@ final class RecordNpsSubmission
                     ]);
                     $this->audit->handle(
                         organization: $organization,
-                        actor: null,
+                        actor: $auditActor,
                         action: 'feedback.submitted',
                         targetType: FeedbackSubmission::class,
                         targetId: (string) $submission->getKey(),
@@ -126,7 +178,9 @@ final class RecordNpsSubmission
                             'theme_count' => count($themeIds),
                         ],
                     );
-                    $this->scenarioEvents->feedbackSubmitted($submission, $band, now()->toImmutable());
+                    if ($dispatchScenario) {
+                        $this->scenarioEvents->feedbackSubmitted($submission, $band, now()->toImmutable());
+                    }
 
                     return $submission->refresh();
                 });
