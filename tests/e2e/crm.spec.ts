@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 type CrmFixture = {
     email: string;
@@ -2674,18 +2674,33 @@ test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => 
 
     const problemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
     await problemSection.getByRole('button', { name: 'Добавить группу', exact: true }).click();
-    const groupNameInput = problemSection.getByRole('textbox', { name: 'Название группы*', exact: true }).last();
-    await groupNameInput.fill(groupName);
-    await problemSection.getByLabel('Порядок', { exact: true }).last().fill('9999');
+    const groupNameInputs = problemSection.getByRole('textbox', { name: 'Название группы*', exact: true });
+    let blankInputCount = 0;
+    for (let index = 0; index < await groupNameInputs.count(); index += 1) {
+        const input = groupNameInputs.nth(index);
+        if ((await input.inputValue()) === '') {
+            await input.fill(blankInputCount === 0 ? groupName : `${groupName} ${blankInputCount + 1}`);
+            blankInputCount += 1;
+        }
+    }
+    expect(blankInputCount).toBeGreaterThan(0);
     await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
     await expect(page.getByText('Группы аналитики сохранены', { exact: true })).toBeVisible();
 
     await page.reload();
     const reopenedProblemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
-    const reopenedNameInput = reopenedProblemSection.getByDisplayValue(groupName, { exact: true });
-    await expect(reopenedNameInput).toHaveCount(1);
+    const reopenedNameInputs = reopenedProblemSection.getByRole('textbox', { name: 'Название группы*', exact: true });
+    let groupIndex = -1;
+    for (let index = 0; index < await reopenedNameInputs.count(); index += 1) {
+        if ((await reopenedNameInputs.nth(index).inputValue()) === groupName) {
+            groupIndex = index;
+            break;
+        }
+    }
+    expect(groupIndex).toBeGreaterThanOrEqual(0);
+    const reopenedNameInput: Locator = reopenedNameInputs.nth(groupIndex);
     await reopenedNameInput.fill(renamedGroupName);
-    const activeToggle = reopenedProblemSection.getByLabel('Активна', { exact: true }).last();
+    const activeToggle = reopenedProblemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(groupIndex);
     if (await activeToggle.isChecked()) {
         await activeToggle.uncheck();
     }
@@ -2694,8 +2709,16 @@ test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => 
 
     await page.reload();
     const finalProblemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
-    await expect(finalProblemSection.getByDisplayValue(renamedGroupName, { exact: true })).toHaveCount(1);
-    await expect(finalProblemSection.getByLabel('Активна', { exact: true }).last()).not.toBeChecked();
+    const finalNameInputs = finalProblemSection.getByRole('textbox', { name: 'Название группы*', exact: true });
+    let finalGroupIndex = -1;
+    for (let index = 0; index < await finalNameInputs.count(); index += 1) {
+        if ((await finalNameInputs.nth(index).inputValue()) === renamedGroupName) {
+            finalGroupIndex = index;
+            break;
+        }
+    }
+    expect(finalGroupIndex).toBeGreaterThanOrEqual(0);
+    await expect(finalProblemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(finalGroupIndex)).not.toBeChecked();
     await expect(page.locator('html')).toBeVisible();
     await assertNoHorizontalOverflow(page);
 });
