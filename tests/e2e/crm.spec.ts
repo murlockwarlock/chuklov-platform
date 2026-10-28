@@ -2677,8 +2677,14 @@ test('staff can create, view, and edit a client session from the CRM client flow
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
     await page.getByLabel('Название или описание боли*', { exact: true }).fill('Обновлённая боль');
+    const resultField = page.getByLabel('Результат после сеанса', { exact: true });
+    await resultField.fill('Ручная правка перед заполнением');
     await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
-    await expect(page.getByLabel('Результат после сеанса', { exact: true })).toContainText('было 7, стало 3');
+    const replaceResultDialog = page.getByRole('dialog', { name: 'Заменить текст результата?' });
+    await expect(replaceResultDialog).toBeVisible();
+    await expect(replaceResultDialog).toContainText('Текущий текст будет заменён сводкой по данным сеанса.');
+    await replaceResultDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await expect(resultField).toContainText('было 7, стало 3');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
