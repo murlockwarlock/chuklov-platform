@@ -2720,19 +2720,21 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await expect(page.getByRole('heading', { name: 'Тесты и причины нарушений', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
-    await page.getByLabel('Название теста*', { exact: true }).last().fill(testName);
-    await page.getByLabel('Раздел', { exact: true }).last().fill('E2E раздел');
-    const valueLabels = page.getByLabel('Название значения*', { exact: true });
+    const testNameInput = page.getByLabel('Название теста*', { exact: true }).last();
+    await testNameInput.fill(testName);
+    const configuredTestItem = page.getByDisplayValue(testName).locator('xpath=ancestor::li[1]');
+    await configuredTestItem.getByLabel('Раздел', { exact: true }).fill('E2E раздел');
+    const valueLabels = configuredTestItem.getByLabel('Название значения*', { exact: true });
     await valueLabels.last().fill('Норма');
-    await page.getByRole('button', { name: 'Добавить значение', exact: true }).last().click();
+    await configuredTestItem.getByRole('button', { name: 'Добавить значение', exact: true }).click();
     await expect(valueLabels).toHaveCount(2);
     await valueLabels.last().fill('Отклонение');
-    await page.getByLabel('Считать нарушением', { exact: true }).last().check();
-    const activeTestToggle = page.getByLabel('Активен', { exact: true }).last();
+    await configuredTestItem.getByLabel('Считать нарушением', { exact: true }).last().check();
+    const activeTestToggle = configuredTestItem.getByLabel('Активен', { exact: true });
     if (! await activeTestToggle.isChecked()) {
         await activeTestToggle.check();
     }
-    const activeValueToggles = page.getByLabel('Активно', { exact: true });
+    const activeValueToggles = configuredTestItem.getByLabel('Активно', { exact: true });
     await expect(activeValueToggles).toHaveCount(2);
     for (const toggle of await activeValueToggles.all()) {
         if (! await toggle.isChecked()) {
@@ -2742,8 +2744,9 @@ test('staff can maintain the clinical test catalog and use it in a new session',
 
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
     await page.getByLabel('Название причины*', { exact: true }).last().fill(causeName);
-    await page.getByLabel('Группа', { exact: true }).last().fill('E2E причины');
-    const activeCauseToggle = page.getByLabel('Активна', { exact: true }).last();
+    const configuredCauseItem = page.getByDisplayValue(causeName).locator('xpath=ancestor::li[1]');
+    await configuredCauseItem.getByLabel('Группа', { exact: true }).fill('E2E причины');
+    const activeCauseToggle = configuredCauseItem.getByLabel('Активна', { exact: true });
     if (! await activeCauseToggle.isChecked()) {
         await activeCauseToggle.check();
     }
@@ -2751,8 +2754,8 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
 
     await page.reload();
-    await expect(page.getByLabel('Название теста*', { exact: true }).last()).toHaveValue(testName);
-    await expect(page.getByLabel('Название причины*', { exact: true }).last()).toHaveValue(causeName);
+    await expect(page.getByDisplayValue(testName)).toBeVisible();
+    await expect(page.getByDisplayValue(causeName)).toBeVisible();
 
     await page.goto(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create`);
     await expect(page.getByRole('heading', { name: 'Новый сеанс', exact: true })).toBeVisible();
