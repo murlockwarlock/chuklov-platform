@@ -2422,6 +2422,7 @@ test('companion shows accessible typing feedback and respects intentional histor
         const headers = { ...response.headers(), 'x-inertia': 'true', 'content-type': 'text/html; charset=UTF-8' };
         delete headers['content-length'];
         delete headers['content-encoding'];
+        console.log('Companion response headers', headers);
         await route.fulfill({ status: response.status(), headers, body: JSON.stringify(payload) });
     });
     const pollResponsePromise = page.waitForResponse((response) => response.url().includes('/portal/companion')
