@@ -88,7 +88,8 @@ final class AnalyticsDashboardWidgetTest extends TestCase
                 'period' => DashboardPeriod::Today,
             ])
             ->call('analyze')
-            ->assertNotified('Анализ обновлён');
+            ->assertNotified('Анализ обновлён')
+            ->assertSee('Источники клиентов');
 
         self::assertArrayHasKey('pain', $component->instance()->results);
         self::assertArrayHasKey('acquisition', $component->instance()->results);

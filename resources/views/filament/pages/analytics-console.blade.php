@@ -18,6 +18,17 @@
                     @if ($results['pain']['problems'] === [])
                         <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('За выбранный период структурированные категории не найдены.') }}</p>
                     @else
+                        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2" aria-label="{{ __('Сравнение боли до и после') }}">
+                            @foreach ($results['pain']['problems'] as $problem)
+                                <div class="space-y-2 rounded-lg bg-gray-50 p-3 dark:bg-white/5">
+                                    <div class="truncate text-sm font-medium text-gray-950 dark:text-white">{{ $problem['group'] ? $problem['group'].': ' : '' }}{{ $problem['name'] }}</div>
+                                    <div class="space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                                        <div class="flex items-center gap-2"><span class="w-12 shrink-0">{{ __('До') }}</span><div class="h-2 min-w-0 flex-1 rounded-full bg-gray-200 dark:bg-white/10"><div class="h-2 rounded-full bg-amber-500" style="width: {{ $problem['average_before'] === null ? 0 : min(100, max(0, $problem['average_before'] * 10)) }}%"></div></div><span class="w-8 text-right">{{ $problem['average_before'] ?? '—' }}</span></div>
+                                        <div class="flex items-center gap-2"><span class="w-12 shrink-0">{{ __('После') }}</span><div class="h-2 min-w-0 flex-1 rounded-full bg-gray-200 dark:bg-white/10"><div class="h-2 rounded-full bg-emerald-500" style="width: {{ $problem['average_after'] === null ? 0 : min(100, max(0, $problem['average_after'] * 10)) }}%"></div></div><span class="w-8 text-right">{{ $problem['average_after'] ?? '—' }}</span></div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
                         <div class="mt-4 overflow-x-auto">
                             <table class="w-full min-w-[760px] text-left text-sm">
                                 <thead class="border-b border-gray-200 text-xs uppercase text-gray-500 dark:border-white/10 dark:text-gray-400">
@@ -55,9 +66,18 @@
                     <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Источники клиентов') }}</h2>
                     <p class="mt-2 text-2xl font-semibold text-gray-950 dark:text-white">{{ $results['acquisition']['new_clients'] }}</p>
                     <p class="text-sm text-gray-500 dark:text-gray-400">{{ __('Новых клиентов') }}</p>
+                    @php($maxSourceCount = max(1, (int) collect($results['acquisition']['sources'])->max('count')))
                     <ul class="mt-4 space-y-2 text-sm">
                         @foreach ($results['acquisition']['sources'] as $source)
-                            <li class="flex justify-between gap-3"><span class="min-w-0 break-words">{{ $source['label'] }}</span><span>{{ $source['count'] }}</span></li>
+                            <li class="space-y-1">
+                                <div class="flex justify-between gap-3">
+                                    <span class="min-w-0 break-words">{{ $source['label'] }}</span>
+                                    <span>{{ $source['count'] }}</span>
+                                </div>
+                                <div class="h-2 rounded-full bg-gray-100 dark:bg-white/10" role="img" aria-label="{{ __('Доля источника :source', ['source' => $source['label']]) }}">
+                                    <div class="h-2 rounded-full bg-primary-600" style="width: {{ min(100, max(0, $source['count'] / $maxSourceCount * 100)) }}%"></div>
+                                </div>
+                            </li>
                         @endforeach
                     </ul>
                 </section>
@@ -150,7 +170,12 @@
                             <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ __($label) }}</h3>
                             <ul class="mt-2 space-y-1 text-sm">
                                 @foreach ($results['demographics'][$key] as $item)
-                                    <li class="flex justify-between gap-3"><span class="min-w-0 break-words">{{ $item['label'] }}</span><span>{{ $item['count'] }} · {{ $item['percent'] }}%</span></li>
+                                    <li class="space-y-1">
+                                        <div class="flex justify-between gap-3"><span class="min-w-0 break-words">{{ $item['label'] }}</span><span>{{ $item['count'] }} · {{ $item['percent'] }}%</span></div>
+                                        <div class="h-2 rounded-full bg-gray-100 dark:bg-white/10" role="img" aria-label="{{ __('Доля категории :category', ['category' => $item['label']]) }}">
+                                            <div class="h-2 rounded-full bg-primary-600" style="width: {{ min(100, max(0, $item['percent'])) }}%"></div>
+                                        </div>
+                                    </li>
                                 @endforeach
                             </ul>
                         </div>
