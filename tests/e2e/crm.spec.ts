@@ -2356,9 +2356,10 @@ test('staff can manage private client audio recordings', async ({ page }) => {
     await login(page, fixture);
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
+    const audioPanel = page.getByRole('tabpanel', { name: /Аудиозаписи/ });
     const audioTable = page.getByRole('table', { name: 'Аудиозаписи' });
-    await expect(audioTable).toBeVisible();
-    await expect(audioTable.getByText('Аудиозаписей пока нет', { exact: true })).toBeVisible();
+    await expect(audioPanel.getByRole('heading', { name: 'Аудиозаписи', exact: true })).toBeVisible();
+    await expect(audioPanel.getByRole('heading', { name: 'Аудиозаписей пока нет', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Загрузить аудиозапись', exact: true }).click();
     const audioDialog = page.getByRole('dialog').last();
