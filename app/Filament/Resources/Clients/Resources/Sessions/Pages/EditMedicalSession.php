@@ -60,8 +60,8 @@ class EditMedicalSession extends LocalizedEditRecord
                 ->label(__('Заполнить результат'))
                 ->icon('heroicon-o-sparkles')
                 ->requiresConfirmation(fn (): bool => filled($this->data['result'] ?? null))
-                ->modalHeading(__('Заменить текст результата?'))
-                ->modalDescription(__('Текущий текст будет заменён сводкой по данным сеанса.'))
+                ->modalHeading(fn (): ?string => filled($this->data['result'] ?? null) ? __('Заменить текст результата?') : null)
+                ->modalDescription(fn (): ?string => filled($this->data['result'] ?? null) ? __('Текущий текст будет заменён сводкой по данным сеанса.') : null)
                 ->action(function (): void {
                     $actor = $this->actor();
                     $record = $this->getRecord();
@@ -182,6 +182,7 @@ class EditMedicalSession extends LocalizedEditRecord
                         Textarea::make('result')
                             ->label(__('Результат после сеанса'))
                             ->rows(3)
+                            ->live(onBlur: true)
                             ->placeholder(__('Эффект после процедур/до следующего сеанса'))
                             ->key(fn (): string => 'session-result-'.$this->resultFormVersion),
                     ])
