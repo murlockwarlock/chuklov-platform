@@ -59,6 +59,9 @@ final class AnalyticsConsole extends LocalizedPage
     /** @var array<string, mixed> */
     public array $results = [];
 
+    /** @var array<string, string> */
+    public array $dimensionErrors = [];
+
     protected string $view = 'filament.pages.analytics-console';
 
     public static function canAccess(): bool
@@ -180,6 +183,7 @@ final class AnalyticsConsole extends LocalizedPage
     {
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
+        $this->dimensionErrors = [];
         $state = $this->form->getState();
         $dimensions = is_array($state['dimensions'] ?? null) ? array_values($state['dimensions']) : [];
         $client = $this->selectedClient($state);
@@ -204,7 +208,7 @@ final class AnalyticsConsole extends LocalizedPage
                     default => null,
                 };
             } catch (Throwable) {
-                $results[(string) $dimension] = ['available' => false];
+                $this->dimensionErrors[(string) $dimension] = $this->dimensionLabel((string) $dimension);
             }
         }
 
@@ -325,6 +329,23 @@ final class AnalyticsConsole extends LocalizedPage
     private function bookingStatuses(User $actor, DashboardPeriod $period, ?Client $client = null): array
     {
         return app(BookingStatusAnalytics::class)->handle($actor, $period, $client)->toArray();
+    }
+
+    private function dimensionLabel(string $dimension): string
+    {
+        return [
+            'pain' => __('Проблемы и динамика боли'),
+            'acquisition' => __('Источники клиентов'),
+            'scheduling' => __('Записи и визиты'),
+            'finance' => __('Финансы'),
+            'feedback' => __('Удовлетворённость и обратная связь'),
+            'goals' => __('Цели и задачи'),
+            'demographics' => __('Демография клиентов'),
+            'services' => __('Услуги и визиты'),
+            'purchases' => __('Типы покупок'),
+            'booking_statuses' => __('Статусы записей'),
+            'segments' => __('Категории клиентов'),
+        ][$dimension] ?? __('Выбранный показатель');
     }
 
     /** @return array<int|string, string> */

@@ -24,6 +24,7 @@ use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
@@ -147,6 +148,33 @@ final class AnalyticsDashboardWidgetTest extends TestCase
         self::assertSame(1, $component->instance()->results['demographics']['client_count']);
         self::assertSame(1, $component->instance()->results['services']['visit_count']);
         self::assertSame(1, $component->instance()->results['booking_statuses']['statuses'][0]['count']);
+    }
+
+    public function test_analytics_console_reports_a_dimension_error_without_rendering_partial_result_shape(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $authorizer = Mockery::mock(OrganizationAuthorizer::class, [app(OrganizationContext::class)])->makePartial();
+        $authorizer->shouldReceive('allows')->andReturn(true);
+        $authorizer->shouldReceive('authorize')->andThrow(new AuthorizationException);
+        $this->app->instance(OrganizationAuthorizer::class, $authorizer);
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['scheduling'],
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён')
+            ->assertSee('Некоторые показатели недоступны')
+            ->assertSee('Записи и визиты')
+            ->assertSee('Не удалось получить результаты выбранных показателей');
+
+        self::assertSame([], $component->instance()->results);
+        self::assertSame(['scheduling' => 'Записи и визиты'], $component->instance()->dimensionErrors);
     }
 
     public function test_analytics_widgets_render_without_replacing_upcoming_widget(): void

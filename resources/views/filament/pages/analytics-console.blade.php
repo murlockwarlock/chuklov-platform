@@ -1,9 +1,24 @@
 <x-filament-panels::page>
     {{ $this->content }}
 
-    @if ($results === [])
+    @if ($dimensionErrors !== [])
+        <div class="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100" role="alert">
+            <p class="font-medium">{{ __('Некоторые показатели недоступны') }}</p>
+            <ul class="mt-2 list-disc space-y-1 pl-5">
+                @foreach ($dimensionErrors as $error)
+                    <li>{{ $error }}</li>
+                @endforeach
+            </ul>
+        </div>
+    @endif
+
+    @if ($results === [] && $dimensionErrors === [])
         <div class="mt-6 rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm dark:border-white/10 dark:bg-gray-900 dark:text-gray-300">
             {{ __('Выберите показатели и нажмите «Анализировать».') }}
+        </div>
+    @elseif ($results === [])
+        <div class="mt-6 rounded-xl border border-gray-200 bg-white p-6 text-sm text-gray-600 shadow-sm dark:border-white/10 dark:bg-gray-900 dark:text-gray-300">
+            {{ __('Не удалось получить результаты выбранных показателей. Проверьте настройки доступа и повторите анализ.') }}
         </div>
     @else
         <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
