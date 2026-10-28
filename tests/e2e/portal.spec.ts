@@ -1399,6 +1399,7 @@ test('Telegram Mini App B2B launch authenticates before showing the requested de
                     availabilityRange: null,
                     configurationReady: false,
                     configurationIssue: null,
+                    formConfiguration: { version: null, fields: [] },
                     urls: {
                         answer: '/portal/profile/b2b-answer',
                         page: '/portal/b2b',
