@@ -86,6 +86,44 @@ final class PainAnalyticsTest extends TestCase
         self::assertSame(1.0, $data->problems[0]['session_2_after']);
     }
 
+    public function test_problem_analytics_can_filter_to_one_tenant_problem_tag(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $neck = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Шея',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $shoulder = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Плечо',
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-10-01 09:00:00', 'UTC'),
+            pains: [
+                ['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 7, 'after_score' => 3],
+                ['name' => 'Плечо', 'tag_ids' => [$shoulder->getKey()], 'before_score' => 5, 'after_score' => 2],
+            ],
+        ));
+
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+        $data = app(PainAnalytics::class)->handle($admin, $period, problemTagId: (int) $neck->getKey());
+
+        self::assertCount(1, $data->problems);
+        self::assertSame('Шея', $data->problems[0]['name']);
+        self::assertSame(7.0, $data->problems[0]['average_before']);
+        self::assertSame(3.0, $data->problems[0]['average_after']);
+    }
+
     /** @return array{0: Organization, 1: User, 2: Client, 3: Specialist} */
     private function fixture(): array
     {

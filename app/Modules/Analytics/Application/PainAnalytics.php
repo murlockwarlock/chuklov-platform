@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\PainAnalyticsData;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -18,13 +19,23 @@ final readonly class PainAnalytics
         private OrganizationAuthorizer $authorizer,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): PainAnalyticsData
-    {
+    public function handle(
+        User $actor,
+        DashboardPeriod $period,
+        ?Client $client = null,
+        ?int $problemTagId = null,
+    ): PainAnalyticsData {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
         $organizationId = (int) $organization->getKey();
 
         if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
+        if ($problemTagId !== null && ! MedicalProblemTag::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($problemTagId)
+            ->exists()) {
             abort(404);
         }
         $clientId = $client?->getKey();
@@ -37,6 +48,11 @@ final readonly class PainAnalytics
         ];
         if ($clientId !== null) {
             $bindings['client_id'] = (int) $clientId;
+        }
+        $tagFilter = '';
+        if ($problemTagId !== null) {
+            $tagFilter = ' AND pain_tags.medical_problem_tag_id = :problem_tag_id';
+            $bindings['problem_tag_id'] = $problemTagId;
         }
 
         $rows = DB::select(
@@ -72,6 +88,7 @@ final readonly class PainAnalytics
                     ON pain_tags.organization_id = pains.organization_id
                     AND pain_tags.client_id = pains.client_id
                     AND pain_tags.medical_session_pain_id = pains.id
+                    {$tagFilter}
                 INNER JOIN medical_problem_tags AS tags
                     ON tags.organization_id = pain_tags.organization_id
                     AND tags.id = pain_tags.medical_problem_tag_id

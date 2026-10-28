@@ -14,6 +14,7 @@ use App\Filament\Widgets\UpcomingBookingsWidget;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -148,6 +149,32 @@ final class AnalyticsDashboardWidgetTest extends TestCase
         self::assertSame(1, $component->instance()->results['demographics']['client_count']);
         self::assertSame(1, $component->instance()->results['services']['visit_count']);
         self::assertSame(1, $component->instance()->results['booking_statuses']['statuses'][0]['count']);
+    }
+
+    public function test_analytics_console_preserves_and_applies_problem_tag_filter(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $tag = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Шея',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['pain'],
+                'problem_tag_id' => $tag->getKey(),
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame($tag->getKey(), $component->instance()->data['problem_tag_id']);
+        self::assertArrayHasKey('pain', $component->instance()->results);
     }
 
     public function test_analytics_console_reports_a_dimension_error_without_rendering_partial_result_shape(): void

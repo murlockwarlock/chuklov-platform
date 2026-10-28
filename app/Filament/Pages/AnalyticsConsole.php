@@ -20,6 +20,7 @@ use App\Modules\Analytics\Application\ServiceVisitAnalytics;
 use App\Modules\Finance\Application\FinancialReconciliationContract;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -88,6 +89,7 @@ final class AnalyticsConsole extends LocalizedPage
         $this->form->fill([
             'dimensions' => ['pain'],
             'client_id' => null,
+            'problem_tag_id' => null,
             'period' => DashboardPeriod::DefaultPreset,
             'start_date' => null,
             'end_date' => null,
@@ -129,6 +131,25 @@ final class AnalyticsConsole extends LocalizedPage
                             ->getOptionLabelUsing(fn (mixed $value): ?string => $this->clientOptionLabel($value))
                             ->nullable()
                             ->placeholder(__('Все клиенты')),
+                        Select::make('problem_tag_id')
+                            ->label(__('Категория проблемы'))
+                            ->options(function (Get $get): array {
+                                $selectedTagId = filter_var(
+                                    $get('problem_tag_id'),
+                                    FILTER_VALIDATE_INT,
+                                    ['options' => ['min_range' => 1]],
+                                );
+
+                                return app(MedicalProblemTagCatalog::class)->optionsForSelection(
+                                    app(OrganizationContext::class)->id(),
+                                    $selectedTagId === false ? [] : [(int) $selectedTagId],
+                                );
+                            })
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->placeholder(__('Все категории'))
+                            ->visible(fn (Get $get): bool => in_array('pain', (array) $get('dimensions'), true)),
                         Select::make('period')
                             ->label(__('Период'))
                             ->options(DashboardPeriod::options())
@@ -188,6 +209,7 @@ final class AnalyticsConsole extends LocalizedPage
         $state = $this->form->getState();
         $dimensions = is_array($state['dimensions'] ?? null) ? array_values($state['dimensions']) : [];
         $client = $this->selectedClient($state);
+        $problemTagId = $this->selectedProblemTagId($state);
         $organization = app(OrganizationContext::class)->organization();
         $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
         $results = [];
@@ -195,7 +217,7 @@ final class AnalyticsConsole extends LocalizedPage
         foreach ($dimensions as $dimension) {
             try {
                 $results[(string) $dimension] = match ((string) $dimension) {
-                    'pain' => app(PainAnalytics::class)->handle($actor, $period, $client)->toArray(),
+                    'pain' => app(PainAnalytics::class)->handle($actor, $period, $client, $problemTagId)->toArray(),
                     'acquisition' => $this->acquisition($actor, $period, $client),
                     'scheduling' => $this->scheduling($actor, $period, $client),
                     'finance' => $this->finance($actor, $period, $client),
@@ -225,11 +247,12 @@ final class AnalyticsConsole extends LocalizedPage
         $organization = app(OrganizationContext::class)->organization();
         $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
         $client = $this->selectedClient($state);
+        $problemTagId = $this->selectedProblemTagId($state);
         $results = [];
         foreach ((array) ($state['dimensions'] ?? []) as $dimension) {
             try {
                 $results[(string) $dimension] = match ((string) $dimension) {
-                    'pain' => app(PainAnalytics::class)->handle($actor, $period, $client)->toArray(),
+                    'pain' => app(PainAnalytics::class)->handle($actor, $period, $client, $problemTagId)->toArray(),
                     'acquisition' => $this->acquisition($actor, $period, $client),
                     'scheduling' => $this->scheduling($actor, $period, $client),
                     'finance' => $this->finance($actor, $period, $client),
@@ -431,5 +454,13 @@ final class AnalyticsConsole extends LocalizedPage
         return Client::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
             ->findOrFail($clientId);
+    }
+
+    /** @param array<string, mixed> $state */
+    private function selectedProblemTagId(array $state): ?int
+    {
+        $value = filter_var($state['problem_tag_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+
+        return $value === false ? null : (int) $value;
     }
 }
