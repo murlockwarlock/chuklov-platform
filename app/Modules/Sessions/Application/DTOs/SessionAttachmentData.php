@@ -11,9 +11,11 @@ final readonly class SessionAttachmentData
         public string $gallery,
         public int $sizeBytes,
         public ?string $downloadUrl,
+        public ?string $previewUrl,
+        public string $uploadedAt,
     ) {}
 
-    /** @return array{attachment_id: int, filename: string, type: string, gallery: string, size: string, download_url: ?string} */
+    /** @return array{attachment_id: int, filename: string, type: string, gallery: string, size: string, download_url: ?string, preview_url: ?string, uploaded_at: string} */
     public function toArray(): array
     {
         return [
@@ -23,6 +25,8 @@ final readonly class SessionAttachmentData
             'gallery' => $this->gallery,
             'size' => self::formatSize($this->sizeBytes),
             'download_url' => $this->downloadUrl,
+            'preview_url' => $this->previewUrl,
+            'uploaded_at' => $this->uploadedAt,
         ];
     }
 

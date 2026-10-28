@@ -169,13 +169,19 @@ final class SessionInfolist
                             ->schema([
                                 TextEntry::make('filename')
                                     ->label(__('Файл'))
-                                    ->url(fn (Get $get): ?string => $get('download_url'))
+                                    ->url(fn (Get $get): ?string => $get('preview_url') ?? $get('download_url'))
                                     ->openUrlInNewTab()
                                     ->columnSpanFull(),
                                 TextEntry::make('type')->label(__('Тип')),
                                 TextEntry::make('gallery')->label(__('Раздел')),
                                 TextEntry::make('size')->label(__('Размер')),
+                                TextEntry::make('uploaded_at')->label(__('Загружен')),
                                 TextEntry::make('status')->label(__('Состояние')),
+                                TextEntry::make('download')
+                                    ->label(__('Скачать'))
+                                    ->state(__('Скачать'))
+                                    ->url(fn (Get $get): ?string => $get('download_url'))
+                                    ->openUrlInNewTab(),
                             ])
                             ->columns(2)
                             ->state(function (MedicalSession $record, RepeatableEntry $entry): array {

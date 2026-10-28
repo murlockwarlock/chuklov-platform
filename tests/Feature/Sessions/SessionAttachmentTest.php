@@ -50,6 +50,8 @@ final class SessionAttachmentTest extends TestCase
         $listed = app(ListSessionAttachments::class)->handle($admin, $session, $client);
         self::assertSame('report.pdf', $listed[0]->filename);
         self::assertNotNull($listed[0]->downloadUrl);
+        self::assertNotNull($listed[0]->previewUrl);
+        self::assertNotSame('', $listed[0]->uploadedAt);
 
         self::assertTrue(app(UnlinkSessionAttachment::class)->handle(
             $admin,
@@ -78,6 +80,7 @@ final class SessionAttachmentTest extends TestCase
 
         $listed = app(ListSessionAttachments::class)->handle($admin, $session, $client);
         self::assertSame('До', $listed[0]->gallery);
+        self::assertNotNull($listed[0]->previewUrl);
         $this->assertDatabaseHas('medical_session_attachments', [
             'medical_attachment_id' => $photo->getKey(),
             'gallery' => MedicalSessionAttachmentGallery::Before->value,

@@ -25,11 +25,11 @@ final readonly class ListSessionAttachments
             ->where('organization_id', $organization->getKey())
             ->where('client_id', $client->getKey())
             ->where('medical_session_id', $session->getKey())
-            ->with('attachment:id,organization_id,client_id,uuid,attachment_type,original_filename,size_bytes')
+            ->with('attachment:id,organization_id,client_id,uuid,attachment_type,original_filename,mime_type,size_bytes,created_at')
             ->orderByDesc('id')
             ->limit(max(1, min($limit, 50)))
             ->get(['id', 'organization_id', 'client_id', 'medical_session_id', 'medical_attachment_id', 'gallery'])
-            ->map(function (MedicalSessionAttachment $link) use ($actor): SessionAttachmentData {
+            ->map(function (MedicalSessionAttachment $link) use ($actor, $organization): SessionAttachmentData {
                 $attachment = $link->attachment;
 
                 return new SessionAttachmentData(
@@ -39,6 +39,8 @@ final readonly class ListSessionAttachments
                     gallery: $link->gallery->label(),
                     sizeBytes: (int) $attachment->size_bytes,
                     downloadUrl: $this->temporaryUrl->handle($actor, $attachment, 15),
+                    previewUrl: $this->temporaryUrl->handlePreview($actor, $attachment, 15),
+                    uploadedAt: $attachment->created_at->copy()->setTimezone($organization->defaultTimezone())->format('d.m.Y H:i'),
                 );
             })
             ->all();

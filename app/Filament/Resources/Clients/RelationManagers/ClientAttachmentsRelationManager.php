@@ -17,6 +17,7 @@ use App\Modules\AI\Domain\Enums\HumanReviewReasonCode;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Application\AttachmentAuthorization;
+use App\Modules\Attachments\Application\DeleteMedicalAttachment;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
 use App\Modules\Attachments\Application\ListClientAttachments;
@@ -47,6 +48,7 @@ use Throwable;
 
 final class ClientAttachmentsRelationManager extends LocalizedRelationManager
 {
+    /** @var array<int, AiRun>|null */
     private ?array $latestDocumentAnalysisRuns = null;
 
     protected static string $relationship = 'medicalAttachments';
@@ -98,9 +100,11 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                 TextColumn::make('attachment_type')
                     ->label(__('Тип'))
                     ->badge()
-                    ->formatStateUsing(fn (AttachmentType|string $state): string => $state instanceof AttachmentType
-                        ? CrmLabel::enum($state)
-                        : (CrmLabel::enum(AttachmentType::tryFrom($state)) ?? __('Файл'))),
+                    ->formatStateUsing(function (AttachmentType|string $state): string {
+                        $type = $state instanceof AttachmentType ? $state : AttachmentType::tryFrom($state);
+
+                        return CrmLabel::enum($type) ?? __('Файл');
+                    }),
                 TextColumn::make('size_bytes')
                     ->label(__('Размер'))
                     ->formatStateUsing(fn (int|string $state): string => self::formatBytes((int) $state))
@@ -124,8 +128,8 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                         Select::make('attachment_type')
                             ->label(__('Тип файла'))
                             ->options([
-                                AttachmentType::MedicalReport->value => CrmLabel::enum(AttachmentType::MedicalReport),
-                                AttachmentType::PosturePhoto->value => CrmLabel::enum(AttachmentType::PosturePhoto),
+                                AttachmentType::MedicalReport->value => CrmLabel::enum(AttachmentType::MedicalReport) ?? __('Медицинский документ'),
+                                AttachmentType::PosturePhoto->value => CrmLabel::enum(AttachmentType::PosturePhoto) ?? __('Фото осанки'),
                             ])
                             ->required(),
                         FileUpload::make('file')
@@ -205,6 +209,20 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                         ->label(__('Скачать'))
                         ->action(function (MedicalAttachment $record) use ($actor): mixed {
                             return redirect()->to(app(GetTemporaryAttachmentUrl::class)->handle($actor, $record));
+                        }),
+                    Action::make('delete')
+                        ->label(__('Удалить'))
+                        ->icon('heroicon-o-trash')
+                        ->color('danger')
+                        ->requiresConfirmation()
+                        ->visible(fn (MedicalAttachment $record): bool => $this->isPosturePhoto($record)
+                            && app(AttachmentAuthorization::class)->allowsUpload($actor, $client))
+                        ->authorize(fn (MedicalAttachment $record): bool => $this->isPosturePhoto($record)
+                            && app(AttachmentAuthorization::class)->allowsUpload($actor, $client))
+                        ->action(function (MedicalAttachment $record) use ($actor): void {
+                            app(DeleteMedicalAttachment::class)->handle($actor, $record);
+                            $this->flushCachedTableRecords();
+                            Notification::make()->title(__('Фото удалено'))->success()->send();
                         }),
                     Action::make('startDocumentAnalysis')
                         ->label(__('Запустить анализ'))
@@ -469,6 +487,11 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
         }
 
         return round($bytes / (1024 * 1024), 1).' '.__('МБ');
+    }
+
+    private function isPosturePhoto(MedicalAttachment $attachment): bool
+    {
+        return AttachmentType::tryFrom((string) $attachment->getRawOriginal('attachment_type')) === AttachmentType::PosturePhoto;
     }
 
     private static function sendUploadNotification(): void
