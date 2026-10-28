@@ -2487,7 +2487,7 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
 
-    const dimensions = page.getByRole('combobox', { name: 'Показатели', exact: true });
+    const dimensions = page.locator('button.fi-select-input-btn').first();
     await dimensions.click();
     await page.locator('.fi-select-input-option:visible').filter({ hasText: 'Источники клиентов' }).click();
     await dimensions.click();
