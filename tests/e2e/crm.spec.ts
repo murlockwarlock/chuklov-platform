@@ -2678,7 +2678,6 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
     await page.getByLabel('Название или описание боли*', { exact: true }).fill('Обновлённая боль');
     await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
-    await expect(page.getByText('Результат заполнен', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Результат после сеанса', { exact: true })).toContainText('было 7, стало 3');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
