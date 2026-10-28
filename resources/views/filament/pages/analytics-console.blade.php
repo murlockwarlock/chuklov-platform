@@ -87,7 +87,16 @@
                             <div><dt class="text-gray-500">{{ __('Платежи') }}</dt><dd class="font-semibold">{{ $results['finance']['receipt_count'] }}</dd></div>
                             <div><dt class="text-gray-500">{{ __('Долг') }}</dt><dd class="font-semibold">{{ $results['finance']['debt_minor'] }} {{ $results['finance']['currency'] }}</dd></div>
                             <div><dt class="text-gray-500">{{ __('LTV') }}</dt><dd class="font-semibold">{{ $results['finance']['realized_ltv_minor'] ?? '—' }} {{ $results['finance']['currency'] }}</dd></div>
+                            <div><dt class="text-gray-500">{{ __('Расходы') }}</dt><dd class="font-semibold">{{ $results['finance']['expenses_minor'] ?? '—' }} {{ $results['finance']['currency'] }}</dd></div>
+                            <div><dt class="text-gray-500">{{ __('Движение денежных средств') }}</dt><dd class="font-semibold">{{ $results['finance']['cash_movement_minor'] ?? '—' }} {{ $results['finance']['currency'] }}</dd></div>
                         </dl>
+                        @if ($results['finance']['accounts'] !== [])
+                            <ul class="mt-4 space-y-2 text-sm">
+                                @foreach ($results['finance']['accounts'] as $account)
+                                    <li class="flex flex-wrap justify-between gap-3"><span class="min-w-0 break-words">{{ $account['label'] }}</span><span>{{ $account['movement_minor'] }} {{ $results['finance']['currency'] }}</span></li>
+                                @endforeach
+                            </ul>
+                        @endif
                     @endif
                 </section>
             @endif

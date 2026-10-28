@@ -10,6 +10,7 @@ use App\Modules\Finance\Application\CurrentCurrencyConfigurationIntegrity;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\FinancialReconciliationProjection;
 use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
+use App\Modules\Finance\Domain\Models\FinanceAccount;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
@@ -56,8 +57,10 @@ final class FinanceAnalytics
                 ->where('ledger.organization_id', $organizationId)
                 ->where('ledger.occurred_at', '>=', $period->startUtc)
                 ->where('ledger.occurred_at', '<', $period->endUtc);
+            $revenueQuery->where('ledger.entry_type', '<>', FinancialLedgerEntryType::Expense->value);
             $this->excludeGiftCertificateRedemptions($revenueQuery, $ledgerTable, 'ledger');
             $revenue = $this->baseAmountSum($revenueQuery);
+            $expenses = $this->expenses($organizationId, $period, $ledgerTable);
             $receipts = $this->receipts($organizationId, $period, $ledgerTable);
             $cohortClientCount = $this->cohortClientCount($organizationId, $period);
             $realizedLtv = $cohortClientCount === 0
@@ -77,6 +80,9 @@ final class FinanceAnalytics
                 debtMinor: $debt,
                 receiptCount: $receipts['count'],
                 cohortClientCount: $cohortClientCount,
+                expensesMinor: $expenses,
+                cashMovementMinor: BigInteger::of($revenue)->minus($expenses)->toString(),
+                accounts: $this->accounts($organizationId, $period, $ledgerTable),
             );
         } catch (\Throwable) {
             return FinanceAnalyticsData::unavailable();
@@ -104,6 +110,47 @@ final class FinanceAnalytics
             'total' => $this->integerString($row?->total),
             'count' => (int) ($row->receipt_count ?? 0),
         ];
+    }
+
+    private function expenses(int $organizationId, DashboardPeriod $period, string $ledgerTable): string
+    {
+        $row = DB::table($ledgerTable)
+            ->where('organization_id', $organizationId)
+            ->where('entry_type', FinancialLedgerEntryType::Expense->value)
+            ->where('occurred_at', '>=', $period->startUtc)
+            ->where('occurred_at', '<', $period->endUtc)
+            ->selectRaw('COALESCE(SUM(base_amount_minor), 0) as total')
+            ->first();
+
+        return BigInteger::of($this->integerString($row?->total))->abs()->toString();
+    }
+
+    /** @return list<array{label: string, account_type: string, currency: string, movement_minor: string}> */
+    private function accounts(int $organizationId, DashboardPeriod $period, string $ledgerTable): array
+    {
+        $accountTable = (new FinanceAccount)->getTable();
+        $rows = DB::table($accountTable.' as accounts')
+            ->leftJoin($ledgerTable.' as ledger', function (JoinClause $join) use ($period): void {
+                $join
+                    ->on('ledger.organization_id', '=', 'accounts.organization_id')
+                    ->on('ledger.account_id', '=', 'accounts.id')
+                    ->where('ledger.occurred_at', '>=', $period->startUtc)
+                    ->where('ledger.occurred_at', '<', $period->endUtc);
+            })
+            ->where('accounts.organization_id', $organizationId)
+            ->select('accounts.name', 'accounts.account_type', 'accounts.currency')
+            ->selectRaw('COALESCE(SUM(ledger.base_amount_minor), 0) as movement_minor')
+            ->groupBy('accounts.id', 'accounts.name', 'accounts.account_type', 'accounts.currency')
+            ->orderBy('accounts.sort_order')
+            ->orderBy('accounts.name')
+            ->get();
+
+        return $rows->map(fn (object $row): array => [
+            'label' => (string) $row->name,
+            'account_type' => (string) $row->account_type,
+            'currency' => (string) $row->currency,
+            'movement_minor' => $this->integerString($row->movement_minor),
+        ])->all();
     }
 
     private function cohortClientCount(int $organizationId, DashboardPeriod $period): int

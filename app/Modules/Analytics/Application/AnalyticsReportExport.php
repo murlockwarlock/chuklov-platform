@@ -131,6 +131,8 @@ final readonly class AnalyticsReportExport
             'receipt_count' => 'Количество платежей',
             'debt_minor' => 'Долг (минимальные единицы)',
             'realized_ltv_minor' => 'LTV (минимальные единицы)',
+            'expenses_minor' => 'Расходы (минимальные единицы)',
+            'cash_movement_minor' => 'Движение денежных средств (минимальные единицы)',
             default => $metric,
         };
     }

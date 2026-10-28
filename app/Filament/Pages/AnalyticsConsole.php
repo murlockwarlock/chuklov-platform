@@ -264,6 +264,9 @@ final class AnalyticsConsole extends LocalizedPage
             'receipt_count' => $data->receiptCount,
             'debt_minor' => $data->debtMinor,
             'realized_ltv_minor' => $data->realizedLtvMinor,
+            'expenses_minor' => $data->expensesMinor,
+            'cash_movement_minor' => $data->cashMovementMinor,
+            'accounts' => $data->accounts,
         ];
     }
 
