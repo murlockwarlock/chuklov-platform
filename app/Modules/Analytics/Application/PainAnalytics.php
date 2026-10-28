@@ -117,19 +117,28 @@ final readonly class PainAnalytics
             $bindings,
         );
 
-        $sessionCount = DB::table('medical_sessions')
+        $sessionQuery = DB::table('medical_sessions')
             ->where('organization_id', $organizationId)
             ->where('occurred_at', '>=', $period->startUtc)
             ->where('occurred_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId))
-            ->count();
-        $clientCount = DB::table('medical_sessions')
-            ->where('organization_id', $organizationId)
-            ->where('occurred_at', '>=', $period->startUtc)
-            ->where('occurred_at', '<', $period->endUtc)
-            ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId))
-            ->distinct('client_id')
-            ->count('client_id');
+            ->when($problemTagId !== null, function ($query) use ($organizationId, $problemTagId): void {
+                $query->whereExists(function ($subquery) use ($organizationId, $problemTagId): void {
+                    $subquery
+                        ->selectRaw('1')
+                        ->from('medical_session_pains as filtered_pains')
+                        ->join('medical_session_pain_tags as filtered_tags', function ($join) use ($organizationId, $problemTagId): void {
+                            $join->on('filtered_tags.medical_session_pain_id', '=', 'filtered_pains.id')
+                                ->where('filtered_tags.organization_id', $organizationId)
+                                ->where('filtered_tags.medical_problem_tag_id', $problemTagId);
+                        })
+                        ->whereColumn('filtered_pains.medical_session_id', 'medical_sessions.id')
+                        ->where('filtered_pains.organization_id', $organizationId)
+                        ->whereColumn('filtered_pains.client_id', 'medical_sessions.client_id');
+                });
+            });
+        $sessionCount = (clone $sessionQuery)->count();
+        $clientCount = (clone $sessionQuery)->distinct('client_id')->count('client_id');
 
         return new PainAnalyticsData(
             clientCount: $clientCount,

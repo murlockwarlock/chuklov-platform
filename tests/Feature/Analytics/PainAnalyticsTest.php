@@ -110,6 +110,13 @@ final class PainAnalyticsTest extends TestCase
                 ['name' => 'Плечо', 'tag_ids' => [$shoulder->getKey()], 'before_score' => 5, 'after_score' => 2],
             ],
         ));
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-10-08 09:00:00', 'UTC'),
+            pains: [
+                ['name' => 'Плечо', 'tag_ids' => [$shoulder->getKey()], 'before_score' => 4, 'after_score' => 1],
+            ],
+        ));
 
         $period = DashboardPeriod::fromFilters(
             ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
@@ -119,6 +126,8 @@ final class PainAnalyticsTest extends TestCase
         $data = app(PainAnalytics::class)->handle($admin, $period, problemTagId: (int) $neck->getKey());
 
         self::assertCount(1, $data->problems);
+        self::assertSame(1, $data->clientCount);
+        self::assertSame(1, $data->sessionCount);
         self::assertSame('Шея', $data->problems[0]['name']);
         self::assertSame(7.0, $data->problems[0]['average_before']);
         self::assertSame(3.0, $data->problems[0]['average_after']);
