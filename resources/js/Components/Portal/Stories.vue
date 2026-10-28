@@ -36,6 +36,12 @@ function move(direction: number): void {
         }
     }
 }
+function showSubtitles(event: Event): void {
+    const video = event.currentTarget as HTMLVideoElement;
+    for (const track of video.textTracks) {
+        track.mode = 'showing';
+    }
+}
 function swipe(event: TouchEvent): void {
     const distance = (event.changedTouches[0]?.clientX ?? touchStart) - touchStart;
     if (Math.abs(distance) > 50) move(distance > 0 ? -1 : 1);
@@ -106,6 +112,7 @@ function swipe(event: TouchEvent): void {
         class="portal-story-player__video"
         @error="playbackError = true"
         @canplay="playbackError = false"
+        @loadedmetadata="showSubtitles"
       >
         <track
           v-if="selected.subtitlesUrl"
