@@ -39,6 +39,7 @@ final readonly class UploadMedicalAttachment
         if ($command->uploadKey !== null && ! Str::isUuid($command->uploadKey)) {
             throw ValidationException::withMessages(['upload_key' => 'Invalid upload key.']);
         }
+        $displayName = self::normalizeDisplayName($command->displayName);
         $uuid = $command->uploadKey ?? (string) Str::uuid();
         $stored = null;
         try {
@@ -46,7 +47,7 @@ final readonly class UploadMedicalAttachment
             $stored = $command->attachmentType === AttachmentType::AudioRecording
                 ? $this->storage->store($orgId, $command->file, $storageUuid, AttachmentType::AudioRecording)
                 : $this->storage->store($orgId, $command->file, $storageUuid);
-            $attachment = DB::transaction(function () use ($actor, $organization, $client, $command, $uuid, $stored): MedicalAttachment {
+            $attachment = DB::transaction(function () use ($actor, $organization, $client, $command, $displayName, $uuid, $stored): MedicalAttachment {
                 $lockedClient = Client::query()->where('organization_id', $organization->getKey())->whereKey($client->getKey())->lockForUpdate()->firstOrFail();
                 $this->authorization->authorizeUpload($actor, $lockedClient, $command->attachmentType);
                 $existing = MedicalAttachment::query()->where('organization_id', $organization->getKey())->where('client_id', $client->getKey())->where('uuid', $uuid)->first();
@@ -55,7 +56,8 @@ final readonly class UploadMedicalAttachment
                         || (int) $existing->client_id !== (int) $client->getKey()
                         || $existing->attachment_type !== $command->attachmentType
                         || $existing->sha256_checksum !== $stored->sha256Checksum
-                        || $existing->original_filename !== $stored->originalFilename) {
+                        || $existing->original_filename !== $stored->originalFilename
+                        || $existing->display_name !== $displayName) {
                         throw ValidationException::withMessages(['upload_key' => 'This upload key cannot be reused.']);
                     }
 
@@ -83,6 +85,7 @@ final readonly class UploadMedicalAttachment
                     'disk' => $stored->disk,
                     'storage_path' => $stored->storagePath,
                     'original_filename' => $stored->originalFilename,
+                    'display_name' => $displayName,
                     'mime_type' => $stored->mimeType,
                     'size_bytes' => $stored->sizeBytes,
                     'sha256_checksum' => $stored->sha256Checksum,
@@ -122,5 +125,24 @@ final readonly class UploadMedicalAttachment
 
             throw $exception;
         }
+    }
+
+    private static function normalizeDisplayName(?string $displayName): ?string
+    {
+        if ($displayName === null) {
+            return null;
+        }
+
+        $displayName = trim($displayName);
+
+        if ($displayName === '') {
+            return null;
+        }
+
+        if (Str::length($displayName) > 255) {
+            throw ValidationException::withMessages(['display_name' => 'Название не должно быть длиннее 255 символов.']);
+        }
+
+        return $displayName;
     }
 }

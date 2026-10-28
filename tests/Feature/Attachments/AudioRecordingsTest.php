@@ -43,10 +43,12 @@ final class AudioRecordingsTest extends TestCase
                 file: $this->wavUpload('session.wav'),
                 clientId: (int) $client->getKey(),
                 attachmentType: AttachmentType::AudioRecording,
+                displayName: 'Сеанс 12.10.2026',
             ),
         );
 
         self::assertSame(AttachmentType::AudioRecording, $audio->attachment_type);
+        self::assertSame('Сеанс 12.10.2026', $audio->display_name);
         self::assertSame('audio/x-wav', $audio->mime_type);
         Storage::disk('private')->assertExists($audio->storage_path);
         self::assertDatabaseHas('medical_attachments', [
@@ -69,10 +71,16 @@ final class AudioRecordingsTest extends TestCase
 
         $component
             ->assertSuccessful()
-            ->assertTableColumnStateSet('original_filename', 'session.wav', $audio)
+            ->assertTableColumnStateSet('presentation_name', 'Сеанс 12.10.2026', $audio)
             ->assertTableActionVisible('play', $audio)
             ->assertTableActionVisible('download', $audio)
             ->assertTableActionVisible('delete', $audio);
+
+        $component
+            ->mountTableAction('upload')
+            ->assertFormFieldExists('display_name')
+            ->assertFormFieldExists('file')
+            ->unmountTableAction();
 
         $component->mountTableAction('play', $audio);
         self::assertStringContainsString('<audio', $component->getMountedActionModalHtml());
@@ -126,6 +134,7 @@ final class AudioRecordingsTest extends TestCase
             'disk' => 'private',
             'storage_path' => $path,
             'original_filename' => 'session.wav',
+            'display_name' => 'Сеанс 12.10.2026',
             'mime_type' => 'audio/x-wav',
             'size_bytes' => strlen($this->wavContent()),
             'sha256_checksum' => hash('sha256', $this->wavContent()),

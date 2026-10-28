@@ -3,7 +3,6 @@
 namespace App\Filament\Resources\Clients\RelationManagers;
 
 use App\Filament\Support\ClientAttachmentUploadFailureReporter;
-use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\Attachments\Application\AttachmentAuthorization;
@@ -13,19 +12,17 @@ use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
 use App\Modules\Attachments\Application\ListClientAttachments;
 use App\Modules\Attachments\Application\UploadMedicalAttachment;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
-use App\Modules\Attachments\Domain\Exceptions\InvalidAttachmentException;
-use App\Modules\Attachments\Domain\Exceptions\UnsupportedDicomException;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 use Throwable;
 
@@ -63,7 +60,7 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
                     ->where('attachment_type', AttachmentType::AudioRecording),
             )
             ->columns([
-                TextColumn::make('original_filename')
+                TextColumn::make('presentation_name')
                     ->label(__('Название'))
                     ->limit(48)
                     ->wrap(),
@@ -81,6 +78,11 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
                     ->label(__('Загрузить аудиозапись'))
                     ->icon('heroicon-o-microphone')
                     ->schema([
+                        TextInput::make('display_name')
+                            ->label(__('Название записи'))
+                            ->helperText(__('Например: «Сеанс 12.10.2026».'))
+                            ->maxLength(255)
+                            ->required(),
                         FileUpload::make('file')
                             ->label(__('Аудиофайл'))
                             ->acceptedFileTypes(self::audioMimeTypes())
@@ -100,9 +102,10 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
                                     file: $data['file'],
                                     clientId: (int) $client->getKey(),
                                     attachmentType: AttachmentType::AudioRecording,
+                                    displayName: (string) $data['display_name'],
                                 ),
                             );
-                        } catch (ValidationException|InvalidAttachmentException|UnsupportedDicomException|Throwable $exception) {
+                        } catch (Throwable $exception) {
                             app(ClientAttachmentUploadFailureReporter::class)->handle($exception, $actor, $client);
 
                             return;
@@ -121,7 +124,7 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
                     ->modalWidth('xl')
                     ->modalContent(fn (MedicalAttachment $record): View => view('filament.resources.clients.audio-preview', [
                         'url' => app(GetTemporaryAttachmentUrl::class)->handlePreview($actor, $record),
-                        'filename' => $record->original_filename,
+                        'filename' => $record->display_name ?: $record->original_filename,
                     ])),
                 Action::make('download')
                     ->label(__('Скачать'))

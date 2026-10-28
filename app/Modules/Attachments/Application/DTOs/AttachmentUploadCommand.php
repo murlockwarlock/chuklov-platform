@@ -11,6 +11,7 @@ final readonly class AttachmentUploadCommand
         public UploadedFile $file,
         public int $clientId,
         public AttachmentType $attachmentType = AttachmentType::MedicalReport,
+        public ?string $displayName = null,
         public ?string $uploadKey = null,
     ) {}
 }

@@ -28,6 +28,7 @@ final readonly class ListClientAttachments
                 'client_id',
                 'attachment_type',
                 'original_filename',
+                'display_name',
                 'mime_type',
                 'size_bytes',
                 'evaluation_fixture_key',
