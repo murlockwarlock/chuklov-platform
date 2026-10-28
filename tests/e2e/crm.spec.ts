@@ -2720,22 +2720,22 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await expect(page.getByRole('heading', { name: 'Тесты и причины нарушений', exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
-    await page.getByLabel('Название теста', { exact: true }).last().fill(testName);
+    await page.getByLabel('Название теста*', { exact: true }).last().fill(testName);
     await page.getByLabel('Раздел', { exact: true }).last().fill('E2E раздел');
-    await page.getByLabel('Название значения', { exact: true }).last().fill('Норма');
+    await page.getByLabel('Название значения*', { exact: true }).last().fill('Норма');
     await page.getByRole('button', { name: 'Добавить значение', exact: true }).last().click();
-    await page.getByLabel('Название значения', { exact: true }).last().fill('Отклонение');
+    await page.getByLabel('Название значения*', { exact: true }).last().fill('Отклонение');
     await page.getByLabel('Считать нарушением', { exact: true }).last().check();
 
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
-    await page.getByLabel('Название причины', { exact: true }).last().fill(causeName);
+    await page.getByLabel('Название причины*', { exact: true }).last().fill(causeName);
     await page.getByLabel('Группа', { exact: true }).last().fill('E2E причины');
     await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
     await expect(page.getByText('Каталог сохранён', { exact: true })).toBeVisible();
 
     await page.reload();
-    await expect(page.getByLabel('Название теста', { exact: true }).last()).toHaveValue(testName);
-    await expect(page.getByLabel('Название причины', { exact: true }).last()).toHaveValue(causeName);
+    await expect(page.getByLabel('Название теста*', { exact: true }).last()).toHaveValue(testName);
+    await expect(page.getByLabel('Название причины*', { exact: true }).last()).toHaveValue(causeName);
 
     await page.goto(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create`);
     await expect(page.getByRole('heading', { name: 'Новый сеанс', exact: true })).toBeVisible();
