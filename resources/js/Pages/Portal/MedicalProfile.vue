@@ -2,7 +2,6 @@
 import { Link, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
-import PainScale from '../../Components/Portal/PainScale.vue';
 import MedicalAttachmentsUploader from '../../Components/Portal/MedicalAttachmentsUploader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
@@ -249,7 +248,6 @@ function save(): void {
                 </label>
               </div>
             </fieldset>
-            <PainScale v-model="form.answers.pain_vas" />
           </section>
           <section class="portal-panel portal-panel--compact portal-stack">
             <div class="flex items-center justify-between gap-3">
@@ -498,10 +496,6 @@ function save(): void {
         </form>
         <template v-else>
           <section class="portal-panel portal-panel--compact portal-stack medical-profile__assessment">
-            <PainScale
-              :model-value="profile.answers.pain_vas ?? null"
-              readonly
-            />
             <div
               v-if="profile.answers.symptoms?.length"
               class="medical-profile__symptoms"

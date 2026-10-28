@@ -119,11 +119,7 @@ final class MedicalProfileForm
                 ->itemLabel(fn (array $state): string => (string) ($state['name'] ?? __('Новая боль')))
                 ->addActionLabel(__('Добавить боль'))
                 ->columnSpanFull(),
-            Checkbox::make('pain_not_measured')->label(__('Боль не оценивалась'))->live(),
-            Slider::make('answers.pain_vas')->label(__('Шкала боли (ВАШ)'))
-                ->range(minValue: 0, maxValue: 10)->step(1)->nullable()->default(null)
-                ->disabled(fn (Get $get): bool => $get('pain_not_measured') === true)
-                ->helperText(__('0 — нет боли · 10 — нестерпимая боль')),
+            Hidden::make('answers.pain_vas')->dehydrated()->nullable(),
             Textarea::make('complaints')->label(__('Жалобы'))->rows(3)->maxLength(10000),
             Textarea::make('goals')->label(__('Задачи по здоровью'))->rows(3)->maxLength(10000),
             Checkbox::make('answers.no_chronic_conditions')->label(__('Хронических заболеваний нет')),

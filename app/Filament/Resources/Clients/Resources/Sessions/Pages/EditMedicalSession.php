@@ -19,7 +19,6 @@ use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Actions\Action;
-use Filament\Forms\Components\Checkbox;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
@@ -74,22 +73,11 @@ class EditMedicalSession extends LocalizedEditRecord
                 Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
                 Section::make(__('Клинические заметки'))
                     ->schema([
-                        Checkbox::make('pain_not_measured')
-                            ->label(__('Боль не измерена'))
-                            ->default(true)
-                            ->live(),
-                        Slider::make('pain_vas')
-                            ->label(__('Шкала боли'))
-                            ->range(minValue: 0, maxValue: 10)
-                            ->step(1)
-                            ->nullable()
-                            ->default(null)
-                            ->disabled(fn (Get $get): bool => $get('pain_not_measured') === true)
-                            ->live()
-                            ->helperText(__('0 — нет боли · 10 — максимальная боль')),
-                        Placeholder::make('pain_vas_current')
-                            ->label(__('Текущее значение'))
-                            ->content(fn (Get $get): string => $get('pain_not_measured') === true ? __('Не указана') : self::painVasDisplay($get('pain_vas')))
+                        Hidden::make('pain_vas')->dehydrated()->nullable(),
+                        Hidden::make('pain_not_measured')->dehydrated()->default(true),
+                        Placeholder::make('pain_vas_legacy')
+                            ->label(__('Историческое значение ВАШ'))
+                            ->content(fn (Get $get): string => self::legacyPainVasDisplay($get('pain_vas')))
                             ->columnSpanFull(),
                         Repeater::make('pains')
                             ->label(__('Боли'))
@@ -111,7 +99,7 @@ class EditMedicalSession extends LocalizedEditRecord
                                 ])->columns(2)->default(['all'])->required(),
                                 Slider::make('before_score')->label(__('До сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
                                 Slider::make('after_score')->label(__('После сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
-                                Placeholder::make('previous_after_score')->label(__('После предыдущего сеанса'))->content(fn (Get $get): string => self::painVasDisplay($get('previous_after_score'))),
+                                Placeholder::make('previous_after_score')->label(__('После предыдущего сеанса'))->content(fn (Get $get): string => self::scoreDisplay($get('previous_after_score'))),
                                 Select::make('tag_ids')
                                     ->label(__('Категория проблемы'))
                                     ->options(fn (): array => app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id()))
@@ -163,13 +151,6 @@ class EditMedicalSession extends LocalizedEditRecord
                     ])
                     ->columnSpanFull(),
             ]);
-    }
-
-    private static function painVasDisplay(mixed $value): string
-    {
-        return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
-            ? __(':value / 10', ['value' => (int) $value])
-            : __('Не указана');
     }
 
     /**
@@ -276,6 +257,20 @@ class EditMedicalSession extends LocalizedEditRecord
     }
 
     /** @param array<string, list<string>> $messages */
+    private static function scoreDisplay(mixed $value): string
+    {
+        return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
+            ? __(':value / 10', ['value' => (int) $value])
+            : __('Нет данных');
+    }
+
+    private static function legacyPainVasDisplay(mixed $value): string
+    {
+        return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
+            ? __(':value / 10', ['value' => (int) $value])
+            : __('Не указана');
+    }
+
     private static function throwValidation(array $messages): never
     {
         throw ValidationException::withMessages($messages);
