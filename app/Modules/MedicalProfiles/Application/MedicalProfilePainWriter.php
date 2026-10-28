@@ -16,10 +16,13 @@ final readonly class MedicalProfilePainWriter
         private MedicalProblemTagCatalog $tags,
     ) {}
 
-    /** @param array<int, mixed> $rawPains */
-    /** @return list<MedicalPainData> */
+    /**
+     * @param  list<mixed>  $rawPains
+     * @return list<MedicalPainData>
+     */
     public function replace(MedicalProfile $profile, array $rawPains, int $keyVersion): array
     {
+        $existing = $profile->pains()->with('problemTags')->lockForUpdate()->get()->keyBy('lineage_key');
         $inputs = [];
         $lineages = [];
         foreach ($rawPains as $rawPain) {
@@ -41,10 +44,11 @@ final readonly class MedicalProfilePainWriter
                 throw ValidationException::withMessages(['pains' => 'Каждая боль должна быть указана только один раз.']);
             }
             $lineages[$lineage] = true;
-            $inputs[] = [$input, $lineage, $this->tags->assertKnown((int) $profile->organization_id, $input->tagIds)];
+            $existingPain = $existing->get($lineage);
+            $preservedTagIds = $existingPain instanceof MedicalProfilePain ? $existingPain->problemTags->modelKeys() : [];
+            $inputs[] = [$input, $lineage, $this->tags->assertKnown((int) $profile->organization_id, $input->tagIds, $preservedTagIds)];
         }
 
-        $existing = $profile->pains()->lockForUpdate()->get()->keyBy('lineage_key');
         foreach ($existing as $lineage => $pain) {
             if (! isset($lineages[$lineage])) {
                 $pain->delete();

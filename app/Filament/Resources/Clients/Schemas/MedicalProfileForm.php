@@ -30,6 +30,9 @@ final class MedicalProfileForm
     /** @return array<string, mixed> */
     public static function fill(?MedicalProfileData $profile): array
     {
+        $pains = $profile instanceof MedicalProfileData ? $profile->pains : [];
+        $historyEntries = $profile instanceof MedicalProfileData ? $profile->historyEntries : [];
+
         return [
             'anamnesis' => $profile?->anamnesis,
             'complaints' => $profile?->complaints,
@@ -44,13 +47,13 @@ final class MedicalProfileForm
                 'name' => $pain->name,
                 'score' => $pain->score,
                 'tag_ids' => $pain->tagIds,
-            ], $profile?->pains ?? []),
+            ], $pains),
             'history_entries' => array_map(static fn ($entry): array => [
                 'lineage_key' => $entry->lineageKey,
                 'type' => $entry->type,
                 'year' => $entry->year,
                 'description' => $entry->description,
-            ], $profile?->historyEntries ?? []),
+            ], $historyEntries),
             'pain_not_measured' => (self::answers($profile)['pain_vas'] ?? null) === null,
             'answers' => self::answers($profile) ?? [
                 'symptoms' => [], 'pain_vas' => null, 'no_chronic_conditions' => false,
@@ -106,7 +109,7 @@ final class MedicalProfileForm
                         ->helperText(__('Можно оставить без оценки.')),
                     Select::make('tag_ids')
                         ->label(__('Категория проблемы'))
-                        ->options(fn (): array => app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id()))
+                        ->options(fn (Get $get): array => app(MedicalProblemTagCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (array) $get('tag_ids')))
                         ->multiple()
                         ->searchable()
                         ->preload()

@@ -7,6 +7,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
+use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProfilePainReader;
 use App\Modules\MedicalProfiles\Application\SaveMedicalFrequencyPeriods;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
@@ -30,6 +31,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
@@ -287,6 +289,56 @@ final class MedicalPainFlowTest extends TestCase
             occurredAt: Carbon::parse('2026-10-08 09:00:00', 'UTC'),
         ));
         self::assertSame([(int) $tag->getKey()], $next->pains[0]->tagIds);
+    }
+
+    public function test_inactive_problem_tags_remain_editable_and_carry_forward_without_allowing_new_selection(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $tag = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Историческая категория',
+            'group_name' => 'Синтетика',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            pains: [['name' => 'Шея', 'score' => 6, 'tag_ids' => [$tag->getKey()]]],
+            painsProvided: true,
+        ));
+        $tag->forceFill(['is_active' => false])->save();
+
+        $profile = app(GetMedicalProfile::class)->handle($admin, $client);
+        self::assertNotNull($profile);
+        $updatedProfile = app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            pains: [$profile->pains[0]->toArray()],
+            painsProvided: true,
+        ));
+        self::assertSame([(int) $tag->getKey()], $updatedProfile->pains[0]->tagIds);
+        self::assertSame('Синтетика: Историческая категория (неактивна)', app(MedicalProblemTagCatalog::class)->optionsForSelection((int) $organization->getKey(), [$tag->getKey()])[$tag->getKey()]);
+
+        $first = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-20 09:00:00', 'UTC'),
+        ));
+        self::assertSame([(int) $tag->getKey()], $first->pains[0]->tagIds);
+
+        $next = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-27 09:00:00', 'UTC'),
+        ));
+        self::assertSame([(int) $tag->getKey()], $next->pains[0]->tagIds);
+
+        $this->expectException(ValidationException::class);
+        app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($next->id), UpdateSessionCommand::fromArray([
+            'pains' => [[
+                'lineage_key' => (string) Str::uuid(),
+                'name' => 'Новая боль',
+                'frequency_mode' => 'permanent',
+                'time_of_day' => ['all'],
+                'tag_ids' => [$tag->getKey()],
+            ]],
+        ]));
     }
 
     public function test_profile_history_rows_and_session_observation_fields_are_encrypted_and_reloadable(): void

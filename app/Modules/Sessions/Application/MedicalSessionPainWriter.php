@@ -20,9 +20,9 @@ final readonly class MedicalSessionPainWriter
     ) {}
 
     /** @param array<int, mixed> $rawPains */
-    public function replace(MedicalSession $session, array $rawPains, int $keyVersion, bool $allowInactiveFrequencyPeriods = false): void
+    public function replace(MedicalSession $session, array $rawPains, int $keyVersion, bool $allowInactiveFrequencyPeriods = false, bool $allowInactiveProblemTags = false): void
     {
-        $existing = $session->pains()->lockForUpdate()->get()->keyBy('lineage_key');
+        $existing = $session->pains()->with('problemTags')->lockForUpdate()->get()->keyBy('lineage_key');
         $inputs = [];
         $lineages = [];
         foreach ($rawPains as $rawPain) {
@@ -35,8 +35,12 @@ final readonly class MedicalSessionPainWriter
                 throw ValidationException::withMessages(['pains' => 'Каждая боль должна быть указана только один раз.']);
             }
             $lineages[$lineage] = true;
+            $existingPain = $existing->get($lineage);
+            $preservedTagIds = $existingPain instanceof MedicalSessionPain ? $existingPain->problemTags->modelKeys() : [];
+            if ($allowInactiveProblemTags) {
+                $preservedTagIds = [...$preservedTagIds, ...$input->tagIds];
+            }
             if ($input->frequencyMode === 'count' && $input->frequencyPeriodUnit !== null) {
-                $existingPain = $existing->get($lineage);
                 $canKeepInactivePeriod = $allowInactiveFrequencyPeriods
                     || ($existingPain instanceof MedicalSessionPain
                         && $existingPain->frequency_mode === 'count'
@@ -45,7 +49,7 @@ final readonly class MedicalSessionPainWriter
                     $this->periods->assertActive((int) $session->organization_id, $input->frequencyPeriodUnit);
                 }
             }
-            $inputs[] = [$input, $lineage, $this->tags->assertKnown((int) $session->organization_id, $input->tagIds)];
+            $inputs[] = [$input, $lineage, $this->tags->assertKnown((int) $session->organization_id, $input->tagIds, $preservedTagIds)];
         }
 
         foreach ($existing as $lineage => $pain) {

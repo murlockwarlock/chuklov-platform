@@ -99,7 +99,7 @@ final readonly class MedicalSessionPainInitializer
                 return;
             }
 
-            $this->writer->replace($lockedSession, $defaults, $keyVersion, allowInactiveFrequencyPeriods: true);
+            $this->writer->replace($lockedSession, $defaults, $keyVersion, allowInactiveFrequencyPeriods: true, allowInactiveProblemTags: true);
         });
     }
 }

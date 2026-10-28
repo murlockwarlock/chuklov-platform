@@ -89,7 +89,7 @@ final class SessionForm
                                     ->content(fn (Get $get): string => self::scoreDisplay(self::previousAfterScore($get))),
                                 Select::make('tag_ids')
                                     ->label(__('Категория проблемы'))
-                                    ->options(fn (): array => app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id()))
+                                    ->options(fn (Get $get): array => app(MedicalProblemTagCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (array) $get('tag_ids')))
                                     ->multiple()
                                     ->searchable()
                                     ->preload(),
