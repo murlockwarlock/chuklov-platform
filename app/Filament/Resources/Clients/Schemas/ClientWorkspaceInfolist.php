@@ -7,6 +7,7 @@ use App\Filament\Support\FinancePresentation;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Analytics\Application\ClientAnalyticsInsights;
+use App\Modules\Analytics\Application\ClientPainHistory;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\FeedbackAnalytics;
 use App\Modules\Analytics\Application\GoalAnalytics;
@@ -29,6 +30,7 @@ use App\Modules\Referrals\Domain\Models\ReferralCampaignLink;
 use App\Modules\Tracker\Application\ResolveTrackerAccess;
 use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
 use Carbon\CarbonImmutable;
+use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
@@ -332,7 +334,7 @@ final class ClientWorkspaceInfolist
 
                                 $now = CarbonImmutable::now('UTC');
                                 $period = new DashboardPeriod(
-                                    startUtc: CarbonImmutable::create(2000, 1, 1, 0, 0, 0, 'UTC'),
+                                    startUtc: CarbonImmutable::parse('2000-01-01 00:00:00', 'UTC'),
                                     endUtc: $now->addDay(),
                                     timezone: app(OrganizationContext::class)->defaultTimezone(),
                                     startDate: '2000-01-01',
@@ -363,6 +365,25 @@ final class ClientWorkspaceInfolist
                             ->placeholder(__('Структурированная динамика пока не заполнена'))
                             ->columnSpanFull()
                             ->wrap(),
+                        RepeatableEntry::make('pain_history')
+                            ->label(__('История боли'))
+                            ->schema([
+                                TextEntry::make('session_number')->label(__('Сеанс')),
+                                TextEntry::make('occurred_at')->label(__('Дата')),
+                                TextEntry::make('pain')->label(__('Боль'))->wrap(),
+                                TextEntry::make('before_score')->label(__('До сеанса'))->placeholder(__('Не указано')),
+                                TextEntry::make('after_score')->label(__('После сеанса'))->placeholder(__('Не указано')),
+                            ])
+                            ->columns(5)
+                            ->state(function (Client $record): array {
+                                $actor = auth()->user();
+
+                                return $actor instanceof User
+                                    ? app(ClientPainHistory::class)->handle($actor, $record)
+                                    : [];
+                            })
+                            ->placeholder(__('История боли пока не заполнена'))
+                            ->columnSpanFull(),
                         TextEntry::make('feedback_analytics')
                             ->label(__('Удовлетворённость и темы обратной связи'))
                             ->state(function (Client $record): ?string {
@@ -373,7 +394,7 @@ final class ClientWorkspaceInfolist
 
                                 $now = CarbonImmutable::now('UTC');
                                 $period = new DashboardPeriod(
-                                    startUtc: CarbonImmutable::create(2000, 1, 1, 0, 0, 0, 'UTC'),
+                                    startUtc: CarbonImmutable::parse('2000-01-01 00:00:00', 'UTC'),
                                     endUtc: $now->addDay(),
                                     timezone: app(OrganizationContext::class)->defaultTimezone(),
                                     startDate: '2000-01-01',
@@ -406,7 +427,7 @@ final class ClientWorkspaceInfolist
 
                                 $now = CarbonImmutable::now('UTC');
                                 $period = new DashboardPeriod(
-                                    startUtc: CarbonImmutable::create(2000, 1, 1, 0, 0, 0, 'UTC'),
+                                    startUtc: CarbonImmutable::parse('2000-01-01 00:00:00', 'UTC'),
                                     endUtc: $now->addDay(),
                                     timezone: app(OrganizationContext::class)->defaultTimezone(),
                                     startDate: '2000-01-01',

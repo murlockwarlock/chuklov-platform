@@ -4,6 +4,7 @@ namespace Tests\Feature\Analytics;
 
 use App\Models\User;
 use App\Modules\Analytics\Application\ClientAnalyticsInsights;
+use App\Modules\Analytics\Application\ClientPainHistory;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -12,6 +13,8 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Sessions\Application\CreateSession;
+use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -78,6 +81,67 @@ final class ClientAnalyticsInsightsTest extends TestCase
         $this->expectException(NotFoundHttpException::class);
 
         app(ClientAnalyticsInsights::class)->handle($admin, $foreignClient);
+    }
+
+    public function test_client_pain_history_returns_each_session_before_and_after_in_organization_timezone(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $organization->update(['timezone' => 'Asia/Almaty']);
+        app(OrganizationContext::class)->set($organization);
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-10-01 09:00:00', 'UTC'),
+            pains: [[
+                'name' => 'Шея',
+                'before_score' => 7,
+                'after_score' => 3,
+            ]],
+        ));
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-10-08 09:00:00', 'UTC'),
+            pains: [[
+                'name' => 'Шея',
+                'before_score' => null,
+                'after_score' => 1,
+            ]],
+        ));
+
+        $history = app(ClientPainHistory::class)->handle($admin, $client);
+
+        self::assertSame([
+            [
+                'session_id' => $history[0]['session_id'],
+                'session_number' => 1,
+                'occurred_at' => '01.10.2026 14:00',
+                'pain' => 'Шея',
+                'before_score' => 7,
+                'after_score' => 3,
+            ],
+            [
+                'session_id' => $history[1]['session_id'],
+                'session_number' => 2,
+                'occurred_at' => '08.10.2026 14:00',
+                'pain' => 'Шея',
+                'before_score' => null,
+                'after_score' => 1,
+            ],
+        ], $history);
+    }
+
+    public function test_client_pain_history_rejects_a_client_from_another_organization(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $foreignOrganization = Organization::factory()->create();
+        $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create();
+        app(OrganizationContext::class)->set($organization);
+
+        $this->expectException(NotFoundHttpException::class);
+
+        app(ClientPainHistory::class)->handle($admin, $foreignClient);
     }
 
     /** @return array{0: Organization, 1: User} */
