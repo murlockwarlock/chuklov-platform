@@ -2431,6 +2431,7 @@ test('staff can manage private client audio recordings', async ({ page }) => {
         const response = await downloadResponse;
         expect(response.headers()['content-type']).toContain('audio');
         expect(Number(response.headers()['content-length'])).toBeGreaterThan(0);
+        await expect(page).toHaveURL(/\/admin\/attachments\/.+mode=download/, { timeout: 10_000 });
         await page.goto(`/admin/clients/${fixture.clientId}`);
         await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
     }
