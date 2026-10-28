@@ -41,6 +41,29 @@ final class MedicalFrequencyPeriodCatalog
             ->all();
     }
 
+    /** @return array<string, string> */
+    public function optionsForSelection(int $organizationId, ?string $selectedKey): array
+    {
+        $options = $this->options($organizationId);
+        $selectedKey = is_string($selectedKey) ? trim($selectedKey) : '';
+
+        if ($selectedKey === '' || array_key_exists($selectedKey, $options)) {
+            return $options;
+        }
+
+        $unit = MedicalFrequencyPeriodUnit::query()
+            ->where('organization_id', $organizationId)
+            ->where('key', $selectedKey)
+            ->first();
+        if ($unit === null) {
+            return $options;
+        }
+
+        $options[$selectedKey] = (string) $unit->getRawOriginal('label').' ('.__('неактивен').')';
+
+        return $options;
+    }
+
     public function assertActive(int $organizationId, string $key): void
     {
         if (! $this->isActive($organizationId, $key)) {

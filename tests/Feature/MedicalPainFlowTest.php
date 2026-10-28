@@ -116,6 +116,7 @@ final class MedicalPainFlowTest extends TestCase
         self::assertSame('Неделя', $options['week']);
         self::assertSame('Две недели', $options['fortnight']);
         self::assertArrayNotHasKey('year', $options);
+        self::assertSame('Год (неактивен)', app(MedicalFrequencyPeriodCatalog::class)->optionsForSelection((int) $organization->getKey(), 'year')['year']);
 
         $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
             specialistId: (int) $specialist->getKey(),

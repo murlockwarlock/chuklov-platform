@@ -89,7 +89,7 @@ class EditMedicalSession extends LocalizedEditRecord
                                     'count' => __('Количество раз за период'),
                                 ])->required()->live(),
                                 TextInput::make('frequency_count')->label(__('Количество'))->integer()->minValue(1)->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count'),
-                                Select::make('frequency_period_unit')->label(__('Период'))->options(fn (): array => app(MedicalFrequencyPeriodCatalog::class)->options(app(OrganizationContext::class)->id()))->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count')->searchable(),
+                                Select::make('frequency_period_unit')->label(__('Период'))->options(fn (Get $get): array => app(MedicalFrequencyPeriodCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), $get('frequency_period_unit')))->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count')->searchable(),
                                 CheckboxList::make('time_of_day')->label(__('Время суток'))->options([
                                     'all' => __('Весь день'),
                                     'morning' => __('Утро'),
