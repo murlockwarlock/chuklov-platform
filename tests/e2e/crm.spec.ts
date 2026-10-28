@@ -2437,6 +2437,8 @@ test('staff can manage private client audio recordings', async ({ page }) => {
     }
 
     if (test.info().project.name === 'mobile') {
+        console.log('audio-e2e: restored row html', (await audioRow.evaluate((row) => row.outerHTML)).slice(0, 6000));
+        console.log('audio-e2e: page action labels', await page.locator('button').evaluateAll((buttons) => buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent?.trim()).filter(Boolean).slice(-30)));
         console.log('audio-e2e: restored row buttons', await audioRow.locator('button').evaluateAll((buttons) => buttons.map((button) => ({
             text: button.textContent?.trim(),
             ariaLabel: button.getAttribute('aria-label'),
