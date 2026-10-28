@@ -102,6 +102,16 @@ final class SessionInfolist
                             ->columnSpanFull(),
                     ])
                     ->visible(fn (MedicalSession $record, Section $section): bool => self::hasPains($record, $section)),
+                Section::make(__('Особые жалобы'))
+                    ->schema([
+                        TextEntry::make('special_complaints')
+                            ->hiddenLabel()
+                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->pain)
+                            ->placeholder(__('Не заполнено'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                    ])
+                    ->visible(fn (MedicalSession $record, Section $section): bool => self::hasSpecialComplaints($record, $section)),
                 Section::make(__('Тесты и причины нарушений'))
                     ->schema([
                         TextEntry::make('test_counters')
@@ -136,6 +146,52 @@ final class SessionInfolist
                             ->columnSpanFull(),
                     ])
                     ->visible(fn (MedicalSession $record, Section $section): bool => self::hasTestsOrCauses($record, $section)),
+                Section::make(__('Протокол и результат сеанса'))
+                    ->schema([
+                        TextEntry::make('root_cause_hypothesis')
+                            ->label(__('Первопричина'))
+                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->rootCauseHypothesis)
+                            ->placeholder(__('Не заполнено'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                        TextEntry::make('tests')
+                            ->label(__('Тесты'))
+                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->tests)
+                            ->placeholder(__('Не заполнено'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                        TextEntry::make('observations')
+                            ->label(__('Наблюдения'))
+                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->observations)
+                            ->placeholder(__('Не заполнено'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                        TextEntry::make('protocol')
+                            ->label(__('Алгоритм / протокол сеанса'))
+                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->protocol)
+                            ->placeholder(__('Не заполнено'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                        TextEntry::make('subjective_feelings')
+                            ->label(__('Субъективные ощущения клиента после сеанса'))
+                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->subjectiveFeelings)
+                            ->placeholder(__('Не заполнено'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                        TextEntry::make('visual_posture_diagnostics')
+                            ->label(__('Визуальная диагностика осанки'))
+                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->visualPostureDiagnostics)
+                            ->placeholder(__('Не заполнено'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                        TextEntry::make('result')
+                            ->label(__('Результат после сеанса'))
+                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->result)
+                            ->placeholder(__('Не заполнено'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                    ])
+                    ->visible(fn (MedicalSession $record, Section $section): bool => self::hasCurrentClinicalFields($record, $section)),
                 Section::make(__('Динамика подтверждённых фактов'))
                     ->schema([
                         RepeatableEntry::make('comparison')
@@ -151,7 +207,7 @@ final class SessionInfolist
                                 TextEntry::make('observations')->label(__('Наблюдения'))->placeholder(__('Не заполнено')),
                                 TextEntry::make('root_cause_hypothesis')->label(__('Первопричина'))->placeholder(__('Не заполнено')),
                                 TextEntry::make('protocol')->label(__('Протокол'))->placeholder(__('Не заполнено')),
-                                TextEntry::make('result')->label(__('Результат'))->placeholder(__('Не заполнено')),
+                                TextEntry::make('result')->label(__('Результат после сеанса'))->placeholder(__('Не заполнено')),
                             ])
                             ->columns(2)
                             ->state(function (MedicalSession $record, RepeatableEntry $entry): array {
@@ -293,6 +349,20 @@ final class SessionInfolist
         return $data instanceof MedicalSessionData && ($data->testResults !== [] || $data->rootCauses !== []);
     }
 
+    private static function hasCurrentClinicalFields(MedicalSession $record, Component $component): bool
+    {
+        $data = self::sessionData($record, $component);
+
+        return $data instanceof MedicalSessionData
+            && ($data->rootCauseHypothesis !== null
+                || $data->tests !== null
+                || $data->observations !== null
+                || $data->protocol !== null
+                || $data->subjectiveFeelings !== null
+                || $data->visualPostureDiagnostics !== null
+                || $data->result !== null);
+    }
+
     private static function testCounters(MedicalSession $record, Component $component): ?string
     {
         $data = self::sessionData($record, $component);
@@ -355,6 +425,11 @@ final class SessionInfolist
     private static function hasPains(MedicalSession $record, Component $component): bool
     {
         return self::pains($record, $component) !== [];
+    }
+
+    private static function hasSpecialComplaints(MedicalSession $record, Component $component): bool
+    {
+        return filled(self::sessionData($record, $component)?->pain);
     }
 
     private static function sessionData(MedicalSession $record, Component $component): ?MedicalSessionData

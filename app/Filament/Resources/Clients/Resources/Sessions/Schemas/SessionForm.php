@@ -99,6 +99,7 @@ final class SessionForm
                             ->itemLabel(fn (array $state): string => (string) ($state['name'] ?? __('Новая боль')))
                             ->addActionLabel(__('Добавить боль'))
                             ->columnSpanFull(),
+                        Textarea::make('pain')->label(__('Особые жалобы'))->rows(3)->placeholder(__('Что ещё важно учесть специалисту')),
                         Repeater::make('test_results')
                             ->label(__('Кинезиологические и мануальные тесты'))
                             ->schema([
@@ -131,6 +132,8 @@ final class SessionForm
                             ->itemLabel(fn (array $state): string => filled($state['test_id'] ?? null) ? __('Выбранный тест') : __('Новый тест'))
                             ->addActionLabel(__('Добавить тест'))
                             ->columnSpanFull(),
+                        Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
+                        Textarea::make('observations')->label(__('Наблюдения'))->rows(3)->placeholder(__('Дополнительные наблюдения')),
                         Repeater::make('root_causes')
                             ->label(__('Первопричина нарушений'))
                             ->schema([
@@ -147,20 +150,17 @@ final class SessionForm
                             ->reorderable()
                             ->addActionLabel(__('Добавить первопричину'))
                             ->columnSpanFull(),
+                        Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),
                         Hidden::make('pain_vas')->dehydrated()->nullable(),
                         Hidden::make('pain_not_measured')->dehydrated()->default(true),
                         Placeholder::make('pain_vas_legacy')
                             ->label(__('Историческое значение ВАШ'))
                             ->content(fn (Get $get): string => self::legacyPainVasDisplay($get('pain_vas')))
                             ->columnSpanFull(),
-                        Textarea::make('pain')->label(__('Особые жалобы'))->rows(3)->placeholder(__('Что ещё важно учесть специалисту')),
-                        Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
-                        Textarea::make('observations')->label(__('Наблюдения'))->rows(3)->placeholder(__('Дополнительные наблюдения')),
-                        Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),
                         Textarea::make('protocol')->label(__('Протокол'))->rows(3)->placeholder(__('Назначенные процедуры и план')),
                         Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->rows(3)->placeholder(__('Что клиент почувствовал после сеанса')),
                         Textarea::make('visual_posture_diagnostics')->label(__('Визуальная диагностика осанки'))->rows(3)->placeholder(__('Изменения линии плеч, таза и позвоночника')),
-                        Textarea::make('result')->label(__('Результат'))->rows(3)->placeholder(__('Эффект после процедур/до следующего сеанса')),
+                        Textarea::make('result')->label(__('Результат после сеанса'))->rows(3)->placeholder(__('Эффект после процедур/до следующего сеанса')),
                     ])->columnSpanFull(),
             ]);
     }

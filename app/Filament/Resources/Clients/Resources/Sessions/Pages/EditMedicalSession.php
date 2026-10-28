@@ -114,6 +114,7 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->itemLabel(fn (array $state): string => (string) ($state['name'] ?? __('Новая боль')))
                             ->addActionLabel(__('Добавить боль'))
                             ->columnSpanFull(),
+                        Textarea::make('pain')->label(__('Особые жалобы'))->rows(3)->placeholder(__('Что ещё важно учесть специалисту')),
                         Repeater::make('test_results')
                             ->label(__('Кинезиологические и мануальные тесты'))
                             ->schema([
@@ -128,6 +129,8 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->collapsible()
                             ->addActionLabel(__('Добавить тест'))
                             ->columnSpanFull(),
+                        Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
+                        Textarea::make('observations')->label(__('Наблюдения'))->rows(3)->placeholder(__('Субъективные и объективные наблюдения')),
                         Repeater::make('root_causes')
                             ->label(__('Первопричина нарушений'))
                             ->schema([
@@ -140,14 +143,11 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->reorderable()
                             ->addActionLabel(__('Добавить первопричину'))
                             ->columnSpanFull(),
-                        Textarea::make('pain')->label(__('Особые жалобы'))->rows(3)->placeholder(__('Что ещё важно учесть специалисту')),
-                        Textarea::make('tests')->label(__('Тесты'))->rows(3)->placeholder(__('Проведённые проверки и их результаты')),
-                        Textarea::make('observations')->label(__('Наблюдения'))->rows(3)->placeholder(__('Субъективные и объективные наблюдения')),
                         Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),
                         Textarea::make('protocol')->label(__('Протокол'))->rows(3)->placeholder(__('Назначенные процедуры и план')),
                         Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->rows(3)->placeholder(__('Что клиент почувствовал после сеанса')),
                         Textarea::make('visual_posture_diagnostics')->label(__('Визуальная диагностика осанки'))->rows(3)->placeholder(__('Изменения линии плеч, таза и позвоночника')),
-                        Textarea::make('result')->label(__('Результат'))->rows(3)->placeholder(__('Эффект после процедур/до следующего сеанса')),
+                        Textarea::make('result')->label(__('Результат после сеанса'))->rows(3)->placeholder(__('Эффект после процедур/до следующего сеанса')),
                     ])
                     ->columnSpanFull(),
             ]);
