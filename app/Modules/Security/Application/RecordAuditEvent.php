@@ -174,6 +174,7 @@ class RecordAuditEvent
         'feedback.classification.updated' => ['theme_count'],
         'analytics.classification.suggested' => ['taxonomy', 'source_type', 'tag_count'],
         'analytics.classification.accepted' => ['taxonomy', 'source_type', 'tag_count'],
+        'analytics.taxonomy_groups.updated' => ['taxonomy_count', 'group_count'],
         'tracker.goal_catalog.updated' => ['tag_count'],
         'medical.profile.created' => ['source', 'key_version', 'updated_fields'],
         'medical.profile.updated' => ['source', 'key_version', 'updated_fields'],
