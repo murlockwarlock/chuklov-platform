@@ -2568,7 +2568,15 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     const complaintsChoices = await complaintsGroup.locator('.medical-profile__choice-grid').boundingBox();
     if (!complaintsLegend || !complaintsChoices) throw new Error('Medical complaint choices are not positioned');
     expect(complaintsChoices.y - (complaintsLegend.y + complaintsLegend.height)).toBeGreaterThanOrEqual(8);
-    await expect(page.getByLabel('Шкала интенсивности боли (ВАШ):', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Шкала интенсивности боли (ВАШ):', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    await page.locator('#medical-pain-0').fill('Боль в шее');
+    await page.locator('#medical-pain-score-0').fill('8');
+    await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    await page.locator('#medical-pain-1').fill('Боль в пояснице');
+    await page.locator('#medical-pain-score-1').fill('0');
+    await expect(page.locator('#medical-pain-score-0')).toHaveValue('8');
+    await expect(page.locator('#medical-pain-score-1')).toHaveValue('0');
     await expect(page.getByLabel('Задачи по здоровью', { exact: true })).toHaveAttribute('placeholder', 'Опишите конкретные результаты и задачи, которые вы хотите решить с Евгением (например: 1. Убрать тянущую боль в пояснице при наклонах. 2. Избавиться от утренней скованности и отеков)');
     await expect(page.getByLabel('Год операции', { exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
@@ -2636,7 +2644,9 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.getByLabel('Год травмы', { exact: true }).fill('2021');
     await expect(page.locator('#medical-operations-year-error')).toHaveCount(0);
     await expect(page.locator('#medical-injuries-year-error')).toHaveCount(0);
-    const painSlider = page.locator('#medical-pain');
+    const painSlider = page.locator('#medical-pain-score-0');
+    const secondPainSlider = page.locator('#medical-pain-score-1');
+    await expect(page.locator('input[type="range"][id^="medical-pain-score-"]')).toHaveCount(2);
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await painSlider.scrollIntoViewIfNeeded();
@@ -2657,14 +2667,10 @@ test('September 26 confirmed profile persists and the medical editor saves then 
         await expect(page.getByText('10 / 10', { exact: true })).toBeVisible();
     }
     await painSlider.focus();
-    await painSlider.press('Home');
-    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
-    for (let step = 0; step < 8; step++) {
-        await painSlider.press('ArrowRight');
-    }
-    await expect(painSlider).toHaveValue('8');
-    await expect(page.getByText('8 / 10', { exact: true })).toBeVisible();
     await painSlider.press('End');
+    await expect(painSlider).toHaveValue('10');
+    await expect(secondPainSlider).toHaveValue('0');
+    await expect(page.getByText('10 / 10', { exact: true })).toBeVisible();
     let failFirstSave = true;
     await page.route('**/portal/medical-profile*', async (route) => {
         if (route.request().method() === 'POST') {
@@ -2687,6 +2693,7 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByText('Данные сохранены', { exact: true })).toBeVisible();
     await page.unroute('**/portal/medical-profile*');
     await expect(page.getByText('10 / 10', { exact: true })).toBeVisible();
+    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByText('Synthetic symptoms', { exact: true })).toBeVisible();
     await expect(page.getByText('Synthetic scar location', { exact: true })).toBeVisible();
@@ -2697,14 +2704,16 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByLabel('Хронических заболеваний нет', { exact: true })).toBeChecked();
     await expect(page.getByLabel('Год операции', { exact: true })).toHaveValue(String(new Date().getFullYear()));
     await expect(page.getByLabel('Характер травмы', { exact: true })).toHaveValue('Synthetic injury description');
-    await page.locator('#medical-pain').focus();
-    await page.locator('#medical-pain').press('Home');
+    await expect(page.locator('#medical-pain-score-0')).toHaveValue('10');
+    await expect(page.locator('#medical-pain-score-1')).toHaveValue('0');
+    await page.locator('#medical-pain-score-0').focus();
+    await page.locator('#medical-pain-score-0').press('Home');
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `Medical editor at ${width}px`).toBe(true);
     }
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
-    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
+    await expect(page.getByText('0 / 10', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Редактировать данные', exact: true })).toBeVisible();
     const fileChooserEvent = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'Выбрать файлы', exact: true }).click();
