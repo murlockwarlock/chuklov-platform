@@ -19,9 +19,9 @@ final readonly class DeleteMedicalAttachment
     public function handle(User $actor, MedicalAttachment $attachment): bool
     {
         $organization = $this->authorization->authorizeDelete($actor, $attachment);
-        $storagePath = $attachment->storage_path;
 
-        $deleted = DB::transaction(function () use ($actor, $organization, $attachment): bool {
+        /** @var array{deleted: bool, storage_path: string|null} $result */
+        $result = DB::transaction(function () use ($actor, $organization, $attachment): array {
             $locked = MedicalAttachment::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($attachment->getKey())
@@ -29,9 +29,10 @@ final readonly class DeleteMedicalAttachment
                 ->first();
 
             if (! $locked instanceof MedicalAttachment) {
-                return false;
+                return ['deleted' => false, 'storage_path' => null];
             }
 
+            $storagePath = filled($locked->storage_path) ? (string) $locked->storage_path : null;
             $locked->sessionLinks()->delete();
             $deleted = $locked->delete();
 
@@ -48,13 +49,13 @@ final readonly class DeleteMedicalAttachment
                 );
             }
 
-            return $deleted;
+            return ['deleted' => $deleted, 'storage_path' => $storagePath];
         });
 
-        if ($deleted) {
-            $this->storage->delete($storagePath);
+        if ($result['deleted'] && $result['storage_path'] !== null) {
+            $this->storage->delete($result['storage_path']);
         }
 
-        return $deleted;
+        return $result['deleted'];
     }
 }
