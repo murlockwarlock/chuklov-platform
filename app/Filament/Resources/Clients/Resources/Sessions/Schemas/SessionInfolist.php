@@ -104,6 +104,11 @@ final class SessionInfolist
                     ->visible(fn (MedicalSession $record, Section $section): bool => self::hasPains($record, $section)),
                 Section::make(__('Тесты и причины нарушений'))
                     ->schema([
+                        TextEntry::make('test_counters')
+                            ->label(__('Нарушения по тестам'))
+                            ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::testCounters($record, $entry))
+                            ->placeholder(__('Тесты пока не заполнены'))
+                            ->columnSpanFull(),
                         RepeatableEntry::make('test_results')
                             ->label(__('Проведённые тесты'))
                             ->schema([
@@ -286,6 +291,22 @@ final class SessionInfolist
         $data = self::sessionData($record, $component);
 
         return $data instanceof MedicalSessionData && ($data->testResults !== [] || $data->rootCauses !== []);
+    }
+
+    private static function testCounters(MedicalSession $record, Component $component): ?string
+    {
+        $data = self::sessionData($record, $component);
+        if (! $data instanceof MedicalSessionData || $data->testResults === []) {
+            return null;
+        }
+
+        $before = count(array_filter($data->testResults, static fn ($test): bool => $test->beforeAbnormal));
+        $after = count(array_filter($data->testResults, static fn ($test): bool => $test->afterAbnormal));
+
+        return __('До: :before · После: :after', [
+            'before' => $before,
+            'after' => $after,
+        ]);
     }
 
     /** @return list<array<string, mixed>> */

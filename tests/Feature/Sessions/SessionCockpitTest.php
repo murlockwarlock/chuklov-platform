@@ -36,6 +36,8 @@ use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\ListClientSessions;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
+use App\Modules\Sessions\Domain\Models\MedicalTestValue;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
@@ -445,6 +447,57 @@ final class SessionCockpitTest extends TestCase
             ->assertSee('Утро, Вечер')
             ->assertSee('6/10')
             ->assertSee('2/10');
+    }
+
+    public function test_filament_detail_page_shows_before_and_after_abnormal_test_counters(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'synthetic_posture_test',
+            'name' => 'Синтетический тест осанки',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $abnormal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'abnormal',
+            'label' => 'Отклонение',
+            'is_abnormal' => true,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $normal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'normal',
+            'label' => 'Норма',
+            'is_abnormal' => false,
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+
+        $result = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-08-16 10:00:00', 'UTC'),
+            testResults: [[
+                'test_id' => $test->getKey(),
+                'before_value_id' => $abnormal->getKey(),
+                'after_value_id' => $normal->getKey(),
+            ]],
+        ));
+        $session = MedicalSession::query()->whereKey($result->id)->firstOrFail();
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Нарушения по тестам')
+            ->assertSee('До: 1 · После: 0');
     }
 
     public function test_filament_session_cockpit_shows_reviewed_clinical_summary_and_canonical_workspace_link(): void
