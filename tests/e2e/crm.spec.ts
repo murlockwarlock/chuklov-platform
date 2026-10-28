@@ -2739,6 +2739,11 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     const saveCatalogButton = page.getByRole('button', { name: 'Сохранить каталог', exact: true });
     await saveCatalogButton.click();
     await page.waitForTimeout(3_000);
+    const valueInputsBeforeSave = await page.getByLabel('Название значения*', { exact: true }).evaluateAll((elements) => elements.map((element) => ({
+        value: (element as HTMLInputElement).value,
+        visible: Boolean((element as HTMLElement).offsetParent),
+        id: element.id,
+    })));
     const invalidFields = await page.locator('[aria-invalid="true"]').evaluateAll((elements) => elements.map((element) => ({
         tag: element.tagName,
         ariaLabel: element.getAttribute('aria-label'),
@@ -2765,7 +2770,7 @@ test('staff can maintain the clinical test catalog and use it in a new session',
             }];
         }),
     }));
-    throw new Error(`CATALOG_SAVE_DEBUG ${JSON.stringify({ livewireRequests, invalidFields, formMetadata })}`);
+    throw new Error(`CATALOG_SAVE_DEBUG ${JSON.stringify({ livewireRequests, valueInputsBeforeSave, invalidFields, formMetadata })}`);
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
 
     await page.reload();
