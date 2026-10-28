@@ -2719,7 +2719,10 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.goto('/admin/medical-clinical-catalog-configuration');
     await expect(page.getByRole('heading', { name: 'Тесты и причины нарушений', exact: true })).toBeVisible();
 
+    const testNameInputs = page.getByLabel('Название теста*', { exact: true });
+    const existingTestCount = await testNameInputs.count();
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
+    await expect(testNameInputs).toHaveCount(existingTestCount + 1, { timeout: 15_000 });
     const testNameInput = page.getByLabel('Название теста*', { exact: true }).last();
     await expect(testNameInput).toBeVisible();
     await testNameInput.fill(testName);
@@ -2733,7 +2736,7 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await expect(addValueButton).toBeVisible();
     await addValueButton.click();
     const valueLabels = configuredTestItem.getByLabel('Название значения*', { exact: true });
-    await expect(valueLabels).toHaveCount(2);
+    await expect(valueLabels).toHaveCount(2, { timeout: 15_000 });
     await valueLabels.first().fill('Норма');
     await valueLabels.first().press('Tab');
     await valueLabels.last().fill('Отклонение');
@@ -2751,7 +2754,10 @@ test('staff can maintain the clinical test catalog and use it in a new session',
         }
     }
 
+    const causeNameInputs = page.getByLabel('Название причины*', { exact: true });
+    const existingCauseCount = await causeNameInputs.count();
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
+    await expect(causeNameInputs).toHaveCount(existingCauseCount + 1, { timeout: 15_000 });
     const causeNameInput = page.getByLabel('Название причины*', { exact: true }).last();
     await causeNameInput.fill(causeName);
     await causeNameInput.press('Tab');
