@@ -2401,7 +2401,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(attachmentsTable.getByRole('row').filter({ hasText: /ux-[a-e]-report\.pdf/ })).toHaveCount(5);
 });
 
-test('staff can manage private client audio recordings', async ({ page }) => {
+test('staff can manage private client audio recordings', async ({ page, request }) => {
     test.setTimeout(90_000);
     const fixture = createCrmFixture();
 
@@ -2446,6 +2446,13 @@ test('staff can manage private client audio recordings', async ({ page }) => {
     expect(playbackSource).toMatch(/\/admin\/attachments\//);
     await playbackDialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
 
+    if (playbackSource === null) {
+        throw new Error('The authorized audio preview did not expose a private URL.');
+    }
+
+    const unauthorizedResponse = await request.get(playbackSource, { maxRedirects: 0, timeout: 10_000 });
+    expect([302, 401, 403]).toContain(unauthorizedResponse.status());
+
     const downloadResponseMatcher = (response: { status(): number; url(): string }): boolean => {
         const url = new URL(response.url());
 
@@ -2489,15 +2496,6 @@ test('staff can manage private client audio recordings', async ({ page }) => {
     await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
     await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA' })).toHaveCount(0);
 
-    if (playbackSource === null) {
-        throw new Error('The authorized audio preview did not expose a private URL.');
-    }
-    await page.context().clearCookies();
-    const unauthorizedResponse = await page.request.get(
-        test.info().project.name === 'desktop' ? playbackSource : '/admin',
-        { maxRedirects: 0, timeout: 10_000 },
-    );
-    expect([302, 401, 403]).toContain(unauthorizedResponse.status());
 });
 
 test('staff can complete the clinical AI workflow from the client cockpit', async ({ page }) => {
