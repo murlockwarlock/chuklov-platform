@@ -55,10 +55,14 @@ final readonly class SaveTrackerGoalCatalog
                     ...$tag,
                 ])->save();
             }
-            TrackerGoalTag::query()
+            $inactiveTags = TrackerGoalTag::query()
                 ->where('organization_id', $organization->getKey())
                 ->when($names !== [], fn ($query) => $query->whereNotIn('name', array_keys($names)))
-                ->update(['is_active' => false]);
+                ->lockForUpdate()
+                ->get();
+            foreach ($inactiveTags as $inactiveTag) {
+                $inactiveTag->forceFill(['is_active' => false])->save();
+            }
             $this->audit->handle(
                 organization: $organization,
                 actor: $actor,

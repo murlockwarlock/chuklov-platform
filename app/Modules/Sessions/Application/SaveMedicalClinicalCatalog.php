@@ -23,9 +23,11 @@ final readonly class SaveMedicalClinicalCatalog
         private RecordAuditEvent $audit,
     ) {}
 
-    /** @param array<int, mixed> $tests */
-    /** @param array<int, mixed> $causes */
-    /** @param array<int, mixed> $problemTags */
+    /**
+     * @param  array<int, mixed>  $tests
+     * @param  array<int, mixed>  $causes
+     * @param  array<int, mixed>|null  $problemTags
+     */
     public function handle(User $actor, array $tests, array $causes, ?array $problemTags = null): void
     {
         $organization = $this->context->organization();
@@ -113,7 +115,14 @@ final readonly class SaveMedicalClinicalCatalog
                     $model->save();
                     $tagNames[] = $tag['name'];
                 }
-                MedicalProblemTag::query()->where('organization_id', $organizationId)->when($tagNames !== [], fn ($query) => $query->whereNotIn('name', $tagNames))->update(['is_active' => false]);
+                $inactiveTags = MedicalProblemTag::query()
+                    ->where('organization_id', $organizationId)
+                    ->when($tagNames !== [], fn ($query) => $query->whereNotIn('name', $tagNames))
+                    ->lockForUpdate()
+                    ->get();
+                foreach ($inactiveTags as $inactiveTag) {
+                    $inactiveTag->forceFill(['is_active' => false])->save();
+                }
             }
 
             $this->audit->handle(
@@ -131,7 +140,10 @@ final readonly class SaveMedicalClinicalCatalog
         });
     }
 
-    /** @return list<array{key:string,name:string,section:?string,is_active:bool,sort_order:int,values:list<array{key:string,label:string,is_abnormal:bool,is_active:bool,sort_order:int}>}> */
+    /**
+     * @param  array<int, mixed>  $tests
+     * @return list<array{key:string,name:string,section:?string,is_active:bool,sort_order:int,values:list<array{key:string,label:string,is_abnormal:bool,is_active:bool,sort_order:int}>}>
+     */
     private function normalizeTests(array $tests): array
     {
         $normalized = [];
@@ -178,7 +190,10 @@ final readonly class SaveMedicalClinicalCatalog
         return $normalized;
     }
 
-    /** @return list<array{name:string,group_name:?string,is_active:bool,sort_order:int}> */
+    /**
+     * @param  array<int, mixed>  $causes
+     * @return list<array{name:string,group_name:?string,is_active:bool,sort_order:int}>
+     */
     private function normalizeCauses(array $causes): array
     {
         $normalized = [];
@@ -198,7 +213,10 @@ final readonly class SaveMedicalClinicalCatalog
         return $normalized;
     }
 
-    /** @return list<array{name:string,group_name:?string,is_active:bool,sort_order:int}> */
+    /**
+     * @param  array<int, mixed>  $tags
+     * @return list<array{name:string,group_name:?string,is_active:bool,sort_order:int}>
+     */
     private function normalizeProblemTags(array $tags): array
     {
         $normalized = [];

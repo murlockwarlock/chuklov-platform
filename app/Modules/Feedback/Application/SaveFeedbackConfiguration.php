@@ -21,8 +21,10 @@ final class SaveFeedbackConfiguration
         private readonly RecordAuditEvent $audit,
     ) {}
 
-    /** @param array<array-key, mixed> $reviewDestinations */
-    /** @param array<array-key, mixed>|null $feedbackThemes */
+    /**
+     * @param  array<array-key, mixed>  $reviewDestinations
+     * @param  array<array-key, mixed>|null  $feedbackThemes
+     */
     public function handle(
         User $actor,
         bool $enabled,
@@ -93,10 +95,14 @@ final class SaveFeedbackConfiguration
                     ])->save();
                     $themeNames[] = $theme['name'];
                 }
-                FeedbackTheme::query()
+                $inactiveThemes = FeedbackTheme::query()
                     ->where('organization_id', $organization->getKey())
                     ->when($themeNames !== [], fn ($query) => $query->whereNotIn('name', $themeNames))
-                    ->update(['is_active' => false]);
+                    ->lockForUpdate()
+                    ->get();
+                foreach ($inactiveThemes as $inactiveTheme) {
+                    $inactiveTheme->forceFill(['is_active' => false])->save();
+                }
             }
             $this->audit->handle(
                 organization: $organization,

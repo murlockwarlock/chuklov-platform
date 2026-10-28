@@ -15,6 +15,7 @@ use App\Modules\Analytics\Application\AcceptAnalyticsClassification;
 use App\Modules\Analytics\Application\SuggestAnalyticsTags;
 use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
 use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
+use App\Modules\Feedback\Application\SaveFeedbackConfiguration;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Feedback\Domain\Models\FeedbackTheme;
 use App\Modules\Identity\Domain\Models\Client;
@@ -456,6 +457,56 @@ final class AnalyticsAiClassificationTest extends TestCase
         $task->forceFill(['title' => 'Практика дыхания'])->save();
 
         self::assertSame(ClassificationRunStatus::Stale, $taskRun->refresh()->status);
+    }
+
+    public function test_owner_deactivation_of_feedback_theme_invalidates_pending_suggestions(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $submission = new FeedbackSubmission;
+        $submission->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'score' => 2,
+            'internal_feedback' => 'Нужна более понятная программа.',
+            'source' => 'crm',
+            'idempotency_key' => 'theme-deactivation',
+            'request_hash' => hash('sha256', 'theme-deactivation'),
+            'submitted_at' => now(),
+        ])->save();
+        $theme = new FeedbackTheme;
+        $theme->forceFill([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Программа',
+            'group_name' => 'Сервис',
+            'is_active' => true,
+            'sort_order' => 1,
+        ])->save();
+        $run = new AnalyticsClassificationRun;
+        $run->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'taxonomy' => 'feedback',
+            'source_type' => 'feedback_submission',
+            'source_id' => $submission->getKey(),
+            'source_digest' => hash('sha256', 'theme-deactivation-run'),
+            'status' => ClassificationRunStatus::NeedsReview,
+            'attempt_count' => 1,
+            'suggestions' => [['id' => $theme->getKey(), 'label' => 'Сервис: Программа']],
+        ])->save();
+
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 9,
+            lowScoreFeedbackRequired: false,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+            feedbackThemes: [],
+        );
+
+        self::assertFalse((bool) $theme->refresh()->is_active);
+        self::assertSame(ClassificationRunStatus::Stale, $run->refresh()->status);
     }
 
     /** @return array{0: Organization, 1: User} */
