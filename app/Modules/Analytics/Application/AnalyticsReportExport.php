@@ -91,6 +91,12 @@ final readonly class AnalyticsReportExport
             }
         }
 
+        if (isset($results['segments']) && is_array($results['segments'])) {
+            foreach ((array) ($results['segments']['segments'] ?? []) as $segment) {
+                $sheet->fromArray([['Категории клиентов', (string) ($segment['label'] ?? '—'), (int) ($segment['count'] ?? 0), null, null, $segment['percent'] ?? null, null]], null, 'A'.$row++);
+            }
+        }
+
         foreach (['scheduling' => 'Записи и визиты', 'finance' => 'Финансы'] as $key => $label) {
             if (! isset($results[$key]) || ! is_array($results[$key])) {
                 continue;

@@ -85,7 +85,7 @@ final class AnalyticsDashboardWidgetTest extends TestCase
             ->test(AnalyticsConsole::class)
             ->assertSuccessful()
             ->fillForm([
-                'dimensions' => ['pain', 'acquisition', 'scheduling'],
+                'dimensions' => ['pain', 'acquisition', 'scheduling', 'segments'],
                 'period' => DashboardPeriod::Today,
             ])
             ->call('analyze')
@@ -95,7 +95,8 @@ final class AnalyticsDashboardWidgetTest extends TestCase
         self::assertArrayHasKey('pain', $component->instance()->results);
         self::assertArrayHasKey('acquisition', $component->instance()->results);
         self::assertArrayHasKey('scheduling', $component->instance()->results);
-        self::assertSame(['pain', 'acquisition', 'scheduling'], $component->instance()->data['dimensions']);
+        self::assertArrayHasKey('segments', $component->instance()->results);
+        self::assertSame(['pain', 'acquisition', 'scheduling', 'segments'], $component->instance()->data['dimensions']);
     }
 
     public function test_analytics_console_applies_the_selected_client_to_each_requested_dimension(): void

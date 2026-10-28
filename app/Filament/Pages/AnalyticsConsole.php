@@ -7,6 +7,7 @@ use App\Models\User;
 use App\Modules\Analytics\Application\AcquisitionAnalytics;
 use App\Modules\Analytics\Application\AnalyticsReportExport;
 use App\Modules\Analytics\Application\BookingStatusAnalytics;
+use App\Modules\Analytics\Application\ClientSegmentAnalytics;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\DemographicsAnalytics;
 use App\Modules\Analytics\Application\FeedbackAnalytics;
@@ -108,6 +109,7 @@ final class AnalyticsConsole extends LocalizedPage
                                 'services' => __('Услуги и визиты'),
                                 'purchases' => __('Типы покупок'),
                                 'booking_statuses' => __('Статусы записей'),
+                                'segments' => __('Категории клиентов'),
                             ])
                             ->multiple()
                             ->searchable()
@@ -198,6 +200,7 @@ final class AnalyticsConsole extends LocalizedPage
                     'services' => $this->services($actor, $period, $client),
                     'purchases' => $this->purchases($actor, $period, $client),
                     'booking_statuses' => $this->bookingStatuses($actor, $period, $client),
+                    'segments' => app(ClientSegmentAnalytics::class)->handle($actor, $client),
                     default => null,
                 };
             } catch (Throwable) {
@@ -231,6 +234,7 @@ final class AnalyticsConsole extends LocalizedPage
                     'services' => $this->services($actor, $period, $client),
                     'purchases' => $this->purchases($actor, $period, $client),
                     'booking_statuses' => $this->bookingStatuses($actor, $period, $client),
+                    'segments' => app(ClientSegmentAnalytics::class)->handle($actor, $client),
                     default => null,
                 };
             } catch (Throwable) {

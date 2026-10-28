@@ -241,6 +241,23 @@
                     </ul>
                 </section>
             @endif
+
+            @if (isset($results['segments']))
+                <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-gray-900">
+                    <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Категории клиентов') }}</h2>
+                    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ __('Клиентов: :count', ['count' => $results['segments']['client_count']]) }}</p>
+                    <ul class="mt-4 space-y-2 text-sm">
+                        @foreach ($results['segments']['segments'] as $segment)
+                            <li class="space-y-1">
+                                <div class="flex justify-between gap-3"><span class="min-w-0 break-words">{{ $segment['label'] }}</span><span>{{ $segment['count'] }} · {{ $segment['percent'] }}%</span></div>
+                                <div class="h-2 rounded-full bg-gray-100 dark:bg-white/10" role="img" aria-label="{{ __('Доля категории :category', ['category' => $segment['label']]) }}">
+                                    <div class="h-2 rounded-full bg-primary-600" style="width: {{ min(100, max(0, $segment['percent'])) }}%"></div>
+                                </div>
+                            </li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endif
         </div>
     @endif
 </x-filament-panels::page>
