@@ -2735,7 +2735,15 @@ test('staff can maintain the clinical test catalog and use it in a new session',
             console.log(`E2E_LIVEWIRE ${request.url()} ${(request.postData() ?? '').slice(0, 500)}`);
         }
     });
-    await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
+    const saveCatalogButton = page.getByRole('button', { name: 'Сохранить каталог', exact: true });
+    const saveCatalogMetadata = await saveCatalogButton.evaluate((element) => ({
+        outerHTML: element.outerHTML,
+        formId: element.getAttribute('form'),
+        closestFormId: element.closest('form')?.id ?? null,
+        disabled: (element as HTMLButtonElement).disabled,
+    }));
+    throw new Error(`CATALOG_SAVE_BUTTON ${JSON.stringify(saveCatalogMetadata)}`);
+    await saveCatalogButton.click();
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
 
     await page.reload();
