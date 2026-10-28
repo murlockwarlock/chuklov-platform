@@ -2736,7 +2736,15 @@ test('staff can maintain the clinical test catalog and use it in a new session',
         return response.request().method() === 'POST' && response.url().includes('/livewire') && !postData.includes('"method":"$refresh"');
     }, { timeout: 15_000 });
     await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
-    const catalogSaveResponse = await catalogSaveResponsePromise;
+    const catalogSaveResponse = await catalogSaveResponsePromise.catch(async () => {
+        const formMetadata = await page.locator('#medical-clinical-catalog-form').evaluate((element) => ({
+            checkValidity: (element as HTMLFormElement).checkValidity(),
+            closestWireId: element.closest('[wire\\:id]')?.getAttribute('wire:id') ?? null,
+            closestWireName: element.closest('[wire\\:name]')?.getAttribute('wire:name') ?? null,
+            livewirePresent: Boolean((window as Window & { Livewire?: unknown }).Livewire),
+        }));
+        throw new Error(`CATALOG_SAVE_NO_RESPONSE ${JSON.stringify(formMetadata)}`);
+    });
     const catalogSaveResponseBody = await catalogSaveResponse.text();
     const catalogSaveRequestBody = catalogSaveResponse.request().postData() ?? '';
     const catalogSaveResponseJson = JSON.parse(catalogSaveResponseBody) as { components?: Array<{ snapshot?: string; effects?: { returns?: unknown[] } }> };
