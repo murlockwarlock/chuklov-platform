@@ -98,14 +98,21 @@ final readonly class SuggestAnalyticsTags
                 return $this->fail($run, $result->isSuccess() ? 'invalid_output' : 'ai_failed', $result->errorMessageSanitized);
             }
 
-            $run->forceFill([
-                'status' => ClassificationRunStatus::NeedsReview,
-                'ai_run_id' => $result->runId,
-                'suggestions' => $suggestions,
-                'error_code' => null,
-                'error_message_sanitized' => null,
-                'updated_at' => now(),
-            ])->save();
+            $updated = AnalyticsClassificationRun::query()
+                ->whereKey($run->getKey())
+                ->where('status', ClassificationRunStatus::Processing->value)
+                ->where('source_digest', $run->source_digest)
+                ->update([
+                    'status' => ClassificationRunStatus::NeedsReview->value,
+                    'ai_run_id' => $result->runId,
+                    'suggestions' => $suggestions,
+                    'error_code' => null,
+                    'error_message_sanitized' => null,
+                    'updated_at' => now(),
+                ]);
+            if ($updated === 0) {
+                return $this->result($run->refresh());
+            }
             $this->audit->handle($organization, $actor, 'analytics.classification.suggested', $run::class, (string) $run->getKey(), [
                 'taxonomy' => $taxonomy,
                 'source_type' => $sourceType,
@@ -233,12 +240,19 @@ final readonly class SuggestAnalyticsTags
 
     private function fail(AnalyticsClassificationRun $run, string $code, ?string $message): ClassificationResultData
     {
-        $run->forceFill([
-            'status' => ClassificationRunStatus::Failed,
-            'error_code' => $code,
-            'error_message_sanitized' => $message !== null ? mb_substr($message, 0, 500) : null,
-            'updated_at' => now(),
-        ])->save();
+        $updated = AnalyticsClassificationRun::query()
+            ->whereKey($run->getKey())
+            ->where('status', ClassificationRunStatus::Processing->value)
+            ->where('source_digest', $run->source_digest)
+            ->update([
+                'status' => ClassificationRunStatus::Failed->value,
+                'error_code' => $code,
+                'error_message_sanitized' => $message !== null ? mb_substr($message, 0, 500) : null,
+                'updated_at' => now(),
+            ]);
+        if ($updated === 0) {
+            return $this->result($run->refresh());
+        }
 
         return $this->result($run->refresh());
     }

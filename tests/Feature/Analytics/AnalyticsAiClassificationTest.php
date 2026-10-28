@@ -217,6 +217,79 @@ final class AnalyticsAiClassificationTest extends TestCase
         self::assertSame(1, $calls);
     }
 
+    public function test_source_change_during_ai_execution_cannot_publish_old_suggestions(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $submission = new FeedbackSubmission;
+        $submission->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'score' => 4,
+            'internal_feedback' => 'Исходный текст.',
+            'source' => 'crm',
+            'idempotency_key' => 'source-change-during-run',
+            'request_hash' => hash('sha256', 'source-change-during-run'),
+            'submitted_at' => now(),
+        ])->save();
+        $theme = new FeedbackTheme;
+        $theme->forceFill([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Сервис',
+            'group_name' => null,
+            'is_active' => true,
+            'sort_order' => 1,
+        ])->save();
+        $this->activePrompt($organization);
+        $this->app->instance(AiWorkflowEngine::class, new class($submission) implements AiWorkflowEngine
+        {
+            public function __construct(private FeedbackSubmission $submission) {}
+
+            public function run(int $organizationId, AiRunRequest $request): AiRunResult
+            {
+                $this->submission->forceFill(['internal_feedback' => 'Обновлённый текст.'])->save();
+                $aiRun = new AiRun;
+                $aiRun->forceFill([
+                    'organization_id' => $organizationId,
+                    'capability' => $request->capability,
+                    'workflow_key' => $request->workflowKey,
+                    'origin' => $request->origin,
+                    'initiated_by_user_id' => $request->initiatedByUserId,
+                    'client_id' => $request->clientId,
+                    'status' => AiRunStatus::Succeeded,
+                    'execution_mode' => $request->executionMode,
+                    'prompt_version_id' => $request->promptVersionId,
+                    'idempotency_key' => $request->idempotencyKey,
+                ])->save();
+
+                return new AiRunResult(
+                    runId: (int) $aiRun->getKey(),
+                    status: AiRunStatus::Succeeded,
+                    outputPayload: ['tags' => ['Сервис']],
+                );
+            }
+
+            public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+            {
+                throw new \LogicException('Not used in classification test.');
+            }
+        });
+        app(OrganizationContext::class)->set($organization);
+
+        $result = app(SuggestAnalyticsTags::class)->handle(
+            actor: $admin,
+            taxonomy: 'feedback',
+            sourceType: 'feedback_submission',
+            sourceId: (int) $submission->getKey(),
+            clientId: (int) $client->getKey(),
+            sourceText: 'Исходный текст.',
+            availableTags: [['id' => (int) $theme->getKey(), 'label' => 'Сервис']],
+        );
+
+        self::assertSame(ClassificationRunStatus::Stale, $result->status);
+        self::assertSame([], $result->suggestions);
+    }
+
     public function test_goal_suggestions_are_reviewed_and_applied_to_the_tenant_task(): void
     {
         [$organization, $admin] = $this->fixture();
@@ -334,7 +407,7 @@ final class AnalyticsAiClassificationTest extends TestCase
         self::assertSame([(int) $tag->getKey()], $pain->refresh()->problemTags()->pluck('medical_problem_tags.id')->all());
     }
 
-    public function test_source_and_taxonomy_changes_invalidate_reviewed_suggestions_without_touching_processing_runs(): void
+    public function test_source_and_taxonomy_changes_invalidate_all_previous_suggestions_without_losing_confirmed_data(): void
     {
         [$organization] = $this->fixture();
         $client = Client::factory()->forOrganization($organization)->create();
@@ -389,7 +462,7 @@ final class AnalyticsAiClassificationTest extends TestCase
         ])->save();
         $submission->forceFill(['internal_feedback' => 'Нужно больше сна и отдыха.'])->save();
 
-        self::assertSame(ClassificationRunStatus::Processing, $processing->refresh()->status);
+        self::assertSame(ClassificationRunStatus::Stale, $processing->refresh()->status);
 
         $taxonomyRun = new AnalyticsClassificationRun;
         $taxonomyRun->forceFill([
@@ -404,7 +477,7 @@ final class AnalyticsAiClassificationTest extends TestCase
         ])->save();
         $theme->forceFill(['group_name' => 'Сервис'])->save();
 
-        self::assertSame(ClassificationRunStatus::Processing, $processing->refresh()->status);
+        self::assertSame(ClassificationRunStatus::Stale, $processing->refresh()->status);
         self::assertSame(ClassificationRunStatus::Stale, $taxonomyRun->refresh()->status);
     }
 

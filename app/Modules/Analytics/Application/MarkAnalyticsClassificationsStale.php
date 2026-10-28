@@ -18,10 +18,7 @@ final class MarkAnalyticsClassificationsStale
             ->where('organization_id', $organizationId)
             ->where('source_type', trim($sourceType))
             ->where('source_id', $sourceId)
-            ->whereNotIn('status', [
-                ClassificationRunStatus::Processing->value,
-                ClassificationRunStatus::Stale->value,
-            ])
+            ->where('status', '!=', ClassificationRunStatus::Stale->value)
             ->update($this->stalePayload());
     }
 
@@ -41,10 +38,7 @@ final class MarkAnalyticsClassificationsStale
         return AnalyticsClassificationRun::query()
             ->where('organization_id', $organizationId)
             ->whereIn('taxonomy', array_values(array_unique($taxonomies)))
-            ->whereNotIn('status', [
-                ClassificationRunStatus::Processing->value,
-                ClassificationRunStatus::Stale->value,
-            ])
+            ->where('status', '!=', ClassificationRunStatus::Stale->value)
             ->update($this->stalePayload());
     }
 
