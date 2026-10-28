@@ -7,6 +7,7 @@ use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Feedback\Domain\Models\FeedbackTheme;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
+use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
 use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Illuminate\Database\Eloquent\Model;
@@ -23,6 +24,10 @@ final class AnalyticsClassificationSourceObserver
     public function updated(Model $model): void
     {
         if ($model instanceof MedicalProfilePain && ! $model->wasChanged('name')) {
+            return;
+        }
+
+        if ($model instanceof MedicalSessionPain && ! $model->wasChanged('name')) {
             return;
         }
 
@@ -51,6 +56,12 @@ final class AnalyticsClassificationSourceObserver
 
         if ($model instanceof MedicalProfilePain) {
             $this->stale->forSource($organizationId, 'medical_profile_pain', (int) $model->getKey());
+
+            return;
+        }
+
+        if ($model instanceof MedicalSessionPain) {
+            $this->stale->forSource($organizationId, 'medical_session_pain', (int) $model->getKey());
 
             return;
         }

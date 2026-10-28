@@ -13,6 +13,7 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
+use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use App\Modules\Tracker\Application\TrackerGoalTagCatalog;
 use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Illuminate\Support\Facades\DB;
@@ -56,6 +57,8 @@ final readonly class AcceptAnalyticsClassification
                 $selectedIds = $this->acceptGoalTags($run, (int) $organization->getKey(), $themeIds);
             } elseif ($run->taxonomy === 'complaints' && $run->source_type === 'medical_profile_pain') {
                 $selectedIds = $this->acceptProblemTags($run, (int) $organization->getKey(), $themeIds);
+            } elseif ($run->taxonomy === 'complaints' && $run->source_type === 'medical_session_pain') {
+                $selectedIds = $this->acceptSessionProblemTags($run, (int) $organization->getKey(), $themeIds);
             } else {
                 throw ValidationException::withMessages([
                     'classification' => 'Этот тип классификации нельзя принять в CRM.',
@@ -153,6 +156,35 @@ final readonly class AcceptAnalyticsClassification
         if ($run->client_id !== null && (int) $run->client_id !== (int) $pain->client_id) {
             throw ValidationException::withMessages([
                 'classification' => 'Боль не принадлежит указанному клиенту.',
+            ]);
+        }
+        $suggestedIds = $this->suggestedIds($run->suggestions);
+        $selectedIds = $themeIds === null ? $suggestedIds : $themeIds;
+        $preservedIds = $pain->problemTags()->pluck('medical_problem_tags.id')->all();
+        $selectedIds = $this->problemTags->assertKnown($organizationId, $selectedIds, $preservedIds);
+
+        $pain->problemTags()->syncWithPivotValues($selectedIds, [
+            'organization_id' => $organizationId,
+            'client_id' => $pain->client_id,
+        ]);
+
+        return $selectedIds;
+    }
+
+    /**
+     * @param  array<int, mixed>|null  $themeIds
+     * @return list<int>
+     */
+    private function acceptSessionProblemTags(AnalyticsClassificationRun $run, int $organizationId, ?array $themeIds): array
+    {
+        $pain = MedicalSessionPain::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($run->source_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+        if ($run->client_id !== null && (int) $run->client_id !== (int) $pain->client_id) {
+            throw ValidationException::withMessages([
+                'classification' => 'Боль сеанса не принадлежит указанному клиенту.',
             ]);
         }
         $suggestedIds = $this->suggestedIds($run->suggestions);

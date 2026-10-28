@@ -7,7 +7,12 @@ use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\SessionForm;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
+use App\Modules\Analytics\Application\AcceptAnalyticsClassification;
+use App\Modules\Analytics\Application\SuggestAnalyticsTags;
+use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
+use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\DTOs\MedicalPainData;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -19,6 +24,7 @@ use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\Hidden;
@@ -63,6 +69,8 @@ class EditMedicalSession extends LocalizedEditRecord
                     $this->form->fill($this->data);
                     Notification::make()->title(__('Результат заполнен'))->success()->send();
                 }),
+            $this->suggestSessionPainTagsAction(),
+            $this->acceptSessionPainTagsAction(),
         ];
     }
 
@@ -302,6 +310,178 @@ class EditMedicalSession extends LocalizedEditRecord
         }
 
         return $parent;
+    }
+
+    private function suggestSessionPainTagsAction(): Action
+    {
+        return Action::make('suggestSessionPainTags')
+            ->label(__('Предложить категории боли с ИИ'))
+            ->icon('heroicon-o-sparkles')
+            ->schema([
+                Select::make('pain_id')
+                    ->label(__('Боль сеанса'))
+                    ->options(fn (): array => $this->sessionPainOptions())
+                    ->searchable()
+                    ->preload()
+                    ->required(),
+            ])
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()))
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()))
+            ->action(function (array $data): void {
+                $pain = $this->sessionPain((int) ($data['pain_id'] ?? 0));
+                $sourceText = $this->sessionPainName($pain);
+                if ($sourceText === null) {
+                    Notification::make()->warning()->title(__('Не удалось прочитать боль'))->send();
+
+                    return;
+                }
+
+                $options = app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id());
+                $result = app(SuggestAnalyticsTags::class)->handle(
+                    actor: $this->actor(),
+                    taxonomy: 'complaints',
+                    sourceType: 'medical_session_pain',
+                    sourceId: (int) $pain->getKey(),
+                    clientId: (int) $pain->client_id,
+                    sourceText: $sourceText,
+                    availableTags: array_map(
+                        static fn (int|string $id, string $label): array => ['id' => (int) $id, 'label' => $label],
+                        array_keys($options),
+                        array_values($options),
+                    ),
+                    force: true,
+                );
+                $labels = collect($result->suggestions)->pluck('label')->implode(', ');
+                if ($labels !== '') {
+                    Notification::make()->success()->title(__('Предложения категорий готовы'))->body($labels)->send();
+
+                    return;
+                }
+
+                Notification::make()->warning()->title(__('Предложения категорий недоступны'))->body(__('Настройте prompt классификатора или добавьте категории проблем.'))->send();
+            });
+    }
+
+    private function acceptSessionPainTagsAction(): Action
+    {
+        return Action::make('acceptSessionPainTags')
+            ->label(__('Принять категории боли'))
+            ->icon('heroicon-o-check-circle')
+            ->schema([
+                Select::make('pain_id')
+                    ->label(__('Боль сеанса'))
+                    ->options(fn (): array => $this->sessionPainOptionsWithSuggestions())
+                    ->searchable()
+                    ->preload()
+                    ->live()
+                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                        $run = $this->latestSessionPainClassificationRun((int) $state);
+                        $set('tag_ids', $this->classificationSuggestionIds($run));
+                    })
+                    ->required(),
+                Select::make('tag_ids')
+                    ->label(__('Категории проблемы'))
+                    ->options(fn (Get $get): array => app(MedicalProblemTagCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (array) $get('tag_ids')))
+                    ->multiple()
+                    ->searchable()
+                    ->preload(),
+            ])
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->sessionPainWithSuggestionsExists())
+            ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()))
+            ->action(function (array $data): void {
+                $painId = (int) ($data['pain_id'] ?? 0);
+                $run = $this->latestSessionPainClassificationRun($painId);
+                abort_unless($run instanceof AnalyticsClassificationRun, 422);
+                app(AcceptAnalyticsClassification::class)->handle(
+                    actor: $this->actor(),
+                    runId: (int) $run->getKey(),
+                    themeIds: is_array($data['tag_ids'] ?? null) ? $data['tag_ids'] : [],
+                );
+                Notification::make()->success()->title(__('Категории боли сохранены'))->send();
+            });
+    }
+
+    /** @return array<int, string> */
+    private function sessionPainOptions(): array
+    {
+        $data = app(GetSession::class)->handle($this->actor(), $this->session(), $this->parentClient());
+
+        return collect($data === null ? [] : $data->pains)
+            ->mapWithKeys(static fn (MedicalPainData $pain): array => [(int) $pain->id => $pain->name])
+            ->all();
+    }
+
+    /** @return array<int, string> */
+    private function sessionPainOptionsWithSuggestions(): array
+    {
+        $painIds = AnalyticsClassificationRun::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('taxonomy', 'complaints')
+            ->where('source_type', 'medical_session_pain')
+            ->where('status', ClassificationRunStatus::NeedsReview)
+            ->pluck('source_id');
+
+        return collect($this->sessionPainOptions())
+            ->filter(static fn (string $name, int|string $id): bool => $painIds->contains((int) $id))
+            ->all();
+    }
+
+    private function sessionPainWithSuggestionsExists(): bool
+    {
+        return $this->sessionPainOptionsWithSuggestions() !== [];
+    }
+
+    private function sessionPain(int $painId): MedicalSessionPain
+    {
+        return MedicalSessionPain::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('client_id', $this->parentClient()->getKey())
+            ->where('medical_session_id', $this->session()->getKey())
+            ->whereKey($painId)
+            ->firstOrFail();
+    }
+
+    private function sessionPainName(MedicalSessionPain $pain): ?string
+    {
+        $painData = collect($this->sessionPainOptions())
+            ->get((int) $pain->getKey());
+
+        return is_string($painData) && trim($painData) !== '' ? $painData : null;
+    }
+
+    private function latestSessionPainClassificationRun(int $painId): ?AnalyticsClassificationRun
+    {
+        $this->sessionPain($painId);
+
+        return AnalyticsClassificationRun::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('taxonomy', 'complaints')
+            ->where('source_type', 'medical_session_pain')
+            ->where('source_id', $painId)
+            ->where('status', ClassificationRunStatus::NeedsReview)
+            ->latest('id')
+            ->first();
+    }
+
+    /** @return list<int> */
+    private function classificationSuggestionIds(?AnalyticsClassificationRun $run): array
+    {
+        if (! $run instanceof AnalyticsClassificationRun || ! is_array($run->suggestions)) {
+            return [];
+        }
+
+        return array_map(
+            static fn (mixed $id): int => (int) $id,
+            array_column($run->suggestions, 'id'),
+        );
+    }
+
+    private function session(): MedicalSession
+    {
+        $session = $this->getRecord();
+        abort_unless($session instanceof MedicalSession, 404);
+
+        return $session;
     }
 
     private static function scoreDisplay(mixed $value): string

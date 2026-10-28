@@ -107,6 +107,7 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Services\Infrastructure\Storage\FilesystemServiceMediaStorage;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
@@ -240,6 +241,7 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         MedicalProfilePain::observe(AnalyticsClassificationSourceObserver::class);
+        MedicalSessionPain::observe(AnalyticsClassificationSourceObserver::class);
         FeedbackSubmission::observe(AnalyticsClassificationSourceObserver::class);
         TrackerTask::observe(AnalyticsClassificationSourceObserver::class);
         MedicalProblemTag::observe(AnalyticsClassificationSourceObserver::class);

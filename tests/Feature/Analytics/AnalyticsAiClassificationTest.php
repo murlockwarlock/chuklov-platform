@@ -26,6 +26,10 @@ use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Sessions\Application\CreateSession;
+use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
+use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskFrequency;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskType;
 use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
@@ -407,6 +411,52 @@ final class AnalyticsAiClassificationTest extends TestCase
         self::assertSame([(int) $tag->getKey()], $pain->refresh()->problemTags()->pluck('medical_problem_tags.id')->all());
     }
 
+    public function test_complaint_classification_can_be_manually_corrected_on_a_session_pain(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::now(),
+            pains: [['name' => 'Плечо', 'before_score' => 6]],
+        ));
+        $pain = MedicalSessionPain::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('medical_session_id', $session->id)
+            ->sole();
+        $tag = new MedicalProblemTag;
+        $tag->forceFill([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Плечевой пояс',
+            'group_name' => 'Синтетика',
+            'is_active' => true,
+            'sort_order' => 1,
+        ])->save();
+        $run = new AnalyticsClassificationRun;
+        $run->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'taxonomy' => 'complaints',
+            'source_type' => 'medical_session_pain',
+            'source_id' => $pain->getKey(),
+            'source_digest' => hash('sha256', 'session-pain-classification'),
+            'status' => ClassificationRunStatus::NeedsReview,
+            'attempt_count' => 1,
+            'suggestions' => [['id' => $tag->getKey(), 'label' => 'Синтетика: Плечевой пояс']],
+        ])->save();
+        app(OrganizationContext::class)->set($organization);
+
+        $accepted = app(AcceptAnalyticsClassification::class)->handle(
+            actor: $admin,
+            runId: (int) $run->getKey(),
+            themeIds: [$tag->getKey()],
+        );
+
+        self::assertSame(ClassificationRunStatus::Succeeded, $accepted->status);
+        self::assertSame([(int) $tag->getKey()], $pain->refresh()->problemTags()->pluck('medical_problem_tags.id')->all());
+    }
+
     public function test_source_and_taxonomy_changes_invalidate_all_previous_suggestions_without_losing_confirmed_data(): void
     {
         [$organization] = $this->fixture();
@@ -530,6 +580,38 @@ final class AnalyticsAiClassificationTest extends TestCase
         $task->forceFill(['title' => 'Практика дыхания'])->save();
 
         self::assertSame(ClassificationRunStatus::Stale, $taskRun->refresh()->status);
+    }
+
+    public function test_session_pain_source_changes_invalidate_its_classification(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::now(),
+            pains: [['name' => 'Колено']],
+        ));
+        $pain = MedicalSessionPain::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('medical_session_id', $session->id)
+            ->sole();
+        $run = new AnalyticsClassificationRun;
+        $run->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'taxonomy' => 'complaints',
+            'source_type' => 'medical_session_pain',
+            'source_id' => $pain->getKey(),
+            'source_digest' => hash('sha256', 'session-pain-source'),
+            'status' => ClassificationRunStatus::NeedsReview,
+            'attempt_count' => 1,
+        ])->save();
+
+        $pain->forceFill(['name' => $pain->getRawOriginal('name').'changed'])->save();
+
+        self::assertSame(ClassificationRunStatus::Stale, $run->refresh()->status);
+        self::assertNull($run->suggestions);
     }
 
     public function test_owner_deactivation_of_feedback_theme_invalidates_pending_suggestions(): void
