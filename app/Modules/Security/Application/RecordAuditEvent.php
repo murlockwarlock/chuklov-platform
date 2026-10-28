@@ -172,6 +172,8 @@ class RecordAuditEvent
         'feedback.configuration.updated' => ['enabled', 'positive_threshold', 'low_score_feedback_required', 'review_url_ru_set', 'review_url_en_set', 'review_destinations_count', 'feedback_theme_count'],
         'feedback.submitted' => ['score', 'band', 'source', 'has_internal_feedback', 'theme_count'],
         'feedback.classification.updated' => ['theme_count'],
+        'analytics.classification.suggested' => ['taxonomy', 'source_type', 'tag_count'],
+        'analytics.classification.accepted' => ['taxonomy', 'source_type', 'tag_count'],
         'tracker.goal_catalog.updated' => ['tag_count'],
         'medical.profile.created' => ['source', 'key_version', 'updated_fields'],
         'medical.profile.updated' => ['source', 'key_version', 'updated_fields'],

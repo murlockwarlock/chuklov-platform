@@ -1,0 +1,211 @@
+<?php
+
+namespace Tests\Feature\Analytics;
+
+use App\Models\User;
+use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Application\Data\AiRunResult;
+use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
+use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Models\AiPrompt;
+use App\Modules\AI\Domain\Models\AiPromptVersion;
+use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\Analytics\Application\AcceptAnalyticsClassification;
+use App\Modules\Analytics\Application\SuggestAnalyticsTags;
+use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
+use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
+use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
+use App\Modules\Feedback\Domain\Models\FeedbackTheme;
+use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Models\Organization;
+use Carbon\CarbonImmutable;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+final class AnalyticsAiClassificationTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_ai_suggestions_are_schema_validated_persisted_and_idempotent(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $submission = new FeedbackSubmission;
+        $submission->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'score' => 4,
+            'internal_feedback' => 'После курса хотелось больше времени на восстановление.',
+            'source' => 'portal',
+            'idempotency_key' => 'classification-feedback',
+            'request_hash' => hash('sha256', 'classification-feedback'),
+            'submitted_at' => now(),
+        ])->save();
+        $theme = new FeedbackTheme;
+        $theme->forceFill([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Время восстановления',
+            'group_name' => 'Процесс',
+            'is_active' => true,
+            'sort_order' => 1,
+        ])->save();
+        $this->activePrompt($organization);
+        $calls = 0;
+        $this->app->instance(AiWorkflowEngine::class, new class($calls) implements AiWorkflowEngine
+        {
+            public function __construct(private int &$calls) {}
+
+            public function run(int $organizationId, AiRunRequest $request): AiRunResult
+            {
+                $this->calls++;
+                $aiRun = new AiRun;
+                $aiRun->forceFill([
+                    'organization_id' => $organizationId,
+                    'capability' => $request->capability,
+                    'workflow_key' => $request->workflowKey,
+                    'origin' => $request->origin,
+                    'initiated_by_user_id' => $request->initiatedByUserId,
+                    'client_id' => $request->clientId,
+                    'status' => AiRunStatus::Succeeded,
+                    'execution_mode' => $request->executionMode,
+                    'prompt_version_id' => $request->promptVersionId,
+                    'idempotency_key' => $request->idempotencyKey,
+                ])->save();
+
+                return new AiRunResult(
+                    runId: (int) $aiRun->getKey(),
+                    status: AiRunStatus::Succeeded,
+                    outputPayload: ['tags' => ['Процесс: Время восстановления']],
+                );
+            }
+
+            public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+            {
+                throw new \LogicException('Not used in classification test.');
+            }
+        });
+        app(OrganizationContext::class)->set($organization);
+
+        $run = app(SuggestAnalyticsTags::class)->handle(
+            actor: $admin,
+            taxonomy: 'feedback',
+            sourceType: 'feedback_submission',
+            sourceId: (int) $submission->getKey(),
+            clientId: (int) $client->getKey(),
+            sourceText: (string) $submission->internal_feedback,
+            availableTags: [['id' => (int) $theme->getKey(), 'label' => 'Процесс: Время восстановления']],
+        );
+
+        self::assertSame(ClassificationRunStatus::NeedsReview, $run->status);
+        self::assertSame([['id' => $theme->getKey(), 'label' => 'Процесс: Время восстановления']], $run->suggestions);
+        self::assertSame(1, $calls);
+
+        $accepted = app(AcceptAnalyticsClassification::class)->handle(
+            actor: $admin,
+            runId: $run->runId,
+            themeIds: [$theme->getKey()],
+        );
+
+        self::assertSame(ClassificationRunStatus::Succeeded, $accepted->status);
+        self::assertSame([$theme->getKey()], $submission->refresh()->themes()->pluck('feedback_themes.id')->all());
+
+        $replayed = app(SuggestAnalyticsTags::class)->handle(
+            actor: $admin,
+            taxonomy: 'feedback',
+            sourceType: 'feedback_submission',
+            sourceId: (int) $submission->getKey(),
+            clientId: (int) $client->getKey(),
+            sourceText: (string) $submission->internal_feedback,
+            availableTags: [['id' => (int) $theme->getKey(), 'label' => 'Процесс: Время восстановления']],
+        );
+
+        self::assertSame($run->runId, $replayed->runId);
+        self::assertSame(1, $calls);
+        self::assertSame(1, AnalyticsClassificationRun::query()->where('organization_id', $organization->getKey())->count());
+
+        $acceptedAgain = app(AcceptAnalyticsClassification::class)->handle(
+            actor: $admin,
+            runId: $run->runId,
+            themeIds: [$theme->getKey()],
+        );
+
+        self::assertSame(ClassificationRunStatus::Succeeded, $acceptedAgain->status);
+    }
+
+    public function test_invalid_ai_output_fails_without_assigning_tags_and_can_retry(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $this->activePrompt($organization);
+        $calls = 0;
+        $this->app->instance(AiWorkflowEngine::class, new class($calls) implements AiWorkflowEngine
+        {
+            public function __construct(private int &$calls) {}
+
+            public function run(int $organizationId, AiRunRequest $request): AiRunResult
+            {
+                $this->calls++;
+
+                return new AiRunResult(
+                    runId: 702,
+                    status: AiRunStatus::Succeeded,
+                    outputPayload: ['tags' => ['Неизвестная категория']],
+                );
+            }
+
+            public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+            {
+                throw new \LogicException('Not used in classification test.');
+            }
+        });
+        app(OrganizationContext::class)->set($organization);
+
+        $result = app(SuggestAnalyticsTags::class)->handle(
+            actor: $admin,
+            taxonomy: 'goals',
+            sourceType: 'tracker_task',
+            sourceId: 99,
+            clientId: null,
+            sourceText: 'Хочу легче двигаться.',
+            availableTags: [['id' => 1, 'label' => 'Подвижность']],
+        );
+
+        self::assertSame(ClassificationRunStatus::Failed, $result->status);
+        self::assertSame('invalid_output', $result->errorCode);
+        self::assertSame([], $result->suggestions);
+        self::assertSame(1, $calls);
+    }
+
+    /** @return array{0: Organization, 1: User} */
+    private function fixture(): array
+    {
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        app(OrganizationContext::class)->set($organization);
+
+        return [$organization, $admin];
+    }
+
+    private function activePrompt(Organization $organization): void
+    {
+        $prompt = AiPrompt::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'analytics_classification',
+            'name' => 'Классификация аналитики',
+            'capability' => AiCapability::GeneralAssistant,
+        ]);
+        $version = AiPromptVersion::query()->create([
+            'organization_id' => $organization->getKey(),
+            'prompt_id' => $prompt->getKey(),
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Return JSON tags from the configured taxonomy.',
+            'user_prompt_template' => '{{source_text}} {{allowed_tags}}',
+            'output_schema' => ['type' => 'object', 'properties' => ['tags' => ['type' => 'array']]],
+            'activated_at' => CarbonImmutable::now(),
+        ]);
+        $prompt->forceFill(['active_version_id' => $version->getKey()])->save();
+    }
+}

@@ -8,6 +8,10 @@ use App\Filament\Resources\FeedbackSubmissions\Pages\ViewFeedbackSubmission;
 use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\LocalizedResource;
 use App\Models\User;
+use App\Modules\Analytics\Application\AcceptAnalyticsClassification;
+use App\Modules\Analytics\Application\SuggestAnalyticsTags;
+use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
+use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
 use App\Modules\Feedback\Application\ClassifyFeedbackSubmission;
 use App\Modules\Feedback\Application\FeedbackThemeCatalog;
 use App\Modules\Feedback\Application\ListFeedbackSubmissionsForCrm;
@@ -20,6 +24,7 @@ use Filament\Actions\Action;
 use Filament\Actions\ViewAction;
 use Filament\Forms\Components\Select;
 use Filament\Infolists\Components\TextEntry;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -119,6 +124,99 @@ final class FeedbackSubmissionResource extends LocalizedResource
                             $record,
                             is_array($data['theme_ids'] ?? null) ? $data['theme_ids'] : [],
                         );
+                    }),
+                Action::make('suggestAi')
+                    ->label(__('Предложить темы с ИИ'))
+                    ->icon('heroicon-o-sparkles')
+                    ->visible(fn (): bool => auth()->user() instanceof User && app(OrganizationAuthorizer::class)->allows(
+                        auth()->user(),
+                        app(OrganizationContext::class)->organization(),
+                        OrganizationPermission::ManageClients,
+                    ))
+                    ->action(function (FeedbackSubmission $record): void {
+                        $actor = auth()->user();
+                        abort_unless($actor instanceof User, 403);
+                        $options = app(FeedbackThemeCatalog::class)->options(app(OrganizationContext::class)->id());
+                        $result = app(SuggestAnalyticsTags::class)->handle(
+                            actor: $actor,
+                            taxonomy: 'feedback',
+                            sourceType: 'feedback_submission',
+                            sourceId: (int) $record->getKey(),
+                            clientId: (int) $record->client_id,
+                            sourceText: (string) ($record->internal_feedback ?? ''),
+                            availableTags: array_map(
+                                static fn (int|string $id, string $label): array => ['id' => (int) $id, 'label' => $label],
+                                array_keys($options),
+                                array_values($options),
+                            ),
+                        );
+                        $labels = collect($result->suggestions)->pluck('label')->implode(', ');
+                        if ($labels !== '') {
+                            Notification::make()->success()->title(__('Предложения ИИ готовы'))->body($labels)->send();
+
+                            return;
+                        }
+
+                        Notification::make()->warning()->title(__('Предложения ИИ недоступны'))->body(__('Настройте prompt классификатора или добавьте структурированные темы.'))->send();
+                    }),
+                Action::make('acceptAi')
+                    ->label(__('Принять предложения ИИ'))
+                    ->icon('heroicon-o-check-circle')
+                    ->schema([
+                        Select::make('theme_ids')
+                            ->label(__('Темы комментария'))
+                            ->options(fn (): array => app(FeedbackThemeCatalog::class)->options(app(OrganizationContext::class)->id()))
+                            ->multiple()
+                            ->searchable()
+                            ->preload(),
+                    ])
+                    ->fillForm(function (FeedbackSubmission $record): array {
+                        $run = AnalyticsClassificationRun::query()
+                            ->where('organization_id', app(OrganizationContext::class)->id())
+                            ->where('taxonomy', 'feedback')
+                            ->where('source_type', 'feedback_submission')
+                            ->where('source_id', $record->getKey())
+                            ->where('status', ClassificationRunStatus::NeedsReview)
+                            ->latest('id')
+                            ->first();
+
+                        return [
+                            'theme_ids' => collect($run?->suggestions ?? [])->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all(),
+                        ];
+                    })
+                    ->visible(function (FeedbackSubmission $record): bool {
+                        if (! auth()->user() instanceof User || ! app(OrganizationAuthorizer::class)->allows(
+                            auth()->user(),
+                            app(OrganizationContext::class)->organization(),
+                            OrganizationPermission::ManageClients,
+                        )) {
+                            return false;
+                        }
+
+                        return AnalyticsClassificationRun::query()
+                            ->where('organization_id', app(OrganizationContext::class)->id())
+                            ->where('taxonomy', 'feedback')
+                            ->where('source_type', 'feedback_submission')
+                            ->where('source_id', $record->getKey())
+                            ->where('status', ClassificationRunStatus::NeedsReview)
+                            ->exists();
+                    })
+                    ->action(function (FeedbackSubmission $record, array $data): void {
+                        $actor = auth()->user();
+                        abort_unless($actor instanceof User, 403);
+                        app(AcceptAnalyticsClassification::class)->handle(
+                            actor: $actor,
+                            runId: (int) AnalyticsClassificationRun::query()
+                                ->where('organization_id', app(OrganizationContext::class)->id())
+                                ->where('taxonomy', 'feedback')
+                                ->where('source_type', 'feedback_submission')
+                                ->where('source_id', $record->getKey())
+                                ->where('status', ClassificationRunStatus::NeedsReview)
+                                ->latest('id')
+                                ->value('id'),
+                            themeIds: is_array($data['theme_ids'] ?? null) ? $data['theme_ids'] : [],
+                        );
+                        Notification::make()->success()->title(__('Темы сохранены'))->send();
                     }),
             ])
             ->defaultSort('submitted_at', 'desc')
