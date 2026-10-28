@@ -87,7 +87,7 @@ final readonly class AcceptAnalyticsClassification
     }
 
     /**
-     * @param array<int, mixed>|null $themeIds
+     * @param  array<int, mixed>|null  $themeIds
      * @return list<int>
      */
     private function acceptFeedback(AnalyticsClassificationRun $run, int $organizationId, ?array $themeIds): array
@@ -110,7 +110,7 @@ final readonly class AcceptAnalyticsClassification
     }
 
     /**
-     * @param array<int, mixed>|null $themeIds
+     * @param  array<int, mixed>|null  $themeIds
      * @return list<int>
      */
     private function acceptGoalTags(AnalyticsClassificationRun $run, int $organizationId, ?array $themeIds): array
@@ -138,7 +138,7 @@ final readonly class AcceptAnalyticsClassification
     }
 
     /**
-     * @param array<int, mixed>|null $themeIds
+     * @param  array<int, mixed>|null  $themeIds
      * @return list<int>
      */
     private function acceptProblemTags(AnalyticsClassificationRun $run, int $organizationId, ?array $themeIds): array
