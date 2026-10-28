@@ -160,6 +160,32 @@
                     </ul>
                 </section>
             @endif
+
+            @if (isset($results['purchases']))
+                <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-gray-900">
+                    <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Типы покупок') }}</h2>
+                    @if ($results['purchases']['types'] === [])
+                        <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('Покупок за выбранный период нет.') }}</p>
+                    @else
+                        <ul class="mt-4 space-y-2 text-sm">
+                            @foreach ($results['purchases']['types'] as $type)
+                                <li class="flex flex-wrap justify-between gap-3"><span class="min-w-0 break-words">{{ $type['label'] }}</span><span>{{ $type['count'] }} · {{ $type['client_count'] }} {{ __('клиентов') }}</span></li>
+                            @endforeach
+                        </ul>
+                    @endif
+                </section>
+            @endif
+
+            @if (isset($results['booking_statuses']))
+                <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-gray-900">
+                    <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Статусы записей') }}</h2>
+                    <ul class="mt-4 space-y-2 text-sm">
+                        @foreach ($results['booking_statuses']['statuses'] as $status)
+                            <li class="flex flex-wrap justify-between gap-3"><span>{{ $status['label'] }}</span><span>{{ $status['count'] }}</span></li>
+                        @endforeach
+                    </ul>
+                </section>
+            @endif
         </div>
     @endif
 </x-filament-panels::page>

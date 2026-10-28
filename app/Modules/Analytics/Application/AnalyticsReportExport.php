@@ -79,6 +79,18 @@ final readonly class AnalyticsReportExport
             }
         }
 
+        if (isset($results['purchases']) && is_array($results['purchases'])) {
+            foreach ((array) ($results['purchases']['types'] ?? []) as $type) {
+                $sheet->fromArray([['Типы покупок', (string) ($type['label'] ?? '—'), (int) ($type['count'] ?? 0), null, (int) ($type['client_count'] ?? 0), null, null]], null, 'A'.$row++);
+            }
+        }
+
+        if (isset($results['booking_statuses']) && is_array($results['booking_statuses'])) {
+            foreach ((array) ($results['booking_statuses']['statuses'] ?? []) as $status) {
+                $sheet->fromArray([['Статусы записей', (string) ($status['label'] ?? '—'), (int) ($status['count'] ?? 0), null, null, null, null]], null, 'A'.$row++);
+            }
+        }
+
         foreach (['scheduling' => 'Записи и визиты', 'finance' => 'Финансы'] as $key => $label) {
             if (! isset($results[$key]) || ! is_array($results[$key])) {
                 continue;

@@ -6,12 +6,14 @@ use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\Analytics\Application\AcquisitionAnalytics;
 use App\Modules\Analytics\Application\AnalyticsReportExport;
+use App\Modules\Analytics\Application\BookingStatusAnalytics;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\DemographicsAnalytics;
 use App\Modules\Analytics\Application\FeedbackAnalytics;
 use App\Modules\Analytics\Application\FinanceAnalytics;
 use App\Modules\Analytics\Application\GoalAnalytics;
 use App\Modules\Analytics\Application\PainAnalytics;
+use App\Modules\Analytics\Application\PurchaseAnalytics;
 use App\Modules\Analytics\Application\SchedulingAnalytics;
 use App\Modules\Analytics\Application\ServiceVisitAnalytics;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -101,6 +103,8 @@ final class AnalyticsConsole extends LocalizedPage
                                 'goals' => __('Цели и задачи'),
                                 'demographics' => __('Демография клиентов'),
                                 'services' => __('Услуги и визиты'),
+                                'purchases' => __('Типы покупок'),
+                                'booking_statuses' => __('Статусы записей'),
                             ])
                             ->multiple()
                             ->searchable()
@@ -179,6 +183,8 @@ final class AnalyticsConsole extends LocalizedPage
                     'goals' => $this->goals($actor, $period),
                     'demographics' => $this->demographics($actor, $period),
                     'services' => $this->services($actor, $period),
+                    'purchases' => $this->purchases($actor, $period),
+                    'booking_statuses' => $this->bookingStatuses($actor, $period),
                     default => null,
                 };
             } catch (Throwable) {
@@ -209,6 +215,8 @@ final class AnalyticsConsole extends LocalizedPage
                     'goals' => $this->goals($actor, $period),
                     'demographics' => $this->demographics($actor, $period),
                     'services' => $this->services($actor, $period),
+                    'purchases' => $this->purchases($actor, $period),
+                    'booking_statuses' => $this->bookingStatuses($actor, $period),
                     default => null,
                 };
             } catch (Throwable) {
@@ -277,5 +285,15 @@ final class AnalyticsConsole extends LocalizedPage
     private function services(User $actor, DashboardPeriod $period): array
     {
         return app(ServiceVisitAnalytics::class)->handle($actor, $period)->toArray();
+    }
+
+    private function purchases(User $actor, DashboardPeriod $period): array
+    {
+        return app(PurchaseAnalytics::class)->handle($actor, $period)->toArray();
+    }
+
+    private function bookingStatuses(User $actor, DashboardPeriod $period): array
+    {
+        return app(BookingStatusAnalytics::class)->handle($actor, $period)->toArray();
     }
 }
