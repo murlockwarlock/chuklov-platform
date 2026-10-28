@@ -245,12 +245,14 @@ onUnmounted(() => {
 });
 
 watch(messageSignature, async () => {
+    const shouldFollow = followNewest.value && isNearBottom(historyElement.value);
     await nextTick();
-    if (followNewest.value) {
+    if (shouldFollow) {
         scrollToNewest();
         return;
     }
 
+    followNewest.value = false;
     showNewMessages.value = true;
 });
 </script>
