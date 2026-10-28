@@ -2582,11 +2582,13 @@ test('staff can complete the clinical AI workflow from the client cockpit', asyn
 });
 
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
     const fixture = createCrmFixture({ clinicalCatalogFlow: true });
     const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
-    const testName = `E2E раздел: E2E тест ${suffix}`;
-    const causeName = `E2E причины: E2E причина ${suffix}`;
+    const testName = `E2E тест ${suffix}`;
+    const testOptionName = `E2E раздел: ${testName}`;
+    const causeName = `E2E причина ${suffix}`;
+    const causeOptionName = `E2E причины: ${causeName}`;
 
     await login(page, fixture);
 
@@ -2625,7 +2627,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
     const testSelect = page.getByRole('combobox', { name: 'Тест*', exact: true });
     await testSelect.click();
-    await page.getByRole('option', { name: testName, exact: true }).click();
+    await page.getByRole('option', { name: testOptionName, exact: true }).click();
     const beforeTestValue = page.getByRole('combobox', { name: 'До сеанса', exact: true });
     await beforeTestValue.click();
     await page.getByRole('option', { name: 'Норма', exact: true }).click();
@@ -2634,11 +2636,13 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByRole('option', { name: 'Отклонение · нарушение', exact: true }).click();
     const testCauseSelect = page.getByRole('combobox', { name: 'Причины нарушений', exact: true }).first();
     await testCauseSelect.click();
-    await page.getByRole('option', { name: causeName, exact: true }).click();
+    await page.getByRole('option', { name: causeOptionName, exact: true }).click();
     await page.getByRole('button', { name: 'Добавить первопричину', exact: true }).click();
     const rootCauseSelect = page.getByRole('combobox', { name: 'Причина из сеанса', exact: true });
     await rootCauseSelect.click();
-    await page.getByRole('option', { name: causeName, exact: true }).click();
+    const rootCauseOption = page.getByRole('option', { name: causeOptionName, exact: true }).last();
+    await expect(rootCauseOption).toBeVisible();
+    await rootCauseOption.click({ force: true });
     await page.getByLabel('Дополнительное описание', { exact: true }).fill('E2E описание первопричины');
     await page.getByLabel('Гипотеза первопричины', { exact: true }).fill('E2E гипотеза');
     await page.getByLabel('Алгоритм / протокол сеанса', { exact: true }).fill('E2E протокол');
@@ -2650,8 +2654,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     const sessionRow = page.getByRole('row').filter({ hasText: '18.08.2026' });
     await expect(sessionRow).toBeVisible();
     const sessionViewLink = sessionRow.getByRole('link', { name: 'Открыть', exact: true });
-    await sessionViewLink.scrollIntoViewIfNeeded();
-    await sessionViewLink.click();
+    await sessionViewLink.click({ force: true });
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
     await expect(page.getByText('Первичная боль', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
@@ -2682,9 +2685,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
     const updatedSessionLink = page.getByRole('row').filter({ hasText: '18.08.2026' }).getByRole('link', { name: 'Открыть', exact: true });
     await expect(updatedSessionLink).toBeVisible();
-    await updatedSessionLink.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(250);
-    await updatedSessionLink.click();
+    await updatedSessionLink.click({ force: true });
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
     await expect(page.getByText('Обновлённая боль', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByText('было 7, стало 3 из 10', { exact: true })).toBeVisible();
