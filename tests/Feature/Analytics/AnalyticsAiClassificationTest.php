@@ -333,6 +333,131 @@ final class AnalyticsAiClassificationTest extends TestCase
         self::assertSame([(int) $tag->getKey()], $pain->refresh()->problemTags()->pluck('medical_problem_tags.id')->all());
     }
 
+    public function test_source_and_taxonomy_changes_invalidate_reviewed_suggestions_without_touching_processing_runs(): void
+    {
+        [$organization] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $submission = new FeedbackSubmission;
+        $submission->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'score' => 3,
+            'internal_feedback' => 'Нужно больше времени на восстановление.',
+            'source' => 'crm',
+            'idempotency_key' => 'stale-source',
+            'request_hash' => hash('sha256', 'stale-source'),
+            'submitted_at' => now(),
+        ])->save();
+        $theme = new FeedbackTheme;
+        $theme->forceFill([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Восстановление',
+            'group_name' => 'Процесс',
+            'is_active' => true,
+            'sort_order' => 1,
+        ])->save();
+        $run = new AnalyticsClassificationRun;
+        $run->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'taxonomy' => 'feedback',
+            'source_type' => 'feedback_submission',
+            'source_id' => $submission->getKey(),
+            'source_digest' => hash('sha256', 'feedback-source'),
+            'status' => ClassificationRunStatus::NeedsReview,
+            'attempt_count' => 1,
+            'suggestions' => [['id' => $theme->getKey(), 'label' => 'Процесс: Восстановление']],
+        ])->save();
+
+        $submission->forceFill(['internal_feedback' => 'Нужно больше времени и сна для восстановления.'])->save();
+
+        self::assertSame(ClassificationRunStatus::Stale, $run->refresh()->status);
+        self::assertNull($run->suggestions);
+        self::assertSame('source_changed', $run->error_code);
+
+        $processing = new AnalyticsClassificationRun;
+        $processing->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'taxonomy' => 'feedback',
+            'source_type' => 'feedback_submission',
+            'source_id' => $submission->getKey(),
+            'source_digest' => hash('sha256', 'feedback-processing'),
+            'status' => ClassificationRunStatus::Processing,
+            'attempt_count' => 1,
+        ])->save();
+        $submission->forceFill(['internal_feedback' => 'Нужно больше сна и отдыха.'])->save();
+
+        self::assertSame(ClassificationRunStatus::Processing, $processing->refresh()->status);
+
+        $taxonomyRun = new AnalyticsClassificationRun;
+        $taxonomyRun->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'taxonomy' => 'feedback',
+            'source_type' => 'feedback_submission',
+            'source_id' => $submission->getKey(),
+            'source_digest' => hash('sha256', 'feedback-taxonomy'),
+            'status' => ClassificationRunStatus::NeedsReview,
+            'attempt_count' => 1,
+        ])->save();
+        $theme->forceFill(['group_name' => 'Сервис'])->save();
+
+        self::assertSame(ClassificationRunStatus::Processing, $processing->refresh()->status);
+        self::assertSame(ClassificationRunStatus::Stale, $taxonomyRun->refresh()->status);
+    }
+
+    public function test_medical_pain_and_goal_source_changes_invalidate_their_classifications(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            pains: [['name' => 'Плечо', 'score' => 6]],
+            painsProvided: true,
+        ));
+        $pain = MedicalProfilePain::query()->where('organization_id', $organization->getKey())->sole();
+        $painRun = new AnalyticsClassificationRun;
+        $painRun->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'taxonomy' => 'complaints',
+            'source_type' => 'medical_profile_pain',
+            'source_id' => $pain->getKey(),
+            'source_digest' => hash('sha256', 'pain-source'),
+            'status' => ClassificationRunStatus::NeedsReview,
+            'attempt_count' => 1,
+        ])->save();
+        $pain->forceFill(['name' => $pain->getRawOriginal('name').'changed'])->save();
+
+        self::assertSame(ClassificationRunStatus::Stale, $painRun->refresh()->status);
+
+        $task = new TrackerTask;
+        $task->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'title' => 'Практика движения',
+            'task_type' => TrackerTaskType::Practice->value,
+            'frequency' => TrackerTaskFrequency::Daily->value,
+            'starts_on' => '2026-10-01',
+            'active' => true,
+            'display_order' => 1,
+        ])->save();
+        $taskRun = new AnalyticsClassificationRun;
+        $taskRun->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'taxonomy' => 'goals',
+            'source_type' => 'tracker_task',
+            'source_id' => $task->getKey(),
+            'source_digest' => hash('sha256', 'task-source'),
+            'status' => ClassificationRunStatus::NeedsReview,
+            'attempt_count' => 1,
+        ])->save();
+        $task->forceFill(['title' => 'Практика дыхания'])->save();
+
+        self::assertSame(ClassificationRunStatus::Stale, $taskRun->refresh()->status);
+    }
+
     /** @return array{0: Organization, 1: User} */
     private function fixture(): array
     {

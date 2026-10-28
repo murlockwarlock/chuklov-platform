@@ -18,6 +18,7 @@ final readonly class SaveAnalyticsTaxonomyGroups
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
         private RecordAuditEvent $audit,
+        private MarkAnalyticsClassificationsStale $stale,
     ) {}
 
     /** @param array<string, mixed> $groupsByTaxonomy */
@@ -31,7 +32,9 @@ final readonly class SaveAnalyticsTaxonomyGroups
             $total = 0;
             foreach ($normalized as $taxonomy => $groups) {
                 $total += count($groups);
-                $this->saveTaxonomy($organization->getKey(), AnalyticsTaxonomy::from($taxonomy), $groups);
+                $taxonomyEnum = AnalyticsTaxonomy::from($taxonomy);
+                $this->saveTaxonomy($organization->getKey(), $taxonomyEnum, $groups);
+                $this->stale->forTaxonomy((int) $organization->getKey(), $taxonomyEnum->value);
             }
             $this->audit->handle(
                 organization: $organization,
