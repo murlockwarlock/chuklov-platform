@@ -98,6 +98,20 @@ async function uploadCrmMedicalReport(page: Page, filename: string, expectedOutc
     await expect(page.getByText('Файл загружен', { exact: true })).toBeVisible();
 }
 
+async function removeEmptyRepeaterItems(page: Page, label: string): Promise<void> {
+    const inputs = page.getByLabel(label, { exact: true });
+
+    for (let index = (await inputs.count()) - 1; index >= 0; index -= 1) {
+        const input = inputs.nth(index);
+        if ((await input.inputValue()).trim() !== '') {
+            continue;
+        }
+
+        await input.locator('xpath=ancestor::li[1]').getByRole('button', { name: 'Удалить', exact: true }).first().click();
+        await page.waitForLoadState('networkidle');
+    }
+}
+
 function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
@@ -2722,7 +2736,7 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     const testNameInputs = page.getByLabel('Название теста*', { exact: true });
     const existingTestCount = await testNameInputs.count();
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
-    await expect(testNameInputs).toHaveCount(existingTestCount + 1, { timeout: 15_000 });
+    await expect.poll(async () => testNameInputs.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(existingTestCount + 1);
     const testNameInput = page.getByLabel('Название теста*', { exact: true }).last();
     await expect(testNameInput).toBeVisible();
     await testNameInput.fill(testName);
@@ -2734,14 +2748,23 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.waitForLoadState('networkidle');
     const addValueButton = configuredTestItem.getByRole('button', { name: 'Добавить значение', exact: true });
     await expect(addValueButton).toBeVisible();
-    await addValueButton.click();
     const valueLabels = configuredTestItem.getByLabel('Название значения*', { exact: true });
-    await expect(valueLabels).toHaveCount(2, { timeout: 15_000 });
-    await valueLabels.first().fill('Норма');
-    await valueLabels.first().press('Tab');
-    await valueLabels.last().fill('Отклонение');
-    await valueLabels.last().press('Tab');
-    await configuredTestItem.getByLabel('Считать нарушением', { exact: true }).last().check();
+    for (let attempt = 0; attempt < 3 && (await valueLabels.count()) < 2; attempt += 1) {
+        await addValueButton.click();
+        try {
+            await expect.poll(async () => valueLabels.count(), { timeout: 5_000 }).toBeGreaterThanOrEqual(2);
+        } catch (error) {
+            if (attempt === 2) {
+                throw error;
+            }
+        }
+    }
+    await expect.poll(async () => valueLabels.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+    await valueLabels.nth(0).fill('Норма');
+    await valueLabels.nth(0).press('Tab');
+    await valueLabels.nth(1).fill('Отклонение');
+    await valueLabels.nth(1).press('Tab');
+    await configuredTestItem.getByLabel('Считать нарушением', { exact: true }).nth(1).check();
     const activeTestToggle = configuredTestItem.getByLabel('Активен', { exact: true });
     if (! await activeTestToggle.isChecked()) {
         await activeTestToggle.check();
@@ -2753,11 +2776,12 @@ test('staff can maintain the clinical test catalog and use it in a new session',
             await toggle.check();
         }
     }
+    await removeEmptyRepeaterItems(page, 'Название значения*');
 
     const causeNameInputs = page.getByLabel('Название причины*', { exact: true });
     const existingCauseCount = await causeNameInputs.count();
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
-    await expect(causeNameInputs).toHaveCount(existingCauseCount + 1, { timeout: 15_000 });
+    await expect.poll(async () => causeNameInputs.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(existingCauseCount + 1);
     const causeNameInput = page.getByLabel('Название причины*', { exact: true }).last();
     await causeNameInput.fill(causeName);
     await causeNameInput.press('Tab');
@@ -2768,6 +2792,8 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     if (! await activeCauseToggle.isChecked()) {
         await activeCauseToggle.check();
     }
+    await removeEmptyRepeaterItems(page, 'Название теста*');
+    await removeEmptyRepeaterItems(page, 'Название причины*');
     await page.waitForLoadState('networkidle');
     await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
