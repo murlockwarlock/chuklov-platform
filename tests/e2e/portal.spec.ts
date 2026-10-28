@@ -2419,11 +2419,7 @@ test('companion shows accessible typing feedback and respects intentional histor
         }
         signalPollIntercepted();
         await userScrolledAway;
-        const headers = { ...response.headers(), 'x-inertia': 'true', 'content-type': 'text/html; charset=UTF-8' };
-        delete headers['content-length'];
-        delete headers['content-encoding'];
-        console.log('Companion response headers', headers);
-        await route.fulfill({ status: response.status(), headers, body: JSON.stringify(payload) });
+        await route.fulfill({ response, body: JSON.stringify(payload) });
     });
     const pollResponsePromise = page.waitForResponse((response) => response.url().includes('/portal/companion')
         && response.request().method() === 'GET'
@@ -2443,7 +2439,6 @@ test('companion shows accessible typing feedback and respects intentional histor
 
     const pollResponse = await pollResponsePromise;
     expect(pollResponse.status()).toBe(200);
-    console.log('Companion browser response headers', await pollResponse.allHeaders());
     const pollPayload = await pollResponse.json() as {
         props?: { companion?: { pending?: boolean; messages?: Array<{ id?: string }> } };
     };
