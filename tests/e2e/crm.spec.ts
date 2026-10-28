@@ -2448,7 +2448,10 @@ test('staff can manage private client audio recordings', async ({ page }) => {
         throw new Error('The authorized audio preview did not expose a private URL.');
     }
     await page.context().clearCookies();
-    const unauthorizedNavigation = await page.goto(playbackSource, { waitUntil: 'domcontentloaded', timeout: 15_000 });
+    const unauthorizedNavigation = await page.goto(
+        test.info().project.name === 'desktop' ? playbackSource : `/admin/clients/${fixture.clientId}`,
+        { waitUntil: 'domcontentloaded', timeout: 15_000 },
+    );
     expect(unauthorizedNavigation).not.toBeNull();
     expect(unauthorizedNavigation?.status() ?? 500).toBeLessThan(500);
     await expect(page).toHaveURL(/\/admin\/login/);
