@@ -7,12 +7,14 @@ final readonly class DemographicsAnalyticsData
     /** @param list<array{label: string, count: int, percent: float}> $age
      * @param  list<array{label: string, count: int, percent: float}>  $sex
      * @param  list<array{label: string, count: int, percent: float}>  $country
+     * @param  list<array{label: string, count: int, percent: float}>  $children
      */
     public function __construct(
         public int $clientCount,
         public array $age,
         public array $sex,
         public array $country,
+        public array $children,
     ) {}
 
     /** @return array<string, mixed> */
@@ -23,6 +25,7 @@ final readonly class DemographicsAnalyticsData
             'age' => $this->age,
             'sex' => $this->sex,
             'country' => $this->country,
+            'children' => $this->children,
         ];
     }
 }

@@ -41,6 +41,7 @@ final readonly class DemographicsAnalytics
         $ageCounts = [];
         $sexCounts = [];
         $countryCounts = [];
+        $childrenCounts = [];
         foreach ($clients as $client) {
             $ageLabel = $this->ageLabel($client->birth_date, $referenceDate);
             $sexLabel = match ((string) $client->gender) {
@@ -50,9 +51,11 @@ final readonly class DemographicsAnalytics
             };
             $country = trim((string) ($client->country ?? ''));
             $countryLabel = $country === '' ? 'Не указана' : $country;
+            $childrenLabel = $ageLabel === 'Дети' ? 'Дети' : ($ageLabel === 'Не указано' ? 'Не указано' : 'Взрослые');
             $ageCounts[$ageLabel] = ($ageCounts[$ageLabel] ?? 0) + 1;
             $sexCounts[$sexLabel] = ($sexCounts[$sexLabel] ?? 0) + 1;
             $countryCounts[$countryLabel] = ($countryCounts[$countryLabel] ?? 0) + 1;
+            $childrenCounts[$childrenLabel] = ($childrenCounts[$childrenLabel] ?? 0) + 1;
         }
 
         $total = count($clients);
@@ -62,6 +65,7 @@ final readonly class DemographicsAnalytics
             age: $this->distribution($ageCounts, $total),
             sex: $this->distribution($sexCounts, $total),
             country: $this->distribution($countryCounts, $total),
+            children: $this->distribution($childrenCounts, $total),
         );
     }
 

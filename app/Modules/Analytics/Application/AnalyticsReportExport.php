@@ -66,7 +66,7 @@ final readonly class AnalyticsReportExport
         }
 
         if (isset($results['demographics']) && is_array($results['demographics'])) {
-            foreach (['age' => 'Возраст', 'sex' => 'Пол', 'country' => 'Страна'] as $key => $label) {
+            foreach (['age' => 'Возраст', 'sex' => 'Пол', 'children' => 'Дети и взрослые', 'country' => 'Страна'] as $key => $label) {
                 foreach ((array) ($results['demographics'][$key] ?? []) as $item) {
                     $sheet->fromArray([['Демография клиентов', $label.': '.(string) ($item['label'] ?? '—'), (int) ($item['count'] ?? 0), null, null, $item['percent'] ?? null, null]], null, 'A'.$row++);
                 }
