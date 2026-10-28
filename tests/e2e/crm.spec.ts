@@ -2722,55 +2722,16 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
     await page.getByLabel('Название теста*', { exact: true }).last().fill(testName);
     await page.getByLabel('Раздел', { exact: true }).last().fill('E2E раздел');
-    await page.getByLabel('Название значения*', { exact: true }).last().fill('Норма');
+    const valueLabels = page.getByLabel('Название значения*', { exact: true });
+    await valueLabels.last().fill('Норма');
     await page.getByRole('button', { name: 'Добавить значение', exact: true }).last().click();
-    await page.getByLabel('Название значения*', { exact: true }).last().fill('Отклонение');
-    await page.getByLabel('Считать нарушением', { exact: true }).last().check();
+    await valueLabels.first().fill('Отклонение');
+    await page.getByLabel('Считать нарушением', { exact: true }).first().check();
 
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
     await page.getByLabel('Название причины*', { exact: true }).last().fill(causeName);
     await page.getByLabel('Группа', { exact: true }).last().fill('E2E причины');
-    const livewireRequests: Array<{ url: string; postData: string }> = [];
-    page.on('request', (request) => {
-        if (request.method() === 'POST' && request.url().includes('/livewire')) {
-            livewireRequests.push({ url: request.url(), postData: (request.postData() ?? '').slice(0, 500) });
-        }
-    });
-    const saveCatalogButton = page.getByRole('button', { name: 'Сохранить каталог', exact: true });
-    await saveCatalogButton.click();
-    await page.waitForTimeout(3_000);
-    const valueInputsBeforeSave = await page.getByLabel('Название значения*', { exact: true }).evaluateAll((elements) => elements.map((element) => ({
-        value: (element as HTMLInputElement).value,
-        visible: Boolean((element as HTMLElement).offsetParent),
-        id: element.id,
-    })));
-    const invalidFields = await page.locator('[aria-invalid="true"]').evaluateAll((elements) => elements.map((element) => ({
-        tag: element.tagName,
-        ariaLabel: element.getAttribute('aria-label'),
-        value: (element as HTMLInputElement).value,
-    })));
-    const formMetadata = await page.locator('#medical-clinical-catalog-form').evaluate((element) => ({
-        outerHTML: element.outerHTML.slice(0, 4_000),
-        wireSubmit: element.getAttribute('wire:submit'),
-        wireSubmitPrevent: element.getAttribute('wire:submit.prevent'),
-        noValidate: (element as HTMLFormElement).noValidate,
-        checkValidity: (element as HTMLFormElement).checkValidity(),
-        invalidControls: Array.from((element as HTMLFormElement).elements).flatMap((control) => {
-            const input = control as HTMLInputElement;
-            return input.validity.valid ? [] : [{
-                tag: input.tagName,
-                type: input.type,
-                id: input.id,
-                name: input.name,
-                ariaLabel: input.getAttribute('aria-label'),
-                value: input.value,
-                required: input.required,
-                validationMessage: input.validationMessage,
-                outerHTML: input.outerHTML.slice(0, 500),
-            }];
-        }),
-    }));
-    throw new Error(`CATALOG_SAVE_DEBUG ${JSON.stringify({ livewireRequests, valueInputsBeforeSave, invalidFields, formMetadata })}`);
+    await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
 
     await page.reload();
