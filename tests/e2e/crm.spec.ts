@@ -2753,11 +2753,15 @@ test('staff can maintain the clinical test catalog and use it in a new session',
         invalidControls: Array.from((element as HTMLFormElement).elements).flatMap((control) => {
             const input = control as HTMLInputElement;
             return input.validity.valid ? [] : [{
+                tag: input.tagName,
+                type: input.type,
+                id: input.id,
                 name: input.name,
                 ariaLabel: input.getAttribute('aria-label'),
                 value: input.value,
                 required: input.required,
                 validationMessage: input.validationMessage,
+                outerHTML: input.outerHTML.slice(0, 500),
             }];
         }),
     }));
