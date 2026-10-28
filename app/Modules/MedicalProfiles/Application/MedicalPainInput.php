@@ -75,7 +75,7 @@ final readonly class MedicalPainInput
             name: $name,
             frequencyMode: $frequencyMode,
             frequencyCount: $frequencyCount,
-            frequencyPeriodUnit: $frequencyPeriodUnit === '' ? null : $frequencyPeriodUnit,
+            frequencyPeriodUnit: $frequencyPeriodUnit,
             timeOfDay: $timeOfDay,
             score: self::nullableScore($data['score'] ?? null, 'score'),
             beforeScore: self::nullableScore($data['before_score'] ?? null, 'before_score'),

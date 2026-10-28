@@ -463,6 +463,7 @@ final class ClientWorkspaceUxATest extends TestCase
             'chronic_conditions',
             'operations',
             'injuries',
+            'structured_history_entries',
             'medicines',
             'supplements',
         ], array_map(
@@ -973,6 +974,30 @@ final class ClientWorkspaceUxATest extends TestCase
 
         self::assertNotNull($profile);
         self::assertSame($updatedAnamnesis, $profile->anamnesis);
+    }
+
+    public function test_client_cockpit_shows_structured_operation_and_injury_rows(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->callAction('editMedicalProfile', [
+                'history_entries' => [
+                    ['type' => 'operation', 'year' => 2019, 'description' => 'Артроскопия колена'],
+                    ['type' => 'injury', 'year' => 2022, 'description' => 'Растяжение голеностопа'],
+                ],
+            ])
+            ->assertNotified('Медицинский профиль сохранён');
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertSee('Операции и травмы по годам')
+            ->assertSee('Артроскопия колена')
+            ->assertSee('Растяжение голеностопа');
     }
 
     public function test_client_search_supports_international_phones_and_telegram_id(): void

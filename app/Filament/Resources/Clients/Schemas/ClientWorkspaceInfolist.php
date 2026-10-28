@@ -502,6 +502,17 @@ final class ClientWorkspaceInfolist
                             ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'injuries'))
                             ->placeholder(__('Не указаны'))
                             ->wrap(),
+                        RepeatableEntry::make('structured_history_entries')
+                            ->label(__('Операции и травмы по годам'))
+                            ->schema([
+                                TextEntry::make('type')->label(__('Тип')),
+                                TextEntry::make('year')->label(__('Год')),
+                                TextEntry::make('description')->label(__('Описание'))->wrap(),
+                            ])
+                            ->columns(3)
+                            ->state(fn (Client $record): array => self::structuredHistoryEntries($record))
+                            ->placeholder(__('Структурированные записи отсутствуют'))
+                            ->columnSpanFull(),
                         TextEntry::make('legacy_complaints_goals')
                             ->label(__('Историческая запись: жалобы и цели'))
                             ->state(fn (Client $record): ?string => self::medicalProfileField($record, 'complaintsGoals'))
@@ -585,5 +596,21 @@ final class ClientWorkspaceInfolist
             'supplements' => $profile?->supplements,
             default => null,
         };
+    }
+
+    /** @return list<array{type: string, year: int, description: string}> */
+    private static function structuredHistoryEntries(Client $record): array
+    {
+        $profile = self::medicalProfile($record);
+
+        if ($profile === null) {
+            return [];
+        }
+
+        return array_map(static fn ($entry): array => [
+            'type' => $entry->type === 'operation' ? __('Операция') : __('Травма'),
+            'year' => $entry->year,
+            'description' => $entry->description,
+        ], $profile->historyEntries);
     }
 }

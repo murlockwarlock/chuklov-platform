@@ -134,6 +134,7 @@ final class MedicalProfileForm
             Textarea::make('operations')->label(__('Операции'))->rows(3)->maxLength(10000),
             Repeater::make('history_entries')
                 ->label(__('Операции и травмы по годам'))
+                ->helperText(__('Добавляйте отдельную строку для каждой операции или травмы.'))
                 ->schema([
                     Hidden::make('lineage_key')->dehydrated()->nullable(),
                     Select::make('type')->label(__('Тип'))->options([
@@ -149,6 +150,9 @@ final class MedicalProfileForm
                 ->collapsible()
                 ->itemLabel(fn (array $state): string => (string) ($state['description'] ?? __('Новая запись')))
                 ->addActionLabel(__('Добавить запись'))
+                ->visible(fn (Get $get): bool => $get('answers.had_operations') === true
+                    || $get('answers.had_injuries') === true
+                    || is_array($get('history_entries')) && $get('history_entries') !== [])
                 ->columnSpanFull(),
             Checkbox::make('answers.had_injuries')->label(__('Были травмы'))->live(),
             TextInput::make('answers.injury_year')->label(__('Год травмы'))->integer()->minValue(1900)->maxValue(now()->year)
