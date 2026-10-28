@@ -2744,7 +2744,12 @@ test('staff can maintain the clinical test catalog and use it in a new session',
         ariaLabel: element.getAttribute('aria-label'),
         value: (element as HTMLInputElement).value,
     })));
-    throw new Error(`CATALOG_SAVE_DEBUG ${JSON.stringify({ livewireRequests, invalidFields })}`);
+    const formMetadata = await page.locator('#medical-clinical-catalog-form').evaluate((element) => ({
+        outerHTML: element.outerHTML.slice(0, 4_000),
+        wireSubmit: element.getAttribute('wire:submit'),
+        wireSubmitPrevent: element.getAttribute('wire:submit.prevent'),
+    }));
+    throw new Error(`CATALOG_SAVE_DEBUG ${JSON.stringify({ livewireRequests, invalidFields, formMetadata })}`);
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
 
     await page.reload();
