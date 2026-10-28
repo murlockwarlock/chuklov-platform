@@ -29,6 +29,7 @@ final class AssignTrackerTask
         private readonly TrackerGoalTagCatalog $goalTags,
     ) {}
 
+    /** @param list<int> $goalTagIds */
     public function handle(
         User $actor,
         Client $client,

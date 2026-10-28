@@ -703,7 +703,9 @@ class ViewClient extends LocalizedViewRecord
                         : null,
                     weekDay: filled($data['week_day'] ?? null) ? (int) $data['week_day'] : null,
                     displayOrder: (int) $data['display_order'],
-                    goalTagIds: is_array($data['goal_tag_ids'] ?? null) ? $data['goal_tag_ids'] : [],
+                    goalTagIds: is_array($data['goal_tag_ids'] ?? null)
+                        ? array_values(array_map(static fn (mixed $id): int => (int) $id, $data['goal_tag_ids']))
+                        : [],
                 );
                 Notification::make()->title(__('Задача назначена'))->success()->send();
             });
@@ -1015,10 +1017,10 @@ class ViewClient extends LocalizedViewRecord
             return [];
         }
 
-        return array_values(array_map(
+        return array_map(
             static fn (mixed $id): int => (int) $id,
             array_column($run->suggestions, 'id'),
-        ));
+        );
     }
 
     private function recordFeedbackAction(): Action
@@ -1029,7 +1031,10 @@ class ViewClient extends LocalizedViewRecord
             ->schema([
                 Select::make('score')
                     ->label(__('Оценка клиента'))
-                    ->options(array_combine(range(0, 10), range(0, 10)))
+                    ->options(array_combine(
+                        range(0, 10),
+                        array_map(static fn (int $score): string => (string) $score, range(0, 10)),
+                    ))
                     ->native(false)
                     ->required(),
                 Textarea::make('internal_feedback')
@@ -1056,7 +1061,7 @@ class ViewClient extends LocalizedViewRecord
                 );
                 Notification::make()
                     ->title(__('Обратная связь сохранена'))
-                    ->body(__('Запись :date добавлена в историю клиента.', ['date' => $submission->submitted_at?->format('d.m.Y H:i')]))
+                    ->body(__('Запись :date добавлена в историю клиента.', ['date' => CarbonImmutable::parse((string) $submission->submitted_at)->format('d.m.Y H:i')]))
                     ->success()
                     ->send();
             });

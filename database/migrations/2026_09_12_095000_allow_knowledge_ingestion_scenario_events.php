@@ -50,7 +50,5 @@ return new class extends Migration
         DB::statement("ALTER TABLE scenario_actions ADD CONSTRAINT operational_scenario_actions_event_ck CHECK (trigger_event IN ({$quotedEvents}))");
     }
 
-    public function down(): void
-    {
-    }
+    public function down(): void {}
 };

@@ -12,6 +12,7 @@ use App\Modules\Sessions\Application\ImportMedicalClinicalCatalogCsv;
 use App\Modules\Sessions\Application\SaveMedicalClinicalCatalog;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
+use App\Modules\Sessions\Domain\Models\MedicalTestValue;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
@@ -81,7 +82,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                 'section' => $test->section,
                 'is_active' => $test->is_active,
                 'sort_order' => $test->sort_order,
-                'values' => $test->values->map(static fn ($value): array => [
+                'values' => $test->values->map(static fn (MedicalTestValue $value): array => [
                     'key' => $value->key,
                     'label' => $value->label,
                     'is_abnormal' => $value->is_abnormal,

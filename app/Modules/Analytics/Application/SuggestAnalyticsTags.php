@@ -90,7 +90,14 @@ final readonly class SuggestAnalyticsTags
                     'source_text' => mb_substr($sourceText, 0, 4000),
                     'allowed_tags' => array_map(static fn (array $tag): string => $tag['label'], $availableTags),
                 ],
-                idempotencyKey: 'analytics-classification:'.$organizationId.':'.$taxonomy.':'.$sourceType.':'.$sourceId.':'.$digest.':attempt:'.$run->attempt_count,
+                idempotencyKey: $this->aiIdempotencyKey(
+                    organizationId: $organizationId,
+                    taxonomy: $taxonomy,
+                    sourceType: $sourceType,
+                    sourceId: $sourceId,
+                    digest: $digest,
+                    attempt: $run->attempt_count,
+                ),
                 actor: $actor,
             ));
             $suggestions = $this->validateOutput($result->outputPayload, $availableTags);
@@ -260,6 +267,24 @@ final readonly class SuggestAnalyticsTags
     private function failedResult(int $runId, string $errorCode): ClassificationResultData
     {
         return new ClassificationResultData($runId, ClassificationRunStatus::Failed, [], $errorCode);
+    }
+
+    private function aiIdempotencyKey(
+        int $organizationId,
+        string $taxonomy,
+        string $sourceType,
+        int $sourceId,
+        string $digest,
+        int $attempt,
+    ): string {
+        return 'analytics-classification:'.hash('sha256', implode('|', [
+            $organizationId,
+            $taxonomy,
+            $sourceType,
+            $sourceId,
+            $digest,
+            $attempt,
+        ]));
     }
 
     private function result(AnalyticsClassificationRun $run): ClassificationResultData

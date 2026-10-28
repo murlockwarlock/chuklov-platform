@@ -84,8 +84,13 @@ final class PurchaseAndBookingStatusAnalyticsTest extends TestCase
 
         $specialist = Specialist::factory()->forOrganization($organization)->create();
         $service = Service::factory()->forOrganization($organization)->create();
-        foreach (['completed', 'cancelled', 'rescheduled'] as $eventType) {
-            $booking = Booking::factory()->forClient($client)->forSpecialist($specialist)->forService($service)->create();
+        foreach (['completed', 'cancelled', 'rescheduled'] as $index => $eventType) {
+            $start = $createdAt->addHours($index + 1);
+            $booking = Booking::factory()->forClient($client)->forSpecialist($specialist)->forService($service)->create([
+                'starts_at' => $start,
+                'ends_at' => $start->addHour(),
+                'blocking_ends_at' => $start->addHour(),
+            ]);
             BookingEvent::factory()->forBooking($booking)->create([
                 'event_type' => $eventType,
                 'occurred_at' => $createdAt,

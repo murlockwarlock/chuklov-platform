@@ -8,9 +8,9 @@ use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Security\Application\RecordAuditEvent;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionAttachment;
-use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
@@ -28,8 +28,7 @@ final readonly class LinkSessionAttachment
         Client $client,
         int $attachmentId,
         MedicalSessionAttachmentGallery $gallery = MedicalSessionAttachmentGallery::General,
-    ): MedicalSessionAttachment
-    {
+    ): MedicalSessionAttachment {
         $organization = $this->sessionAuthorization->authorizeManageSession($actor, $session, $client);
         $this->attachmentAuthorization->authorizeManage($actor, $client);
 

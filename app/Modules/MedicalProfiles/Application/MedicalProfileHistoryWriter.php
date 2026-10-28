@@ -13,8 +13,10 @@ final readonly class MedicalProfileHistoryWriter
 {
     public function __construct(private MedicalEncryptorInterface $encryptor) {}
 
-    /** @param array<int, mixed> $entries */
-    /** @return list<MedicalHistoryEntryData> */
+    /**
+     * @param  array<int, mixed>  $entries
+     * @return list<MedicalHistoryEntryData>
+     */
     public function replace(MedicalProfile $profile, array $entries, int $keyVersion): array
     {
         $normalized = [];

@@ -226,7 +226,7 @@ final class FeedbackSubmissionResource extends LocalizedResource
                             ->first();
 
                         return [
-                            'theme_ids' => collect($run?->suggestions ?? [])->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all(),
+                            'theme_ids' => collect($run instanceof AnalyticsClassificationRun ? $run->suggestions : [])->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all(),
                         ];
                     })
                     ->visible(function (FeedbackSubmission $record): bool {

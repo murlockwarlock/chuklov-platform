@@ -14,7 +14,10 @@ final readonly class MedicalProfilePainReader
     /** @return list<MedicalPainData> */
     public function forProfile(MedicalProfile $profile): array
     {
-        return $profile->pains()->with('problemTags')->get()->map(function (MedicalProfilePain $pain) use ($profile): MedicalPainData {
+        return array_values($profile->pains()->with('problemTags')->get()->map(function (MedicalProfilePain $pain) use ($profile): MedicalPainData {
+            /** @var mixed $timeOfDay */
+            $timeOfDay = $pain->getAttribute('time_of_day');
+
             return new MedicalPainData(
                 id: (int) $pain->getKey(),
                 lineageKey: (string) $pain->lineage_key,
@@ -26,10 +29,10 @@ final readonly class MedicalProfilePainReader
                 frequencyMode: (string) $pain->frequency_mode,
                 frequencyCount: $pain->frequency_count !== null ? (int) $pain->frequency_count : null,
                 frequencyPeriodUnit: $pain->frequency_period_unit !== null ? (string) $pain->frequency_period_unit : null,
-                timeOfDay: is_array($pain->time_of_day) && $pain->time_of_day !== [] ? array_values($pain->time_of_day) : ['all'],
+                timeOfDay: is_array($timeOfDay) && $timeOfDay !== [] ? array_values(array_map('strval', $timeOfDay)) : ['all'],
                 score: $pain->score !== null ? (int) $pain->score : null,
-                tagIds: $pain->problemTags->modelKeys(),
+                tagIds: array_values(array_map(static fn (int|string $id): int => (int) $id, $pain->problemTags->modelKeys())),
             );
-        })->all();
+        })->all());
     }
 }

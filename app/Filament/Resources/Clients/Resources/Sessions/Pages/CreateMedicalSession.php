@@ -46,7 +46,10 @@ class CreateMedicalSession extends LocalizedCreateRecord
             ->firstOrFail();
     }
 
-    /** @param array<string, mixed> $data */
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, mixed>
+     */
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $data['pains'] = app(MedicalSessionPainInitializer::class)->defaultsForClient($this->parentClient());

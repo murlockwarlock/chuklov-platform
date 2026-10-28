@@ -17,12 +17,12 @@ final readonly class MedicalProfileHistoryReader
         $organizationId = (int) $profile->organization_id;
         $keyVersion = (int) $profile->encryption_key_version;
 
-        return $profile->historyEntries()->get()->map(fn (MedicalProfileHistoryEntry $entry): MedicalHistoryEntryData => new MedicalHistoryEntryData(
+        return array_values($profile->historyEntries()->get()->map(fn (MedicalProfileHistoryEntry $entry): MedicalHistoryEntryData => new MedicalHistoryEntryData(
             id: (int) $entry->getKey(),
             lineageKey: (string) $entry->lineage_key,
             type: (string) $entry->entry_type,
             year: (int) $entry->year,
             description: (string) $this->encryptor->decryptField($organizationId, $entry->description, (int) $entry->encryption_key_version),
-        ))->all();
+        ))->all());
     }
 }

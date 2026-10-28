@@ -37,7 +37,10 @@ final readonly class MedicalSessionPainReader
             $previousAfter = $previous->pains()->pluck('after_score', 'lineage_key')->map(static fn (mixed $value): ?int => $value === null ? null : (int) $value)->all();
         }
 
-        return $rows->map(function (MedicalSessionPain $pain) use ($session, $previousAfter): MedicalPainData {
+        return array_values($rows->map(function (MedicalSessionPain $pain) use ($session, $previousAfter): MedicalPainData {
+            /** @var mixed $timeOfDay */
+            $timeOfDay = $pain->getAttribute('time_of_day');
+
             return new MedicalPainData(
                 id: (int) $pain->getKey(),
                 lineageKey: (string) $pain->lineage_key,
@@ -49,12 +52,12 @@ final readonly class MedicalSessionPainReader
                 frequencyMode: (string) $pain->frequency_mode,
                 frequencyCount: $pain->frequency_count !== null ? (int) $pain->frequency_count : null,
                 frequencyPeriodUnit: $pain->frequency_period_unit !== null ? (string) $pain->frequency_period_unit : null,
-                timeOfDay: is_array($pain->time_of_day) && $pain->time_of_day !== [] ? array_values($pain->time_of_day) : ['all'],
+                timeOfDay: is_array($timeOfDay) && $timeOfDay !== [] ? array_values(array_map('strval', $timeOfDay)) : ['all'],
                 beforeScore: $pain->before_score !== null ? (int) $pain->before_score : null,
                 afterScore: $pain->after_score !== null ? (int) $pain->after_score : null,
                 previousAfterScore: array_key_exists((string) $pain->lineage_key, $previousAfter) ? $previousAfter[(string) $pain->lineage_key] : null,
-                tagIds: $pain->problemTags->modelKeys(),
+                tagIds: array_values(array_map(static fn (int|string $id): int => (int) $id, $pain->problemTags->modelKeys())),
             );
-        })->all();
+        })->all());
     }
 }

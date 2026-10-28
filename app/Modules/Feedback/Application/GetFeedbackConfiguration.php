@@ -31,6 +31,7 @@ final class GetFeedbackConfiguration
             ])
             ->values()
             ->all();
+        /** @var list<array{name: string, groupName: string|null, isActive: bool, sortOrder: int}> $feedbackThemes */
         $feedbackThemes = FeedbackTheme::query()
             ->where('organization_id', $this->context->id())
             ->orderBy('sort_order')

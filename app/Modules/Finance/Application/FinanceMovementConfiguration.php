@@ -162,7 +162,7 @@ final class FinanceMovementConfiguration
     }
 
     /**
-     * @param array<int, mixed> $values
+     * @param  array<int, mixed>  $values
      * @return list<array{id: int|null, name: string, account_type: string, currency: string, is_active: bool, sort_order: int}>
      */
     private function accounts(array $values): array
@@ -202,7 +202,7 @@ final class FinanceMovementConfiguration
     }
 
     /**
-     * @param array<int, mixed> $values
+     * @param  array<int, mixed>  $values
      * @return list<array{id: int|null, name: string, is_active: bool, sort_order: int}>
      */
     private function categories(array $values): array

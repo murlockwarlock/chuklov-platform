@@ -59,8 +59,10 @@ final readonly class SaveMedicalFrequencyPeriods
         });
     }
 
-    /** @param array<int, mixed> $rows */
-    /** @return list<array{key: string, label: string, is_active: bool, sort_order: int}> */
+    /**
+     * @param  array<int, mixed>  $rows
+     * @return list<array{key: string, label: string, is_active: bool, sort_order: int}>
+     */
     private function normalize(array $rows): array
     {
         $normalized = [];

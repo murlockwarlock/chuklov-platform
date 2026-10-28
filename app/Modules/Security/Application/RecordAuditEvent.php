@@ -152,8 +152,6 @@ class RecordAuditEvent
         'finance.manual_payment.recorded' => ['source', 'payment_method', 'payment_currency', 'settlement_currency', 'receipt_attached'],
         'finance.expense.recorded' => ['source', 'payment_currency', 'base_currency', 'account_id', 'category_id'],
         'finance.movement.configuration.updated' => ['account_count', 'category_count'],
-        'finance.expense.recorded' => ['source', 'payment_currency', 'base_currency', 'account_id', 'category_id'],
-        'finance.movement.configuration.updated' => ['account_count', 'category_count'],
         'finance.payment.corrected' => ['source', 'correction_of', 'reason_present'],
         'gift_certificate.issued' => ['purchase_item_id', 'amount_minor', 'currency'],
         'gift_certificate.transfer.initiated' => ['certificate_id', 'from_client_id', 'currency'],
