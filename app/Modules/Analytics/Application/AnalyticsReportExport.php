@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Finance\Application\FinancialReconciliationContract;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -15,6 +16,7 @@ final readonly class AnalyticsReportExport
     public function __construct(
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
+        private FinancialReconciliationContract $money,
     ) {}
 
     /** @param array<string, mixed> $results */
@@ -111,7 +113,10 @@ final readonly class AnalyticsReportExport
                     $sheet->fromArray([[
                         $label,
                         (string) ($account['label'] ?? '—'),
-                        $account['movement_minor'] ?? null,
+                        $account['movement_display'] ?? $this->formatMoney(
+                            $account['movement_minor'] ?? null,
+                            $account['movement_currency'] ?? $account['currency'] ?? null,
+                        ),
                         self::humanAccountType((string) ($account['account_type'] ?? '')),
                         $account['currency'] ?? null,
                         null,
@@ -120,9 +125,24 @@ final readonly class AnalyticsReportExport
                 }
             }
 
+            $displayMetrics = [
+                'revenue_minor' => 'revenue_display',
+                'debt_minor' => 'debt_display',
+                'realized_ltv_minor' => 'realized_ltv_display',
+                'expenses_minor' => 'expenses_display',
+                'cash_movement_minor' => 'cash_movement_display',
+            ];
             foreach ($results[$key] as $metric => $value) {
                 if (is_array($value)) {
                     continue;
+                }
+                if (array_key_exists($metric, $displayMetrics)) {
+                    $displayMetric = $displayMetrics[$metric];
+                    if (array_key_exists($displayMetric, $results[$key])) {
+                        continue;
+                    }
+                    $value = $this->formatMoney($value, $results[$key]['currency'] ?? null);
+                    $metric = $displayMetric;
                 }
                 $sheet->fromArray([[$label, self::humanMetric((string) $metric), $value, null, null, null, null]], null, 'A'.$row++);
             }
@@ -152,14 +172,30 @@ final readonly class AnalyticsReportExport
             'no_shows' => 'Неявки',
             'available' => 'Отчёт доступен',
             'currency' => 'Валюта',
-            'revenue_minor' => 'Доход (минимальные единицы)',
+            'revenue_display' => 'Доход',
             'receipt_count' => 'Количество платежей',
-            'debt_minor' => 'Долг (минимальные единицы)',
-            'realized_ltv_minor' => 'LTV (минимальные единицы)',
-            'expenses_minor' => 'Расходы (минимальные единицы)',
-            'cash_movement_minor' => 'Движение денежных средств (минимальные единицы)',
+            'debt_display' => 'Долг',
+            'realized_ltv_display' => 'LTV',
+            'expenses_display' => 'Расходы',
+            'cash_movement_display' => 'Движение денежных средств',
             default => $metric,
         };
+    }
+
+    private function formatMoney(mixed $minor, mixed $currency): ?string
+    {
+        if ($minor === null || $currency === null || $currency === '') {
+            return null;
+        }
+
+        try {
+            $code = $this->money->currency($currency);
+
+            return $this->money->money($minor, $code, 'A persisted financial amount is invalid.')
+                ->toDecimalString().' '.$code->value;
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private static function humanAccountType(string $type): string

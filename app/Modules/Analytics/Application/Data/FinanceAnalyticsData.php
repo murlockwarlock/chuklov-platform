@@ -4,7 +4,7 @@ namespace App\Modules\Analytics\Application\Data;
 
 final readonly class FinanceAnalyticsData
 {
-    /** @param list<array{label: string, account_type: string, currency: string, movement_minor: string}> $accounts */
+    /** @param list<array{label: string, account_type: string, currency: string, movement_currency: string, movement_minor: string}> $accounts */
     public function __construct(
         public bool $available,
         public string $baseCurrency,

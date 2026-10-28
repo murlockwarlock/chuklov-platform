@@ -50,6 +50,6 @@ final class AnalyticsReportExportTest extends TestCase
             unlink($path);
         }
 
-        self::assertContains(['Финансы', 'Основная касса', '-2500', 'Касса', 'USD', null, null], $rows);
+        self::assertContains(['Финансы', 'Основная касса', '-25.00 USD', 'Касса', 'USD', null, null], $rows);
     }
 }

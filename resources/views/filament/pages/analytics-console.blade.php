@@ -120,12 +120,12 @@
                         <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('Финансовый отчёт недоступен до проверки настроек валюты и сверки.') }}</p>
                     @else
                         <dl class="mt-4 grid grid-cols-2 gap-4 text-sm">
-                            <div><dt class="text-gray-500">{{ __('Доход') }}</dt><dd class="font-semibold">{{ $results['finance']['revenue_minor'] }} {{ $results['finance']['currency'] }}</dd></div>
+                            <div><dt class="text-gray-500">{{ __('Доход') }}</dt><dd class="font-semibold">{{ $results['finance']['revenue_display'] ?? '—' }}</dd></div>
                             <div><dt class="text-gray-500">{{ __('Платежи') }}</dt><dd class="font-semibold">{{ $results['finance']['receipt_count'] }}</dd></div>
-                            <div><dt class="text-gray-500">{{ __('Долг') }}</dt><dd class="font-semibold">{{ $results['finance']['debt_minor'] }} {{ $results['finance']['currency'] }}</dd></div>
-                            <div><dt class="text-gray-500">{{ __('LTV') }}</dt><dd class="font-semibold">{{ $results['finance']['realized_ltv_minor'] ?? '—' }} {{ $results['finance']['currency'] }}</dd></div>
-                            <div><dt class="text-gray-500">{{ __('Расходы') }}</dt><dd class="font-semibold">{{ $results['finance']['expenses_minor'] ?? '—' }} {{ $results['finance']['currency'] }}</dd></div>
-                            <div><dt class="text-gray-500">{{ __('Движение денежных средств') }}</dt><dd class="font-semibold">{{ $results['finance']['cash_movement_minor'] ?? '—' }} {{ $results['finance']['currency'] }}</dd></div>
+                            <div><dt class="text-gray-500">{{ __('Долг') }}</dt><dd class="font-semibold">{{ $results['finance']['debt_display'] ?? '—' }}</dd></div>
+                            <div><dt class="text-gray-500">{{ __('LTV') }}</dt><dd class="font-semibold">{{ $results['finance']['realized_ltv_display'] ?? '—' }}</dd></div>
+                            <div><dt class="text-gray-500">{{ __('Расходы') }}</dt><dd class="font-semibold">{{ $results['finance']['expenses_display'] ?? '—' }}</dd></div>
+                            <div><dt class="text-gray-500">{{ __('Движение денежных средств') }}</dt><dd class="font-semibold">{{ $results['finance']['cash_movement_display'] ?? '—' }}</dd></div>
                         </dl>
                         @php
                             $financeRevenue = (float) ($results['finance']['revenue_minor'] ?? 0);
@@ -133,15 +133,15 @@
                             $financeMovement = (float) ($results['finance']['cash_movement_minor'] ?? 0);
                             $financeMaximum = max(1, abs($financeRevenue), abs($financeExpenses), abs($financeMovement));
                             $financeFlows = [
-                                ['label' => __('Доход'), 'value' => $financeRevenue, 'color' => 'bg-emerald-500'],
-                                ['label' => __('Расходы'), 'value' => $financeExpenses, 'color' => 'bg-rose-500'],
-                                ['label' => __('Движение'), 'value' => $financeMovement, 'color' => 'bg-primary-600'],
+                                ['label' => __('Доход'), 'value' => $financeRevenue, 'display' => $results['finance']['revenue_display'] ?? '—', 'color' => 'bg-emerald-500'],
+                                ['label' => __('Расходы'), 'value' => $financeExpenses, 'display' => $results['finance']['expenses_display'] ?? '—', 'color' => 'bg-rose-500'],
+                                ['label' => __('Движение'), 'value' => $financeMovement, 'display' => $results['finance']['cash_movement_display'] ?? '—', 'color' => 'bg-primary-600'],
                             ];
                         @endphp
                         <div class="mt-5 space-y-3" aria-label="{{ __('Сравнение денежных потоков') }}">
                             @foreach ($financeFlows as $flow)
                                 <div class="space-y-1 text-xs text-gray-500 dark:text-gray-400">
-                                    <div class="flex justify-between gap-3"><span>{{ $flow['label'] }}</span><span>{{ $flow['value'] }} {{ $results['finance']['currency'] }}</span></div>
+                                    <div class="flex justify-between gap-3"><span>{{ $flow['label'] }}</span><span>{{ $flow['display'] }}</span></div>
                                     <div class="h-2 rounded-full bg-gray-100 dark:bg-white/10"><div class="h-2 rounded-full {{ $flow['color'] }}" style="width: {{ min(100, max(0, abs($flow['value']) / $financeMaximum * 100)) }}%"></div></div>
                                 </div>
                             @endforeach
@@ -149,7 +149,7 @@
                         @if ($results['finance']['accounts'] !== [])
                             <ul class="mt-4 space-y-2 text-sm">
                                 @foreach ($results['finance']['accounts'] as $account)
-                                    <li class="flex flex-wrap justify-between gap-3"><span class="min-w-0 break-words">{{ $account['label'] }}</span><span>{{ $account['movement_minor'] }} {{ $results['finance']['currency'] }}</span></li>
+                                    <li class="flex flex-wrap justify-between gap-3"><span class="min-w-0 break-words">{{ $account['label'] }}</span><span>{{ $account['movement_display'] ?? $account['movement_minor'] }}</span></li>
                                 @endforeach
                             </ul>
                         @endif

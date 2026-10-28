@@ -17,6 +17,7 @@ use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Analytics\Application\PurchaseAnalytics;
 use App\Modules\Analytics\Application\SchedulingAnalytics;
 use App\Modules\Analytics\Application\ServiceVisitAnalytics;
+use App\Modules\Finance\Application\FinancialReconciliationContract;
 use App\Modules\Identity\Application\ClientSearch;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -281,18 +282,48 @@ final class AnalyticsConsole extends LocalizedPage
     private function finance(User $actor, DashboardPeriod $period, ?Client $client = null): array
     {
         $data = app(FinanceAnalytics::class)->handle($actor, $period, $client);
+        $accounts = array_map(function (array $account): array {
+            $account['movement_display'] = $this->formatFinanceAmount(
+                $account['movement_minor'],
+                $account['movement_currency'],
+            );
+
+            return $account;
+        }, $data->accounts);
 
         return [
             'available' => $data->available,
             'currency' => $data->baseCurrency,
             'revenue_minor' => $data->revenueMinor,
+            'revenue_display' => $this->formatFinanceAmount($data->revenueMinor, $data->baseCurrency),
             'receipt_count' => $data->receiptCount,
             'debt_minor' => $data->debtMinor,
+            'debt_display' => $this->formatFinanceAmount($data->debtMinor, $data->baseCurrency),
             'realized_ltv_minor' => $data->realizedLtvMinor,
+            'realized_ltv_display' => $this->formatFinanceAmount($data->realizedLtvMinor, $data->baseCurrency),
             'expenses_minor' => $data->expensesMinor,
+            'expenses_display' => $this->formatFinanceAmount($data->expensesMinor, $data->baseCurrency),
             'cash_movement_minor' => $data->cashMovementMinor,
-            'accounts' => $data->accounts,
+            'cash_movement_display' => $this->formatFinanceAmount($data->cashMovementMinor, $data->baseCurrency),
+            'accounts' => $accounts,
         ];
+    }
+
+    private function formatFinanceAmount(?string $minor, string $currency): string
+    {
+        if ($minor === null || $currency === '') {
+            return '—';
+        }
+
+        try {
+            $contract = app(FinancialReconciliationContract::class);
+            $code = $contract->currency($currency);
+
+            return $contract->money($minor, $code, 'A persisted financial amount is invalid.')
+                ->toDecimalString().' '.$code->value;
+        } catch (Throwable) {
+            return '—';
+        }
     }
 
     /** @return array<string, mixed> */

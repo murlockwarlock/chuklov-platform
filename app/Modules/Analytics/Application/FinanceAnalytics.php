@@ -89,7 +89,7 @@ final class FinanceAnalytics
                 cohortClientCount: $cohortClientCount,
                 expensesMinor: $expenses,
                 cashMovementMinor: BigInteger::of($revenue)->minus($expenses)->toString(),
-                accounts: $this->accounts($organizationId, $period, $ledgerTable, $obligationTable, $client),
+                accounts: $this->accounts($organizationId, $period, $ledgerTable, $obligationTable, $baseCurrency->value, $client),
             );
         } catch (\Throwable) {
             return FinanceAnalyticsData::unavailable();
@@ -136,8 +136,8 @@ final class FinanceAnalytics
         return BigInteger::of($this->integerString($row?->total))->abs()->toString();
     }
 
-    /** @return list<array{label: string, account_type: string, currency: string, movement_minor: string}> */
-    private function accounts(int $organizationId, DashboardPeriod $period, string $ledgerTable, string $obligationTable, ?Client $client = null): array
+    /** @return list<array{label: string, account_type: string, currency: string, movement_currency: string, movement_minor: string}> */
+    private function accounts(int $organizationId, DashboardPeriod $period, string $ledgerTable, string $obligationTable, string $movementCurrency, ?Client $client = null): array
     {
         $clientId = $client?->getKey();
         $accountTable = (new FinanceAccount)->getTable();
@@ -162,6 +162,7 @@ final class FinanceAnalytics
             'label' => (string) $row->name,
             'account_type' => (string) $row->account_type,
             'currency' => (string) $row->currency,
+            'movement_currency' => $movementCurrency,
             'movement_minor' => $this->integerString($row->movement_minor),
         ])->all());
     }
