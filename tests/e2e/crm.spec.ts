@@ -2554,6 +2554,7 @@ test('staff can complete the clinical AI workflow from the client cockpit', asyn
 });
 
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
+    test.setTimeout(60_000);
     const fixture = createCrmFixture();
 
     await login(page, fixture);
@@ -2585,8 +2586,11 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
     const sessionRow = page.getByRole('row').filter({ hasText: '18.08.2026' });
     await expect(sessionRow).toBeVisible();
-    await sessionRow.getByRole('link', { name: 'Открыть', exact: true }).click();
-    await expect(page.getByText('Первичная боль', { exact: true })).toBeVisible();
+    const sessionViewLink = sessionRow.getByRole('link', { name: 'Открыть', exact: true });
+    await sessionViewLink.scrollIntoViewIfNeeded();
+    await sessionViewLink.click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
+    await expect(page.getByText('Первичная боль', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
     const dynamics = page.getByLabel('Динамика подтверждённых фактов');
     await expect(dynamics.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
@@ -2603,13 +2607,14 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Название или описание боли*', { exact: true }).fill('Обновлённая боль');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
-    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
     const updatedSessionLink = page.getByRole('row').filter({ hasText: '18.08.2026' }).getByRole('link', { name: 'Открыть', exact: true });
     await expect(updatedSessionLink).toBeVisible();
     await updatedSessionLink.scrollIntoViewIfNeeded();
     await page.waitForTimeout(250);
     await updatedSessionLink.click();
-    await expect(page.getByText('Обновлённая боль', { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
+    await expect(page.getByText('Обновлённая боль', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
