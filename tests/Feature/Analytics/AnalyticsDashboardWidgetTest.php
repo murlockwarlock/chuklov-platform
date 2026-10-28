@@ -265,6 +265,29 @@ final class AnalyticsDashboardWidgetTest extends TestCase
         self::assertSame('Социальные сети', $component->instance()->results['acquisition']['sources'][0]['label']);
     }
 
+    public function test_analytics_console_preserves_purchase_and_booking_status_filters(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['purchases', 'booking_statuses'],
+                'purchase_type' => 'program',
+                'booking_status' => 'cancelled',
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame('program', $component->instance()->data['purchase_type']);
+        self::assertSame('cancelled', $component->instance()->data['booking_status']);
+        self::assertSame([], $component->instance()->results['purchases']['types']);
+        self::assertSame([['key' => 'cancelled', 'label' => 'Отменённые', 'count' => 0]], $component->instance()->results['booking_statuses']['statuses']);
+    }
+
     public function test_analytics_console_reports_a_dimension_error_without_rendering_partial_result_shape(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();

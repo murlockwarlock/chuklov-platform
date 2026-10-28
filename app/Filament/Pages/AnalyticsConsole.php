@@ -96,6 +96,8 @@ final class AnalyticsConsole extends LocalizedPage
             'feedback_theme_id' => null,
             'goal_tag_id' => null,
             'source_key' => null,
+            'purchase_type' => null,
+            'booking_status' => null,
             'period' => DashboardPeriod::DefaultPreset,
             'start_date' => null,
             'end_date' => null,
@@ -209,6 +211,22 @@ final class AnalyticsConsole extends LocalizedPage
                             ->nullable()
                             ->placeholder(__('Все источники'))
                             ->visible(fn (Get $get): bool => in_array('acquisition', (array) $get('dimensions'), true)),
+                        Select::make('purchase_type')
+                            ->label(__('Тип покупки'))
+                            ->options(PurchaseAnalytics::options())
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->placeholder(__('Все типы покупок'))
+                            ->visible(fn (Get $get): bool => in_array('purchases', (array) $get('dimensions'), true)),
+                        Select::make('booking_status')
+                            ->label(__('Статус записи'))
+                            ->options(BookingStatusAnalytics::options())
+                            ->searchable()
+                            ->preload()
+                            ->nullable()
+                            ->placeholder(__('Все статусы'))
+                            ->visible(fn (Get $get): bool => in_array('booking_statuses', (array) $get('dimensions'), true)),
                         Select::make('period')
                             ->label(__('Период'))
                             ->options(DashboardPeriod::options())
@@ -272,6 +290,8 @@ final class AnalyticsConsole extends LocalizedPage
         $feedbackThemeId = $this->selectedFeedbackThemeId($state);
         $goalTagId = $this->selectedGoalTagId($state);
         $sourceKey = $this->selectedSourceKey($state);
+        $purchaseType = $this->selectedPurchaseType($state);
+        $bookingStatus = $this->selectedBookingStatus($state);
         $organization = app(OrganizationContext::class)->organization();
         $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
         $results = [];
@@ -287,8 +307,8 @@ final class AnalyticsConsole extends LocalizedPage
                     'goals' => $this->goals($actor, $period, $client, $goalTagId),
                     'demographics' => $this->demographics($actor, $period, $client),
                     'services' => $this->services($actor, $period, $client),
-                    'purchases' => $this->purchases($actor, $period, $client),
-                    'booking_statuses' => $this->bookingStatuses($actor, $period, $client),
+                    'purchases' => $this->purchases($actor, $period, $client, $purchaseType),
+                    'booking_statuses' => $this->bookingStatuses($actor, $period, $client, $bookingStatus),
                     'segments' => app(ClientSegmentAnalytics::class)->handle($actor, $client),
                     default => null,
                 };
@@ -313,6 +333,8 @@ final class AnalyticsConsole extends LocalizedPage
         $feedbackThemeId = $this->selectedFeedbackThemeId($state);
         $goalTagId = $this->selectedGoalTagId($state);
         $sourceKey = $this->selectedSourceKey($state);
+        $purchaseType = $this->selectedPurchaseType($state);
+        $bookingStatus = $this->selectedBookingStatus($state);
         $results = [];
         foreach ((array) ($state['dimensions'] ?? []) as $dimension) {
             try {
@@ -325,8 +347,8 @@ final class AnalyticsConsole extends LocalizedPage
                     'goals' => $this->goals($actor, $period, $client, $goalTagId),
                     'demographics' => $this->demographics($actor, $period, $client),
                     'services' => $this->services($actor, $period, $client),
-                    'purchases' => $this->purchases($actor, $period, $client),
-                    'booking_statuses' => $this->bookingStatuses($actor, $period, $client),
+                    'purchases' => $this->purchases($actor, $period, $client, $purchaseType),
+                    'booking_statuses' => $this->bookingStatuses($actor, $period, $client, $bookingStatus),
                     'segments' => app(ClientSegmentAnalytics::class)->handle($actor, $client),
                     default => null,
                 };
@@ -439,15 +461,15 @@ final class AnalyticsConsole extends LocalizedPage
     }
 
     /** @return array<string, mixed> */
-    private function purchases(User $actor, DashboardPeriod $period, ?Client $client = null): array
+    private function purchases(User $actor, DashboardPeriod $period, ?Client $client = null, ?string $catalogType = null): array
     {
-        return app(PurchaseAnalytics::class)->handle($actor, $period, $client)->toArray();
+        return app(PurchaseAnalytics::class)->handle($actor, $period, $client, $catalogType)->toArray();
     }
 
     /** @return array<string, mixed> */
-    private function bookingStatuses(User $actor, DashboardPeriod $period, ?Client $client = null): array
+    private function bookingStatuses(User $actor, DashboardPeriod $period, ?Client $client = null, ?string $status = null): array
     {
-        return app(BookingStatusAnalytics::class)->handle($actor, $period, $client)->toArray();
+        return app(BookingStatusAnalytics::class)->handle($actor, $period, $client, $status)->toArray();
     }
 
     private function dimensionLabel(string $dimension): string
@@ -556,5 +578,21 @@ final class AnalyticsConsole extends LocalizedPage
         $value = trim($value);
 
         return preg_match('/^[a-z][a-z0-9_]{1,119}$/D', $value) === 1 ? $value : null;
+    }
+
+    /** @param array<string, mixed> $state */
+    private function selectedPurchaseType(array $state): ?string
+    {
+        $value = $state['purchase_type'] ?? null;
+
+        return is_string($value) && array_key_exists($value, PurchaseAnalytics::options()) ? $value : null;
+    }
+
+    /** @param array<string, mixed> $state */
+    private function selectedBookingStatus(array $state): ?string
+    {
+        $value = $state['booking_status'] ?? null;
+
+        return is_string($value) && array_key_exists($value, BookingStatusAnalytics::options()) ? $value : null;
     }
 }

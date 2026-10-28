@@ -28,12 +28,25 @@ final class PurchaseAnalytics
         private readonly OrganizationAuthorizer $authorizer,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): PurchaseAnalyticsData
+    /** @return array<string, string> */
+    public static function options(): array
     {
+        return self::Labels;
+    }
+
+    public function handle(
+        User $actor,
+        DashboardPeriod $period,
+        ?Client $client = null,
+        ?string $catalogType = null,
+    ): PurchaseAnalyticsData {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewFinance);
         $organizationId = (int) $organization->getKey();
         if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
+        if ($catalogType !== null && ! array_key_exists($catalogType, self::Labels)) {
             abort(404);
         }
         $clientId = $client?->getKey();
@@ -61,6 +74,9 @@ final class PurchaseAnalytics
                 : 'unknown';
             if (! isset(self::Labels[$key])) {
                 $key = 'unknown';
+            }
+            if ($catalogType !== null && $catalogType !== $key) {
+                continue;
             }
             $aggregates[$key]['clients'][(int) $row->client_id] = true;
             $aggregates[$key]['count'] = ($aggregates[$key]['count'] ?? 0) + 1;

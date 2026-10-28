@@ -104,6 +104,13 @@ final class PurchaseAndBookingStatusAnalyticsTest extends TestCase
 
         $statuses = app(BookingStatusAnalytics::class)->handle($admin, $period);
         self::assertSame([1, 1, 1], array_column($statuses->statuses, 'count'));
+
+        $programs = app(PurchaseAnalytics::class)->handle($admin, $period, catalogType: 'program');
+        self::assertSame(['Пакеты и программы'], array_column($programs->types, 'label'));
+        self::assertSame([1], array_column($programs->types, 'count'));
+
+        $cancelled = app(BookingStatusAnalytics::class)->handle($admin, $period, status: 'cancelled');
+        self::assertSame([['key' => 'cancelled', 'label' => 'Отменённые', 'count' => 1]], $cancelled->statuses);
     }
 
     /** @return array{0: Organization, 1: User} */
