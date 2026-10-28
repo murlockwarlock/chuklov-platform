@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Analytics\Application\Data\AcquisitionAnalyticsData;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\SourceBucket;
+use App\Modules\Attribution\Application\AttributionSourceCatalog;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -37,6 +38,7 @@ final class AcquisitionAnalytics
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly AttributionSourceCatalog $sourceCatalog,
     ) {}
 
     public function handle(User $actor, DashboardPeriod $period): AcquisitionAnalyticsData
@@ -132,14 +134,44 @@ final class AcquisitionAnalytics
             ->orderByDesc('source_count')
             ->orderBy('source_label')
             ->limit(self::MaximumSourceResultBuckets)
-            ->get()
-            ->map(static fn (object $row): SourceBucket => new SourceBucket(
-                label: (string) $row->source_label,
-                count: (int) $row->source_count,
-            ))
-            ->all();
+            ->get();
 
-        return array_values($rows);
+        $configured = $this->sourceCatalog->rows($organizationId);
+        $buckets = [];
+        foreach ($rows as $row) {
+            $label = in_array((string) $row->bucket_kind, [self::SemanticKindUnknown, self::BucketKindOverflow], true)
+                ? (string) $row->source_label
+                : $this->configuredLabel($row, $configured);
+            $buckets[$label] = ($buckets[$label] ?? 0) + (int) $row->source_count;
+        }
+
+        arsort($buckets);
+
+        return array_values(array_map(
+            static fn (string $label, int $count): SourceBucket => new SourceBucket(label: $label, count: $count),
+            array_keys($buckets),
+            array_values($buckets),
+        ));
+    }
+
+    /** @param list<array{source_key: string, label: string, aliases: list<string>, is_active: bool, sort_order: int}> $configured */
+    private function configuredLabel(object $row, array $configured): string
+    {
+        $needle = mb_strtolower(trim((string) ($row->bucket_value ?? '')));
+        foreach ($configured as $mapping) {
+            if (! $mapping['is_active']) {
+                continue;
+            }
+            $keys = [mb_strtolower($mapping['source_key']), mb_strtolower($mapping['label'])];
+            foreach ($mapping['aliases'] as $alias) {
+                $keys[] = mb_strtolower($alias);
+            }
+            if ($needle !== '' && in_array($needle, $keys, true)) {
+                return $mapping['label'];
+            }
+        }
+
+        return (string) $row->source_label;
     }
 
     /** @return literal-string */

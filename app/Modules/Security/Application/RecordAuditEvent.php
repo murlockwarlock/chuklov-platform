@@ -60,6 +60,7 @@ class RecordAuditEvent
         'attribution.accepted' => ['source_type', 'capture_channel', 'has_referral', 'has_utm'],
         'attribution.manual_source.accepted' => ['source_type'],
         'attribution.source_detail.updated' => [],
+        'attribution.source_catalog.updated' => ['count'],
         'attribution.legacy.adopted' => ['source_type'],
         'referral.identity.created' => ['client_id'],
         'referral.partner.activated' => ['client_id', 'source', 'reactivated'],
