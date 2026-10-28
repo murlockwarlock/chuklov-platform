@@ -26,6 +26,7 @@ final class MedicalSessionSnapshotHasher
             'root_cause_hypothesis' => $session->getRawOriginal('root_cause_hypothesis'),
             'protocol' => $session->getRawOriginal('protocol'),
             'result' => $session->getRawOriginal('result'),
+            'causes_manual_override' => (bool) $session->causes_manual_override,
             'encryption_key_version' => (int) $session->encryption_key_version,
             'pains' => MedicalSessionPain::query()
                 ->where('organization_id', $session->organization_id)
@@ -53,6 +54,11 @@ final class MedicalSessionSnapshotHasher
                 ->orderBy('id')
                 ->get(['id', 'medical_cause_definition_id', 'free_text', 'encryption_key_version'])
                 ->map(static fn (MedicalSessionRootCause $rootCause): array => $rootCause->getAttributes())
+                ->all(),
+            'causes' => $session->causes()
+                ->orderBy('medical_cause_definitions.id')
+                ->pluck('medical_cause_definitions.id')
+                ->values()
                 ->all(),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
     }

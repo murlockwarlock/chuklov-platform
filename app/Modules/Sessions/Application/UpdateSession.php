@@ -29,6 +29,7 @@ final readonly class UpdateSession
         private MedicalSessionPainReader $painReader,
         private MedicalSessionTestWriter $testWriter,
         private MedicalSessionTestReader $testReader,
+        private MedicalSessionCauseWriter $causeWriter,
     ) {}
 
     public function handle(User $actor, MedicalSession $session, UpdateSessionCommand $command, ?Client $expectedClient = null): MedicalSessionData
@@ -119,6 +120,9 @@ final readonly class UpdateSession
                 'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
                 'protocol' => $encrypted->encryptedProtocol,
                 'result' => $encrypted->encryptedResult,
+                'causes_manual_override' => $command->causesManualOverrideProvided
+                    ? $command->causesManualOverride
+                    : (bool) $existing->causes_manual_override,
                 'encryption_key_version' => $keyVersion,
             ]);
             $existing->save();
@@ -127,7 +131,23 @@ final readonly class UpdateSession
                 $this->painWriter->replace($existing, $command->pains ?? [], $keyVersion);
             }
             if ($command->testResultsProvided || $command->rootCausesProvided) {
-                $this->testWriter->replace($existing, $command->testResults ?? [], $command->rootCauses ?? [], $keyVersion);
+                $existingSessionCauseIds = $command->causesManualOverrideProvided
+                    ? ($command->causesManualOverride ? ($command->causeIds ?? []) : [])
+                    : ($existing->causes_manual_override ? $existing->causes()->pluck('medical_cause_definitions.id')->all() : []);
+                $this->testWriter->replace(
+                    $existing,
+                    $command->testResults ?? [],
+                    $command->rootCauses ?? [],
+                    $keyVersion,
+                    $existingSessionCauseIds,
+                );
+            }
+            if ($command->causesProvided || $command->causesManualOverrideProvided) {
+                $this->causeWriter->replace(
+                    $existing,
+                    $command->causeIds ?? [],
+                    $command->causesManualOverrideProvided ? $command->causesManualOverride : (bool) $existing->causes_manual_override,
+                );
             }
 
             $this->audit->handle(
@@ -165,6 +185,8 @@ final readonly class UpdateSession
                 visualPostureDiagnostics: $visualPostureDiagnostics,
                 testResults: $this->testReader->tests($existing),
                 rootCauses: $this->testReader->rootCauses($existing),
+                causes: $this->testReader->causes($existing),
+                causesManualOverride: (bool) $existing->causes_manual_override,
             );
         });
 
@@ -242,6 +264,9 @@ final readonly class UpdateSession
         }
         if ($command->rootCausesProvided) {
             $fields[] = 'root_causes';
+        }
+        if ($command->causesProvided || $command->causesManualOverrideProvided) {
+            $fields[] = 'causes';
         }
 
         return $fields;

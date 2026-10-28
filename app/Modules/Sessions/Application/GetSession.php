@@ -64,6 +64,8 @@ final class GetSession
             pains: $this->painReader->forSession($persisted),
             testResults: $this->testReader->tests($persisted),
             rootCauses: $this->testReader->rootCauses($persisted),
+            causes: $this->testReader->causes($persisted),
+            causesManualOverride: (bool) $persisted->causes_manual_override,
         );
 
         return $this->resolved[$cacheKey] = $data;

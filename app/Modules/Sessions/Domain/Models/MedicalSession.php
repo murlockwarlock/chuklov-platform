@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -29,6 +30,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $root_cause_hypothesis
  * @property string|null $protocol
  * @property string|null $result
+ * @property bool $causes_manual_override
  * @property int $encryption_key_version
  * @property Carbon $occurred_at
  * @property Carbon $created_at
@@ -40,8 +42,9 @@ use Illuminate\Support\Carbon;
  * @property-read Collection<int, MedicalSessionAttachment> $attachmentLinks
  * @property-read Collection<int, MedicalSessionTestResult> $testResults
  * @property-read Collection<int, MedicalSessionRootCause> $rootCauses
+ * @property-read Collection<int, MedicalCauseDefinition> $causes
  */
-#[Fillable(['pain', 'pain_vas', 'tests', 'observations', 'subjective_feelings', 'visual_posture_diagnostics', 'root_cause_hypothesis', 'protocol', 'result', 'encryption_key_version'])]
+#[Fillable(['pain', 'pain_vas', 'tests', 'observations', 'subjective_feelings', 'visual_posture_diagnostics', 'root_cause_hypothesis', 'protocol', 'result', 'causes_manual_override', 'encryption_key_version'])]
 class MedicalSession extends Model
 {
     /** @return BelongsTo<Organization, $this> */
@@ -96,10 +99,19 @@ class MedicalSession extends Model
             ->orderBy('id');
     }
 
+    /** @return BelongsToMany<MedicalCauseDefinition, $this> */
+    public function causes(): BelongsToMany
+    {
+        return $this->belongsToMany(MedicalCauseDefinition::class, 'medical_session_causes', 'medical_session_id', 'medical_cause_definition_id')
+            ->wherePivot('organization_id', $this->organization_id)
+            ->withPivot(['organization_id', 'client_id']);
+    }
+
     protected function casts(): array
     {
         return [
             'encryption_key_version' => 'integer',
+            'causes_manual_override' => 'boolean',
             'occurred_at' => 'datetime',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',

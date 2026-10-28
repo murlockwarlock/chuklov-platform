@@ -31,6 +31,7 @@ use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
+use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
@@ -132,6 +133,17 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->collapsible()
                             ->addActionLabel(__('Добавить тест'))
                             ->columnSpanFull(),
+                        Hidden::make('causes_manual_override')->dehydrated()->default(false),
+                        Select::make('cause_ids')
+                            ->label(__('Причины нарушений'))
+                            ->helperText(__('Список собирается из причин у abnormal-тестов; его можно скорректировать вручную.'))
+                            ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->causeOptionsForSelection(app(OrganizationContext::class)->id(), (array) $get('cause_ids')))
+                            ->multiple()
+                            ->searchable()
+                            ->preload()
+                            ->live()
+                            ->afterStateUpdated(static fn (Set $set): mixed => $set('causes_manual_override', true))
+                            ->columnSpanFull(),
                         Hidden::make('tests')->dehydrated()->nullable(),
                         Hidden::make('observations')->dehydrated()->nullable(),
                         Repeater::make('root_causes')
@@ -199,6 +211,8 @@ class EditMedicalSession extends LocalizedEditRecord
                 'cause_id' => $cause->causeId,
                 'free_text' => $cause->freeText,
             ], $decrypted->rootCauses),
+            'cause_ids' => array_map(static fn (array $cause): int => $cause['id'], $decrypted->causes),
+            'causes_manual_override' => $decrypted->causesManualOverride,
             'expected_snapshot' => app(MedicalSessionSnapshotHasher::class)->forSession($record),
         ];
     }
@@ -260,6 +274,10 @@ class EditMedicalSession extends LocalizedEditRecord
             ->filter(static fn (int $id): bool => $id > 0)
             ->unique()
             ->all();
+        $selectedCauseIds = $get('../../cause_ids');
+        if (is_array($selectedCauseIds)) {
+            $causeIds = array_values(array_unique([...$causeIds, ...array_map(static fn (mixed $id): int => (int) $id, $selectedCauseIds)]));
+        }
         $currentCauseId = (int) $get('cause_id');
         if ($currentCauseId > 0) {
             $causeIds[] = $currentCauseId;
@@ -330,6 +348,8 @@ class EditMedicalSession extends LocalizedEditRecord
             'pains',
             'test_results',
             'root_causes',
+            'cause_ids',
+            'causes_manual_override',
         ];
 
         $normalized = [];

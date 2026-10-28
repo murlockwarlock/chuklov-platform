@@ -32,6 +32,9 @@ final readonly class MedicalSessionData
         public array $testResults = [],
         /** @var list<MedicalSessionRootCauseData> */
         public array $rootCauses = [],
+        /** @var list<array{id:int,name:string}> */
+        public array $causes = [],
+        public bool $causesManualOverride = false,
     ) {}
 
     public function occurredAtAtom(): ?string
@@ -55,6 +58,8 @@ final readonly class MedicalSessionData
             'visual_posture_diagnostics' => $this->visualPostureDiagnostics,
             'test_results' => array_map(static fn (MedicalSessionTestData $test): array => $test->toArray(), $this->testResults),
             'root_causes' => array_map(static fn (MedicalSessionRootCauseData $cause): array => $cause->toArray(), $this->rootCauses),
+            'causes' => $this->causes,
+            'causes_manual_override' => $this->causesManualOverride,
             'tests' => $this->tests,
             'observations' => $this->observations,
             'root_cause_hypothesis' => $this->rootCauseHypothesis,

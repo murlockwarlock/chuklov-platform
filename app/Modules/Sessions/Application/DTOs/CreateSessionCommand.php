@@ -29,6 +29,9 @@ final readonly class CreateSessionCommand
         public ?array $testResults = null,
         /** @var array<int, mixed>|null */
         public ?array $rootCauses = null,
+        /** @var array<int, mixed>|null */
+        public ?array $causeIds = null,
+        public bool $causesManualOverride = false,
     ) {}
 
     /**
@@ -61,6 +64,8 @@ final readonly class CreateSessionCommand
             visualPostureDiagnostics: self::optionalTrimmedString($data, 'visual_posture_diagnostics'),
             testResults: array_key_exists('test_results', $data) && is_array($data['test_results']) ? array_values($data['test_results']) : null,
             rootCauses: array_key_exists('root_causes', $data) && is_array($data['root_causes']) ? array_values($data['root_causes']) : null,
+            causeIds: array_key_exists('cause_ids', $data) && is_array($data['cause_ids']) ? array_values($data['cause_ids']) : null,
+            causesManualOverride: filter_var($data['causes_manual_override'] ?? false, FILTER_VALIDATE_BOOLEAN),
         );
     }
 

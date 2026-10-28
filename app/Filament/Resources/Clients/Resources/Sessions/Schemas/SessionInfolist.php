@@ -305,15 +305,12 @@ final class SessionInfolist
             return [];
         }
 
-        $names = collect($data->testResults)
-            ->flatMap(static fn ($test): array => collect($test->causes)->pluck('name')->all())
+        return array_values(collect($data->causes)
+            ->pluck('name')
             ->filter(static fn (mixed $name): bool => is_string($name))
             ->map(static fn (mixed $name): string => $name)
-            ->unique()
             ->values()
-            ->all();
-
-        return array_values($names);
+            ->all());
     }
 
     /** @return list<array<string, mixed>> */
@@ -334,7 +331,7 @@ final class SessionInfolist
     {
         $data = self::sessionData($record, $component);
 
-        return $data instanceof MedicalSessionData && ($data->testResults !== [] || $data->rootCauses !== []);
+        return $data instanceof MedicalSessionData && ($data->testResults !== [] || $data->causes !== [] || $data->rootCauses !== []);
     }
 
     private static function hasCurrentClinicalFields(MedicalSession $record, Component $component): bool

@@ -444,6 +444,90 @@ final class MedicalPainFlowTest extends TestCase
         self::assertSame($session->rootCauses[0]->toArray(), $reloaded?->rootCauses[0]->toArray());
     }
 
+    public function test_session_causes_can_be_manually_overridden_without_losing_test_relations(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'manual_cause_test',
+            'name' => 'Тест для ручной причины',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $abnormal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'abnormal',
+            'label' => 'Отклонение',
+            'is_abnormal' => true,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $derivedCause = MedicalCauseDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Причина из теста',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $manualCause = MedicalCauseDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Ручная корректировка',
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+
+        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-26 09:00:00', 'UTC'),
+            testResults: [[
+                'test_id' => $test->getKey(),
+                'before_value_id' => $abnormal->getKey(),
+                'after_value_id' => $abnormal->getKey(),
+                'cause_ids' => [$derivedCause->getKey()],
+            ]],
+        ));
+
+        self::assertFalse($session->causesManualOverride);
+        self::assertSame(['Причина из теста'], array_column($session->causes, 'name'));
+
+        $updated = app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($session->id), UpdateSessionCommand::fromArray([
+            'pain' => null,
+            'tests' => null,
+            'observations' => null,
+            'root_cause_hypothesis' => null,
+            'protocol' => null,
+            'result' => null,
+            'test_results' => [[
+                'test_id' => $test->getKey(),
+                'before_value_id' => $abnormal->getKey(),
+                'after_value_id' => $abnormal->getKey(),
+                'cause_ids' => [$derivedCause->getKey()],
+            ]],
+            'cause_ids' => [$manualCause->getKey()],
+            'causes_manual_override' => true,
+            'root_causes' => [['cause_id' => $manualCause->getKey(), 'free_text' => 'Выбрано вручную']],
+        ]));
+
+        self::assertTrue($updated->causesManualOverride);
+        self::assertSame(['Ручная корректировка'], array_column($updated->causes, 'name'));
+        self::assertSame(['Причина из теста'], array_column($updated->testResults[0]->causes, 'name'));
+        self::assertSame('Выбрано вручную', $updated->rootCauses[0]->freeText);
+
+        $cleared = app(UpdateSession::class)->handle($admin, MedicalSession::findOrFail($session->id), UpdateSessionCommand::fromArray([
+            'pain' => null,
+            'tests' => null,
+            'observations' => null,
+            'root_cause_hypothesis' => null,
+            'protocol' => null,
+            'result' => null,
+            'cause_ids' => [],
+            'causes_manual_override' => true,
+        ]));
+
+        self::assertSame([], $cleared->causes);
+        self::assertSame([], app(GetSession::class)->handle($admin, MedicalSession::findOrFail($session->id), $client)?->causes);
+    }
+
     public function test_causes_require_an_abnormal_test_and_root_causes_require_current_session_causes(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

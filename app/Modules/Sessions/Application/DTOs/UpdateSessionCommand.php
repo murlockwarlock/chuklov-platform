@@ -29,6 +29,11 @@ final readonly class UpdateSessionCommand
         /** @var array<int, mixed>|null */
         public ?array $rootCauses = null,
         public bool $rootCausesProvided = false,
+        /** @var array<int, mixed>|null */
+        public ?array $causeIds = null,
+        public bool $causesProvided = false,
+        public bool $causesManualOverride = false,
+        public bool $causesManualOverrideProvided = false,
     ) {}
 
     /**
@@ -78,6 +83,10 @@ final readonly class UpdateSessionCommand
             testResultsProvided: array_key_exists('test_results', $data),
             rootCauses: array_key_exists('root_causes', $data) && is_array($data['root_causes']) ? array_values($data['root_causes']) : null,
             rootCausesProvided: array_key_exists('root_causes', $data),
+            causeIds: array_key_exists('cause_ids', $data) && is_array($data['cause_ids']) ? array_values($data['cause_ids']) : null,
+            causesProvided: array_key_exists('cause_ids', $data),
+            causesManualOverride: filter_var($data['causes_manual_override'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            causesManualOverrideProvided: array_key_exists('causes_manual_override', $data),
         );
     }
 

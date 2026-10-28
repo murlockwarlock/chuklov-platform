@@ -19,8 +19,9 @@ final readonly class MedicalSessionTestWriter
     /**
      * @param  array<int, mixed>  $tests
      * @param  array<int, mixed>  $rootCauses
+     * @param  array<int, mixed>  $sessionCauseIds
      */
-    public function replace(MedicalSession $session, array $tests, array $rootCauses, int $keyVersion): void
+    public function replace(MedicalSession $session, array $tests, array $rootCauses, int $keyVersion, array $sessionCauseIds = []): void
     {
         $organizationId = (int) $session->organization_id;
         $existing = $session->testResults()->with('causes')->get()->keyBy('medical_test_definition_id');
@@ -48,7 +49,11 @@ final readonly class MedicalSessionTestWriter
         foreach ($normalizedTests as $test) {
             $testCauseIds = [...$testCauseIds, ...$test['cause_ids']];
         }
-        $availableRootCauseIds = array_values(array_unique([...$testCauseIds, ...$existingRootCauseIds]));
+        $availableRootCauseIds = array_values(array_unique([
+            ...$testCauseIds,
+            ...$existingRootCauseIds,
+            ...collect($sessionCauseIds)->map(static fn (mixed $id): int => (int) $id)->filter(static fn (int $id): bool => $id > 0)->all(),
+        ]));
         $normalizedRoots = $this->normalizeRootCauses($rootCauses, $availableRootCauseIds);
 
         $kept = [];

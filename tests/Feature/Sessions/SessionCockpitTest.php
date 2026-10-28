@@ -904,7 +904,9 @@ final class SessionCockpitTest extends TestCase
 
         Livewire::actingAs($admin)
             ->test(CreateMedicalSession::class, ['parentRecord' => $client])
-            ->assertSuccessful();
+            ->assertSuccessful()
+            ->assertSchemaComponentExists('cause_ids')
+            ->assertSchemaComponentExists('protocol_actions');
 
         $component = Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])

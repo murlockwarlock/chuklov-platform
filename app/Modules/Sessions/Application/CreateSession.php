@@ -32,6 +32,7 @@ final readonly class CreateSession
         private MedicalSessionPainReader $painReader,
         private MedicalSessionTestWriter $testWriter,
         private MedicalSessionTestReader $testReader,
+        private MedicalSessionCauseWriter $causeWriter,
     ) {}
 
     public function handle(User $actor, Client $client, CreateSessionCommand $command): MedicalSessionData
@@ -93,6 +94,7 @@ final readonly class CreateSession
                 'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
                 'protocol' => $encrypted->encryptedProtocol,
                 'result' => $encrypted->encryptedResult,
+                'causes_manual_override' => $command->causesManualOverride,
                 'encryption_key_version' => $keyVersion,
                 'occurred_at' => $occurredAtUtc,
             ]);
@@ -104,7 +106,16 @@ final readonly class CreateSession
                 $this->painInitializer->initialize($session, $keyVersion);
             }
             if ($command->testResults !== null || $command->rootCauses !== null) {
-                $this->testWriter->replace($session, $command->testResults ?? [], $command->rootCauses ?? [], $keyVersion);
+                $this->testWriter->replace(
+                    $session,
+                    $command->testResults ?? [],
+                    $command->rootCauses ?? [],
+                    $keyVersion,
+                    $command->causesManualOverride ? ($command->causeIds ?? []) : [],
+                );
+            }
+            if ($command->causeIds !== null || $command->causesManualOverride) {
+                $this->causeWriter->replace($session, $command->causeIds ?? [], $command->causesManualOverride);
             }
 
             $this->audit->handle(
@@ -144,6 +155,8 @@ final readonly class CreateSession
                 visualPostureDiagnostics: $command->visualPostureDiagnostics,
                 testResults: $this->testReader->tests($session),
                 rootCauses: $this->testReader->rootCauses($session),
+                causes: $this->testReader->causes($session),
+                causesManualOverride: (bool) $session->causes_manual_override,
             );
         });
     }
