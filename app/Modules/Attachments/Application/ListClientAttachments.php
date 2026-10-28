@@ -30,6 +30,7 @@ final readonly class ListClientAttachments
                 'original_filename',
                 'mime_type',
                 'size_bytes',
+                'storage_path',
                 'evaluation_fixture_key',
                 'created_at',
             ])

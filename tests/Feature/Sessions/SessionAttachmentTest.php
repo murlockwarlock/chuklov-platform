@@ -17,6 +17,7 @@ use App\Modules\Sessions\Application\GetSessionDynamics;
 use App\Modules\Sessions\Application\LinkSessionAttachment;
 use App\Modules\Sessions\Application\ListSessionAttachments;
 use App\Modules\Sessions\Application\UnlinkSessionAttachment;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Facades\Filament;
@@ -58,6 +59,38 @@ final class SessionAttachmentTest extends TestCase
         ));
         $this->assertDatabaseMissing('medical_session_attachments', ['medical_attachment_id' => $attachment->getKey()]);
         $this->assertDatabaseHas('medical_attachments', ['id' => $attachment->getKey()]);
+    }
+
+    public function test_posture_photo_can_be_assigned_to_before_gallery_and_report_cannot(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $session = $this->makeSession($admin, $client, $specialist);
+        $photo = $this->attachment($organization, $admin, $client, 'before.jpg', AttachmentType::PosturePhoto, 'jpg');
+        $report = $this->attachment($organization, $admin, $client, 'report.pdf');
+
+        app(LinkSessionAttachment::class)->handle(
+            $admin,
+            $session,
+            $client,
+            (int) $photo->getKey(),
+            MedicalSessionAttachmentGallery::Before,
+        );
+
+        $listed = app(ListSessionAttachments::class)->handle($admin, $session, $client);
+        self::assertSame('До', $listed[0]->gallery);
+        $this->assertDatabaseHas('medical_session_attachments', [
+            'medical_attachment_id' => $photo->getKey(),
+            'gallery' => MedicalSessionAttachmentGallery::Before->value,
+        ]);
+
+        $this->expectException(ValidationException::class);
+        app(LinkSessionAttachment::class)->handle(
+            $admin,
+            $session,
+            $client,
+            (int) $report->getKey(),
+            MedicalSessionAttachmentGallery::After,
+        );
     }
 
     public function test_link_rejects_foreign_organization_and_wrong_client_attachments(): void
@@ -295,17 +328,19 @@ final class SessionAttachmentTest extends TestCase
         User $admin,
         Client $client,
         string $filename = 'report.pdf',
+        AttachmentType $type = AttachmentType::MedicalReport,
+        string $extension = 'pdf',
     ): MedicalAttachment {
         return MedicalAttachment::query()->create([
             'uuid' => (string) Str::uuid(),
             'organization_id' => $organization->getKey(),
             'client_id' => $client->getKey(),
             'uploaded_by_user_id' => $admin->getKey(),
-            'attachment_type' => AttachmentType::MedicalReport,
             'disk' => 'private',
-            'storage_path' => 'medical/attachments/'.$organization->getKey().'/report.pdf',
+            'storage_path' => 'medical/attachments/'.$organization->getKey().'/'.$filename,
             'original_filename' => $filename,
-            'mime_type' => 'application/pdf',
+            'attachment_type' => $type,
+            'mime_type' => $extension === 'jpg' ? 'image/jpeg' : 'application/pdf',
             'size_bytes' => 1024,
             'sha256_checksum' => (string) Str::uuid(),
         ]);

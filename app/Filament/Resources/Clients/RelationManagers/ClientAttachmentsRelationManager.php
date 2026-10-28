@@ -86,7 +86,9 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
             ->poll(fn (): ?string => $canViewAiRuns && $this->shouldPoll() ? '5s' : null)
             ->stackedOnMobile()
             ->modifyQueryUsing(
-                fn (Builder $query): Builder => app(ListClientAttachments::class)->query($actor, $client),
+                fn (Builder $query): Builder => app(ListClientAttachments::class)
+                    ->query($actor, $client)
+                    ->where('attachment_type', '!=', AttachmentType::AudioRecording),
             )
             ->columns([
                 TextColumn::make('original_filename')

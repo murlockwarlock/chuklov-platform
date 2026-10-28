@@ -11,6 +11,7 @@ use App\Modules\Sessions\Application\LinkSessionAttachment;
 use App\Modules\Sessions\Application\ListSessionAttachments;
 use App\Modules\Sessions\Application\SearchClientAttachments;
 use App\Modules\Sessions\Application\UnlinkSessionAttachment;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
@@ -50,6 +51,13 @@ class ViewMedicalSession extends LocalizedViewRecord
                         ->getOptionLabelUsing(fn (mixed $value): ?string => is_numeric($value)
                             ? app(SearchClientAttachments::class)->label($this->actor(), $this->client(), (int) $value)
                             : null),
+                    Select::make('gallery')
+                        ->label(__('Раздел галереи'))
+                        ->options(collect(MedicalSessionAttachmentGallery::cases())->mapWithKeys(
+                            static fn (MedicalSessionAttachmentGallery $gallery): array => [$gallery->value => $gallery->label()],
+                        )->all())
+                        ->default(MedicalSessionAttachmentGallery::General->value)
+                        ->required(),
                 ])
                 ->modalSubmitActionLabel(__('Связать'))
                 ->action(function (array $data): void {
@@ -58,6 +66,7 @@ class ViewMedicalSession extends LocalizedViewRecord
                         $this->session(),
                         $this->client(),
                         (int) $data['attachment_id'],
+                        MedicalSessionAttachmentGallery::from((string) $data['gallery']),
                     );
 
                     Notification::make()->success()->title(__('Файл связан с сеансом'))->send();

@@ -124,6 +124,7 @@ final class SessionInfolist
                                     ->openUrlInNewTab()
                                     ->columnSpanFull(),
                                 TextEntry::make('type')->label(__('Тип')),
+                                TextEntry::make('gallery')->label(__('Раздел')),
                                 TextEntry::make('size')->label(__('Размер')),
                                 TextEntry::make('status')->label(__('Состояние')),
                             ])
