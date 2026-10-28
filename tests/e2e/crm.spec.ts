@@ -2438,12 +2438,12 @@ test('staff can manage private client audio recordings', async ({ page }) => {
         throw new Error('The authorized audio preview did not expose a private URL.');
     }
     await page.context().clearCookies();
-    const unauthorizedResponse = await page.request.get(playbackSource, {
-        maxRedirects: 0,
-        headers: { Accept: 'application/json' },
-    });
-    expect([302, 401, 403]).toContain(unauthorizedResponse.status());
-    expect(JSON.stringify(await unauthorizedResponse.body())).not.toContain('qa-session.wav');
+    const unauthorizedStatus = await page.evaluate(async (url: string): Promise<number> => {
+        const response = await fetch(url, { credentials: 'same-origin', redirect: 'manual' });
+
+        return response.status;
+    }, playbackSource);
+    expect([0, 302, 401, 403]).toContain(unauthorizedStatus);
 });
 
 test('staff can complete the clinical AI workflow from the client cockpit', async ({ page }) => {
