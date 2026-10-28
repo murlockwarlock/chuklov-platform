@@ -86,7 +86,7 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
                         FileUpload::make('file')
                             ->label(__('Аудиофайл'))
                             ->acceptedFileTypes(self::audioMimeTypes())
-                            ->maxSize((int) ceil((int) config('medical.audio_attachment_max_bytes', 536_870_912) / 1024))
+                            ->maxSize((int) ceil((int) config('medical.audio_attachment_max_bytes', 67_108_864) / 1024))
                             ->storeFiles(false)
                             ->required(),
                     ])

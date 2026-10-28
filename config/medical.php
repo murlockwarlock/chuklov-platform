@@ -8,5 +8,5 @@ return [
     'current_version' => (int) env('MEDICAL_ENCRYPTION_KEY_VERSION', 1),
     'cipher' => 'AES-256-CBC',
     'attachment_max_bytes' => (int) env('MEDICAL_ATTACHMENT_MAX_BYTES', 20_971_520),
-    'audio_attachment_max_bytes' => (int) env('MEDICAL_AUDIO_ATTACHMENT_MAX_BYTES', 536_870_912),
+    'audio_attachment_max_bytes' => (int) env('MEDICAL_AUDIO_ATTACHMENT_MAX_BYTES', 67_108_864),
 ];

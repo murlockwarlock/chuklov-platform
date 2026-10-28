@@ -17,7 +17,7 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
     public function maxBytes(?AttachmentType $attachmentType = null): int
     {
         if ($attachmentType === AttachmentType::AudioRecording) {
-            return (int) config('medical.audio_attachment_max_bytes', 536_870_912);
+            return (int) config('medical.audio_attachment_max_bytes', 67_108_864);
         }
 
         return (int) config('medical.attachment_max_bytes', 20_971_520);
