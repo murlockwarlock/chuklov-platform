@@ -2661,7 +2661,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(testName, { exact: true })).toBeVisible();
     await expect(page.getByText(causeName, { exact: true }).first()).toBeVisible();
     await expect(page.getByText('E2E описание первопричины', { exact: true })).toBeVisible();
-    await expect(page.getByText('E2E протокол', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Протокол и результат сеанса').getByText('E2E протокол', { exact: true })).toBeVisible();
     await expect(page.getByText('E2E стало легче', { exact: true })).toBeVisible();
     await expect(page.getByText('E2E плечи ровнее', { exact: true })).toBeVisible();
     const dynamics = page.getByLabel('Динамика подтверждённых фактов');
