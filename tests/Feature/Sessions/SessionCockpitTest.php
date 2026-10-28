@@ -414,6 +414,39 @@ final class SessionCockpitTest extends TestCase
             ->assertSee('Файлы сеанса');
     }
 
+    public function test_filament_detail_page_renders_normalized_pain_rows_with_scores_and_frequency(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $result = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-08-16 10:00:00', 'UTC'),
+            pains: [[
+                'name' => 'Шея',
+                'frequency_mode' => 'count',
+                'frequency_count' => 3,
+                'frequency_period_unit' => 'week',
+                'time_of_day' => ['morning', 'evening'],
+                'before_score' => 6,
+                'after_score' => 2,
+            ]],
+        ));
+        $session = MedicalSession::query()->whereKey($result->id)->firstOrFail();
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Боли')
+            ->assertSee('Шея')
+            ->assertSee('3 раз за неделя')
+            ->assertSee('Утро, Вечер')
+            ->assertSee('6/10')
+            ->assertSee('2/10');
+    }
+
     public function test_filament_session_cockpit_shows_reviewed_clinical_summary_and_canonical_workspace_link(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

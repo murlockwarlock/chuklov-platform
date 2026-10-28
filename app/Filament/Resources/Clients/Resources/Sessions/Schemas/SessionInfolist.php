@@ -10,6 +10,7 @@ use App\Filament\Support\CrmLabel;
 use App\Models\User;
 use App\Modules\AI\Application\Services\ReadClinicalAiClientSummary;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProfileAuthorization;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
@@ -84,6 +85,23 @@ final class SessionInfolist
                             ->columnSpanFull(),
                     ])
                     ->visible(fn (MedicalSession $record, Section $section): bool => self::clinicalSummary($record, $section) !== null),
+                Section::make(__('Боли'))
+                    ->schema([
+                        RepeatableEntry::make('pains')
+                            ->hiddenLabel()
+                            ->schema([
+                                TextEntry::make('name')->label(__('Боль'))->wrap(),
+                                TextEntry::make('frequency')->label(__('Частота'))->wrap(),
+                                TextEntry::make('time_of_day')->label(__('Время суток'))->wrap(),
+                                TextEntry::make('before_score')->label(__('До сеанса'))->suffix('/10')->placeholder(__('Не указано')),
+                                TextEntry::make('after_score')->label(__('После сеанса'))->suffix('/10')->placeholder(__('Не указано')),
+                                TextEntry::make('previous_after_score')->label(__('После предыдущего сеанса'))->suffix('/10')->placeholder(__('Не указано')),
+                            ])
+                            ->columns(3)
+                            ->state(fn (MedicalSession $record, RepeatableEntry $entry): array => self::pains($record, $entry))
+                            ->columnSpanFull(),
+                    ])
+                    ->visible(fn (MedicalSession $record, Section $section): bool => self::hasPains($record, $section)),
                 Section::make(__('Тесты и причины нарушений'))
                     ->schema([
                         RepeatableEntry::make('test_results')
@@ -232,11 +250,15 @@ final class SessionInfolist
             return [];
         }
 
-        return collect($data->testResults)
+        $names = collect($data->testResults)
             ->flatMap(static fn ($test): array => collect($test->causes)->pluck('name')->all())
+            ->filter(static fn (mixed $name): bool => is_string($name))
+            ->map(static fn (mixed $name): string => $name)
             ->unique()
             ->values()
             ->all();
+
+        return array_values($names);
     }
 
     /** @return list<array<string, mixed>> */
@@ -258,6 +280,54 @@ final class SessionInfolist
         $data = self::sessionData($record, $component);
 
         return $data instanceof MedicalSessionData && ($data->testResults !== [] || $data->rootCauses !== []);
+    }
+
+    /** @return list<array<string, mixed>> */
+    private static function pains(MedicalSession $record, Component $component): array
+    {
+        $data = self::sessionData($record, $component);
+        if (! $data instanceof MedicalSessionData) {
+            return [];
+        }
+
+        $periods = app(MedicalFrequencyPeriodCatalog::class)->options(app(OrganizationContext::class)->id());
+        $timeLabels = [
+            'all' => __('Весь день'),
+            'morning' => __('Утро'),
+            'day' => __('День'),
+            'evening' => __('Вечер'),
+            'night' => __('Ночь'),
+        ];
+
+        return array_map(static function ($pain) use ($periods, $timeLabels): array {
+            $periodKey = $pain->frequencyPeriodUnit;
+            $periodLabel = is_string($periodKey) ? ($periods[$periodKey] ?? __('период')) : __('период');
+            $frequency = $pain->frequencyMode === 'count'
+                ? __(':count раз за :period', [
+                    'count' => $pain->frequencyCount ?? '—',
+                    'period' => $periodLabel,
+                ])
+                : __('Постоянная');
+
+            $times = array_map(
+                static fn (string $time): string => $timeLabels[$time] ?? $time,
+                $pain->timeOfDay,
+            );
+
+            return [
+                'name' => $pain->name,
+                'frequency' => $frequency,
+                'time_of_day' => implode(', ', $times),
+                'before_score' => $pain->beforeScore,
+                'after_score' => $pain->afterScore,
+                'previous_after_score' => $pain->previousAfterScore,
+            ];
+        }, $data->pains);
+    }
+
+    private static function hasPains(MedicalSession $record, Component $component): bool
+    {
+        return self::pains($record, $component) !== [];
     }
 
     private static function sessionData(MedicalSession $record, Component $component): ?MedicalSessionData
