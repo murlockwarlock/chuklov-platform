@@ -18,6 +18,10 @@ use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Feedback\Domain\Models\FeedbackTheme;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
+use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
@@ -256,6 +260,47 @@ final class AnalyticsAiClassificationTest extends TestCase
 
         self::assertSame(ClassificationRunStatus::Succeeded, $accepted->status);
         self::assertSame([(int) $tag->getKey()], $task->refresh()->goalTags()->pluck('tracker_goal_tags.id')->all());
+    }
+
+    public function test_complaint_classification_can_be_manually_corrected_on_a_profile_pain(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            pains: [['name' => 'Шея', 'score' => 7]],
+            painsProvided: true,
+        ));
+        $pain = MedicalProfilePain::query()->where('organization_id', $organization->getKey())->sole();
+        $tag = new MedicalProblemTag;
+        $tag->forceFill([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Шейный отдел',
+            'group_name' => 'Синтетика',
+            'is_active' => true,
+            'sort_order' => 1,
+        ])->save();
+        $run = new AnalyticsClassificationRun;
+        $run->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'taxonomy' => 'complaints',
+            'source_type' => 'medical_profile_pain',
+            'source_id' => $pain->getKey(),
+            'source_digest' => hash('sha256', 'profile-pain-classification'),
+            'status' => ClassificationRunStatus::NeedsReview,
+            'attempt_count' => 1,
+            'suggestions' => [['id' => $tag->getKey(), 'label' => 'Синтетика: Шейный отдел']],
+        ])->save();
+        app(OrganizationContext::class)->set($organization);
+
+        $accepted = app(AcceptAnalyticsClassification::class)->handle(
+            actor: $admin,
+            runId: (int) $run->getKey(),
+            themeIds: [$tag->getKey()],
+        );
+
+        self::assertSame(ClassificationRunStatus::Succeeded, $accepted->status);
+        self::assertSame([(int) $tag->getKey()], $pain->refresh()->problemTags()->pluck('medical_problem_tags.id')->all());
     }
 
     /** @return array{0: Organization, 1: User} */

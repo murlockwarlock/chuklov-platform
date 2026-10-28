@@ -27,9 +27,11 @@ use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientConsent;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
+use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProfileSnapshotHasher;
 use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -179,6 +181,8 @@ class ViewClient extends LocalizedViewRecord
                 $this->assignTrackerTaskAction(),
                 $this->suggestTrackerGoalsAction(),
                 $this->acceptTrackerGoalsAction(),
+                $this->suggestProfilePainTagsAction(),
+                $this->acceptProfilePainTagsAction(),
                 $this->grantTrackerAccessAction(),
                 $this->extendTrackerAccessAction(),
                 $this->endTrackerAccessAction(),
@@ -783,6 +787,92 @@ class ViewClient extends LocalizedViewRecord
             });
     }
 
+    private function suggestProfilePainTagsAction(): Action
+    {
+        return Action::make('suggestProfilePainTags')
+            ->label(__('Предложить категории боли с ИИ'))
+            ->icon('heroicon-o-sparkles')
+            ->schema([
+                Select::make('pain_id')
+                    ->label(__('Боль клиента'))
+                    ->options(fn (): array => $this->medicalProfilePainOptions())
+                    ->searchable()
+                    ->preload()
+                    ->required(),
+            ])
+            ->visible(fn (): bool => $this->canManageClients())
+            ->action(function (array $data): void {
+                $pain = $this->medicalProfilePain((int) ($data['pain_id'] ?? 0));
+                $profile = app(GetMedicalProfile::class)->handle($this->actor(), $this->clientRecord());
+                $sourceText = collect($profile?->pains ?? [])->firstWhere('id', (int) $pain->getKey())?->name;
+                if (! is_string($sourceText) || trim($sourceText) === '') {
+                    Notification::make()->warning()->title(__('Не удалось прочитать боль'))->send();
+
+                    return;
+                }
+                $options = app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id());
+                $result = app(SuggestAnalyticsTags::class)->handle(
+                    actor: $this->actor(),
+                    taxonomy: 'complaints',
+                    sourceType: 'medical_profile_pain',
+                    sourceId: (int) $pain->getKey(),
+                    clientId: (int) $pain->client_id,
+                    sourceText: $sourceText,
+                    availableTags: array_map(
+                        static fn (int|string $id, string $label): array => ['id' => (int) $id, 'label' => $label],
+                        array_keys($options),
+                        array_values($options),
+                    ),
+                );
+                $labels = collect($result->suggestions)->pluck('label')->implode(', ');
+                if ($labels !== '') {
+                    Notification::make()->success()->title(__('Предложения категорий готовы'))->body($labels)->send();
+
+                    return;
+                }
+
+                Notification::make()->warning()->title(__('Предложения категорий недоступны'))->body(__('Настройте prompt классификатора или добавьте категории проблем.'))->send();
+            });
+    }
+
+    private function acceptProfilePainTagsAction(): Action
+    {
+        return Action::make('acceptProfilePainTags')
+            ->label(__('Принять категории боли'))
+            ->icon('heroicon-o-check-circle')
+            ->schema([
+                Select::make('pain_id')
+                    ->label(__('Боль клиента'))
+                    ->options(fn (): array => $this->medicalProfilePainOptionsWithSuggestions())
+                    ->searchable()
+                    ->preload()
+                    ->live()
+                    ->afterStateUpdated(function (Set $set, mixed $state): void {
+                        $run = $this->latestComplaintClassificationRun((int) $state);
+                        $set('tag_ids', collect($run?->suggestions ?? [])->pluck('id')->map(static fn (mixed $id): int => (int) $id)->all());
+                    })
+                    ->required(),
+                Select::make('tag_ids')
+                    ->label(__('Категории проблемы'))
+                    ->options(fn (): array => app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id()))
+                    ->multiple()
+                    ->searchable()
+                    ->preload(),
+            ])
+            ->visible(fn (): bool => $this->canManageClients() && $this->medicalProfilePainWithSuggestionsExists())
+            ->action(function (array $data): void {
+                $painId = (int) ($data['pain_id'] ?? 0);
+                $run = $this->latestComplaintClassificationRun($painId);
+                abort_unless($run instanceof AnalyticsClassificationRun, 422);
+                app(AcceptAnalyticsClassification::class)->handle(
+                    actor: $this->actor(),
+                    runId: (int) $run->getKey(),
+                    themeIds: is_array($data['tag_ids'] ?? null) ? $data['tag_ids'] : [],
+                );
+                Notification::make()->success()->title(__('Категории боли сохранены'))->send();
+            });
+    }
+
     /** @return array<int, string> */
     private function trackerTaskOptions(): array
     {
@@ -841,6 +931,59 @@ class ViewClient extends LocalizedViewRecord
             ->where('taxonomy', 'goals')
             ->where('source_type', 'tracker_task')
             ->where('source_id', $taskId)
+            ->where('status', ClassificationRunStatus::NeedsReview)
+            ->latest('id')
+            ->first();
+    }
+
+    /** @return array<int, string> */
+    private function medicalProfilePainOptions(): array
+    {
+        $profile = app(GetMedicalProfile::class)->handle($this->actor(), $this->clientRecord());
+
+        return collect($profile?->pains ?? [])->mapWithKeys(static fn ($pain): array => [(int) $pain->id => $pain->name])->all();
+    }
+
+    /** @return array<int, string> */
+    private function medicalProfilePainOptionsWithSuggestions(): array
+    {
+        $profilePainIds = AnalyticsClassificationRun::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('taxonomy', 'complaints')
+            ->where('source_type', 'medical_profile_pain')
+            ->where('status', ClassificationRunStatus::NeedsReview)
+            ->pluck('source_id');
+        $profile = app(GetMedicalProfile::class)->handle($this->actor(), $this->clientRecord());
+
+        return collect($profile?->pains ?? [])
+            ->filter(static fn ($pain): bool => $profilePainIds->contains($pain->id))
+            ->mapWithKeys(static fn ($pain): array => [(int) $pain->id => $pain->name])
+            ->all();
+    }
+
+    private function medicalProfilePainWithSuggestionsExists(): bool
+    {
+        return $this->medicalProfilePainOptionsWithSuggestions() !== [];
+    }
+
+    private function medicalProfilePain(int $painId): MedicalProfilePain
+    {
+        return MedicalProfilePain::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('client_id', $this->clientRecord()->getKey())
+            ->whereKey($painId)
+            ->firstOrFail();
+    }
+
+    private function latestComplaintClassificationRun(int $painId): ?AnalyticsClassificationRun
+    {
+        $this->medicalProfilePain($painId);
+
+        return AnalyticsClassificationRun::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->where('taxonomy', 'complaints')
+            ->where('source_type', 'medical_profile_pain')
+            ->where('source_id', $painId)
             ->where('status', ClassificationRunStatus::NeedsReview)
             ->latest('id')
             ->first();

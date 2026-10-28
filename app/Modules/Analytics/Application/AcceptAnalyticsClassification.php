@@ -7,6 +7,8 @@ use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
 use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
 use App\Modules\Feedback\Application\FeedbackThemeCatalog;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
+use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -22,6 +24,7 @@ final readonly class AcceptAnalyticsClassification
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
         private FeedbackThemeCatalog $themes,
+        private MedicalProblemTagCatalog $problemTags,
         private TrackerGoalTagCatalog $goalTags,
         private RecordAuditEvent $audit,
     ) {}
@@ -51,6 +54,8 @@ final readonly class AcceptAnalyticsClassification
                 $selectedIds = $this->acceptFeedback($run, (int) $organization->getKey(), $themeIds);
             } elseif ($run->taxonomy === 'goals' && $run->source_type === 'tracker_task') {
                 $selectedIds = $this->acceptGoalTags($run, (int) $organization->getKey(), $themeIds);
+            } elseif ($run->taxonomy === 'complaints' && $run->source_type === 'medical_profile_pain') {
+                $selectedIds = $this->acceptProblemTags($run, (int) $organization->getKey(), $themeIds);
             } else {
                 throw ValidationException::withMessages([
                     'classification' => 'Этот тип классификации нельзя принять в CRM.',
@@ -121,6 +126,31 @@ final readonly class AcceptAnalyticsClassification
         $task->goalTags()->syncWithPivotValues($selectedIds, [
             'organization_id' => $organizationId,
             'client_id' => $task->client_id,
+        ]);
+
+        return $selectedIds;
+    }
+
+    /** @param array<int, mixed>|null $themeIds */
+    private function acceptProblemTags(AnalyticsClassificationRun $run, int $organizationId, ?array $themeIds): array
+    {
+        $pain = MedicalProfilePain::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($run->source_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+        if ($run->client_id !== null && (int) $run->client_id !== (int) $pain->client_id) {
+            throw ValidationException::withMessages([
+                'classification' => 'Боль не принадлежит указанному клиенту.',
+            ]);
+        }
+        $suggestedIds = $this->suggestedIds($run->suggestions);
+        $selectedIds = $themeIds === null ? $suggestedIds : $themeIds;
+        $selectedIds = $this->problemTags->assertKnown($organizationId, $selectedIds);
+
+        $pain->problemTags()->syncWithPivotValues($selectedIds, [
+            'organization_id' => $organizationId,
+            'client_id' => $pain->client_id,
         ]);
 
         return $selectedIds;
