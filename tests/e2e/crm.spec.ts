@@ -2728,10 +2728,25 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await expect(valueLabels).toHaveCount(2);
     await valueLabels.last().fill('Отклонение');
     await page.getByLabel('Считать нарушением', { exact: true }).last().check();
+    const activeTestToggle = page.getByLabel('Активен', { exact: true }).last();
+    if (! await activeTestToggle.isChecked()) {
+        await activeTestToggle.check();
+    }
+    const activeValueToggles = page.getByLabel('Активно', { exact: true });
+    await expect(activeValueToggles).toHaveCount(2);
+    for (const toggle of await activeValueToggles.all()) {
+        if (! await toggle.isChecked()) {
+            await toggle.check();
+        }
+    }
 
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
     await page.getByLabel('Название причины*', { exact: true }).last().fill(causeName);
     await page.getByLabel('Группа', { exact: true }).last().fill('E2E причины');
+    const activeCauseToggle = page.getByLabel('Активна', { exact: true }).last();
+    if (! await activeCauseToggle.isChecked()) {
+        await activeCauseToggle.check();
+    }
     await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
 
