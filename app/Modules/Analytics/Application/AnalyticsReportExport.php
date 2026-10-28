@@ -29,7 +29,7 @@ final readonly class AnalyticsReportExport
         $sheet->setTitle('Отчёт');
         $sheet->fromArray([
             ['Раздел', 'Показатель', 'Значение', 'Группа', 'До', 'После', 'Снижение'],
-        ], null, 'A1');
+        ], null, 'A1', true);
         $row = 2;
 
         if (isset($results['pain']) && is_array($results['pain'])) {
@@ -42,60 +42,60 @@ final readonly class AnalyticsReportExport
                     $problem['average_before'] ?? null,
                     $problem['average_after'] ?? null,
                     $problem['average_reduction'] ?? null,
-                ]], null, 'A'.$row++);
+                ]], null, 'A'.$row++, true);
             }
         }
 
         if (isset($results['acquisition']) && is_array($results['acquisition'])) {
-            $sheet->fromArray([['Источники клиентов', 'Новые клиенты', (int) ($results['acquisition']['new_clients'] ?? 0), null, null, null, null]], null, 'A'.$row++);
+            $sheet->fromArray([['Источники клиентов', 'Новые клиенты', (int) ($results['acquisition']['new_clients'] ?? 0), null, null, null, null]], null, 'A'.$row++, true);
             foreach ((array) ($results['acquisition']['sources'] ?? []) as $source) {
-                $sheet->fromArray([['Источники клиентов', (string) ($source['label'] ?? '—'), (int) ($source['count'] ?? 0), null, null, null, null]], null, 'A'.$row++);
+                $sheet->fromArray([['Источники клиентов', (string) ($source['label'] ?? '—'), (int) ($source['count'] ?? 0), null, null, null, null]], null, 'A'.$row++, true);
             }
         }
 
         if (isset($results['feedback']) && is_array($results['feedback'])) {
-            $sheet->fromArray([['Удовлетворённость и обратная связь', 'Оценок', (int) ($results['feedback']['submission_count'] ?? 0), null, null, null, null]], null, 'A'.$row++);
-            $sheet->fromArray([['Удовлетворённость и обратная связь', 'Средняя оценка', $results['feedback']['average_score'] ?? null, null, null, null, null]], null, 'A'.$row++);
+            $sheet->fromArray([['Удовлетворённость и обратная связь', 'Оценок', (int) ($results['feedback']['submission_count'] ?? 0), null, null, null, null]], null, 'A'.$row++, true);
+            $sheet->fromArray([['Удовлетворённость и обратная связь', 'Средняя оценка', $results['feedback']['average_score'] ?? null, null, null, null, null]], null, 'A'.$row++, true);
             foreach ((array) ($results['feedback']['themes'] ?? []) as $theme) {
-                $sheet->fromArray([['Темы обратной связи', (string) ($theme['name'] ?? '—'), (int) ($theme['client_count'] ?? 0), $theme['group'] ?? null, null, $theme['average_score'] ?? null, null]], null, 'A'.$row++);
+                $sheet->fromArray([['Темы обратной связи', (string) ($theme['name'] ?? '—'), (int) ($theme['client_count'] ?? 0), $theme['group'] ?? null, null, $theme['average_score'] ?? null, null]], null, 'A'.$row++, true);
             }
         }
 
         if (isset($results['goals']) && is_array($results['goals'])) {
             foreach ((array) ($results['goals']['goals'] ?? []) as $goal) {
-                $sheet->fromArray([['Цели и задачи', (string) ($goal['name'] ?? '—'), (int) ($goal['client_count'] ?? 0), $goal['group'] ?? null, (int) ($goal['task_count'] ?? 0), null, null]], null, 'A'.$row++);
+                $sheet->fromArray([['Цели и задачи', (string) ($goal['name'] ?? '—'), (int) ($goal['client_count'] ?? 0), $goal['group'] ?? null, (int) ($goal['task_count'] ?? 0), null, null]], null, 'A'.$row++, true);
             }
         }
 
         if (isset($results['demographics']) && is_array($results['demographics'])) {
             foreach (['age' => 'Возраст', 'sex' => 'Пол', 'children' => 'Дети и взрослые', 'country' => 'Страна'] as $key => $label) {
                 foreach ((array) ($results['demographics'][$key] ?? []) as $item) {
-                    $sheet->fromArray([['Демография клиентов', $label.': '.(string) ($item['label'] ?? '—'), (int) ($item['count'] ?? 0), null, null, $item['percent'] ?? null, null]], null, 'A'.$row++);
+                    $sheet->fromArray([['Демография клиентов', $label.': '.(string) ($item['label'] ?? '—'), (int) ($item['count'] ?? 0), null, null, $item['percent'] ?? null, null]], null, 'A'.$row++, true);
                 }
             }
         }
 
         if (isset($results['services']) && is_array($results['services'])) {
             foreach ((array) ($results['services']['services'] ?? []) as $service) {
-                $sheet->fromArray([['Услуги и визиты', (string) ($service['name'] ?? '—'), (int) ($service['visit_count'] ?? 0), null, (int) ($service['client_count'] ?? 0), null, null]], null, 'A'.$row++);
+                $sheet->fromArray([['Услуги и визиты', (string) ($service['name'] ?? '—'), (int) ($service['visit_count'] ?? 0), null, (int) ($service['client_count'] ?? 0), null, null]], null, 'A'.$row++, true);
             }
         }
 
         if (isset($results['purchases']) && is_array($results['purchases'])) {
             foreach ((array) ($results['purchases']['types'] ?? []) as $type) {
-                $sheet->fromArray([['Типы покупок', (string) ($type['label'] ?? '—'), (int) ($type['count'] ?? 0), null, (int) ($type['client_count'] ?? 0), null, null]], null, 'A'.$row++);
+                $sheet->fromArray([['Типы покупок', (string) ($type['label'] ?? '—'), (int) ($type['count'] ?? 0), null, (int) ($type['client_count'] ?? 0), null, null]], null, 'A'.$row++, true);
             }
         }
 
         if (isset($results['booking_statuses']) && is_array($results['booking_statuses'])) {
             foreach ((array) ($results['booking_statuses']['statuses'] ?? []) as $status) {
-                $sheet->fromArray([['Статусы записей', (string) ($status['label'] ?? '—'), (int) ($status['count'] ?? 0), null, null, null, null]], null, 'A'.$row++);
+                $sheet->fromArray([['Статусы записей', (string) ($status['label'] ?? '—'), (int) ($status['count'] ?? 0), null, null, null, null]], null, 'A'.$row++, true);
             }
         }
 
         if (isset($results['segments']) && is_array($results['segments'])) {
             foreach ((array) ($results['segments']['segments'] ?? []) as $segment) {
-                $sheet->fromArray([['Категории клиентов', (string) ($segment['label'] ?? '—'), (int) ($segment['count'] ?? 0), null, null, $segment['percent'] ?? null, null]], null, 'A'.$row++);
+                $sheet->fromArray([['Категории клиентов', (string) ($segment['label'] ?? '—'), (int) ($segment['count'] ?? 0), null, null, $segment['percent'] ?? null, null]], null, 'A'.$row++, true);
             }
         }
 
@@ -121,7 +121,7 @@ final readonly class AnalyticsReportExport
                         $account['currency'] ?? null,
                         null,
                         null,
-                    ]], null, 'A'.$row++);
+                    ]], null, 'A'.$row++, true);
                 }
             }
 
@@ -144,7 +144,7 @@ final readonly class AnalyticsReportExport
                     $value = $this->formatMoney($value, $results[$key]['currency'] ?? null);
                     $metric = $displayMetric;
                 }
-                $sheet->fromArray([[$label, self::humanMetric((string) $metric), $value, null, null, null, null]], null, 'A'.$row++);
+                $sheet->fromArray([[$label, self::humanMetric((string) $metric), $value, null, null, null, null]], null, 'A'.$row++, true);
             }
         }
 
