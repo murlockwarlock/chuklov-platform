@@ -2489,6 +2489,13 @@ test('staff can analyze several dimensions and download a filtered Excel report'
 
     const dimensions = page.locator('[data-field-wrapper]').filter({ hasText: 'Показатели' }).locator('button.fi-select-input-btn');
     await dimensions.click();
+    console.log('analytics-select-debug', await dimensions.evaluate((element) => ({
+        text: element.textContent,
+        expanded: element.getAttribute('aria-expanded'),
+        html: element.outerHTML.slice(0, 1000),
+    })));
+    console.log('analytics-option-debug', await page.locator('[role="option"]').allTextContents());
+    console.log('analytics-source-label-count', await page.getByText('Источники клиентов', { exact: true }).count());
     await page.getByRole('option', { name: 'Источники клиентов', exact: true }).click();
     await dimensions.click();
     await page.getByRole('option', { name: 'Финансы', exact: true }).click();
