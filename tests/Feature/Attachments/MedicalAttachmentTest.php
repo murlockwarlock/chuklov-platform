@@ -323,6 +323,27 @@ final class MedicalAttachmentTest extends TestCase
         self::assertStringStartsWith("medical/attachments/{$organization->getKey()}/", $pdf->storage_path);
     }
 
+    public function test_authorized_staff_can_stream_a_partial_attachment_range(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $attachment = app(UploadMedicalAttachment::class)->handle($admin, new AttachmentUploadCommand(
+            file: UploadedFile::fake()->createWithContent('recording.wav', $this->wavContent()),
+            attachmentType: AttachmentType::AudioRecording,
+            clientId: (int) $client->getKey(),
+        ));
+        $url = app(GetTemporaryAttachmentUrl::class)->handlePreview($admin, $attachment);
+
+        self::assertIsString($url);
+        $response = $this->actingAs($admin)->withHeader('Range', 'bytes=0-7')->get($url);
+
+        $response
+            ->assertStatus(206)
+            ->assertHeader('Accept-Ranges', 'bytes')
+            ->assertHeader('Content-Length', '8')
+            ->assertHeader('Content-Range', "bytes 0-7/{$attachment->size_bytes}");
+        self::assertSame(substr($this->wavContent(), 0, 8), $response->streamedContent());
+    }
+
     public function test_preview_mode_rejects_unsupported_mime_and_tampered_modes(): void
     {
         [$organization, $admin, $client] = $this->setupOrganizationWithClient();
@@ -417,6 +438,15 @@ final class MedicalAttachmentTest extends TestCase
         $webpHeader = "RIFF\x24\x00\x00\x00WEBPVP8 \x18\x00\x00\x00\x30\x01\x00\x9d\x01\x2a\x01\x00\x01\x00\x02\x00\x34\x25\xa4\x00\x03\x70\x00\xfe\xfb\xfd\x00\x00";
 
         return UploadedFile::fake()->createWithContent($name, $webpHeader);
+    }
+
+    private function wavContent(): string
+    {
+        $data = str_repeat("\0", 1600);
+
+        return 'RIFF'.pack('V', 36 + strlen($data))
+            .'WAVEfmt '.pack('VvvVVvv', 16, 1, 1, 8000, 16000, 2, 16)
+            .'data'.pack('V', strlen($data)).$data;
     }
 
     /** @return array{0: Organization, 1: User, 2: Client} */
