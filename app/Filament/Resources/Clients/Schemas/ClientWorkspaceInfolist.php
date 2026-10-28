@@ -6,6 +6,7 @@ use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\FinancePresentation;
 use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
+use App\Modules\Analytics\Application\ClientAnalyticsInsights;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\FeedbackAnalytics;
 use App\Modules\Analytics\Application\GoalAnalytics;
@@ -423,6 +424,46 @@ final class ClientWorkspaceInfolist
                                     ->implode("\n");
                             })
                             ->placeholder(__('Категории задач пока не назначены'))
+                            ->columnSpanFull()
+                            ->wrap(),
+                        TextEntry::make('client_analytics')
+                            ->label(__('Сводка клиента'))
+                            ->state(function (Client $record): ?string {
+                                $actor = auth()->user();
+                                if (! $actor instanceof User) {
+                                    return null;
+                                }
+
+                                $insights = app(ClientAnalyticsInsights::class)->handle($actor, $record);
+                                $lines = [
+                                    __('Сегменты: :value', [
+                                        'value' => $insights->segments === [] ? __('не определены') : implode(', ', $insights->segments),
+                                    ]),
+                                    __('Визиты: :completed завершено · :upcoming впереди · :no_show неявок', [
+                                        'completed' => $insights->completedVisitCount,
+                                        'upcoming' => $insights->upcomingBookingCount,
+                                        'no_show' => $insights->noShowCount,
+                                    ]),
+                                ];
+
+                                if ($insights->lastCompletedAt instanceof CarbonImmutable) {
+                                    $timezone = app(OrganizationContext::class)->defaultTimezone();
+                                    $lines[] = __('Последний визит: :date', [
+                                        'date' => $insights->lastCompletedAt->setTimezone($timezone)->format('d.m.Y H:i'),
+                                    ]);
+                                }
+
+                                if ($insights->services !== []) {
+                                    $lines[] = __('Услуги: :services', [
+                                        'services' => collect($insights->services)
+                                            ->map(static fn (array $service): string => $service['name'].' ('.$service['visit_count'].')')
+                                            ->implode(', '),
+                                    ]);
+                                }
+
+                                return implode("\n", $lines);
+                            })
+                            ->placeholder(__('Аналитика клиента пока не накоплена'))
                             ->columnSpanFull()
                             ->wrap(),
                         TextEntry::make('chronic_conditions')
