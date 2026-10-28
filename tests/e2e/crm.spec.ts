@@ -2749,6 +2749,15 @@ test('staff can maintain the clinical test catalog and use it in a new session',
             closestWireName: element.closest('[wire\\:name]')?.getAttribute('wire:name') ?? null,
             forms: Array.from(document.querySelectorAll('form')).map((form) => ({ id: form.id, wireSubmit: form.getAttribute('wire:submit') })),
             catalogSubmitState: (window as Window & { catalogSubmitState?: unknown }).catalogSubmitState ?? null,
+            requiredInputs: Array.from(element.querySelectorAll('input[required]')).map((input) => ({
+                id: input.id,
+                value: (input as HTMLInputElement).value,
+                visible: Boolean((input as HTMLElement).offsetParent),
+            })),
+            invalidInputs: Array.from((element as HTMLFormElement).elements).flatMap((control) => {
+                const input = control as HTMLInputElement;
+                return input.validity.valid ? [] : [{ id: input.id, value: input.value, outerHTML: input.outerHTML.slice(0, 400) }];
+            }),
             livewireComponents: typeof (window as Window & { Livewire?: { all?: () => Array<{ id?: string; name?: string; el?: HTMLElement }> } }).Livewire?.all === 'function'
                 ? (window as Window & { Livewire?: { all: () => Array<{ id?: string; name?: string; el?: HTMLElement }> } }).Livewire?.all().map((component) => ({ id: component.id, name: component.name, rootTag: component.el?.tagName, rootContainsForm: component.el?.contains(element) }))
                 : [],
