@@ -2735,7 +2735,17 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
     const catalogSaveResponse = await catalogSaveResponsePromise;
     const catalogSaveResponseBody = await catalogSaveResponse.text();
-    throw new Error(`CATALOG_SAVE_RESPONSE ${JSON.stringify({ status: catalogSaveResponse.status(), url: catalogSaveResponse.url(), body: catalogSaveResponseBody.slice(0, 3_000) })}`);
+    const catalogSaveRequestBody = catalogSaveResponse.request().postData() ?? '';
+    const catalogSaveResponseJson = JSON.parse(catalogSaveResponseBody) as { components?: Array<{ snapshot?: string; effects?: { returns?: unknown[] } }> };
+    const componentNames = (catalogSaveResponseJson.components ?? []).map((component) => {
+        try {
+            const snapshot = JSON.parse(component.snapshot ?? '{}') as { memo?: { name?: string }; data?: Record<string, unknown> };
+            return snapshot.memo?.name ?? 'unknown';
+        } catch {
+            return 'invalid-snapshot';
+        }
+    });
+    throw new Error(`CATALOG_SAVE_RESPONSE ${JSON.stringify({ status: catalogSaveResponse.status(), url: catalogSaveResponse.url(), request: catalogSaveRequestBody.slice(0, 3_000), componentNames })}`);
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
 
     await page.reload();
