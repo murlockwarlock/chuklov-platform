@@ -2730,6 +2730,11 @@ test('staff can maintain the clinical test catalog and use it in a new session',
     await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
     await page.getByLabel('Название причины*', { exact: true }).last().fill(causeName);
     await page.getByLabel('Группа', { exact: true }).last().fill('E2E причины');
+    page.on('request', (request) => {
+        if (request.method() === 'POST' && request.url().includes('/livewire')) {
+            console.log(`E2E_LIVEWIRE ${request.url()} ${(request.postData() ?? '').slice(0, 500)}`);
+        }
+    });
     await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
     await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
 
