@@ -126,7 +126,6 @@ final class AnalyticsConsole extends LocalizedPage
                                 'segments' => __('Категории клиентов'),
                             ])
                             ->multiple()
-                            ->searchable()
                             ->required()
                             ->default(['pain']),
                         Select::make('client_id')
