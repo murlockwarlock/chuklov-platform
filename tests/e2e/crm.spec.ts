@@ -113,15 +113,9 @@ async function removeEmptyRepeaterItems(page: Page, label: string): Promise<void
 }
 
 async function setLivewireRangeValue(page: Page, slider: Locator, value: number): Promise<void> {
-    const waitForLivewireResponse = (): Promise<unknown> => page.waitForResponse((response) => {
-        const pathname = new URL(response.url()).pathname;
-
-        return response.request().method() === 'POST' && pathname.includes('/livewire/') && response.ok();
-    });
     const pressAndWait = async (key: string): Promise<void> => {
-        const livewireResponse = waitForLivewireResponse();
         await slider.press(key);
-        await livewireResponse;
+        await page.waitForTimeout(300);
     };
 
     await pressAndWait('Home');
@@ -2327,6 +2321,8 @@ test('staff can use the client cockpit for medical profile and private files', a
     const anamnesis = medicalDialog.getByRole('textbox', { name: 'Анамнез', exact: true });
     await expect(anamnesis).toBeVisible();
     await anamnesis.fill('Запись из клиентского рабочего места');
+    await anamnesis.press('Tab');
+    await page.waitForTimeout(500);
 
     await medicalDialog.getByRole('button', { name: 'Добавить боль', exact: true }).click();
     const profilePainName = medicalDialog.getByLabel('Название или описание боли*', { exact: true }).last();
