@@ -118,7 +118,8 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->preload()
                                 ->required()
                                 ->live(onBlur: true)
-                                ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
+                                ->afterStateUpdated(function (Component $component, Get $get, Set $set, mixed $state): void {
+                                    $component->getRootContainer()->clearCachedChildSchemas();
                                     $source = is_string($state) ? $state : '';
                                     $set('aggregation', AnalyticsMetricSourceCatalog::defaultAggregation($source));
                                     $this->syncOutputUnit($get, $set, $source);
@@ -134,7 +135,8 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->required()
                                 ->default(AnalyticsMetricCalculation::Value->value)
                                 ->live(onBlur: true)
-                                ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
+                                ->afterStateUpdated(function (Component $component, Get $get, Set $set, mixed $state): void {
+                                    $component->getRootContainer()->clearCachedChildSchemas();
                                     $this->syncOutputUnit($get, $set);
                                     if ($state === AnalyticsMetricCalculation::Value->value) {
                                         $set('source_b_key', null);
@@ -156,7 +158,8 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->required()
                                 ->default(AnalyticsMetricComparison::None->value)
                                 ->live()
-                                ->afterStateUpdated(function (Set $set, mixed $state): void {
+                                ->afterStateUpdated(function (Component $component, Set $set, mixed $state): void {
+                                    $component->getRootContainer()->clearCachedChildSchemas();
                                     if ($state !== AnalyticsMetricComparison::None->value) {
                                         $set('source_b_key', null);
                                     }
