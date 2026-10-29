@@ -2366,14 +2366,28 @@ test('staff can use the client cockpit for medical profile and private files', a
         }
 
         let responseBody = '';
+        let responseShape = '';
+        let responseMessages = '';
 
         try {
             responseBody = await response.text();
+            const payload = JSON.parse(responseBody) as {
+                components?: Array<{ effects?: Record<string, unknown>; snapshot?: string }>;
+                errors?: unknown;
+            };
+            responseShape = `components=${payload.components?.length ?? 0};effects=${(payload.components ?? []).map((component) => Object.keys(component.effects ?? {}).join(',')).join('|')};topErrors=${payload.errors === undefined ? 'no' : 'yes'}`;
+            responseMessages = [
+                'Медицинский профиль сохранён',
+                'Медицинский профиль изменился',
+                'Обязательное поле',
+                'required',
+                'exception',
+            ].filter((message) => responseBody.includes(message)).join(',');
         } catch {
             responseBody = '';
         }
 
-        anamnesisResponseSummaries.push(`status=${response.status()};success=${responseBody.includes('Медицинский профиль сохранён')};error=${responseBody.includes('exception') || responseBody.includes('errors')};length=${responseBody.length}`);
+        anamnesisResponseSummaries.push(`status=${response.status()};success=${responseBody.includes('Медицинский профиль сохранён')};error=${responseBody.includes('exception') || responseBody.includes('errors')};shape=${responseShape};messages=${responseMessages};length=${responseBody.length}`);
     });
 
     await login(page, fixture);
