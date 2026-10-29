@@ -2364,7 +2364,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(medicalDialog.getByText('2021 — Перелом ключицы', { exact: true })).toBeVisible();
 
     await anamnesis.fill('Запись из клиентского рабочего места');
-    await anamnesis.press('Tab');
+    await anamnesis.blur();
     await page.waitForTimeout(1000);
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     console.log(`ANAMNESIS_REQUESTS ${anamnesisRequestSummaries.join('|')}`);
