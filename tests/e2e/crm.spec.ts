@@ -113,15 +113,22 @@ async function removeEmptyRepeaterItems(page: Page, label: string): Promise<void
 }
 
 async function setLivewireRangeValue(page: Page, slider: Locator, value: number): Promise<void> {
-    const livewireResponse = page.waitForResponse((response) => {
+    const waitForLivewireResponse = (): Promise<unknown> => page.waitForResponse((response) => {
         const pathname = new URL(response.url()).pathname;
 
         return response.request().method() === 'POST' && pathname.includes('/livewire/') && response.ok();
     });
-    await slider.fill(String(value));
-    await slider.press('Tab');
-    await livewireResponse;
-    await expect(slider).toHaveValue(String(value));
+    const pressAndWait = async (key: string): Promise<void> => {
+        const livewireResponse = waitForLivewireResponse();
+        await slider.press(key);
+        await livewireResponse;
+    };
+
+    await pressAndWait('Home');
+    for (let index = 0; index < value; index += 1) {
+        await pressAndWait('ArrowRight');
+    }
+    await expect(slider).toHaveAttribute('aria-valuenow', `${value}.0`);
 }
 
 function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean } = {}): CrmFixture {
