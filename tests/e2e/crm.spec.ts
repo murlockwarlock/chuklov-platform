@@ -2305,95 +2305,6 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
 test('staff can use the client cockpit for medical profile and private files', async ({ page }) => {
     test.setTimeout(90_000);
     const fixture = createCrmFixture({ includeMedicalAttachment: false });
-    const anamnesisRequestSummaries: string[] = [];
-    const anamnesisResponseSummaries: string[] = [];
-    const navigationUrls: string[] = [];
-    page.on('framenavigated', (frame) => {
-        if (frame === page.mainFrame()) {
-            navigationUrls.push(frame.url());
-        }
-    });
-    page.on('request', (request) => {
-        if (request.method() !== 'POST') {
-            return;
-        }
-
-        const body = request.postData() ?? '';
-        let calls = '';
-        let updateKeys = '';
-        let snapshotExpected = false;
-
-        try {
-            const payload = JSON.parse(body) as {
-                components?: Array<{
-                    calls?: Array<{ method?: string }>;
-                    updates?: Record<string, unknown>;
-                    snapshot?: string;
-                }>;
-            };
-            calls = (payload.components ?? [])
-                .flatMap((component) => component.calls ?? [])
-                .map((call) => call.method ?? '')
-                .filter(Boolean)
-                .join(',');
-            updateKeys = (payload.components ?? [])
-                .flatMap((component) => Object.keys(component.updates ?? {}))
-                .join(',');
-            snapshotExpected = (payload.components ?? []).some((component) => {
-                const snapshot = component.snapshot ?? '';
-
-                try {
-                    return JSON.stringify(JSON.parse(snapshot)).includes('клиентского');
-                } catch {
-                    return snapshot.includes('клиентского');
-                }
-            });
-        } catch {
-            calls = 'unparsed';
-        }
-
-        anamnesisRequestSummaries.push(`path=${new URL(request.url()).pathname};calls=${calls || 'none'};updates=${updateKeys || 'none'};snapshotExpected=${snapshotExpected};key=${body.includes('anamnesis')};expected=${body.includes('клиентского')};length=${body.length}`);
-    });
-    page.on('response', async (response) => {
-        if (response.request().method() !== 'POST' || !response.url().includes('/livewire-')) {
-            return;
-        }
-
-        const body = response.request().postData() ?? '';
-
-        if (!body.includes('callMountedAction')) {
-            return;
-        }
-
-        let responseBody = '';
-        let responseShape = '';
-        let responseMessages = '';
-        let responseValidation = '';
-
-        try {
-            responseBody = await response.text();
-            const payload = JSON.parse(responseBody) as {
-                components?: Array<{ effects?: Record<string, unknown>; snapshot?: string }>;
-                errors?: unknown;
-            };
-            responseShape = `components=${payload.components?.length ?? 0};effects=${(payload.components ?? []).map((component) => Object.keys(component.effects ?? {}).join(',')).join('|')};topErrors=${payload.errors === undefined ? 'no' : 'yes'}`;
-            responseMessages = [
-                'Медицинский профиль сохранён',
-                'Медицинский профиль изменился',
-                'Обязательное поле',
-                'required',
-                'exception',
-            ].filter((message) => responseBody.includes(message)).join(',');
-            const validationMatches = [...responseBody.matchAll(/fi-fo-field-wrp-error-message[^>]*>\s*([^<]+)/g)]
-                .map((match) => match[1]?.trim() ?? '')
-                .filter(Boolean);
-            responseValidation = `ariaInvalid=${(responseBody.match(/aria-invalid="true"/g) ?? []).length};messages=${validationMatches.join(',')}`;
-        } catch {
-            responseBody = '';
-        }
-
-        anamnesisResponseSummaries.push(`status=${response.status()};success=${responseBody.includes('Медицинский профиль сохранён')};error=${responseBody.includes('exception') || responseBody.includes('errors')};shape=${responseShape};messages=${responseMessages};validation=${responseValidation};length=${responseBody.length}`);
-    });
 
     await login(page, fixture);
     await page.goto('/admin/clients');
@@ -2433,19 +2344,8 @@ test('staff can use the client cockpit for medical profile and private files', a
 
     await medicalDialog.getByLabel('Были травмы', { exact: true }).check();
     await expect(medicalDialog.getByRole('button', { name: 'Добавить травму', exact: true })).toBeVisible();
-    console.log(`HISTORY_BEFORE_INJURY ${JSON.stringify(await medicalDialog.locator('button').evaluateAll((buttons) => buttons
-        .filter((button) => ['Добавить операцию', 'Добавить травму'].includes(button.textContent?.trim() ?? ''))
-        .map((button) => ({ text: button.textContent?.trim(), wireClick: button.getAttribute('wire:click') }))))}`);
     await medicalDialog.getByRole('button', { name: 'Добавить травму', exact: true }).click();
     await expect(medicalDialog.getByText('Новая травма', { exact: true }).last()).toBeVisible();
-    console.log(`HISTORY_AFTER_INJURY ${JSON.stringify(await medicalDialog.locator('input,textarea').evaluateAll((fields) => fields
-        .map((field) => ({
-            label: field.getAttribute('aria-label'),
-            models: field.getAttributeNames().filter((attribute) => attribute.startsWith('wire:model')).map((attribute) => [attribute, field.getAttribute(attribute)]),
-            value: (field as HTMLInputElement).value,
-        }))
-        .filter((field) => field.models.some(([, value]) => value?.includes('history')))))}`);
-    console.log(`HISTORY_ITEMS ${JSON.stringify(await medicalDialog.locator('li.fi-fo-repeater-item').evaluateAll((items) => items.map((item) => ({ text: item.textContent?.trim(), classes: item.className, htmlLength: item.innerHTML.length }))))}`);
     const injuryHeader = medicalDialog.getByText('Новая травма', { exact: true }).last();
     const injuryFields = medicalDialog.getByRole('textbox', { name: 'Описание*', exact: true }).last();
     if (await injuryHeader.isVisible() && !await injuryFields.isVisible()) {
@@ -2459,31 +2359,8 @@ test('staff can use the client cockpit for medical profile and private files', a
 
     await anamnesis.fill('Запись из клиентского рабочего места');
     await anamnesis.blur();
-    await page.waitForTimeout(1000);
-    console.log(`ANAMNESIS_FORM ${await medicalDialog.locator('form').evaluate((form) => JSON.stringify({
-        submit: form.getAttribute('wire:submit'),
-        submitPrevent: form.getAttribute('wire:submit.prevent'),
-        buttons: Array.from(form.querySelectorAll('button')).map((button) => ({
-            text: button.textContent?.trim(),
-            type: button.getAttribute('type'),
-            wireClick: button.getAttribute('wire:click'),
-            xOnClick: button.getAttribute('x-on:click'),
-        })),
-    }))}`);
-    await medicalDialog.locator('form').evaluate((form) => {
-        const trackedForm = form as HTMLFormElement & { __submitEvents?: Array<{ defaultPrevented: boolean }> };
-        trackedForm.__submitEvents = [];
-        form.addEventListener('submit', (event) => {
-            trackedForm.__submitEvents?.push({ defaultPrevented: event.defaultPrevented });
-        });
-    });
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
-    await page.waitForTimeout(1500);
-    console.log(`ANAMNESIS_AFTER_CLICK visible=${await medicalDialog.isVisible()}`);
     await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
-    console.log(`ANAMNESIS_REQUESTS ${anamnesisRequestSummaries.join('|')}`);
-    console.log(`ANAMNESIS_RESPONSES ${anamnesisResponseSummaries.join('|')}`);
-    console.log(`ANAMNESIS_NAVIGATIONS ${navigationUrls.join('|')}`);
     await page.reload();
     await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
     const reopenedMedicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
