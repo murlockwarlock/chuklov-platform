@@ -2342,7 +2342,7 @@ test('staff can use the client cockpit for medical profile and private files', a
                 const snapshot = component.snapshot ?? '';
 
                 try {
-                    return Buffer.from(snapshot, 'base64').toString('utf8').includes('клиентского');
+                    return JSON.stringify(JSON.parse(snapshot)).includes('клиентского');
                 } catch {
                     return snapshot.includes('клиентского');
                 }
