@@ -2437,8 +2437,12 @@ test('staff can use the client cockpit for medical profile and private files', a
         .map((button) => ({ text: button.textContent?.trim(), wireClick: button.getAttribute('wire:click') }))))}`);
     await medicalDialog.getByRole('button', { name: 'Добавить травму', exact: true }).click();
     console.log(`HISTORY_AFTER_INJURY ${JSON.stringify(await medicalDialog.locator('input,textarea').evaluateAll((fields) => fields
-        .map((field) => ({ label: field.getAttribute('aria-label'), name: field.getAttribute('name'), model: field.getAttribute('wire:model'), value: (field as HTMLInputElement).value }))
-        .filter((field) => field.model?.includes('history'))))}`);
+        .map((field) => ({
+            label: field.getAttribute('aria-label'),
+            models: field.getAttributeNames().filter((attribute) => attribute.startsWith('wire:model')).map((attribute) => [attribute, field.getAttribute(attribute)]),
+            value: (field as HTMLInputElement).value,
+        }))
+        .filter((field) => field.models.some(([, value]) => value?.includes('history')))))}`);
     const injuryItem = medicalDialog.getByRole('textbox', { name: 'Описание*', exact: true }).last().locator('xpath=ancestor::li[1]');
     await injuryItem.getByLabel('Год*', { exact: true }).fill('2021');
     await injuryItem.getByLabel('Описание*', { exact: true }).fill('Перелом ключицы');
