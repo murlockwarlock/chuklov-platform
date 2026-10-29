@@ -80,6 +80,12 @@ final readonly class UpdateMedicalProfile
                     medicines: null,
                     supplements: null,
                 );
+            $previousHistoryEntries = $existing instanceof MedicalProfile
+                ? $this->historyReader->forProfile($existing)
+                : [];
+            $historyEntriesForValidation = $command->historyEntriesProvided
+                ? array_values($command->historyEntries ?? [])
+                : array_map(static fn ($entry): array => $entry->toArray(), $previousHistoryEntries);
 
             $plainData = new MedicalProfileData(
                 anamnesis: $command->shouldUpdateAnamnesis() ? $command->anamnesis : $previous->anamnesis,
@@ -96,7 +102,7 @@ final readonly class UpdateMedicalProfile
                 clinicalAnswers: $command->clinicalAnswersProvided ? $command->clinicalAnswers : $previous->clinicalAnswers,
             );
             if ($command->confirmCurrentData) {
-                $this->questionnaire->validateCompletedProfile($plainData);
+                $this->questionnaire->validateCompletedProfile($plainData, $historyEntriesForValidation);
             }
             $encrypted = $this->encryptor->encryptProfile($orgId, $plainData, $keyVersion);
 
@@ -123,7 +129,7 @@ final readonly class UpdateMedicalProfile
                 $profile->client_confirmed_at = CarbonImmutable::now('UTC');
             }
             try {
-                $this->questionnaire->validateCompletedProfile($plainData);
+                $this->questionnaire->validateCompletedProfile($plainData, $historyEntriesForValidation);
                 $profile->completed_at ??= CarbonImmutable::now('UTC');
             } catch (ValidationException) {
                 $profile->completed_at = null;
@@ -136,7 +142,7 @@ final readonly class UpdateMedicalProfile
                 : ($existing instanceof MedicalProfile ? $this->painReader->forProfile($profile) : []);
             $historyEntries = $command->historyEntriesProvided
                 ? $this->historyWriter->replace($profile, $command->historyEntries ?? [], $keyVersion)
-                : ($existing instanceof MedicalProfile ? $this->historyReader->forProfile($profile) : []);
+                : ($existing instanceof MedicalProfile ? $previousHistoryEntries : []);
 
             $this->audit->handle(
                 organization: $organization,

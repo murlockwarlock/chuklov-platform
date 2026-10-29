@@ -907,7 +907,8 @@ final class SessionCockpitTest extends TestCase
             ->assertSuccessful()
             ->assertSchemaComponentExists('cause_ids')
             ->assertSchemaComponentExists('causes_manual_override')
-            ->assertSchemaComponentExists('protocol_actions');
+            ->assertSchemaComponentExists('derived_causes')
+            ->assertSchemaComponentExists('protocol');
 
         $component = Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
@@ -917,10 +918,7 @@ final class SessionCockpitTest extends TestCase
             ->mountAction('suggestSessionPainTags')
             ->assertFormFieldExists('pain_id')
             ->unmountAction()
-            ->assertFormComponentActionExists('protocol_actions', 'fillProtocol')
-            ->callFormComponentAction('protocol_actions', 'fillProtocol')
-            ->assertNotified('Автозаполнение алгоритма пока не настроено')
-            ->assertSet('data.protocol', null)
+            ->assertDontSee('Автозаполнение алгоритма пока не настроено')
             ->callAction('fillResult')
             ->assertNotified('Результат заполнен')
             ->assertSet('data.result', "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены");

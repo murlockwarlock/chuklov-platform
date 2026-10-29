@@ -14,6 +14,55 @@ use Illuminate\Validation\ValidationException;
 
 final readonly class AttributionSourceCatalog
 {
+    /** @return list<array{source_key: string, label: string, aliases: list<array{value: string}>, is_active: bool, sort_order: int}> */
+    public static function defaultRows(): array
+    {
+        return [
+            [
+                'source_key' => 'referral',
+                'label' => 'Рекомендация знакомых',
+                'aliases' => [['value' => 'referral'], ['value' => 'recommendation']],
+                'is_active' => true,
+                'sort_order' => 0,
+            ],
+            [
+                'source_key' => 'telegram_chuklov',
+                'label' => 'Telegram-канал Чуклова',
+                'aliases' => [['value' => 'telegram'], ['value' => 'telegram_channel']],
+                'is_active' => true,
+                'sort_order' => 1,
+            ],
+            [
+                'source_key' => 'instagram',
+                'label' => 'Instagram',
+                'aliases' => [['value' => 'instagram'], ['value' => 'ig'], ['value' => 'insta']],
+                'is_active' => true,
+                'sort_order' => 2,
+            ],
+            [
+                'source_key' => 'search',
+                'label' => 'Поиск Yandex/Google',
+                'aliases' => [['value' => 'yandex'], ['value' => 'google'], ['value' => 'yandex_search'], ['value' => 'google_search']],
+                'is_active' => true,
+                'sort_order' => 3,
+            ],
+            [
+                'source_key' => 'website',
+                'label' => 'Сайт chuklov.com',
+                'aliases' => [['value' => 'site'], ['value' => 'web'], ['value' => 'website'], ['value' => 'chuklov.com']],
+                'is_active' => true,
+                'sort_order' => 4,
+            ],
+            [
+                'source_key' => 'other',
+                'label' => 'Другое',
+                'aliases' => [['value' => 'other'], ['value' => 'другое']],
+                'is_active' => true,
+                'sort_order' => 5,
+            ],
+        ];
+    }
+
     public function __construct(
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
@@ -53,6 +102,18 @@ final readonly class AttributionSourceCatalog
         }
 
         return $options;
+    }
+
+    public function ensureDefaults(User $actor): void
+    {
+        $organization = $this->context->organization();
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSettings);
+
+        if ($this->rows((int) $organization->getKey()) !== []) {
+            return;
+        }
+
+        $this->save($actor, self::defaultRows());
     }
 
     /** @param array<int, mixed> $rows */

@@ -28,11 +28,11 @@ final readonly class AnalyticsMetricConfiguration
 
         return [
             'therapy_effectiveness' => $this->metricValue(
-                label: 'Эффективность терапии, %',
+                label: 'Снижение боли, %',
                 setting: $settings->get(OrganizationSettingKey::AnalyticsTherapyEffectivenessFormulaReference->value)?->string_value,
             ),
             'ltv_percent' => $this->metricValue(
-                label: 'LTV клиентов, %',
+                label: 'LTV новых клиентов',
                 setting: $settings->get(OrganizationSettingKey::AnalyticsLtvPercentFormulaReference->value)?->string_value,
             ),
         ];

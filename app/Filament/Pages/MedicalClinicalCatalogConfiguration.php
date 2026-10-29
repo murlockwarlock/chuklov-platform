@@ -39,9 +39,9 @@ use UnitEnum;
 /** @property-read Schema $form */
 final class MedicalClinicalCatalogConfiguration extends LocalizedPage
 {
-    protected static ?string $title = 'Тесты и причины нарушений';
+    protected static ?string $title = 'Клинические справочники';
 
-    protected static ?string $navigationLabel = 'Тесты и причины нарушений';
+    protected static ?string $navigationLabel = 'Клинические справочники';
 
     protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedClipboardDocumentCheck;
 
@@ -141,7 +141,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                             ])->columns(2)->defaultItems(0)->reorderable()->collapsible()->addActionLabel(__('Добавить тест'))->columnSpanFull(),
                     ])->columnSpanFull(),
                 Section::make(__('Причины нарушений'))
-                    ->description(__('Справочник причин используется для ручного выбора по каждому abnormal-тесту.'))
+                    ->description(__('Справочник причин используется для ручного выбора по каждому тесту с выявленным нарушением.'))
                     ->schema([
                         Repeater::make('causes')
                             ->schema([

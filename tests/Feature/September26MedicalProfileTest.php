@@ -80,8 +80,7 @@ final class September26MedicalProfileTest extends TestCase
         $data = $this->answers('');
         $data['answers']['had_operations'] = true;
         $data['answers']['had_injuries'] = true;
-        $data['operations'] = 'Synthetic operation details';
-        $data['injuries'] = 'Synthetic injury details';
+        unset($data['operations'], $data['injuries']);
         $data['operation_history'] = [
             ['type' => 'operation', 'year' => 2020, 'description' => 'Synthetic operation row'],
         ];
@@ -96,6 +95,7 @@ final class September26MedicalProfileTest extends TestCase
             ->assertNotified('Медицинский профиль сохранён');
 
         $profile = app(GetMedicalProfile::class)->handle($staff, $client);
+        self::assertNotNull(MedicalProfile::query()->where('client_id', $client->getKey())->sole()->completed_at);
         $answers = json_decode((string) $profile?->clinicalAnswers, true, flags: JSON_THROW_ON_ERROR);
         self::assertNull($answers['operation_year']);
         self::assertNull($answers['injury_year']);

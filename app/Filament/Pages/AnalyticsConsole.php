@@ -356,7 +356,23 @@ final class AnalyticsConsole extends LocalizedPage
             }
         }
 
-        return app(AnalyticsReportExport::class)->download($actor, array_filter($results, static fn (mixed $result): bool => is_array($result)));
+        $exportResults = array_filter($results, static fn (mixed $result): bool => is_array($result));
+        $currency = is_array($exportResults['finance'] ?? null)
+            ? ($exportResults['finance']['currency'] ?? null)
+            : null;
+
+        return app(AnalyticsReportExport::class)->download(
+            $actor,
+            $exportResults,
+            'analytics-'.$period->startDate.'-'.$period->endDate.'.xlsx',
+            [
+                'period' => $period->label(),
+                'client' => $client === null ? 'Все клиенты' : $client->full_name,
+                'filters' => $this->exportFilterLabels($state),
+                'timezone' => $period->timezone,
+                'currency' => $currency,
+            ],
+        );
     }
 
     /** @return array<string, mixed> */
@@ -406,6 +422,8 @@ final class AnalyticsConsole extends LocalizedPage
             'revenue_minor' => $data->revenueMinor,
             'revenue_display' => $this->formatFinanceAmount($data->revenueMinor, $data->baseCurrency),
             'receipt_count' => $data->receiptCount,
+            'average_receipt_minor' => $data->averageReceiptMinor,
+            'average_receipt_display' => $this->formatFinanceAmount($data->averageReceiptMinor, $data->baseCurrency),
             'debt_minor' => $data->debtMinor,
             'debt_display' => $this->formatFinanceAmount($data->debtMinor, $data->baseCurrency),
             'realized_ltv_minor' => $data->realizedLtvMinor,
@@ -486,6 +504,70 @@ final class AnalyticsConsole extends LocalizedPage
             'booking_statuses' => __('Статусы записей'),
             'segments' => __('Категории клиентов'),
         ][$dimension] ?? __('Выбранный показатель');
+    }
+
+    /** @param array<string, mixed> $state
+     * @return list<string>
+     */
+    private function exportFilterLabels(array $state): array
+    {
+        $filters = [
+            'Показатели: '.implode(', ', array_map(fn (mixed $dimension): string => $this->dimensionLabel((string) $dimension), (array) ($state['dimensions'] ?? []))),
+        ];
+
+        $organizationId = app(OrganizationContext::class)->id();
+        $problemTagId = $this->selectedProblemTagId($state);
+        if ($problemTagId !== null) {
+            $label = $this->optionLabel(
+                app(MedicalProblemTagCatalog::class)->optionsForSelection($organizationId, [$problemTagId]),
+                $problemTagId,
+            );
+            $filters[] = 'Категория проблемы: '.$label;
+        }
+
+        $feedbackThemeId = $this->selectedFeedbackThemeId($state);
+        if ($feedbackThemeId !== null) {
+            $label = $this->optionLabel(
+                app(FeedbackThemeCatalog::class)->optionsForSelection($organizationId, [$feedbackThemeId]),
+                $feedbackThemeId,
+            );
+            $filters[] = 'Тема обратной связи: '.$label;
+        }
+
+        $goalTagId = $this->selectedGoalTagId($state);
+        if ($goalTagId !== null) {
+            $label = $this->optionLabel(
+                app(TrackerGoalTagCatalog::class)->optionsForSelection($organizationId, [$goalTagId]),
+                $goalTagId,
+            );
+            $filters[] = 'Категория задачи: '.$label;
+        }
+
+        $sourceKey = $this->selectedSourceKey($state);
+        if ($sourceKey !== null) {
+            $filters[] = 'Источник клиента: '.$this->optionLabel(
+                app(AttributionSourceCatalog::class)->optionsForSelection($organizationId, $sourceKey),
+                $sourceKey,
+            );
+        }
+
+        $purchaseType = $this->selectedPurchaseType($state);
+        if ($purchaseType !== null) {
+            $filters[] = 'Тип покупки: '.(PurchaseAnalytics::options()[$purchaseType] ?? 'Выбрано');
+        }
+
+        $bookingStatus = $this->selectedBookingStatus($state);
+        if ($bookingStatus !== null) {
+            $filters[] = 'Статус записи: '.(BookingStatusAnalytics::options()[$bookingStatus] ?? 'Выбрано');
+        }
+
+        return $filters;
+    }
+
+    /** @param array<int|string, string> $options */
+    private function optionLabel(array $options, int|string $value): string
+    {
+        return (string) ($options[$value] ?? $options[(string) $value] ?? 'Выбрано');
     }
 
     /** @return array<int|string, string> */

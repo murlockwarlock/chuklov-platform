@@ -112,7 +112,7 @@ final class SessionInfolist
                             ->wrap(),
                     ])
                     ->visible(fn (MedicalSession $record, Section $section): bool => self::hasSpecialComplaints($record, $section)),
-                Section::make(__('Тесты и причины нарушений'))
+                Section::make(__('Клинические тесты и причины'))
                     ->schema([
                         TextEntry::make('test_counters')
                             ->label(__('Нарушения по тестам'))

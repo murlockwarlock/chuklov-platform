@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 
+use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
@@ -19,8 +20,6 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
-use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -87,8 +86,46 @@ final class SessionForm
                                     'evening' => __('Вечер'),
                                     'night' => __('Ночь'),
                                 ])->columns(2)->default(['all']),
-                                Slider::make('before_score')->label(__('До сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
-                                Slider::make('after_score')->label(__('После сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
+                                Slider::make('before_score')
+                                    ->label(__('До сеанса'))
+                                    ->range(minValue: 0, maxValue: 10)
+                                    ->step(1)
+                                    ->nullable()
+                                    ->live()
+                                    ->helperText(__('0 — нет боли · 10 — максимальная боль')),
+                                Placeholder::make('before_score_display')
+                                    ->label(__('Текущее значение до сеанса'))
+                                    ->content(fn (Get $get): string => self::scoreDisplay($get('before_score'))),
+                                Actions::make([
+                                    Action::make('clearBeforeScore')
+                                        ->label(__('Без оценки'))
+                                        ->icon('heroicon-o-x-mark')
+                                        ->color('gray')
+                                        ->action(static function (Set $set): void {
+                                            $set('before_score', null);
+                                        })
+                                        ->visible(fn (Get $get): bool => $get('before_score') !== null),
+                                ])->columnSpanFull(),
+                                Slider::make('after_score')
+                                    ->label(__('После сеанса'))
+                                    ->range(minValue: 0, maxValue: 10)
+                                    ->step(1)
+                                    ->nullable()
+                                    ->live()
+                                    ->helperText(__('0 — нет боли · 10 — максимальная боль')),
+                                Placeholder::make('after_score_display')
+                                    ->label(__('Текущее значение после сеанса'))
+                                    ->content(fn (Get $get): string => self::scoreDisplay($get('after_score'))),
+                                Actions::make([
+                                    Action::make('clearAfterScore')
+                                        ->label(__('Без оценки'))
+                                        ->icon('heroicon-o-x-mark')
+                                        ->color('gray')
+                                        ->action(static function (Set $set): void {
+                                            $set('after_score', null);
+                                        })
+                                        ->visible(fn (Get $get): bool => $get('after_score') !== null),
+                                ])->columnSpanFull(),
                                 Placeholder::make('previous_after_score')
                                     ->label(__('После предыдущего сеанса'))
                                     ->content(fn (Get $get): string => self::scoreDisplay(self::previousAfterScore($get))),
@@ -97,7 +134,9 @@ final class SessionForm
                                     ->options(fn (Get $get): array => app(MedicalProblemTagCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (array) $get('tag_ids')))
                                     ->multiple()
                                     ->searchable()
-                                    ->preload(),
+                                    ->preload()
+                                    ->helperText(fn (Get $get): string => self::problemTagHelperText($get('tag_ids')))
+                                    ->hintAction(self::problemTagConfigurationAction()),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
@@ -139,21 +178,39 @@ final class SessionForm
                             ->itemLabel(fn (array $state): string => filled($state['test_id'] ?? null) ? __('Выбранный тест') : __('Новый тест'))
                             ->addActionLabel(__('Добавить тест'))
                             ->columnSpanFull(),
-                        Toggle::make('causes_manual_override')
-                            ->label(__('Использовать ручной список причин'))
-                            ->helperText(__('Если выключено, причины собираются из abnormal-тестов.'))
-                            ->default(false)
-                            ->live()
-                            ->dehydrated(),
+                        Hidden::make('causes_manual_override')->default(false)->dehydrated(),
+                        Placeholder::make('derived_causes')
+                            ->label(__('Причины по результатам тестов'))
+                            ->content(fn (Get $get): string => self::causeNames(self::derivedCauseIds($get)))
+                            ->visible(fn (Get $get): bool => $get('causes_manual_override') !== true)
+                            ->columnSpanFull(),
+                        Actions::make([
+                            Action::make('editCausesManually')
+                                ->label(__('Изменить список вручную'))
+                                ->icon('heroicon-o-pencil-square')
+                                ->action(static function (Set $set): void {
+                                    $set('causes_manual_override', true);
+                                })
+                                ->visible(fn (Get $get): bool => $get('causes_manual_override') !== true),
+                            Action::make('useTestCauses')
+                                ->label(__('Вернуться к причинам из тестов'))
+                                ->icon('heroicon-o-arrow-uturn-left')
+                                ->color('gray')
+                                ->action(static function (Get $get, Set $set): void {
+                                    $set('cause_ids', self::derivedCauseIds($get));
+                                    $set('causes_manual_override', false);
+                                })
+                                ->visible(fn (Get $get): bool => $get('causes_manual_override') === true),
+                        ])->columnSpanFull(),
                         Select::make('cause_ids')
-                            ->label(__('Причины нарушений'))
-                            ->helperText(__('Список собирается из причин у abnormal-тестов; его можно скорректировать вручную.'))
+                            ->label(__('Причины сеанса'))
                             ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->causeOptionsForSelection(app(OrganizationContext::class)->id(), (array) $get('cause_ids')))
                             ->multiple()
                             ->searchable()
                             ->preload()
                             ->live()
                             ->afterStateUpdated(static fn (Set $set): mixed => $set('causes_manual_override', true))
+                            ->visible(fn (Get $get): bool => $get('causes_manual_override') === true)
                             ->columnSpanFull(),
                         Hidden::make('tests')->dehydrated()->nullable(),
                         Hidden::make('observations')->dehydrated()->nullable(),
@@ -181,7 +238,6 @@ final class SessionForm
                             ->content(fn (Get $get): string => self::legacyPainVasDisplay($get('pain_vas')))
                             ->columnSpanFull(),
                         Textarea::make('protocol')->label(__('Алгоритм / протокол сеанса'))->rows(3)->placeholder(__('Пошаговый план сеанса')),
-                        self::protocolActions(),
                         Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->rows(3)->placeholder(__('Что клиент почувствовал после сеанса')),
                         Textarea::make('visual_posture_diagnostics')->label(__('Визуальная диагностика осанки'))->rows(3)->placeholder(__('Изменения линии плеч, таза и позвоночника')),
                         Textarea::make('result')->label(__('Результат после сеанса'))->rows(3)->placeholder(__('Эффект после процедур/до следующего сеанса')),
@@ -193,24 +249,7 @@ final class SessionForm
     {
         return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
             ? __(':value / 10', ['value' => (int) $value])
-            : __('Нет данных');
-    }
-
-    public static function protocolActions(): Actions
-    {
-        return Actions::make([
-            Action::make('fillProtocol')
-                ->label(__('Заполнить'))
-                ->icon('heroicon-o-sparkles')
-                ->color('gray')
-                ->action(static function (): void {
-                    Notification::make()
-                        ->title(__('Автозаполнение алгоритма пока не настроено'))
-                        ->body(__('Заполните протокол вручную. Введённый текст сохранён.'))
-                        ->warning()
-                        ->send();
-                }),
-        ])->key('protocol_actions')->columnSpanFull();
+            : __('Без оценки');
     }
 
     private static function previousAfterScore(Get $get): mixed
@@ -225,6 +264,65 @@ final class SessionForm
         return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
             ? __(':value / 10', ['value' => (int) $value])
             : __('Не указана');
+    }
+
+    /** @return list<int> */
+    private static function derivedCauseIds(Get $get): array
+    {
+        $testResults = $get('test_results');
+        $ids = [];
+        foreach (is_array($testResults) ? $testResults : [] as $test) {
+            if (! is_array($test) || ! is_array($test['cause_ids'] ?? null)) {
+                continue;
+            }
+            foreach ($test['cause_ids'] as $id) {
+                $id = (int) $id;
+                if ($id > 0 && ! in_array($id, $ids, true)) {
+                    $ids[] = $id;
+                }
+            }
+        }
+
+        return $ids;
+    }
+
+    /** @param list<int> $causeIds */
+    private static function causeNames(array $causeIds): string
+    {
+        if ($causeIds === []) {
+            return __('Причины по результатам тестов пока не выбраны.');
+        }
+
+        $options = app(MedicalClinicalCatalog::class)->causeOptionsForSelection(
+            app(OrganizationContext::class)->id(),
+            $causeIds,
+        );
+
+        return implode(', ', array_values(array_intersect_key($options, array_flip($causeIds))));
+    }
+
+    /** @return array<int, string> */
+    private static function problemTagOptions(mixed $selectedIds): array
+    {
+        return app(MedicalProblemTagCatalog::class)->optionsForSelection(
+            app(OrganizationContext::class)->id(),
+            is_array($selectedIds) ? $selectedIds : [],
+        );
+    }
+
+    private static function problemTagHelperText(mixed $selectedIds): string
+    {
+        return self::problemTagOptions($selectedIds) === []
+            ? __('Категории проблем ещё не настроены.')
+            : __('Выберите одну или несколько категорий для статистики.');
+    }
+
+    private static function problemTagConfigurationAction(): Action
+    {
+        return Action::make('configureProblemCategories')
+            ->label(__('Настроить категории'))
+            ->url(MedicalClinicalCatalogConfiguration::getUrl())
+            ->visible(fn (): bool => self::problemTagOptions([]) === [] && MedicalClinicalCatalogConfiguration::canAccess());
     }
 
     /** @return array<int, string> */
@@ -324,7 +422,7 @@ final class SessionForm
             ->mapWithKeys(static fn (Booking $booking): array => [
                 $booking->getKey() => Carbon::parse((string) $booking->getAttribute('starts_at'), 'UTC')
                     ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
-                    ->format('d.m.Y H:i').' (#'.$booking->getKey().')',
+                    ->format('d.m.Y H:i'),
             ])
             ->all();
     }
@@ -342,7 +440,7 @@ final class SessionForm
         return $booking instanceof Booking
             ? Carbon::parse((string) $booking->getAttribute('starts_at'), 'UTC')
                 ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
-                ->format('d.m.Y H:i').' (#'.$booking->getKey().')'
+                ->format('d.m.Y H:i')
             : null;
     }
 

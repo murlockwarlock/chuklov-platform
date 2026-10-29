@@ -18,7 +18,7 @@ final class AnalyticsMetricConfigurationTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_formula_references_are_editable_in_crm_without_enabling_undefined_percentages(): void
+    public function test_metric_page_exposes_safe_metrics_without_presenting_text_as_an_executable_formula(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();
         app(OrganizationContext::class)->set($organization);
@@ -27,16 +27,18 @@ final class AnalyticsMetricConfigurationTest extends TestCase
         self::assertFalse($configuration->values()['therapy_effectiveness']['configured']);
         self::assertFalse($configuration->values()['ltv_percent']['configured']);
 
+        $configuration->save($admin, [
+            'therapy_effectiveness_formula_reference' => 'Утверждённая формула снижения боли после курса.',
+            'ltv_percent_formula_reference' => 'Утверждённая база сравнения LTV и период расчёта.',
+        ]);
+
         Livewire::actingAs($admin)
             ->test(AnalyticsMetricSettings::class)
             ->assertSuccessful()
-            ->fillForm([
-                'therapy_effectiveness_formula_reference' => 'Утверждённая формула снижения боли после курса.',
-                'ltv_percent_formula_reference' => 'Утверждённая база сравнения LTV и период расчёта.',
-            ])
-            ->call('save')
-            ->assertNotified('Описание формул сохранено')
-            ->assertSee('Расчёт отключён до утверждения формулы');
+            ->assertSee('Снижение боли, %')
+            ->assertSee('LTV новых клиентов')
+            ->assertDontSee('Описание формулы владельца')
+            ->assertDontSee('Описание формул сохранено');
 
         $values = $configuration->values();
         self::assertSame('Утверждённая формула снижения боли после курса.', $values['therapy_effectiveness']['formula_reference']);

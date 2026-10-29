@@ -2,9 +2,9 @@
 
 namespace App\Filament\Resources\Clients\Resources\Sessions\Pages;
 
+use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
-use App\Filament\Resources\Clients\Resources\Sessions\Schemas\SessionForm;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Analytics\Application\AcceptAnalyticsClassification;
@@ -16,10 +16,12 @@ use App\Modules\MedicalProfiles\Application\DTOs\MedicalPainData;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GenerateSessionResult;
 use App\Modules\Sessions\Application\GetSession;
+use App\Modules\Sessions\Application\LinkMedicalSessionBooking;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\UpdateSession;
@@ -34,13 +36,15 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
-use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 
 class EditMedicalSession extends LocalizedEditRecord
@@ -56,12 +60,59 @@ class EditMedicalSession extends LocalizedEditRecord
     protected function getHeaderActions(): array
     {
         return [
+            Action::make('linkBooking')
+                ->label(fn (): string => $this->session()->booking_id === null ? __('Связать с записью') : __('Изменить связь с записью'))
+                ->icon('heroicon-o-link')
+                ->schema([
+                    Select::make('booking_id')
+                        ->label(__('Запись на приём'))
+                        ->placeholder(__('Без записи на приём'))
+                        ->options(fn (): array => $this->bookingOptions())
+                        ->getSearchResultsUsing(fn (string $search): array => $this->bookingOptions($search))
+                        ->getOptionLabelUsing(fn (mixed $value): ?string => $this->bookingLabel($value))
+                        ->searchable()
+                        ->native(false)
+                        ->required(),
+                ])
+                ->fillForm(fn (): array => ['booking_id' => $this->session()->booking_id])
+                ->modalSubmitActionLabel(__('Сохранить связь'))
+                ->action(function (array $data): void {
+                    app(LinkMedicalSessionBooking::class)->handle(
+                        $this->actor(),
+                        $this->session(),
+                        $this->parentClient(),
+                        (int) $data['booking_id'],
+                    );
+                    Notification::make()->success()->title(__('Связь с записью сохранена'))->send();
+                    $this->record = $this->session()->fresh();
+                    $this->form->model($this->record);
+                    $this->fillForm();
+                })
+                ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord())),
+            Action::make('unlinkBooking')
+                ->label(__('Отвязать запись'))
+                ->icon('heroicon-o-link-slash')
+                ->color('gray')
+                ->requiresConfirmation()
+                ->action(function (): void {
+                    app(LinkMedicalSessionBooking::class)->handle(
+                        $this->actor(),
+                        $this->session(),
+                        $this->parentClient(),
+                        null,
+                    );
+                    Notification::make()->success()->title(__('Запись отвязана от сеанса'))->send();
+                    $this->record = $this->session()->fresh();
+                    $this->form->model($this->record);
+                    $this->fillForm();
+                })
+                ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->session()->booking_id !== null),
             Action::make('fillResult')
                 ->label(__('Заполнить результат'))
                 ->icon('heroicon-o-sparkles')
                 ->requiresConfirmation(fn (): bool => filled($this->data['result'] ?? null))
-                ->modalHeading(fn (): ?string => filled($this->data['result'] ?? null) ? __('Заменить текст результата?') : null)
-                ->modalDescription(fn (): ?string => filled($this->data['result'] ?? null) ? __('Текущий текст будет заменён сводкой по данным сеанса.') : null)
+                ->modalHeading(fn (): ?string => filled($this->data['result'] ?? null) ? (string) __('Заменить текст результата?') : null)
+                ->modalDescription(fn (): ?string => filled($this->data['result'] ?? null) ? (string) __('Текущий текст будет заменён сводкой по данным сеанса.') : null)
                 ->action(function (): void {
                     $actor = $this->actor();
                     $record = $this->getRecord();
@@ -111,8 +162,46 @@ class EditMedicalSession extends LocalizedEditRecord
                                     'evening' => __('Вечер'),
                                     'night' => __('Ночь'),
                                 ])->columns(2)->default(['all']),
-                                Slider::make('before_score')->label(__('До сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
-                                Slider::make('after_score')->label(__('После сеанса'))->range(minValue: 0, maxValue: 10)->step(1)->nullable(),
+                                Slider::make('before_score')
+                                    ->label(__('До сеанса'))
+                                    ->range(minValue: 0, maxValue: 10)
+                                    ->step(1)
+                                    ->nullable()
+                                    ->live()
+                                    ->helperText(__('0 — нет боли · 10 — максимальная боль')),
+                                Placeholder::make('before_score_display')
+                                    ->label(__('Текущее значение до сеанса'))
+                                    ->content(fn (Get $get): string => self::scoreDisplay($get('before_score'))),
+                                Actions::make([
+                                    Action::make('clearBeforeScore')
+                                        ->label(__('Без оценки'))
+                                        ->icon('heroicon-o-x-mark')
+                                        ->color('gray')
+                                        ->action(static function (Set $set): void {
+                                            $set('before_score', null);
+                                        })
+                                        ->visible(fn (Get $get): bool => $get('before_score') !== null),
+                                ])->columnSpanFull(),
+                                Slider::make('after_score')
+                                    ->label(__('После сеанса'))
+                                    ->range(minValue: 0, maxValue: 10)
+                                    ->step(1)
+                                    ->nullable()
+                                    ->live()
+                                    ->helperText(__('0 — нет боли · 10 — максимальная боль')),
+                                Placeholder::make('after_score_display')
+                                    ->label(__('Текущее значение после сеанса'))
+                                    ->content(fn (Get $get): string => self::scoreDisplay($get('after_score'))),
+                                Actions::make([
+                                    Action::make('clearAfterScore')
+                                        ->label(__('Без оценки'))
+                                        ->icon('heroicon-o-x-mark')
+                                        ->color('gray')
+                                        ->action(static function (Set $set): void {
+                                            $set('after_score', null);
+                                        })
+                                        ->visible(fn (Get $get): bool => $get('after_score') !== null),
+                                ])->columnSpanFull(),
                                 Placeholder::make('previous_after_score')
                                     ->label(__('После предыдущего сеанса'))
                                     ->content(fn (Get $get): string => self::scoreDisplay(self::previousAfterScore($get))),
@@ -121,7 +210,9 @@ class EditMedicalSession extends LocalizedEditRecord
                                     ->options(fn (Get $get): array => app(MedicalProblemTagCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), (array) $get('tag_ids')))
                                     ->multiple()
                                     ->searchable()
-                                    ->preload(),
+                                    ->preload()
+                                    ->helperText(fn (Get $get): string => self::problemTagHelperText($get('tag_ids')))
+                                    ->hintAction(self::problemTagConfigurationAction()),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
@@ -145,20 +236,39 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->collapsible()
                             ->addActionLabel(__('Добавить тест'))
                             ->columnSpanFull(),
-                        Toggle::make('causes_manual_override')
-                            ->label(__('Использовать ручной список причин'))
-                            ->helperText(__('Если выключено, причины собираются из abnormal-тестов.'))
-                            ->live()
-                            ->dehydrated(),
+                        Hidden::make('causes_manual_override')->default(false)->dehydrated(),
+                        Placeholder::make('derived_causes')
+                            ->label(__('Причины по результатам тестов'))
+                            ->content(fn (Get $get): string => self::causeNames(self::derivedCauseIds($get)))
+                            ->visible(fn (Get $get): bool => $get('causes_manual_override') !== true)
+                            ->columnSpanFull(),
+                        Actions::make([
+                            Action::make('editCausesManually')
+                                ->label(__('Изменить список вручную'))
+                                ->icon('heroicon-o-pencil-square')
+                                ->action(static function (Set $set): void {
+                                    $set('causes_manual_override', true);
+                                })
+                                ->visible(fn (Get $get): bool => $get('causes_manual_override') !== true),
+                            Action::make('useTestCauses')
+                                ->label(__('Вернуться к причинам из тестов'))
+                                ->icon('heroicon-o-arrow-uturn-left')
+                                ->color('gray')
+                                ->action(static function (Get $get, Set $set): void {
+                                    $set('cause_ids', self::derivedCauseIds($get));
+                                    $set('causes_manual_override', false);
+                                })
+                                ->visible(fn (Get $get): bool => $get('causes_manual_override') === true),
+                        ])->columnSpanFull(),
                         Select::make('cause_ids')
-                            ->label(__('Причины нарушений'))
-                            ->helperText(__('Список собирается из причин у abnormal-тестов; его можно скорректировать вручную.'))
+                            ->label(__('Причины сеанса'))
                             ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->causeOptionsForSelection(app(OrganizationContext::class)->id(), (array) $get('cause_ids')))
                             ->multiple()
                             ->searchable()
                             ->preload()
                             ->live()
                             ->afterStateUpdated(static fn (Set $set): mixed => $set('causes_manual_override', true))
+                            ->visible(fn (Get $get): bool => $get('causes_manual_override') === true)
                             ->columnSpanFull(),
                         Hidden::make('tests')->dehydrated()->nullable(),
                         Hidden::make('observations')->dehydrated()->nullable(),
@@ -176,7 +286,6 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->columnSpanFull(),
                         Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),
                         Textarea::make('protocol')->label(__('Алгоритм / протокол сеанса'))->rows(3)->placeholder(__('Пошаговый план сеанса')),
-                        SessionForm::protocolActions(),
                         Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->rows(3)->placeholder(__('Что клиент почувствовал после сеанса')),
                         Textarea::make('visual_posture_diagnostics')->label(__('Визуальная диагностика осанки'))->rows(3)->placeholder(__('Изменения линии плеч, таза и позвоночника')),
                         Textarea::make('result')
@@ -318,6 +427,75 @@ class EditMedicalSession extends LocalizedEditRecord
         }
 
         return $parent;
+    }
+
+    /** @return array<int, string> */
+    private function bookingOptions(string $search = ''): array
+    {
+        $query = $this->bookingQuery();
+        $normalized = trim($search);
+        if (ctype_digit($normalized)) {
+            $query->whereKey((int) $normalized);
+        } elseif ($normalized !== '') {
+            try {
+                $query->whereDate('starts_at', Carbon::parse($normalized));
+            } catch (\Throwable) {
+                $query->whereKey(0);
+            }
+        }
+
+        return $query
+            ->orderByDesc('starts_at')
+            ->limit(50)
+            ->with('service:id,name')
+            ->get(['id', 'starts_at', 'service_id'])
+            ->mapWithKeys(static fn (Booking $booking): array => [
+                $booking->getKey() => self::bookingPresentation($booking),
+            ])
+            ->all();
+    }
+
+    private function bookingLabel(mixed $value): ?string
+    {
+        if (! is_scalar($value) || ! is_numeric($value)) {
+            return null;
+        }
+
+        $booking = $this->bookingQuery()
+            ->with('service:id,name')
+            ->whereKey((int) $value)
+            ->first(['id', 'starts_at', 'service_id']);
+
+        return $booking instanceof Booking ? self::bookingPresentation($booking) : null;
+    }
+
+    /** @return Builder<Booking> */
+    private function bookingQuery(): Builder
+    {
+        $session = $this->session();
+        $client = $this->parentClient();
+        $organizationId = app(OrganizationContext::class)->id();
+
+        return Booking::query()
+            ->where('organization_id', $organizationId)
+            ->where('specialist_id', $session->specialist_id)
+            ->where(fn (Builder $query): Builder => $query
+                ->whereHas('patientProfile', fn (Builder $patients): Builder => $patients
+                    ->where('organization_id', $organizationId)
+                    ->where('clinical_client_id', $client->getKey()))
+                ->orWhere(fn (Builder $legacy): Builder => $legacy
+                    ->whereNull('patient_profile_id')
+                    ->where('client_id', $client->getKey())));
+    }
+
+    private static function bookingPresentation(Booking $booking): string
+    {
+        $service = trim($booking->service->name);
+        $date = Carbon::parse((string) $booking->getAttribute('starts_at'), 'UTC')
+            ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
+            ->format('d.m.Y H:i');
+
+        return $service === '' ? $date : $date.' — '.$service;
     }
 
     private function suggestSessionPainTagsAction(): Action
@@ -496,7 +674,7 @@ class EditMedicalSession extends LocalizedEditRecord
     {
         return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
             ? __(':value / 10', ['value' => (int) $value])
-            : __('Нет данных');
+            : __('Без оценки');
     }
 
     private static function previousAfterScore(Get $get): mixed
@@ -511,6 +689,65 @@ class EditMedicalSession extends LocalizedEditRecord
         return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
             ? __(':value / 10', ['value' => (int) $value])
             : __('Не указана');
+    }
+
+    /** @return list<int> */
+    private static function derivedCauseIds(Get $get): array
+    {
+        $testResults = $get('test_results');
+        $ids = [];
+        foreach (is_array($testResults) ? $testResults : [] as $test) {
+            if (! is_array($test) || ! is_array($test['cause_ids'] ?? null)) {
+                continue;
+            }
+            foreach ($test['cause_ids'] as $id) {
+                $id = (int) $id;
+                if ($id > 0 && ! in_array($id, $ids, true)) {
+                    $ids[] = $id;
+                }
+            }
+        }
+
+        return $ids;
+    }
+
+    /** @param list<int> $causeIds */
+    private static function causeNames(array $causeIds): string
+    {
+        if ($causeIds === []) {
+            return __('Причины по результатам тестов пока не выбраны.');
+        }
+
+        $options = app(MedicalClinicalCatalog::class)->causeOptionsForSelection(
+            app(OrganizationContext::class)->id(),
+            $causeIds,
+        );
+
+        return implode(', ', array_values(array_intersect_key($options, array_flip($causeIds))));
+    }
+
+    /** @return array<int, string> */
+    private static function problemTagOptions(mixed $selectedIds): array
+    {
+        return app(MedicalProblemTagCatalog::class)->optionsForSelection(
+            app(OrganizationContext::class)->id(),
+            is_array($selectedIds) ? $selectedIds : [],
+        );
+    }
+
+    private static function problemTagHelperText(mixed $selectedIds): string
+    {
+        return self::problemTagOptions($selectedIds) === []
+            ? __('Категории проблем ещё не настроены.')
+            : __('Выберите одну или несколько категорий для статистики.');
+    }
+
+    private static function problemTagConfigurationAction(): Action
+    {
+        return Action::make('configureProblemCategories')
+            ->label(__('Настроить категории'))
+            ->url(MedicalClinicalCatalogConfiguration::getUrl())
+            ->visible(fn (): bool => self::problemTagOptions([]) === [] && MedicalClinicalCatalogConfiguration::canAccess());
     }
 
     /** @param array<string, list<string>> $messages */

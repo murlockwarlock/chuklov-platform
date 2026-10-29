@@ -30,6 +30,7 @@
                             {{ __('Клиенты: :clients · Сеансы: :sessions', ['clients' => $results['pain']['client_count'], 'sessions' => $results['pain']['session_count']]) }}
                         </p>
                     </div>
+                    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ __('Снижение боли, % — изменение оценки боли относительно значения до сеанса.') }}</p>
                     @if ($results['pain']['problems'] === [])
                         <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('За выбранный период структурированные категории не найдены.') }}</p>
                     @else
@@ -53,6 +54,7 @@
                                     <th class="px-3 py-2">{{ __('До') }}</th>
                                     <th class="px-3 py-2">{{ __('После') }}</th>
                                     <th class="px-3 py-2">{{ __('Среднее снижение') }}</th>
+                                    <th class="px-3 py-2">{{ __('Снижение боли, %') }}</th>
                                     <th class="px-3 py-2">{{ __('Сеанс 1 / 2 / 3 после') }}</th>
                                 </tr>
                                 </thead>
@@ -66,6 +68,7 @@
                                         <td class="px-3 py-3">{{ $problem['average_before'] ?? '—' }}</td>
                                         <td class="px-3 py-3">{{ $problem['average_after'] ?? '—' }}</td>
                                         <td class="px-3 py-3">{{ $problem['average_reduction'] ?? '—' }}</td>
+                                        <td class="px-3 py-3">{{ $problem['average_reduction_percent'] === null ? __('Недостаточно данных') : $problem['average_reduction_percent'].'%' }}</td>
                                         <td class="px-3 py-3">{{ $problem['session_1_after'] ?? '—' }} / {{ $problem['session_2_after'] ?? '—' }} / {{ $problem['session_3_after'] ?? '—' }}</td>
                                     </tr>
                                 @endforeach
@@ -123,7 +126,8 @@
                             <div><dt class="text-gray-500">{{ __('Доход') }}</dt><dd class="font-semibold">{{ $results['finance']['revenue_display'] ?? '—' }}</dd></div>
                             <div><dt class="text-gray-500">{{ __('Платежи') }}</dt><dd class="font-semibold">{{ $results['finance']['receipt_count'] }}</dd></div>
                             <div><dt class="text-gray-500">{{ __('Долг') }}</dt><dd class="font-semibold">{{ $results['finance']['debt_display'] ?? '—' }}</dd></div>
-                            <div><dt class="text-gray-500">{{ __('LTV') }}</dt><dd class="font-semibold">{{ $results['finance']['realized_ltv_display'] ?? '—' }}</dd></div>
+                            <div><dt class="text-gray-500">{{ __('Средний чек') }}</dt><dd class="font-semibold">{{ $results['finance']['average_receipt_display'] ?? '—' }}</dd></div>
+                            <div><dt class="text-gray-500">{{ __('LTV новых клиентов') }}</dt><dd class="font-semibold">{{ $results['finance']['realized_ltv_display'] ?? '—' }}</dd></div>
                             <div><dt class="text-gray-500">{{ __('Расходы') }}</dt><dd class="font-semibold">{{ $results['finance']['expenses_display'] ?? '—' }}</dd></div>
                             <div><dt class="text-gray-500">{{ __('Движение денежных средств') }}</dt><dd class="font-semibold">{{ $results['finance']['cash_movement_display'] ?? '—' }}</dd></div>
                         </dl>

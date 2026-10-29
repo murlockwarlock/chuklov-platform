@@ -44,6 +44,16 @@ class CreateBooking extends LocalizedCreateRecord
 
         $prefill = [];
         $organizationId = app(OrganizationContext::class)->id();
+        $clientId = request()->query('client_id') ?? request()->query('client');
+        if (is_string($clientId) && ctype_digit($clientId)) {
+            $client = Client::query()
+                ->where('organization_id', $organizationId)
+                ->whereKey((int) $clientId)
+                ->first();
+            if ($client instanceof Client) {
+                $prefill['client_id'] = $client->getKey();
+            }
+        }
         $specialistId = request()->query('specialist_id');
 
         $specialist = $this->resolveSpecialist($specialistId, $organizationId);
@@ -235,7 +245,7 @@ class CreateBooking extends LocalizedCreateRecord
             }
             $url = ListBookings::getUrl();
 
-            return $parameters === [] ? $url : $url.'?'.http_build_query($parameters);
+            return $url.'?'.http_build_query($parameters);
         }
 
         return parent::getRedirectUrl();

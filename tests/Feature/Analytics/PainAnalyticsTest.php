@@ -82,8 +82,45 @@ final class PainAnalyticsTest extends TestCase
         self::assertSame(5.0, $data->problems[0]['average_before']);
         self::assertSame(1.5, $data->problems[0]['average_after']);
         self::assertSame(3.5, $data->problems[0]['average_reduction']);
+        self::assertSame(70.83, $data->problems[0]['average_reduction_percent']);
         self::assertSame(2.0, $data->problems[0]['session_1_after']);
         self::assertSame(1.0, $data->problems[0]['session_2_after']);
+    }
+
+    public function test_pain_reduction_percent_is_null_when_before_is_zero_or_either_score_is_missing(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $tag = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Нулевая боль',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-10-01 09:00:00', 'UTC'),
+            pains: [[
+                'name' => 'Без исходной боли',
+                'tag_ids' => [$tag->getKey()],
+                'before_score' => 0,
+                'after_score' => 0,
+            ], [
+                'name' => 'Без оценки после',
+                'tag_ids' => [$tag->getKey()],
+                'before_score' => null,
+                'after_score' => 5,
+            ]],
+        ));
+
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+        $data = app(PainAnalytics::class)->handle($admin, $period);
+
+        self::assertNull($data->problems[0]['average_reduction_percent']);
     }
 
     public function test_problem_analytics_can_filter_to_one_tenant_problem_tag(): void

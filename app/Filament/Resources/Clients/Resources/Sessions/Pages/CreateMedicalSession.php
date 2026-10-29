@@ -7,6 +7,8 @@ use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
@@ -53,6 +55,20 @@ class CreateMedicalSession extends LocalizedCreateRecord
     protected function mutateFormDataBeforeFill(array $data): array
     {
         $data['pains'] = app(MedicalSessionPainInitializer::class)->defaultsForClient($this->parentClient());
+
+        $bookingId = request()->query('booking_id');
+        if (is_numeric($bookingId) && (int) $bookingId > 0) {
+            $booking = Booking::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->whereKey((int) $bookingId)
+                ->first();
+
+            if ($booking instanceof Booking && $booking->clinicalClientId() === (int) $this->parentClient()->getKey()) {
+                $data['booking_id'] = (int) $booking->getKey();
+                $data['specialist_id'] = (int) $booking->specialist_id;
+                $data['occurred_at'] = $booking->starts_at;
+            }
+        }
 
         return $data;
     }

@@ -23,7 +23,7 @@ final class AttributionSourceCatalogTest extends TestCase
     public function test_owner_mapping_is_used_by_acquisition_analytics_without_changing_attribution_records(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();
-        $client = Client::factory()->forOrganization($organization)->create();
+        $client = Client::factory()->forOrganization($organization)->create(['created_at' => '2026-10-28 12:00:00']);
         $attribution = new ClientAttribution;
         $attribution->forceFill([
             'organization_id' => $organization->getKey(),
@@ -86,8 +86,8 @@ final class AttributionSourceCatalogTest extends TestCase
     public function test_selected_source_filters_new_clients_and_buckets_by_owner_mapping(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();
-        $socialClient = Client::factory()->forOrganization($organization)->create();
-        $telegramClient = Client::factory()->forOrganization($organization)->create();
+        $socialClient = Client::factory()->forOrganization($organization)->create(['created_at' => '2026-10-28 12:00:00']);
+        $telegramClient = Client::factory()->forOrganization($organization)->create(['created_at' => '2026-10-28 12:00:00']);
         $attribution = new ClientAttribution;
         $attribution->forceFill([
             'organization_id' => $organization->getKey(),
@@ -160,6 +160,35 @@ final class AttributionSourceCatalogTest extends TestCase
         $mapping = app(AttributionSourceCatalog::class)->rows($organization->getKey())[0];
         self::assertMatchesRegularExpression('/^source_[a-z0-9]{12}$/', $mapping['source_key']);
         self::assertSame('Новый канал', $mapping['label']);
+    }
+
+    public function test_default_catalog_is_provisioned_once_and_owner_changes_are_preserved(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+
+        $catalog = app(AttributionSourceCatalog::class);
+        $catalog->ensureDefaults($admin);
+        self::assertSame([
+            'Рекомендация знакомых',
+            'Telegram-канал Чуклова',
+            'Instagram',
+            'Поиск Yandex/Google',
+            'Сайт chuklov.com',
+            'Другое',
+        ], array_column($catalog->rows($organization->getKey()), 'label'));
+
+        $catalog->save($admin, [[
+            'source_key' => 'instagram',
+            'label' => 'Instagram и Reels',
+            'aliases' => [['value' => 'instagram']],
+            'is_active' => true,
+            'sort_order' => 0,
+        ]]);
+        $catalog->ensureDefaults($admin);
+
+        self::assertSame('Instagram и Reels', $catalog->rows($organization->getKey())[0]['label']);
+        self::assertCount(6, $catalog->rows($organization->getKey()));
     }
 
     /** @return array{0: Organization, 1: User} */

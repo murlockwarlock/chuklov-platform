@@ -64,6 +64,9 @@ final class AttributionSourceSettings extends LocalizedPage
 
     public function mount(): void
     {
+        $actor = Auth::user();
+        abort_unless($actor instanceof User, 403);
+        app(AttributionSourceCatalog::class)->ensureDefaults($actor);
         $rows = app(AttributionSourceCatalog::class)->rows(app(OrganizationContext::class)->id());
         $this->form->fill([
             'sources' => array_map(static fn (array $row): array => [
@@ -86,9 +89,10 @@ final class AttributionSourceSettings extends LocalizedPage
                                 Hidden::make('source_key')->default(fn (): string => 'source_'.Str::lower(Str::random(12))),
                                 TextInput::make('label')->label(__('Название'))->required()->maxLength(160),
                                 Repeater::make('aliases')
-                                    ->label(__('Синонимы и ключи из рекламы'))
+                                    ->label(__('Какие значения считать этим источником'))
+                                    ->helperText(__('Например, для Instagram сюда можно добавить: instagram, ig, insta. Если такое значение придёт из UTM или другого источника привлечения, оно попадёт в эту категорию.'))
                                     ->schema([
-                                        TextInput::make('value')->label(__('Значение'))->required()->maxLength(120),
+                                        TextInput::make('value')->label(__('Вариант названия / ключ'))->required()->maxLength(120),
                                     ])
                                     ->defaultItems(0)
                                     ->addActionLabel(__('Добавить синоним'))

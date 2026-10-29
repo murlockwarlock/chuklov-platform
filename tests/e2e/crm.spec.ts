@@ -2136,6 +2136,12 @@ test('staff can complete a visit and record a manual payment through the normal 
     await page.goto(`/admin/bookings/${fixture.financeBookingId}`);
     await expect(page.getByRole('heading', { name: 'Запись на приём', exact: true })).toBeVisible();
 
+    await page.getByRole('button', { name: 'Создать медицинский сеанс', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create\\?booking_id=${fixture.financeBookingId}$`));
+    await expect(page.getByRole('heading', { name: 'Новый сеанс', exact: true })).toBeVisible();
+    await page.goto(`/admin/bookings/${fixture.financeBookingId}`);
+    await expect(page.getByRole('heading', { name: 'Запись на приём', exact: true })).toBeVisible();
+
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     const confirmationDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Подтвердить запись' }).last();
     await expect(confirmationDialog).toBeVisible();
@@ -2302,8 +2308,46 @@ test('staff can use the client cockpit for medical profile and private files', a
     const anamnesis = medicalDialog.getByRole('textbox', { name: 'Анамнез', exact: true });
     await expect(anamnesis).toBeVisible();
     await anamnesis.fill('Запись из клиентского рабочего места');
+
+    await medicalDialog.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    const profilePainName = medicalDialog.getByLabel('Название или описание боли*', { exact: true }).last();
+    await profilePainName.fill('Боль для проверки шкалы');
+    const profilePainScore = medicalDialog.getByRole('slider', { name: 'Оценка боли', exact: true }).last();
+    await profilePainScore.press('Home');
+    await expect(medicalDialog.getByText('0 / 10', { exact: true })).toBeVisible();
+    for (let index = 0; index < 5; index += 1) {
+        await profilePainScore.press('ArrowRight');
+    }
+    await expect(medicalDialog.getByText('5 / 10', { exact: true })).toBeVisible();
+    await medicalDialog.getByRole('button', { name: 'Без оценки', exact: true }).last().click();
+    await expect(medicalDialog.getByText('Без оценки', { exact: true }).last()).toBeVisible();
+
+    await medicalDialog.getByLabel('Были операции', { exact: true }).check();
+    await medicalDialog.getByRole('button', { name: 'Добавить операцию', exact: true }).click();
+    const operationItem = medicalDialog.getByRole('textbox', { name: 'Описание*', exact: true }).last().locator('xpath=ancestor::li[1]');
+    await operationItem.getByLabel('Год*', { exact: true }).fill('2026');
+    await operationItem.getByLabel('Описание*', { exact: true }).fill('Удаление грыжи');
+    await operationItem.getByLabel('Описание*', { exact: true }).press('Tab');
+    await expect(medicalDialog.getByText('2026 — Удаление грыжи', { exact: true })).toBeVisible();
+
+    await medicalDialog.getByLabel('Были травмы', { exact: true }).check();
+    await medicalDialog.getByRole('button', { name: 'Добавить травму', exact: true }).click();
+    const injuryItem = medicalDialog.getByRole('textbox', { name: 'Описание*', exact: true }).last().locator('xpath=ancestor::li[1]');
+    await injuryItem.getByLabel('Год*', { exact: true }).fill('2021');
+    await injuryItem.getByLabel('Описание*', { exact: true }).fill('Перелом ключицы');
+    await injuryItem.getByLabel('Описание*', { exact: true }).press('Tab');
+    await expect(medicalDialog.getByText('2021 — Перелом ключицы', { exact: true })).toBeVisible();
+
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
+    await page.reload();
+    await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
+    const reopenedMedicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
+    await expect(reopenedMedicalDialog.getByText('2026 — Удаление грыжи', { exact: true })).toBeVisible();
+    await expect(reopenedMedicalDialog.getByText('2021 — Перелом ключицы', { exact: true })).toBeVisible();
+    await expect(reopenedMedicalDialog.getByText('Без оценки', { exact: true }).last()).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(reopenedMedicalDialog).toBeHidden();
 
     await page.getByRole('tab', { name: 'Файлы и МРТ', exact: true }).click();
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
@@ -2618,6 +2662,11 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Сеансы клиента' })).toBeVisible();
 
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('tab', { name: 'Записи на приём', exact: true }).click();
+    await expect(page.getByText('У клиента пока нет записей на приём.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Создать запись', exact: true })).toBeVisible();
+
     await page.getByRole('link', { name: 'Новый сеанс', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create$`));
 
@@ -2637,6 +2686,15 @@ test('staff can create, view, and edit a client session from the CRM client flow
     for (let index = 0; index < 3; index += 1) {
         await afterPainScore.press('ArrowRight');
     }
+    await expect(page.getByText('7 / 10', { exact: true })).toBeVisible();
+    await expect(page.getByText('3 / 10', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Без оценки', exact: true }).first().click();
+    await expect(page.getByText('Без оценки', { exact: true }).first()).toBeVisible();
+    await beforePainScore.press('Home');
+    for (let index = 0; index < 7; index += 1) {
+        await beforePainScore.press('ArrowRight');
+    }
+    await expect(page.getByText('7 / 10', { exact: true })).toBeVisible();
     await page.getByLabel('Особые жалобы', { exact: true }).fill('Первичная запись о боли');
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
     const testSelect = page.getByRole('combobox', { name: 'Тест*', exact: true });
@@ -2651,6 +2709,12 @@ test('staff can create, view, and edit a client session from the CRM client flow
     const testCauseSelect = page.getByRole('combobox', { name: 'Причины нарушений', exact: true }).first();
     await testCauseSelect.click();
     await page.getByRole('option', { name: causeOptionName, exact: true }).click();
+    await expect(page.getByText('Причины по результатам тестов', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Изменить список вручную', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Вернуться к причинам из тестов', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Заполнить', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Добавить первопричину', exact: true }).click();
     const rootCauseSelect = page.getByRole('combobox', { name: 'Причина из сеанса', exact: true });
     await rootCauseSelect.click();
@@ -2731,7 +2795,7 @@ test('staff can maintain the clinical test catalog and use it in a new session',
 
     await login(page, fixture);
     await page.goto('/admin/medical-clinical-catalog-configuration');
-    await expect(page.getByRole('heading', { name: 'Тесты и причины нарушений', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Клинические справочники', exact: true })).toBeVisible();
 
     const testNameInputs = page.getByLabel('Название теста*', { exact: true });
     const existingTestCount = await testNameInputs.count();
@@ -2915,6 +2979,35 @@ test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => 
     expect(reopenedGroupIndex).toBeGreaterThanOrEqual(0);
     await expect(reopenedProblemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(reopenedGroupIndex)).not.toBeChecked();
     await expect(page.locator('html')).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+});
+
+test('staff can review human attribution defaults and aliases in CRM', async ({ page }) => {
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto('/admin/attribution-source-settings');
+    await expect(page.getByRole('heading', { name: 'Источники клиентов', exact: true })).toBeVisible();
+    await expect(page.getByText('Какие значения считать этим источником', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Например, для Instagram сюда можно добавить: instagram, ig, insta.', { exact: false })).toBeVisible();
+
+    const sourceInputs = page.getByRole('textbox', { name: 'Название*', exact: true });
+    let instagramIndex = -1;
+    for (let index = 0; index < await sourceInputs.count(); index += 1) {
+        if ((await sourceInputs.nth(index).inputValue()) === 'Instagram') {
+            instagramIndex = index;
+            break;
+        }
+    }
+    expect(instagramIndex).toBeGreaterThanOrEqual(0);
+    const instagramItem = sourceInputs.nth(instagramIndex).locator('xpath=ancestor::li[1]');
+    const aliasInputs = instagramItem.getByRole('textbox', { name: 'Вариант названия / ключ*', exact: true });
+    await expect(aliasInputs).toHaveCount(3);
+    await expect(aliasInputs.nth(0)).toHaveValue('instagram');
+    await expect(aliasInputs.nth(1)).toHaveValue('ig');
+    await expect(aliasInputs.nth(2)).toHaveValue('insta');
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Источники клиентов', exact: true })).toBeVisible();
     await assertNoHorizontalOverflow(page);
 });
 
