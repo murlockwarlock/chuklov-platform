@@ -2307,12 +2307,12 @@ test('staff can use the client cockpit for medical profile and private files', a
     const fixture = createCrmFixture({ includeMedicalAttachment: false });
     const anamnesisRequestSummaries: string[] = [];
     page.on('request', (request) => {
-        if (request.method() !== 'POST' || !new URL(request.url()).pathname.includes('/livewire/')) {
+        if (request.method() !== 'POST') {
             return;
         }
 
         const body = request.postData() ?? '';
-        anamnesisRequestSummaries.push(`path=${new URL(request.url()).pathname};key=${body.includes('anamnesis')};expected=${body.includes('клиентского')};length=${body.length}`);
+        anamnesisRequestSummaries.push(`path=${new URL(request.url()).pathname};livewire=${new URL(request.url()).pathname.includes('/livewire/')};key=${body.includes('anamnesis')};expected=${body.includes('клиентского')};length=${body.length}`);
     });
 
     await login(page, fixture);
