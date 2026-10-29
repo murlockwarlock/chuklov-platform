@@ -2320,9 +2320,6 @@ test('staff can use the client cockpit for medical profile and private files', a
     const medicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
     const anamnesis = medicalDialog.getByRole('textbox', { name: 'Анамнез', exact: true });
     await expect(anamnesis).toBeVisible();
-    await anamnesis.fill('Запись из клиентского рабочего места');
-    await anamnesis.press('Tab');
-    await page.waitForTimeout(500);
 
     await medicalDialog.getByRole('button', { name: 'Добавить боль', exact: true }).click();
     const profilePainName = medicalDialog.getByLabel('Название или описание боли*', { exact: true }).last();
@@ -2353,6 +2350,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await injuryItem.getByLabel('Описание*', { exact: true }).press('Tab');
     await expect(medicalDialog.getByText('2021 — Перелом ключицы', { exact: true })).toBeVisible();
 
+    await anamnesis.fill('Запись из клиентского рабочего места');
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
     await page.reload();
