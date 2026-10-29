@@ -180,7 +180,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->visible(fn (Get $get): bool => $get('comparison') === AnalyticsMetricComparison::Target->value)
                                 ->required(fn (Get $get): bool => $get('comparison') === AnalyticsMetricComparison::Target->value)
                                 ->numeric()
-                                ->dehydrated(true),
+                                ->live(debounce: 500),
                             Select::make('null_policy')
                                 ->label(__('Если данных нет'))
                                 ->options(self::nullPolicyOptions())
