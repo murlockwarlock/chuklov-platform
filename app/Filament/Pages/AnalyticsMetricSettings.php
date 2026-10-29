@@ -117,7 +117,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->searchable()
                                 ->preload()
                                 ->required()
-                                ->live()
+                                ->live(onBlur: true)
                                 ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
                                     $source = is_string($state) ? $state : '';
                                     $set('aggregation', AnalyticsMetricSourceCatalog::defaultAggregation($source));
@@ -127,14 +127,13 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->label(__('Агрегация'))
                                 ->options(fn (Get $get): array => AnalyticsMetricSourceCatalog::aggregationOptions((string) $get('source_a_key')))
                                 ->required()
-                                ->default(AnalyticsMetricAggregation::SourceValue->value)
-                                ->live(),
+                                ->default(AnalyticsMetricAggregation::SourceValue->value),
                             Select::make('calculation')
                                 ->label(__('Операция'))
                                 ->options(self::calculationOptions())
                                 ->required()
                                 ->default(AnalyticsMetricCalculation::Value->value)
-                                ->live()
+                                ->live(onBlur: true)
                                 ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
                                     $this->syncOutputUnit($get, $set);
                                     if ($state === AnalyticsMetricCalculation::Value->value) {
