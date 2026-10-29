@@ -2396,7 +2396,7 @@ test('staff can use the client cockpit for medical profile and private files', a
         trackedForm.__submitEvents = [];
         form.addEventListener('submit', (event) => {
             trackedForm.__submitEvents?.push({ defaultPrevented: event.defaultPrevented });
-        }, true);
+        });
     });
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
