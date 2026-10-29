@@ -155,7 +155,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->options(self::comparisonOptions())
                                 ->required()
                                 ->default(AnalyticsMetricComparison::None->value)
-                                ->live()
+                                ->live(onBlur: true)
                                 ->afterStateUpdated(function (Set $set, mixed $state): void {
                                     if ($state !== AnalyticsMetricComparison::None->value) {
                                         $set('source_b_key', null);
@@ -178,8 +178,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->helperText(__('Для денежных источников значение указывается в базовой валюте организации.'))
                                 ->visible(fn (Get $get): bool => $get('comparison') === AnalyticsMetricComparison::Target->value)
                                 ->required(fn (Get $get): bool => $get('comparison') === AnalyticsMetricComparison::Target->value)
-                                ->numeric()
-                                ->live(),
+                                ->numeric(),
                             Select::make('null_policy')
                                 ->label(__('Если данных нет'))
                                 ->options(self::nullPolicyOptions())
