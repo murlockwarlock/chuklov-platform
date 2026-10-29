@@ -2368,6 +2368,7 @@ test('staff can use the client cockpit for medical profile and private files', a
         let responseBody = '';
         let responseShape = '';
         let responseMessages = '';
+        let responseValidation = '';
 
         try {
             responseBody = await response.text();
@@ -2383,11 +2384,15 @@ test('staff can use the client cockpit for medical profile and private files', a
                 'required',
                 'exception',
             ].filter((message) => responseBody.includes(message)).join(',');
+            const validationMatches = [...responseBody.matchAll(/fi-fo-field-wrp-error-message[^>]*>\s*([^<]+)/g)]
+                .map((match) => match[1]?.trim() ?? '')
+                .filter(Boolean);
+            responseValidation = `ariaInvalid=${(responseBody.match(/aria-invalid="true"/g) ?? []).length};messages=${validationMatches.join(',')}`;
         } catch {
             responseBody = '';
         }
 
-        anamnesisResponseSummaries.push(`status=${response.status()};success=${responseBody.includes('Медицинский профиль сохранён')};error=${responseBody.includes('exception') || responseBody.includes('errors')};shape=${responseShape};messages=${responseMessages};length=${responseBody.length}`);
+        anamnesisResponseSummaries.push(`status=${response.status()};success=${responseBody.includes('Медицинский профиль сохранён')};error=${responseBody.includes('exception') || responseBody.includes('errors')};shape=${responseShape};messages=${responseMessages};validation=${responseValidation};length=${responseBody.length}`);
     });
 
     await login(page, fixture);
