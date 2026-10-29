@@ -2136,7 +2136,7 @@ test('staff can complete a visit and record a manual payment through the normal 
     await page.goto(`/admin/bookings/${fixture.financeBookingId}`);
     await expect(page.getByRole('heading', { name: 'Запись на приём', exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Создать медицинский сеанс', exact: true }).click();
+    await page.getByRole('link', { name: 'Создать медицинский сеанс', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create\\?booking_id=${fixture.financeBookingId}$`));
     await expect(page.getByRole('heading', { name: 'Новый сеанс', exact: true })).toBeVisible();
     await page.goto(`/admin/bookings/${fixture.financeBookingId}`);
@@ -2339,6 +2339,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(medicalDialog.getByText('2021 — Перелом ключицы', { exact: true })).toBeVisible();
 
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
     await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
     await page.reload();
     await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
@@ -2665,7 +2666,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.goto(`/admin/clients/${fixture.clientId}`);
     await page.getByRole('tab', { name: 'Записи на приём', exact: true }).click();
     await expect(page.getByText('У клиента пока нет записей на приём.', { exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Создать запись', exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Создать запись', exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Новый сеанс', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create$`));
@@ -2989,7 +2990,7 @@ test('staff can review human attribution defaults and aliases in CRM', async ({ 
     await page.goto('/admin/attribution-source-settings');
     await expect(page.getByRole('heading', { name: 'Источники клиентов', exact: true })).toBeVisible();
     await expect(page.getByText('Какие значения считать этим источником', { exact: true }).first()).toBeVisible();
-    await expect(page.getByText('Например, для Instagram сюда можно добавить: instagram, ig, insta.', { exact: false })).toBeVisible();
+    await expect(page.getByText('Например, для Instagram сюда можно добавить: instagram, ig, insta.', { exact: false }).first()).toBeVisible();
 
     const sourceInputs = page.getByRole('textbox', { name: 'Название*', exact: true });
     let instagramIndex = -1;
