@@ -2399,6 +2399,8 @@ test('staff can use the client cockpit for medical profile and private files', a
         });
     });
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await page.waitForTimeout(1500);
+    console.log(`ANAMNESIS_AFTER_CLICK visible=${await medicalDialog.isVisible()}`);
     await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
     console.log(`ANAMNESIS_REQUESTS ${anamnesisRequestSummaries.join('|')}`);
     console.log(`ANAMNESIS_NAVIGATIONS ${navigationUrls.join('|')}`);
