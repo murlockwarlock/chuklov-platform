@@ -2305,6 +2305,19 @@ test('staff can reject, approve, and mark a partner payout as paid from CRM', as
 test('staff can use the client cockpit for medical profile and private files', async ({ page }) => {
     test.setTimeout(90_000);
     const fixture = createCrmFixture({ includeMedicalAttachment: false });
+    const anamnesisRequestSummaries: string[] = [];
+    page.on('request', (request) => {
+        if (request.method() !== 'POST' || !new URL(request.url()).pathname.includes('/livewire/')) {
+            return;
+        }
+
+        const body = request.postData() ?? '';
+        if (!body.includes('anamnesis')) {
+            return;
+        }
+
+        anamnesisRequestSummaries.push(`key=true;expected=${body.includes('клиентского')};length=${body.length}`);
+    });
 
     await login(page, fixture);
     await page.goto('/admin/clients');
@@ -2352,6 +2365,7 @@ test('staff can use the client cockpit for medical profile and private files', a
 
     await anamnesis.fill('Запись из клиентского рабочего места');
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    console.log(`ANAMNESIS_REQUESTS ${anamnesisRequestSummaries.join('|')}`);
     await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
     await page.reload();
     await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
