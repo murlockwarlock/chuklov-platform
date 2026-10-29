@@ -2319,19 +2319,39 @@ test('staff can use the client cockpit for medical profile and private files', a
 
         const body = request.postData() ?? '';
         let calls = '';
+        let updateKeys = '';
+        let snapshotExpected = false;
 
         try {
-            const payload = JSON.parse(body) as { components?: Array<{ calls?: Array<{ method?: string }> }> };
+            const payload = JSON.parse(body) as {
+                components?: Array<{
+                    calls?: Array<{ method?: string }>;
+                    updates?: Record<string, unknown>;
+                    snapshot?: string;
+                }>;
+            };
             calls = (payload.components ?? [])
                 .flatMap((component) => component.calls ?? [])
                 .map((call) => call.method ?? '')
                 .filter(Boolean)
                 .join(',');
+            updateKeys = (payload.components ?? [])
+                .flatMap((component) => Object.keys(component.updates ?? {}))
+                .join(',');
+            snapshotExpected = (payload.components ?? []).some((component) => {
+                const snapshot = component.snapshot ?? '';
+
+                try {
+                    return Buffer.from(snapshot, 'base64').toString('utf8').includes('клиентского');
+                } catch {
+                    return snapshot.includes('клиентского');
+                }
+            });
         } catch {
             calls = 'unparsed';
         }
 
-        anamnesisRequestSummaries.push(`path=${new URL(request.url()).pathname};calls=${calls || 'none'};key=${body.includes('anamnesis')};expected=${body.includes('клиентского')};length=${body.length}`);
+        anamnesisRequestSummaries.push(`path=${new URL(request.url()).pathname};calls=${calls || 'none'};updates=${updateKeys || 'none'};snapshotExpected=${snapshotExpected};key=${body.includes('anamnesis')};expected=${body.includes('клиентского')};length=${body.length}`);
     });
 
     await login(page, fixture);
