@@ -155,7 +155,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->options(self::comparisonOptions())
                                 ->required()
                                 ->default(AnalyticsMetricComparison::None->value)
-                                ->live(onBlur: true)
+                                ->live()
                                 ->afterStateUpdated(function (Set $set, mixed $state): void {
                                     if ($state !== AnalyticsMetricComparison::None->value) {
                                         $set('source_b_key', null);
