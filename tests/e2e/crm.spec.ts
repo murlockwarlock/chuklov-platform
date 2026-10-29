@@ -2484,7 +2484,6 @@ test('staff can use the client cockpit for medical profile and private files', a
     console.log(`ANAMNESIS_REQUESTS ${anamnesisRequestSummaries.join('|')}`);
     console.log(`ANAMNESIS_RESPONSES ${anamnesisResponseSummaries.join('|')}`);
     console.log(`ANAMNESIS_NAVIGATIONS ${navigationUrls.join('|')}`);
-    console.log(`ANAMNESIS_SUBMIT ${await medicalDialog.locator('form').evaluate((form) => JSON.stringify((form as HTMLFormElement & { __submitEvents?: Array<{ defaultPrevented: boolean }> }).__submitEvents ?? []))}`);
     await page.reload();
     await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
     const reopenedMedicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
