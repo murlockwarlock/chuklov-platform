@@ -2443,6 +2443,7 @@ test('staff can use the client cockpit for medical profile and private files', a
             value: (field as HTMLInputElement).value,
         }))
         .filter((field) => field.models.some(([, value]) => value?.includes('history')))))}`);
+    console.log(`HISTORY_ITEMS ${JSON.stringify(await medicalDialog.locator('li.fi-fo-repeater-item').evaluateAll((items) => items.map((item) => ({ text: item.textContent?.trim(), classes: item.className, htmlLength: item.innerHTML.length })))}`);
     const injuryHeader = medicalDialog.getByText('Новая травма', { exact: true }).last();
     if (await injuryHeader.isVisible()) {
         await injuryHeader.click();
