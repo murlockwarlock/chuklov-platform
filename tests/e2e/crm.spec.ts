@@ -2306,6 +2306,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     test.setTimeout(90_000);
     const fixture = createCrmFixture({ includeMedicalAttachment: false });
     const anamnesisRequestSummaries: string[] = [];
+    const anamnesisResponseSummaries: string[] = [];
     const navigationUrls: string[] = [];
     page.on('framenavigated', (frame) => {
         if (frame === page.mainFrame()) {
@@ -2352,6 +2353,27 @@ test('staff can use the client cockpit for medical profile and private files', a
         }
 
         anamnesisRequestSummaries.push(`path=${new URL(request.url()).pathname};calls=${calls || 'none'};updates=${updateKeys || 'none'};snapshotExpected=${snapshotExpected};key=${body.includes('anamnesis')};expected=${body.includes('клиентского')};length=${body.length}`);
+    });
+    page.on('response', async (response) => {
+        if (response.request().method() !== 'POST' || !response.url().includes('/livewire-')) {
+            return;
+        }
+
+        const body = response.request().postData() ?? '';
+
+        if (!body.includes('callMountedAction')) {
+            return;
+        }
+
+        let responseBody = '';
+
+        try {
+            responseBody = await response.text();
+        } catch {
+            responseBody = '';
+        }
+
+        anamnesisResponseSummaries.push(`status=${response.status()};success=${responseBody.includes('Медицинский профиль сохранён')};error=${responseBody.includes('exception') || responseBody.includes('errors')};length=${responseBody.length}`);
     });
 
     await login(page, fixture);
@@ -2423,6 +2445,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     console.log(`ANAMNESIS_AFTER_CLICK visible=${await medicalDialog.isVisible()}`);
     await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
     console.log(`ANAMNESIS_REQUESTS ${anamnesisRequestSummaries.join('|')}`);
+    console.log(`ANAMNESIS_RESPONSES ${anamnesisResponseSummaries.join('|')}`);
     console.log(`ANAMNESIS_NAVIGATIONS ${navigationUrls.join('|')}`);
     console.log(`ANAMNESIS_SUBMIT ${await medicalDialog.locator('form').evaluate((form) => JSON.stringify((form as HTMLFormElement & { __submitEvents?: Array<{ defaultPrevented: boolean }> }).__submitEvents ?? []))}`);
     await page.reload();
