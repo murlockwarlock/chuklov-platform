@@ -3023,6 +3023,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await choose(/^Если знаменатель равен 0/, 'Не рассчитывать');
     await choose(/^Единица/, 'Число');
     await choose(/^Округление/, '0 знаков');
+    await expect(targetValue).toHaveValue('1');
     await customItem.getByRole('switch', { name: 'Активна', exact: true }).check();
     await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
     await expect(page.getByText('Метрики сохранены', { exact: true }).last()).toBeVisible({ timeout: 20_000 });
