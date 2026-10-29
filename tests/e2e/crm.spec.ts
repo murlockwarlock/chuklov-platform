@@ -2363,8 +2363,8 @@ test('staff can use the client cockpit for medical profile and private files', a
     await anamnesis.blur();
     await page.waitForTimeout(1000);
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
-    console.log(`ANAMNESIS_REQUESTS ${anamnesisRequestSummaries.join('|')}`);
     await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
+    console.log(`ANAMNESIS_REQUESTS ${anamnesisRequestSummaries.join('|')}`);
     await page.reload();
     await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
     const reopenedMedicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
