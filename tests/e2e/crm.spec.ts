@@ -2443,6 +2443,10 @@ test('staff can use the client cockpit for medical profile and private files', a
             value: (field as HTMLInputElement).value,
         }))
         .filter((field) => field.models.some(([, value]) => value?.includes('history')))))}`);
+    const injuryHeader = medicalDialog.getByText('Новая травма', { exact: true }).last();
+    if (await injuryHeader.isVisible()) {
+        await injuryHeader.click();
+    }
     const injuryItem = medicalDialog.getByRole('textbox', { name: 'Описание*', exact: true }).last().locator('xpath=ancestor::li[1]');
     await injuryItem.getByLabel('Год*', { exact: true }).fill('2021');
     await injuryItem.getByLabel('Описание*', { exact: true }).fill('Перелом ключицы');
