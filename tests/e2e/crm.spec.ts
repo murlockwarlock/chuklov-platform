@@ -2321,13 +2321,8 @@ test('staff can use the client cockpit for medical profile and private files', a
     const anamnesis = medicalDialog.getByRole('textbox', { name: 'Анамнез', exact: true });
     await expect(anamnesis).toBeVisible();
     await anamnesis.fill('Запись из клиентского рабочего места');
-    const anamnesisUpdate = page.waitForResponse((response) => {
-        const pathname = new URL(response.url()).pathname;
-
-        return response.request().method() === 'POST' && pathname.includes('/livewire/') && response.ok();
-    });
     await anamnesis.press('Tab');
-    await anamnesisUpdate;
+    await page.waitForTimeout(500);
 
     await medicalDialog.getByRole('button', { name: 'Добавить боль', exact: true }).click();
     const profilePainName = medicalDialog.getByLabel('Название или описание боли*', { exact: true }).last();

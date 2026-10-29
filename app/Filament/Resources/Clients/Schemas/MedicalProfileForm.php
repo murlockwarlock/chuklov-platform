@@ -200,7 +200,7 @@ final class MedicalProfileForm
                 ->columnSpanFull(),
             Textarea::make('medicines')->label(__('Лекарственные препараты'))->rows(3)->maxLength(10000),
             Textarea::make('supplements')->label(__('Нутрицевтики и БАДы'))->rows(3)->maxLength(10000),
-            Textarea::make('anamnesis')->label(__('Анамнез'))->rows(3)->maxLength(10000)->live(onBlur: true),
+            Textarea::make('anamnesis')->label(__('Анамнез'))->rows(3)->maxLength(10000)->live(debounce: 300),
         ];
     }
 
