@@ -2375,6 +2375,16 @@ test('staff can use the client cockpit for medical profile and private files', a
     await anamnesis.fill('Запись из клиентского рабочего места');
     await anamnesis.blur();
     await page.waitForTimeout(1000);
+    console.log(`ANAMNESIS_FORM ${await medicalDialog.locator('form').evaluate((form) => JSON.stringify({
+        submit: form.getAttribute('wire:submit'),
+        submitPrevent: form.getAttribute('wire:submit.prevent'),
+        buttons: Array.from(form.querySelectorAll('button')).map((button) => ({
+            text: button.textContent?.trim(),
+            type: button.getAttribute('type'),
+            wireClick: button.getAttribute('wire:click'),
+            xOnClick: button.getAttribute('x-on:click'),
+        })),
+    }))}`);
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
     console.log(`ANAMNESIS_REQUESTS ${anamnesisRequestSummaries.join('|')}`);
