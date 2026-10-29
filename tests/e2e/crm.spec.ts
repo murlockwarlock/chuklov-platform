@@ -2312,7 +2312,20 @@ test('staff can use the client cockpit for medical profile and private files', a
         }
 
         const body = request.postData() ?? '';
-        anamnesisRequestSummaries.push(`path=${new URL(request.url()).pathname};call=${body.includes('callMountedAction')};key=${body.includes('anamnesis')};expected=${body.includes('клиентского')};length=${body.length}`);
+        let calls = '';
+
+        try {
+            const payload = JSON.parse(body) as { components?: Array<{ calls?: Array<{ method?: string }> }> };
+            calls = (payload.components ?? [])
+                .flatMap((component) => component.calls ?? [])
+                .map((call) => call.method ?? '')
+                .filter(Boolean)
+                .join(',');
+        } catch {
+            calls = 'unparsed';
+        }
+
+        anamnesisRequestSummaries.push(`path=${new URL(request.url()).pathname};calls=${calls || 'none'};key=${body.includes('anamnesis')};expected=${body.includes('клиентского')};length=${body.length}`);
     });
 
     await login(page, fixture);
