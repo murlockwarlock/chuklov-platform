@@ -2306,6 +2306,12 @@ test('staff can use the client cockpit for medical profile and private files', a
     test.setTimeout(90_000);
     const fixture = createCrmFixture({ includeMedicalAttachment: false });
     const anamnesisRequestSummaries: string[] = [];
+    const navigationUrls: string[] = [];
+    page.on('framenavigated', (frame) => {
+        if (frame === page.mainFrame()) {
+            navigationUrls.push(frame.url());
+        }
+    });
     page.on('request', (request) => {
         if (request.method() !== 'POST') {
             return;
@@ -2388,6 +2394,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
     console.log(`ANAMNESIS_REQUESTS ${anamnesisRequestSummaries.join('|')}`);
+    console.log(`ANAMNESIS_NAVIGATIONS ${navigationUrls.join('|')}`);
     await page.reload();
     await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
     const reopenedMedicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
