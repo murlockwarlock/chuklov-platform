@@ -173,6 +173,8 @@ class RecordAuditEvent
         'analytics.classification.suggested' => ['taxonomy', 'source_type', 'tag_count'],
         'analytics.classification.accepted' => ['taxonomy', 'source_type', 'tag_count'],
         'analytics.taxonomy_groups.updated' => ['taxonomy_count', 'group_count'],
+        'analytics.metric.created' => ['stable_key', 'active', 'version', 'source_a', 'source_b', 'aggregation', 'calculation', 'comparison', 'output_unit', 'decimal_precision', 'null_policy', 'zero_policy'],
+        'analytics.metric.updated' => ['stable_key', 'active', 'version', 'source_a', 'source_b', 'aggregation', 'calculation', 'comparison', 'output_unit', 'decimal_precision', 'null_policy', 'zero_policy'],
         'tracker.goal_catalog.updated' => ['tag_count'],
         'medical.profile.created' => ['source', 'key_version', 'updated_fields'],
         'medical.profile.updated' => ['source', 'key_version', 'updated_fields'],

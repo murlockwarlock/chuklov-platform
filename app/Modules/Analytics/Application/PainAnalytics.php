@@ -140,6 +140,32 @@ final readonly class PainAnalytics
             });
         $sessionCount = (clone $sessionQuery)->count();
         $clientCount = (clone $sessionQuery)->distinct('client_id')->count('client_id');
+        $summary = DB::table('medical_session_pains as pains')
+            ->join('medical_sessions as sessions', function ($join): void {
+                $join
+                    ->on('sessions.organization_id', '=', 'pains.organization_id')
+                    ->on('sessions.id', '=', 'pains.medical_session_id')
+                    ->on('sessions.client_id', '=', 'pains.client_id');
+            })
+            ->where('pains.organization_id', $organizationId)
+            ->where('sessions.occurred_at', '>=', $period->startUtc)
+            ->where('sessions.occurred_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('pains.client_id', $clientId))
+            ->when($problemTagId !== null, function ($query) use ($organizationId, $problemTagId): void {
+                $query->whereExists(function ($subquery) use ($organizationId, $problemTagId): void {
+                    $subquery
+                        ->selectRaw('1')
+                        ->from('medical_session_pain_tags as selected_tags')
+                        ->whereColumn('selected_tags.medical_session_pain_id', 'pains.id')
+                        ->where('selected_tags.organization_id', $organizationId)
+                        ->where('selected_tags.medical_problem_tag_id', $problemTagId);
+                });
+            })
+            ->selectRaw('AVG(pains.before_score) as average_before')
+            ->selectRaw('AVG(pains.after_score) as average_after')
+            ->selectRaw('AVG(CASE WHEN pains.before_score IS NOT NULL AND pains.after_score IS NOT NULL THEN pains.before_score - pains.after_score END) as average_reduction')
+            ->selectRaw('AVG(CASE WHEN pains.before_score > 0 AND pains.after_score IS NOT NULL THEN ((pains.before_score - pains.after_score) * 100.0 / pains.before_score) END) as average_reduction_percent')
+            ->first();
 
         return new PainAnalyticsData(
             clientCount: $clientCount,
@@ -165,6 +191,10 @@ final readonly class PainAnalytics
                     'session_3_after' => self::nullableFloat($values['session_three_after'] ?? null),
                 ];
             }, $rows)),
+            averageBefore: self::nullableFloat($summary?->average_before),
+            averageAfter: self::nullableFloat($summary?->average_after),
+            averageReduction: self::nullableFloat($summary?->average_reduction),
+            averageReductionPercent: self::nullableFloat($summary?->average_reduction_percent),
         );
     }
 

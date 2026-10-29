@@ -5,9 +5,12 @@ namespace App\Filament\Pages;
 use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\Analytics\Application\AcquisitionAnalytics;
+use App\Modules\Analytics\Application\AnalyticsMetricConfiguration;
+use App\Modules\Analytics\Application\AnalyticsMetricEvaluator;
 use App\Modules\Analytics\Application\AnalyticsReportExport;
 use App\Modules\Analytics\Application\BookingStatusAnalytics;
 use App\Modules\Analytics\Application\ClientSegmentAnalytics;
+use App\Modules\Analytics\Application\Data\AnalyticsMetricFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\DemographicsAnalytics;
 use App\Modules\Analytics\Application\FeedbackAnalytics;
@@ -91,7 +94,7 @@ final class AnalyticsConsole extends LocalizedPage
     public function mount(): void
     {
         $this->form->fill([
-            'dimensions' => ['pain'],
+            'dimensions' => ['pain', 'custom_metrics'],
             'client_id' => null,
             'problem_tag_id' => null,
             'feedback_theme_id' => null,
@@ -125,6 +128,7 @@ final class AnalyticsConsole extends LocalizedPage
                                 'purchases' => __('Типы покупок'),
                                 'booking_statuses' => __('Статусы записей'),
                                 'segments' => __('Категории клиентов'),
+                                'custom_metrics' => __('Вычисляемые метрики'),
                             ])
                             ->columns(['default' => 1, 'sm' => 2, 'lg' => 3])
                             ->required()
@@ -309,6 +313,7 @@ final class AnalyticsConsole extends LocalizedPage
                     'purchases' => $this->purchases($actor, $period, $client, $purchaseType),
                     'booking_statuses' => $this->bookingStatuses($actor, $period, $client, $bookingStatus),
                     'segments' => app(ClientSegmentAnalytics::class)->handle($actor, $client),
+                    'custom_metrics' => $this->customMetrics($actor, $period, $client, $state),
                     default => null,
                 };
             } catch (Throwable) {
@@ -349,6 +354,7 @@ final class AnalyticsConsole extends LocalizedPage
                     'purchases' => $this->purchases($actor, $period, $client, $purchaseType),
                     'booking_statuses' => $this->bookingStatuses($actor, $period, $client, $bookingStatus),
                     'segments' => app(ClientSegmentAnalytics::class)->handle($actor, $client),
+                    'custom_metrics' => $this->customMetrics($actor, $period, $client, $state),
                     default => null,
                 };
             } catch (Throwable) {
@@ -489,6 +495,31 @@ final class AnalyticsConsole extends LocalizedPage
         return app(BookingStatusAnalytics::class)->handle($actor, $period, $client, $status)->toArray();
     }
 
+    /**
+     * @param  array<string, mixed>  $state
+     * @return array{metrics: list<array<string, mixed>>}
+     */
+    private function customMetrics(User $actor, DashboardPeriod $period, ?Client $client, array $state): array
+    {
+        $metrics = app(AnalyticsMetricConfiguration::class)->metrics(true);
+        $filters = new AnalyticsMetricFilters(
+            problemTagId: $this->selectedProblemTagId($state),
+            feedbackThemeId: $this->selectedFeedbackThemeId($state),
+            goalTagId: $this->selectedGoalTagId($state),
+            sourceKey: $this->selectedSourceKey($state),
+            purchaseType: $this->selectedPurchaseType($state),
+            bookingStatus: $this->selectedBookingStatus($state),
+        );
+        $results = app(AnalyticsMetricEvaluator::class)->evaluate($actor, $period, $metrics, $client, $filters);
+
+        return [
+            'metrics' => array_values(array_map(
+                static fn ($result): array => $result->toArray(),
+                $results,
+            )),
+        ];
+    }
+
     private function dimensionLabel(string $dimension): string
     {
         return [
@@ -503,6 +534,7 @@ final class AnalyticsConsole extends LocalizedPage
             'purchases' => __('Типы покупок'),
             'booking_statuses' => __('Статусы записей'),
             'segments' => __('Категории клиентов'),
+            'custom_metrics' => __('Вычисляемые метрики'),
         ][$dimension] ?? __('Выбранный показатель');
     }
 

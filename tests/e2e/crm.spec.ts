@@ -2957,6 +2957,113 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     await expect(page.getByRole('button', { name: 'Анализировать', exact: true })).toBeVisible();
 });
 
+test('owner can configure computed metrics and use them in analytics and Excel', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture();
+    const metricName = `Новые клиенты E2E ${fixture.clientName.slice(-8)}`;
+    const renamedMetricName = `${metricName} обновлено`;
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-metric-settings');
+    await expect(page.getByRole('heading', { name: 'Метрики аналитики', exact: true })).toBeVisible();
+    await expect(page.getByText('Снижение боли, %', { exact: true })).toBeVisible();
+    await expect(page.getByText('Изменение LTV к предыдущему периоду, %', { exact: true })).toBeVisible();
+    await expect(page.getByText('Описание формулы владельца', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('база сравнения не определена', { exact: false })).toHaveCount(0);
+
+    for (const width of [320, 390, 768, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+        await expect(page.getByRole('button', { name: 'Сохранить метрики', exact: true })).toBeVisible();
+    }
+
+    const items = page.locator('.fi-fo-repeater-item');
+    const initialItemCount = await items.count();
+    await page.getByRole('button', { name: 'Добавить метрику', exact: true }).click();
+    await expect.poll(async () => items.count()).toBe(initialItemCount + 1);
+    const customItem = items.last();
+
+    const choose = async (label: RegExp, option: string): Promise<void> => {
+        const control = customItem.getByRole('combobox', { name: label }).first();
+        await control.click();
+        const optionLocator = page.getByRole('option', { name: option, exact: true }).last();
+        await expect(optionLocator).toBeVisible();
+        await optionLocator.click();
+    };
+
+    await customItem.getByRole('textbox', { name: /^Название/ }).fill(metricName);
+    await choose(/^Что считаем/, 'Новые клиенты');
+    await choose(/^Агрегация/, 'Количество');
+    await choose(/^Операция/, 'Значение A');
+    await choose(/^Основа сравнения/, 'Без сравнения');
+    await choose(/^Если данных нет/, 'Не рассчитывать');
+    await choose(/^Если знаменатель равен 0/, 'Не рассчитывать');
+    await choose(/^Единица/, 'Число');
+    await choose(/^Округление/, '0 знаков');
+    await customItem.getByRole('switch', { name: 'Активна', exact: true }).check();
+    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Метрики сохранены', { timeout: 15_000 });
+
+    await page.reload();
+    await expect(page.getByText(metricName, { exact: true })).toBeVisible();
+
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    const customMetricsSection = page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('..');
+    await expect(customMetricsSection.getByText(metricName, { exact: true })).toBeVisible();
+    await expect(customMetricsSection).toContainText('Число');
+
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
+    ]);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('Computed metrics export did not produce a file.');
+    }
+    const workbookXml = execFileSync('unzip', ['-p', downloadPath, 'xl/sharedStrings.xml'], { encoding: 'utf8' });
+    expect(workbookXml).toContain(metricName);
+    expect(workbookXml).toContain('Число');
+
+    await page.goto('/admin/analytics-metric-settings');
+    const reopenedItem = page.locator('.fi-fo-repeater-item').last();
+    await reopenedItem.getByRole('textbox', { name: /^Название/ }).fill(renamedMetricName);
+    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Метрики сохранены', { timeout: 15_000 });
+    await page.reload();
+    await expect(page.getByText(renamedMetricName, { exact: true })).toBeVisible();
+
+    await page.goto('/admin/analytics-console');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('..').getByText(renamedMetricName, { exact: true })).toBeVisible();
+    await expect(page.getByText(metricName, { exact: true })).toHaveCount(0);
+
+    await page.goto('/admin/analytics-metric-settings');
+    await page.locator('.fi-fo-repeater-item').last().getByRole('switch', { name: 'Активна', exact: true }).uncheck();
+    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Метрики сохранены', { timeout: 15_000 });
+    await page.goto('/admin/analytics-console');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('..').getByText(renamedMetricName, { exact: true })).toHaveCount(0);
+
+    await page.goto('/admin/analytics-metric-settings');
+    await page.locator('.fi-fo-repeater-item').last().getByRole('switch', { name: 'Активна', exact: true }).check();
+    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Метрики сохранены', { timeout: 15_000 });
+    await page.goto('/admin/analytics-console');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('..').getByText(renamedMetricName, { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 320, height: 900 });
+    await assertNoHorizontalOverflow(page);
+    await page.setViewportSize({ width: 390, height: 900 });
+    await assertNoHorizontalOverflow(page);
+    await page.setViewportSize({ width: 768, height: 900 });
+    await assertNoHorizontalOverflow(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+});
+
 test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => {
     test.setTimeout(90_000);
     const fixture = createCrmFixture({ taxonomyFlow: true });

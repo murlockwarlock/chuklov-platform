@@ -168,8 +168,25 @@ final readonly class AnalyticsReportExport
                 }
             }
         }
+        if (isset($results['custom_metrics']['metrics']) && is_array($results['custom_metrics']['metrics'])) {
+            foreach ($results['custom_metrics']['metrics'] as $metric) {
+                if (! is_array($metric)) {
+                    continue;
+                }
 
-        $this->writeRows($sheet, $rows, ['Параметр', 'Значение', 'Валюта']);
+                $unit = (string) ($metric['unit'] ?? '');
+                if (($metric['currency'] ?? null) !== null && $metric['currency'] !== '') {
+                    $unit .= ' '.(string) $metric['currency'];
+                }
+                $rows[] = [
+                    (string) ($metric['name'] ?? 'Показатель'),
+                    ($metric['available'] ?? false) ? ($metric['value'] ?? null) : ($metric['display'] ?? null),
+                    $unit,
+                ];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Показатель', 'Значение', 'Единица']);
     }
 
     /** @param array<string, mixed> $data */

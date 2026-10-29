@@ -6,6 +6,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Services\Domain\Models\Service;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
+/** @extends Factory<Service> */
 class ServiceFactory extends Factory
 {
     protected $model = Service::class;

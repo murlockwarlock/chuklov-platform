@@ -22,6 +22,39 @@
         </div>
     @else
         <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+            @if (isset($results['custom_metrics']))
+                <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-gray-900 xl:col-span-2">
+                    <div class="flex flex-wrap items-baseline justify-between gap-3">
+                        <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Вычисляемые метрики') }}</h2>
+                        <a class="text-sm text-primary-600 hover:underline" href="{{ \App\Filament\Pages\AnalyticsMetricSettings::getUrl() }}">{{ __('Настроить метрики') }}</a>
+                    </div>
+                    @if ($results['custom_metrics']['metrics'] === [])
+                        <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('Активных метрик пока нет.') }}</p>
+                    @else
+                        <div class="mt-4 overflow-x-auto">
+                            <table class="w-full min-w-[520px] text-left text-sm">
+                                <thead class="border-b border-gray-200 text-xs uppercase text-gray-500 dark:border-white/10 dark:text-gray-400">
+                                <tr>
+                                    <th class="px-3 py-2">{{ __('Показатель') }}</th>
+                                    <th class="px-3 py-2">{{ __('Значение') }}</th>
+                                    <th class="px-3 py-2">{{ __('Единица') }}</th>
+                                </tr>
+                                </thead>
+                                <tbody>
+                                @foreach ($results['custom_metrics']['metrics'] as $metric)
+                                    <tr class="border-b border-gray-100 last:border-0 dark:border-white/5">
+                                        <td class="px-3 py-3 font-medium text-gray-950 dark:text-white">{{ $metric['name'] }}</td>
+                                        <td class="px-3 py-3">{{ $metric['display'] }}</td>
+                                        <td class="px-3 py-3">{{ $metric['unit'] }}{{ $metric['currency'] ? ' · '.$metric['currency'] : '' }}</td>
+                                    </tr>
+                                @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+                </section>
+            @endif
+
             @if (isset($results['pain']))
                 <section class="rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-gray-900 xl:col-span-2">
                     <div class="flex flex-wrap items-baseline justify-between gap-3">

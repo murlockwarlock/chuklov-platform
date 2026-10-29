@@ -24,7 +24,7 @@ final class AnalyticsReportExportTest extends TestCase
         $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, []));
 
         self::assertSame(['Сводка'], $workbook->getSheetNames());
-        self::assertSame(['Параметр', 'Значение', 'Валюта'], $workbook->getActiveSheet()->toArray()[0]);
+        self::assertSame(['Показатель', 'Значение', 'Единица'], $workbook->getActiveSheet()->toArray()[0]);
         self::assertStringNotContainsString('TRUE', implode('|', $workbook->getActiveSheet()->toArray()[0]));
     }
 
@@ -80,21 +80,32 @@ final class AnalyticsReportExportTest extends TestCase
         ]));
 
         self::assertSame(['Сводка', 'Демография', 'Боли', 'Услуги', 'Финансы'], $workbook->getSheetNames());
+        $painSheet = $workbook->getSheetByName('Боли');
+        $demographicsSheet = $workbook->getSheetByName('Демография');
+        $servicesSheet = $workbook->getSheetByName('Услуги');
+        $financeSheet = $workbook->getSheetByName('Финансы');
+        self::assertNotNull($painSheet);
+        self::assertNotNull($demographicsSheet);
+        self::assertNotNull($servicesSheet);
+        self::assertNotNull($financeSheet);
+
         self::assertSame(
             ['Проблема', 'Группа', 'Клиентов', 'Среднее до', 'Среднее после', 'Снижение', 'Снижение, %'],
-            $workbook->getSheetByName('Боли')?->toArray()[0],
+            $painSheet->toArray()[0],
         );
         self::assertContains(
             ['Шея и плечевой пояс', 'Опорно-двигательная система', '2', '7.5', '3.25', '4.25', '56.67'],
-            $workbook->getSheetByName('Боли')?->toArray(),
+            $painSheet->toArray(),
         );
-        self::assertSame(['Параметр', 'Значение', 'Количество', 'Доля, %'], $workbook->getSheetByName('Демография')?->toArray()[0]);
-        self::assertSame(['Услуга', 'Клиентов', 'Визитов'], $workbook->getSheetByName('Услуги')?->toArray()[0]);
-        self::assertSame(['Показатель', 'Значение', 'Валюта'], $workbook->getSheetByName('Финансы')?->toArray()[0]);
-        self::assertContains(['Средний чек', '50.00 USD', 'USD'], $workbook->getSheetByName('Финансы')?->toArray());
-        self::assertContains(['Средний чек', '50.00 USD', 'USD'], $workbook->getSheetByName('Сводка')?->toArray());
-        self::assertNotContains('После', $workbook->getSheetByName('Демография')?->toArray()[0] ?? []);
-        self::assertNotContains('До', $workbook->getSheetByName('Услуги')?->toArray()[0] ?? []);
+        self::assertSame(['Параметр', 'Значение', 'Количество', 'Доля, %'], $demographicsSheet->toArray()[0]);
+        self::assertSame(['Услуга', 'Клиентов', 'Визитов'], $servicesSheet->toArray()[0]);
+        self::assertSame(['Показатель', 'Значение', 'Валюта'], $financeSheet->toArray()[0]);
+        self::assertContains(['Средний чек', '50.00 USD', 'USD'], $financeSheet->toArray());
+        $summarySheet = $workbook->getSheetByName('Сводка');
+        self::assertNotNull($summarySheet);
+        self::assertContains(['Средний чек', '50.00 USD', 'USD'], $summarySheet->toArray());
+        self::assertNotContains('После', $demographicsSheet->toArray()[0]);
+        self::assertNotContains('До', $servicesSheet->toArray()[0]);
         self::assertStringNotContainsString('TRUE', $this->workbookText($workbook));
     }
 
@@ -120,10 +131,43 @@ final class AnalyticsReportExportTest extends TestCase
             ],
         ]));
 
-        self::assertSame(['Источник', 'Новые клиенты', 'Доля, %'], $workbook->getSheetByName('Источники')?->toArray()[0]);
-        self::assertContains(['Instagram', '2', '50'], $workbook->getSheetByName('Источники')?->toArray());
-        self::assertContains(['Счёт', 'Тип', 'Валюта счёта', 'Движение за период', 'Базовая валюта'], $workbook->getSheetByName('Финансы')?->toArray());
-        self::assertContains(['Основная касса', 'Касса', 'USD', '-25.00 USD', 'USD'], $workbook->getSheetByName('Финансы')?->toArray());
+        $sourcesSheet = $workbook->getSheetByName('Источники');
+        $financeSheet = $workbook->getSheetByName('Финансы');
+        self::assertNotNull($sourcesSheet);
+        self::assertNotNull($financeSheet);
+
+        self::assertSame(['Источник', 'Новые клиенты', 'Доля, %'], $sourcesSheet->toArray()[0]);
+        self::assertContains(['Instagram', '2', '50'], $sourcesSheet->toArray());
+        self::assertContains(['Счёт', 'Тип', 'Валюта счёта', 'Движение за период', 'Базовая валюта'], $financeSheet->toArray());
+        self::assertContains(['Основная касса', 'Касса', 'USD', '-25.00 USD', 'USD'], $financeSheet->toArray());
+    }
+
+    public function test_active_custom_metrics_are_exported_to_the_summary_without_definition_details(): void
+    {
+        [, $admin] = $this->fixture();
+
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, [
+            'custom_metrics' => [
+                'metrics' => [[
+                    'name' => 'Снижение боли, %',
+                    'value' => 37.5,
+                    'display' => '37,50 %',
+                    'unit' => '%',
+                    'currency' => null,
+                    'available' => true,
+                ]],
+            ],
+        ]));
+
+        $summarySheet = $workbook->getSheetByName('Сводка');
+        self::assertNotNull($summarySheet);
+
+        self::assertContains(
+            ['Снижение боли, %', '37.5', '%'],
+            $summarySheet->toArray(),
+        );
+        self::assertStringNotContainsString('source_a_key', $this->workbookText($workbook));
+        self::assertStringNotContainsString('calculation', $this->workbookText($workbook));
     }
 
     private function readWorkbook(StreamedResponse $response): Spreadsheet

@@ -4,8 +4,10 @@ namespace Tests\Integration;
 
 use App\Models\User;
 use App\Modules\Analytics\Application\AcquisitionAnalytics;
+use App\Modules\Analytics\Application\AnalyticsMetricConfiguration;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\FinanceAnalytics;
+use App\Modules\Analytics\Domain\Models\AnalyticsMetric;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
@@ -19,6 +21,7 @@ use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -66,9 +69,11 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
 
         $acquisition = app(AcquisitionAnalytics::class)->handle($admin, $period);
         $finance = app(FinanceAnalytics::class)->handle($admin, $period);
+        $source = collect($acquisition->sources)->firstWhere('label', 'postgres-source');
 
         self::assertSame(2, $acquisition->newClients);
-        self::assertSame(2, collect($acquisition->sources)->firstWhere('label', 'postgres-source')->count);
+        self::assertNotNull($source);
+        self::assertSame(2, $source->count);
         self::assertTrue($finance->available);
         self::assertSame('1000000000', $finance->revenueMinor);
     }
@@ -255,6 +260,68 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
         self::assertSame(1, $sources->where('label', 'Не указан')->count());
         self::assertSame(1, $sources->where('label', 'Другие')->count());
         self::assertNotContains('legacy-only', $labels);
+    }
+
+    public function test_postgresql_computed_metric_presets_are_idempotent_and_unique_per_organization(): void
+    {
+        $this->requirePostgres();
+        [$organization] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        $configuration = app(AnalyticsMetricConfiguration::class);
+
+        self::assertCount(2, $configuration->metrics());
+        $configuration->ensurePresets();
+        self::assertCount(2, $configuration->metrics());
+
+        $preset = $configuration->metrics()->firstOrFail();
+        $this->expectException(QueryException::class);
+        DB::table('analytics_metric_configurations')->insert([
+            'organization_id' => $organization->getKey(),
+            'stable_key' => $preset->stable_key,
+            'name' => 'Дубликат',
+            'active' => true,
+            'output_unit' => 'number',
+            'decimal_precision' => 0,
+            'source_a_key' => 'acquisition.new_clients',
+            'aggregation' => 'count',
+            'calculation' => 'value',
+            'comparison' => 'none',
+            'null_policy' => 'do_not_calculate',
+            'zero_policy' => 'do_not_calculate',
+            'sort_order' => 100,
+            'version' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    public function test_postgresql_computed_metric_comparison_foreign_key_cannot_cross_organizations(): void
+    {
+        $this->requirePostgres();
+        [$organization] = $this->organizationWithAdmin();
+        [$otherOrganization] = $this->organizationWithAdmin();
+        $foreignMetric = AnalyticsMetric::factory()->forOrganization($otherOrganization)->create();
+
+        $this->expectException(QueryException::class);
+        DB::table('analytics_metric_configurations')->insert([
+            'organization_id' => $organization->getKey(),
+            'stable_key' => 'cross_org_metric',
+            'name' => 'Чужое сравнение',
+            'active' => true,
+            'output_unit' => 'number',
+            'decimal_precision' => 0,
+            'source_a_key' => 'acquisition.new_clients',
+            'aggregation' => 'count',
+            'calculation' => 'difference',
+            'comparison' => 'metric',
+            'comparison_metric_id' => $foreignMetric->getKey(),
+            'null_policy' => 'do_not_calculate',
+            'zero_policy' => 'do_not_calculate',
+            'sort_order' => 100,
+            'version' => 1,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     /** @return array{0: Organization, 1: User} */
