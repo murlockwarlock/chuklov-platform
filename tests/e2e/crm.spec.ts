@@ -2391,10 +2391,18 @@ test('staff can use the client cockpit for medical profile and private files', a
             xOnClick: button.getAttribute('x-on:click'),
         })),
     }))}`);
+    await medicalDialog.locator('form').evaluate((form) => {
+        const trackedForm = form as HTMLFormElement & { __submitEvents?: Array<{ defaultPrevented: boolean }> };
+        trackedForm.__submitEvents = [];
+        form.addEventListener('submit', (event) => {
+            trackedForm.__submitEvents?.push({ defaultPrevented: event.defaultPrevented });
+        }, true);
+    });
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
     console.log(`ANAMNESIS_REQUESTS ${anamnesisRequestSummaries.join('|')}`);
     console.log(`ANAMNESIS_NAVIGATIONS ${navigationUrls.join('|')}`);
+    console.log(`ANAMNESIS_SUBMIT ${await medicalDialog.locator('form').evaluate((form) => JSON.stringify((form as HTMLFormElement & { __submitEvents?: Array<{ defaultPrevented: boolean }> }).__submitEvents ?? []))}`);
     await page.reload();
     await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
     const reopenedMedicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
