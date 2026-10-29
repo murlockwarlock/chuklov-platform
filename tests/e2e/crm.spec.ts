@@ -2981,31 +2981,56 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     const initialItemCount = await items.count();
     await page.getByRole('button', { name: 'Добавить метрику', exact: true }).click();
     await expect.poll(async () => items.count()).toBe(initialItemCount + 1);
+    await page.waitForTimeout(1500);
     const customItem = items.last();
 
     const choose = async (label: RegExp, option: string): Promise<void> => {
         const control = customItem.getByRole('combobox', { name: label }).first();
+        if (await control.evaluate((element) => element.tagName === 'SELECT')) {
+            await expect.poll(
+                async () => (await control.locator('option').allTextContents()).map((text) => text.trim()),
+                { timeout: 20_000 },
+            ).toContain(option);
+            await control.selectOption({ label: option });
+            await page.waitForTimeout(750);
+            return;
+        }
+
         await control.click();
-        const optionLocator = page.getByRole('option', { name: option, exact: true }).last();
-        await expect(optionLocator).toBeVisible();
-        await optionLocator.click();
+        const options = page.locator('li.fi-select-input-option:visible');
+        for (let index = 0; index < await options.count(); index += 1) {
+            const optionLocator = options.nth(index);
+            if ((await optionLocator.innerText()).trim() === option) {
+                await optionLocator.click();
+                await page.waitForTimeout(750);
+                return;
+            }
+        }
+
+        throw new Error(`Visible option not found: ${option}`);
     };
 
     await customItem.getByRole('textbox', { name: /^Название/ }).fill(metricName);
     await choose(/^Что считаем/, 'Новые клиенты');
     await choose(/^Агрегация/, 'Количество');
-    await choose(/^Операция/, 'Значение A');
-    await choose(/^Основа сравнения/, 'Без сравнения');
+    await choose(/^Операция/, 'A − B');
+    await choose(/^Основа сравнения/, 'Фиксированное целевое значение');
+    const targetValue = customItem.getByLabel(/^Целевое значение/);
+    await expect(targetValue).toBeVisible();
+    await targetValue.fill('1');
+    await targetValue.press('Tab');
     await choose(/^Если данных нет/, 'Не рассчитывать');
     await choose(/^Если знаменатель равен 0/, 'Не рассчитывать');
     await choose(/^Единица/, 'Число');
     await choose(/^Округление/, '0 знаков');
     await customItem.getByRole('switch', { name: 'Активна', exact: true }).check();
     await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('Метрики сохранены', { timeout: 15_000 });
+    await expect(page.getByText('Метрики сохранены', { exact: true }).last()).toBeVisible({ timeout: 20_000 });
 
     await page.reload();
+    const persistedItem = page.locator('.fi-fo-repeater-item').last();
     await expect(page.getByText(metricName, { exact: true })).toBeVisible();
+    await expect(persistedItem.getByLabel(/^Целевое значение/)).toHaveValue('1');
 
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();

@@ -179,7 +179,8 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->helperText(__('Для денежных источников значение указывается в базовой валюте организации.'))
                                 ->visible(fn (Get $get): bool => $get('comparison') === AnalyticsMetricComparison::Target->value)
                                 ->required(fn (Get $get): bool => $get('comparison') === AnalyticsMetricComparison::Target->value)
-                                ->numeric(),
+                                ->numeric()
+                                ->live(onBlur: true),
                             Select::make('null_policy')
                                 ->label(__('Если данных нет'))
                                 ->options(self::nullPolicyOptions())
