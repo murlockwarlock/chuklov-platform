@@ -2312,7 +2312,7 @@ test('staff can use the client cockpit for medical profile and private files', a
         }
 
         const body = request.postData() ?? '';
-        anamnesisRequestSummaries.push(`path=${new URL(request.url()).pathname};livewire=${new URL(request.url()).pathname.includes('/livewire/')};key=${body.includes('anamnesis')};expected=${body.includes('клиентского')};length=${body.length}`);
+        anamnesisRequestSummaries.push(`path=${new URL(request.url()).pathname};call=${body.includes('callMountedAction')};key=${body.includes('anamnesis')};expected=${body.includes('клиентского')};length=${body.length}`);
     });
 
     await login(page, fixture);

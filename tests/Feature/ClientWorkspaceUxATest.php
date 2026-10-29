@@ -976,6 +976,27 @@ final class ClientWorkspaceUxATest extends TestCase
         self::assertSame($updatedAnamnesis, $profile->anamnesis);
     }
 
+    public function test_client_cockpit_medical_profile_mounted_state_persists_anamnesis(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $anamnesis = 'Анамнез из состояния формы';
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->mountAction('editMedicalProfile')
+            ->set('mountedActions.0.data.anamnesis', $anamnesis)
+            ->callMountedAction()
+            ->assertNotified('Медицинский профиль сохранён');
+
+        $profile = app(GetMedicalProfile::class)->handle($admin, $client);
+
+        self::assertNotNull($profile);
+        self::assertSame($anamnesis, $profile->anamnesis);
+    }
+
     public function test_client_cockpit_shows_structured_operation_and_injury_rows(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();
