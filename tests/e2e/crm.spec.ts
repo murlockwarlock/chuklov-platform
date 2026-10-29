@@ -2432,10 +2432,12 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(medicalDialog.getByText('2026 — Удаление грыжи', { exact: true })).toBeVisible();
 
     await medicalDialog.getByLabel('Были травмы', { exact: true }).check();
+    await expect(medicalDialog.getByRole('button', { name: 'Добавить травму', exact: true })).toBeVisible();
     console.log(`HISTORY_BEFORE_INJURY ${JSON.stringify(await medicalDialog.locator('button').evaluateAll((buttons) => buttons
         .filter((button) => ['Добавить операцию', 'Добавить травму'].includes(button.textContent?.trim() ?? ''))
         .map((button) => ({ text: button.textContent?.trim(), wireClick: button.getAttribute('wire:click') }))))}`);
     await medicalDialog.getByRole('button', { name: 'Добавить травму', exact: true }).click();
+    await expect(medicalDialog.getByText('Новая травма', { exact: true }).last()).toBeVisible();
     console.log(`HISTORY_AFTER_INJURY ${JSON.stringify(await medicalDialog.locator('input,textarea').evaluateAll((fields) => fields
         .map((field) => ({
             label: field.getAttribute('aria-label'),
