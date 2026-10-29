@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 type CrmFixture = {
     email: string;
@@ -110,6 +110,18 @@ async function removeEmptyRepeaterItems(page: Page, label: string): Promise<void
         await input.locator('xpath=ancestor::li[1]').getByRole('button', { name: 'Удалить', exact: true }).first().click();
         await page.waitForLoadState('networkidle');
     }
+}
+
+async function setLivewireRangeValue(page: Page, slider: Locator, value: number): Promise<void> {
+    const livewireResponse = page.waitForResponse((response) => {
+        const pathname = new URL(response.url()).pathname;
+
+        return response.request().method() === 'POST' && pathname.includes('/livewire/') && response.ok();
+    });
+    await slider.fill(String(value));
+    await slider.press('Tab');
+    await livewireResponse;
+    await expect(slider).toHaveValue(String(value));
 }
 
 function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean } = {}): CrmFixture {
@@ -2340,10 +2352,10 @@ test('staff can use the client cockpit for medical profile and private files', a
 
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
-    await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
     await page.reload();
     await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
     const reopenedMedicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
+    await expect(reopenedMedicalDialog.getByRole('textbox', { name: 'Анамнез', exact: true })).toHaveValue('Запись из клиентского рабочего места');
     await expect(reopenedMedicalDialog.getByText('2026 — Удаление грыжи', { exact: true })).toBeVisible();
     await expect(reopenedMedicalDialog.getByText('2021 — Перелом ключицы', { exact: true })).toBeVisible();
     await expect(reopenedMedicalDialog.getByText('Без оценки', { exact: true }).last()).toBeVisible();
@@ -2691,10 +2703,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText('3 / 10', { exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Без оценки', exact: true }).first().click();
     await expect(page.getByText('Без оценки', { exact: true }).first()).toBeVisible();
-    await beforePainScore.press('Home');
-    for (let index = 0; index < 7; index += 1) {
-        await beforePainScore.press('ArrowRight');
-    }
+    await setLivewireRangeValue(page, beforePainScore, 7);
     await expect(page.getByText('7 / 10', { exact: true })).toBeVisible();
     await page.getByLabel('Особые жалобы', { exact: true }).fill('Первичная запись о боли');
     await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
