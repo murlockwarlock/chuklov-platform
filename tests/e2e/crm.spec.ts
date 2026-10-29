@@ -2447,10 +2447,11 @@ test('staff can use the client cockpit for medical profile and private files', a
         .filter((field) => field.models.some(([, value]) => value?.includes('history')))))}`);
     console.log(`HISTORY_ITEMS ${JSON.stringify(await medicalDialog.locator('li.fi-fo-repeater-item').evaluateAll((items) => items.map((item) => ({ text: item.textContent?.trim(), classes: item.className, htmlLength: item.innerHTML.length }))))}`);
     const injuryHeader = medicalDialog.getByText('Новая травма', { exact: true }).last();
-    if (await injuryHeader.isVisible()) {
+    const injuryFields = medicalDialog.getByRole('textbox', { name: 'Описание*', exact: true }).last();
+    if (await injuryHeader.isVisible() && !await injuryFields.isVisible()) {
         await injuryHeader.click();
     }
-    const injuryItem = medicalDialog.getByRole('textbox', { name: 'Описание*', exact: true }).last().locator('xpath=ancestor::li[1]');
+    const injuryItem = injuryFields.locator('xpath=ancestor::li[1]');
     await injuryItem.getByLabel('Год*', { exact: true }).fill('2021');
     await injuryItem.getByLabel('Описание*', { exact: true }).fill('Перелом ключицы');
     await injuryItem.getByLabel('Описание*', { exact: true }).press('Tab');
