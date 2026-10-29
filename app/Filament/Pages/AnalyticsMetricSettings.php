@@ -150,7 +150,6 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->options(AnalyticsMetricSourceCatalog::options())
                                 ->searchable()
                                 ->preload()
-                                ->visible(fn (Get $get): bool => $this->needsSourceB($get))
                                 ->required(fn (Get $get): bool => $this->needsSourceB($get)),
                             Select::make('comparison')
                                 ->label(__('Основа сравнения'))
@@ -173,13 +172,11 @@ final class AnalyticsMetricSettings extends LocalizedPage
                             Select::make('comparison_metric_id')
                                 ->label(__('Метрика для сравнения'))
                                 ->options(fn (Get $get): array => $this->comparisonMetricOptions($get('id')))
-                                ->visible(fn (Get $get): bool => $get('comparison') === AnalyticsMetricComparison::Metric->value)
                                 ->required(fn (Get $get): bool => $get('comparison') === AnalyticsMetricComparison::Metric->value)
                                 ->searchable(),
                             TextInput::make('target_value')
                                 ->label(__('Целевое значение'))
-                                ->helperText(__('Для денежных источников значение указывается в базовой валюте организации.'))
-                                ->visible(fn (Get $get): bool => $get('comparison') === AnalyticsMetricComparison::Target->value)
+                                ->helperText(__('Заполняется при сравнении с целью. Для денежных источников значение указывается в базовой валюте организации.'))
                                 ->required(fn (Get $get): bool => $get('comparison') === AnalyticsMetricComparison::Target->value)
                                 ->numeric(),
                             Select::make('null_policy')
