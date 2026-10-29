@@ -2312,11 +2312,7 @@ test('staff can use the client cockpit for medical profile and private files', a
         }
 
         const body = request.postData() ?? '';
-        if (!body.includes('anamnesis')) {
-            return;
-        }
-
-        anamnesisRequestSummaries.push(`key=true;expected=${body.includes('клиентского')};length=${body.length}`);
+        anamnesisRequestSummaries.push(`path=${new URL(request.url()).pathname};key=${body.includes('anamnesis')};expected=${body.includes('клиентского')};length=${body.length}`);
     });
 
     await login(page, fixture);
