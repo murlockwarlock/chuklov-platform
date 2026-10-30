@@ -80,7 +80,6 @@ final class ClinicalTestProtocol
             ])
             ->default(self::defaultState())
             ->itemLabel(fn (array $state): string => (string) ($state['test_label'] ?? __('Тест')))
-            ->defaultItems(0)
             ->addable(false)
             ->deletable(false)
             ->reorderable(false)

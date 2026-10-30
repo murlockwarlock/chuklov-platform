@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Pages;
 
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
+use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
 use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
@@ -29,6 +30,7 @@ class CreateMedicalSession extends LocalizedCreateRecord
         $this->callHook('beforeFill');
 
         $data = [
+            'test_results' => ClinicalTestProtocol::stateFor([]),
             'pains' => array_map(
                 static fn (array $pain): array => [
                     ...$pain,

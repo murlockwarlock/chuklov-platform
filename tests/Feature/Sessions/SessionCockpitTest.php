@@ -747,6 +747,31 @@ final class SessionCockpitTest extends TestCase
         self::assertSame([0, 0], array_map(static fn (mixed $score): int => (int) $score, array_column($pains, 'after_score_ui')));
     }
 
+    public function test_filament_create_form_prefills_active_clinical_test_protocol(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'synthetic_create_protocol',
+            'name' => 'Синтетический протокол',
+            'section' => 'Синтетика',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client]);
+        $results = array_values($component->get('data.test_results'));
+
+        self::assertCount(1, $results);
+        self::assertSame((int) $test->getKey(), (int) ($results[0]['test_id'] ?? 0));
+        self::assertSame('Синтетика · Синтетический протокол', $results[0]['test_label'] ?? null);
+        self::assertNull($results[0]['before_value_id'] ?? null);
+        self::assertNull($results[0]['after_value_id'] ?? null);
+    }
+
     public function test_session_pain_frequency_and_time_are_optional_with_safe_defaults(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
