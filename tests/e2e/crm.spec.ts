@@ -2715,17 +2715,15 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await setLivewireRangeValue(page, beforePainScore, 7);
     await expect(page.getByText('7 / 10', { exact: true })).toBeVisible();
     await page.getByLabel('Особые жалобы', { exact: true }).fill('Первичная запись о боли');
-    await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
-    const testSelect = page.getByRole('combobox', { name: 'Тест*', exact: true });
-    await testSelect.click();
-    await page.getByRole('option', { name: testOptionName, exact: true }).click();
-    const beforeTestValue = page.getByRole('combobox', { name: 'До сеанса', exact: true });
+    const testItem = page.locator('.fi-fo-repeater-item').filter({ hasText: testOptionName }).last();
+    await expect(testItem).toBeVisible();
+    const beforeTestValue = testItem.getByRole('combobox', { name: 'До сеанса', exact: true });
     await beforeTestValue.click();
     await page.getByRole('option', { name: 'Норма', exact: true }).click();
-    const afterTestValue = page.getByRole('combobox', { name: 'После сеанса', exact: true });
+    const afterTestValue = testItem.getByRole('combobox', { name: 'После сеанса', exact: true });
     await afterTestValue.click();
     await page.getByRole('option', { name: 'Отклонение · нарушение', exact: true }).click();
-    const testCauseSelect = page.getByRole('combobox', { name: 'Причины нарушений', exact: true }).first();
+    const testCauseSelect = testItem.getByRole('combobox', { name: 'Причины нарушений', exact: true });
     await testCauseSelect.click();
     await page.getByRole('option', { name: causeOptionName, exact: true }).click();
     await expect(page.getByText('Причины по результатам тестов', { exact: true })).toBeVisible();
@@ -2887,13 +2885,9 @@ test('staff can maintain the clinical test catalog and use it in a new session',
 
     await page.goto(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create`);
     await expect(page.getByRole('heading', { name: 'Новый сеанс', exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
-    const testSelect = page.getByRole('combobox', { name: 'Тест*', exact: true });
-    await testSelect.click();
-    const testOption = page.getByRole('option').filter({ hasText: testName }).last();
-    await expect(testOption).toBeVisible();
-    await testOption.click();
-    const beforeTestValue = page.getByRole('combobox', { name: 'До сеанса', exact: true });
+    const testItem = page.locator('.fi-fo-repeater-item').filter({ hasText: testName }).last();
+    await expect(testItem).toBeVisible();
+    const beforeTestValue = testItem.getByRole('combobox', { name: 'До сеанса', exact: true });
     await beforeTestValue.click();
     const abnormalValueOption = page.getByRole('option').filter({ hasText: 'Отклонение' }).last();
     await expect(abnormalValueOption).toBeVisible();
@@ -2966,7 +2960,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await login(page, fixture);
     await page.goto('/admin/analytics-metric-settings');
     await expect(page.getByRole('heading', { name: 'Метрики аналитики', exact: true })).toBeVisible();
-    await expect(page.getByText('Снижение боли, %', { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Снижение боли, %', exact: true })).toBeVisible();
     await expect(page.getByText('Изменение LTV к предыдущему периоду, %', { exact: true })).toBeVisible();
     await expect(page.getByText('Описание формулы владельца', { exact: true })).toHaveCount(0);
     await expect(page.getByText('база сравнения не определена', { exact: false })).toHaveCount(0);
