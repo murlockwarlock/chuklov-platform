@@ -29,7 +29,14 @@ class CreateMedicalSession extends LocalizedCreateRecord
         $this->callHook('beforeFill');
 
         $data = [
-            'pains' => app(MedicalSessionPainInitializer::class)->defaultsForClient($this->parentClient()),
+            'pains' => array_map(
+                static fn (array $pain): array => [
+                    ...$pain,
+                    'before_score_ui' => self::scoreUiValue($pain['before_score'] ?? null),
+                    'after_score_ui' => self::scoreUiValue($pain['after_score'] ?? null),
+                ],
+                app(MedicalSessionPainInitializer::class)->defaultsForClient($this->parentClient()),
+            ),
         ];
         $bookingId = request()->query('booking_id');
         if (is_numeric($bookingId) && (int) $bookingId > 0) {
@@ -48,17 +55,6 @@ class CreateMedicalSession extends LocalizedCreateRecord
         $this->form->fill();
         $defaultState = $this->form->getRawState();
         $this->form->fill(is_array($defaultState) ? array_replace($defaultState, $data) : $data);
-
-        $state = $this->form->getRawState();
-        if (is_array($state) && is_array($state['pains'] ?? null)) {
-            foreach ($state['pains'] as $key => $pain) {
-                if (is_array($pain)) {
-                    $state['pains'][$key]['after_score'] = null;
-                }
-            }
-
-            $this->form->rawState($state);
-        }
 
         $this->callHook('afterFill');
     }
@@ -124,5 +120,10 @@ class CreateMedicalSession extends LocalizedCreateRecord
     private static function formValidation(ValidationException $exception): ValidationException
     {
         return ValidationException::withMessages($exception->errors());
+    }
+
+    private static function scoreUiValue(mixed $value): int
+    {
+        return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10 ? (int) $value : 0;
     }
 }

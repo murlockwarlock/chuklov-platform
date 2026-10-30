@@ -163,42 +163,74 @@ class EditMedicalSession extends LocalizedEditRecord
                                     'evening' => __('Вечер'),
                                     'night' => __('Ночь'),
                                 ])->columns(2)->default(['all']),
-                                Slider::make('before_score')
+                                Hidden::make('before_score')->dehydrated()->nullable(),
+                                Hidden::make('after_score')->dehydrated()->nullable(),
+                                Slider::make('before_score_ui')
                                     ->label(__('До сеанса'))
                                     ->range(minValue: 0, maxValue: 10)
                                     ->step(1)
+                                    ->default(0)
                                     ->nullable()
+                                    ->dehydrated(false)
                                     ->live()
+                                    ->afterStateUpdated(static function (Set $set, mixed $state): void {
+                                        $set('before_score', is_numeric($state) ? (int) $state : null);
+                                    })
                                     ->helperText(__('0 — нет боли · 10 — максимальная боль')),
                                 Placeholder::make('before_score_display')
                                     ->label(__('Текущее значение до сеанса'))
                                     ->content(fn (Get $get): string => self::scoreDisplay($get('before_score'))),
                                 Actions::make([
+                                    Action::make('setBeforeZero')
+                                        ->label(__('Указать 0'))
+                                        ->icon('heroicon-o-check')
+                                        ->color('gray')
+                                        ->action(static function (Set $set): void {
+                                            $set('before_score', 0);
+                                            $set('before_score_ui', 0);
+                                        })
+                                        ->visible(fn (Get $get): bool => $get('before_score') === null),
                                     Action::make('clearBeforeScore')
                                         ->label(__('Без оценки'))
                                         ->icon('heroicon-o-x-mark')
                                         ->color('gray')
                                         ->action(static function (Set $set): void {
+                                            $set('before_score_ui', 0);
                                             $set('before_score', null);
                                         })
                                         ->visible(fn (Get $get): bool => $get('before_score') !== null),
                                 ])->columnSpanFull(),
-                                Slider::make('after_score')
+                                Slider::make('after_score_ui')
                                     ->label(__('После сеанса'))
                                     ->range(minValue: 0, maxValue: 10)
                                     ->step(1)
+                                    ->default(0)
                                     ->nullable()
+                                    ->dehydrated(false)
                                     ->live()
+                                    ->afterStateUpdated(static function (Set $set, mixed $state): void {
+                                        $set('after_score', is_numeric($state) ? (int) $state : null);
+                                    })
                                     ->helperText(__('0 — нет боли · 10 — максимальная боль')),
                                 Placeholder::make('after_score_display')
                                     ->label(__('Текущее значение после сеанса'))
                                     ->content(fn (Get $get): string => self::scoreDisplay($get('after_score'))),
                                 Actions::make([
+                                    Action::make('setAfterZero')
+                                        ->label(__('Указать 0'))
+                                        ->icon('heroicon-o-check')
+                                        ->color('gray')
+                                        ->action(static function (Set $set): void {
+                                            $set('after_score', 0);
+                                            $set('after_score_ui', 0);
+                                        })
+                                        ->visible(fn (Get $get): bool => $get('after_score') === null),
                                     Action::make('clearAfterScore')
                                         ->label(__('Без оценки'))
                                         ->icon('heroicon-o-x-mark')
                                         ->color('gray')
                                         ->action(static function (Set $set): void {
+                                            $set('after_score_ui', 0);
                                             $set('after_score', null);
                                         })
                                         ->visible(fn (Get $get): bool => $get('after_score') !== null),
@@ -329,7 +361,13 @@ class EditMedicalSession extends LocalizedEditRecord
             'root_cause_hypothesis' => $decrypted->rootCauseHypothesis,
             'protocol' => $decrypted->protocol,
             'result' => $decrypted->result,
-            'pains' => array_map(static fn ($pain): array => $pain->toArray(), $decrypted->pains),
+            'pains' => array_map(static function ($pain): array {
+                $data = $pain->toArray();
+                $data['before_score_ui'] = self::scoreUiValue($data['before_score'] ?? null);
+                $data['after_score_ui'] = self::scoreUiValue($data['after_score'] ?? null);
+
+                return $data;
+            }, $decrypted->pains),
             'test_results' => ClinicalTestProtocol::stateFor(array_map(static fn ($test): array => [
                 'test_id' => $test->testId,
                 'before_value_id' => $test->beforeValueId,
@@ -753,6 +791,11 @@ class EditMedicalSession extends LocalizedEditRecord
     private static function throwValidation(array $messages): never
     {
         throw ValidationException::withMessages($messages);
+    }
+
+    private static function scoreUiValue(mixed $value): int
+    {
+        return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10 ? (int) $value : 0;
     }
 
     /**

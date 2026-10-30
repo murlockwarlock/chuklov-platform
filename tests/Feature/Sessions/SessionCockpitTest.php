@@ -743,6 +743,8 @@ final class SessionCockpitTest extends TestCase
         self::assertSame(['Шея', 'Поясница'], array_column($pains, 'name'));
         self::assertSame([7, 0], array_map(static fn (mixed $score): int => (int) $score, array_column($pains, 'before_score')));
         self::assertSame([null, null], array_column($pains, 'after_score'));
+        self::assertSame([7, 0], array_map(static fn (mixed $score): int => (int) $score, array_column($pains, 'before_score_ui')));
+        self::assertSame([0, 0], array_map(static fn (mixed $score): int => (int) $score, array_column($pains, 'after_score_ui')));
     }
 
     public function test_session_pain_frequency_and_time_are_optional_with_safe_defaults(): void
