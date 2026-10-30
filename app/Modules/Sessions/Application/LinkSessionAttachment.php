@@ -44,7 +44,10 @@ final readonly class LinkSessionAttachment
             ]);
         }
 
-        if ($gallery !== MedicalSessionAttachmentGallery::General && $attachment->attachment_type !== AttachmentType::PosturePhoto) {
+        if ($gallery !== MedicalSessionAttachmentGallery::General && (
+            $attachment->attachment_type !== AttachmentType::PosturePhoto
+            || ! in_array(strtolower((string) $attachment->mime_type), ['image/jpeg', 'image/png', 'image/webp'], true)
+        )) {
             throw ValidationException::withMessages([
                 'gallery' => 'В галереи «До» и «После» можно добавить только фото осанки.',
             ]);

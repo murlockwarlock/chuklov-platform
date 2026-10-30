@@ -3,6 +3,7 @@
 namespace App\Modules\ClientPortal\Application;
 
 use App\Modules\Identity\Application\ResolvePatientClinicalClient;
+use App\Modules\MedicalProfiles\Application\MedicalProfileHistoryReader;
 use App\Modules\MedicalProfiles\Application\MedicalProfilePainReader;
 use App\Modules\MedicalProfiles\Application\MedicalProfileSnapshotHasher;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
@@ -16,6 +17,7 @@ final readonly class GetClientMedicalProfile
         private MedicalEncryptorInterface $encryptor,
         private MedicalProfileSnapshotHasher $snapshots,
         private MedicalProfilePainReader $painReader,
+        private MedicalProfileHistoryReader $historyReader,
         private ResolvePatientClinicalClient $patients,
     ) {}
 
@@ -43,6 +45,7 @@ final readonly class GetClientMedicalProfile
                 'answers' => [],
                 'legacyFields' => [],
                 'pains' => [],
+                'historyEntries' => [],
             ];
         }
 
@@ -84,6 +87,7 @@ final readonly class GetClientMedicalProfile
                 'answers' => [],
                 'legacyFields' => [],
                 'pains' => [],
+                'historyEntries' => [],
             ];
         }
 
@@ -112,6 +116,7 @@ final readonly class GetClientMedicalProfile
                 'operationsInjuries' => ! filled($data->operations) && ! filled($data->injuries) ? $data->operationsInjuries : null,
             ], fn (?string $value): bool => filled($value)),
             'pains' => array_map(static fn ($pain): array => $pain->toArray(), $this->painReader->forProfile($profile)),
+            'historyEntries' => array_map(static fn ($entry): array => $entry->toArray(), $this->historyReader->forProfile($profile)),
         ];
     }
 }

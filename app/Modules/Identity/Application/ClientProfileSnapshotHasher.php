@@ -19,6 +19,7 @@ final class ClientProfileSnapshotHasher
             'language' => $client->getRawOriginal('language'),
             'timezone' => $client->getRawOriginal('timezone'),
             'timezone_source' => $client->getRawOriginal('timezone_source') ?? 'organization',
+            'archived_at' => $client->getRawOriginal('archived_at'),
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
 }

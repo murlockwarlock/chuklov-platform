@@ -93,7 +93,7 @@ final class AnalyticsConsole extends LocalizedPage
 
     public function mount(): void
     {
-        $this->form->fill([
+        $defaults = [
             'dimensions' => ['pain', 'custom_metrics'],
             'client_id' => null,
             'problem_tag_id' => null,
@@ -105,7 +105,9 @@ final class AnalyticsConsole extends LocalizedPage
             'period' => DashboardPeriod::DefaultPreset,
             'start_date' => null,
             'end_date' => null,
-        ]);
+        ];
+        $saved = session()->get($this->stateSessionKey(), []);
+        $this->form->fill([...$defaults, ...(is_array($saved) ? $saved : [])]);
     }
 
     public function form(Schema $schema): Schema
@@ -287,6 +289,7 @@ final class AnalyticsConsole extends LocalizedPage
         abort_unless($actor instanceof User, 403);
         $this->dimensionErrors = [];
         $state = $this->form->getState();
+        session()->put($this->stateSessionKey(), $this->persistedState($state));
         $dimensions = is_array($state['dimensions'] ?? null) ? array_values($state['dimensions']) : [];
         $client = $this->selectedClient($state);
         $problemTagId = $this->selectedProblemTagId($state);
@@ -670,6 +673,36 @@ final class AnalyticsConsole extends LocalizedPage
         $value = filter_var($state['feedback_theme_id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
         return $value === false ? null : (int) $value;
+    }
+
+    private function stateSessionKey(): string
+    {
+        return 'analytics.console.state.'.app(OrganizationContext::class)->id();
+    }
+
+    /** @param array<string, mixed> $state
+     * @return array<string, mixed>
+     */
+    private function persistedState(array $state): array
+    {
+        $period = $state['period'] ?? DashboardPeriod::DefaultPreset;
+        if ($period instanceof \BackedEnum) {
+            $period = $period->value;
+        }
+
+        return [
+            'dimensions' => array_values(array_map('strval', (array) ($state['dimensions'] ?? []))),
+            'client_id' => $state['client_id'] ?? null,
+            'problem_tag_id' => $state['problem_tag_id'] ?? null,
+            'feedback_theme_id' => $state['feedback_theme_id'] ?? null,
+            'goal_tag_id' => $state['goal_tag_id'] ?? null,
+            'source_key' => $state['source_key'] ?? null,
+            'purchase_type' => $state['purchase_type'] ?? null,
+            'booking_status' => $state['booking_status'] ?? null,
+            'period' => $period,
+            'start_date' => $state['start_date'] ?? null,
+            'end_date' => $state['end_date'] ?? null,
+        ];
     }
 
     /** @param array<string, mixed> $state */

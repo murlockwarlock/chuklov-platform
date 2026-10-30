@@ -255,6 +255,7 @@ final class ScenarioRuleResource extends LocalizedResource
                 'booking.needs_medical_profile' => __('необходимость заполнить карту здоровья'),
                 'booking.has_qualifying_next_booking' => __('подходящая следующая запись'),
                 'client.language' => __('язык клиента'),
+                'client.completed_visits' => __('количество завершённых визитов клиента'),
                 'client.marketing_consent' => __('согласие на маркетинговые сообщения'),
                 'onboarding.completed' => __('завершение оформления'),
                 'onboarding.stage' => __('этап оформления'),

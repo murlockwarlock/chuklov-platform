@@ -6,6 +6,7 @@ use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Sessions\Application\LinkSessionAttachment;
 use App\Modules\Sessions\Application\ListSessionAttachments;
@@ -33,6 +34,8 @@ class ViewMedicalSession extends LocalizedViewRecord
                 ->icon('heroicon-o-arrow-left')
                 ->color('gray')
                 ->url(fn (): string => ClientResource::getUrl('sessions', ['record' => $this->getParentRecord()])),
+            $this->linkPhotoAction(MedicalSessionAttachmentGallery::Before),
+            $this->linkPhotoAction(MedicalSessionAttachmentGallery::After),
             Action::make('linkAttachment')
                 ->label(__('Связать файл'))
                 ->icon('heroicon-o-paper-clip')
@@ -135,5 +138,42 @@ class ViewMedicalSession extends LocalizedViewRecord
         abort_unless($session instanceof MedicalSession, 404);
 
         return $session;
+    }
+
+    private function linkPhotoAction(MedicalSessionAttachmentGallery $gallery): Action
+    {
+        $label = $gallery === MedicalSessionAttachmentGallery::Before
+            ? __('Добавить фото до сеанса')
+            : __('Добавить фото после сеанса');
+
+        return Action::make('link'.ucfirst($gallery->value).'Photo')
+            ->label($label)
+            ->icon('heroicon-o-photo')
+            ->schema([
+                Select::make('attachment_id')
+                    ->label(__('Фото клиента'))
+                    ->required()
+                    ->searchable()
+                    ->native(false)
+                    ->preload()
+                    ->options(fn (): array => app(SearchClientAttachments::class)->handle($this->actor(), $this->client(), '', 50, AttachmentType::PosturePhoto))
+                    ->getSearchResultsUsing(fn (string $search): array => app(SearchClientAttachments::class)->handle($this->actor(), $this->client(), $search, 50, AttachmentType::PosturePhoto))
+                    ->getOptionLabelUsing(fn (mixed $value): ?string => is_numeric($value)
+                        ? app(SearchClientAttachments::class)->label($this->actor(), $this->client(), (int) $value)
+                        : null),
+            ])
+            ->modalSubmitActionLabel(__('Добавить'))
+            ->action(function (array $data) use ($gallery): void {
+                app(LinkSessionAttachment::class)->handle(
+                    $this->actor(),
+                    $this->session(),
+                    $this->client(),
+                    (int) $data['attachment_id'],
+                    $gallery,
+                );
+
+                Notification::make()->success()->title(__('Фото добавлено в галерею'))->send();
+            })
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()));
     }
 }

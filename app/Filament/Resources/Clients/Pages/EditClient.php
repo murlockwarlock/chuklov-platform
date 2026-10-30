@@ -33,7 +33,9 @@ class EditClient extends LocalizedEditRecord
         $answer = is_string($data['b2b_specialist_answer'] ?? null)
             ? B2bSpecialistAnswer::tryFrom($data['b2b_specialist_answer'])
             : null;
+        $archived = (bool) ($data['archived'] ?? false);
         unset($data['b2b_role'], $data['broadcast_tags'], $data['b2b_specialist_answer']);
+        $data['archived'] = $archived;
         unset($data['full_name']);
         $updated = app(UpdateClientProfileFromCrm::class)->handle($actor, $record, $data);
         app(SetBroadcastClientClassification::class)->handle($actor, $updated, $role, $tags);
@@ -60,6 +62,7 @@ class EditClient extends LocalizedEditRecord
         $data['b2b_specialist_answer'] = $profile?->getRawOriginal('b2b_specialist_answer');
         $data['broadcast_tags'] = BroadcastClientTag::query()->where('organization_id', $record->organization_id)->where('client_id', $record->getKey())->orderBy('tag')->pluck('tag')->all();
         $data['expected_snapshot'] = app(ClientProfileSnapshotHasher::class)->forClient($record);
+        $data['archived'] = $record->archived_at !== null;
 
         return $data;
     }

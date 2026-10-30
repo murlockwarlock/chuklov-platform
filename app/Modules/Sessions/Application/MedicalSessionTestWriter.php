@@ -153,6 +153,9 @@ final readonly class MedicalSessionTestWriter
                 ->unique()
                 ->values()
                 ->all();
+            if ($before === null && $after === null && $causeIds === []) {
+                continue;
+            }
             if ($causeIds !== [] && ! ($before !== null && $before->is_abnormal) && ! ($after !== null && $after->is_abnormal)) {
                 throw ValidationException::withMessages(['test_results' => 'Причины можно указать только для теста с отклонением.']);
             }

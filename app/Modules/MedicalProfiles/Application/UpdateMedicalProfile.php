@@ -47,7 +47,7 @@ final readonly class UpdateMedicalProfile
             throw ValidationException::withMessages(['medical_profile' => 'Откройте медицинскую анкету и подтвердите актуальные данные.']);
         }
 
-        $this->validateCommand($command, $actor instanceof Client);
+        $this->validateCommand($command, $actor instanceof Client && ! $command->historyEntriesProvided);
         $keyVersion = $this->keyResolver->getCurrentKeyVersion($orgId);
 
         $result = DB::transaction(function () use ($actor, $organization, $client, $command, $keyVersion, $orgId): MedicalProfileData {

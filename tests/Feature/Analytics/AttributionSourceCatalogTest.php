@@ -170,11 +170,17 @@ final class AttributionSourceCatalogTest extends TestCase
         $catalog = app(AttributionSourceCatalog::class);
         $catalog->ensureDefaults($admin);
         self::assertSame([
-            'Рекомендация знакомых',
-            'Telegram-канал Чуклова',
+            'Рекомендации',
+            'Telegram',
             'Instagram',
-            'Поиск Yandex/Google',
-            'Сайт chuklov.com',
+            'Yandex/Google/search',
+            'сайт/web',
+            'SMS',
+            'Stories / Сторис',
+            'Контакт',
+            'YouTube',
+            'TikTok',
+            'Партнёры',
             'Другое',
         ], array_column($catalog->rows($organization->getKey()), 'label'));
 
@@ -188,7 +194,7 @@ final class AttributionSourceCatalogTest extends TestCase
         $catalog->ensureDefaults($admin);
 
         self::assertSame('Instagram и Reels', $catalog->rows($organization->getKey())[0]['label']);
-        self::assertCount(6, $catalog->rows($organization->getKey()));
+        self::assertCount(12, $catalog->rows($organization->getKey()));
     }
 
     /** @return array{0: Organization, 1: User} */

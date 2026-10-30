@@ -53,6 +53,7 @@ final class AnalyticsReportExportTest extends TestCase
             'services' => [
                 'visit_count' => 4,
                 'services' => [['name' => 'Массаж', 'client_count' => 2, 'visit_count' => 4]],
+                'specialists' => [['name' => 'Специалист А', 'client_count' => 2, 'visit_count' => 4]],
             ],
             'scheduling' => [
                 'bookings' => 4,
@@ -79,14 +80,16 @@ final class AnalyticsReportExportTest extends TestCase
             'currency' => 'USD',
         ]));
 
-        self::assertSame(['Сводка', 'Демография', 'Боли', 'Услуги', 'Финансы'], $workbook->getSheetNames());
+        self::assertSame(['Сводка', 'Демография', 'Боли', 'Услуги', 'Специалисты', 'Финансы'], $workbook->getSheetNames());
         $painSheet = $workbook->getSheetByName('Боли');
         $demographicsSheet = $workbook->getSheetByName('Демография');
         $servicesSheet = $workbook->getSheetByName('Услуги');
+        $specialistsSheet = $workbook->getSheetByName('Специалисты');
         $financeSheet = $workbook->getSheetByName('Финансы');
         self::assertNotNull($painSheet);
         self::assertNotNull($demographicsSheet);
         self::assertNotNull($servicesSheet);
+        self::assertNotNull($specialistsSheet);
         self::assertNotNull($financeSheet);
 
         self::assertSame(
@@ -99,6 +102,8 @@ final class AnalyticsReportExportTest extends TestCase
         );
         self::assertSame(['Параметр', 'Значение', 'Количество', 'Доля, %'], $demographicsSheet->toArray()[0]);
         self::assertSame(['Услуга', 'Клиентов', 'Визитов'], $servicesSheet->toArray()[0]);
+        self::assertSame(['Специалист', 'Клиентов', 'Визитов'], $specialistsSheet->toArray()[0]);
+        self::assertContains(['Специалист А', '2', '4'], $specialistsSheet->toArray());
         self::assertSame(['Показатель', 'Значение', 'Валюта'], $financeSheet->toArray()[0]);
         self::assertContains(['Средний чек', '50.00 USD', 'USD'], $financeSheet->toArray());
         $summarySheet = $workbook->getSheetByName('Сводка');

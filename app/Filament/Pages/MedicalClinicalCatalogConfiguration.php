@@ -187,7 +187,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
     {
         return [
             Action::make('importCsv')
-                ->label(__('Импортировать CSV'))
+                ->label(__('Импортировать CSV/XLSX'))
                 ->icon('heroicon-o-arrow-up-tray')
                 ->color('gray')
                 ->authorize(fn (): bool => self::canAccess())
@@ -201,9 +201,9 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                         ])
                         ->required(),
                     FileUpload::make('file')
-                        ->label(__('CSV-файл'))
+                        ->label(__('CSV/XLSX-файл'))
                         ->helperText(__('Тесты: «Название теста», «Раздел», «Значение», «Нарушение», «Активен», «Порядок теста», «Порядок значения». Причины и категории: «Название», «Группа», «Активна», «Порядок». До 2 МБ.'))
-                        ->acceptedFileTypes(['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel'])
+                        ->acceptedFileTypes(['text/csv', 'text/plain', 'application/csv', 'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'])
                         ->maxSize(2048)
                         ->storeFiles(false)
                         ->required(),
@@ -218,12 +218,12 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                     try {
                         $rows = app(ImportMedicalClinicalCatalogCsv::class)->handle($actor, $file, (string) ($data['section'] ?? ''));
                         $this->mount();
-                        Notification::make()->success()->title(__('CSV импортирован'))->body(__('Импортировано строк: :count', ['count' => $rows]))->send();
+                        Notification::make()->success()->title(__('Файл каталога импортирован'))->body(__('Импортировано строк: :count', ['count' => $rows]))->send();
                     } catch (ValidationException $exception) {
                         $message = collect($exception->errors())->flatten()->first();
-                        Notification::make()->danger()->title(is_string($message) ? $message : __('Проверьте CSV-файл.'))->send();
+                        Notification::make()->danger()->title(is_string($message) ? $message : __('Проверьте файл каталога.'))->send();
                     } catch (Throwable) {
-                        Notification::make()->danger()->title(__('CSV-файл не удалось импортировать.'))->send();
+                        Notification::make()->danger()->title(__('Файл каталога не удалось импортировать.'))->send();
                     }
                 }),
         ];

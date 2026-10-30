@@ -146,38 +146,18 @@ final class SessionForm
                             ->addActionLabel(__('Добавить боль'))
                             ->columnSpanFull(),
                         Textarea::make('pain')->label(__('Особые жалобы'))->rows(3)->placeholder(__('Что ещё важно учесть специалисту')),
-                        Repeater::make('test_results')
-                            ->label(__('Кинезиологические и мануальные тесты'))
-                            ->schema([
-                                Select::make('test_id')
-                                    ->label(__('Тест'))
-                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->testOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id')))
-                                    ->required()
-                                    ->searchable()
-                                    ->live(),
-                                Select::make('before_value_id')
-                                    ->label(__('До сеанса'))
-                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('before_value_id')]))
-                                    ->nullable()
-                                    ->searchable(),
-                                Select::make('after_value_id')
-                                    ->label(__('После сеанса'))
-                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('after_value_id')]))
-                                    ->nullable()
-                                    ->searchable(),
-                                Select::make('cause_ids')
-                                    ->label(__('Причины нарушений'))
-                                    ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->causeOptionsForSelection(app(OrganizationContext::class)->id(), (array) $get('cause_ids')))
-                                    ->multiple()
-                                    ->searchable(),
-                            ])
-                            ->columns(2)
-                            ->defaultItems(0)
-                            ->reorderable()
-                            ->collapsible()
-                            ->itemLabel(fn (array $state): string => filled($state['test_id'] ?? null) ? __('Выбранный тест') : __('Новый тест'))
-                            ->addActionLabel(__('Добавить тест'))
+                        Placeholder::make('test_catalog_empty')
+                            ->content(__('Каталог клинических тестов пока пуст. Настройте его перед заполнением протокола.'))
+                            ->visible(fn (): bool => app(MedicalClinicalCatalog::class)->testOptions(app(OrganizationContext::class)->id()) === [])
                             ->columnSpanFull(),
+                        Actions::make([
+                            Action::make('configureClinicalCatalog')
+                                ->label(__('Настроить каталог тестов'))
+                                ->url(MedicalClinicalCatalogConfiguration::getUrl())
+                                ->visible(fn (): bool => app(MedicalClinicalCatalog::class)->testOptions(app(OrganizationContext::class)->id()) === [] && MedicalClinicalCatalogConfiguration::canAccess()),
+                        ])->columnSpanFull(),
+                        ClinicalTestProtocol::counters(),
+                        ClinicalTestProtocol::field(),
                         Hidden::make('causes_manual_override')->default(false)->dehydrated(),
                         Placeholder::make('derived_causes')
                             ->label(__('Причины по результатам тестов'))

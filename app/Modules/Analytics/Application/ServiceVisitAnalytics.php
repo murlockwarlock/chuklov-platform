@@ -51,10 +51,34 @@ final readonly class ServiceVisitAnalytics
                 'client_count' => (int) $row->client_count,
             ])
             ->all();
+        $specialistRows = DB::table('bookings')
+            ->join('specialists', function ($join): void {
+                $join->on('specialists.organization_id', '=', 'bookings.organization_id')
+                    ->on('specialists.id', '=', 'bookings.specialist_id');
+            })
+            ->where('bookings.organization_id', $organizationId)
+            ->where('bookings.status', BookingStatus::Completed->value)
+            ->where('bookings.starts_at', '>=', $period->startUtc)
+            ->where('bookings.starts_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('bookings.client_id', $clientId))
+            ->select('specialists.id', 'specialists.display_name')
+            ->selectRaw('COUNT(*) as visit_count')
+            ->selectRaw('COUNT(DISTINCT bookings.client_id) as client_count')
+            ->groupBy('specialists.id', 'specialists.display_name')
+            ->orderByDesc('visit_count')
+            ->orderBy('specialists.display_name')
+            ->get()
+            ->map(static fn (object $row): array => [
+                'name' => (string) $row->display_name,
+                'visit_count' => (int) $row->visit_count,
+                'client_count' => (int) $row->client_count,
+            ])
+            ->all();
 
         return new ServiceVisitAnalyticsData(
             visitCount: array_sum(array_column($rows, 'visit_count')),
             services: array_values($rows),
+            specialists: array_values($specialistRows),
         );
     }
 }

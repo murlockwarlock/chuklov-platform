@@ -5,22 +5,73 @@ namespace App\Modules\Sessions\Application;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
+use Illuminate\Database\Eloquent\Collection;
 
 final class MedicalClinicalCatalog
 {
     /** @return array<int, string> */
     public function testOptions(int $organizationId): array
     {
-        return MedicalTestDefinition::query()
-            ->where('organization_id', $organizationId)
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->orderBy('name')
-            ->get(['id', 'name', 'section'])
+        return $this->testProtocolRows($organizationId)
             ->mapWithKeys(static fn (MedicalTestDefinition $test): array => [
                 $test->getKey() => filled($test->section) ? $test->section.': '.$test->name : $test->name,
             ])
             ->all();
+    }
+
+    /** @param array<int, int> $selectedTestIds
+     * @return Collection<int, MedicalTestDefinition>
+     */
+    public function testProtocolRows(int $organizationId, array $selectedTestIds = []): Collection
+    {
+        return MedicalTestDefinition::query()
+            ->where('organization_id', $organizationId)
+            ->when($selectedTestIds === [], fn ($query) => $query->where('is_active', true))
+            ->when($selectedTestIds !== [], fn ($query) => $query->where(fn ($query) => $query
+                ->where('is_active', true)
+                ->orWhereIn('id', $selectedTestIds)))
+            ->orderBy('section')
+            ->orderBy('sort_order')
+            ->orderBy('name')
+            ->get(['id', 'name', 'section', 'is_active']);
+    }
+
+    /** @param array<int, mixed> $results
+     * @return array{before:int,after:int}
+     */
+    public function abnormalCounts(int $organizationId, array $results): array
+    {
+        $valueIds = collect($results)
+            ->filter(static fn (mixed $result): bool => is_array($result))
+            ->flatMap(static fn (array $result): array => [$result['before_value_id'] ?? null, $result['after_value_id'] ?? null])
+            ->filter(static fn (mixed $id): bool => $id !== null && (int) $id > 0)
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->unique()
+            ->values();
+        if ($valueIds->isEmpty()) {
+            return ['before' => 0, 'after' => 0];
+        }
+        $abnormalIds = MedicalTestValue::query()
+            ->where('organization_id', $organizationId)
+            ->whereIn('id', $valueIds->all())
+            ->where('is_abnormal', true)
+            ->pluck('id')
+            ->map(static fn (mixed $id): int => (int) $id)
+            ->all();
+        $counts = ['before' => 0, 'after' => 0];
+        foreach ($results as $result) {
+            if (! is_array($result)) {
+                continue;
+            }
+            if (in_array((int) ($result['before_value_id'] ?? 0), $abnormalIds, true)) {
+                $counts['before']++;
+            }
+            if (in_array((int) ($result['after_value_id'] ?? 0), $abnormalIds, true)) {
+                $counts['after']++;
+            }
+        }
+
+        return $counts;
     }
 
     /** @return array<int, string> */

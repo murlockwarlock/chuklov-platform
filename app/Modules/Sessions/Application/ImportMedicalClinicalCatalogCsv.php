@@ -12,6 +12,9 @@ use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use Throwable;
 
 final readonly class ImportMedicalClinicalCatalogCsv
 {
@@ -61,8 +64,20 @@ final readonly class ImportMedicalClinicalCatalogCsv
     {
         $path = $file->getRealPath();
         if (! is_string($path) || $path === '' || ! is_readable($path)) {
-            throw ValidationException::withMessages(['file' => 'Не удалось прочитать CSV-файл.']);
+            throw ValidationException::withMessages(['file' => 'Не удалось прочитать файл каталога.']);
         }
+
+        $extension = mb_strtolower((string) pathinfo($file->getClientOriginalName(), PATHINFO_EXTENSION));
+        if (in_array($extension, ['xlsx', 'xls'], true)) {
+            return $this->readSpreadsheetRows($path);
+        }
+
+        return $this->readCsvRows($path);
+    }
+
+    /** @return list<array<string, string>> */
+    private function readCsvRows(string $path): array
+    {
 
         $handle = fopen($path, 'rb');
         if ($handle === false) {
@@ -107,6 +122,69 @@ final readonly class ImportMedicalClinicalCatalogCsv
 
         if ($rows === []) {
             throw ValidationException::withMessages(['file' => 'CSV-файл не содержит строк для импорта.']);
+        }
+
+        return $rows;
+    }
+
+    /** @return list<array<string, string>> */
+    private function readSpreadsheetRows(string $path): array
+    {
+        try {
+            $reader = IOFactory::createReaderForFile($path);
+            $reader->setReadDataOnly(true);
+            $spreadsheet = $reader->load($path);
+            $sheet = $spreadsheet->getActiveSheet();
+            if ($sheet->getHighestDataRow() > 5001 || Coordinate::columnIndexFromString($sheet->getHighestDataColumn()) > 20) {
+                throw ValidationException::withMessages(['file' => 'XLSX-файл превышает допустимый размер.']);
+            }
+            $matrix = $sheet->toArray(null, true, true, false);
+            $header = array_shift($matrix);
+            if (! is_array($header)) {
+                throw ValidationException::withMessages(['file' => 'В XLSX-файле отсутствует строка заголовков.']);
+            }
+
+            $headers = array_values(array_map(fn (mixed $value): string => $this->normalizeHeader($value), $header));
+            $matrix = array_values(array_map(
+                static fn (array $row): array => array_values($row),
+                $matrix,
+            ));
+
+            return $this->rowsFromMatrix($headers, $matrix, 'XLSX-файл');
+        } catch (ValidationException $exception) {
+            throw $exception;
+        } catch (Throwable) {
+            throw ValidationException::withMessages(['file' => 'Не удалось прочитать XLSX-файл.']);
+        }
+    }
+
+    /** @param list<string> $headers
+     * @param  list<array<int, mixed>>  $matrix
+     * @return list<array<string, string>>
+     */
+    private function rowsFromMatrix(array $headers, array $matrix, string $format): array
+    {
+        if (count(array_filter($headers, static fn (string $value): bool => $value !== '')) !== count(array_unique(array_filter($headers)))) {
+            throw ValidationException::withMessages(['file' => 'Заголовки '.$format.' должны быть уникальными.']);
+        }
+
+        $rows = [];
+        foreach ($matrix as $values) {
+            if (count(array_filter($values, static fn (mixed $value): bool => trim((string) $value) !== '')) === 0) {
+                continue;
+            }
+
+            $row = [];
+            foreach ($headers as $index => $name) {
+                if ($name !== '') {
+                    $row[$name] = trim((string) ($values[$index] ?? ''));
+                }
+            }
+            $rows[] = $row;
+        }
+
+        if ($rows === []) {
+            throw ValidationException::withMessages(['file' => $format.' не содержит строк для импорта.']);
         }
 
         return $rows;

@@ -26,6 +26,7 @@ final class DemographicsAndServicesAnalyticsTest extends TestCase
     public function test_demographics_percentages_and_completed_service_distribution_are_backend_aggregates(): void
     {
         [$organization, $admin, $specialist] = $this->fixture();
+        $secondSpecialist = Specialist::factory()->forOrganization($organization)->create(['display_name' => 'Второй специалист']);
         Client::factory()->forOrganization($organization)->create([
             'birth_date' => '2015-01-01',
             'gender' => 'FEMALE',
@@ -46,6 +47,27 @@ final class DemographicsAndServicesAnalyticsTest extends TestCase
             'ends_at' => '2026-10-10 11:00:00',
             'blocking_ends_at' => '2026-10-10 11:00:00',
         ]);
+        Booking::factory()->forOrganization($organization)->forClient($adult)->forSpecialist($secondSpecialist)->forService($service)->create([
+            'status' => BookingStatus::Completed->value,
+            'visit_format' => VisitFormat::Office->value,
+            'starts_at' => '2026-10-11 10:00:00',
+            'ends_at' => '2026-10-11 11:00:00',
+            'blocking_ends_at' => '2026-10-11 11:00:00',
+        ]);
+        Booking::factory()->forOrganization($organization)->forClient($adult)->forSpecialist($specialist)->forService($service)->create([
+            'status' => BookingStatus::Cancelled->value,
+            'visit_format' => VisitFormat::Office->value,
+            'starts_at' => '2026-10-12 10:00:00',
+            'ends_at' => '2026-10-12 11:00:00',
+            'blocking_ends_at' => '2026-10-12 11:00:00',
+        ]);
+        Booking::factory()->forOrganization($organization)->forClient($adult)->forSpecialist($specialist)->forService($service)->create([
+            'status' => BookingStatus::NoShow->value,
+            'visit_format' => VisitFormat::Office->value,
+            'starts_at' => '2026-10-13 10:00:00',
+            'ends_at' => '2026-10-13 11:00:00',
+            'blocking_ends_at' => '2026-10-13 11:00:00',
+        ]);
         $period = DashboardPeriod::fromFilters(
             ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
             'UTC',
@@ -60,9 +82,13 @@ final class DemographicsAndServicesAnalyticsTest extends TestCase
         self::assertSame(100.0, $demographics->country[0]['percent']);
 
         $services = app(ServiceVisitAnalytics::class)->handle($admin, $period);
-        self::assertSame(1, $services->visitCount);
+        self::assertSame(2, $services->visitCount);
         self::assertSame('Синтетический сеанс', $services->services[0]['name']);
         self::assertSame(1, $services->services[0]['client_count']);
+        self::assertSame(2, $services->services[0]['visit_count']);
+        self::assertCount(2, $services->specialists);
+        self::assertSame(1, $services->specialists[0]['visit_count']);
+        self::assertSame(1, $services->specialists[1]['visit_count']);
     }
 
     public function test_age_buckets_use_the_organization_timezone_end_date(): void

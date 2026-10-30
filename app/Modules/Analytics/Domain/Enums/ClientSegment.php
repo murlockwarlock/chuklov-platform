@@ -14,6 +14,8 @@ enum ClientSegment: string
     case WarmLead = 'warm_lead';
     case Sleeping = 'sleeping';
     case ColdLead = 'cold_lead';
+    case Penalty = 'penalty';
+    case Archived = 'archived';
 
     /** @return array<string, string> */
     public static function labels(): array
@@ -27,8 +29,10 @@ enum ClientSegment: string
             self::Restricted->value => 'Ограничена запись',
             self::Blacklist->value => 'Чёрный список',
             self::WarmLead->value => 'Тёплые лиды',
-            self::Sleeping->value => 'Спящие (более года)',
-            self::ColdLead->value => 'Не явились',
+            self::Sleeping->value => 'Спящие',
+            self::ColdLead->value => 'Холодные лиды',
+            self::Penalty->value => 'Штрафники',
+            self::Archived->value => 'Удалённые / архивные',
         ];
     }
 

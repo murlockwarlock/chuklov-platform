@@ -183,6 +183,7 @@ class ViewClient extends LocalizedViewRecord
                 ->visible(fn (): bool => MedicalSessionResource::canCreate()),
             ActionGroup::make([
                 $this->assignTrackerTaskAction(),
+                $this->assignTrackerTaskAction(true),
                 $this->suggestTrackerGoalsAction(),
                 $this->acceptTrackerGoalsAction(),
                 $this->suggestProfilePainTagsAction(),
@@ -623,11 +624,14 @@ class ViewClient extends LocalizedViewRecord
             });
     }
 
-    private function assignTrackerTaskAction(): Action
+    private function assignTrackerTaskAction(bool $fromMedicalProfile = false): Action
     {
-        return Action::make('assignTrackerTask')
-            ->label(__('Назначить задачу'))
+        return Action::make($fromMedicalProfile ? 'assignProfileGoal' : 'assignTrackerTask')
+            ->label($fromMedicalProfile ? __('Перенести цель из медпрофиля') : __('Назначить задачу'))
             ->icon('heroicon-o-clipboard-document-check')
+            ->fillForm(fn (): array => $fromMedicalProfile
+                ? ['title' => $this->medicalProfileGoals()]
+                : [])
             ->schema([
                 TextInput::make('title')
                     ->label(__('Название задачи'))
@@ -691,7 +695,8 @@ class ViewClient extends LocalizedViewRecord
                     ->searchable()
                     ->preload(),
             ])
-            ->visible(fn (): bool => $this->canManageClients())
+            ->visible(fn (): bool => $this->canManageClients()
+                && (! $fromMedicalProfile || $this->medicalProfileGoals() !== null))
             ->action(function (array $data): void {
                 $timezone = app(OrganizationContext::class)->defaultTimezone();
                 app(AssignTrackerTask::class)->handle(
@@ -712,6 +717,14 @@ class ViewClient extends LocalizedViewRecord
                 );
                 Notification::make()->title(__('Задача назначена'))->success()->send();
             });
+    }
+
+    private function medicalProfileGoals(): ?string
+    {
+        $profile = app(GetMedicalProfile::class)->handle($this->actor(), $this->clientRecord());
+        $goals = trim((string) $profile?->goals);
+
+        return $goals === '' ? null : $goals;
     }
 
     private function suggestTrackerGoalsAction(): Action

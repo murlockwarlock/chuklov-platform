@@ -63,10 +63,32 @@ final class ClientSegmentQuery
             ClientSegment::Restricted => $query->whereHas('activeBookingRestriction'),
             ClientSegment::Blacklist => $query->whereHas('activeBlacklistRestriction'),
             ClientSegment::WarmLead => $query
-                ->whereHas('bookings', $completed)
-                ->whereDoesntHave('purchases', fn (Builder $purchase): Builder => $purchase
-                    ->whereColumn('commerce_purchases.organization_id', 'clients.organization_id')
-                    ->where('commerce_purchases.status', PurchaseStatus::Paid->value)),
+                ->whereHas('bookings', function (Builder $booking) use ($completed, $thresholds): Builder {
+                    $booking = $completed($booking);
+                    $serviceIds = $thresholds['warm_lead_service_ids'] ?? [];
+                    if ($serviceIds !== []) {
+                        $booking->whereIn('bookings.service_id', $serviceIds);
+                    }
+
+                    return $booking;
+                })
+                ->whereDoesntHave('purchases', function (Builder $purchase) use ($thresholds): Builder {
+                    $purchase
+                        ->whereColumn('commerce_purchases.organization_id', 'clients.organization_id')
+                        ->where('commerce_purchases.status', PurchaseStatus::Paid->value);
+                    $targetServiceIds = $thresholds['warm_lead_target_service_ids'] ?? [];
+                    if ($targetServiceIds === []) {
+                        return $purchase;
+                    }
+
+                    return $purchase->whereHas('items', function (Builder $item) use ($targetServiceIds): Builder {
+                        return $item->where(function (Builder $query) use ($targetServiceIds): void {
+                            foreach ($targetServiceIds as $serviceId) {
+                                $query->orWhereJsonContains('product_snapshot->service_id', (int) $serviceId);
+                            }
+                        });
+                    });
+                }),
             ClientSegment::Sleeping => $query
                 ->where('clients.created_at', '<', CarbonImmutable::now('UTC')->subDays($thresholds['sleeping_days']))
                 ->whereDoesntHave(
@@ -87,6 +109,12 @@ final class ClientSegmentQuery
             ClientSegment::ColdLead => $query->whereHas('bookings', fn (Builder $booking): Builder => $booking
                 ->whereColumn('bookings.organization_id', 'clients.organization_id')
                 ->where('bookings.status', BookingStatus::NoShow->value)),
+            ClientSegment::Penalty => ($thresholds['penalty_tag'] ?? '') === ''
+                ? $query->whereKey(0)
+                : $query->whereHas('broadcastTags', fn (Builder $tag): Builder => $tag
+                    ->whereColumn('broadcast_client_tags.organization_id', 'clients.organization_id')
+                    ->where('broadcast_client_tags.tag', $thresholds['penalty_tag'])),
+            ClientSegment::Archived => $query->whereNotNull('clients.archived_at'),
         };
     }
 

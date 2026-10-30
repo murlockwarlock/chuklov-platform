@@ -265,6 +265,16 @@
                             <li class="flex flex-wrap justify-between gap-3"><span class="min-w-0 break-words">{{ $service['name'] }}</span><span>{{ $service['visit_count'] }} · {{ $service['client_count'] }} {{ __('клиентов') }}</span></li>
                         @endforeach
                     </ul>
+                    <h3 class="mt-6 text-sm font-medium text-gray-700 dark:text-gray-300">{{ __('По специалистам') }}</h3>
+                    @if ($results['services']['specialists'] === [])
+                        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ __('Завершённых визитов специалистов за период нет.') }}</p>
+                    @else
+                        <ul class="mt-3 space-y-2 text-sm">
+                            @foreach ($results['services']['specialists'] as $specialist)
+                                <li class="flex flex-wrap justify-between gap-3"><span class="min-w-0 break-words">{{ $specialist['name'] }}</span><span>{{ $specialist['visit_count'] }} · {{ $specialist['client_count'] }} {{ __('клиентов') }}</span></li>
+                            @endforeach
+                        </ul>
+                    @endif
                 </section>
             @endif
 

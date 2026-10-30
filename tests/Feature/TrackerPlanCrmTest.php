@@ -11,6 +11,8 @@ use App\Filament\Resources\WorkingLocations\WorkingLocationResource;
 use App\Models\User;
 use App\Modules\Finance\Application\SaveCurrencyConfiguration;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
+use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -95,6 +97,44 @@ final class TrackerPlanCrmTest extends TestCase
             'title' => 'Вечерняя практика',
             'task_type' => TrackerTaskType::Practice->value,
             'frequency' => 'daily',
+        ]);
+    }
+
+    public function test_client_profile_goal_can_enter_tracker_taxonomy_from_prefilled_crm_action(): void
+    {
+        $admin = $this->trackerAdmin();
+        $organization = Organization::query()->findOrFail((int) config('tenancy.default_organization_id'));
+        $client = Client::factory()->forOrganization($organization)->create();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        app(UpdateMedicalProfile::class)->handle($admin, $client, UpdateMedicalProfileCommand::fromArray([
+            'complaints' => 'Синтетическая жалоба',
+            'goals' => 'Синтетическая цель из медпрофиля',
+            'clinical_answers' => json_encode([
+                'symptoms' => ['neck'],
+                'pain_vas' => null,
+                'no_chronic_conditions' => true,
+                'had_operations' => false,
+                'operation_year' => null,
+                'had_injuries' => false,
+                'injury_year' => null,
+            ], JSON_THROW_ON_ERROR),
+        ]));
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertActionVisible('assignProfileGoal')
+            ->callAction('assignProfileGoal', [
+                'task_type' => TrackerTaskType::Practice->value,
+                'frequency' => 'daily',
+                'starts_on' => today()->toDateString(),
+                'display_order' => 0,
+            ])
+            ->assertHasNoActionErrors();
+
+        $this->assertDatabaseHas('tracker_tasks', [
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'title' => 'Синтетическая цель из медпрофиля',
         ]);
     }
 

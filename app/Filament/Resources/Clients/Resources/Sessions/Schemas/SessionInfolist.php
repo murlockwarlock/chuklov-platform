@@ -19,6 +19,7 @@ use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\GetSessionDynamics;
 use App\Modules\Sessions\Application\ListSessionAttachments;
 use App\Modules\Sessions\Application\MedicalSessionAuthorization;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Infolists\Components\RepeatableEntry;
 use Filament\Infolists\Components\TextEntry;
@@ -209,6 +210,26 @@ final class SessionInfolist
 
                                 return app(GetSessionDynamics::class)->handle($actor, $record, $parent)->comparison();
                             })
+                            ->columnSpanFull(),
+                    ]),
+                Section::make(__('Фото до сеанса'))
+                    ->schema([
+                        ViewEntry::make('beforePhotos')
+                            ->hiddenLabel()
+                            ->view(
+                                'filament.resources.clients.session-photo-gallery',
+                                fn (MedicalSession $record, ViewEntry $entry): array => self::photoGalleryViewData($record, $entry, MedicalSessionAttachmentGallery::Before),
+                            )
+                            ->columnSpanFull(),
+                    ]),
+                Section::make(__('Фото после сеанса'))
+                    ->schema([
+                        ViewEntry::make('afterPhotos')
+                            ->hiddenLabel()
+                            ->view(
+                                'filament.resources.clients.session-photo-gallery',
+                                fn (MedicalSession $record, ViewEntry $entry): array => self::photoGalleryViewData($record, $entry, MedicalSessionAttachmentGallery::After),
+                            )
                             ->columnSpanFull(),
                     ]),
                 Section::make(__('Файлы сеанса'))
@@ -414,6 +435,28 @@ final class SessionInfolist
     private static function hasPains(MedicalSession $record, Component $component): bool
     {
         return self::pains($record, $component) !== [];
+    }
+
+    /** @return array{attachments: list<array<string, mixed>>} */
+    private static function photoGalleryViewData(MedicalSession $record, Component $component, MedicalSessionAttachmentGallery $gallery): array
+    {
+        $actor = auth()->user();
+        $parent = self::parentClient($record, $component);
+        if (! $actor instanceof User || ! $parent instanceof Client) {
+            return ['attachments' => []];
+        }
+
+        $attachments = array_map(
+            static fn ($attachment): array => $attachment->toArray(),
+            app(ListSessionAttachments::class)->handle($actor, $record, $parent),
+        );
+
+        return [
+            'attachments' => array_values(array_filter(
+                $attachments,
+                static fn (array $attachment): bool => $attachment['gallery_key'] === $gallery->value,
+            )),
+        ];
     }
 
     private static function hasSpecialComplaints(MedicalSession $record, Component $component): bool

@@ -10,7 +10,9 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
+use App\Modules\Services\Domain\Models\Service;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
@@ -70,6 +72,35 @@ final class ClientSegmentSettings extends LocalizedPage
                     TextInput::make('regular_completed_visits')->label(__('Визитов для категории «Постоянные»'))->integer()->minValue(1)->maxValue(3650)->required(),
                     TextInput::make('dormant_days')->label(__('Период без визита для «Неактивные», дней'))->integer()->minValue(1)->maxValue(3650)->required(),
                     TextInput::make('sleeping_days')->label(__('Период для «Спящие», дней'))->integer()->minValue(1)->maxValue(3650)->required(),
+                    Select::make('warm_lead_service_ids')
+                        ->label(__('Услуги квалифицирующего визита для «Тёплых лидов»'))
+                        ->helperText(__('Если список пуст, учитывается любой завершённый визит. Названия услуг не зашиты в аналитику.'))
+                        ->options(fn (): array => Service::query()
+                            ->where('organization_id', app(OrganizationContext::class)->id())
+                            ->orderBy('name')
+                            ->pluck('name', 'id')
+                            ->all())
+                        ->multiple()
+                        ->searchable()
+                        ->preload()
+                        ->nullable(),
+                    Select::make('warm_lead_target_service_ids')
+                        ->label(__('Целевые услуги для «Тёплых лидов»'))
+                        ->helperText(__('Если список пуст, учитывается любая оплаченная покупка. Выбранные услуги берутся из сохранённого снимка покупки.'))
+                        ->options(fn (): array => Service::query()
+                            ->where('organization_id', app(OrganizationContext::class)->id())
+                            ->orderBy('name')
+                            ->pluck('name', 'id')
+                            ->all())
+                        ->multiple()
+                        ->searchable()
+                        ->preload()
+                        ->nullable(),
+                    TextInput::make('penalty_tag')
+                        ->label(__('Метка для категории «Штрафники»'))
+                        ->helperText(__('Укажите точную метку клиента из блока «Метки для рассылок». Пусто — категория отключена.'))
+                        ->maxLength(80)
+                        ->nullable(),
                 ])
                 ->columns(['default' => 1, 'sm' => 2])
                 ->columnSpanFull(),
@@ -99,6 +130,9 @@ final class ClientSegmentSettings extends LocalizedPage
         $setter->handle($actor, OrganizationSettingKey::ClientSegmentRegularCompletedVisits, (int) $data['regular_completed_visits']);
         $setter->handle($actor, OrganizationSettingKey::ClientSegmentDormantDays, (int) $data['dormant_days']);
         $setter->handle($actor, OrganizationSettingKey::ClientSegmentSleepingDays, (int) $data['sleeping_days']);
+        $setter->handle($actor, OrganizationSettingKey::ClientSegmentWarmLeadServiceIds, json_encode(array_values(array_map('intval', (array) ($data['warm_lead_service_ids'] ?? []))), JSON_THROW_ON_ERROR));
+        $setter->handle($actor, OrganizationSettingKey::ClientSegmentWarmLeadTargetServiceIds, json_encode(array_values(array_map('intval', (array) ($data['warm_lead_target_service_ids'] ?? []))), JSON_THROW_ON_ERROR));
+        $setter->handle($actor, OrganizationSettingKey::ClientSegmentPenaltyTag, trim((string) ($data['penalty_tag'] ?? '')));
         Notification::make()->success()->title(__('Настройки категорий клиентов сохранены'))->send();
     }
 }

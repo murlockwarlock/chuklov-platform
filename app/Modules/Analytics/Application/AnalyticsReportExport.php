@@ -50,6 +50,7 @@ final readonly class AnalyticsReportExport
         }
         if (isset($results['services']) && is_array($results['services'])) {
             $this->writeServices($this->newSheet($spreadsheet, 'Услуги'), $results['services']);
+            $this->writeSpecialists($this->newSheet($spreadsheet, 'Специалисты'), $results['services']);
         }
         if (isset($results['purchases']) && is_array($results['purchases'])) {
             $this->writePurchases($this->newSheet($spreadsheet, 'Покупки'), $results['purchases']);
@@ -136,6 +137,7 @@ final readonly class AnalyticsReportExport
         }
         if (isset($results['services']['visit_count'])) {
             $rows[] = ['Визиты по услугам', $results['services']['visit_count'], null];
+            $rows[] = ['Специалисты в отчёте', count((array) ($results['services']['specialists'] ?? [])), null];
         }
         if (isset($results['feedback']) && is_array($results['feedback'])) {
             foreach ([
@@ -252,6 +254,19 @@ final readonly class AnalyticsReportExport
         }
 
         $this->writeRows($sheet, $rows, ['Услуга', 'Клиентов', 'Визитов']);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writeSpecialists(Worksheet $sheet, array $data): void
+    {
+        $rows = [];
+        foreach ((array) ($data['specialists'] ?? []) as $specialist) {
+            if (is_array($specialist)) {
+                $rows[] = [(string) ($specialist['name'] ?? '—'), (int) ($specialist['client_count'] ?? 0), (int) ($specialist['visit_count'] ?? 0)];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Специалист', 'Клиентов', 'Визитов']);
     }
 
     /** @param array<string, mixed> $data */

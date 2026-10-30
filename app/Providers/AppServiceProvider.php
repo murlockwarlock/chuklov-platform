@@ -78,6 +78,7 @@ use App\Modules\Scenarios\Application\BookingMedicalProfileConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingNextBookingConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingSourceConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingStatusConditionEvaluator;
+use App\Modules\Scenarios\Application\ClientCompletedVisitsConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientLanguageConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientMarketingConsentConditionEvaluator;
 use App\Modules\Scenarios\Application\ConditionEvaluatorRegistry;
@@ -192,6 +193,7 @@ class AppServiceProvider extends ServiceProvider
                 app(BookingMedicalProfileConditionEvaluator::class),
                 app(BookingNextBookingConditionEvaluator::class),
                 new ClientLanguageConditionEvaluator,
+                new ClientCompletedVisitsConditionEvaluator,
                 new ClientMarketingConsentConditionEvaluator,
                 new OnboardingCompletedConditionEvaluator,
                 new OnboardingStageConditionEvaluator,

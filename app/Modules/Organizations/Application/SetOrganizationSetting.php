@@ -146,6 +146,24 @@ class SetOrganizationSetting
             throw new InvalidArgumentException('The analytics formula reference is invalid.');
         }
 
+        if (in_array($key, [
+            OrganizationSettingKey::ClientSegmentWarmLeadServiceIds,
+            OrganizationSettingKey::ClientSegmentWarmLeadTargetServiceIds,
+        ], true)) {
+            if (! is_string($value) || mb_strlen($value) > 4096) {
+                throw new InvalidArgumentException('The client segment service list is invalid.');
+            }
+            $decoded = json_decode($value, true);
+            if (! is_array($decoded) || count($decoded) > 100 || array_filter($decoded, static fn (mixed $id): bool => filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) !== []) {
+                throw new InvalidArgumentException('The client segment service list is invalid.');
+            }
+        }
+
+        if ($key === OrganizationSettingKey::ClientSegmentPenaltyTag
+            && (! is_string($value) || mb_strlen($value) > 80)) {
+            throw new InvalidArgumentException('The client penalty tag is invalid.');
+        }
+
         if ($key === OrganizationSettingKey::PatientNotificationRecipients
             && (! is_string($value) || ! in_array($value, ['patient_only', 'booker_only', 'both'], true))) {
             throw new InvalidArgumentException('The patient notification recipient policy is invalid.');

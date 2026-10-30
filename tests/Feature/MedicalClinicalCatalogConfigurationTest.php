@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
+use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
 use App\Models\User;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Sessions\Application\ImportMedicalClinicalCatalogCsv;
+use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Domain\Models\MedicalCauseDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
 use App\Modules\Sessions\Domain\Models\MedicalTestValue;
@@ -16,6 +18,8 @@ use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Livewire\Livewire;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Tests\TestCase;
 
 final class MedicalClinicalCatalogConfigurationTest extends TestCase
@@ -118,6 +122,89 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
             'tests',
         );
         self::assertSame($testKey, $test->refresh()->key);
+    }
+
+    public function test_manager_can_import_the_same_catalog_contract_from_xlsx(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $path = tempnam(sys_get_temp_dir(), 'medical-catalog-');
+        self::assertIsString($path);
+
+        try {
+            $spreadsheet = new Spreadsheet;
+            $spreadsheet->getActiveSheet()->fromArray([
+                ['Название теста', 'Раздел', 'Значение', 'Нарушение', 'Активен', 'Порядок теста', 'Порядок значения'],
+                ['Синтетический тест', 'Баланс', 'Норма', 'нет', 'да', 1, 1],
+                ['Синтетический тест', 'Баланс', 'Отклонение', 'да', 'да', 1, 2],
+            ]);
+            (new Xlsx($spreadsheet))->save($path);
+
+            $rows = app(ImportMedicalClinicalCatalogCsv::class)->handle(
+                $admin,
+                new UploadedFile($path, 'tests.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', UPLOAD_ERR_OK, true),
+                'tests',
+            );
+
+            self::assertSame(2, $rows);
+            $test = MedicalTestDefinition::query()->where('organization_id', $organization->getKey())->sole();
+            self::assertSame(2, $test->values()->count());
+            self::assertTrue((bool) $test->values()->where('label', 'Отклонение')->value('is_abnormal'));
+        } finally {
+            unlink($path);
+        }
+    }
+
+    public function test_protocol_lists_large_active_catalog_and_keeps_historical_inactive_tests(): void
+    {
+        [$organization] = $this->fixture();
+        $tests = [];
+        for ($index = 1; $index <= 60; $index++) {
+            $test = MedicalTestDefinition::query()->create([
+                'organization_id' => $organization->getKey(),
+                'key' => 'synthetic_test_'.$index,
+                'name' => 'Синтетический тест '.$index,
+                'section' => $index <= 30 ? 'Раздел A' : 'Раздел B',
+                'is_active' => true,
+                'sort_order' => $index,
+            ]);
+            $normal = MedicalTestValue::query()->create([
+                'organization_id' => $organization->getKey(),
+                'medical_test_definition_id' => $test->getKey(),
+                'key' => 'normal_'.$index,
+                'label' => 'Норма',
+                'is_abnormal' => false,
+                'is_active' => true,
+                'sort_order' => 1,
+            ]);
+            $abnormal = MedicalTestValue::query()->create([
+                'organization_id' => $organization->getKey(),
+                'medical_test_definition_id' => $test->getKey(),
+                'key' => 'abnormal_'.$index,
+                'label' => 'Отклонение',
+                'is_abnormal' => true,
+                'is_active' => true,
+                'sort_order' => 2,
+            ]);
+            $tests[] = [$test, $normal, $abnormal];
+        }
+
+        app(OrganizationContext::class)->set($organization);
+        $rows = app(MedicalClinicalCatalog::class)->testProtocolRows((int) $organization->getKey());
+        self::assertCount(60, $rows);
+        self::assertSame('Синтетический тест 1', $rows->first()->name);
+
+        $counts = app(MedicalClinicalCatalog::class)->abnormalCounts((int) $organization->getKey(), [
+            ['test_id' => $tests[0][0]->getKey(), 'before_value_id' => $tests[0][2]->getKey(), 'after_value_id' => $tests[0][1]->getKey()],
+            ['test_id' => $tests[1][0]->getKey(), 'before_value_id' => $tests[1][1]->getKey(), 'after_value_id' => $tests[1][2]->getKey()],
+        ]);
+        self::assertSame(['before' => 1, 'after' => 1], $counts);
+
+        $tests[0][0]->forceFill(['is_active' => false])->save();
+        $state = ClinicalTestProtocol::stateFor([
+            ['test_id' => $tests[0][0]->getKey(), 'before_value_id' => $tests[0][2]->getKey(), 'after_value_id' => null, 'cause_ids' => []],
+        ]);
+        self::assertSame($tests[0][0]->getKey(), $state[0]['test_id']);
+        self::assertSame($tests[0][2]->getKey(), $state[0]['before_value_id']);
     }
 
     /** @return array{Organization, User} */
