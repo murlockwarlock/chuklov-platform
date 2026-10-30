@@ -19,6 +19,8 @@ use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
+use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalFrequencyPeriodUnit;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -35,6 +37,7 @@ use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\ListClientSessions;
+use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
@@ -715,6 +718,31 @@ final class SessionCockpitTest extends TestCase
                 ->assertSet('data.pain_not_measured', $value === null)
                 ->assertSet('data.pain_vas', $value);
         }
+    }
+
+    public function test_filament_create_form_prefills_profile_pains_for_the_first_session(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            pains: [
+                ['name' => 'Шея', 'score' => 7],
+                ['name' => 'Поясница', 'score' => 0],
+            ],
+            painsProvided: true,
+        ));
+        self::assertSame(['Шея', 'Поясница'], array_map(
+            static fn (array $pain): string => $pain['name'],
+            app(MedicalSessionPainInitializer::class)->defaultsForClient($client),
+        ));
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client]);
+        $pains = array_values($component->get('data.pains'));
+        self::assertSame(['Шея', 'Поясница'], array_column($pains, 'name'));
+        self::assertSame([7, 0], array_map(static fn (mixed $score): int => (int) $score, array_column($pains, 'before_score')));
+        self::assertSame([null, null], array_column($pains, 'after_score'));
     }
 
     public function test_session_pain_frequency_and_time_are_optional_with_safe_defaults(): void

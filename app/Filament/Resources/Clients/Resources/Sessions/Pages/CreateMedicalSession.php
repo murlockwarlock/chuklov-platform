@@ -24,6 +24,45 @@ class CreateMedicalSession extends LocalizedCreateRecord
 
     protected static ?string $breadcrumb = 'Новый сеанс';
 
+    protected function fillForm(): void
+    {
+        $this->callHook('beforeFill');
+
+        $data = [
+            'pains' => app(MedicalSessionPainInitializer::class)->defaultsForClient($this->parentClient()),
+        ];
+        $bookingId = request()->query('booking_id');
+        if (is_numeric($bookingId) && (int) $bookingId > 0) {
+            $booking = Booking::query()
+                ->where('organization_id', app(OrganizationContext::class)->id())
+                ->whereKey((int) $bookingId)
+                ->first();
+
+            if ($booking instanceof Booking && $booking->clinicalClientId() === (int) $this->parentClient()->getKey()) {
+                $data['booking_id'] = (int) $booking->getKey();
+                $data['specialist_id'] = (int) $booking->specialist_id;
+                $data['occurred_at'] = $booking->starts_at;
+            }
+        }
+
+        $this->form->fill();
+        $defaultState = $this->form->getRawState();
+        $this->form->fill(is_array($defaultState) ? array_replace($defaultState, $data) : $data);
+
+        $state = $this->form->getRawState();
+        if (is_array($state) && is_array($state['pains'] ?? null)) {
+            foreach ($state['pains'] as $key => $pain) {
+                if (is_array($pain)) {
+                    $state['pains'][$key]['after_score'] = null;
+                }
+            }
+
+            $this->form->rawState($state);
+        }
+
+        $this->callHook('afterFill');
+    }
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = $this->actor();
@@ -46,31 +85,6 @@ class CreateMedicalSession extends LocalizedCreateRecord
             ->where('organization_id', $result->organizationId)
             ->where('id', $result->id)
             ->firstOrFail();
-    }
-
-    /**
-     * @param  array<string, mixed>  $data
-     * @return array<string, mixed>
-     */
-    protected function mutateFormDataBeforeFill(array $data): array
-    {
-        $data['pains'] = app(MedicalSessionPainInitializer::class)->defaultsForClient($this->parentClient());
-
-        $bookingId = request()->query('booking_id');
-        if (is_numeric($bookingId) && (int) $bookingId > 0) {
-            $booking = Booking::query()
-                ->where('organization_id', app(OrganizationContext::class)->id())
-                ->whereKey((int) $bookingId)
-                ->first();
-
-            if ($booking instanceof Booking && $booking->clinicalClientId() === (int) $this->parentClient()->getKey()) {
-                $data['booking_id'] = (int) $booking->getKey();
-                $data['specialist_id'] = (int) $booking->specialist_id;
-                $data['occurred_at'] = $booking->starts_at;
-            }
-        }
-
-        return $data;
     }
 
     protected function getRedirectUrl(): string
