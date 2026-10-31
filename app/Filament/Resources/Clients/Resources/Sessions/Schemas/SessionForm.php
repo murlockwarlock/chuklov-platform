@@ -51,17 +51,7 @@ final class SessionForm
                             ->optionsLimit(50)
                             ->options(static fn (): array => self::specialistResults(''))
                             ->getSearchResultsUsing(static fn (string $search): array => self::specialistResults($search))
-                            ->getOptionLabelUsing(static fn (mixed $value): ?string => self::specialistLabel($value))
-                            ->live()
-                            ->afterStateUpdated(static function (Get $get, Set $set): void {
-                                $results = $get('test_results');
-                                $hasProtocolRows = is_array($results) && collect($results)->contains(
-                                    static fn (mixed $result): bool => is_array($result) && (int) ($result['test_id'] ?? 0) > 0,
-                                );
-                                if (! $hasProtocolRows) {
-                                    $set('test_results', ClinicalTestProtocol::stateFor([]));
-                                }
-                            }),
+                            ->getOptionLabelUsing(static fn (mixed $value): ?string => self::specialistLabel($value)),
                         Select::make('booking_id')
                             ->label(__('Запись на приём (необязательно)'))
                             ->helperText(__('Связан только с записями этого клиента и выбранного специалиста.'))

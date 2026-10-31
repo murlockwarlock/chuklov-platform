@@ -2695,6 +2695,8 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Специалист').click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
+    const protocolTestLabel = page.locator('input[type="hidden"][wire\\:model*="test_results"][wire\\:model*="test_label"]').first();
+    await expect(protocolTestLabel).toHaveValue(/E2E тест/);
     await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
     await page.getByLabel('Название или описание боли*', { exact: true }).fill('Первичная боль');
     const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
