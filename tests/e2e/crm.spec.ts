@@ -2665,7 +2665,6 @@ test('staff can create, view, and edit a client session from the CRM client flow
     test.setTimeout(90_000);
     const fixture = createCrmFixture({ clinicalCatalogFlow: true });
     const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
-    const testName = `E2E тест ${suffix}`;
     const causeName = `E2E причина ${suffix}`;
     const causeOptionName = `E2E причины: ${causeName}`;
 
@@ -2697,6 +2696,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
     const protocolTestLabel = page.locator('input[type="hidden"][wire\\:model*="test_results"][wire\\:model*="test_label"]').first();
     await expect(protocolTestLabel).toHaveValue(/E2E/);
+    const selectedProtocolTestLabel = await protocolTestLabel.inputValue();
     await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
     await page.getByLabel('Название или описание боли*', { exact: true }).fill('Первичная боль');
     const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
@@ -2727,7 +2727,9 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await testCauseSelect.click();
     await page.getByRole('option', { name: causeOptionName, exact: true }).click();
     await expect(page.getByText('Причины по результатам тестов', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Изменить список вручную', exact: true }).click();
+    const manualCauseButton = page.getByRole('button', { name: 'Изменить список вручную', exact: true });
+    await manualCauseButton.scrollIntoViewIfNeeded();
+    await manualCauseButton.click();
     await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Вернуться к причинам из тестов', exact: true }).click();
     await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeHidden();
@@ -2753,7 +2755,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
     await expect(page.getByText('Первичная боль', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
-    await expect(page.getByText(testName, { exact: true })).toBeVisible();
+    await expect(page.getByText(selectedProtocolTestLabel, { exact: true })).toBeVisible();
     await expect(page.getByText(causeName, { exact: true }).first()).toBeVisible();
     await expect(page.getByText('E2E описание первопричины', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Протокол и результат сеанса').getByText('E2E протокол', { exact: true })).toBeVisible();
@@ -3015,8 +3017,9 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await expect(page.getByText('Метрики сохранены', { exact: true }).last()).toBeVisible({ timeout: 20_000 });
 
     await page.reload();
-    const persistedItem = page.locator('.fi-fo-repeater-item').last();
-    await expect(page.getByText(metricName, { exact: true })).toBeVisible();
+    const persistedMetricHeading = page.getByRole('heading', { name: metricName, exact: true }).last();
+    await expect(persistedMetricHeading).toBeVisible();
+    const persistedItem = persistedMetricHeading.locator('xpath=ancestor::li[contains(@class,"fi-fo-repeater-item")][1]');
     await expect(persistedItem.locator('input[id$=".target_value"]')).toHaveValue('1');
 
     await page.goto('/admin/analytics-console');
