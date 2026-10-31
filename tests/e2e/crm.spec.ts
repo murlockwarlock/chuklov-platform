@@ -113,15 +113,19 @@ async function removeEmptyRepeaterItems(page: Page, label: string): Promise<void
 }
 
 async function setLivewireRangeValue(page: Page, slider: Locator, value: number): Promise<void> {
-    const pressAndWait = async (key: string): Promise<void> => {
-        await slider.press(key);
-        await page.waitForTimeout(300);
-    };
+    await slider.press('Home');
+    await expect.poll(() => slider.getAttribute('aria-valuenow'), { timeout: 5_000 }).toBe('0.0');
 
-    await pressAndWait('Home');
-    for (let index = 0; index < value; index += 1) {
-        await pressAndWait('ArrowRight');
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        const currentValue = Number(await slider.getAttribute('aria-valuenow'));
+        if (currentValue === value) {
+            break;
+        }
+
+        await slider.press(currentValue < value ? 'ArrowRight' : 'ArrowLeft');
+        await page.waitForTimeout(350);
     }
+
     await expect(slider).toHaveAttribute('aria-valuenow', `${value}.0`);
 }
 
@@ -2665,6 +2669,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     test.setTimeout(90_000);
     const fixture = createCrmFixture({ clinicalCatalogFlow: true });
     const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const testName = `E2E тест ${suffix}`;
     const causeName = `E2E причина ${suffix}`;
     const causeOptionName = `E2E причины: ${causeName}`;
 
@@ -2696,7 +2701,6 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
     const protocolTestLabel = page.locator('input[type="hidden"][wire\\:model*="test_results"][wire\\:model*="test_label"]').first();
     await expect(protocolTestLabel).toHaveValue(/E2E/);
-    const selectedProtocolTestLabel = await protocolTestLabel.inputValue();
     await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
     await page.getByLabel('Название или описание боли*', { exact: true }).fill('Первичная боль');
     const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
@@ -2755,7 +2759,8 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
     await expect(page.getByText('Первичная боль', { exact: true })).toBeVisible({ timeout: 15_000 });
     await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
-    await expect(page.getByText(selectedProtocolTestLabel, { exact: true })).toBeVisible();
+    const testNameText = page.getByText(new RegExp(testName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).last();
+    await expect(testNameText).toBeVisible();
     await expect(page.getByText(causeName, { exact: true }).first()).toBeVisible();
     await expect(page.getByText('E2E описание первопричины', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Протокол и результат сеанса').getByText('E2E протокол', { exact: true })).toBeVisible();
@@ -3024,6 +3029,12 @@ test('owner can configure computed metrics and use them in analytics and Excel',
 
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    const customMetricsDimension = page.getByRole('checkbox', { name: 'Вычисляемые метрики', exact: true });
+    for (let attempt = 0; attempt < 3 && !await customMetricsDimension.isChecked(); attempt += 1) {
+        await customMetricsDimension.click();
+        await page.waitForTimeout(750);
+    }
+    await expect(customMetricsDimension).toBeChecked();
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
     const customMetricsSection = page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('..');
     await expect(customMetricsSection.getByText(metricName, { exact: true })).toBeVisible();
