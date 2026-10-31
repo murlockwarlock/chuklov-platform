@@ -3013,18 +3013,38 @@ test('analytics custom period rejects invalid dates without falling back to the 
     await expect(endDate).toHaveValue('2026-10-31');
 
     await page.reload();
-    await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
     await expect(period).toHaveValue('custom');
     await expect(startDate).toHaveValue('2026-10-01');
     await expect(endDate).toHaveValue('2026-10-31');
+    await analyze.click();
+    await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
+
+    const navigateHistory = async (direction: 'back' | 'forward'): Promise<void> => {
+        try {
+            if (direction === 'back') {
+                await page.goBack();
+            } else {
+                await page.goForward();
+            }
+        } catch (error) {
+            if (!String(error).includes('ERR_ABORTED')) {
+                throw error;
+            }
+        }
+    };
 
     await page.goto('/admin');
-    await page.goBack();
+    await navigateHistory('back');
     await expect(page).toHaveURL(/\/admin\/analytics-console$/);
-    await page.goForward();
-    await page.goBack();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2026-10-01');
+    await expect(endDate).toHaveValue('2026-10-31');
+    await navigateHistory('forward');
+    await navigateHistory('back');
     await expect(page).toHaveURL(/\/admin\/analytics-console$/);
-    await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
     await expect(period).toHaveValue('custom');
     await expect(startDate).toHaveValue('2026-10-01');
     await expect(endDate).toHaveValue('2026-10-31');
