@@ -274,6 +274,7 @@ final class AnalyticsConsole extends LocalizedPage
     {
         return Form::make([EmbeddedSchema::make('form')])
             ->id('analytics-console-form')
+            ->extraAttributes(['novalidate' => true])
             ->livewireSubmitHandler('analyze')
             ->footer([
                 Actions::make([

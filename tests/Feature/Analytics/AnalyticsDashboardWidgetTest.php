@@ -434,7 +434,7 @@ final class AnalyticsDashboardWidgetTest extends TestCase
         app(OrganizationContext::class)->set($organization);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
-        Livewire::actingAs($admin)
+        $component = Livewire::actingAs($admin)
             ->test(AnalyticsConsole::class)
             ->fillForm([
                 'dimensions' => ['acquisition'],
@@ -445,6 +445,8 @@ final class AnalyticsDashboardWidgetTest extends TestCase
             ->call('analyze')
             ->assertSee('Укажите дату окончания произвольного периода.')
             ->assertDontSee('validation.required_if');
+
+        self::assertStringContainsString('novalidate="novalidate"', $component->html());
     }
 
     public function test_analytics_widgets_render_without_replacing_upcoming_widget(): void

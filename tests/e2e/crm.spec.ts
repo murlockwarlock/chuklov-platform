@@ -2965,6 +2965,72 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     await expect(page.getByRole('button', { name: 'Анализировать', exact: true })).toBeVisible();
 });
 
+test('analytics custom period rejects invalid dates without falling back to the default', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+
+    const period = page.locator('#form\\.period');
+    const startDate = page.locator('#form\\.start_date');
+    const endDate = page.locator('#form\\.end_date');
+    const analyze = page.getByRole('button', { name: 'Анализировать', exact: true });
+    const fieldError = (message: string) => page.locator('.fi-fo-field-wrp-error-message:visible').filter({ hasText: message });
+
+    await period.selectOption('custom');
+    await startDate.fill('2026-10-01');
+    await endDate.fill('');
+    await analyze.click();
+    await expect(fieldError('Укажите дату окончания произвольного периода.')).toBeVisible();
+    await expect(page.getByText('validation.required_if', { exact: false })).toHaveCount(0);
+    await expect(period).toHaveValue('custom');
+    await expect(endDate).toHaveValue('');
+
+    await startDate.fill('2026-10-10');
+    await endDate.fill('2026-10-01');
+    await analyze.click();
+    await expect(fieldError('Дата окончания не может быть раньше даты начала.')).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2026-10-10');
+    await expect(endDate).toHaveValue('2026-10-01');
+
+    await startDate.fill('2024-01-01');
+    await endDate.fill('2025-01-02');
+    await analyze.click();
+    await expect(fieldError('Выберите период не более 366 дней.')).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2024-01-01');
+    await expect(endDate).toHaveValue('2025-01-02');
+
+    await startDate.fill('2026-10-01');
+    await endDate.fill('2026-10-31');
+    await analyze.click();
+    await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2026-10-01');
+    await expect(endDate).toHaveValue('2026-10-31');
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2026-10-01');
+    await expect(endDate).toHaveValue('2026-10-31');
+
+    await page.goto('/admin');
+    await page.goBack();
+    await expect(page).toHaveURL(/\/admin\/analytics-console$/);
+    await page.goForward();
+    await page.goBack();
+    await expect(page).toHaveURL(/\/admin\/analytics-console$/);
+    await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2026-10-01');
+    await expect(endDate).toHaveValue('2026-10-31');
+    await assertNoHorizontalOverflow(page);
+});
+
 test('owner can configure computed metrics and use them in analytics and Excel', async ({ page }) => {
     test.setTimeout(120_000);
     const fixture = createCrmFixture();
