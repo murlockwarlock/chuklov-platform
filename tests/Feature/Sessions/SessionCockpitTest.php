@@ -772,6 +772,30 @@ final class SessionCockpitTest extends TestCase
         self::assertNull($results[0]['after_value_id'] ?? null);
     }
 
+    public function test_create_form_keeps_clinical_test_protocol_after_live_date_update(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'synthetic_live_protocol',
+            'name' => 'Синтетический тест обновления',
+            'section' => 'Синтетика',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client])
+            ->set('data.occurred_at', '2026-08-16 10:00');
+        $results = array_values($component->get('data.test_results'));
+
+        self::assertCount(1, $results);
+        self::assertSame((int) $test->getKey(), (int) ($results[0]['test_id'] ?? 0));
+        self::assertSame('Синтетика · Синтетический тест обновления', $results[0]['test_label'] ?? null);
+    }
+
     public function test_session_pain_frequency_and_time_are_optional_with_safe_defaults(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

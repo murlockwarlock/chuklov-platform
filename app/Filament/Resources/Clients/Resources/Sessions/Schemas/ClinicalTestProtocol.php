@@ -60,7 +60,7 @@ final class ClinicalTestProtocol
                     ->dehydrated()
                     ->extraAttributes(fn (Get $get): array => ['value' => (string) $get('test_id')]),
                 Hidden::make('test_label')
-                    ->dehydrated(false)
+                    ->dehydrated()
                     ->extraAttributes(fn (Get $get): array => ['value' => (string) $get('test_label')]),
                 Select::make('before_value_id')
                     ->label(__('До сеанса'))
