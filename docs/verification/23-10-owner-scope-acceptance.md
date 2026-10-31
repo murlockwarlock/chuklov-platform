@@ -301,9 +301,10 @@ contract. It did not constitute owner acceptance of every medical workflow;
 the relevant automated medical/session/attachment tests and the existing
 staging smoke remain the evidence for those paths.
 
-The final PR head is the documentation-only revision
-`36990107ffc1dd137e4dfc5e9e1a51e03e75da57`. One normal protected deploy was
-attempted with that exact revision after the document push. The deployment
+The preceding closeout head was the documentation-only revision
+`36990107ffc1dd137e4dfc5e9e1a51e03e75da57`; the current PR head is the commit
+containing this verification record. One normal protected deploy was attempted
+with that preceding exact revision after the document push. The deployment
 failed during remote preflight with `ENOSPC` while npm populated the remote
 cache (`/root/.npm/_cacache`, exit 228), before migrations, release switching
 or application restart. The safety guard was not changed or bypassed. A smoke
