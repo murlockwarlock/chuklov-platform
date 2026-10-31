@@ -108,14 +108,29 @@ analytics or medical authority.
 
 ## Verification record
 
-Local checks for this follow-up are PASS: PHP syntax on every changed PHP
-file, Pint on every changed production/test file, changed-file PHPStan with
-zero diagnostics, `git diff --check`, and the focused analytics, period,
-classification, feedback and medical regression suites. The XLSX regression
-parses a real generated workbook with PhpSpreadsheet.
+The implementation candidate is `7cb0f96e9c60d58ef55c9914b0d9a07534571f29`.
+Local checks are PASS: PHP syntax on every changed PHP file, Pint on every
+changed production/test file, changed-file PHPStan with zero diagnostics,
+`git diff --check`, and the focused analytics, period, classification,
+feedback and medical regression suites. The XLSX regression parses a real
+generated workbook with PhpSpreadsheet.
 
-PostgreSQL, exact-final-SHA staging and browser acceptance remain environment
-gates and are not upgraded from local PASS results. They must be recorded in
-the final PR handoff as PASS, PARTIAL or NOT RUN only after the corresponding
-environment actually exercises this candidate. Owner acceptance remains NOT
-RUN until the owner performs it.
+Hosted CI run `41195715334` ran against that exact candidate. Integration
+foundation, concurrency, RAG, privacy/secret scan, and Docker/runtime health
+are PASS. Quality is FAIL because its feature suite reproduces the baseline
+`MedicalSessionTest` exclusion-constraint failure
+(`bookings_no_specialist_overlap` at `tests/Feature/Sessions/MedicalSessionTest.php:253`);
+the predecessor run `41187029774` fails at the same test, line and constraint.
+PHPStan reports 184 diagnostics in both runs, with zero diagnostics in the
+changed-file check.
+
+Staging deployment and repository-owned smoke are PASS at the exact candidate:
+the application, PostgreSQL/pgvector, Redis, private storage, queues, Nginx
+medical-upload policy, CRM smoke routes and Portal smoke route all passed;
+the deployment reported `Nothing to migrate`.
+
+Hosted E2E run `41195718383` is PARTIAL: 98 passed, 5 skipped and 2 failed out
+of 105. All failures are existing-scope WebKit booking/scheduling scenarios
+(`multi-specialist Journal` and `backdated booking`); the changed analytics,
+period, session, catalog and export journeys passed in the run. This does not
+replace manual staging browser acceptance. Owner acceptance remains NOT RUN.
