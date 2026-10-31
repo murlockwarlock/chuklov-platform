@@ -116,6 +116,19 @@ commit was `ea3e14115668d02a040d7e81c1b7a032d923bb58`; this final
 artifact-only reconciliation is the current PR head, whose exact SHA is
 recorded in the PR description and final report.
 
+The exact diff from verified application source `9de21be3` to the current PR
+head contains only this file:
+
+```text
+M docs/verification/23-10-owner-scope-acceptance.md
+```
+
+The runtime-relevant diff is empty. The normalized `git ls-tree -r` manifest
+excluding this acceptance artifact is identical at both revisions:
+`503442e252e95d4c2409662e26d3d21336d64366ae8665be6087fcff18c40d84` across
+2,791 tracked paths. No application source, configuration, dependency lock,
+migration, frontend source/asset, Docker or deployment file changed.
+
 ### WebKit scheduling failures
 
 The original full run was `41195718383` (job
@@ -151,12 +164,12 @@ regression.
 | `9de21be39a8d1e01628031fc68f4c2cd38604e4d` | `41202259555` | 2/2 exact tests PASS |
 | `92ef260997717c4549d1dca1e42b02b079fb4755`, full WebKit file | `41200144359` | 33 passed, 2 skipped, 0 failed; both scheduling tests pass in the full WebKit file |
 
-Both failures are therefore classified separately as `FLAKY / TEST DEFECT`,
-specifically full-suite-order/setup-dependent failures, not current product
-regressions. The same observable tests pass on the baseline, three isolated
-current-code attempts, the final exact target run, and a full WebKit-only run.
-No scheduling or booking production code was changed, and no product defect,
-data loss, tenant leakage or incorrect booking ownership was reproduced.
+Both failures are therefore classified separately as `NON-REPRODUCIBLE
+INTERMITTENT E2E FAILURE / likely order or setup dependent; product scheduling
+regression not reproduced`. No concrete race or shared-state defect was
+localized, so this is not called a proven test defect. No scheduling or booking
+production code was changed, and no product defect, data loss, tenant leakage
+or incorrect booking ownership was reproduced.
 
 ### Final focused staging and browser acceptance
 
@@ -189,16 +202,19 @@ cancelled while the branch-level E2E queue was active and is not used as
 evidence; it was replaced by successful run `41202744295`.
 
 After the preceding documentation-only PR-head commit, three authorized
-attempts were made to deploy `ea3e14115668d02a040d7e81c1b7a032d923bb58` with
-the previous application source as the expected current revision. Each completed the
-application health checks, then the deployment guard detected a host listening
-port inventory change and restored `9de21be39a8d1e01628031fc68f4c2cd38604e4d`.
-The only observed delta was the ephemeral UDP port of the external
-`warp-svc`; application ports, Nginx, PostgreSQL, Redis and Compose services
-remained unchanged. The safety guard was not bypassed or weakened. Therefore
-the browser and smoke evidence below is exact for the deployed application
-source SHA. The current artifact-only PR head has the same application tree and
-also could not receive an exact-revision deploy in this environment.
+attempts were made through the normal protected deployment path. The guard
+completed application health checks, then detected a host listening-port
+inventory change and restored
+`9de21be39a8d1e01628031fc68f4c2cd38604e4d`. The only observed delta was the
+ephemeral UDP endpoint of the external `warp-svc`: the pre-deploy snapshot had
+`0.0.0.0:43169`, while the post-check no longer had that UDP listener; its
+stable TCP listener on `127.0.0.1:40000` remained. Application ports, Nginx,
+PostgreSQL, Redis and Compose services remained unchanged. The guard is in
+`scripts/deploy-staging.sh:869-870` and correctly failed closed; it was not
+bypassed or weakened. This is pre-existing/external staging-host behavior, not
+a change between the verified application source and the docs-only head.
+Exact final revision deployment remains NOT VERIFIED. Follow-up issue:
+[#62](https://github.com/murlockwarlock/chuklov-platform/issues/62).
 
 ### XLSX evidence
 
@@ -224,9 +240,9 @@ workbook and parser output are retained outside the repository under
 - Local focused PHP suites, XLSX parser regression, period/DST tests, medical root-cause transaction tests, classification acceptance tests, Pint, changed-file PHPStan and `git diff --check`: PASS. The changed production PHP PHPStan check has zero diagnostics; the existing test-file diagnostics are not part of this follow-up.
 - Hosted CI `41202259360` at `9de21be3`: Integration foundation, concurrency, RAG, privacy/secret scan and Docker/runtime health PASS. Quality is FAIL / PRE-EXISTING BASELINE: `MedicalSessionTest` fails at line 253 on PostgreSQL exclusion constraint `bookings_no_specialist_overlap`, matching the predecessor failure in `41195715334` and its earlier baseline. The full feature run had 2363 passed, 1 failed and 1 skipped. PHPStan remains the known 184-diagnostic baseline; no current-file diagnostic was added.
 - PostgreSQL: PASS for the changed analytics/date/XLSX/classification paths through hosted PostgreSQL jobs and exact staging health. The unrelated Quality baseline failure is not reported as a full Quality PASS.
-- Scope browser acceptance: PARTIAL for the final PR head, with PASS evidence for the custom-period and XLSX flows at exact deployed application source `9de21be3`; partial-dimension browser failure injection was not run against shared staging because there is no safe deterministic staging fault fixture. The partial-result/warning/atomic-export contract is covered by `AnalyticsDashboardWidgetTest` and the hosted feature suite. The preceding docs-only head `ea3e1411` and the current artifact-only head were not deployed because the protected host-inventory guard repeatedly rolled back the former; no application code changed between them.
+- Scope browser acceptance: PASS on runtime-equivalent deployed application source `9de21be3` for the custom-period and XLSX flows listed above; exact final revision browser verification is NOT VERIFIED because the protected deployment guard rolled it back. Partial-dimension browser failure injection was not run against shared staging because there is no safe deterministic staging fault fixture; the partial-result/warning/atomic-export contract is covered by `AnalyticsDashboardWidgetTest` and the hosted feature suite.
 - Full E2E: PARTIAL. Original full run `41195718383` remains 98 passed, 5 skipped and 2 failed; exact WebKit rerun and final isolated target tests pass, but the full 105-test matrix was not rerun at the final source SHA.
-- Staging functional acceptance: PARTIAL for the final PR head; repository smoke and focused real-browser journeys PASS at exact application source `9de21be3`, while the documentation-only heads remain undeployed after the protected host-inventory guard rollback.
+- Staging functional acceptance: PARTIAL; repository smoke and focused real-browser journeys PASS on runtime-equivalent application source `9de21be3`, while exact final SHA verification remains NOT VERIFIED after the protected host-inventory guard rollback.
 - Owner acceptance: NOT RUN.
 - Remaining in-scope BLOCKING: 0.
 - Remaining in-scope REAL BUG: 0.
@@ -234,6 +250,6 @@ workbook and parser output are retained outside the repository under
 Limitations are limited to the full-suite WebKit scheduling test instability,
 the known unrelated Quality baseline failure, no published diagnostics from
 the original run, no manual shared-staging partial-fault injection, the staging
-host's dynamic `warp-svc` port preventing an exact docs-only PR-head deploy, and
-no owner acceptance. The acceptance did not modify credentials, MFA, production
+host's dynamic `warp-svc` port preventing exact final-head verification, and no
+owner acceptance. The acceptance did not modify credentials, MFA, production
 data, or accepted booking UX.
