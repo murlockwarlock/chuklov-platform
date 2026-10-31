@@ -111,8 +111,8 @@ analytics or medical authority.
 Continuation starting SHA: `92ef260997717c4549d1dca1e42b02b079fb4755`.
 Final application source SHA for this acceptance: `9de21be39a8d1e01628031fc68f4c2cd38604e4d`.
 The subsequent acceptance-artifact commit is documentation-only; it does not
-change the deployed application source. PR #61 and the final report record the
-exact resulting PR head.
+change the deployed application source. The resulting PR head at the time of
+this record is `ea3e14115668d02a040d7e81c1b7a032d923bb58`.
 
 ### WebKit scheduling failures
 
@@ -186,6 +186,18 @@ The temporary duplicate WebKit custom-period dispatch `41202259540` was
 cancelled while the branch-level E2E queue was active and is not used as
 evidence; it was replaced by successful run `41202744295`.
 
+After the documentation-only PR-head commit, three authorized attempts were
+made to deploy `ea3e14115668d02a040d7e81c1b7a032d923bb58` with the previous
+application source as the expected current revision. Each completed the
+application health checks, then the deployment guard detected a host listening
+port inventory change and restored `9de21be39a8d1e01628031fc68f4c2cd38604e4d`.
+The only observed delta was the ephemeral UDP port of the external
+`warp-svc`; application ports, Nginx, PostgreSQL, Redis and Compose services
+remained unchanged. The safety guard was not bypassed or weakened. Therefore
+the browser and smoke evidence below is exact for the deployed application
+source SHA, while the final documentation-only PR head could not receive an
+exact-revision deploy in this environment.
+
 ### XLSX evidence
 
 The final staging browser flow created four temporary owner-configurable metric
@@ -210,15 +222,16 @@ workbook and parser output are retained outside the repository under
 - Local focused PHP suites, XLSX parser regression, period/DST tests, medical root-cause transaction tests, classification acceptance tests, Pint, changed-file PHPStan and `git diff --check`: PASS. The changed production PHP PHPStan check has zero diagnostics; the existing test-file diagnostics are not part of this follow-up.
 - Hosted CI `41202259360` at `9de21be3`: Integration foundation, concurrency, RAG, privacy/secret scan and Docker/runtime health PASS. Quality is FAIL / PRE-EXISTING BASELINE: `MedicalSessionTest` fails at line 253 on PostgreSQL exclusion constraint `bookings_no_specialist_overlap`, matching the predecessor failure in `41195715334` and its earlier baseline. The full feature run had 2363 passed, 1 failed and 1 skipped. PHPStan remains the known 184-diagnostic baseline; no current-file diagnostic was added.
 - PostgreSQL: PASS for the changed analytics/date/XLSX/classification paths through hosted PostgreSQL jobs and exact staging health. The unrelated Quality baseline failure is not reported as a full Quality PASS.
-- Scope browser acceptance: PASS for the custom-period and XLSX flows listed above; partial-dimension browser failure injection was not run against shared staging because there is no safe deterministic staging fault fixture. The partial-result/warning/atomic-export contract is covered by `AnalyticsDashboardWidgetTest` and the hosted feature suite.
+- Scope browser acceptance: PARTIAL for the final PR head, with PASS evidence for the custom-period and XLSX flows at exact deployed application source `9de21be3`; partial-dimension browser failure injection was not run against shared staging because there is no safe deterministic staging fault fixture. The partial-result/warning/atomic-export contract is covered by `AnalyticsDashboardWidgetTest` and the hosted feature suite. The docs-only head `ea3e1411` was not deployed because the protected host-inventory guard repeatedly rolled it back.
 - Full E2E: PARTIAL. Original full run `41195718383` remains 98 passed, 5 skipped and 2 failed; exact WebKit rerun and final isolated target tests pass, but the full 105-test matrix was not rerun at the final source SHA.
-- Staging functional acceptance: PASS for the changed analytics scope at exact `9de21be3`; repository smoke and focused real-browser journeys passed.
+- Staging functional acceptance: PARTIAL for the final PR head; repository smoke and focused real-browser journeys PASS at exact application source `9de21be3`, while the documentation-only PR head `ea3e1411` remains undeployed after the protected host-inventory guard rollback.
 - Owner acceptance: NOT RUN.
 - Remaining in-scope BLOCKING: 0.
 - Remaining in-scope REAL BUG: 0.
 
 Limitations are limited to the full-suite WebKit scheduling test instability,
 the known unrelated Quality baseline failure, no published diagnostics from
-the original run, no manual shared-staging partial-fault injection, and no
-owner acceptance. The acceptance did not modify credentials, MFA, production
+the original run, no manual shared-staging partial-fault injection, the staging
+host's dynamic `warp-svc` port preventing an exact docs-only PR-head deploy, and
+no owner acceptance. The acceptance did not modify credentials, MFA, production
 data, or accepted booking UX.
