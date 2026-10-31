@@ -2795,9 +2795,13 @@ test('staff can create, view, and edit a client session from the CRM client flow
     const replaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
     await expect(replaceResultDialog).toBeVisible();
     await expect(replaceResultDialog).toContainText('Текущий текст будет заменён сводкой по данным сеанса.');
+    const replaceResultResponse = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
     await replaceResultDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await replaceResultResponse;
     await expect(resultField).toHaveValue(/было 7, стало 3/);
-    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    const saveSessionButton = page.getByRole('button', { name: 'Сохранить', exact: true });
+    await expect(saveSessionButton).toBeEnabled({ timeout: 30_000 });
+    await saveSessionButton.click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
     const updatedSessionLink = page.getByRole('row').filter({ hasText: '18.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).last();
@@ -2966,6 +2970,12 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     const fixture = createCrmFixture();
     const metricName = `Новые клиенты E2E ${fixture.clientName.slice(-8)}`;
     const renamedMetricName = `${metricName} обновлено`;
+    const saveMetricsAndWait = async (): Promise<void> => {
+        const saveResponse = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
+        await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
+        await saveResponse;
+        await expect(page.locator('.fi-no-notification.fi-status-success:visible').filter({ hasText: 'Метрики сохранены' }).last()).toBeVisible({ timeout: 20_000 });
+    };
 
     await login(page, fixture);
     await page.goto('/admin/analytics-metric-settings');
@@ -3022,11 +3032,10 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await choose(/^Округление/, '0 знаков');
     await expect(targetValue).toHaveValue('1');
     await customItem.getByRole('switch', { name: 'Активна', exact: true }).check();
-    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
-    await expect(page.getByText('Метрики сохранены', { exact: true }).last()).toBeVisible({ timeout: 20_000 });
+    await saveMetricsAndWait();
 
     await page.reload();
-    const persistedMetricHeading = page.getByRole('heading', { name: metricName, exact: true }).last();
+    const persistedMetricHeading = page.getByRole('heading', { name: metricName, exact: true });
     await expect(persistedMetricHeading).toBeVisible();
     const persistedItem = persistedMetricHeading.locator('xpath=ancestor::li[contains(@class,"fi-fo-repeater-item")][1]');
     await expect(persistedItem.locator('input[id$=".target_value"]')).toHaveValue('1');
@@ -3062,10 +3071,9 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await page.goto('/admin/analytics-metric-settings');
     const reopenedItem = page.locator('.fi-fo-repeater-item').last();
     await reopenedItem.getByRole('textbox', { name: /^Название/ }).fill(renamedMetricName);
-    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
-    await expect(page.getByText('Метрики сохранены', { exact: true }).last()).toBeVisible({ timeout: 15_000 });
+    await saveMetricsAndWait();
     await page.reload();
-    await expect(page.getByText(renamedMetricName, { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: renamedMetricName, exact: true })).toBeVisible();
 
     await page.goto('/admin/analytics-console');
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
@@ -3074,16 +3082,14 @@ test('owner can configure computed metrics and use them in analytics and Excel',
 
     await page.goto('/admin/analytics-metric-settings');
     await page.locator('.fi-fo-repeater-item').last().getByRole('switch', { name: 'Активна', exact: true }).uncheck();
-    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
-    await expect(page.getByText('Метрики сохранены', { exact: true }).last()).toBeVisible({ timeout: 15_000 });
+    await saveMetricsAndWait();
     await page.goto('/admin/analytics-console');
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toHaveCount(0);
 
     await page.goto('/admin/analytics-metric-settings');
     await page.locator('.fi-fo-repeater-item').last().getByRole('switch', { name: 'Активна', exact: true }).check();
-    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
-    await expect(page.getByText('Метрики сохранены', { exact: true }).last()).toBeVisible({ timeout: 15_000 });
+    await saveMetricsAndWait();
     await page.goto('/admin/analytics-console');
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toBeVisible();
