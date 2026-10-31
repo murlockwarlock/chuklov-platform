@@ -8,6 +8,7 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -370,10 +371,7 @@ final readonly class AnalyticsReportExport
         }
         if ($accounts !== []) {
             $start = count($rows) + 3;
-            $sheet->fromArray([['Счёт', 'Тип', 'Валюта счёта', 'Движение за период', 'Базовая валюта']], null, 'A'.$start, true);
-            foreach ($accounts as $index => $account) {
-                $sheet->fromArray([$account], null, 'A'.($start + $index + 1), true);
-            }
+            $this->writeRows($sheet, $accounts, ['Счёт', 'Тип', 'Валюта счёта', 'Движение за период', 'Базовая валюта'], $start);
         }
     }
 
@@ -389,11 +387,29 @@ final readonly class AnalyticsReportExport
      * @param  list<array<int, mixed>>  $rows
      * @param  list<string>  $headers
      */
-    private function writeRows(Worksheet $sheet, array $rows, array $headers): void
+    private function writeRows(Worksheet $sheet, array $rows, array $headers, int $startRow = 1): void
     {
-        $sheet->fromArray([$headers], null, 'A1', true);
+        $this->writeRow($sheet, $headers, $startRow);
         foreach ($rows as $index => $row) {
-            $sheet->fromArray([$row], null, 'A'.($index + 2), true);
+            $this->writeRow($sheet, $row, $startRow + $index + 1);
+        }
+    }
+
+    /** @param array<int, mixed> $values */
+    private function writeRow(Worksheet $sheet, array $values, int $row): void
+    {
+        foreach (array_values($values) as $index => $value) {
+            $coordinate = Coordinate::stringFromColumnIndex($index + 1).$row;
+            $type = match (true) {
+                $value === null => DataType::TYPE_NULL,
+                is_bool($value) => DataType::TYPE_BOOL,
+                is_int($value), is_float($value) => DataType::TYPE_NUMERIC,
+                default => DataType::TYPE_STRING,
+            };
+            if (! is_string($value) && ! is_int($value) && ! is_float($value) && ! is_bool($value) && $value !== null) {
+                $value = (string) $value;
+            }
+            $sheet->setCellValueExplicit($coordinate, $value, $type);
         }
     }
 

@@ -187,9 +187,18 @@ final readonly class MedicalSessionTestWriter
         if ($causeId !== null && ! in_array($causeId, $availableCauseIds, true)) {
             throw ValidationException::withMessages(['root_causes' => 'Выбранная первопричина недоступна.']);
         }
-        $freeText = trim((string) ($raw['free_text'] ?? ''));
+        $freeTextInput = $raw['free_text'] ?? null;
+        if ($freeTextInput !== null && ! is_string($freeTextInput)) {
+            throw ValidationException::withMessages(['root_causes' => 'Описание первопричины должно быть текстом.']);
+        }
+        $freeText = trim((string) ($freeTextInput ?? ''));
         if ($causeId === null && $freeText === '') {
             throw ValidationException::withMessages(['root_causes' => 'Выберите причину или укажите описание.']);
+        }
+        if ($freeTextInput !== null && mb_strlen($freeTextInput) > MedicalSessionFieldLimits::MaxTextLength) {
+            throw ValidationException::withMessages([
+                'root_causes' => 'Описание первопричины не может быть длиннее '.MedicalSessionFieldLimits::MaxTextLength.' символов.',
+            ]);
         }
 
         return ['cause_id' => $causeId, 'free_text' => $freeText === '' ? null : $freeText, 'sort_order' => $sortOrder];

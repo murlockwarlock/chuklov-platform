@@ -234,20 +234,7 @@ final readonly class AnalyticsMetricEvaluator
 
     private function previousPeriod(DashboardPeriod $period): DashboardPeriod
     {
-        $seconds = $period->startUtc->diffInSeconds($period->endUtc);
-        $start = $period->startUtc->subSeconds($seconds);
-        $end = $period->startUtc;
-        $timezone = new \DateTimeZone($period->timezone);
-
-        return new DashboardPeriod(
-            startUtc: $start,
-            endUtc: $end,
-            timezone: $period->timezone,
-            startDate: $start->setTimezone($timezone)->format('Y-m-d'),
-            endDate: $end->subSecond()->setTimezone($timezone)->format('Y-m-d'),
-            preset: DashboardPeriod::Custom,
-            nowUtc: $period->nowUtc->subSeconds($seconds),
-        );
+        return $period->previousCalendarPeriod();
     }
 
     private function result(

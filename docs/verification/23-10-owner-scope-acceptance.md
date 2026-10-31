@@ -5,6 +5,22 @@ canonical authorities remain the existing Medical Profiles, Sessions,
 Attachments, Feedback, Tracker, Attribution, Booking, Commerce, Finance and
 Analytics modules.
 
+## PR #61 follow-up defect closure
+
+Starting SHA for this follow-up: `263ed0550411bd6735feb9bb9ae2f186c5094f00`.
+The checks below cover the six confirmed findings reproduced from that
+candidate; they extend the acceptance matrix rather than creating a second
+analytics or medical authority.
+
+| # | Finding | Implemented | Authoritative path | Regression / acceptance evidence | PostgreSQL relevance | Browser relevance |
+|---:|---|---|---|---|---|---|
+| 1 | XLSX formula injection | YES | `AnalyticsReportExport::writeRow()` writes every export cell with an explicit PhpSpreadsheet type; no untrusted `fromArray()` path remains | `AnalyticsReportExportTest::test_formula_like_labels_remain_exact_explicit_strings_and_numbers_remain_numeric` opens the actual XLSX and checks exact values, string types, non-formula cells, numeric, boolean and null types | YES — labels and aggregates originate from tenant data; current candidate PostgreSQL gate is reported separately | YES — download path must be exercised at the final staged revision |
+| 2 | Partial analytics shown as full success | YES | `AnalyticsConsole::calculateDimensions()`, `analyze()` and `export()` preserve successful dimensions, record human errors, log only safe context, and make export atomic | `AnalyticsDashboardWidgetTest` covers single failure, mixed success/warning and no partial workbook; all-success regression remains green | YES — dimension authorization/query failures run against organization-scoped data; current candidate PostgreSQL gate is reported separately | YES — warning, retry and download behavior require final staged browser verification |
+| 3 | Invalid custom range silently defaulted | YES | `DashboardPeriod::validatedCustomRange()` is shared by console analyze/export; Filament field errors are populated by `validatedStateAndPeriod()` | `DashboardPeriodTest` covers missing, malformed, reversed, overlong, exact 366-day ranges; console test covers reject, correction, analyze and export | YES — period filtering and organization timezone boundaries require PostgreSQL verification | YES — invalid/corrected form and reload require final staged browser verification |
+| 4 | Previous-period comparison wrong across DST | YES | `DashboardPeriod::previousCalendarPeriod()` shifts organization-local calendar dates before one UTC conversion; `AnalyticsMetricEvaluator` delegates to it | `DashboardPeriodTest` covers New York spring-forward/fall-back, today, 7-day, custom and non-DST boundaries | YES — timestamp/query boundaries require PostgreSQL verification | YES — analytics period UI requires final staged browser verification |
+| 5 | Root-cause free text lacked backend limit | YES | shared `MedicalSessionFieldLimits::MaxTextLength` is used by form, CreateSession, UpdateSession and `MedicalSessionTestWriter`; validation is multibyte-safe and transactional | `MedicalPainFlowTest::test_root_cause_free_text_has_a_unicode_safe_authoritative_limit_without_partial_writes` covers 10,000 accepted, 10,001 rejected and reload preservation | YES — encrypted session write and rollback require PostgreSQL verification | YES — CRM validation and corrected submit require final staged browser verification |
+| 6 | Feedback classification could cross clients | YES | `AcceptAnalyticsClassification::acceptFeedback()` checks run client against locked submission client before theme synchronization inside the existing transaction | `AnalyticsAiClassificationTest::test_feedback_classification_rejects_a_run_for_another_client_in_the_same_organization` proves controlled rejection, unchanged review state and no theme pivot write | YES — organization/client guard and transaction atomicity require PostgreSQL verification | YES — review/accept error and normal matching-client flow require final staged browser verification |
+
 ## Medical owner file
 
 | # | Scope | Implemented | Authoritative path | Regression / acceptance evidence | PostgreSQL relevance | Browser relevance |
@@ -92,7 +108,14 @@ Analytics modules.
 
 ## Verification record
 
-Local focused backend, frontend typecheck/lint and changed-file PHPStan are
-recorded in the task handoff. PostgreSQL, exact-SHA staging and browser
-acceptance are environment gates and must be reported separately from these
-local PASS results.
+Local checks for this follow-up are PASS: PHP syntax on every changed PHP
+file, Pint on every changed production/test file, changed-file PHPStan with
+zero diagnostics, `git diff --check`, and the focused analytics, period,
+classification, feedback and medical regression suites. The XLSX regression
+parses a real generated workbook with PhpSpreadsheet.
+
+PostgreSQL, exact-final-SHA staging and browser acceptance remain environment
+gates and are not upgraded from local PASS results. They must be recorded in
+the final PR handoff as PASS, PARTIAL or NOT RUN only after the corresponding
+environment actually exercises this candidate. Owner acceptance remains NOT
+RUN until the owner performs it.

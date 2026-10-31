@@ -36,6 +36,7 @@ use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
 use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
 final class AnalyticsAiClassificationTest extends TestCase
@@ -180,6 +181,61 @@ final class AnalyticsAiClassificationTest extends TestCase
         self::assertSame(ClassificationRunStatus::NeedsReview, $changed->status);
         self::assertSame(ClassificationRunStatus::Stale, AnalyticsClassificationRun::query()->findOrFail($run->runId)->status);
         self::assertSame(3, $calls);
+    }
+
+    public function test_feedback_classification_rejects_a_run_for_another_client_in_the_same_organization(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $submissionClient = Client::factory()->forOrganization($organization)->create();
+        $runClient = Client::factory()->forOrganization($organization)->create();
+        $submission = new FeedbackSubmission;
+        $submission->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $submissionClient->getKey(),
+            'score' => 4,
+            'internal_feedback' => 'Нужно больше времени на восстановление.',
+            'source' => 'crm',
+            'idempotency_key' => 'classification-client-mismatch',
+            'request_hash' => hash('sha256', 'classification-client-mismatch'),
+            'submitted_at' => now(),
+        ])->save();
+        $theme = new FeedbackTheme;
+        $theme->forceFill([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Время восстановления',
+            'group_name' => 'Процесс',
+            'is_active' => true,
+            'sort_order' => 1,
+        ])->save();
+        $run = new AnalyticsClassificationRun;
+        $run->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $runClient->getKey(),
+            'taxonomy' => 'feedback',
+            'source_type' => 'feedback_submission',
+            'source_id' => $submission->getKey(),
+            'source_digest' => hash('sha256', 'classification-client-mismatch-run'),
+            'status' => ClassificationRunStatus::NeedsReview,
+            'attempt_count' => 1,
+            'suggestions' => [['id' => $theme->getKey(), 'label' => 'Процесс: Время восстановления']],
+        ])->save();
+        app(OrganizationContext::class)->set($organization);
+
+        try {
+            app(AcceptAnalyticsClassification::class)->handle(
+                actor: $admin,
+                runId: (int) $run->getKey(),
+                themeIds: [$theme->getKey()],
+            );
+            self::fail('A classification run for another client was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertSame('Обратная связь не принадлежит указанному клиенту.', $exception->errors()['classification'][0]);
+        }
+
+        self::assertSame(ClassificationRunStatus::NeedsReview, $run->refresh()->status);
+        self::assertNull($run->accepted_at);
+        self::assertSame(0, $submission->refresh()->themes()->count());
+        self::assertSame(1, FeedbackTheme::query()->where('organization_id', $organization->getKey())->count());
     }
 
     public function test_invalid_ai_output_fails_without_assigning_tags_and_can_retry(): void

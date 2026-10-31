@@ -8,6 +8,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -112,6 +113,63 @@ final class AnalyticsReportExportTest extends TestCase
         self::assertNotContains('После', $demographicsSheet->toArray()[0]);
         self::assertNotContains('До', $servicesSheet->toArray()[0]);
         self::assertStringNotContainsString('TRUE', $this->workbookText($workbook));
+    }
+
+    public function test_formula_like_labels_remain_exact_explicit_strings_and_numbers_remain_numeric(): void
+    {
+        [, $admin] = $this->fixture();
+
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, [
+            'acquisition' => [
+                'new_clients' => 2,
+                'sources' => [['label' => '-source', 'count' => 1]],
+            ],
+            'pain' => [
+                'problems' => [[
+                    'name' => '=CLIENT()',
+                    'group' => '+source',
+                    'client_count' => 2,
+                    'average_before' => 4,
+                ]],
+            ],
+            'services' => [
+                'specialists' => [['name' => '@specialist', 'client_count' => 1, 'visit_count' => 2]],
+            ],
+        ], metadata: [
+            'period' => '=period',
+            'client' => '@client',
+            'filters' => ['-filter', '+filter'],
+            'timezone' => true,
+        ]));
+
+        $summary = $workbook->getSheetByName('Сводка');
+        $pain = $workbook->getSheetByName('Боли');
+        $sources = $workbook->getSheetByName('Источники');
+        $specialists = $workbook->getSheetByName('Специалисты');
+        self::assertNotNull($summary);
+        self::assertNotNull($pain);
+        self::assertNotNull($sources);
+        self::assertNotNull($specialists);
+
+        foreach ([
+            [$summary, 'B2', '=period'],
+            [$summary, 'B3', '@client'],
+            [$summary, 'B4', '-filter, +filter'],
+            [$pain, 'A2', '=CLIENT()'],
+            [$pain, 'B2', '+source'],
+            [$sources, 'A2', '-source'],
+            [$specialists, 'A2', '@specialist'],
+        ] as [$sheet, $coordinate, $value]) {
+            self::assertSame($value, $sheet->getCell($coordinate)->getValue());
+            self::assertSame(DataType::TYPE_STRING, $sheet->getCell($coordinate)->getDataType());
+            self::assertFalse($sheet->getCell($coordinate)->isFormula());
+        }
+
+        self::assertSame(DataType::TYPE_BOOL, $summary->getCell('B5')->getDataType());
+        self::assertTrue($summary->getCell('B5')->getValue());
+        self::assertSame(DataType::TYPE_NUMERIC, $pain->getCell('C2')->getDataType());
+        self::assertSame(2, $pain->getCell('C2')->getValue());
+        self::assertNull($pain->getCell('E2')->getValue());
     }
 
     public function test_sources_and_finance_accounts_have_human_columns(): void

@@ -32,6 +32,7 @@ use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
@@ -298,6 +299,14 @@ final class AnalyticsDashboardWidgetTest extends TestCase
         $authorizer->shouldReceive('allows')->andReturn(true);
         $authorizer->shouldReceive('authorize')->andThrow(new AuthorizationException);
         $this->app->instance(OrganizationAuthorizer::class, $authorizer);
+        Log::shouldReceive('warning')
+            ->once()
+            ->with('analytics.dimension_failed', Mockery::on(
+                static fn (array $context): bool => $context['organization_id'] === $organization->getKey()
+                    && $context['dimension'] === 'scheduling'
+                    && $context['exception'] === AuthorizationException::class
+                    && ! array_key_exists('message', $context),
+            ));
 
         $component = Livewire::actingAs($admin)
             ->test(AnalyticsConsole::class)
@@ -306,13 +315,117 @@ final class AnalyticsDashboardWidgetTest extends TestCase
                 'period' => DashboardPeriod::Today,
             ])
             ->call('analyze')
-            ->assertNotified('Анализ обновлён')
+            ->assertNotified('Анализ завершён частично')
             ->assertSee('Некоторые показатели недоступны')
             ->assertSee('Записи и визиты')
             ->assertSee('Не удалось получить результаты выбранных показателей');
 
         self::assertSame([], $component->instance()->results);
         self::assertSame(['scheduling' => 'Записи и визиты'], $component->instance()->dimensionErrors);
+    }
+
+    public function test_analytics_console_keeps_available_dimensions_and_warns_on_partial_failure(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $authorizer = Mockery::mock(OrganizationAuthorizer::class, [app(OrganizationContext::class)])->makePartial();
+        $authorizer->shouldReceive('allows')->andReturn(true);
+        $authorizer->shouldReceive('authorize')->andReturnUsing(
+            static function (User $actor, Organization $currentOrganization, OrganizationPermission $permission): mixed {
+                if ($permission === OrganizationPermission::ViewScheduling) {
+                    throw new \RuntimeException('synthetic dimension failure');
+                }
+
+                return $actor->membershipFor($currentOrganization);
+            },
+        );
+        $this->app->instance(OrganizationAuthorizer::class, $authorizer);
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition', 'scheduling'],
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ завершён частично')
+            ->assertSee('Некоторые показатели недоступны')
+            ->assertSee('Записи и визиты');
+
+        self::assertArrayHasKey('acquisition', $component->instance()->results);
+        self::assertArrayNotHasKey('scheduling', $component->instance()->results);
+        self::assertSame(['scheduling' => 'Записи и визиты'], $component->instance()->dimensionErrors);
+    }
+
+    public function test_analytics_export_does_not_return_a_partial_workbook_when_a_dimension_fails(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $authorizer = Mockery::mock(OrganizationAuthorizer::class, [app(OrganizationContext::class)])->makePartial();
+        $authorizer->shouldReceive('allows')->andReturn(true);
+        $authorizer->shouldReceive('authorize')->andReturnUsing(
+            static function (User $actor, Organization $currentOrganization, OrganizationPermission $permission): mixed {
+                if ($permission === OrganizationPermission::ViewScheduling) {
+                    throw new \RuntimeException('synthetic export failure');
+                }
+
+                return $actor->membershipFor($currentOrganization);
+            },
+        );
+        $this->app->instance(OrganizationAuthorizer::class, $authorizer);
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition', 'scheduling'],
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('export')
+            ->assertNotified('Excel не сформирован')
+            ->assertNoFileDownloaded()
+            ->assertSee('Некоторые показатели недоступны');
+
+        self::assertSame(['scheduling' => 'Записи и визиты'], $component->instance()->dimensionErrors);
+    }
+
+    public function test_analytics_console_rejects_invalid_custom_period_and_exports_after_correction(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition'],
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-02',
+                'end_date' => '2026-10-01',
+            ])
+            ->call('analyze')
+            ->assertNotified('Не удалось выполнить анализ')
+            ->assertHasErrors(['data.end_date']);
+
+        self::assertSame([], $component->instance()->results);
+
+        $component
+            ->call('export')
+            ->assertNotified('Не удалось выполнить экспорт')
+            ->assertNoFileDownloaded()
+            ->fillForm([
+                'dimensions' => ['acquisition'],
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-02',
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён')
+            ->call('export')
+            ->assertFileDownloaded('analytics-2026-10-01-2026-10-02.xlsx');
     }
 
     public function test_analytics_widgets_render_without_replacing_upcoming_widget(): void

@@ -100,6 +100,11 @@ final readonly class AcceptAnalyticsClassification
             ->whereKey($run->source_id)
             ->lockForUpdate()
             ->firstOrFail();
+        if ($run->client_id === null || (int) $run->client_id !== (int) $submission->client_id) {
+            throw ValidationException::withMessages([
+                'classification' => 'Обратная связь не принадлежит указанному клиенту.',
+            ]);
+        }
         $suggestedIds = $this->suggestedIds($run->suggestions);
         $selectedIds = $themeIds === null ? $suggestedIds : $themeIds;
         $preservedIds = $submission->themes()->pluck('feedback_themes.id')->all();

@@ -44,6 +44,8 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use LogicException;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
@@ -280,7 +282,7 @@ final class AnalyticsConsole extends LocalizedPage
             Action::make('export')
                 ->label(__('Скачать Excel'))
                 ->icon('heroicon-o-arrow-down-tray')
-                ->action(fn (): StreamedResponse => $this->export()),
+                ->action(fn (): ?StreamedResponse => $this->export()),
         ];
     }
 
@@ -289,84 +291,57 @@ final class AnalyticsConsole extends LocalizedPage
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         $this->dimensionErrors = [];
-        $state = $this->form->getState();
+        $this->resetValidation();
+        $resolved = $this->validatedStateAndPeriod('анализ');
+        if ($resolved === null) {
+            return;
+        }
+        [$state, $period] = $resolved;
         session()->put($this->stateSessionKey(), $this->persistedState($state));
-        $dimensions = is_array($state['dimensions'] ?? null) ? array_values($state['dimensions']) : [];
-        $client = $this->selectedClient($state);
-        $problemTagId = $this->selectedProblemTagId($state);
-        $feedbackThemeId = $this->selectedFeedbackThemeId($state);
-        $goalTagId = $this->selectedGoalTagId($state);
-        $sourceKey = $this->selectedSourceKey($state);
-        $purchaseType = $this->selectedPurchaseType($state);
-        $bookingStatus = $this->selectedBookingStatus($state);
-        $organization = app(OrganizationContext::class)->organization();
-        $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
-        $results = [];
+        $calculated = $this->calculateDimensions($actor, $state, $period);
+        $this->results = $calculated['results'];
+        $this->dimensionErrors = $calculated['errors'];
 
-        foreach ($dimensions as $dimension) {
-            try {
-                $results[(string) $dimension] = match ((string) $dimension) {
-                    'pain' => app(PainAnalytics::class)->handle($actor, $period, $client, $problemTagId)->toArray(),
-                    'acquisition' => $this->acquisition($actor, $period, $client, $sourceKey),
-                    'scheduling' => $this->scheduling($actor, $period, $client),
-                    'finance' => $this->finance($actor, $period, $client),
-                    'feedback' => $this->feedback($actor, $period, $client, $feedbackThemeId),
-                    'goals' => $this->goals($actor, $period, $client, $goalTagId),
-                    'demographics' => $this->demographics($actor, $period, $client),
-                    'services' => $this->services($actor, $period, $client),
-                    'purchases' => $this->purchases($actor, $period, $client, $purchaseType),
-                    'booking_statuses' => $this->bookingStatuses($actor, $period, $client, $bookingStatus),
-                    'segments' => app(ClientSegmentAnalytics::class)->handle($actor, $client),
-                    'custom_metrics' => $this->customMetrics($actor, $period, $client, $state),
-                    default => null,
-                };
-            } catch (Throwable) {
-                $this->dimensionErrors[(string) $dimension] = $this->dimensionLabel((string) $dimension);
-            }
+        if ($this->dimensionErrors !== []) {
+            Notification::make()
+                ->title(__('Анализ завершён частично'))
+                ->body(__('Часть выбранных показателей недоступна. Проверьте список разделов и повторите анализ.'))
+                ->warning()
+                ->send();
+
+            return;
         }
 
-        $this->results = array_filter($results, static fn (mixed $result): bool => is_array($result));
         Notification::make()->title(__('Анализ обновлён'))->success()->send();
     }
 
-    public function export(): StreamedResponse
+    public function export(): ?StreamedResponse
     {
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
-        $state = $this->form->getState();
-        $organization = app(OrganizationContext::class)->organization();
-        $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
-        $client = $this->selectedClient($state);
-        $problemTagId = $this->selectedProblemTagId($state);
-        $feedbackThemeId = $this->selectedFeedbackThemeId($state);
-        $goalTagId = $this->selectedGoalTagId($state);
-        $sourceKey = $this->selectedSourceKey($state);
-        $purchaseType = $this->selectedPurchaseType($state);
-        $bookingStatus = $this->selectedBookingStatus($state);
-        $results = [];
-        foreach ((array) ($state['dimensions'] ?? []) as $dimension) {
-            try {
-                $results[(string) $dimension] = match ((string) $dimension) {
-                    'pain' => app(PainAnalytics::class)->handle($actor, $period, $client, $problemTagId)->toArray(),
-                    'acquisition' => $this->acquisition($actor, $period, $client, $sourceKey),
-                    'scheduling' => $this->scheduling($actor, $period, $client),
-                    'finance' => $this->finance($actor, $period, $client),
-                    'feedback' => $this->feedback($actor, $period, $client, $feedbackThemeId),
-                    'goals' => $this->goals($actor, $period, $client, $goalTagId),
-                    'demographics' => $this->demographics($actor, $period, $client),
-                    'services' => $this->services($actor, $period, $client),
-                    'purchases' => $this->purchases($actor, $period, $client, $purchaseType),
-                    'booking_statuses' => $this->bookingStatuses($actor, $period, $client, $bookingStatus),
-                    'segments' => app(ClientSegmentAnalytics::class)->handle($actor, $client),
-                    'custom_metrics' => $this->customMetrics($actor, $period, $client, $state),
-                    default => null,
-                };
-            } catch (Throwable) {
-                $results[(string) $dimension] = ['available' => false];
-            }
+        $this->dimensionErrors = [];
+        $this->resetValidation();
+        $resolved = $this->validatedStateAndPeriod('экспорт');
+        if ($resolved === null) {
+            return null;
+        }
+        [$state, $period] = $resolved;
+        $calculated = $this->calculateDimensions($actor, $state, $period);
+        $this->results = $calculated['results'];
+        $this->dimensionErrors = $calculated['errors'];
+
+        if ($this->dimensionErrors !== []) {
+            Notification::make()
+                ->title(__('Excel не сформирован'))
+                ->body(__('Недоступны: ').implode(', ', array_values($this->dimensionErrors)))
+                ->danger()
+                ->send();
+
+            return null;
         }
 
-        $exportResults = array_filter($results, static fn (mixed $result): bool => is_array($result));
+        $client = $this->selectedClient($state);
+        $exportResults = $this->results;
         $currency = is_array($exportResults['finance'] ?? null)
             ? ($exportResults['finance']['currency'] ?? null)
             : null;
@@ -383,6 +358,85 @@ final class AnalyticsConsole extends LocalizedPage
                 'currency' => $currency,
             ],
         );
+    }
+
+    /** @return array{0: array<string, mixed>, 1: DashboardPeriod}|null */
+    private function validatedStateAndPeriod(string $operation): ?array
+    {
+        try {
+            $state = $this->form->getState();
+            $organization = app(OrganizationContext::class)->organization();
+            $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
+        } catch (ValidationException $exception) {
+            foreach ($exception->errors() as $field => $messages) {
+                $field = str_starts_with($field, 'data.') ? $field : 'data.'.$field;
+                foreach ((array) $messages as $message) {
+                    $this->addError($field, (string) $message);
+                }
+            }
+            Notification::make()
+                ->title(__('Не удалось выполнить :operation', ['operation' => $operation]))
+                ->body(__('Проверьте даты произвольного периода.'))
+                ->danger()
+                ->send();
+
+            return null;
+        }
+
+        return [$state, $period];
+    }
+
+    /**
+     * @param  array<string, mixed>  $state
+     * @return array{results: array<string, mixed>, errors: array<string, string>}
+     */
+    private function calculateDimensions(User $actor, array $state, DashboardPeriod $period): array
+    {
+        $dimensions = is_array($state['dimensions'] ?? null) ? array_values($state['dimensions']) : [];
+        $client = $this->selectedClient($state);
+        $problemTagId = $this->selectedProblemTagId($state);
+        $feedbackThemeId = $this->selectedFeedbackThemeId($state);
+        $goalTagId = $this->selectedGoalTagId($state);
+        $sourceKey = $this->selectedSourceKey($state);
+        $purchaseType = $this->selectedPurchaseType($state);
+        $bookingStatus = $this->selectedBookingStatus($state);
+        $results = [];
+        $errors = [];
+
+        foreach ($dimensions as $dimension) {
+            $key = (string) $dimension;
+            try {
+                $results[$key] = match ($key) {
+                    'pain' => app(PainAnalytics::class)->handle($actor, $period, $client, $problemTagId)->toArray(),
+                    'acquisition' => $this->acquisition($actor, $period, $client, $sourceKey),
+                    'scheduling' => $this->scheduling($actor, $period, $client),
+                    'finance' => $this->finance($actor, $period, $client),
+                    'feedback' => $this->feedback($actor, $period, $client, $feedbackThemeId),
+                    'goals' => $this->goals($actor, $period, $client, $goalTagId),
+                    'demographics' => $this->demographics($actor, $period, $client),
+                    'services' => $this->services($actor, $period, $client),
+                    'purchases' => $this->purchases($actor, $period, $client, $purchaseType),
+                    'booking_statuses' => $this->bookingStatuses($actor, $period, $client, $bookingStatus),
+                    'segments' => app(ClientSegmentAnalytics::class)->handle($actor, $client),
+                    'custom_metrics' => $this->customMetrics($actor, $period, $client, $state),
+                    default => null,
+                };
+            } catch (Throwable $exception) {
+                $errors[$key] = $this->dimensionLabel($key);
+                Log::warning('analytics.dimension_failed', [
+                    'organization_id' => app(OrganizationContext::class)->id(),
+                    'dimension' => $key,
+                    'request_id' => request()->header('X-Request-Id'),
+                    'route' => request()->route()?->getName(),
+                    'exception' => $exception::class,
+                ]);
+            }
+        }
+
+        return [
+            'results' => array_filter($results, static fn (mixed $result): bool => is_array($result)),
+            'errors' => $errors,
+        ];
     }
 
     /** @return array<string, mixed> */

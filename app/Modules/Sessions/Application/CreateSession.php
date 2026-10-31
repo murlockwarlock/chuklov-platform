@@ -20,8 +20,6 @@ use Illuminate\Validation\ValidationException;
 
 final readonly class CreateSession
 {
-    private const MAX_FIELD_LENGTH = 10000;
-
     public function __construct(
         private MedicalSessionAuthorization $authorization,
         private MedicalEncryptorInterface $encryptor,
@@ -224,9 +222,9 @@ final readonly class CreateSession
             'protocol' => $command->protocol,
             'result' => $command->result,
         ] as $field => $value) {
-            if ($value !== null && mb_strlen($value) > self::MAX_FIELD_LENGTH) {
+            if ($value !== null && mb_strlen($value) > MedicalSessionFieldLimits::MaxTextLength) {
                 throw ValidationException::withMessages([
-                    $field => 'Поле превышает максимальную длину в '.self::MAX_FIELD_LENGTH.' символов.',
+                    $field => 'Поле превышает максимальную длину в '.MedicalSessionFieldLimits::MaxTextLength.' символов.',
                 ]);
             }
         }

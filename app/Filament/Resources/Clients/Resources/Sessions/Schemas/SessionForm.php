@@ -9,6 +9,7 @@ use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
+use App\Modules\Sessions\Application\MedicalSessionFieldLimits;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
@@ -234,7 +235,7 @@ final class SessionForm
                                     ->options(fn (Get $get): array => self::rootCauseOptions($get))
                                     ->searchable()
                                     ->nullable(),
-                                Textarea::make('free_text')->label(__('Дополнительное описание'))->rows(2)->maxLength(10000),
+                                Textarea::make('free_text')->label(__('Дополнительное описание'))->rows(2)->maxLength(MedicalSessionFieldLimits::MaxTextLength),
                             ])
                             ->columns(2)
                             ->defaultItems(0)

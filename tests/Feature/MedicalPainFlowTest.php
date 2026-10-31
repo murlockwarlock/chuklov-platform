@@ -444,6 +444,42 @@ final class MedicalPainFlowTest extends TestCase
         self::assertSame($session->rootCauses[0]->toArray(), $reloaded?->rootCauses[0]->toArray());
     }
 
+    public function test_root_cause_free_text_has_a_unicode_safe_authoritative_limit_without_partial_writes(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $acceptedText = str_repeat('я', 10000);
+
+        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-23 09:00:00', 'UTC'),
+            rootCauses: [['cause_id' => null, 'free_text' => $acceptedText]],
+        ));
+
+        self::assertSame($acceptedText, $session->rootCauses[0]->freeText);
+        $stored = MedicalSession::findOrFail($session->id);
+
+        try {
+            app(UpdateSession::class)->handle($admin, $stored, UpdateSessionCommand::fromArray([
+                'pain' => null,
+                'tests' => null,
+                'observations' => null,
+                'root_cause_hypothesis' => null,
+                'protocol' => null,
+                'result' => null,
+                'root_causes' => [['cause_id' => null, 'free_text' => str_repeat('я', 10001)]],
+            ]));
+            self::fail('An overlong root-cause description was accepted.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('root_causes', $exception->errors());
+        }
+
+        $reloaded = app(GetSession::class)->handle($admin, MedicalSession::findOrFail($session->id), $client);
+        self::assertNotNull($reloaded);
+        self::assertCount(1, $reloaded->rootCauses);
+        self::assertSame($acceptedText, $reloaded->rootCauses[0]->freeText);
+        self::assertSame($organization->getKey(), $client->organization_id);
+    }
+
     public function test_session_causes_can_be_manually_overridden_without_losing_test_relations(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

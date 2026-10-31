@@ -48,7 +48,7 @@ final class AttributionSourceCatalogTest extends TestCase
         $analytics = app(AcquisitionAnalytics::class)->handle(
             $admin,
             DashboardPeriod::fromFilters(
-                ['period' => DashboardPeriod::Custom, 'start_date' => '2000-01-01', 'end_date' => '2100-01-01'],
+                ['period' => DashboardPeriod::Custom, 'start_date' => '2026-01-01', 'end_date' => '2026-12-31'],
                 'UTC',
                 CarbonImmutable::parse('2026-10-28 12:00:00', 'UTC'),
             ),
@@ -132,7 +132,7 @@ final class AttributionSourceCatalogTest extends TestCase
         $analytics = app(AcquisitionAnalytics::class)->handle(
             $admin,
             DashboardPeriod::fromFilters(
-                ['period' => DashboardPeriod::Custom, 'start_date' => '2000-01-01', 'end_date' => '2100-01-01'],
+                ['period' => DashboardPeriod::Custom, 'start_date' => '2026-01-01', 'end_date' => '2026-12-31'],
                 'UTC',
                 CarbonImmutable::parse('2026-10-28 12:00:00', 'UTC'),
             ),
