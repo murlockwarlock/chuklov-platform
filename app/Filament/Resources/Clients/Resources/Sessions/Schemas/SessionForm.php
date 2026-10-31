@@ -52,6 +52,7 @@ final class SessionForm
                             ->options(static fn (): array => self::specialistResults(''))
                             ->getSearchResultsUsing(static fn (string $search): array => self::specialistResults($search))
                             ->getOptionLabelUsing(static fn (mixed $value): ?string => self::specialistLabel($value))
+                            ->live()
                             ->afterStateUpdated(static function (Get $get, Set $set): void {
                                 $results = $get('test_results');
                                 $hasProtocolRows = is_array($results) && collect($results)->contains(
