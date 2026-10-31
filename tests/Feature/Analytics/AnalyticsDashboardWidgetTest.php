@@ -428,6 +428,25 @@ final class AnalyticsDashboardWidgetTest extends TestCase
             ->assertFileDownloaded('analytics-2026-10-01-2026-10-02.xlsx');
     }
 
+    public function test_analytics_console_uses_human_messages_for_missing_custom_dates(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition'],
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => null,
+            ])
+            ->call('analyze')
+            ->assertSee('Укажите дату окончания произвольного периода.')
+            ->assertDontSee('validation.required_if');
+    }
+
     public function test_analytics_widgets_render_without_replacing_upcoming_widget(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();

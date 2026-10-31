@@ -245,12 +245,18 @@ final class AnalyticsConsole extends LocalizedPage
                             ->format('Y-m-d')
                             ->displayFormat('d.m.Y')
                             ->requiredIf('period', DashboardPeriod::Custom)
+                            ->validationMessages([
+                                'required_if' => __('Укажите дату начала произвольного периода.'),
+                            ])
                             ->visible(fn (Get $get): bool => $get('period') === DashboardPeriod::Custom),
                         DatePicker::make('end_date')
                             ->label(__('Конец'))
                             ->format('Y-m-d')
                             ->displayFormat('d.m.Y')
                             ->requiredIf('period', DashboardPeriod::Custom)
+                            ->validationMessages([
+                                'required_if' => __('Укажите дату окончания произвольного периода.'),
+                            ])
                             ->visible(fn (Get $get): bool => $get('period') === DashboardPeriod::Custom),
                     ])
                     ->columns(['default' => 1, 'sm' => 2])
