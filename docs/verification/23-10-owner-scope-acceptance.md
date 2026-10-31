@@ -301,6 +301,22 @@ contract. It did not constitute owner acceptance of every medical workflow;
 the relevant automated medical/session/attachment tests and the existing
 staging smoke remain the evidence for those paths.
 
+The final PR head is the documentation-only revision
+`36990107ffc1dd137e4dfc5e9e1a51e03e75da57`. One normal protected deploy was
+attempted with that exact revision after the document push. The deployment
+failed during remote preflight with `ENOSPC` while npm populated the remote
+cache (`/root/.npm/_cacache`, exit 228), before migrations, release switching
+or application restart. The safety guard was not changed or bypassed. A smoke
+run against a detached `a687639c` worktree confirmed the deployed revision
+remained `a687639c` and all staging health/CRM/Portal checks passed.
+
+Therefore exact-final-revision staging is `NOT VERIFIED`; staging functional
+acceptance is `PASS` only for the runtime-equivalent application revision
+`a687639cc4cff72ee952809adb960c673ce7547f`. The exact diff from that deployed
+application source to the final PR head is this acceptance document only; no
+deployable application tree, migration, dependency, asset or runtime file
+changed.
+
 ### XLSX evidence
 
 The existing `AnalyticsReportExportTest` opens a real generated workbook with
