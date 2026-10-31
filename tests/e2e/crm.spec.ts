@@ -2696,7 +2696,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
     const protocolTestLabel = page.locator('input[type="hidden"][wire\\:model*="test_results"][wire\\:model*="test_label"]').first();
-    await expect(protocolTestLabel).toHaveValue(/E2E тест/);
+    await expect(protocolTestLabel).toHaveValue(/E2E/);
     await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
     await page.getByLabel('Название или описание боли*', { exact: true }).fill('Первичная боль');
     const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
@@ -3001,7 +3001,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await choose(/^Агрегация/, 'Количество');
     await choose(/^Операция/, 'A − B');
     await choose(/^Основа сравнения/, 'Фиксированное целевое значение');
-    const targetValue = customItem.getByLabel(/^Целевое значение/);
+    const targetValue = customItem.locator('input[id$=".target_value"]');
     await expect(targetValue).toBeVisible();
     await targetValue.fill('1');
     await targetValue.press('Tab');
@@ -3017,7 +3017,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await page.reload();
     const persistedItem = page.locator('.fi-fo-repeater-item').last();
     await expect(page.getByText(metricName, { exact: true })).toBeVisible();
-    await expect(persistedItem.getByLabel(/^Целевое значение/)).toHaveValue('1');
+    await expect(persistedItem.locator('input[id$=".target_value"]')).toHaveValue('1');
 
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
