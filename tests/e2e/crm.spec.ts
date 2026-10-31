@@ -2731,8 +2731,10 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await testCauseSelect.click();
     await page.getByRole('option', { name: causeOptionName, exact: true }).click();
     await expect(page.getByText('Причины по результатам тестов', { exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('option', { name: causeOptionName, exact: true }).last()).toBeHidden();
     const manualCauseButton = page.getByRole('button', { name: 'Изменить список вручную', exact: true });
-    await manualCauseButton.scrollIntoViewIfNeeded();
+    await manualCauseButton.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'nearest' }));
     await manualCauseButton.click();
     await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Вернуться к причинам из тестов', exact: true }).click();
@@ -3030,9 +3032,10 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
     const customMetricsDimension = page.getByRole('checkbox', { name: 'Вычисляемые метрики', exact: true });
-    for (let attempt = 0; attempt < 3 && !await customMetricsDimension.isChecked(); attempt += 1) {
-        await customMetricsDimension.click();
-        await page.waitForTimeout(750);
+    if (! await customMetricsDimension.isChecked()) {
+        const dimensionsUpdate = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
+        await customMetricsDimension.check();
+        await dimensionsUpdate;
     }
     await expect(customMetricsDimension).toBeChecked();
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();

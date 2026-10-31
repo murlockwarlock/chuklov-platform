@@ -132,6 +132,7 @@ final class AnalyticsConsole extends LocalizedPage
                                 'segments' => __('Категории клиентов'),
                                 'custom_metrics' => __('Вычисляемые метрики'),
                             ])
+                            ->live()
                             ->columns(['default' => 1, 'sm' => 2, 'lg' => 3])
                             ->required()
                             ->default(['pain']),
