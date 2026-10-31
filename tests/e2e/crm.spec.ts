@@ -2699,7 +2699,9 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Специалист').click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
-    const protocolTestLabel = page.locator('input[type="hidden"][wire\\:model*="test_results"][wire\\:model*="test_label"]').first();
+    const protocolItem = page.locator('.fi-fo-repeater-item').filter({ hasText: testName }).last();
+    await expect(protocolItem).toBeVisible();
+    const protocolTestLabel = protocolItem.locator('input[type="hidden"][wire\\:model*="test_results"][wire\\:model*="test_label"]').first();
     await expect(protocolTestLabel).toHaveValue(/E2E/);
     await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
     await page.getByLabel('Название или описание боли*', { exact: true }).fill('Первичная боль');
@@ -2720,14 +2722,14 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await setLivewireRangeValue(page, beforePainScore, 7);
     await expect(page.getByText('7 / 10', { exact: true })).toBeVisible();
     await page.getByLabel('Особые жалобы', { exact: true }).fill('Первичная запись о боли');
-    const beforeTestValue = page.getByRole('combobox', { name: 'До сеанса', exact: true }).last();
+    const beforeTestValue = protocolItem.getByRole('combobox', { name: 'До сеанса', exact: true });
     await expect(beforeTestValue).toBeVisible();
     await beforeTestValue.click();
     await page.getByRole('option', { name: 'Норма', exact: true }).click();
-    const afterTestValue = page.getByRole('combobox', { name: 'После сеанса', exact: true }).last();
+    const afterTestValue = protocolItem.getByRole('combobox', { name: 'После сеанса', exact: true });
     await afterTestValue.click();
     await page.getByRole('option', { name: 'Отклонение · нарушение', exact: true }).click();
-    const testCauseSelect = page.getByRole('combobox', { name: 'Причины нарушений', exact: true }).last();
+    const testCauseSelect = protocolItem.getByRole('combobox', { name: 'Причины нарушений', exact: true });
     await testCauseSelect.click();
     await page.getByRole('option', { name: causeOptionName, exact: true }).click();
     await expect(page.getByText('Причины по результатам тестов', { exact: true })).toBeVisible();
@@ -3040,7 +3042,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     }
     await expect(customMetricsDimension).toBeChecked();
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
-    const customMetricsSection = page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('..');
+    const customMetricsSection = page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]');
     await expect(customMetricsSection.getByText(metricName, { exact: true })).toBeVisible();
     await expect(customMetricsSection).toContainText('Число');
 
@@ -3067,7 +3069,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
 
     await page.goto('/admin/analytics-console');
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('..').getByText(renamedMetricName, { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toBeVisible();
     await expect(page.getByText(metricName, { exact: true })).toHaveCount(0);
 
     await page.goto('/admin/analytics-metric-settings');
@@ -3076,7 +3078,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await expect(page.getByRole('status')).toContainText('Метрики сохранены', { timeout: 15_000 });
     await page.goto('/admin/analytics-console');
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('..').getByText(renamedMetricName, { exact: true })).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toHaveCount(0);
 
     await page.goto('/admin/analytics-metric-settings');
     await page.locator('.fi-fo-repeater-item').last().getByRole('switch', { name: 'Активна', exact: true }).check();
@@ -3084,7 +3086,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await expect(page.getByRole('status')).toContainText('Метрики сохранены', { timeout: 15_000 });
     await page.goto('/admin/analytics-console');
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('..').getByText(renamedMetricName, { exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 320, height: 900 });
     await assertNoHorizontalOverflow(page);
     await page.setViewportSize({ width: 390, height: 900 });
