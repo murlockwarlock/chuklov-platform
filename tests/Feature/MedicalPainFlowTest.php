@@ -216,7 +216,7 @@ final class MedicalPainFlowTest extends TestCase
             painsProvided: true,
         ));
 
-        self::assertSame('permanent', $profile->pains[0]->frequencyMode);
+        self::assertSame('unspecified', $profile->pains[0]->frequencyMode);
         self::assertNull($profile->pains[0]->frequencyCount);
         self::assertNull($profile->pains[0]->frequencyPeriodUnit);
         self::assertSame(['all'], $profile->pains[0]->timeOfDay);
@@ -225,7 +225,7 @@ final class MedicalPainFlowTest extends TestCase
         self::assertNull($profile->pains[0]->afterScore);
 
         $raw = DB::table('medical_profile_pains')->where('organization_id', $organization->getKey())->sole();
-        self::assertSame('permanent', $raw->frequency_mode);
+        self::assertSame('unspecified', $raw->frequency_mode);
         self::assertNull($raw->frequency_count);
         self::assertNull($raw->frequency_period_unit);
         self::assertSame(['all'], is_string($raw->time_of_day) ? json_decode($raw->time_of_day, true, 512, JSON_THROW_ON_ERROR) : $raw->time_of_day);

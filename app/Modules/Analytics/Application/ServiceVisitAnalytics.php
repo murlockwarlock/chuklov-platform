@@ -46,7 +46,7 @@ final readonly class ServiceVisitAnalytics
             ->select('services.id', 'services.name')
             ->selectRaw('COUNT(*) as visit_count')
             ->selectRaw('COUNT(DISTINCT bookings.client_id) as client_count')
-            ->groupBy('services.name')
+            ->groupBy('services.id', 'services.name')
             ->orderByDesc('visit_count')
             ->orderBy('services.name')
             ->get()

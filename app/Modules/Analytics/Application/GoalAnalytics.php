@@ -62,7 +62,7 @@ final readonly class GoalAnalytics
             ->select('tags.id', 'tags.name', 'tags.group_name')
             ->selectRaw('COUNT(DISTINCT tasks.client_id) as client_count')
             ->selectRaw('COUNT(DISTINCT tasks.id) as task_count')
-            ->groupBy('tags.name', 'tags.group_name')
+            ->groupBy('tags.id', 'tags.name', 'tags.group_name')
             ->orderByDesc('client_count')
             ->orderBy('tags.name')
             ->get()

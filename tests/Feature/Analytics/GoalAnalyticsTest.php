@@ -53,6 +53,7 @@ final class GoalAnalyticsTest extends TestCase
         );
         $data = app(GoalAnalytics::class)->handle($admin, $period);
 
+        self::assertSame((int) $tag->getKey(), $data->goals[0]['id']);
         self::assertSame('Сон', $data->goals[0]['name']);
         self::assertSame(1, $data->goals[0]['client_count']);
         self::assertSame(1, $data->goals[0]['task_count']);

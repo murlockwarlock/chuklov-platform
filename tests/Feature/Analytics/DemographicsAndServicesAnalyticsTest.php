@@ -83,6 +83,7 @@ final class DemographicsAndServicesAnalyticsTest extends TestCase
 
         $services = app(ServiceVisitAnalytics::class)->handle($admin, $period);
         self::assertSame(2, $services->visitCount);
+        self::assertSame((int) $service->getKey(), $services->services[0]['id']);
         self::assertSame('Синтетический сеанс', $services->services[0]['name']);
         self::assertSame(1, $services->services[0]['client_count']);
         self::assertSame(2, $services->services[0]['visit_count']);
