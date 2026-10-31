@@ -3063,7 +3063,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     const reopenedItem = page.locator('.fi-fo-repeater-item').last();
     await reopenedItem.getByRole('textbox', { name: /^Название/ }).fill(renamedMetricName);
     await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('Метрики сохранены', { timeout: 15_000 });
+    await expect(page.getByText('Метрики сохранены', { exact: true }).last()).toBeVisible({ timeout: 15_000 });
     await page.reload();
     await expect(page.getByText(renamedMetricName, { exact: true })).toBeVisible();
 
@@ -3075,7 +3075,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await page.goto('/admin/analytics-metric-settings');
     await page.locator('.fi-fo-repeater-item').last().getByRole('switch', { name: 'Активна', exact: true }).uncheck();
     await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('Метрики сохранены', { timeout: 15_000 });
+    await expect(page.getByText('Метрики сохранены', { exact: true }).last()).toBeVisible({ timeout: 15_000 });
     await page.goto('/admin/analytics-console');
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toHaveCount(0);
@@ -3083,7 +3083,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await page.goto('/admin/analytics-metric-settings');
     await page.locator('.fi-fo-repeater-item').last().getByRole('switch', { name: 'Активна', exact: true }).check();
     await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
-    await expect(page.getByRole('status')).toContainText('Метрики сохранены', { timeout: 15_000 });
+    await expect(page.getByText('Метрики сохранены', { exact: true }).last()).toBeVisible({ timeout: 15_000 });
     await page.goto('/admin/analytics-console');
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toBeVisible();
