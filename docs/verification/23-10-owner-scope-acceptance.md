@@ -108,29 +108,117 @@ analytics or medical authority.
 
 ## Verification record
 
-The implementation candidate is `7cb0f96e9c60d58ef55c9914b0d9a07534571f29`.
-Local checks are PASS: PHP syntax on every changed PHP file, Pint on every
-changed production/test file, changed-file PHPStan with zero diagnostics,
-`git diff --check`, and the focused analytics, period, classification,
-feedback and medical regression suites. The XLSX regression parses a real
-generated workbook with PhpSpreadsheet.
+Continuation starting SHA: `92ef260997717c4549d1dca1e42b02b079fb4755`.
+Final application source SHA for this acceptance: `9de21be39a8d1e01628031fc68f4c2cd38604e4d`.
+The subsequent acceptance-artifact commit is documentation-only; it does not
+change the deployed application source. PR #61 and the final report record the
+exact resulting PR head.
 
-Hosted CI run `41195715334` ran against that exact candidate. Integration
-foundation, concurrency, RAG, privacy/secret scan, and Docker/runtime health
-are PASS. Quality is FAIL because its feature suite reproduces the baseline
-`MedicalSessionTest` exclusion-constraint failure
-(`bookings_no_specialist_overlap` at `tests/Feature/Sessions/MedicalSessionTest.php:253`);
-the predecessor run `41187029774` fails at the same test, line and constraint.
-PHPStan reports 184 diagnostics in both runs, with zero diagnostics in the
-changed-file check.
+### WebKit scheduling failures
 
-Staging deployment and repository-owned smoke are PASS at the exact candidate:
-the application, PostgreSQL/pgvector, Redis, private storage, queues, Nginx
-medical-upload policy, CRM smoke routes and Portal smoke route all passed;
-the deployment reported `Nothing to migrate`.
+The original full run was `41195718383` (job
+`124521357372`, head `7cb0f96e9c60d58ef55c9914b0d9a07534571f29`). The workflow
+ran 105 tests with one worker, Playwright retries `0`, `trace: on-first-retry`,
+and no explicit retry. The WebKit runtime was Playwright WebKit 26.5 / build
+2336. The workflow used `APP_ENV=testing`, PostgreSQL, Redis, the seeded test
+organization, and the `desktop`, `mobile` and `webkit` projects from
+`playwright.config.ts`.
 
-Hosted E2E run `41195718383` is PARTIAL: 98 passed, 5 skipped and 2 failed out
-of 105. All failures are existing-scope WebKit booking/scheduling scenarios
-(`multi-specialist Journal` and `backdated booking`); the changed analytics,
-period, session, catalog and export journeys passed in the run. This does not
-replace manual staging browser acceptance. Owner acceptance remains NOT RUN.
+| Exact failed test | Project / viewport | Timeout | Failure evidence | Published artifacts |
+|---|---|---:|---|---|
+| `tests/e2e/crm.spec.ts:895:1 — multi-specialist Journal keeps the accepted layout and slot ownership` | `webkit`; the test explicitly sets `390x900` | test 60 s; assertion 5 s | `expect(locator).toBeVisible()` for `getByRole('heading', { name: 'Журнал записей', exact: true })`; no element after `goto('/admin/bookings?...')`; source line 904 | none: the manual dispatch did not set `publish_diagnostics=true`; no retry means no trace/video; runner log only names `test-results/.../error-context.md` |
+| `tests/e2e/crm.spec.ts:1465:1 — staff can create a backdated booking from the ordinary availability form` | `webkit` Desktop Safari project viewport (`1280x720`) | test 60 s | `locator.click` timed out waiting for exact `getByText('CRM Специалист qm6ruugmhk1v')` at source line 1475 after opening `Специалист*` | none for the same reason |
+
+The comparison command executed by the hosted E2E workflow was:
+
+```text
+npx playwright test tests/e2e/crm.spec.ts -g 'multi-specialist Journal|staff can create a backdated booking from the ordinary availability form' --project webkit
+```
+
+The command used the same workflow setup, browser installation, seed strategy,
+environment, worker count, locale/timezone defaults and retry policy for every
+SHA. The PR base is `8b85efb65ee5d7cf80940cbec29c26a004871f56`; it was not run
+because both exact tests were already passing on the pre-fix baseline and the
+current candidate, so an additional base run would not distinguish a product
+regression.
+
+| SHA | Hosted runs / attempts | Result |
+|---|---|---|
+| `263ed0550411bd6735feb9bb9ae2f186c5094f00` | `41199320637`, `41199587646`, `41199587671` | 3/3 exact runs PASS; both tests pass |
+| `92ef260997717c4549d1dca1e42b02b079fb4755` | `41199320313`, `41199587531`, `41199587852` | 3/3 exact runs PASS; both tests pass |
+| `9de21be39a8d1e01628031fc68f4c2cd38604e4d` | `41202259555` | 2/2 exact tests PASS |
+| `92ef260997717c4549d1dca1e42b02b079fb4755`, full WebKit file | `41200144359` | 33 passed, 2 skipped, 0 failed; both scheduling tests pass in the full WebKit file |
+
+Both failures are therefore classified separately as `FLAKY / TEST DEFECT`,
+specifically full-suite-order/setup-dependent failures, not current product
+regressions. The same observable tests pass on the baseline, three isolated
+current-code attempts, the final exact target run, and a full WebKit-only run.
+No scheduling or booking production code was changed, and no product defect,
+data loss, tenant leakage or incorrect booking ownership was reproduced.
+
+### Final focused staging and browser acceptance
+
+The final application source `9de21be3` was deployed with
+`make deploy-staging REVISION=9de21be39a8d1e01628031fc68f4c2cd38604e4d`.
+The deployment reported the exact SHA, healthy app/Horizon/scheduler/Telegram
+runtime, PostgreSQL/pgvector/Redis/private-storage health and `Nothing to
+migrate`. `scripts/staging-smoke.sh` then passed at the exact SHA.
+
+Using the stored separate CRM QA account and real browser clicks, the custom
+period journey passed at that exact staging revision in Chromium desktop
+`1440x900`, WebKit desktop `1440x900`, and Chromium mobile `390x844`:
+
+- custom period with an empty end date showed `Укажите дату окончания произвольного периода.` and no raw `validation.required_if`;
+- reversed dates showed `Дата окончания не может быть раньше даты начала.`;
+- a 367-day range showed `Выберите период не более 366 дней.`;
+- the corrected `2026-10-01`–`2026-10-31` range analyzed pain, services and client segments;
+- a second Analyze succeeded;
+- reload and back/forward preserved `custom` and both dates, without falling back to the default period;
+- the primary page had no horizontal overflow.
+
+Hosted browser regressions at the final source SHA also passed:
+
+- `41202259402`: custom-period test, Chromium desktop, 1/1;
+- `41202744295`: custom-period test, WebKit desktop, 1/1;
+- `41202259555`: both original scheduling tests, WebKit, 2/2.
+
+The temporary duplicate WebKit custom-period dispatch `41202259540` was
+cancelled while the branch-level E2E queue was active and is not used as
+evidence; it was replaced by successful run `41202744295`.
+
+### XLSX evidence
+
+The final staging browser flow created four temporary owner-configurable metric
+labels, downloaded a real workbook, parsed it with PhpSpreadsheet, and restored
+the original metric names and inactive states. The workbook contained sheets
+`Сводка`, `Боли`, `Услуги`, `Специалисты`, and `Категории клиентов`.
+
+| Cell | Exact value | PhpSpreadsheet type | Formula |
+|---|---|---|---|
+| `Сводка!A16` | `=TEST-9de` | `s` | no |
+| `Сводка!A17` | `+TEST-9de` | `s` | no |
+| `Сводка!A18` | `-TEST-9de` | `s` | no |
+| `Сводка!A19` | `@TEST-9de` | `s` | no |
+| `Сводка!B7` | `12` | `n` | no |
+
+No visible apostrophe or business-value mutation was introduced. The local
+workbook and parser output are retained outside the repository under
+`~/.codex/local-artifacts/chuklov-platform/pr61-staging/`.
+
+### Verification status
+
+- Local focused PHP suites, XLSX parser regression, period/DST tests, medical root-cause transaction tests, classification acceptance tests, Pint, changed-file PHPStan and `git diff --check`: PASS. The changed production PHP PHPStan check has zero diagnostics; the existing test-file diagnostics are not part of this follow-up.
+- Hosted CI `41202259360` at `9de21be3`: Integration foundation, concurrency, RAG, privacy/secret scan and Docker/runtime health PASS. Quality is FAIL / PRE-EXISTING BASELINE: `MedicalSessionTest` fails at line 253 on PostgreSQL exclusion constraint `bookings_no_specialist_overlap`, matching the predecessor failure in `41195715334` and its earlier baseline. The full feature run had 2363 passed, 1 failed and 1 skipped. PHPStan remains the known 184-diagnostic baseline; no current-file diagnostic was added.
+- PostgreSQL: PASS for the changed analytics/date/XLSX/classification paths through hosted PostgreSQL jobs and exact staging health. The unrelated Quality baseline failure is not reported as a full Quality PASS.
+- Scope browser acceptance: PASS for the custom-period and XLSX flows listed above; partial-dimension browser failure injection was not run against shared staging because there is no safe deterministic staging fault fixture. The partial-result/warning/atomic-export contract is covered by `AnalyticsDashboardWidgetTest` and the hosted feature suite.
+- Full E2E: PARTIAL. Original full run `41195718383` remains 98 passed, 5 skipped and 2 failed; exact WebKit rerun and final isolated target tests pass, but the full 105-test matrix was not rerun at the final source SHA.
+- Staging functional acceptance: PASS for the changed analytics scope at exact `9de21be3`; repository smoke and focused real-browser journeys passed.
+- Owner acceptance: NOT RUN.
+- Remaining in-scope BLOCKING: 0.
+- Remaining in-scope REAL BUG: 0.
+
+Limitations are limited to the full-suite WebKit scheduling test instability,
+the known unrelated Quality baseline failure, no published diagnostics from
+the original run, no manual shared-staging partial-fault injection, and no
+owner acceptance. The acceptance did not modify credentials, MFA, production
+data, or accepted booking UX.
