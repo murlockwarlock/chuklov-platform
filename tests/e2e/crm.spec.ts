@@ -3031,6 +3031,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
 
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await page.waitForLoadState('networkidle');
     const customMetricsDimension = page.getByRole('checkbox', { name: 'Вычисляемые метрики', exact: true });
     if (! await customMetricsDimension.isChecked()) {
         const dimensionsUpdate = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
