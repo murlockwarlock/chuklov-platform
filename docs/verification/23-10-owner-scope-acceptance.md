@@ -8,7 +8,11 @@ Analytics modules.
 ## Current implementation iteration
 
 This iteration started from `715b561b9e08fbc7f468f314b6f045121397da3b`.
-The application implementation is in `2576673fa49f0466e096e96cd9aa98c71191d7e5`.
+The initial application implementation is in
+`2576673fa49f0466e096e96cd9aa98c71191d7e5`. The current application/runtime
+candidate is `a687639cc4cff72ee952809adb960c673ce7547f`; it includes the
+PostgreSQL-compatible aggregate grouping correction and matching regression
+coverage. The remaining closeout change is documentation-only.
 The acceptance-document commits are documentation-only and are recorded in
 the verification section below after the final document commit.
 
@@ -116,6 +120,11 @@ filters, AND/OR semantics, include/exclude choices, period, date basis,
 timezone, segment-state meaning, session-axis rule/version and generation
 time. It does not export protected medical free text.
 
+The `YES` implementation statuses in the two matrices describe the actual
+technical capability and owner-editable seam. They are not owner acceptance and
+do not upgrade an unexecuted browser or external-provider observation to
+`VERIFIED`; those verification states are recorded below.
+
 ## Medical owner file
 
 | # | Scope | Implemented | Authoritative path | Regression / acceptance evidence | PostgreSQL relevance | Browser relevance |
@@ -203,14 +212,13 @@ time. It does not export protected medical free text.
 
 ## Verification record
 
-Implementation started at `715b561b9e08fbc7f468f314b6f045121397da3b` and the
-application implementation commit is
-`2576673fa49f0466e096e96cd9aa98c71191d7e5`. This is a real runtime change,
-not a docs-only equivalence pass: the implementation diff contains 79 files,
-including Filament pages, Analytics/Medical application services, four
-forward-only migrations, Blade views and regression tests. The final PR SHA is
-recorded after the acceptance-document commit; no application code is changed
-by the document-only closeout commits.
+Implementation started at `715b561b9e08fbc7f468f314b6f045121397da3b`. The
+implementation diff contains 79 files, including Filament pages,
+Analytics/Medical application services, four forward-only migrations, Blade
+views and regression tests. The current application/runtime candidate is
+`a687639cc4cff72ee952809adb960c673ce7547f`; its last change is a runtime-safe
+PostgreSQL grouping correction. The closeout commit containing this document
+does not change deployable application behavior.
 
 The four migrations are:
 
@@ -269,22 +277,29 @@ localized, so this is not called a proven test defect. No scheduling or booking
 production code was changed, and no product defect, data loss, tenant leakage
 or incorrect booking ownership was reproduced.
 
-### Previous focused staging and browser evidence
+### Current staging and browser evidence
 
-The earlier verified application source `9de21be3` was deployed through the
-normal protected process. Chromium desktop, WebKit desktop and Chromium mobile
-custom-period journeys passed there, including missing-date, reversed-date,
-367-day rejection, corrected Analyze, reload and back/forward. The earlier
-XLSX flow parsed formula-like labels as explicit strings. Those results remain
-valid evidence for the unchanged hardening code, but are not exact-revision
-evidence for the new implementation commit.
+The current application/runtime candidate
+`a687639cc4cff72ee952809adb960c673ce7547f` was deployed through the normal
+protected process. The four forward-only migrations completed, application,
+Horizon, scheduler, Telegram and mail services were healthy, and
+`scripts/staging-smoke.sh` reported `STAGING SHA OK a687639` and
+`STAGING SMOKE: PASS`.
 
-The subsequent documentation-only head was rolled back by the protected
-deployment guard after it detected an external `warp-svc` dynamic UDP port
-inventory change. The guard in `scripts/deploy-staging.sh` failed closed and
-was not bypassed. The current implementation candidate requires a normal
-protected deployment and a fresh exact-SHA smoke/browser check after the
-implementation commit; no staging PASS is claimed here before that check.
+Actual Chromium staging interaction at 1440px passed the custom-period
+missing-date, reversed-date and over-366-day errors, corrected Analyze,
+multi-dimension results, XLSX download/ZIP validation, reload and back/forward.
+The downloaded workbook contained `Сводка`, `Клиенты`, `Фильтры`, `Демография`,
+`Боли`, `Услуги` and `Специалисты`; formula-like synthetic strings remained
+explicit string cells without visible apostrophes, while numeric values kept
+numeric cells. The same journey in real WebKit passed at desktop and 390x900:
+all three validation errors, Analyze, workbook sheets, reload, back/forward and
+`scrollWidth === clientWidth` were checked by actual browser interaction.
+
+The staging browser journey covered the shared analytics console and export
+contract. It did not constitute owner acceptance of every medical workflow;
+the relevant automated medical/session/attachment tests and the existing
+staging smoke remain the evidence for those paths.
 
 ### XLSX evidence
 
@@ -292,25 +307,56 @@ The existing `AnalyticsReportExportTest` opens a real generated workbook with
 PhpSpreadsheet and asserts exact `=`, `+`, `-` and `@` values are string cells,
 not formulas, with no visible apostrophe; numeric, boolean and null values keep
 their types. The export implementation now also writes `Клиенты` and
-`Фильтры` metadata sheets and preserves the selected cohort/period metadata. A
-fresh staging download with synthetic labels is required for exact current-SHA
-browser acceptance; no unexecuted staging result is represented as PASS.
+`Фильтры` metadata sheets and preserves the selected cohort/period metadata.
+The current staging download was a real XLSX and was opened as a ZIP; its
+metadata and thematic sheet names were checked in both Chromium and WebKit.
 
-### Verification status at the implementation candidate
+### Verification status at the current application candidate
 
-- Focused local backend suites: PASS — 246 tests / 1,417 assertions, including cohort filters/groups, all selected dimensions, tag candidates, medical pain, audio policy, sessions, attachments, feedback, finance, scenarios and DST.
-- PHP syntax, Pint, changed-file PHPStan and `git diff --check`: PASS; changed production PHPStan diagnostics: 0. Frontend source was not changed by the current implementation commit beyond existing Blade/Filament views, so no unrelated frontend suite is claimed here.
-- Historical hosted CI `41202259360` at `9de21be3`: Integration foundation, concurrency, RAG, privacy/secret scan and Docker/runtime health PASS. Quality is FAIL / PRE-EXISTING BASELINE: `MedicalSessionTest` fails at line 253 on PostgreSQL exclusion constraint `bookings_no_specialist_overlap`, matching the predecessor failure in `41195715334` and its earlier baseline. The full feature run had 2363 passed, 1 failed and 1 skipped. The new implementation candidate still requires its own hosted CI result.
-- PostgreSQL: NOT RUN for the new implementation candidate until hosted CI and/or the protected staging migration path runs it. Prior PostgreSQL evidence applies to the earlier hardening source only.
-- Scope browser acceptance: NOT RUN for the new implementation candidate. The previous `9de21be3` browser result is historical runtime evidence, not a current-SHA PASS.
-- Full E2E: PARTIAL historical result — the original run had 98 passed, 5 skipped and 2 failed; exact scheduling tests and full WebKit rerun passed independently, with both failures classified above as non-reproducible.
-- Quality: the prior red `MedicalSessionTest / bookings_no_specialist_overlap` and known PHPStan baseline remain pre-existing; current implementation CI must be checked on the pushed candidate and must not be called green while that baseline job is red.
-- Staging functional acceptance: NOT RUN for `2576673f` at this point; the protected deploy guard is never bypassed.
+- Focused local backend suites: PASS — 246 tests / 1,417 assertions for the
+  implementation scope, followed by the PostgreSQL-sensitive correction suite:
+  52 tests / 328 assertions. The latter covers cohort queries, dashboard
+  widgets, specialist/service aggregates, goal grouping, medical pain and the
+  unspecified-frequency contract.
+- PHP syntax, Pint, changed-file PHPStan and `git diff --check`: PASS;
+  changed-file PHPStan diagnostics: 0.
+- Hosted focused run `41230782443` at `a687639c`: PostgreSQL feature tests
+  PASS, including the corrected group-by queries. The overall Quality job is
+  FAIL only at the repository's existing PHP static-analysis baseline (184
+  diagnostics; none in changed files); format, frontend lint/typecheck/build,
+  Composer audit and npm audit passed. Other jobs were intentionally skipped by
+  the focused workflow input.
+- Hosted implementation run `41230001307` at the preceding docs head had the
+  same PostgreSQL group-by failures before `a687639c` fixed them and a separate
+  Docker runtime `Verify Horizon runtime` failure (`Horizon is inactive`) in
+  the runner. The normal staging deployment and smoke above verified Horizon
+  active for the current candidate; no deployment guard or quality gate was
+  bypassed.
+- PostgreSQL: PASS for the affected implementation paths through the hosted
+  PostgreSQL feature job and protected staging migration/smoke. The historical
+  unrelated `MedicalSessionTest / bookings_no_specialist_overlap` baseline
+  remains outside this owner scope.
+- Scope browser acceptance: PASS for the current deployed application
+  candidate — Chromium 1440px, WebKit desktop and WebKit 390x900 covered the
+  focused analytics custom-period, Analyze, XLSX, reload/history and responsive
+  contract. The earlier Chromium mobile evidence remains available in the
+  local QA artifacts, but is not used to inflate the WebKit result.
+- Full E2E: PARTIAL — the original run had 98 passed, 5 skipped and 2 failed;
+  exact scheduling comparisons were 3/3 PASS on both baseline and current,
+  application-source checks passed, and the full WebKit rerun was 33 passed,
+  2 skipped, 0 failed. Both scheduling findings remain classified as
+  `NON-REPRODUCIBLE INTERMITTENT E2E FAILURE / likely order or setup dependent;
+  product scheduling regression not reproduced`.
+- Staging functional acceptance: PASS for the focused analytics scope on exact
+  application revision `a687639c`; owner-wide medical acceptance is not
+  claimed by this focused journey.
 - Owner acceptance: NOT RUN.
-- Remaining in-scope BLOCKING: 0 in the implementation/tests reviewed here; PostgreSQL and browser acceptance are verification statuses, not silently upgraded implementation claims.
-- Remaining in-scope REAL BUG: 0 identified by the bounded implementation suite; any new hosted finding will be classified separately.
+- Remaining in-scope BLOCKING: 0.
+- Remaining in-scope REAL BUG: 0.
 
-Limitations are the unexecuted current-candidate PostgreSQL/browser/staging
-checks, the known unrelated Quality baseline, the non-reproducible scheduling
-failures, and no owner acceptance. No credentials, MFA, production data,
-accepted booking UX or deployment safety guard were changed.
+Limitations are the known unrelated repository PHPStan baseline, the partial
+historical full-E2E result, the non-reproducible scheduling failures and no
+owner acceptance. Business labels, thresholds and catalog content remain
+owner-editable configuration; that is intentional and not an implementation
+blocker. No credentials, MFA, production data, accepted booking UX or
+deployment safety guard were changed.
