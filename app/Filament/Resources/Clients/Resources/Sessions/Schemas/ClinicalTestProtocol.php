@@ -56,8 +56,12 @@ final class ClinicalTestProtocol
         return Repeater::make('test_results')
             ->label(__('Клинические тесты'))
             ->schema([
-                Hidden::make('test_id')->dehydrated(),
-                Hidden::make('test_label')->dehydrated(false),
+                Hidden::make('test_id')
+                    ->dehydrated()
+                    ->extraAttributes(fn (Get $get): array => ['value' => (string) $get('test_id')]),
+                Hidden::make('test_label')
+                    ->dehydrated(false)
+                    ->extraAttributes(fn (Get $get): array => ['value' => (string) $get('test_label')]),
                 Select::make('before_value_id')
                     ->label(__('До сеанса'))
                     ->options(fn (Get $get): array => app(MedicalClinicalCatalog::class)->valueOptionsForSelection(app(OrganizationContext::class)->id(), (int) $get('test_id'), [$get('before_value_id')]))
