@@ -2988,17 +2988,10 @@ test('owner can configure computed metrics and use them in analytics and Excel',
         }
 
         await control.click();
-        const options = page.locator('li.fi-select-input-option:visible');
-        for (let index = 0; index < await options.count(); index += 1) {
-            const optionLocator = options.nth(index);
-            if ((await optionLocator.innerText()).trim() === option) {
-                await optionLocator.click();
-                await page.waitForTimeout(750);
-                return;
-            }
-        }
-
-        throw new Error(`Visible option not found: ${option}`);
+        const optionLocator = page.getByRole('option', { name: option, exact: true }).last();
+        await expect(optionLocator).toBeVisible({ timeout: 20_000 });
+        await optionLocator.click();
+        await page.waitForTimeout(750);
     };
 
     await customItem.getByRole('textbox', { name: /^Название/ }).fill(metricName);

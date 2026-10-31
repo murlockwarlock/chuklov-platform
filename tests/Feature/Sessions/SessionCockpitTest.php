@@ -772,6 +772,31 @@ final class SessionCockpitTest extends TestCase
         self::assertNull($results[0]['after_value_id'] ?? null);
     }
 
+    public function test_create_form_restores_protocol_when_specialist_update_drops_empty_rows(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'synthetic_specialist_protocol',
+            'name' => 'Синтетический тест специалиста',
+            'section' => 'Синтетика',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client])
+            ->set('data.test_results', [])
+            ->set('data.specialist_id', $specialist->getKey());
+
+        $results = array_values($component->get('data.test_results'));
+
+        self::assertCount(1, $results);
+        self::assertSame((int) $test->getKey(), (int) ($results[0]['test_id'] ?? 0));
+    }
+
     public function test_session_pain_frequency_and_time_are_optional_with_safe_defaults(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
