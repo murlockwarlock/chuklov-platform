@@ -41,7 +41,7 @@ final readonly class AnalyticsMetricSourceReader
         $sourceKeys = array_values(array_unique(array_filter($sourceKeys, 'is_string')));
 
         if ($this->hasPrefix($sourceKeys, 'pain.')) {
-            $data = $this->pain->handle($actor, $period, $client, $filters->problemTagId);
+            $data = $this->pain->handle($actor, $period, $client, $filters->problemTagId, $filters->cohort);
             $this->add($values, AnalyticsMetricSourceCatalog::PainAverageBefore, $data->averageBefore);
             $this->add($values, AnalyticsMetricSourceCatalog::PainAverageAfter, $data->averageAfter);
             $this->add($values, AnalyticsMetricSourceCatalog::PainAverageReduction, $data->averageReduction);
@@ -51,7 +51,7 @@ final readonly class AnalyticsMetricSourceReader
         }
 
         if ($this->hasPrefix($sourceKeys, 'finance.')) {
-            $data = $this->finance->handle($actor, $period, $client);
+            $data = $this->finance->handle($actor, $period, $client, $filters->cohort);
             $this->addMoney($values, AnalyticsMetricSourceCatalog::FinanceRevenue, $data->revenueMinor, $data->baseCurrency);
             $this->addMoney($values, AnalyticsMetricSourceCatalog::FinanceAverageReceipt, $data->averageReceiptMinor, $data->baseCurrency);
             $this->addMoney($values, AnalyticsMetricSourceCatalog::FinanceNewClientLtv, $data->realizedLtvMinor, $data->baseCurrency);
@@ -63,12 +63,12 @@ final readonly class AnalyticsMetricSourceReader
         }
 
         if ($this->hasPrefix($sourceKeys, 'acquisition.')) {
-            $data = $this->acquisition->handle($actor, $period, $client, $filters->sourceKey);
+            $data = $this->acquisition->handle($actor, $period, $client, $filters->sourceKey, $filters->cohort);
             $this->add($values, AnalyticsMetricSourceCatalog::AcquisitionNewClients, (float) $data->newClients);
         }
 
         if ($this->hasPrefix($sourceKeys, 'scheduling.')) {
-            $data = $this->scheduling->handle($actor, $period, $client);
+            $data = $this->scheduling->handle($actor, $period, $client, $filters->cohort);
             $this->add($values, AnalyticsMetricSourceCatalog::SchedulingBookings, (float) $data->bookings);
             $this->add($values, AnalyticsMetricSourceCatalog::SchedulingVisits, (float) $data->visits);
             $this->add($values, AnalyticsMetricSourceCatalog::SchedulingCancellations, (float) $data->cancellations);
@@ -77,28 +77,28 @@ final readonly class AnalyticsMetricSourceReader
         }
 
         if ($this->hasPrefix($sourceKeys, 'feedback.')) {
-            $data = $this->feedback->handle($actor, $period, $client, $filters->feedbackThemeId);
+            $data = $this->feedback->handle($actor, $period, $client, $filters->feedbackThemeId, $filters->cohort);
             $this->add($values, AnalyticsMetricSourceCatalog::FeedbackAverageScore, $data->averageScore);
             $this->add($values, AnalyticsMetricSourceCatalog::FeedbackSubmissionCount, (float) $data->submissionCount);
         }
 
         if ($this->hasPrefix($sourceKeys, 'demographics.')) {
-            $data = $this->demographics->handle($actor, $period, $client);
+            $data = $this->demographics->handle($actor, $period, $client, $filters->cohort);
             $this->add($values, AnalyticsMetricSourceCatalog::DemographicsClientCount, (float) $data->clientCount);
         }
 
         if ($this->hasPrefix($sourceKeys, 'services.')) {
-            $data = $this->services->handle($actor, $period, $client);
+            $data = $this->services->handle($actor, $period, $client, $filters->cohort);
             $this->add($values, AnalyticsMetricSourceCatalog::ServiceVisitCount, (float) $data->visitCount);
         }
 
         if ($this->hasPrefix($sourceKeys, 'purchases.')) {
-            $data = $this->purchases->handle($actor, $period, $client, $filters->purchaseType);
+            $data = $this->purchases->handle($actor, $period, $client, $filters->purchaseType, $filters->cohort);
             $this->add($values, AnalyticsMetricSourceCatalog::PurchaseCount, (float) array_sum(array_column($data->types, 'count')));
         }
 
         if ($this->hasPrefix($sourceKeys, 'booking_statuses.')) {
-            $data = $this->bookingStatuses->handle($actor, $period, $client, $filters->bookingStatus);
+            $data = $this->bookingStatuses->handle($actor, $period, $client, $filters->bookingStatus, $filters->cohort);
             $counts = [];
             foreach ($data->statuses as $status) {
                 $counts[$status['key']] = (float) $status['count'];
@@ -109,7 +109,7 @@ final readonly class AnalyticsMetricSourceReader
         }
 
         if ($this->hasPrefix($sourceKeys, 'segments.')) {
-            $data = $this->segments->handle($actor, $client);
+            $data = $this->segments->handle($actor, $client, $filters->cohort, $period);
             $this->add($values, AnalyticsMetricSourceCatalog::SegmentClientCount, (float) $data['client_count']);
         }
 

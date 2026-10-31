@@ -6,6 +6,7 @@ use App\Filament\Support\LocalizedPage;
 use App\Models\User;
 use App\Modules\Analytics\Application\AnalyticsMetricConfiguration;
 use App\Modules\Analytics\Application\AnalyticsMetricSourceCatalog;
+use App\Modules\Analytics\Application\ClientSessionAxisCatalog;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Domain\Enums\AnalyticsMetricAggregation;
 use App\Modules\Analytics\Domain\Enums\AnalyticsMetricCalculation;
@@ -15,7 +16,9 @@ use App\Modules\Analytics\Domain\Enums\AnalyticsMetricUnit;
 use App\Modules\Analytics\Domain\Enums\AnalyticsMetricZeroPolicy;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
@@ -80,6 +83,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
     {
         $this->form->fill([
             'preview_period' => DashboardPeriod::LastThirtyDays,
+            'session_axis_semantics' => app(ClientSessionAxisCatalog::class)->selected(app(OrganizationContext::class)->id())['key'],
             'metrics' => app(AnalyticsMetricConfiguration::class)->formValues(),
         ]);
     }
@@ -221,6 +225,15 @@ final class AnalyticsMetricSettings extends LocalizedPage
                 ])
                 ->columns(['default' => 1, 'sm' => 2])
                 ->columnSpanFull(),
+            Section::make(__('Семантика оси сеансов'))
+                ->description(__('Подписи «сеанс 1 / 2 / 3» не означают курс и используют выбранное здесь правило. Версия правила попадает в Excel.'))
+                ->schema([
+                    Select::make('session_axis_semantics')
+                        ->label(__('Как считать сеанс 1 / 2 / 3'))
+                        ->options(ClientSessionAxisCatalog::options())
+                        ->required(),
+                ])
+                ->columnSpanFull(),
         ])->statePath('data');
     }
 
@@ -247,7 +260,13 @@ final class AnalyticsMetricSettings extends LocalizedPage
         abort_unless($actor instanceof User, 403);
 
         try {
-            app(AnalyticsMetricConfiguration::class)->save($actor, $this->form->getState());
+            $state = $this->form->getState();
+            app(AnalyticsMetricConfiguration::class)->save($actor, $state);
+            app(SetOrganizationSetting::class)->handle(
+                $actor,
+                OrganizationSettingKey::AnalyticsSessionAxisSemantics,
+                (string) ($state['session_axis_semantics'] ?? ClientSessionAxisCatalog::Chronological),
+            );
             $this->mount();
             Notification::make()->success()->title(__('Метрики сохранены'))->send();
         } catch (ValidationException $exception) {

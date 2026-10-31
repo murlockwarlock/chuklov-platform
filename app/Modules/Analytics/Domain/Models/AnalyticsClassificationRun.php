@@ -13,7 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property ClassificationRunStatus $status
- * @property array<int, array{id: int, label: string}>|null $suggestions
+ * @property array<int, array{id: int|null, label: string, candidate_type?: string}>|null $suggestions
  */
 #[Fillable([])]
 class AnalyticsClassificationRun extends Model

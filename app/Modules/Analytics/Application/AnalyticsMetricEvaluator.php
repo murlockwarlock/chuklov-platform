@@ -206,6 +206,9 @@ final readonly class AnalyticsMetricEvaluator
         foreach (array_filter($sourceKeys, 'is_string') as $sourceKey) {
             $sourceFilter = AnalyticsMetricSourceCatalog::filter($sourceKey);
             foreach ($filters->values() as $filterKey => $filterValue) {
+                if ($filterKey === 'cohort') {
+                    continue;
+                }
                 if ($filterValue !== null && $filterValue !== '' && $filterKey !== $sourceFilter) {
                     return 'Выбранный фильтр не применяется к этой метрике.';
                 }

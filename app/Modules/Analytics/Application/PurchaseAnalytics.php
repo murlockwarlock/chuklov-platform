@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\PurchaseAnalyticsData;
 use App\Modules\Commerce\Domain\Models\Purchase;
@@ -14,24 +15,17 @@ use Illuminate\Support\Facades\DB;
 
 final class PurchaseAnalytics
 {
-    private const array Labels = [
-        'service' => 'Разовые сеансы',
-        'program' => 'Пакеты и программы',
-        'gift_certificate' => 'Сертификаты',
-        'physical_product' => 'Товары',
-        'online_product' => 'Онлайн-продукты',
-        'unknown' => 'Другие покупки',
-    ];
-
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly ClientCohortQuery $cohorts,
+        private readonly PurchaseGroupCatalog $groups,
     ) {}
 
     /** @return array<string, string> */
     public static function options(): array
     {
-        return self::Labels;
+        return array_column(PurchaseGroupCatalog::defaults(), 'label', 'key');
     }
 
     public function handle(
@@ -39,6 +33,7 @@ final class PurchaseAnalytics
         DashboardPeriod $period,
         ?Client $client = null,
         ?string $catalogType = null,
+        ?ClientCohortFilters $cohortFilters = null,
     ): PurchaseAnalyticsData {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewFinance);
@@ -46,7 +41,9 @@ final class PurchaseAnalytics
         if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
             abort(404);
         }
-        if ($catalogType !== null && ! array_key_exists($catalogType, self::Labels)) {
+        $activeLabels = $this->groups->options($organizationId);
+        $labels = $this->groups->options($organizationId, false);
+        if ($catalogType !== null && ! array_key_exists($catalogType, $activeLabels)) {
             abort(404);
         }
         $clientId = $client?->getKey();
@@ -61,6 +58,9 @@ final class PurchaseAnalytics
             ->where('purchases.created_at', '>=', $period->startUtc)
             ->where('purchases.created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('purchases.client_id', $clientId))
+            ->when($cohortFilters !== null, function ($query) use ($cohortFilters, $period): void {
+                $this->cohorts->constrain($query, 'purchases.client_id', $cohortFilters, $period);
+            })
             ->select('items.product_snapshot', 'purchases.client_id')
             ->get();
 
@@ -69,12 +69,10 @@ final class PurchaseAnalytics
             $snapshot = is_array($row->product_snapshot)
                 ? $row->product_snapshot
                 : json_decode((string) $row->product_snapshot, true);
-            $key = is_array($snapshot) && is_string($snapshot['catalog_type'] ?? null)
+            $catalogTypeKey = is_array($snapshot) && is_string($snapshot['catalog_type'] ?? null)
                 ? $snapshot['catalog_type']
                 : 'unknown';
-            if (! isset(self::Labels[$key])) {
-                $key = 'unknown';
-            }
+            $key = $this->groups->keyForCatalogType($organizationId, $catalogTypeKey);
             if ($catalogType !== null && $catalogType !== $key) {
                 continue;
             }
@@ -83,7 +81,7 @@ final class PurchaseAnalytics
         }
 
         $types = [];
-        foreach (self::Labels as $key => $label) {
+        foreach ($labels as $key => $label) {
             if (! isset($aggregates[$key])) {
                 continue;
             }

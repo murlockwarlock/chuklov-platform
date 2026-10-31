@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\GoalAnalyticsData;
 use App\Modules\Identity\Domain\Models\Client;
@@ -17,6 +18,7 @@ final readonly class GoalAnalytics
     public function __construct(
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
+        private ClientCohortQuery $cohorts,
     ) {}
 
     public function handle(
@@ -24,6 +26,7 @@ final readonly class GoalAnalytics
         DashboardPeriod $period,
         ?Client $client = null,
         ?int $goalTagId = null,
+        ?ClientCohortFilters $cohortFilters = null,
     ): GoalAnalyticsData {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
@@ -53,7 +56,10 @@ final readonly class GoalAnalytics
             ->where('tasks.created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('tasks.client_id', $clientId))
             ->when($goalTagId !== null, fn ($query) => $query->where('links.tracker_goal_tag_id', $goalTagId))
-            ->select('tags.name', 'tags.group_name')
+            ->when($cohortFilters !== null, function ($query) use ($cohortFilters, $period): void {
+                $this->cohorts->constrain($query, 'tasks.client_id', $cohortFilters, $period);
+            })
+            ->select('tags.id', 'tags.name', 'tags.group_name')
             ->selectRaw('COUNT(DISTINCT tasks.client_id) as client_count')
             ->selectRaw('COUNT(DISTINCT tasks.id) as task_count')
             ->groupBy('tags.name', 'tags.group_name')
@@ -61,6 +67,7 @@ final readonly class GoalAnalytics
             ->orderBy('tags.name')
             ->get()
             ->map(static fn (object $row): array => [
+                'id' => (int) $row->id,
                 'name' => (string) $row->name,
                 'group' => $row->group_name !== null ? (string) $row->group_name : null,
                 'client_count' => (int) $row->client_count,

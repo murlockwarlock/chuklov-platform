@@ -698,26 +698,36 @@ final class SessionCockpitTest extends TestCase
         $component->assertDontSee('Редактировать');
     }
 
-    public function test_filament_session_keeps_unmeasured_pain_distinct_from_zero_through_reopen_and_correction(): void
+    public function test_filament_session_uses_structured_pain_scores_and_hides_legacy_global_score(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
         $this->resolveFilamentContext($admin, $organization);
-        Livewire::actingAs($admin)->test(CreateMedicalSession::class, ['parentRecord' => $client])
-            ->assertSet('data.pain_not_measured', true)
-            ->fillForm(['occurred_at' => '2026-08-16 10:00', 'specialist_id' => $specialist->getKey()])
-            ->call('create')->assertHasNoErrors();
+
+        $component = Livewire::actingAs($admin)->test(CreateMedicalSession::class, ['parentRecord' => $client]);
+        self::assertNull($component->instance()->getSchemaComponent('form.pain_vas'));
+        self::assertNull($component->instance()->getSchemaComponent('form.pain_not_measured'));
+        $component
+            ->fillForm([
+                'occurred_at' => '2026-08-16 10:00',
+                'specialist_id' => $specialist->getKey(),
+                'pains' => [[
+                    'name' => 'Шея',
+                    'before_score' => 0,
+                ]],
+            ])
+            ->call('create')
+            ->assertHasNoErrors();
+
         $session = MedicalSession::query()->where('client_id', $client->getKey())->sole();
+        $pain = $session->pains()->sole();
+        self::assertSame(0, $pain->before_score);
+        self::assertNull($pain->after_score);
         self::assertNull(app(GetSession::class)->handle($admin, $session, $client)?->painVas);
 
-        foreach ([0, 10, null] as $value) {
-            Livewire::actingAs($admin)->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
-                ->fillForm(['pain_not_measured' => $value === null, 'pain_vas' => $value])
-                ->call('save')->assertHasNoErrors();
-            self::assertSame($value, app(GetSession::class)->handle($admin, $session->fresh(), $client)?->painVas);
-            Livewire::actingAs($admin)->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
-                ->assertSet('data.pain_not_measured', $value === null)
-                ->assertSet('data.pain_vas', $value);
-        }
+        $edit = Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()]);
+        self::assertNull($edit->instance()->getSchemaComponent('form.pain_vas'));
+        self::assertNull($edit->instance()->getSchemaComponent('form.pain_not_measured'));
     }
 
     public function test_filament_create_form_prefills_profile_pains_for_the_first_session(): void
@@ -823,7 +833,7 @@ final class SessionCockpitTest extends TestCase
             ->pains()
             ->sole();
 
-        self::assertSame('permanent', $pain->frequency_mode);
+        self::assertSame('unspecified', $pain->frequency_mode);
         self::assertSame(['all'], $pain->time_of_day);
     }
 
@@ -835,17 +845,12 @@ final class SessionCockpitTest extends TestCase
         $component = Livewire::actingAs($admin)
             ->test(CreateMedicalSession::class, ['parentRecord' => $client]);
 
-        self::assertFalse($component->instance()->getSchemaComponent('form.pain_vas')->isRequired());
-        $component->assertSet('data.pain_vas', null);
+        self::assertNull($component->instance()->getSchemaComponent('form.pain_vas'));
+        self::assertNull($component->instance()->getSchemaComponent('form.pain_not_measured'));
         $component
-            ->set('data.pain_not_measured', false)
-            ->set('data.pain_vas', 4)
-            ->assertSee('4 / 10')
             ->fillForm([
                 'occurred_at' => '2026-08-16 10:00',
                 'specialist_id' => $specialist->getKey(),
-                'pain_vas' => 4,
-                'pain_not_measured' => false,
                 'pain' => 'Сильная боль в шее',
                 'tests' => 'МРТ шейного отдела',
                 'observations' => 'Сглаженный лордоз',
@@ -870,7 +875,7 @@ final class SessionCockpitTest extends TestCase
 
         $retrieved = app(GetSession::class)->handle($admin, $session, $client);
         self::assertSame('Сильная боль в шее', $retrieved?->pain);
-        self::assertSame(4, $retrieved?->painVas);
+        self::assertNull($retrieved?->painVas);
     }
 
     public function test_filament_create_session_denies_cross_organization_actor_for_parent_client(): void
@@ -927,10 +932,7 @@ final class SessionCockpitTest extends TestCase
 
         $component = Livewire::actingAs($admin)
             ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
-            ->assertSet('data.pain_vas', 4)
-            ->assertSee('4 / 10')
             ->fillForm([
-                'pain_vas' => 4,
                 'pain' => 'Обновлённая боль',
                 'tests' => '',
                 'observations' => '',
@@ -997,7 +999,11 @@ final class SessionCockpitTest extends TestCase
             ->mountAction('suggestSessionPainTags')
             ->assertFormFieldExists('pain_id')
             ->unmountAction()
-            ->assertDontSee('Автозаполнение алгоритма пока не настроено')
+            ->assertFormComponentActionExists('protocol', 'fillProtocol')
+            ->fillForm(['protocol' => 'Исходный алгоритм'])
+            ->callFormComponentAction('protocol', 'fillProtocol')
+            ->assertNotified('Автозаполнение алгоритма пока не подключено.')
+            ->assertSet('data.protocol', 'Исходный алгоритм')
             ->callAction('fillResult')
             ->assertNotified('Результат заполнен')
             ->assertSet('data.result', "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены");

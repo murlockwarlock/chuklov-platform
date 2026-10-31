@@ -8,7 +8,9 @@ use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
@@ -168,6 +170,50 @@ final class PainAnalyticsTest extends TestCase
         self::assertSame('Шея', $data->problems[0]['name']);
         self::assertSame(7.0, $data->problems[0]['average_before']);
         self::assertSame(3.0, $data->problems[0]['average_after']);
+    }
+
+    public function test_session_axis_semantics_can_be_changed_without_rewriting_session_data(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $tag = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Синтетическая боль',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-09-01 09:00:00', 'UTC'),
+            pains: [['name' => 'Шея', 'tag_ids' => [$tag->getKey()], 'before_score' => 8, 'after_score' => 6]],
+        ));
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-10-08 09:00:00', 'UTC'),
+            pains: [['name' => 'Шея', 'tag_ids' => [$tag->getKey()], 'before_score' => 5, 'after_score' => 2]],
+        ));
+
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+
+        $default = app(PainAnalytics::class)->handle($admin, $period);
+        self::assertSame('client-chronological-v1', $default->sessionAxisVersion);
+        self::assertNull($default->problems[0]['session_1_after']);
+        self::assertSame(2.0, $default->problems[0]['session_2_after']);
+
+        app(SetOrganizationSetting::class)->handle(
+            $admin,
+            OrganizationSettingKey::AnalyticsSessionAxisSemantics,
+            'selected_period_chronological',
+        );
+
+        $selectedPeriod = app(PainAnalytics::class)->handle($admin, $period);
+        self::assertSame('selected-period-chronological-v1', $selectedPeriod->sessionAxisVersion);
+        self::assertSame(2.0, $selectedPeriod->problems[0]['session_1_after']);
+        self::assertNull($selectedPeriod->problems[0]['session_2_after']);
     }
 
     /** @return array{0: Organization, 1: User, 2: Client, 3: Specialist} */

@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\DemographicsAnalyticsData;
 use App\Modules\Identity\Domain\Models\Client;
@@ -18,9 +19,11 @@ final readonly class DemographicsAnalytics
     public function __construct(
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
+        private ClientCohortQuery $cohorts,
+        private ClientAgeRangeCatalog $ageRanges,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): DemographicsAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null): DemographicsAnalyticsData
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
@@ -34,7 +37,10 @@ final readonly class DemographicsAnalytics
             ->where('created_at', '>=', $period->startUtc)
             ->where('created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('id', $clientId))
-            ->select(['birth_date', 'gender', 'country'])
+            ->when($cohortFilters !== null, function ($query) use ($cohortFilters, $period): void {
+                $this->cohorts->constrain($query, 'clients.id', $cohortFilters, $period);
+            })
+            ->select(['id', 'birth_date', 'gender', 'country'])
             ->orderBy('id')
             ->get();
 
@@ -44,7 +50,8 @@ final readonly class DemographicsAnalytics
         $countryCounts = [];
         $childrenCounts = [];
         foreach ($clients as $client) {
-            $ageLabel = $this->ageLabel($client->birth_date, $referenceDate);
+            $age = $this->age($client->birth_date, $referenceDate);
+            $ageLabel = $age === null ? 'Не указано' : $this->ageLabel($age, $organizationId);
             $sexLabel = match ((string) $client->gender) {
                 'MALE' => 'Мужчины',
                 'FEMALE' => 'Женщины',
@@ -52,7 +59,7 @@ final readonly class DemographicsAnalytics
             };
             $country = trim((string) ($client->country ?? ''));
             $countryLabel = $country === '' ? 'Не указана' : $country;
-            $childrenLabel = $ageLabel === 'Дети' ? 'Дети' : ($ageLabel === 'Не указано' ? 'Не указано' : 'Взрослые');
+            $childrenLabel = $age === null ? 'Не указано' : ($age < 18 ? 'Дети' : 'Взрослые');
             $ageCounts[$ageLabel] = ($ageCounts[$ageLabel] ?? 0) + 1;
             $sexCounts[$sexLabel] = ($sexCounts[$sexLabel] ?? 0) + 1;
             $countryCounts[$countryLabel] = ($countryCounts[$countryLabel] ?? 0) + 1;
@@ -88,23 +95,26 @@ final readonly class DemographicsAnalytics
         );
     }
 
-    private function ageLabel(mixed $birthDate, CarbonImmutable $referenceDate): string
+    private function age(mixed $birthDate, CarbonImmutable $referenceDate): ?int
     {
         if (! is_string($birthDate) || trim($birthDate) === '') {
-            return 'Не указано';
+            return null;
         }
         try {
-            $age = CarbonImmutable::parse($birthDate, new DateTimeZone($referenceDate->getTimezone()->getName()))->diffInYears($referenceDate);
+            return (int) CarbonImmutable::parse($birthDate, new DateTimeZone($referenceDate->getTimezone()->getName()))->diffInYears($referenceDate);
         } catch (\Throwable) {
-            return 'Не указано';
+            return null;
+        }
+    }
+
+    private function ageLabel(int $age, int $organizationId): string
+    {
+        foreach ($this->ageRanges->rows($organizationId, true) as $range) {
+            if ($age >= $range['min'] && ($range['max'] === null || $age <= $range['max'])) {
+                return $range['label'];
+            }
         }
 
-        return match (true) {
-            $age < 18 => 'Дети',
-            $age < 30 => '18–29',
-            $age < 45 => '30–44',
-            $age < 60 => '45–59',
-            default => '60+',
-        };
+        return 'Не указано';
     }
 }

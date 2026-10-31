@@ -22,6 +22,7 @@ final readonly class UploadMedicalAttachment
     public function __construct(
         private AttachmentAuthorization $authorization,
         private AttachmentStorageInterface $storage,
+        private MedicalAudioPolicy $audioPolicy,
         private RecordAuditEvent $audit,
     ) {}
 
@@ -35,6 +36,9 @@ final readonly class UploadMedicalAttachment
 
         $this->authorization->authorizeUpload($actor, $client, $command->attachmentType);
         $orgId = (int) $organization->getKey();
+        if ($command->attachmentType === AttachmentType::AudioRecording) {
+            $this->audioPolicy->assertUploadAllowed($orgId, $command->file);
+        }
 
         if ($command->uploadKey !== null && ! Str::isUuid($command->uploadKey)) {
             throw ValidationException::withMessages(['upload_key' => 'Invalid upload key.']);

@@ -11,6 +11,7 @@ final readonly class AnalyticsMetricFilters
         public ?string $sourceKey = null,
         public ?string $purchaseType = null,
         public ?string $bookingStatus = null,
+        public ?ClientCohortFilters $cohort = null,
     ) {}
 
     public static function empty(): self
@@ -18,7 +19,7 @@ final readonly class AnalyticsMetricFilters
         return new self;
     }
 
-    /** @return array{problem_tag_id: ?int, feedback_theme_id: ?int, goal_tag_id: ?int, source_key: ?string, purchase_type: ?string, booking_status: ?string} */
+    /** @return array{problem_tag_id: ?int, feedback_theme_id: ?int, goal_tag_id: ?int, source_key: ?string, purchase_type: ?string, booking_status: ?string, cohort: array<string, mixed>|null} */
     public function values(): array
     {
         return [
@@ -28,6 +29,7 @@ final readonly class AnalyticsMetricFilters
             'source_key' => $this->sourceKey,
             'purchase_type' => $this->purchaseType,
             'booking_status' => $this->bookingStatus,
+            'cohort' => $this->cohort?->toArray(),
         ];
     }
 }

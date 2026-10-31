@@ -67,6 +67,7 @@ final class ClientSegmentQueryTest extends TestCase
 
         $sleeping = Client::factory()->forOrganization($organization)->create(['created_at' => now()->subDays(500)]);
         $this->booking($organization, $sleeping, $specialist, $other, BookingStatus::Completed, now()->subDays(400));
+        $oldWithoutHistory = Client::factory()->forOrganization($organization)->create(['created_at' => now()->subDays(500)]);
 
         $penalty = Client::factory()->forOrganization($organization)->create(['created_at' => now()->subDays(100)]);
         BroadcastClientTag::query()->create([
@@ -82,6 +83,7 @@ final class ClientSegmentQueryTest extends TestCase
         self::assertSame([$warm->getKey()], $segments->query(ClientSegment::WarmLead)->pluck('id')->all());
         self::assertSame([$cold->getKey()], $segments->query(ClientSegment::ColdLead)->pluck('id')->all());
         self::assertSame([$sleeping->getKey()], $segments->query(ClientSegment::Sleeping)->pluck('id')->all());
+        self::assertNotContains($oldWithoutHistory->getKey(), $segments->query(ClientSegment::Sleeping)->pluck('id')->all());
         self::assertSame([$penalty->getKey()], $segments->query(ClientSegment::Penalty)->pluck('id')->all());
         self::assertSame([$archived->getKey()], $segments->query(ClientSegment::Archived)->pluck('id')->all());
         self::assertNotContains($converted->getKey(), $segments->query(ClientSegment::WarmLead)->pluck('id')->all());

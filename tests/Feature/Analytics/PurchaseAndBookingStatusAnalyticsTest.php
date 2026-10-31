@@ -4,11 +4,15 @@ namespace Tests\Feature\Analytics;
 
 use App\Models\User;
 use App\Modules\Analytics\Application\BookingStatusAnalytics;
+use App\Modules\Analytics\Application\ClientCohortQuery;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\PurchaseAnalytics;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
@@ -116,6 +120,63 @@ final class PurchaseAndBookingStatusAnalyticsTest extends TestCase
 
         $cancelled = app(BookingStatusAnalytics::class)->handle($admin, $period, status: 'cancelled');
         self::assertSame([['key' => 'cancelled', 'label' => 'Отменённые', 'count' => 1]], $cancelled->statuses);
+    }
+
+    public function test_purchase_groups_are_owner_configurable_without_rewriting_purchase_history(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $first = Client::factory()->forOrganization($organization)->create();
+        $second = Client::factory()->forOrganization($organization)->create();
+        $createdAt = CarbonImmutable::parse('2026-10-10 10:00:00', 'UTC');
+
+        foreach ([[$first, 'service'], [$second, 'program']] as [$client, $catalogType]) {
+            $purchaseId = DB::table('commerce_purchases')->insertGetId([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $client->getKey(),
+                'status' => 'paid',
+                'total_amount_minor' => 10000,
+                'currency' => 'USD',
+                'purchase_snapshot' => json_encode(['kind' => $catalogType], JSON_THROW_ON_ERROR),
+                'paid_at' => $createdAt,
+                'refunded_at' => null,
+                'created_at' => $createdAt,
+                'updated_at' => $createdAt,
+            ]);
+            DB::table('commerce_purchase_items')->insert([
+                'organization_id' => $organization->getKey(),
+                'purchase_id' => $purchaseId,
+                'sellable_type' => Service::class,
+                'sellable_id' => 1,
+                'quantity' => 1,
+                'amount_minor' => 10000,
+                'currency' => 'USD',
+                'product_snapshot' => json_encode(['catalog_type' => $catalogType], JSON_THROW_ON_ERROR),
+                'fulfillment_provider' => null,
+                'created_at' => $createdAt,
+                'updated_at' => $createdAt,
+            ]);
+        }
+
+        app(SetOrganizationSetting::class)->handle(
+            $admin,
+            OrganizationSettingKey::AnalyticsPurchaseGroups,
+            json_encode([[
+                'key' => 'therapy_products',
+                'label' => 'Терапевтические продукты',
+                'catalog_types' => ['service', 'program'],
+            ]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+        );
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+
+        self::assertSame([['key' => 'therapy_products', 'label' => 'Терапевтические продукты', 'count' => 2, 'client_count' => 2]], app(PurchaseAnalytics::class)->handle($admin, $period)->types);
+        self::assertEqualsCanonicalizing(
+            [$first->getKey(), $second->getKey()],
+            app(ClientCohortQuery::class)->for($admin, new ClientCohortFilters(purchaseTypes: ['therapy_products']), $period)->pluck('clients.id')->all(),
+        );
     }
 
     /** @return array{0: Organization, 1: User} */

@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\SchedulingAnalyticsData;
 use App\Modules\Identity\Domain\Models\Client;
@@ -22,9 +23,10 @@ final class SchedulingAnalytics
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly ClientCohortQuery $cohorts,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): SchedulingAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null): SchedulingAnalyticsData
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
@@ -43,8 +45,11 @@ final class SchedulingAnalytics
             ->where('created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId))
             ->selectRaw('COUNT(*) as bookings')
-            ->selectRaw('COALESCE(SUM(CASE WHEN visit_format = ? THEN 1 ELSE 0 END), 0) as home_requests', [VisitFormat::HomeVisit->value])
-            ->first();
+            ->selectRaw('COALESCE(SUM(CASE WHEN visit_format = ? THEN 1 ELSE 0 END), 0) as home_requests', [VisitFormat::HomeVisit->value]);
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($bookingTotals, 'client_id', $cohortFilters, $period);
+        }
+        $bookingTotals = $bookingTotals->first();
 
         $eventTotals = DB::table($eventTable.' as events')
             ->join($bookingTable.' as bookings', function (JoinClause $join): void {
@@ -59,10 +64,13 @@ final class SchedulingAnalytics
             ->selectRaw('COALESCE(SUM(CASE WHEN events.event_type = ? THEN 1 ELSE 0 END), 0) as cancellations', [BookingEventType::Cancelled->value])
             ->selectRaw('COALESCE(SUM(CASE WHEN events.event_type = ? THEN 1 ELSE 0 END), 0) as reschedules', [BookingEventType::Rescheduled->value])
             ->selectRaw('COALESCE(SUM(CASE WHEN events.event_type = ? THEN 1 ELSE 0 END), 0) as no_shows', [BookingEventType::NoShow->value])
-            ->selectRaw('COUNT(DISTINCT CASE WHEN events.event_type = ? THEN events.booking_id END) as visits', [BookingEventType::Completed->value])
-            ->first();
+            ->selectRaw('COUNT(DISTINCT CASE WHEN events.event_type = ? THEN events.booking_id END) as visits', [BookingEventType::Completed->value]);
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($eventTotals, 'bookings.client_id', $cohortFilters, $period);
+        }
+        $eventTotals = $eventTotals->first();
 
-        $retention = $this->retention($organizationId, $period, $bookingTable, $eventTable, $client);
+        $retention = $this->retention($organizationId, $period, $bookingTable, $eventTable, $client, $cohortFilters);
         $retentionDenominator = (int) ($retention->total_clients ?? 0);
         $retainedClients = (int) ($retention->retained_clients ?? 0);
 
@@ -78,7 +86,7 @@ final class SchedulingAnalytics
         );
     }
 
-    private function retention(int $organizationId, DashboardPeriod $period, string $bookingTable, string $eventTable, ?Client $client = null): object
+    private function retention(int $organizationId, DashboardPeriod $period, string $bookingTable, string $eventTable, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null): object
     {
         $clientId = $client?->getKey();
         $completedClients = DB::query()
@@ -96,6 +104,9 @@ final class SchedulingAnalytics
             ->select('completed_bookings.organization_id', 'completed_bookings.client_id')
             ->selectRaw('MAX(completed_events.occurred_at) as latest_completed_at')
             ->groupBy('completed_bookings.organization_id', 'completed_bookings.client_id');
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($completedClients, 'completed_bookings.client_id', $cohortFilters, $period);
+        }
 
         $result = DB::query()
             ->fromSub($completedClients, 'completed_clients')

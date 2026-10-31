@@ -70,7 +70,7 @@ final readonly class MedicalSessionPainInitializer
         return array_values(collect($this->profilePains->forProfile($profile))->map(static fn (MedicalPainData $pain): array => [
             'lineage_key' => $pain->lineageKey ?: Str::uuid()->toString(),
             'name' => $pain->name,
-            'frequency_mode' => 'permanent',
+            'frequency_mode' => 'unspecified',
             'frequency_count' => null,
             'frequency_period_unit' => null,
             'time_of_day' => ['all'],

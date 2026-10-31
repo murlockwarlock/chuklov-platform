@@ -40,6 +40,11 @@ final readonly class AnalyticsReportExport
         $summary->setTitle('Сводка');
         $this->writeSummary($summary, $metadata, $results);
 
+        if (array_key_exists('cohort_clients', $metadata) || array_key_exists('cohort_filters', $metadata)) {
+            $this->writeClients($this->newSheet($spreadsheet, 'Клиенты'), (array) ($metadata['cohort_clients'] ?? []));
+            $this->writeFilters($this->newSheet($spreadsheet, 'Фильтры'), $metadata);
+        }
+
         if (isset($results['acquisition']) && is_array($results['acquisition'])) {
             $this->writeSources($this->newSheet($spreadsheet, 'Источники'), $results['acquisition']);
         }
@@ -98,6 +103,9 @@ final readonly class AnalyticsReportExport
             'filters' => 'Фильтры',
             'timezone' => 'Часовой пояс',
             'currency' => 'Валюта',
+            'date_basis' => 'Основание даты',
+            'cohort_count' => 'Найдено клиентов',
+            'generated_at' => 'Сформировано',
         ] as $key => $label) {
             $value = $metadata[$key] ?? null;
             if ($value !== null && $value !== '') {
@@ -237,11 +245,14 @@ final readonly class AnalyticsReportExport
                     $problem['average_after'] ?? null,
                     $problem['average_reduction'] ?? null,
                     $problem['average_reduction_percent'] ?? null,
+                    $problem['session_1_after'] ?? null,
+                    $problem['session_2_after'] ?? null,
+                    $problem['session_3_after'] ?? null,
                 ];
             }
         }
 
-        $this->writeRows($sheet, $rows, ['Проблема', 'Группа', 'Клиентов', 'Среднее до', 'Среднее после', 'Снижение', 'Снижение, %']);
+        $this->writeRows($sheet, $rows, ['Проблема', 'Группа', 'Клиентов', 'Среднее до', 'Среднее после', 'Снижение', 'Снижение, %', 'Сеанс 1 после', 'Сеанс 2 после', 'Сеанс 3 после']);
     }
 
     /** @param array<string, mixed> $data */
@@ -373,6 +384,119 @@ final readonly class AnalyticsReportExport
             $start = count($rows) + 3;
             $this->writeRows($sheet, $accounts, ['Счёт', 'Тип', 'Валюта счёта', 'Движение за период', 'Базовая валюта'], $start);
         }
+    }
+
+    /** @param array<int, mixed> $clients */
+    private function writeClients(Worksheet $sheet, array $clients): void
+    {
+        $rows = [];
+        foreach ($clients as $client) {
+            if (! is_array($client)) {
+                continue;
+            }
+            $rows[] = [
+                $client['name'] ?? '—',
+                $client['gender'] ?? 'Не указано',
+                $client['birth_date'] ?? null,
+                $client['country'] ?? 'Не указана',
+                $client['source'] ?? 'Не указан',
+                $client['reason'] ?? 'Соответствует выбранным фильтрам',
+            ];
+        }
+
+        $this->writeRows($sheet, $rows, ['Клиент', 'Пол', 'Дата рождения', 'Страна', 'Источник', 'Причина попадания']);
+    }
+
+    /** @param array<string, mixed> $metadata */
+    private function writeFilters(Worksheet $sheet, array $metadata): void
+    {
+        $rows = [
+            ['Логика фильтров', 'AND между группами; OR внутри группы'],
+            ['Период', $metadata['period'] ?? null],
+            ['Основание даты', $metadata['date_basis'] ?? null],
+            ['Часовой пояс', $metadata['timezone'] ?? null],
+            ['Состояние сегментов', $metadata['segment_state'] ?? 'Текущее состояние сегментов на момент анализа'],
+            ['Семантика оси сеансов', $metadata['session_axis'] ?? null],
+        ];
+        foreach ((array) ($metadata['filters'] ?? []) as $filter) {
+            $rows[] = ['Выбранный фильтр', is_scalar($filter) ? (string) $filter : json_encode($filter, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)];
+        }
+        if (array_key_exists('cohort_count', $metadata)) {
+            $rows[] = ['Размер когорты', (int) $metadata['cohort_count']];
+        }
+        foreach ((array) ($metadata['rule_versions'] ?? []) as $key => $version) {
+            $rows[] = ['Версия правила: '.self::humanFilterKey((string) $key), (string) $version];
+        }
+        if (isset($metadata['generated_at'])) {
+            $rows[] = ['Сформировано', $metadata['generated_at']];
+        }
+        foreach ((array) ($metadata['cohort_filter_labels'] ?? []) as $filter) {
+            if (is_scalar($filter) && (string) $filter !== '') {
+                $rows[] = ['Клиентская когорта', (string) $filter];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Параметр', 'Значение']);
+    }
+
+    private static function humanFilterKey(string $key): string
+    {
+        return [
+            'client_ids' => 'Клиенты',
+            'clientIds' => 'Клиенты',
+            'exclude_client_ids' => 'Исключить клиентов',
+            'excludeClientIds' => 'Исключить клиентов',
+            'saved_group_ids' => 'Сохранённые группы клиентов',
+            'savedGroupIds' => 'Сохранённые группы клиентов',
+            'segments' => 'Категории клиентов',
+            'archived' => 'Архивированность',
+            'blacklist' => 'Чёрный список',
+            'genders' => 'Пол',
+            'countries' => 'Страны',
+            'sourceKeys' => 'Источники привлечения',
+            'problem_tag_ids' => 'Категории проблем',
+            'problemTagIds' => 'Категории проблем',
+            'problem_tag_mode' => 'Режим категорий проблем',
+            'problemTagMode' => 'Режим категорий проблем',
+            'exclude_problem_tag_ids' => 'Исключить категории проблем',
+            'excludeProblemTagIds' => 'Исключить категории проблем',
+            'feedback_theme_ids' => 'Темы обратной связи',
+            'feedbackThemeIds' => 'Темы обратной связи',
+            'goal_tag_ids' => 'Категории целей',
+            'goalTagIds' => 'Категории целей',
+            'age_min' => 'Возраст от',
+            'ageMin' => 'Возраст от',
+            'age_max' => 'Возраст до',
+            'ageMax' => 'Возраст до',
+            'children' => 'Дети',
+            'service_ids' => 'Услуги',
+            'serviceIds' => 'Услуги',
+            'service_categories' => 'Группы услуг',
+            'serviceCategories' => 'Группы услуг',
+            'specialist_ids' => 'Специалисты',
+            'specialistIds' => 'Специалисты',
+            'booking_statuses' => 'Статусы записей',
+            'bookingStatuses' => 'Статусы записей',
+            'booking_event_types' => 'Статусы истории записей',
+            'bookingEventTypes' => 'Статусы истории записей',
+            'completed_visits_min' => 'Завершённых визитов от',
+            'completed_visits_max' => 'Завершённых визитов до',
+            'last_visit_from' => 'Последний визит от',
+            'last_visit_to' => 'Последний визит до',
+            'purchase_types' => 'Типы покупок',
+            'purchaseTypes' => 'Типы покупок',
+            'purchase_statuses' => 'Статусы покупок',
+            'purchaseStatuses' => 'Статусы покупок',
+            'has_pain_score' => 'Наличие оценки боли',
+            'hasPainScore' => 'Наличие оценки боли',
+            'pain_score_min' => 'Оценка боли от',
+            'pain_score_max' => 'Оценка боли до',
+            'satisfaction_min' => 'Удовлетворённость от',
+            'satisfactionMin' => 'Удовлетворённость от',
+            'satisfaction_max' => 'Удовлетворённость до',
+            'satisfactionMax' => 'Удовлетворённость до',
+            'client_cohort' => 'Клиентская когорта',
+        ][$key] ?? $key;
     }
 
     private function newSheet(Spreadsheet $spreadsheet, string $title): Worksheet

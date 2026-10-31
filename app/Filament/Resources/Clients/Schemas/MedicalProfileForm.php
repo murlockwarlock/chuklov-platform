@@ -135,7 +135,7 @@ final class MedicalProfileForm
                 ->label(__('Боли и оценка клиента'))
                 ->schema([
                     Hidden::make('lineage_key')->dehydrated()->nullable(),
-                    TextInput::make('name')->label(__('Название или описание боли'))->required()->maxLength(1000),
+                    TextInput::make('name')->label(__('Название или описание боли'))->maxLength(1000),
                     Slider::make('score')
                         ->label(__('Оценка боли'))
                         ->range(minValue: 0, maxValue: 10)

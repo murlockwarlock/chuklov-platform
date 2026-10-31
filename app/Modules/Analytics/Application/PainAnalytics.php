@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\PainAnalyticsData;
 use App\Modules\Identity\Domain\Models\Client;
@@ -17,6 +18,8 @@ final readonly class PainAnalytics
     public function __construct(
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
+        private ClientCohortQuery $cohorts,
+        private ClientSessionAxisCatalog $sessionAxisCatalog,
     ) {}
 
     public function handle(
@@ -24,6 +27,7 @@ final readonly class PainAnalytics
         DashboardPeriod $period,
         ?Client $client = null,
         ?int $problemTagId = null,
+        ?ClientCohortFilters $cohortFilters = null,
     ): PainAnalyticsData {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
@@ -39,25 +43,40 @@ final readonly class PainAnalytics
             abort(404);
         }
         $clientId = $client?->getKey();
+        $sessionAxis = $this->sessionAxisCatalog->selected($organizationId);
+        $rankedSessionPeriod = '';
 
-        $sessionClientFilter = $clientId !== null ? ' AND sessions.client_id = :client_id' : '';
-        $bindings = [
-            'organization_id' => $organizationId,
-            'start_at' => $period->startUtc,
-            'end_at' => $period->endUtc,
-        ];
+        $cohortSql = '';
+        $bindings = [];
+        if ($cohortFilters !== null) {
+            $cohort = $this->cohorts->query($cohortFilters, $period)->select('clients.id')->toBase();
+            $cohortSql = 'cohort_clients AS ('.$cohort->toSql().'), ';
+            $bindings = $cohort->getBindings();
+        }
+        $sessionClientFilter = $clientId !== null ? ' AND sessions.client_id = ?' : '';
+        if ($cohortFilters !== null) {
+            $sessionClientFilter .= ' AND EXISTS (SELECT 1 FROM cohort_clients WHERE cohort_clients.id = sessions.client_id)';
+        }
+        $bindings[] = $organizationId;
         if ($clientId !== null) {
-            $bindings['client_id'] = (int) $clientId;
+            $bindings[] = (int) $clientId;
+        }
+        if ($sessionAxis['key'] === ClientSessionAxisCatalog::SelectedPeriod) {
+            $rankedSessionPeriod = ' AND sessions.occurred_at >= ? AND sessions.occurred_at < ?';
+            $bindings[] = $period->startUtc;
+            $bindings[] = $period->endUtc;
         }
         $tagFilter = '';
         if ($problemTagId !== null) {
-            $tagFilter = ' AND pain_tags.medical_problem_tag_id = :problem_tag_id';
-            $bindings['problem_tag_id'] = $problemTagId;
+            $tagFilter = ' AND pain_tags.medical_problem_tag_id = ?';
+            $bindings[] = $problemTagId;
         }
+        $bindings[] = $period->startUtc;
+        $bindings[] = $period->endUtc;
 
         $rows = DB::select(
             <<<SQL
-            WITH ranked_sessions AS (
+            WITH {$cohortSql}ranked_sessions AS (
                 SELECT
                     sessions.organization_id,
                     sessions.client_id,
@@ -68,8 +87,9 @@ final readonly class PainAnalytics
                         ORDER BY sessions.occurred_at ASC, sessions.id ASC
                     ) AS session_number
                 FROM medical_sessions AS sessions
-                WHERE sessions.organization_id = :organization_id
+                WHERE sessions.organization_id = ?
                     {$sessionClientFilter}
+                    {$rankedSessionPeriod}
             ), ranked_pains AS (
                 SELECT
                     pains.client_id,
@@ -92,8 +112,8 @@ final readonly class PainAnalytics
                 INNER JOIN medical_problem_tags AS tags
                     ON tags.organization_id = pain_tags.organization_id
                     AND tags.id = pain_tags.medical_problem_tag_id
-                WHERE ranked_sessions.occurred_at >= :start_at
-                    AND ranked_sessions.occurred_at < :end_at
+                WHERE ranked_sessions.occurred_at >= ?
+                    AND ranked_sessions.occurred_at < ?
             )
             SELECT
                 tag_id,
@@ -138,9 +158,12 @@ final readonly class PainAnalytics
                         ->whereColumn('filtered_pains.client_id', 'medical_sessions.client_id');
                 });
             });
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($sessionQuery, 'medical_sessions.client_id', $cohortFilters, $period);
+        }
         $sessionCount = (clone $sessionQuery)->count();
         $clientCount = (clone $sessionQuery)->distinct('client_id')->count('client_id');
-        $summary = DB::table('medical_session_pains as pains')
+        $summaryQuery = DB::table('medical_session_pains as pains')
             ->join('medical_sessions as sessions', function ($join): void {
                 $join
                     ->on('sessions.organization_id', '=', 'pains.organization_id')
@@ -164,8 +187,11 @@ final readonly class PainAnalytics
             ->selectRaw('AVG(pains.before_score) as average_before')
             ->selectRaw('AVG(pains.after_score) as average_after')
             ->selectRaw('AVG(CASE WHEN pains.before_score IS NOT NULL AND pains.after_score IS NOT NULL THEN pains.before_score - pains.after_score END) as average_reduction')
-            ->selectRaw('AVG(CASE WHEN pains.before_score > 0 AND pains.after_score IS NOT NULL THEN ((pains.before_score - pains.after_score) * 100.0 / pains.before_score) END) as average_reduction_percent')
-            ->first();
+            ->selectRaw('AVG(CASE WHEN pains.before_score > 0 AND pains.after_score IS NOT NULL THEN ((pains.before_score - pains.after_score) * 100.0 / pains.before_score) END) as average_reduction_percent');
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($summaryQuery, 'pains.client_id', $cohortFilters, $period);
+        }
+        $summary = $summaryQuery->first();
 
         return new PainAnalyticsData(
             clientCount: $clientCount,
@@ -195,6 +221,8 @@ final readonly class PainAnalytics
             averageAfter: self::nullableFloat($summary?->average_after),
             averageReduction: self::nullableFloat($summary?->average_reduction),
             averageReductionPercent: self::nullableFloat($summary?->average_reduction_percent),
+            sessionAxisLabel: $sessionAxis['label'],
+            sessionAxisVersion: $sessionAxis['version'],
         );
     }
 

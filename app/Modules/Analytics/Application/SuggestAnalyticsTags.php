@@ -10,11 +10,15 @@ use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Models\AiPrompt;
 use App\Modules\Analytics\Application\Data\ClassificationResultData;
+use App\Modules\Analytics\Domain\Enums\AnalyticsTagCandidateStatus;
 use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
 use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
+use App\Modules\Analytics\Domain\Models\AnalyticsTagCandidate;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
+use App\Modules\Organizations\Domain\Models\OrganizationSetting;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
@@ -27,6 +31,7 @@ final readonly class SuggestAnalyticsTags
         private OrganizationAuthorizer $authorizer,
         private AiWorkflowEngine $workflowEngine,
         private RecordAuditEvent $audit,
+        private SyncAnalyticsClassificationCandidates $candidates,
     ) {}
 
     /** @param list<array<string, mixed>> $availableTags */
@@ -100,7 +105,11 @@ final readonly class SuggestAnalyticsTags
                 ),
                 actor: $actor,
             ));
-            $suggestions = $this->validateOutput($result->outputPayload, $availableTags);
+            $suggestions = $this->validateOutput(
+                $result->outputPayload,
+                $availableTags,
+                $this->newTagCandidatesEnabled($organizationId),
+            );
             if (! $result->isSuccess() || $suggestions === null) {
                 return $this->fail($run, $result->isSuccess() ? 'invalid_output' : 'ai_failed', $result->errorMessageSanitized);
             }
@@ -120,6 +129,7 @@ final readonly class SuggestAnalyticsTags
             if ($updated === 0) {
                 return $this->result($run->refresh());
             }
+            $this->candidates->handle($run->refresh());
             $this->audit->handle($organization, $actor, 'analytics.classification.suggested', $run::class, (string) $run->getKey(), [
                 'taxonomy' => $taxonomy,
                 'source_type' => $sourceType,
@@ -153,6 +163,15 @@ final readonly class SuggestAnalyticsTags
                             'error_message_sanitized' => 'Источник классификации изменился.',
                             'updated_at' => now(),
                         ])->save();
+                        AnalyticsTagCandidate::query()
+                            ->where('organization_id', $stale->organization_id)
+                            ->where('classification_run_id', $stale->getKey())
+                            ->where('status', AnalyticsTagCandidateStatus::NeedsReview->value)
+                            ->update([
+                                'status' => AnalyticsTagCandidateStatus::Stale->value,
+                                'review_note' => 'Источник классификации изменился.',
+                                'updated_at' => now(),
+                            ]);
                     });
                 $run = AnalyticsClassificationRun::query()
                     ->where('organization_id', $organizationId)
@@ -208,9 +227,9 @@ final readonly class SuggestAnalyticsTags
 
     /** @param array<string, mixed>|null $payload
      * @param  list<array{id: int, label: string}>  $availableTags
-     * @return list<array{id: int, label: string}>
+     * @return list<array{id: int|null, label: string, candidate_type?: string}>
      */
-    private function validateOutput(?array $payload, array $availableTags): ?array
+    private function validateOutput(?array $payload, array $availableTags, bool $allowNewCandidates = false): ?array
     {
         $values = $payload['tags'] ?? null;
         if (! is_array($values) || count($values) > 20) {
@@ -219,17 +238,34 @@ final readonly class SuggestAnalyticsTags
         $known = collect($availableTags)->mapWithKeys(static fn (array $tag): array => [mb_strtolower($tag['label']) => $tag])->all();
         $result = [];
         foreach ($values as $value) {
-            if (! is_string($value) || trim($value) === '') {
+            $label = is_string($value) ? trim($value) : (is_array($value) && is_string($value['label'] ?? null) ? trim($value['label']) : '');
+            if ($label === '') {
                 return null;
             }
-            $key = mb_strtolower(trim($value));
-            if (! isset($known[$key]) || isset($result[$known[$key]['id']])) {
+            $key = mb_strtolower($label);
+            if (! isset($known[$key])) {
+                if (! $allowNewCandidates || isset($result['new:'.$key])) {
+                    return null;
+                }
+                $result['new:'.$key] = ['id' => null, 'label' => $label, 'candidate_type' => 'new'];
+
+                continue;
+            }
+            if (isset($result[$known[$key]['id']])) {
                 return null;
             }
             $result[$known[$key]['id']] = $known[$key];
         }
 
         return array_values($result);
+    }
+
+    private function newTagCandidatesEnabled(int $organizationId): bool
+    {
+        return OrganizationSetting::query()
+            ->where('organization_id', $organizationId)
+            ->where('setting_key', OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled->value)
+            ->value('boolean_value') === true;
     }
 
     /** @param list<array<string, mixed>> $availableTags

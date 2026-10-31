@@ -4,6 +4,7 @@ namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\BookingStatusAnalyticsData;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -25,6 +26,7 @@ final class BookingStatusAnalytics
     public function __construct(
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
+        private readonly ClientCohortQuery $cohorts,
     ) {}
 
     /** @return array<string, string> */
@@ -38,6 +40,7 @@ final class BookingStatusAnalytics
         DashboardPeriod $period,
         ?Client $client = null,
         ?string $status = null,
+        ?ClientCohortFilters $cohortFilters = null,
     ): BookingStatusAnalyticsData {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
@@ -61,6 +64,9 @@ final class BookingStatusAnalytics
             ->where('events.occurred_at', '<', $period->endUtc)
             ->whereIn('events.event_type', $status === null ? array_keys(self::Labels) : [$status])
             ->when($clientId !== null, fn ($query) => $query->where('bookings.client_id', $clientId))
+            ->when($cohortFilters !== null, function ($query) use ($cohortFilters, $period): void {
+                $this->cohorts->constrain($query, 'bookings.client_id', $cohortFilters, $period);
+            })
             ->select('events.event_type')
             ->selectRaw('COUNT(DISTINCT events.booking_id) as booking_count')
             ->groupBy('events.event_type')

@@ -5,6 +5,8 @@ namespace Tests\Feature\Analytics;
 use App\Models\User;
 use App\Modules\Analytics\Application\AnalyticsMetricConfiguration;
 use App\Modules\Analytics\Application\AnalyticsMetricEvaluator;
+use App\Modules\Analytics\Application\Data\AnalyticsMetricFilters;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Domain\Models\AnalyticsMetric;
 use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
@@ -67,6 +69,27 @@ final class ComputedAnalyticsMetricsTest extends TestCase
         $result = app(AnalyticsMetricEvaluator::class)->evaluate($admin, $period, [$metric])[$metric->stable_key];
 
         self::assertNull($result->value);
+    }
+
+    public function test_typed_metric_builder_uses_the_same_client_cohort_without_rejecting_it_as_a_dimension_filter(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $client->update(['gender' => 'FEMALE']);
+        $this->painSession($admin, $client, $specialist, 8, 4);
+        $otherClient = Client::factory()->forOrganization($organization)->create(['gender' => 'MALE']);
+        $this->painSession($admin, $otherClient, Specialist::factory()->forOrganization($organization)->create(), 10, 0, 'Другая синтетическая боль');
+
+        $metric = $this->preset('pain_reduction_percent');
+        $result = app(AnalyticsMetricEvaluator::class)->evaluate(
+            $admin,
+            $this->period($organization),
+            [$metric],
+            filters: new AnalyticsMetricFilters(
+                cohort: new ClientCohortFilters(genders: ['FEMALE']),
+            ),
+        )[$metric->stable_key];
+
+        self::assertSame(50.0, $result->value);
     }
 
     public function test_ltv_preset_compares_current_cohort_with_the_previous_comparable_period(): void
@@ -346,10 +369,11 @@ final class ComputedAnalyticsMetricsTest extends TestCase
         Specialist $specialist,
         ?int $before,
         ?int $after,
+        string $name = 'Синтетическая боль',
     ): void {
         $tag = MedicalProblemTag::query()->create([
             'organization_id' => $client->organization_id,
-            'name' => 'Синтетическая боль',
+            'name' => $name,
             'is_active' => true,
             'sort_order' => 1,
         ]);
@@ -357,7 +381,7 @@ final class ComputedAnalyticsMetricsTest extends TestCase
             specialistId: (int) $specialist->getKey(),
             occurredAt: CarbonImmutable::parse('2026-10-15 09:00:00', 'UTC'),
             pains: [[
-                'name' => 'Синтетическая боль',
+                'name' => $name,
                 'tag_ids' => [$tag->getKey()],
                 'before_score' => $before,
                 'after_score' => $after,

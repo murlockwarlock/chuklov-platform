@@ -91,6 +91,17 @@ final class ClientSegmentQuery
                 }),
             ClientSegment::Sleeping => $query
                 ->where('clients.created_at', '<', CarbonImmutable::now('UTC')->subDays($thresholds['sleeping_days']))
+                ->where(function (Builder $client): void {
+                    $client->whereHas('bookings', function (Builder $booking): Builder {
+                        return $booking
+                            ->whereColumn('bookings.organization_id', 'clients.organization_id')
+                            ->where('bookings.status', BookingStatus::Completed->value);
+                    })->orWhereHas('purchases', function (Builder $purchase): Builder {
+                        return $purchase
+                            ->whereColumn('commerce_purchases.organization_id', 'clients.organization_id')
+                            ->where('commerce_purchases.status', PurchaseStatus::Paid->value);
+                    });
+                })
                 ->whereDoesntHave(
                     'bookings',
                     fn (Builder $booking): Builder => $completed($booking)->where(

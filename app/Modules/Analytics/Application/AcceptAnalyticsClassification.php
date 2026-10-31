@@ -51,6 +51,11 @@ final readonly class AcceptAnalyticsClassification
                     'classification' => 'Предложения недоступны для принятия.',
                 ]);
             }
+            if (collect($run->suggestions ?? [])->contains(static fn (array $suggestion): bool => ! is_numeric($suggestion['id']))) {
+                throw ValidationException::withMessages([
+                    'classification' => 'Сначала обработайте кандидаты новых категорий в разделе «Кандидаты тегов».',
+                ]);
+            }
             if ($run->taxonomy === 'feedback' && $run->source_type === 'feedback_submission') {
                 $selectedIds = $this->acceptFeedback($run, (int) $organization->getKey(), $themeIds);
             } elseif ($run->taxonomy === 'goals' && $run->source_type === 'tracker_task') {

@@ -139,21 +139,16 @@ class EditMedicalSession extends LocalizedEditRecord
                 Hidden::make('expected_snapshot')->dehydrated()->nullable()->string(),
                 Section::make(__('Клинические заметки'))
                     ->schema([
-                        Hidden::make('pain_vas')->dehydrated()->nullable(),
-                        Hidden::make('pain_not_measured')->dehydrated()->default(true),
-                        Placeholder::make('pain_vas_legacy')
-                            ->label(__('Историческое значение ВАШ'))
-                            ->content(fn (Get $get): string => self::legacyPainVasDisplay($get('pain_vas')))
-                            ->columnSpanFull(),
                         Repeater::make('pains')
                             ->label(__('Боли'))
                             ->schema([
                                 Hidden::make('lineage_key')->dehydrated()->nullable(),
-                                Textarea::make('name')->label(__('Название или описание боли'))->rows(2)->required()->maxLength(1000),
+                                Textarea::make('name')->label(__('Название или описание боли'))->rows(2)->maxLength(1000),
                                 Select::make('frequency_mode')->label(__('Частота'))->options([
+                                    'unspecified' => __('Не указана'),
                                     'permanent' => __('Постоянно'),
                                     'count' => __('Количество раз за период'),
-                                ])->default('permanent')->live(),
+                                ])->default('unspecified')->live(),
                                 TextInput::make('frequency_count')->label(__('Количество'))->integer()->minValue(1)->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count'),
                                 Select::make('frequency_period_unit')->label(__('Период'))->options(fn (Get $get): array => app(MedicalFrequencyPeriodCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id(), $get('frequency_period_unit')))->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')->required(fn (Get $get): bool => $get('frequency_mode') === 'count')->searchable(),
                                 CheckboxList::make('time_of_day')->label(__('Время суток'))->options([
@@ -316,7 +311,19 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->addActionLabel(__('Добавить первопричину'))
                             ->columnSpanFull(),
                         Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),
-                        Textarea::make('protocol')->label(__('Алгоритм / протокол сеанса'))->rows(3)->placeholder(__('Пошаговый план сеанса')),
+                        Textarea::make('protocol')
+                            ->label(__('Алгоритм сеанса (пошаговый протокол сеанса)'))
+                            ->rows(3)
+                            ->placeholder(__('Пошаговый план сеанса'))
+                            ->hintAction(Action::make('fillProtocol')
+                                ->label(__('Заполнить'))
+                                ->icon('heroicon-o-sparkles')
+                                ->action(static function (): void {
+                                    Notification::make()
+                                        ->title(__('Автозаполнение алгоритма пока не подключено.'))
+                                        ->info()
+                                        ->send();
+                                })),
                         Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->rows(3)->placeholder(__('Что клиент почувствовал после сеанса')),
                         Textarea::make('visual_posture_diagnostics')->label(__('Визуальная диагностика осанки'))->rows(3)->placeholder(__('Изменения линии плеч, таза и позвоночника')),
                         Textarea::make('result')
@@ -352,8 +359,6 @@ class EditMedicalSession extends LocalizedEditRecord
 
         return [
             'pain' => $decrypted->pain,
-            'pain_vas' => $decrypted->painVas,
-            'pain_not_measured' => $decrypted->painVas === null,
             'tests' => $decrypted->tests,
             'observations' => $decrypted->observations,
             'subjective_feelings' => $decrypted->subjectiveFeelings,
@@ -721,13 +726,6 @@ class EditMedicalSession extends LocalizedEditRecord
         return is_array($state) ? ($state['previous_after_score'] ?? null) : null;
     }
 
-    private static function legacyPainVasDisplay(mixed $value): string
-    {
-        return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
-            ? __(':value / 10', ['value' => (int) $value])
-            : __('Не указана');
-    }
-
     /** @return list<int> */
     private static function derivedCauseIds(Get $get): array
     {
@@ -804,12 +802,9 @@ class EditMedicalSession extends LocalizedEditRecord
      */
     private static function normalizeClinical(array $data): array
     {
-        if (($data['pain_not_measured'] ?? false) === true) {
-            $data['pain_vas'] = null;
-        }
+        unset($data['pain_vas']);
         $fields = [
             'pain',
-            'pain_vas',
             'tests',
             'observations',
             'subjective_feelings',

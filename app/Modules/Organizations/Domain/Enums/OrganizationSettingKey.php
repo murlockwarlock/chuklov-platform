@@ -30,6 +30,12 @@ enum OrganizationSettingKey: string
     case ClientSegmentPenaltyTag = 'client_segment_penalty_tag';
     case AnalyticsTherapyEffectivenessFormulaReference = 'analytics_therapy_effectiveness_formula_reference';
     case AnalyticsLtvPercentFormulaReference = 'analytics_ltv_percent_formula_reference';
+    case MedicalAudioAllowedMimeTypes = 'medical_audio_allowed_mime_types';
+    case MedicalAudioBusinessMaxBytes = 'medical_audio_business_max_bytes';
+    case AnalyticsAiNewTagCandidatesEnabled = 'analytics_ai_new_tag_candidates_enabled';
+    case AnalyticsAgeRanges = 'analytics_age_ranges';
+    case AnalyticsPurchaseGroups = 'analytics_purchase_groups';
+    case AnalyticsSessionAxisSemantics = 'analytics_session_axis_semantics';
 
     public function type(): OrganizationSettingType
     {
@@ -46,9 +52,11 @@ enum OrganizationSettingKey: string
             self::ClientSegmentRegularCompletedVisits,
             self::ClientSegmentDormantDays,
             self::ClientSegmentSleepingDays => OrganizationSettingType::Integer,
+            self::MedicalAudioBusinessMaxBytes => OrganizationSettingType::Integer,
             self::B2bZoomHostLicensed,
             self::TrackerFreeMode,
-            self::TrackerEnabled => OrganizationSettingType::Boolean,
+            self::TrackerEnabled,
+            self::AnalyticsAiNewTagCandidatesEnabled => OrganizationSettingType::Boolean,
             default => OrganizationSettingType::String,
         };
     }

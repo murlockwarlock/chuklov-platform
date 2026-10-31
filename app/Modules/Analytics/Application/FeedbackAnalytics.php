@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\FeedbackAnalyticsData;
 use App\Modules\Feedback\Domain\Models\FeedbackTheme;
@@ -17,6 +18,7 @@ final readonly class FeedbackAnalytics
     public function __construct(
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
+        private ClientCohortQuery $cohorts,
     ) {}
 
     public function handle(
@@ -24,6 +26,7 @@ final readonly class FeedbackAnalytics
         DashboardPeriod $period,
         ?Client $client = null,
         ?int $themeId = null,
+        ?ClientCohortFilters $cohortFilters = null,
     ): FeedbackAnalyticsData {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
@@ -54,6 +57,9 @@ final readonly class FeedbackAnalytics
                         ->where('selected_links.feedback_theme_id', $themeId);
                 });
             });
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($base, 'feedback_submissions.client_id', $cohortFilters, $period);
+        }
         $summary = (clone $base)
             ->selectRaw('COUNT(*) as submission_count')
             ->selectRaw('AVG(score) as average_score')
@@ -73,6 +79,9 @@ final readonly class FeedbackAnalytics
             ->where('submissions.submitted_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('submissions.client_id', $clientId))
             ->when($themeId !== null, fn ($query) => $query->where('links.feedback_theme_id', $themeId))
+            ->when($cohortFilters !== null, function ($query) use ($cohortFilters, $period): void {
+                $this->cohorts->constrain($query, 'submissions.client_id', $cohortFilters, $period);
+            })
             ->select('themes.id', 'themes.name', 'themes.group_name')
             ->selectRaw('COUNT(DISTINCT links.client_id) as client_count')
             ->selectRaw('COUNT(DISTINCT links.feedback_submission_id) as submission_count')
@@ -82,6 +91,7 @@ final readonly class FeedbackAnalytics
             ->orderBy('themes.name')
             ->get()
             ->map(static fn (object $row): array => [
+                'id' => (int) $row->id,
                 'name' => (string) $row->name,
                 'group' => $row->group_name !== null ? (string) $row->group_name : null,
                 'client_count' => (int) $row->client_count,

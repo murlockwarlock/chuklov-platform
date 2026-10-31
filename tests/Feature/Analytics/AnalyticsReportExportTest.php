@@ -45,6 +45,9 @@ final class AnalyticsReportExportTest extends TestCase
                     'average_after' => 3.25,
                     'average_reduction' => 4.25,
                     'average_reduction_percent' => 56.67,
+                    'session_1_after' => 4.0,
+                    'session_2_after' => 3.0,
+                    'session_3_after' => 2.0,
                 ]],
             ],
             'demographics' => [
@@ -94,11 +97,11 @@ final class AnalyticsReportExportTest extends TestCase
         self::assertNotNull($financeSheet);
 
         self::assertSame(
-            ['Проблема', 'Группа', 'Клиентов', 'Среднее до', 'Среднее после', 'Снижение', 'Снижение, %'],
+            ['Проблема', 'Группа', 'Клиентов', 'Среднее до', 'Среднее после', 'Снижение', 'Снижение, %', 'Сеанс 1 после', 'Сеанс 2 после', 'Сеанс 3 после'],
             $painSheet->toArray()[0],
         );
         self::assertContains(
-            ['Шея и плечевой пояс', 'Опорно-двигательная система', '2', '7.5', '3.25', '4.25', '56.67'],
+            ['Шея и плечевой пояс', 'Опорно-двигательная система', '2', '7.5', '3.25', '4.25', '56.67', '4', '3', '2'],
             $painSheet->toArray(),
         );
         self::assertSame(['Параметр', 'Значение', 'Количество', 'Доля, %'], $demographicsSheet->toArray()[0]);
@@ -170,6 +173,40 @@ final class AnalyticsReportExportTest extends TestCase
         self::assertSame(DataType::TYPE_NUMERIC, $pain->getCell('C2')->getDataType());
         self::assertSame(2, $pain->getCell('C2')->getValue());
         self::assertNull($pain->getCell('E2')->getValue());
+    }
+
+    public function test_cohort_and_filter_sheets_preserve_safe_types_and_human_metadata(): void
+    {
+        [, $admin] = $this->fixture();
+
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, [], metadata: [
+            'period' => '01.10.2026 — 31.10.2026',
+            'date_basis' => 'Дата события',
+            'timezone' => 'Asia/Almaty',
+            'filters' => ['Пол: Женщины', '=UNTRUSTED'],
+            'cohort_count' => 2,
+            'cohort_clients' => [
+                ['name' => '=CLIENT()', 'gender' => 'FEMALE', 'birth_date' => '1985-06-10', 'country' => '+KZ', 'source' => '@instagram'],
+                ['name' => 'Обычный клиент', 'gender' => null, 'birth_date' => null, 'country' => null, 'source' => null],
+            ],
+            'cohort_filters' => ['genders' => ['FEMALE'], 'ageMin' => 30, 'ageMax' => 44],
+            'rule_versions' => ['client_cohort' => '1'],
+            'generated_at' => '2026-10-31T12:00:00+00:00',
+        ]));
+
+        self::assertSame(['Сводка', 'Клиенты', 'Фильтры'], $workbook->getSheetNames());
+        $clients = $workbook->getSheetByName('Клиенты');
+        $filters = $workbook->getSheetByName('Фильтры');
+        self::assertNotNull($clients);
+        self::assertNotNull($filters);
+        self::assertSame(['Клиент', 'Пол', 'Дата рождения', 'Страна', 'Источник', 'Причина попадания'], $clients->toArray()[0]);
+        self::assertSame('=CLIENT()', $clients->getCell('A2')->getValue());
+        self::assertSame(DataType::TYPE_STRING, $clients->getCell('A2')->getDataType());
+        self::assertFalse($clients->getCell('A2')->isFormula());
+        self::assertSame('+KZ', $clients->getCell('D2')->getValue());
+        self::assertSame(DataType::TYPE_STRING, $clients->getCell('D2')->getDataType());
+        self::assertSame(['Параметр', 'Значение'], $filters->toArray()[0]);
+        self::assertStringContainsString('AND', $this->workbookText($workbook));
     }
 
     public function test_sources_and_finance_accounts_have_human_columns(): void

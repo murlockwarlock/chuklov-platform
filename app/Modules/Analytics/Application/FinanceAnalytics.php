@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\FinanceAnalyticsData;
 use App\Modules\Finance\Application\CurrencyConfigurationService;
@@ -28,9 +29,10 @@ final class FinanceAnalytics
         private readonly CurrentCurrencyConfigurationIntegrity $integrity,
         private readonly CurrencyConfigurationService $configuration,
         private readonly FinancialReconciliationProjection $reconciliation,
+        private readonly ClientCohortQuery $cohorts,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): FinanceAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null): FinanceAnalyticsData
     {
         $organization = $this->authorization->authorizeView($actor);
         $organizationId = (int) $organization->getKey();
@@ -61,22 +63,22 @@ final class FinanceAnalytics
                 ->where('ledger.organization_id', $organizationId)
                 ->where('ledger.occurred_at', '>=', $period->startUtc)
                 ->where('ledger.occurred_at', '<', $period->endUtc);
-            if ($clientId !== null) {
-                $revenueQuery->whereIn('ledger.obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable));
+            if ($clientId !== null || $cohortFilters !== null) {
+                $revenueQuery->whereIn('ledger.obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable, $cohortFilters, $period));
             }
             $revenueQuery->where('ledger.entry_type', '<>', FinancialLedgerEntryType::Expense->value);
             $this->excludeGiftCertificateRedemptions($revenueQuery, $ledgerTable, 'ledger');
             $revenue = $this->qualifiedBaseAmountSum($revenueQuery);
-            $expenses = $this->expenses($organizationId, $period, $ledgerTable, $obligationTable, $client);
-            $receipts = $this->receipts($organizationId, $period, $ledgerTable, $obligationTable, $client);
-            $cohortClientCount = $this->cohortClientCount($organizationId, $period, $client);
+            $expenses = $this->expenses($organizationId, $period, $ledgerTable, $obligationTable, $client, $cohortFilters);
+            $receipts = $this->receipts($organizationId, $period, $ledgerTable, $obligationTable, $client, $cohortFilters);
+            $cohortClientCount = $this->cohortClientCount($organizationId, $period, $client, $cohortFilters);
             $realizedLtv = $cohortClientCount === 0
                 ? null
                 : $this->averageMinor(
-                    $this->cohortLedgerSum($organizationId, $period, $obligationTable, $ledgerTable, $client),
+                    $this->cohortLedgerSum($organizationId, $period, $obligationTable, $ledgerTable, $client, $cohortFilters),
                     $cohortClientCount,
                 );
-            $debt = $this->periodEndDebt($organizationId, $period, $baseCurrency->value, $obligationTable, $ledgerTable, $client);
+            $debt = $this->periodEndDebt($organizationId, $period, $baseCurrency->value, $obligationTable, $ledgerTable, $client, $cohortFilters);
 
             return new FinanceAnalyticsData(
                 available: true,
@@ -89,7 +91,7 @@ final class FinanceAnalytics
                 cohortClientCount: $cohortClientCount,
                 expensesMinor: $expenses,
                 cashMovementMinor: BigInteger::of($revenue)->minus($expenses)->toString(),
-                accounts: $this->accounts($organizationId, $period, $ledgerTable, $obligationTable, $baseCurrency->value, $client),
+                accounts: $this->accounts($organizationId, $period, $ledgerTable, $obligationTable, $baseCurrency->value, $client, $cohortFilters),
             );
         } catch (\Throwable) {
             return FinanceAnalyticsData::unavailable();
@@ -97,7 +99,7 @@ final class FinanceAnalytics
     }
 
     /** @return array{total: string, count: int} */
-    private function receipts(int $organizationId, DashboardPeriod $period, string $ledgerTable, string $obligationTable, ?Client $client = null): array
+    private function receipts(int $organizationId, DashboardPeriod $period, string $ledgerTable, string $obligationTable, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null): array
     {
         $clientId = $client?->getKey();
         $row = DB::table($ledgerTable)
@@ -109,7 +111,7 @@ final class FinanceAnalytics
                 FinancialLedgerEntryType::FakeGatewaySettlement->value,
                 FinancialLedgerEntryType::GatewaySettlement->value,
             ])
-            ->when($clientId !== null, fn ($query) => $query->whereIn('obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable)))
+            ->when($clientId !== null || $cohortFilters !== null, fn ($query) => $query->whereIn('obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable, $cohortFilters, $period)))
             ->where('base_amount_minor', '>', 0)
             ->selectRaw('COALESCE(SUM(base_amount_minor), 0) as total')
             ->selectRaw('COUNT(*) as receipt_count')
@@ -121,7 +123,7 @@ final class FinanceAnalytics
         ];
     }
 
-    private function expenses(int $organizationId, DashboardPeriod $period, string $ledgerTable, string $obligationTable, ?Client $client = null): string
+    private function expenses(int $organizationId, DashboardPeriod $period, string $ledgerTable, string $obligationTable, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null): string
     {
         $clientId = $client?->getKey();
         $row = DB::table($ledgerTable)
@@ -129,7 +131,7 @@ final class FinanceAnalytics
             ->where('entry_type', FinancialLedgerEntryType::Expense->value)
             ->where('occurred_at', '>=', $period->startUtc)
             ->where('occurred_at', '<', $period->endUtc)
-            ->when($clientId !== null, fn ($query) => $query->whereIn('obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable)))
+            ->when($clientId !== null || $cohortFilters !== null, fn ($query) => $query->whereIn('obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable, $cohortFilters, $period)))
             ->selectRaw('COALESCE(SUM(base_amount_minor), 0) as total')
             ->first();
 
@@ -137,18 +139,18 @@ final class FinanceAnalytics
     }
 
     /** @return list<array{label: string, account_type: string, currency: string, movement_currency: string, movement_minor: string}> */
-    private function accounts(int $organizationId, DashboardPeriod $period, string $ledgerTable, string $obligationTable, string $movementCurrency, ?Client $client = null): array
+    private function accounts(int $organizationId, DashboardPeriod $period, string $ledgerTable, string $obligationTable, string $movementCurrency, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null): array
     {
         $clientId = $client?->getKey();
         $accountTable = (new FinanceAccount)->getTable();
         $rows = DB::table($accountTable.' as accounts')
-            ->leftJoin($ledgerTable.' as ledger', function (JoinClause $join) use ($period, $organizationId, $obligationTable, $clientId): void {
+            ->leftJoin($ledgerTable.' as ledger', function (JoinClause $join) use ($period, $organizationId, $obligationTable, $clientId, $cohortFilters): void {
                 $join
                     ->on('ledger.organization_id', '=', 'accounts.organization_id')
                     ->on('ledger.account_id', '=', 'accounts.id')
                     ->where('ledger.occurred_at', '>=', $period->startUtc)
                     ->where('ledger.occurred_at', '<', $period->endUtc)
-                    ->when($clientId !== null, fn ($query) => $query->whereIn('ledger.obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable)));
+                    ->when($clientId !== null || $cohortFilters !== null, fn ($query) => $query->whereIn('ledger.obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable, $cohortFilters, $period)));
             })
             ->where('accounts.organization_id', $organizationId)
             ->select('accounts.name', 'accounts.account_type', 'accounts.currency')
@@ -167,20 +169,24 @@ final class FinanceAnalytics
         ])->all());
     }
 
-    private function cohortClientCount(int $organizationId, DashboardPeriod $period, ?Client $client = null): int
+    private function cohortClientCount(int $organizationId, DashboardPeriod $period, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null): int
     {
         $clientTable = (new Client)->getTable();
         $clientId = $client?->getKey();
 
-        return DB::table($clientTable)
+        $query = DB::table($clientTable)
             ->where('organization_id', $organizationId)
             ->where('created_at', '>=', $period->startUtc)
             ->where('created_at', '<', $period->endUtc)
-            ->when($clientId !== null, fn ($query) => $query->where('id', $clientId))
-            ->count();
+            ->when($clientId !== null, fn ($query) => $query->where('id', $clientId));
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($query, 'clients.id', $cohortFilters, $period);
+        }
+
+        return $query->count();
     }
 
-    private function cohortLedgerSum(int $organizationId, DashboardPeriod $period, string $obligationTable, string $ledgerTable, ?Client $client = null): string
+    private function cohortLedgerSum(int $organizationId, DashboardPeriod $period, string $obligationTable, string $ledgerTable, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null): string
     {
         $clientTable = (new Client)->getTable();
         $clientId = $client?->getKey();
@@ -190,6 +196,9 @@ final class FinanceAnalytics
             ->where('created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('id', $clientId))
             ->select('id');
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($cohort, 'clients.id', $cohortFilters, $period);
+        }
 
         $query = DB::table($ledgerTable.' as ledger')
             ->join($obligationTable.' as obligations', function (JoinClause $join): void {
@@ -219,7 +228,7 @@ final class FinanceAnalytics
             });
     }
 
-    private function periodEndDebt(int $organizationId, DashboardPeriod $period, string $baseCurrency, string $obligationTable, string $ledgerTable, ?Client $client = null): string
+    private function periodEndDebt(int $organizationId, DashboardPeriod $period, string $baseCurrency, string $obligationTable, string $ledgerTable, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null): string
     {
         $clientId = $client?->getKey();
         $obligations = DB::table($obligationTable)
@@ -228,6 +237,8 @@ final class FinanceAnalytics
             ->where('created_at', '<', $period->endUtc);
         if ($clientId !== null) {
             $obligations->where('client_id', $clientId);
+        } elseif ($cohortFilters !== null) {
+            $obligations->whereIn('client_id', $this->cohortClientIds($cohortFilters, $period));
         }
 
         $applied = DB::table($ledgerTable.' as ledger')
@@ -243,6 +254,8 @@ final class FinanceAnalytics
             ->where('ledger.occurred_at', '<', $period->endUtc);
         if ($clientId !== null) {
             $applied->where('obligations.client_id', $clientId);
+        } elseif ($cohortFilters !== null) {
+            $applied->whereIn('obligations.client_id', $this->cohortClientIds($cohortFilters, $period));
         }
 
         $obligationTotal = $this->baseAmountSum($obligations);
@@ -251,12 +264,22 @@ final class FinanceAnalytics
         return BigInteger::of($obligationTotal)->minus($appliedTotal)->toString();
     }
 
-    private function clientObligationIds(int $organizationId, int $clientId, string $obligationTable): Builder
+    private function clientObligationIds(int $organizationId, ?int $clientId, string $obligationTable, ?ClientCohortFilters $cohortFilters = null, ?DashboardPeriod $period = null): Builder
     {
-        return DB::table($obligationTable)
+        $query = DB::table($obligationTable)
             ->where('organization_id', $organizationId)
-            ->where('client_id', $clientId)
+            ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId))
             ->select('id');
+        if ($cohortFilters !== null) {
+            $query->whereIn('client_id', $this->cohortClientIds($cohortFilters, $period));
+        }
+
+        return $query;
+    }
+
+    private function cohortClientIds(ClientCohortFilters $filters, ?DashboardPeriod $period): Builder
+    {
+        return $this->cohorts->query($filters, $period)->select('clients.id')->toBase();
     }
 
     private function averageMinor(string $total, int $count): string

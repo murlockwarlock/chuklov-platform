@@ -547,6 +547,38 @@ final class MedicalSessionTest extends TestCase
         ));
     }
 
+    public function test_root_cause_free_text_accepts_10000_unicode_characters_and_rejects_10001_atomically(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+        $accepted = str_repeat('Ж', 10000);
+        $created = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::now('UTC'),
+            rootCauses: [['free_text' => $accepted]],
+        ));
+
+        self::assertSame($accepted, $created->rootCauses[0]->freeText);
+        $rootCauseCount = MedicalSession::query()->findOrFail($created->id)->rootCauses()->count();
+
+        try {
+            app(UpdateSession::class)->handle($admin, MedicalSession::query()->findOrFail($created->id), new UpdateSessionCommand(
+                pain: null,
+                tests: null,
+                observations: null,
+                rootCauseHypothesis: null,
+                protocol: null,
+                result: null,
+                rootCauses: [['free_text' => str_repeat('Ж', 10001)]],
+                rootCausesProvided: true,
+            ));
+            self::fail('A root-cause description longer than 10000 Unicode characters must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('root_causes', $exception->errors());
+        }
+
+        self::assertSame($rootCauseCount, MedicalSession::query()->findOrFail($created->id)->rootCauses()->count());
+    }
+
     public function test_session_allows_inactive_specialist_for_retroactive_recording(): void
     {
         [$organization, $admin, $client] = $this->setupOrganizationWithClientAndSpecialist();

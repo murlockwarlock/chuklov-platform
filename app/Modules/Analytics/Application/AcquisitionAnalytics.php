@@ -4,6 +4,7 @@ namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\AcquisitionAnalyticsData;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\SourceBucket;
 use App\Modules\Attribution\Application\AttributionSourceCatalog;
@@ -40,9 +41,10 @@ final class AcquisitionAnalytics
         private readonly OrganizationContext $context,
         private readonly OrganizationAuthorizer $authorizer,
         private readonly AttributionSourceCatalog $sourceCatalog,
+        private readonly ClientCohortQuery $cohorts,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null, ?string $sourceKey = null): AcquisitionAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null, ?string $sourceKey = null, ?ClientCohortFilters $cohortFilters = null): AcquisitionAnalyticsData
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
@@ -60,6 +62,9 @@ final class AcquisitionAnalytics
             ->where('clients.created_at', '>=', $period->startUtc)
             ->where('clients.created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('clients.id', $clientId));
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($newClientsQuery, 'clients.id', $cohortFilters, $period);
+        }
         if ($sourceMapping !== null) {
             $newClientsQuery->whereExists(function (Builder $query) use ($organizationId, $sourceMapping): void {
                 $query
@@ -74,7 +79,7 @@ final class AcquisitionAnalytics
 
         return new AcquisitionAnalyticsData(
             newClients: $newClients,
-            sources: $this->sourceBuckets($organizationId, $period, $clientTable, $client, $sourceMapping),
+            sources: $this->sourceBuckets($organizationId, $period, $clientTable, $client, $sourceMapping, $cohortFilters),
         );
     }
 
@@ -88,6 +93,7 @@ final class AcquisitionAnalytics
         string $clientTable,
         ?Client $client = null,
         ?array $sourceMapping = null,
+        ?ClientCohortFilters $cohortFilters = null,
     ): array {
         $attributionTable = (new ClientAttribution)->getTable();
         $clientId = $client?->getKey();
@@ -117,6 +123,9 @@ final class AcquisitionAnalytics
             ->where('clients.created_at', '>=', $period->startUtc)
             ->where('clients.created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('clients.id', $clientId));
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($classified, 'clients.id', $cohortFilters, $period);
+        }
         if ($sourceMapping !== null) {
             $this->applySourceFilter($classified, $sourceMapping);
         }
@@ -178,10 +187,22 @@ final class AcquisitionAnalytics
         arsort($buckets);
 
         return array_map(
-            static fn (string $label, int $count): SourceBucket => new SourceBucket(label: $label, count: $count),
+            fn (string $label, int $count): SourceBucket => new SourceBucket(label: $label, count: $count, key: $this->sourceKeyForLabel($label, $configured)),
             array_keys($buckets),
             array_values($buckets),
         );
+    }
+
+    /** @param list<array{source_key: string, label: string, aliases: list<string>, is_active: bool, sort_order: int}> $configured */
+    private function sourceKeyForLabel(string $label, array $configured): ?string
+    {
+        foreach ($configured as $mapping) {
+            if ($mapping['label'] === $label) {
+                return $mapping['source_key'];
+            }
+        }
+
+        return null;
     }
 
     /** @param array{source_key: string, label: string, aliases: list<string>, is_active: bool, sort_order: int} $mapping */

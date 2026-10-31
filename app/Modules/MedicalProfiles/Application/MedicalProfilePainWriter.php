@@ -29,6 +29,9 @@ final readonly class MedicalProfilePainWriter
             if (! is_array($rawPain)) {
                 throw ValidationException::withMessages(['pains' => 'Проверьте список болей.']);
             }
+            if (MedicalPainInput::isEmptyRow($rawPain)) {
+                continue;
+            }
             $profilePain = $rawPain;
             unset(
                 $profilePain['frequency_mode'],

@@ -10,6 +10,7 @@ use App\Modules\Attachments\Application\DeleteMedicalAttachment;
 use App\Modules\Attachments\Application\DTOs\AttachmentUploadCommand;
 use App\Modules\Attachments\Application\GetTemporaryAttachmentUrl;
 use App\Modules\Attachments\Application\ListClientAttachments;
+use App\Modules\Attachments\Application\MedicalAudioPolicy;
 use App\Modules\Attachments\Application\UploadMedicalAttachment;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
@@ -50,6 +51,7 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
         abort_unless($client instanceof Client, 404);
 
         $canManage = app(AttachmentAuthorization::class)->allowsUpload($actor, $client);
+        $audioPolicy = app(MedicalAudioPolicy::class);
 
         return $table
             ->heading(__('Аудиозаписи'))
@@ -85,8 +87,8 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
                             ->required(),
                         FileUpload::make('file')
                             ->label(__('Аудиофайл'))
-                            ->acceptedFileTypes(self::audioMimeTypes())
-                            ->maxSize((int) ceil((int) config('medical.audio_attachment_max_bytes', 67_108_864) / 1024))
+                            ->acceptedFileTypes($audioPolicy->mimeTypes((int) $client->organization_id))
+                            ->maxSize((int) ceil($audioPolicy->maxBytes((int) $client->organization_id) / 1024))
                             ->storeFiles(false)
                             ->required(),
                     ])
@@ -148,20 +150,6 @@ final class ClientAudioRecordingsRelationManager extends LocalizedRelationManage
             ->paginated([10, 25])
             ->emptyStateHeading(__('Аудиозаписей пока нет'))
             ->emptyStateDescription(__('Загрузите запись сеанса для внутреннего использования.'));
-    }
-
-    /** @return list<string> */
-    private static function audioMimeTypes(): array
-    {
-        return [
-            'audio/mpeg',
-            'audio/mp4',
-            'audio/x-m4a',
-            'audio/wav',
-            'audio/x-wav',
-            'audio/ogg',
-            'audio/webm',
-        ];
     }
 
     private static function formatBytes(int $bytes): string

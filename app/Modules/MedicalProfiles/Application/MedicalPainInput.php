@@ -26,15 +26,13 @@ final readonly class MedicalPainInput
     public static function fromArray(array $data): self
     {
         $name = is_string($data['name'] ?? null) ? trim($data['name']) : '';
-        if ($name === '') {
-            throw ValidationException::withMessages(['pains' => 'Укажите название каждой боли.']);
-        }
         if (mb_strlen($name) > 1000) {
             throw ValidationException::withMessages(['pains' => 'Название боли не должно превышать 1000 символов.']);
         }
 
-        $frequencyMode = is_string($data['frequency_mode'] ?? null) ? $data['frequency_mode'] : 'permanent';
-        if (! in_array($frequencyMode, ['permanent', 'count'], true)) {
+        $frequencyMode = is_string($data['frequency_mode'] ?? null) ? trim($data['frequency_mode']) : 'unspecified';
+        $frequencyMode = $frequencyMode === '' ? 'unspecified' : $frequencyMode;
+        if (! in_array($frequencyMode, ['unspecified', 'permanent', 'count'], true)) {
             throw ValidationException::withMessages(['pains' => 'Выберите корректную частоту боли.']);
         }
 
@@ -45,7 +43,7 @@ final readonly class MedicalPainInput
         if ($frequencyMode === 'count' && ($frequencyCount === null || $frequencyPeriodUnit === null || $frequencyPeriodUnit === '')) {
             throw ValidationException::withMessages(['pains' => 'Для частоты укажите количество и период.']);
         }
-        if ($frequencyMode === 'permanent') {
+        if ($frequencyMode !== 'count') {
             $frequencyCount = null;
             $frequencyPeriodUnit = null;
         }
@@ -83,6 +81,29 @@ final readonly class MedicalPainInput
             lineageKey: $lineageKey,
             tagIds: self::tagIds($data['tag_ids'] ?? []),
         );
+    }
+
+    /** @param array<string, mixed> $data */
+    public static function isEmptyRow(array $data): bool
+    {
+        $name = is_string($data['name'] ?? null) ? trim($data['name']) : '';
+        $count = $data['frequency_count'] ?? null;
+        $period = is_string($data['frequency_period_unit'] ?? null) ? trim($data['frequency_period_unit']) : '';
+        $frequencyMode = array_key_exists('frequency_mode', $data) ? $data['frequency_mode'] : 'unspecified';
+        $frequencyIsDefault = $frequencyMode === null || $frequencyMode === '' || $frequencyMode === 'unspecified';
+        $time = array_key_exists('time_of_day', $data) ? $data['time_of_day'] : ['all'];
+        $timeIsDefault = $time === null || $time === [] || $time === ['all'];
+        $tags = array_key_exists('tag_ids', $data) ? $data['tag_ids'] : [];
+
+        return $name === ''
+            && $frequencyIsDefault
+            && ($count === null || $count === '')
+            && $period === ''
+            && $timeIsDefault
+            && ($data['score'] ?? null) === null
+            && ($data['before_score'] ?? null) === null
+            && ($data['after_score'] ?? null) === null
+            && ($tags === null || $tags === []);
     }
 
     private static function nullableInteger(mixed $value, string $field): ?int

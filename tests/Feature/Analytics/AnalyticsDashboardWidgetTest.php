@@ -182,6 +182,45 @@ final class AnalyticsDashboardWidgetTest extends TestCase
         self::assertArrayHasKey('pain', $component->instance()->results);
     }
 
+    public function test_analytics_console_drills_down_from_a_service_aggregate_to_the_same_cohort_query(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $selected = Client::factory()->forOrganization($organization)->create(['full_name' => 'Клиент услуги']);
+        $other = Client::factory()->forOrganization($organization)->create(['full_name' => 'Другой клиент']);
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create(['name' => 'Комплексная терапия']);
+        $otherService = Service::factory()->forOrganization($organization)->create(['name' => 'Массаж']);
+        foreach ([[$selected, $service], [$other, $otherService]] as [$client, $bookingService]) {
+            Booking::factory()
+                ->forClient($client)
+                ->forSpecialist($specialist)
+                ->forService($bookingService)
+                ->create([
+                    'status' => 'completed',
+                    'starts_at' => '2026-10-10 12:00:00',
+                    'ends_at' => '2026-10-10 13:00:00',
+                    'blocking_ends_at' => '2026-10-10 13:00:00',
+                ]);
+        }
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['services'],
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-11',
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён')
+            ->call('showAggregateClients', 'services', $service->getKey());
+
+        self::assertSame([$selected->full_name], array_column($component->instance()->cohortClients, 'name'));
+        self::assertStringContainsString('записи и услуги', (string) $component->instance()->cohortDrilldownReason);
+    }
+
     public function test_analytics_console_preserves_taxonomy_filters_for_multiple_dimensions(): void
     {
         [$organization, $admin] = $this->organizationWithAdmin();
@@ -345,6 +384,7 @@ final class AnalyticsDashboardWidgetTest extends TestCase
 
         $component = Livewire::actingAs($admin)
             ->test(AnalyticsConsole::class)
+            ->set('cohortClients', [['name' => 'Устаревший клиент']])
             ->fillForm([
                 'dimensions' => ['acquisition', 'scheduling'],
                 'period' => DashboardPeriod::Today,
@@ -356,6 +396,7 @@ final class AnalyticsDashboardWidgetTest extends TestCase
 
         self::assertArrayHasKey('acquisition', $component->instance()->results);
         self::assertArrayNotHasKey('scheduling', $component->instance()->results);
+        self::assertSame([], $component->instance()->cohortClients);
         self::assertSame(['scheduling' => 'Записи и визиты'], $component->instance()->dimensionErrors);
     }
 

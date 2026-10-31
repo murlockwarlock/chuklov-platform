@@ -3,6 +3,8 @@
 namespace App\Modules\Organizations\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\ClientSessionAxisCatalog;
+use App\Modules\Attachments\Application\MedicalAudioPolicy;
 use App\Modules\ClientPortal\Domain\Enums\RoadMapAvailabilityMode;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
@@ -172,6 +174,95 @@ class SetOrganizationSetting
         if ($key === OrganizationSettingKey::RoadMapAvailabilityMode
             && (! is_string($value) || RoadMapAvailabilityMode::tryFrom($value) === null)) {
             throw new InvalidArgumentException('The Road Map availability mode is invalid.');
+        }
+
+        if ($key === OrganizationSettingKey::MedicalAudioAllowedMimeTypes) {
+            $decoded = is_string($value) ? json_decode($value, true) : null;
+            if (! is_array($decoded) || $decoded === [] || count($decoded) > count(MedicalAudioPolicy::allowedMimeTypes())
+                || array_diff($decoded, MedicalAudioPolicy::allowedMimeTypes()) !== []) {
+                throw new InvalidArgumentException('The medical audio format policy is invalid.');
+            }
+        }
+
+        if ($key === OrganizationSettingKey::MedicalAudioBusinessMaxBytes) {
+            $hardCap = (int) config('medical.audio_attachment_max_bytes', 67_108_864);
+            if (! is_int($value) || $value < 1 || $value > $hardCap) {
+                throw new InvalidArgumentException('The medical audio size policy exceeds the server safety limit.');
+            }
+        }
+
+        if ($key === OrganizationSettingKey::AnalyticsAgeRanges) {
+            $decoded = is_string($value) ? json_decode($value, true) : null;
+            if (! is_array($decoded) || $decoded === [] || count($decoded) > 20 || mb_strlen((string) $value) > 4096) {
+                throw new InvalidArgumentException('The analytics age ranges are invalid.');
+            }
+            $keys = [];
+            foreach ($decoded as $range) {
+                if (! is_array($range)
+                    || ! is_string($range['key'] ?? null)
+                    || preg_match('/^[a-z][a-z0-9_-]{0,39}$/', $range['key']) !== 1
+                    || ! is_string($range['label'] ?? null)
+                    || trim($range['label']) === ''
+                    || mb_strlen($range['label']) > 80
+                    || ! is_int($range['min'] ?? null)
+                    || $range['min'] < 0
+                    || $range['min'] > 150
+                    || (($range['max'] ?? null) !== null && (! is_int($range['max']) || $range['max'] < $range['min'] || $range['max'] > 150))) {
+                    throw new InvalidArgumentException('The analytics age ranges are invalid.');
+                }
+                if (array_key_exists('active', $range) && ! is_bool($range['active'])) {
+                    throw new InvalidArgumentException('The analytics age ranges are invalid.');
+                }
+                if (array_key_exists('sort_order', $range) && (! is_int($range['sort_order']) || $range['sort_order'] < 0)) {
+                    throw new InvalidArgumentException('The analytics age ranges are invalid.');
+                }
+                if (in_array($range['key'], $keys, true)) {
+                    throw new InvalidArgumentException('The analytics age ranges are invalid.');
+                }
+                $keys[] = $range['key'];
+            }
+        }
+
+        if ($key === OrganizationSettingKey::AnalyticsPurchaseGroups) {
+            $decoded = is_string($value) ? json_decode($value, true) : null;
+            if (! is_array($decoded) || $decoded === [] || count($decoded) > 50 || mb_strlen((string) $value) > 8192) {
+                throw new InvalidArgumentException('The analytics purchase groups are invalid.');
+            }
+            $keys = [];
+            $types = [];
+            foreach ($decoded as $group) {
+                if (! is_array($group)
+                    || ! is_string($group['key'] ?? null)
+                    || preg_match('/^[a-z][a-z0-9_-]{0,39}$/', $group['key']) !== 1
+                    || ! is_string($group['label'] ?? null)
+                    || trim($group['label']) === ''
+                    || mb_strlen($group['label']) > 120
+                    || ! is_array($group['catalog_types'] ?? null)
+                    || $group['catalog_types'] === []) {
+                    throw new InvalidArgumentException('The analytics purchase groups are invalid.');
+                }
+                if (array_key_exists('active', $group) && ! is_bool($group['active'])) {
+                    throw new InvalidArgumentException('The analytics purchase groups are invalid.');
+                }
+                if (array_key_exists('sort_order', $group) && (! is_int($group['sort_order']) || $group['sort_order'] < 0)) {
+                    throw new InvalidArgumentException('The analytics purchase groups are invalid.');
+                }
+                if (in_array($group['key'], $keys, true)) {
+                    throw new InvalidArgumentException('The analytics purchase groups are invalid.');
+                }
+                $keys[] = $group['key'];
+                foreach ($group['catalog_types'] as $type) {
+                    if (! is_string($type) || trim($type) === '' || mb_strlen($type) > 80 || in_array($type, $types, true)) {
+                        throw new InvalidArgumentException('The analytics purchase groups are invalid.');
+                    }
+                    $types[] = $type;
+                }
+            }
+        }
+
+        if ($key === OrganizationSettingKey::AnalyticsSessionAxisSemantics
+            && (! is_string($value) || ! array_key_exists($value, ClientSessionAxisCatalog::definitions()))) {
+            throw new InvalidArgumentException('The analytics session axis semantics are invalid.');
         }
     }
 }

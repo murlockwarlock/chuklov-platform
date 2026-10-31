@@ -13,6 +13,8 @@ final readonly class PainAnalyticsData
         public ?float $averageAfter = null,
         public ?float $averageReduction = null,
         public ?float $averageReductionPercent = null,
+        public string $sessionAxisLabel = 'Порядок сеансов клиента от первого к последнему',
+        public string $sessionAxisVersion = 'client-chronological-v1',
     ) {}
 
     /** @return array<string, mixed> */
@@ -26,6 +28,8 @@ final readonly class PainAnalyticsData
             'average_after' => $this->averageAfter,
             'average_reduction' => $this->averageReduction,
             'average_reduction_percent' => $this->averageReductionPercent,
+            'session_axis_label' => $this->sessionAxisLabel,
+            'session_axis_version' => $this->sessionAxisVersion,
         ];
     }
 }

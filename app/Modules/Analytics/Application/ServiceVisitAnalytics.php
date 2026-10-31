@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\ServiceVisitAnalyticsData;
 use App\Modules\Identity\Domain\Models\Client;
@@ -17,9 +18,10 @@ final readonly class ServiceVisitAnalytics
     public function __construct(
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
+        private ClientCohortQuery $cohorts,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): ServiceVisitAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null): ServiceVisitAnalyticsData
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
@@ -38,7 +40,10 @@ final readonly class ServiceVisitAnalytics
             ->where('bookings.starts_at', '>=', $period->startUtc)
             ->where('bookings.starts_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('bookings.client_id', $clientId))
-            ->select('services.name')
+            ->when($cohortFilters !== null, function ($query) use ($cohortFilters, $period): void {
+                $this->cohorts->constrain($query, 'bookings.client_id', $cohortFilters, $period);
+            })
+            ->select('services.id', 'services.name')
             ->selectRaw('COUNT(*) as visit_count')
             ->selectRaw('COUNT(DISTINCT bookings.client_id) as client_count')
             ->groupBy('services.name')
@@ -46,6 +51,7 @@ final readonly class ServiceVisitAnalytics
             ->orderBy('services.name')
             ->get()
             ->map(static fn (object $row): array => [
+                'id' => (int) $row->id,
                 'name' => (string) $row->name,
                 'visit_count' => (int) $row->visit_count,
                 'client_count' => (int) $row->client_count,
@@ -61,6 +67,9 @@ final readonly class ServiceVisitAnalytics
             ->where('bookings.starts_at', '>=', $period->startUtc)
             ->where('bookings.starts_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('bookings.client_id', $clientId))
+            ->when($cohortFilters !== null, function ($query) use ($cohortFilters, $period): void {
+                $this->cohorts->constrain($query, 'bookings.client_id', $cohortFilters, $period);
+            })
             ->select('specialists.id', 'specialists.display_name')
             ->selectRaw('COUNT(*) as visit_count')
             ->selectRaw('COUNT(DISTINCT bookings.client_id) as client_count')
@@ -69,6 +78,7 @@ final readonly class ServiceVisitAnalytics
             ->orderBy('specialists.display_name')
             ->get()
             ->map(static fn (object $row): array => [
+                'id' => (int) $row->id,
                 'name' => (string) $row->display_name,
                 'visit_count' => (int) $row->visit_count,
                 'client_count' => (int) $row->client_count,

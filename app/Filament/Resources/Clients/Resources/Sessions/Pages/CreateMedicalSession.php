@@ -66,10 +66,7 @@ class CreateMedicalSession extends LocalizedCreateRecord
         $actor = $this->actor();
         $parent = $this->parentClient();
 
-        if (($data['pain_not_measured'] ?? false) === true) {
-            $data['pain_vas'] = null;
-        }
-        unset($data['pain_not_measured']);
+        unset($data['pain_not_measured'], $data['pain_vas']);
 
         try {
             $command = CreateSessionCommand::fromArray($data);

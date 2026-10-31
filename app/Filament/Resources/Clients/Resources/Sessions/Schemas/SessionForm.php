@@ -21,6 +21,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Slider;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Components\Actions;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
@@ -68,11 +69,12 @@ final class SessionForm
                             ->label(__('Боли'))
                             ->schema([
                                 Hidden::make('lineage_key')->dehydrated()->nullable(),
-                                TextInput::make('name')->label(__('Название или описание боли'))->required()->maxLength(1000),
+                                TextInput::make('name')->label(__('Название или описание боли'))->maxLength(1000),
                                 Select::make('frequency_mode')->label(__('Частота'))->options([
+                                    'unspecified' => __('Не указана'),
                                     'permanent' => __('Постоянно'),
                                     'count' => __('Количество раз за период'),
-                                ])->default('permanent')->live(),
+                                ])->default('unspecified')->live(),
                                 TextInput::make('frequency_count')->label(__('Количество'))->integer()->minValue(1)
                                     ->visible(fn (Get $get): bool => $get('frequency_mode') === 'count')
                                     ->required(fn (Get $get): bool => $get('frequency_mode') === 'count'),
@@ -244,13 +246,19 @@ final class SessionForm
                             ->addActionLabel(__('Добавить первопричину'))
                             ->columnSpanFull(),
                         Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),
-                        Hidden::make('pain_vas')->dehydrated()->nullable(),
-                        Hidden::make('pain_not_measured')->dehydrated()->default(true),
-                        Placeholder::make('pain_vas_legacy')
-                            ->label(__('Историческое значение ВАШ'))
-                            ->content(fn (Get $get): string => self::legacyPainVasDisplay($get('pain_vas')))
-                            ->columnSpanFull(),
-                        Textarea::make('protocol')->label(__('Алгоритм / протокол сеанса'))->rows(3)->placeholder(__('Пошаговый план сеанса')),
+                        Textarea::make('protocol')
+                            ->label(__('Алгоритм сеанса (пошаговый протокол сеанса)'))
+                            ->rows(3)
+                            ->placeholder(__('Пошаговый план сеанса'))
+                            ->hintAction(Action::make('fillProtocol')
+                                ->label(__('Заполнить'))
+                                ->icon('heroicon-o-sparkles')
+                                ->action(static function (): void {
+                                    Notification::make()
+                                        ->title(__('Автозаполнение алгоритма пока не подключено.'))
+                                        ->info()
+                                        ->send();
+                                })),
                         Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->rows(3)->placeholder(__('Что клиент почувствовал после сеанса')),
                         Textarea::make('visual_posture_diagnostics')->label(__('Визуальная диагностика осанки'))->rows(3)->placeholder(__('Изменения линии плеч, таза и позвоночника')),
                         Textarea::make('result')->label(__('Результат после сеанса'))->rows(3)->placeholder(__('Эффект после процедур/до следующего сеанса')),
@@ -270,13 +278,6 @@ final class SessionForm
         $state = $get('');
 
         return is_array($state) ? ($state['previous_after_score'] ?? null) : null;
-    }
-
-    private static function legacyPainVasDisplay(mixed $value): string
-    {
-        return is_numeric($value) && (int) $value >= 0 && (int) $value <= 10
-            ? __(':value / 10', ['value' => (int) $value])
-            : __('Не указана');
     }
 
     /** @return list<int> */

@@ -3,6 +3,8 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
+use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -15,10 +17,11 @@ final readonly class ClientSegmentAnalytics
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
         private ClientSegmentQuery $segments,
+        private ClientCohortQuery $cohorts,
     ) {}
 
     /** @return array{client_count: int, segments: list<array{label: string, count: int, percent: float}>} */
-    public function handle(User $actor, ?Client $client = null): array
+    public function handle(User $actor, ?Client $client = null, ?ClientCohortFilters $cohortFilters = null, ?DashboardPeriod $period = null): array
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
@@ -32,11 +35,15 @@ final readonly class ClientSegmentAnalytics
         if ($client instanceof Client) {
             $base->whereKey($client->getKey());
         }
+        if ($cohortFilters !== null) {
+            $base->whereIn('clients.id', $this->cohorts->query($cohortFilters, $period)->select('clients.id'));
+        }
         $total = (clone $base)->count();
         $rows = [];
         foreach (ClientSegment::cases() as $segment) {
             $count = (clone $this->segments->apply(clone $base, $segment))->count();
             $rows[] = [
+                'key' => $segment->value,
                 'label' => $segment->label(),
                 'count' => $count,
                 'percent' => $total === 0 ? 0.0 : round($count * 100 / $total, 2),

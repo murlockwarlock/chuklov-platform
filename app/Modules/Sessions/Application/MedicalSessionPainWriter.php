@@ -29,6 +29,9 @@ final readonly class MedicalSessionPainWriter
             if (! is_array($rawPain)) {
                 throw ValidationException::withMessages(['pains' => 'Проверьте список болей.']);
             }
+            if (MedicalPainInput::isEmptyRow($rawPain)) {
+                continue;
+            }
             $input = MedicalPainInput::fromArray($rawPain);
             $lineage = $input->lineageKey ?? Str::uuid()->toString();
             if (isset($lineages[$lineage])) {
