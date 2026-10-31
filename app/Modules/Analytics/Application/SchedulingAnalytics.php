@@ -5,6 +5,7 @@ namespace App\Modules\Analytics\Application;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\Data\SchedulingAnalyticsData;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
@@ -23,12 +24,16 @@ final class SchedulingAnalytics
         private readonly OrganizationAuthorizer $authorizer,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period): SchedulingAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): SchedulingAnalyticsData
     {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewScheduling);
 
         $organizationId = (int) $organization->getKey();
+        if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
+        $clientId = $client?->getKey();
         $bookingTable = (new Booking)->getTable();
         $eventTable = (new BookingEvent)->getTable();
 
@@ -36,21 +41,28 @@ final class SchedulingAnalytics
             ->where('organization_id', $organizationId)
             ->where('created_at', '>=', $period->startUtc)
             ->where('created_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId))
             ->selectRaw('COUNT(*) as bookings')
             ->selectRaw('COALESCE(SUM(CASE WHEN visit_format = ? THEN 1 ELSE 0 END), 0) as home_requests', [VisitFormat::HomeVisit->value])
             ->first();
 
-        $eventTotals = DB::table($eventTable)
-            ->where('organization_id', $organizationId)
-            ->where('occurred_at', '>=', $period->startUtc)
-            ->where('occurred_at', '<', $period->endUtc)
-            ->selectRaw('COALESCE(SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END), 0) as cancellations', [BookingEventType::Cancelled->value])
-            ->selectRaw('COALESCE(SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END), 0) as reschedules', [BookingEventType::Rescheduled->value])
-            ->selectRaw('COALESCE(SUM(CASE WHEN event_type = ? THEN 1 ELSE 0 END), 0) as no_shows', [BookingEventType::NoShow->value])
-            ->selectRaw('COUNT(DISTINCT CASE WHEN event_type = ? THEN booking_id END) as visits', [BookingEventType::Completed->value])
+        $eventTotals = DB::table($eventTable.' as events')
+            ->join($bookingTable.' as bookings', function (JoinClause $join): void {
+                $join
+                    ->on('bookings.organization_id', '=', 'events.organization_id')
+                    ->on('bookings.id', '=', 'events.booking_id');
+            })
+            ->where('events.organization_id', $organizationId)
+            ->where('events.occurred_at', '>=', $period->startUtc)
+            ->where('events.occurred_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('bookings.client_id', $clientId))
+            ->selectRaw('COALESCE(SUM(CASE WHEN events.event_type = ? THEN 1 ELSE 0 END), 0) as cancellations', [BookingEventType::Cancelled->value])
+            ->selectRaw('COALESCE(SUM(CASE WHEN events.event_type = ? THEN 1 ELSE 0 END), 0) as reschedules', [BookingEventType::Rescheduled->value])
+            ->selectRaw('COALESCE(SUM(CASE WHEN events.event_type = ? THEN 1 ELSE 0 END), 0) as no_shows', [BookingEventType::NoShow->value])
+            ->selectRaw('COUNT(DISTINCT CASE WHEN events.event_type = ? THEN events.booking_id END) as visits', [BookingEventType::Completed->value])
             ->first();
 
-        $retention = $this->retention($organizationId, $period, $bookingTable, $eventTable);
+        $retention = $this->retention($organizationId, $period, $bookingTable, $eventTable, $client);
         $retentionDenominator = (int) ($retention->total_clients ?? 0);
         $retainedClients = (int) ($retention->retained_clients ?? 0);
 
@@ -66,8 +78,9 @@ final class SchedulingAnalytics
         );
     }
 
-    private function retention(int $organizationId, DashboardPeriod $period, string $bookingTable, string $eventTable): object
+    private function retention(int $organizationId, DashboardPeriod $period, string $bookingTable, string $eventTable, ?Client $client = null): object
     {
+        $clientId = $client?->getKey();
         $completedClients = DB::query()
             ->from($eventTable.' as completed_events')
             ->join($bookingTable.' as completed_bookings', function (JoinClause $join): void {
@@ -79,6 +92,7 @@ final class SchedulingAnalytics
             ->where('completed_events.event_type', BookingEventType::Completed->value)
             ->where('completed_events.occurred_at', '>=', $period->startUtc)
             ->where('completed_events.occurred_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('completed_bookings.client_id', $clientId))
             ->select('completed_bookings.organization_id', 'completed_bookings.client_id')
             ->selectRaw('MAX(completed_events.occurred_at) as latest_completed_at')
             ->groupBy('completed_bookings.organization_id', 'completed_bookings.client_id');

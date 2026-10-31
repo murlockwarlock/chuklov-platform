@@ -3,6 +3,8 @@
 namespace App\Modules\ClientPortal\Application;
 
 use App\Modules\Identity\Application\ResolvePatientClinicalClient;
+use App\Modules\MedicalProfiles\Application\MedicalProfileHistoryReader;
+use App\Modules\MedicalProfiles\Application\MedicalProfilePainReader;
 use App\Modules\MedicalProfiles\Application\MedicalProfileSnapshotHasher;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
@@ -14,6 +16,8 @@ final readonly class GetClientMedicalProfile
         private ClientPortalContext $clientContext,
         private MedicalEncryptorInterface $encryptor,
         private MedicalProfileSnapshotHasher $snapshots,
+        private MedicalProfilePainReader $painReader,
+        private MedicalProfileHistoryReader $historyReader,
         private ResolvePatientClinicalClient $patients,
     ) {}
 
@@ -40,6 +44,8 @@ final readonly class GetClientMedicalProfile
                 'fields' => [],
                 'answers' => [],
                 'legacyFields' => [],
+                'pains' => [],
+                'historyEntries' => [],
             ];
         }
 
@@ -80,13 +86,15 @@ final readonly class GetClientMedicalProfile
                 'fields' => [],
                 'answers' => [],
                 'legacyFields' => [],
+                'pains' => [],
+                'historyEntries' => [],
             ];
         }
 
         return [
             'available' => true,
             'updatedAt' => $profile->updated_at->toIso8601String(),
-            'anamnesis' => $data->anamnesis,
+            'anamnesis' => null,
             'complaintsGoals' => $data->complaintsGoalsForCompatibility(),
             'operationsInjuries' => $data->operationsInjuriesForCompatibility(),
             'medicines' => $data->medicines,
@@ -107,6 +115,8 @@ final readonly class GetClientMedicalProfile
                 'complaintsGoals' => ! filled($data->complaints) && ! filled($data->goals) ? $data->complaintsGoals : null,
                 'operationsInjuries' => ! filled($data->operations) && ! filled($data->injuries) ? $data->operationsInjuries : null,
             ], fn (?string $value): bool => filled($value)),
+            'pains' => array_map(static fn ($pain): array => $pain->toArray(), $this->painReader->forProfile($profile)),
+            'historyEntries' => array_map(static fn ($entry): array => $entry->toArray(), $this->historyReader->forProfile($profile)),
         ];
     }
 }

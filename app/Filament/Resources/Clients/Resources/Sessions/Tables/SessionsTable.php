@@ -44,7 +44,7 @@ class SessionsTable
                         : Carbon::parse((string) $record->booking->getAttribute('starts_at'), 'UTC')
                             ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
                             ->format('d.m.Y H:i'))
-                    ->placeholder(__('Не связан')),
+                    ->placeholder(__('Без записи на приём')),
                 TextColumn::make('booking_status')
                     ->label(__('Статус записи'))
                     ->state(fn ($record): ?string => $record->booking === null ? null : self::statusLabel($record->booking->status))

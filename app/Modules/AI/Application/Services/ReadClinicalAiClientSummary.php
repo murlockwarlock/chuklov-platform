@@ -220,16 +220,16 @@ final readonly class ReadClinicalAiClientSummary
         }
 
         return $query->first([
-                'id',
-                'organization_id',
-                'client_id',
-                'capability',
-                'workflow_key',
-                'status',
-                'human_review_status',
-                'finished_at',
-                'created_at',
-            ]);
+            'id',
+            'organization_id',
+            'client_id',
+            'capability',
+            'workflow_key',
+            'status',
+            'human_review_status',
+            'finished_at',
+            'created_at',
+        ]);
     }
 
     /** @return list<array{label: string, available: bool, availability: string}> */

@@ -45,6 +45,8 @@ const resultDestinations = computed(() => {
     }));
 });
 
+const scoreOptions = Array.from({ length: 11 }, (_, score) => score);
+
 function selectScore(score: number): void {
     form.score = score;
     if (!lowScore.value) {
@@ -120,12 +122,12 @@ function submit(): void {
       >
         <span class="portal-label">{{ t('feedback.score') }}</span>
         <div
-          class="grid grid-cols-5 gap-2 sm:grid-cols-10"
+          class="grid grid-cols-6 gap-2 sm:grid-cols-11"
           role="radiogroup"
           :aria-label="t('feedback.score')"
         >
           <button
-            v-for="score in 10"
+            v-for="score in scoreOptions"
             :key="score"
             type="button"
             class="portal-button portal-button--secondary portal-score-option min-w-0 px-2"

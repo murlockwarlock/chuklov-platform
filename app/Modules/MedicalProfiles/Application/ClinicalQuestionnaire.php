@@ -11,7 +11,8 @@ final class ClinicalQuestionnaire
 {
     public const SYMPTOMS = ['headache', 'neck', 'back', 'joints', 'swelling', 'digestion', 'weakness', 'insomnia', 'stress'];
 
-    public function validateCompletedProfile(MedicalProfileData $profile): void
+    /** @param array<int, mixed> $historyEntries */
+    public function validateCompletedProfile(MedicalProfileData $profile, array $historyEntries = []): void
     {
         try {
             $answers = json_decode($profile->clinicalAnswers ?? '', true, 16, JSON_THROW_ON_ERROR);
@@ -21,15 +22,23 @@ final class ClinicalQuestionnaire
         if (! is_array($answers)) {
             throw ValidationException::withMessages(['answers' => 'Заполните медицинскую анкету.']);
         }
-        $answers = $this->validate($answers);
+        $answers = $this->validate($answers, false);
         if (trim((string) $profile->goals) === '') {
             throw ValidationException::withMessages(['goals' => 'Укажите задачи по здоровью.']);
         }
         if (trim((string) $profile->complaints) === '' && $answers['symptoms'] === []) {
             throw ValidationException::withMessages(['complaints' => 'Выберите симптомы или опишите жалобы.']);
         }
-        foreach (['operations' => $profile->operations, 'injuries' => $profile->injuries] as $field => $description) {
-            if ($answers[$field === 'operations' ? 'had_operations' : 'had_injuries'] && trim((string) $description) === '') {
+        foreach (['operations' => 'operation', 'injuries' => 'injury'] as $field => $type) {
+            $hasStructuredHistory = collect($historyEntries)->contains(
+                static fn (mixed $entry): bool => is_array($entry)
+                    && ($entry['type'] ?? null) === $type
+                    && trim((string) ($entry['description'] ?? '')) !== '',
+            );
+            $description = $field === 'operations' ? $profile->operations : $profile->injuries;
+            if ($answers[$field === 'operations' ? 'had_operations' : 'had_injuries']
+                && trim((string) $description) === ''
+                && ! $hasStructuredHistory) {
                 throw ValidationException::withMessages([$field => 'Добавьте описание.']);
             }
         }
@@ -39,8 +48,15 @@ final class ClinicalQuestionnaire
      * @param  array<string, mixed>  $answers
      * @return array<string, mixed>
      */
-    public function validate(array $answers): array
+    public function validate(array $answers, bool $requireLegacyYears = true): array
     {
+        $operationYearRules = ['nullable', 'integer', 'between:1900,'.now()->year];
+        $injuryYearRules = ['nullable', 'integer', 'between:1900,'.now()->year];
+        if ($requireLegacyYears) {
+            $operationYearRules[] = 'required_if:answers.had_operations,true';
+            $injuryYearRules[] = 'required_if:answers.had_injuries,true';
+        }
+
         $validated = Validator::make(['answers' => $answers], [
             'answers' => ['required', 'array:symptoms,pain_vas,no_chronic_conditions,had_operations,operation_year,had_injuries,injury_year'],
             'answers.symptoms' => ['present', 'array', 'max:9'],
@@ -48,9 +64,9 @@ final class ClinicalQuestionnaire
             'answers.pain_vas' => ['present', 'nullable', 'integer', 'between:0,10'],
             'answers.no_chronic_conditions' => ['required', 'boolean'],
             'answers.had_operations' => ['required', 'boolean'],
-            'answers.operation_year' => ['nullable', 'integer', 'between:1900,'.now()->year, 'required_if:answers.had_operations,true'],
+            'answers.operation_year' => $operationYearRules,
             'answers.had_injuries' => ['required', 'boolean'],
-            'answers.injury_year' => ['nullable', 'integer', 'between:1900,'.now()->year, 'required_if:answers.had_injuries,true'],
+            'answers.injury_year' => $injuryYearRules,
         ])->validate()['answers'];
         $validated['pain_vas'] = $validated['pain_vas'] === null ? null : (int) $validated['pain_vas'];
         foreach (['no_chronic_conditions', 'had_operations', 'had_injuries'] as $field) {

@@ -16,6 +16,8 @@ final class GetSession
     public function __construct(
         private readonly MedicalSessionAuthorization $authorization,
         private readonly MedicalEncryptorInterface $encryptor,
+        private readonly MedicalSessionPainReader $painReader,
+        private readonly MedicalSessionTestReader $testReader,
     ) {}
 
     public function handle(User $actor, MedicalSession $session, ?Client $expectedClient = null): ?MedicalSessionData
@@ -50,6 +52,8 @@ final class GetSession
             painVas: $this->painVas($this->encryptor->decryptField($orgId, $persisted->pain_vas, $keyVersion)),
             tests: $this->encryptor->decryptField($orgId, $persisted->tests, $keyVersion),
             observations: $this->encryptor->decryptField($orgId, $persisted->observations, $keyVersion),
+            subjectiveFeelings: $persisted->subjective_feelings === null ? null : $this->encryptor->decryptField($orgId, $persisted->subjective_feelings, $keyVersion),
+            visualPostureDiagnostics: $persisted->visual_posture_diagnostics === null ? null : $this->encryptor->decryptField($orgId, $persisted->visual_posture_diagnostics, $keyVersion),
             rootCauseHypothesis: $this->encryptor->decryptField($orgId, $persisted->root_cause_hypothesis, $keyVersion),
             protocol: $this->encryptor->decryptField($orgId, $persisted->protocol, $keyVersion),
             result: $this->encryptor->decryptField($orgId, $persisted->result, $keyVersion),
@@ -57,6 +61,11 @@ final class GetSession
             occurredAt: $persisted->occurred_at,
             createdAt: $persisted->created_at,
             updatedAt: $persisted->updated_at,
+            pains: $this->painReader->forSession($persisted),
+            testResults: $this->testReader->tests($persisted),
+            rootCauses: $this->testReader->rootCauses($persisted),
+            causes: $this->testReader->causes($persisted),
+            causesManualOverride: (bool) $persisted->causes_manual_override,
         );
 
         return $this->resolved[$cacheKey] = $data;

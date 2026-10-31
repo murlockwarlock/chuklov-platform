@@ -426,7 +426,7 @@ final class ClientWorkspaceUxATest extends TestCase
         $complaintsAndPainSections = array_values(array_filter(
             $children,
             static fn (mixed $component): bool => $component instanceof Section
-                && (string) $component->getHeading() === 'Жалобы и шкала боли (ВАШ)',
+                && (string) $component->getHeading() === 'Жалобы и историческое значение ВАШ',
         ));
         $goalSections = array_values(array_filter(
             $children,
@@ -448,16 +448,22 @@ final class ClientWorkspaceUxATest extends TestCase
         );
         self::assertSame([
             'anamnesis',
-            'Жалобы и шкала боли (ВАШ)',
+            'Жалобы и историческое значение ВАШ',
             'profile_no_chronic_conditions',
             'profile_had_operations',
             'profile_operation_year',
             'profile_had_injuries',
             'profile_injury_year',
             'Задачи по здоровью',
+            'pain_analytics',
+            'pain_history',
+            'feedback_analytics',
+            'goal_analytics',
+            'client_analytics',
             'chronic_conditions',
             'operations',
             'injuries',
+            'structured_history_entries',
             'medicines',
             'supplements',
         ], array_map(
@@ -968,6 +974,51 @@ final class ClientWorkspaceUxATest extends TestCase
 
         self::assertNotNull($profile);
         self::assertSame($updatedAnamnesis, $profile->anamnesis);
+    }
+
+    public function test_client_cockpit_medical_profile_mounted_state_persists_anamnesis(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $anamnesis = 'Анамнез из состояния формы';
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->mountAction('editMedicalProfile')
+            ->set('mountedActions.0.data.anamnesis', $anamnesis)
+            ->callMountedAction()
+            ->assertNotified('Медицинский профиль сохранён');
+
+        $profile = app(GetMedicalProfile::class)->handle($admin, $client);
+
+        self::assertNotNull($profile);
+        self::assertSame($anamnesis, $profile->anamnesis);
+    }
+
+    public function test_client_cockpit_shows_structured_operation_and_injury_rows(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $client = Client::factory()->forOrganization($organization)->create();
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->callAction('editMedicalProfile', [
+                'history_entries' => [
+                    ['type' => 'operation', 'year' => 2019, 'description' => 'Артроскопия колена'],
+                    ['type' => 'injury', 'year' => 2022, 'description' => 'Растяжение голеностопа'],
+                ],
+            ])
+            ->assertNotified('Медицинский профиль сохранён');
+
+        Livewire::actingAs($admin)
+            ->test(ViewClient::class, ['record' => $client->getKey()])
+            ->assertSee('Операции и травмы по годам')
+            ->assertSee('Артроскопия колена')
+            ->assertSee('Растяжение голеностопа');
     }
 
     public function test_client_search_supports_international_phones_and_telegram_id(): void

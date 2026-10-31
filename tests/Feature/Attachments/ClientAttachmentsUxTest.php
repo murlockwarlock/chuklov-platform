@@ -56,6 +56,7 @@ final class ClientAttachmentsUxTest extends TestCase
             ->assertTableColumnStateSet('analysis_status', 'Не запускался', $attachment)
             ->assertTableActionVisible('preview', $attachment)
             ->assertTableActionVisible('download', $attachment)
+            ->assertTableActionHidden('delete', $attachment)
             ->assertTableActionVisible('startDocumentAnalysis', $attachment)
             ->assertTableActionHidden('retryDocumentAnalysis', $attachment)
             ->assertTableActionHidden('openDocumentAnalysisResult', $attachment);
@@ -66,6 +67,28 @@ final class ClientAttachmentsUxTest extends TestCase
 
         $component->mountTableAction('preview', $attachment);
         self::assertStringContainsString('<iframe', $component->getMountedActionModalHtml());
+    }
+
+    public function test_posture_photo_has_preview_download_and_delete_actions(): void
+    {
+        [$organization, $admin, $client] = $this->setupOrganizationWithClient();
+        $photo = $this->attachment($organization, $admin, $client, 'before.jpg', AttachmentType::PosturePhoto, 'jpg', 'image/jpeg');
+
+        $component = $this->mount($admin, $client);
+
+        $component
+            ->assertTableActionVisible('preview', $photo)
+            ->assertTableActionVisible('download', $photo)
+            ->assertTableActionVisible('delete', $photo)
+            ->mountTableAction('preview', $photo);
+        self::assertStringContainsString('<img', $component->getMountedActionModalHtml());
+
+        $component->unmountTableAction();
+        $component->mountTableAction('delete', $photo);
+        $component->callMountedTableAction();
+
+        self::assertDatabaseMissing('medical_attachments', ['id' => $photo->getKey()]);
+        Storage::disk('private')->assertMissing($photo->storage_path);
     }
 
     public function test_attachment_row_actions_keep_primary_views_visible_and_group_secondary_actions(): void
@@ -669,10 +692,14 @@ final class ClientAttachmentsUxTest extends TestCase
         User $admin,
         Client $client,
         string $filename = 'report.pdf',
+        AttachmentType $type = AttachmentType::MedicalReport,
+        string $extension = 'pdf',
+        string $mimeType = 'application/pdf',
     ): MedicalAttachment {
         $uuid = (string) Str::uuid();
-        $path = "medical/attachments/{$organization->getKey()}/{$uuid}.pdf";
-        Storage::disk('private')->put($path, '%PDF-1.4');
+        $path = "medical/attachments/{$organization->getKey()}/{$uuid}.{$extension}";
+        $content = $type === AttachmentType::PosturePhoto ? 'synthetic-photo' : '%PDF-1.4';
+        Storage::disk('private')->put($path, $content);
 
         $attachment = new MedicalAttachment;
         $attachment->forceFill([
@@ -680,13 +707,13 @@ final class ClientAttachmentsUxTest extends TestCase
             'organization_id' => $organization->getKey(),
             'client_id' => $client->getKey(),
             'uploaded_by_user_id' => $admin->getKey(),
-            'attachment_type' => AttachmentType::MedicalReport,
+            'attachment_type' => $type,
             'disk' => 'private',
             'storage_path' => $path,
             'original_filename' => $filename,
-            'mime_type' => 'application/pdf',
-            'size_bytes' => 8,
-            'sha256_checksum' => hash('sha256', '%PDF-1.4'),
+            'mime_type' => $mimeType,
+            'size_bytes' => strlen($content),
+            'sha256_checksum' => hash('sha256', $content),
         ]);
         $attachment->save();
 

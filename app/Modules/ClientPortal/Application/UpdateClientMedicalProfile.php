@@ -31,33 +31,32 @@ final readonly class UpdateClientMedicalProfile
             'medicines' => ['nullable', 'string', 'max:10000'],
             'supplements' => ['nullable', 'string', 'max:10000'],
             'answers' => ['required', 'array'],
+            'pains' => ['sometimes', 'array', 'max:50'],
+            'history_entries' => ['sometimes', 'array', 'max:100'],
+            'history_entries.*' => ['array'],
         ], [], [
             'complaints' => __('Жалобы'), 'goals' => __('Задачи по здоровью'), 'chronic_conditions' => __('Хронические заболевания'),
             'operations' => __('Операции'), 'injuries' => __('Травмы'), 'medicines' => __('Лекарственные препараты'), 'supplements' => __('Нутрицевтики и БАДы'),
         ])->validate();
-        $answers = $this->questionnaire->validate($fields['answers']);
+        $answers = $this->questionnaire->validate($fields['answers'], false);
         if (trim((string) ($fields['complaints'] ?? '')) === '' && $answers['symptoms'] === []) {
             throw ValidationException::withMessages(['complaints' => 'Выберите симптомы или опишите жалобы.']);
         }
-        foreach (['operations' => 'had_operations', 'injuries' => 'had_injuries'] as $field => $answer) {
-            if ($answers[$answer] && trim((string) ($fields[$field] ?? '')) === '') {
-                throw ValidationException::withMessages([$field => 'Добавьте описание.']);
-            }
-            if (! $answers[$answer]) {
-                $fields[$field] = null;
-                $answers[$field === 'operations' ? 'operation_year' : 'injury_year'] = null;
-            }
+        if (! $answers['had_operations']) {
+            $answers['operation_year'] = null;
+        }
+        if (! $answers['had_injuries']) {
+            $answers['injury_year'] = null;
         }
         if ($answers['no_chronic_conditions']) {
             $fields['chronic_conditions'] = null;
         }
         $subject = $this->patients->handle($this->context->client(), $patientId);
+        $historyEntriesProvided = array_key_exists('history_entries', $fields);
         $this->update->handle($this->context->client(), $subject, new UpdateMedicalProfileCommand(
             expectedSnapshot: $fields['expected_snapshot'],
             complaints: $fields['complaints'] ?? null,
             goals: $fields['goals'],
-            operations: $fields['operations'] ?? null,
-            injuries: $fields['injuries'] ?? null,
             medicines: $fields['medicines'] ?? null,
             supplements: $fields['supplements'] ?? null,
             chronicConditions: $fields['chronic_conditions'] ?? null,
@@ -69,11 +68,13 @@ final readonly class UpdateClientMedicalProfile
             supplementsProvided: true,
             complaintsProvided: true,
             goalsProvided: true,
-            operationsProvided: true,
-            injuriesProvided: true,
             chronicConditionsProvided: true,
             clinicalAnswersProvided: true,
             confirmCurrentData: true,
+            pains: array_key_exists('pains', $fields) ? $fields['pains'] : null,
+            painsProvided: array_key_exists('pains', $fields),
+            historyEntries: $historyEntriesProvided ? $fields['history_entries'] : null,
+            historyEntriesProvided: $historyEntriesProvided,
         ));
     }
 }

@@ -14,6 +14,13 @@ final readonly class GetTemporaryAttachmentUrl
         'image/png',
         'image/webp',
         'text/plain',
+        'audio/mpeg',
+        'audio/mp4',
+        'audio/x-m4a',
+        'audio/wav',
+        'audio/x-wav',
+        'audio/ogg',
+        'audio/webm',
     ];
 
     public function __construct(

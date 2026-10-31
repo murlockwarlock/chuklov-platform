@@ -204,7 +204,7 @@ sudo -n mv -fT -- "$log_format_target.$transfer_id" "$log_format_target"
 
 sudo -n nginx -t > /dev/null
 sudo -n systemctl reload nginx
-sudo -n nginx -T 2>&1 | grep -Fq 'client_max_body_size 24m;'
+sudo -n nginx -T 2>&1 | grep -Fq 'client_max_body_size 72m;'
 sudo -n nginx -T 2>&1 | grep -Fq 'log_format medical_attachment_safe'
 sudo -n nginx -T 2>&1 | grep -Fq 'access_log /var/log/nginx/access.log medical_attachment_safe;'
 

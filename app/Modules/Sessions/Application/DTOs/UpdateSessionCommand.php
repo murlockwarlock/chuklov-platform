@@ -16,6 +16,24 @@ final readonly class UpdateSessionCommand
         public ?string $expectedSnapshot = null,
         public ?int $painVas = null,
         public ?bool $painVasProvided = null,
+        /** @var array<int, mixed>|null */
+        public ?array $pains = null,
+        public bool $painsProvided = false,
+        public ?string $subjectiveFeelings = null,
+        public ?string $visualPostureDiagnostics = null,
+        public ?bool $subjectiveFeelingsProvided = null,
+        public ?bool $visualPostureDiagnosticsProvided = null,
+        /** @var array<int, mixed>|null */
+        public ?array $testResults = null,
+        public bool $testResultsProvided = false,
+        /** @var array<int, mixed>|null */
+        public ?array $rootCauses = null,
+        public bool $rootCausesProvided = false,
+        /** @var array<int, mixed>|null */
+        public ?array $causeIds = null,
+        public bool $causesProvided = false,
+        public bool $causesManualOverride = false,
+        public bool $causesManualOverrideProvided = false,
     ) {}
 
     /**
@@ -55,6 +73,20 @@ final readonly class UpdateSessionCommand
             expectedSnapshot: isset($data['expected_snapshot']) && is_string($data['expected_snapshot']) ? $data['expected_snapshot'] : null,
             painVas: self::normalizePainVas($data),
             painVasProvided: array_key_exists('pain_vas', $data),
+            pains: array_key_exists('pains', $data) && is_array($data['pains']) ? array_values($data['pains']) : null,
+            painsProvided: array_key_exists('pains', $data),
+            subjectiveFeelings: self::normalizeOptionalValue($data['subjective_feelings'] ?? null, 'subjective_feelings'),
+            visualPostureDiagnostics: self::normalizeOptionalValue($data['visual_posture_diagnostics'] ?? null, 'visual_posture_diagnostics'),
+            subjectiveFeelingsProvided: array_key_exists('subjective_feelings', $data),
+            visualPostureDiagnosticsProvided: array_key_exists('visual_posture_diagnostics', $data),
+            testResults: array_key_exists('test_results', $data) && is_array($data['test_results']) ? array_values($data['test_results']) : null,
+            testResultsProvided: array_key_exists('test_results', $data),
+            rootCauses: array_key_exists('root_causes', $data) && is_array($data['root_causes']) ? array_values($data['root_causes']) : null,
+            rootCausesProvided: array_key_exists('root_causes', $data),
+            causeIds: array_key_exists('cause_ids', $data) && is_array($data['cause_ids']) ? array_values($data['cause_ids']) : null,
+            causesProvided: array_key_exists('cause_ids', $data),
+            causesManualOverride: filter_var($data['causes_manual_override'] ?? false, FILTER_VALIDATE_BOOLEAN),
+            causesManualOverrideProvided: array_key_exists('causes_manual_override', $data),
         );
     }
 
@@ -76,6 +108,16 @@ final readonly class UpdateSessionCommand
     public function shouldUpdatePainVas(): bool
     {
         return $this->painVasProvided ?? $this->painVas !== null;
+    }
+
+    public function shouldUpdateSubjectiveFeelings(): bool
+    {
+        return $this->subjectiveFeelingsProvided ?? $this->subjectiveFeelings !== null;
+    }
+
+    public function shouldUpdateVisualPostureDiagnostics(): bool
+    {
+        return $this->visualPostureDiagnosticsProvided ?? $this->visualPostureDiagnostics !== null;
     }
 
     /** @param array<string, mixed> $data */

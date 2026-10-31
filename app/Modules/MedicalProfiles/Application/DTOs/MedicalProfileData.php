@@ -20,6 +20,10 @@ final readonly class MedicalProfileData
         public ?string $injuries = null,
         public ?string $chronicConditions = null,
         public ?string $clinicalAnswers = null,
+        /** @var list<MedicalPainData> */
+        public array $pains = [],
+        /** @var list<MedicalHistoryEntryData> */
+        public array $historyEntries = [],
     ) {}
 
     /** @return array<string, mixed> */
@@ -37,6 +41,8 @@ final readonly class MedicalProfileData
             'injuries' => $this->injuries,
             'chronic_conditions' => $this->chronicConditions,
             'clinical_answers' => $this->clinicalAnswers,
+            'pains' => array_map(static fn (MedicalPainData $pain): array => $pain->toArray(), $this->pains),
+            'history_entries' => array_map(static fn (MedicalHistoryEntryData $entry): array => $entry->toArray(), $this->historyEntries),
             'encryption_key_version' => $this->encryptionKeyVersion,
             'updated_at' => $this->updatedAt?->format(DateTimeInterface::ATOM),
         ];

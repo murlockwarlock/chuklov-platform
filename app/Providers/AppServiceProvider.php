@@ -26,6 +26,7 @@ use App\Modules\AI\Infrastructure\Providers\BoundedBedrockProvider;
 use App\Modules\AI\Infrastructure\Safety\AtomicAiSafetyBudgetManager;
 use App\Modules\AI\Infrastructure\Tools\AiToolRegistry;
 use App\Modules\AI\Infrastructure\Tools\SearchKnowledgeBaseTool;
+use App\Modules\Analytics\Infrastructure\AnalyticsClassificationSourceObserver;
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Attachments\Infrastructure\Storage\PrivateMedicalAttachmentStorage;
@@ -43,6 +44,8 @@ use App\Modules\ClientPortal\Application\ClientPortalContext;
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Content\Infrastructure\Storage\FilesystemContentMediaStorage;
+use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
+use App\Modules\Feedback\Domain\Models\FeedbackTheme;
 use App\Modules\Finance\Domain\Contracts\PaymentGateway;
 use App\Modules\Finance\Domain\Contracts\PaymentGatewayRegistry;
 use App\Modules\Finance\Domain\Contracts\ReceiptStorage;
@@ -64,6 +67,8 @@ use App\Modules\Knowledge\Infrastructure\PgvectorKnowledgeRetriever;
 use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
 use App\Modules\MedicalProfiles\Infrastructure\Encryption\AppKeyMedicalKeyResolver;
 use App\Modules\MedicalProfiles\Infrastructure\Encryption\MedicalDataEncryptor;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -73,6 +78,7 @@ use App\Modules\Scenarios\Application\BookingMedicalProfileConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingNextBookingConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingSourceConditionEvaluator;
 use App\Modules\Scenarios\Application\BookingStatusConditionEvaluator;
+use App\Modules\Scenarios\Application\ClientCompletedVisitsConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientLanguageConditionEvaluator;
 use App\Modules\Scenarios\Application\ClientMarketingConsentConditionEvaluator;
 use App\Modules\Scenarios\Application\ConditionEvaluatorRegistry;
@@ -102,11 +108,14 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Services\Infrastructure\Storage\FilesystemServiceMediaStorage;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Modules\Tracker\Application\TrackerAccessConditionEvaluator;
 use App\Modules\Tracker\Application\TrackerTaskConditionEvaluator;
+use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
+use App\Modules\Tracker\Domain\Models\TrackerTask;
 use App\Policies\AiEvalSuitePolicy;
 use App\Policies\AiModelConfigurationPolicy;
 use App\Policies\AiOrganizationSafetyControlPolicy;
@@ -184,6 +193,7 @@ class AppServiceProvider extends ServiceProvider
                 app(BookingMedicalProfileConditionEvaluator::class),
                 app(BookingNextBookingConditionEvaluator::class),
                 new ClientLanguageConditionEvaluator,
+                new ClientCompletedVisitsConditionEvaluator,
                 new ClientMarketingConsentConditionEvaluator,
                 new OnboardingCompletedConditionEvaluator,
                 new OnboardingStageConditionEvaluator,
@@ -232,6 +242,14 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        MedicalProfilePain::observe(AnalyticsClassificationSourceObserver::class);
+        MedicalSessionPain::observe(AnalyticsClassificationSourceObserver::class);
+        FeedbackSubmission::observe(AnalyticsClassificationSourceObserver::class);
+        TrackerTask::observe(AnalyticsClassificationSourceObserver::class);
+        MedicalProblemTag::observe(AnalyticsClassificationSourceObserver::class);
+        FeedbackTheme::observe(AnalyticsClassificationSourceObserver::class);
+        TrackerGoalTag::observe(AnalyticsClassificationSourceObserver::class);
+
         Http::globalMiddleware(static function (callable $handler): Closure {
             return static function (RequestInterface $request, array $options) use ($handler): PromiseInterface {
                 $request = AiProviderEndpointGuard::guardRequest($request);

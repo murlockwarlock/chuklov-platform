@@ -2,7 +2,6 @@
 import { Link, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
-import PainScale from '../../Components/Portal/PainScale.vue';
 import MedicalAttachmentsUploader from '../../Components/Portal/MedicalAttachmentsUploader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
@@ -16,9 +15,23 @@ type Answers = {
     had_injuries: boolean | null;
     injury_year: number | null;
 };
+type HistoryEntry = {
+    id?: number;
+    lineage_key?: string;
+    type: 'operation' | 'injury';
+    year: number;
+    description: string;
+};
+type EditableHistoryEntry = Omit<HistoryEntry, 'year'> & { year: number | null };
+type Pain = {
+    id?: number;
+    lineage_key?: string;
+    name: string;
+    score: number | null;
+};
 const props = defineProps<{
     portal: PortalShell;
-    profile: { available: boolean; readFailed: boolean; expectedSnapshot: string; fields: Record<string, string | null>; answers: Partial<Answers>; legacyFields: Record<string, string> };
+    profile: { available: boolean; readFailed: boolean; expectedSnapshot: string; fields: Record<string, string | null>; answers: Partial<Answers>; legacyFields: Record<string, string>; pains: Pain[]; historyEntries: HistoryEntry[] };
     urls: { update: string; upload: string };
     materials: { id: number; filename: string; downloadUrl: string }[];
     saved: boolean;
@@ -32,6 +45,8 @@ const uploading = ref(false);
 const currentYear = new Date().getFullYear();
 const requestError = ref('');
 const clientErrors = ref<Record<string, string>>({});
+const pains = ref<Pain[]>(props.profile.pains.map((pain) => ({ ...pain })));
+const historyEntries = ref<EditableHistoryEntry[]>(props.profile.historyEntries.map((entry) => ({ ...entry })));
 const medicalForm = ref<HTMLFormElement | null>(null);
 const fields = ['complaints', 'goals', 'chronic_conditions', 'operations', 'injuries', 'medicines', 'supplements'] as const;
 const symptoms = ['headache', 'neck', 'back', 'joints', 'swelling', 'digestion', 'weakness', 'insomnia', 'stress'];
@@ -58,7 +73,54 @@ const form = useForm({
         had_operations: null, operation_year: null, had_injuries: null, injury_year: null,
         ...props.profile.answers,
     } as Answers,
+    pains: pains.value.map((pain) => ({ ...pain })),
+    history_entries: historyEntries.value.map((entry) => ({ ...entry })),
 });
+function addPain(): void {
+    pains.value.push({ name: '', score: null });
+    syncPains();
+}
+
+function removePain(index: number): void {
+    pains.value.splice(index, 1);
+    syncPains();
+}
+
+function syncPains(): void {
+    form.pains = pains.value.map((pain) => ({ ...pain }));
+}
+function historyFor(type: HistoryEntry['type']): EditableHistoryEntry[] {
+    return historyEntries.value.filter((entry) => entry.type === type);
+}
+
+function syncHistory(): void {
+    form.history_entries = historyEntries.value.map((entry) => ({ ...entry }));
+}
+
+function addHistoryEntry(type: HistoryEntry['type']): void {
+    historyEntries.value.push({ type, year: null, description: '' });
+    syncHistory();
+}
+
+function removeHistoryEntry(entry: EditableHistoryEntry): void {
+    const index = historyEntries.value.indexOf(entry);
+    if (index >= 0) {
+        historyEntries.value.splice(index, 1);
+        syncHistory();
+    }
+}
+
+function setHistoryAnswer(type: HistoryEntry['type'], value: boolean): void {
+    const answer = type === 'operation' ? 'had_operations' : 'had_injuries';
+    const year = type === 'operation' ? 'operation_year' : 'injury_year';
+    form.answers[answer] = value;
+    if (!value) {
+        historyEntries.value = historyEntries.value.filter((entry) => entry.type !== type);
+        form.answers[year] = null;
+        clearClientError(type === 'operation' ? 'operations' : 'injuries');
+        syncHistory();
+    }
+}
 function clearClientError(...keys: string[]): void {
     for (const key of keys) {
         delete clientErrors.value[key];
@@ -76,10 +138,9 @@ function validate(): string | null {
     }
 
     for (const field of ['operations', 'injuries'] as const) {
-        const answer = field === 'operations' ? answers.had_operations : answers.had_injuries;
-        const year = field === 'operations' ? answers.operation_year : answers.injury_year;
-        const yearField = field === 'operations' ? 'operation_year' : 'injury_year';
-        const answerField = field === 'operations' ? 'had_operations' : 'had_injuries';
+        const type = field === 'operations' ? 'operation' : 'injury';
+        const answer = type === 'operation' ? answers.had_operations : answers.had_injuries;
+        const answerField = type === 'operation' ? 'had_operations' : 'had_injuries';
 
         if (answer === null) {
             clientErrors.value[answerField] = t('medical.answerRequired');
@@ -88,17 +149,23 @@ function validate(): string | null {
         if (!answer) {
             continue;
         }
-        if (typeof year !== 'number') {
-            clientErrors.value[yearField] = t('medical.yearRequired');
-        } else if (!Number.isInteger(year) || year < 1900 || year > currentYear) {
-            clientErrors.value[yearField] = t('medical.yearInvalid', { year: currentYear });
-        }
-        if (!form[field].trim()) {
+        const rows = historyFor(type);
+        if (rows.length === 0 && !form[field].trim()) {
             clientErrors.value[field] = t('medical.detailsRequired');
+        }
+        for (const row of rows) {
+            if (row.year === null) {
+                clientErrors.value[field] = t('medical.yearRequired');
+            } else if (!Number.isInteger(row.year) || row.year < 1900 || row.year > currentYear) {
+                clientErrors.value[field] = t('medical.yearInvalid', { year: currentYear });
+            }
+            if (!row.description.trim()) {
+                clientErrors.value[field] = t('medical.detailsRequired');
+            }
         }
     }
 
-    const firstInvalid = ['goals', 'complaints', 'had_operations', 'operation_year', 'operations', 'had_injuries', 'injury_year', 'injuries']
+    const firstInvalid = ['goals', 'complaints', 'had_operations', 'operations', 'had_injuries', 'injuries']
         .find((field) => clientErrors.value[field]);
 
     return firstInvalid ?? null;
@@ -116,11 +183,9 @@ function save(): void {
             goals: '#medical-goals',
             complaints: '[data-medical-field="complaints"] input',
             had_operations: 'input[name="operations"]',
-            operation_year: '#medical-operation-year',
-            operations: '#medical-operations',
+            operations: '[data-medical-history="operation"] input',
             had_injuries: 'input[name="injuries"]',
-            injury_year: '#medical-injury-year',
-            injuries: '#medical-injuries',
+            injuries: '[data-medical-history="injury"] input',
         };
         medicalForm.value?.querySelector<HTMLElement>(fieldTargets[firstInvalid])?.focus();
         return;
@@ -131,6 +196,7 @@ function save(): void {
         onSuccess: () => {
             form.expected_snapshot = props.profile.expectedSnapshot;
             form.defaults();
+            historyEntries.value = form.history_entries.map((entry) => ({ ...entry }));
             editing.value = false;
         },
         onNetworkError: () => {
@@ -228,7 +294,76 @@ function save(): void {
                 </label>
               </div>
             </fieldset>
-            <PainScale v-model="form.answers.pain_vas" />
+          </section>
+          <section class="portal-panel portal-panel--compact portal-stack">
+            <div class="flex items-center justify-between gap-3">
+              <h2 class="portal-label">
+                {{ t('medical.pains') }}
+              </h2>
+              <button
+                type="button"
+                class="portal-button portal-button--secondary"
+                @click="addPain"
+              >
+                {{ t('medical.addPain') }}
+              </button>
+            </div>
+            <p class="portal-copy">
+              {{ t('medical.painsDescription') }}
+            </p>
+            <div
+              v-if="pains.length"
+              class="portal-stack"
+            >
+              <div
+                v-for="(pain, index) in pains"
+                :key="pain.lineage_key || index"
+                class="portal-panel portal-panel--compact portal-stack"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <label
+                    :for="`medical-pain-${index}`"
+                    class="portal-label"
+                  >{{ t('medical.painName') }}</label>
+                  <button
+                    type="button"
+                    class="portal-button portal-button--secondary"
+                    @click="removePain(index)"
+                  >
+                    {{ t('medical.removePain') }}
+                  </button>
+                </div>
+                <input
+                  :id="`medical-pain-${index}`"
+                  v-model="pain.name"
+                  type="text"
+                  maxlength="1000"
+                  class="portal-input"
+                  @input="syncPains"
+                >
+                <label
+                  :for="`medical-pain-score-${index}`"
+                  class="portal-label"
+                >{{ t('medical.painScore') }}</label>
+                <input
+                  :id="`medical-pain-score-${index}`"
+                  v-model.number="pain.score"
+                  type="range"
+                  min="0"
+                  max="10"
+                  step="1"
+                  class="w-full"
+                  @input="syncPains"
+                >
+                <span class="portal-copy">{{ pain.score === null ? t('medical.notSpecified') : `${pain.score} / 10` }}</span>
+              </div>
+            </div>
+            <p
+              v-else
+              class="portal-copy"
+            >
+              {{ t('medical.noPains') }}
+            </p>
           </section>
           <div
             v-for="field in fields"
@@ -238,8 +373,18 @@ function save(): void {
           >
             <template v-if="field === 'operations' || field === 'injuries'">
               <fieldset class="portal-stack min-w-0">
-                <legend class="portal-label">
-                  {{ t('medical.' + field) }}
+                <legend class="flex items-start justify-between gap-3">
+                  <span class="portal-label">
+                    {{ t('medical.' + field) }}
+                  </span>
+                  <button
+                    v-if="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
+                    type="button"
+                    class="portal-button portal-button--secondary"
+                    @click="addHistoryEntry(field === 'operations' ? 'operation' : 'injury')"
+                  >
+                    {{ t(field === 'operations' ? 'medical.addOperation' : 'medical.addInjury') }}
+                  </button>
                 </legend>
                 <div class="medical-profile__choice-grid">
                   <label
@@ -257,7 +402,7 @@ function save(): void {
                       :aria-invalid="Boolean(clientErrors[field === 'operations' ? 'had_operations' : 'had_injuries'])"
                       :aria-describedby="clientErrors[field === 'operations' ? 'had_operations' : 'had_injuries'] ? `medical-${field}-answer-error` : undefined"
                       class="medical-profile__choice-control"
-                      @change="clearClientError(field, field === 'operations' ? 'had_operations' : 'had_injuries', field === 'operations' ? 'operation_year' : 'injury_year')"
+                      @change="setHistoryAnswer(field === 'operations' ? 'operation' : 'injury', form.answers[field === 'operations' ? 'had_operations' : 'had_injuries'] === true)"
                     >
                     <span>{{ t(answer ? 'medical.yes' : 'medical.no') }}</span>
                   </label>
@@ -272,67 +417,69 @@ function save(): void {
                 </p>
                 <div
                   v-if="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
-                  class="portal-field"
+                  :data-medical-history="field === 'operations' ? 'operation' : 'injury'"
+                  class="portal-stack"
                 >
-                  <label
-                    :for="field === 'operations' ? 'medical-operation-year' : 'medical-injury-year'"
-                    class="portal-label"
+                  <div
+                    v-for="(entry, index) in historyFor(field === 'operations' ? 'operation' : 'injury')"
+                    :key="entry.lineage_key || `${field}-${index}`"
+                    class="portal-panel portal-panel--compact portal-stack"
                   >
-                    {{ t(field === 'operations' ? 'medical.operationYear' : 'medical.injuryYear') }}
-                  </label>
-                  <input
-                    :id="field === 'operations' ? 'medical-operation-year' : 'medical-injury-year'"
-                    v-model.number="form.answers[field === 'operations' ? 'operation_year' : 'injury_year']"
-                    type="text"
-                    inputmode="numeric"
-                    pattern="[0-9]{4}"
-                    maxlength="4"
-                    required
-                    :aria-invalid="Boolean(clientErrors[field === 'operations' ? 'operation_year' : 'injury_year'])"
-                    :aria-describedby="clientErrors[field === 'operations' ? 'operation_year' : 'injury_year'] ? `medical-${field}-year-error` : undefined"
-                    class="portal-input"
-                    :placeholder="t('medical.yearPlaceholder')"
-                    @input="clearClientError(field === 'operations' ? 'operation_year' : 'injury_year')"
-                  >
-                  <span
-                    v-if="clientErrors[field === 'operations' ? 'operation_year' : 'injury_year']"
-                    :id="`medical-${field}-year-error`"
-                    class="portal-error"
-                    role="alert"
-                  >
-                    {{ clientErrors[field === 'operations' ? 'operation_year' : 'injury_year'] }}
-                  </span>
+                    <div class="flex items-start justify-between gap-3">
+                      <span class="portal-label">{{ t(field === 'operations' ? 'medical.operation' : 'medical.injury') }} {{ index + 1 }}</span>
+                      <button
+                        type="button"
+                        class="portal-button portal-button--secondary"
+                        @click="removeHistoryEntry(entry)"
+                      >
+                        {{ t('medical.removeHistory') }}
+                      </button>
+                    </div>
+                    <label
+                      :for="`medical-${field}-year-${index}`"
+                      class="portal-label"
+                    >
+                      {{ t('medical.year') }}
+                    </label>
+                    <input
+                      :id="`medical-${field}-year-${index}`"
+                      v-model.number="entry.year"
+                      type="text"
+                      inputmode="numeric"
+                      pattern="[0-9]{4}"
+                      maxlength="4"
+                      class="portal-input"
+                      :placeholder="t('medical.yearPlaceholder')"
+                      :aria-invalid="Boolean(clientErrors[field])"
+                      :aria-describedby="clientErrors[field] ? `medical-${field}-error` : undefined"
+                      @input="syncHistory(); clearClientError(field)"
+                    >
+                    <label
+                      :for="`medical-${field}-description-${index}`"
+                      class="portal-label"
+                    >
+                      {{ t(field === 'operations' ? 'medical.operationDetails' : 'medical.injuryDetails') }}
+                    </label>
+                    <textarea
+                      :id="`medical-${field}-description-${index}`"
+                      v-model="entry.description"
+                      rows="3"
+                      maxlength="10000"
+                      class="portal-input"
+                      :aria-invalid="Boolean(clientErrors[field])"
+                      :aria-describedby="clientErrors[field] ? `medical-${field}-error` : undefined"
+                      @input="syncHistory(); clearClientError(field)"
+                    />
+                  </div>
                 </div>
-                <div
-                  v-if="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
-                  class="portal-field"
+                <p
+                  v-if="clientErrors[field]"
+                  :id="`medical-${field}-error`"
+                  class="portal-error"
+                  role="alert"
                 >
-                  <label
-                    :for="'medical-' + field"
-                    class="portal-label"
-                  >
-                    {{ t(field === 'operations' ? 'medical.operationDetails' : 'medical.injuryDetails') }}
-                  </label>
-                  <textarea
-                    :id="'medical-' + field"
-                    v-model="form[field]"
-                    rows="3"
-                    maxlength="10000"
-                    required
-                    :aria-invalid="Boolean(clientErrors[field])"
-                    :aria-describedby="clientErrors[field] ? `medical-${field}-error` : undefined"
-                    class="portal-input"
-                    @input="clearClientError(field)"
-                  />
-                  <span
-                    v-if="clientErrors[field]"
-                    :id="`medical-${field}-error`"
-                    class="portal-error"
-                    role="alert"
-                  >
-                    {{ clientErrors[field] }}
-                  </span>
-                </div>
+                  {{ clientErrors[field] }}
+                </p>
               </fieldset>
             </template>
             <template v-else>
@@ -407,10 +554,6 @@ function save(): void {
         </form>
         <template v-else>
           <section class="portal-panel portal-panel--compact portal-stack medical-profile__assessment">
-            <PainScale
-              :model-value="profile.answers.pain_vas ?? null"
-              readonly
-            />
             <div
               v-if="profile.answers.symptoms?.length"
               class="medical-profile__symptoms"
@@ -422,6 +565,57 @@ function save(): void {
               >
                 {{ t('medical.' + symptom) }}
               </span>
+            </div>
+          </section>
+          <section class="portal-panel portal-panel--compact portal-stack">
+            <h2 class="portal-label">
+              {{ t('medical.pains') }}
+            </h2>
+            <div
+              v-if="profile.pains.length"
+              class="portal-stack"
+            >
+              <div
+                v-for="pain in profile.pains"
+                :key="pain.lineage_key || pain.id"
+                class="flex items-center justify-between gap-3"
+              >
+                <span class="portal-copy break-words">{{ pain.name }}</span>
+                <span class="portal-copy whitespace-nowrap">{{ pain.score === null ? t('medical.notSpecified') : `${pain.score} / 10` }}</span>
+              </div>
+            </div>
+            <p
+              v-else
+              class="portal-copy"
+            >
+              {{ t('medical.noPains') }}
+            </p>
+          </section>
+          <section
+            v-if="profile.historyEntries.length"
+            class="portal-panel portal-panel--compact portal-stack"
+          >
+            <h2 class="portal-label">
+              {{ t('medical.history') }}
+            </h2>
+            <div
+              v-for="type in ['operation', 'injury']"
+              :key="type"
+              class="portal-stack"
+            >
+              <template v-if="profile.historyEntries.some((entry) => entry.type === type)">
+                <h3 class="portal-label">
+                  {{ t(type === 'operation' ? 'medical.operations' : 'medical.injuries') }}
+                </h3>
+                <div
+                  v-for="entry in profile.historyEntries.filter((item) => item.type === type)"
+                  :key="entry.lineage_key || entry.id"
+                  class="flex items-start justify-between gap-3"
+                >
+                  <span class="portal-copy break-words">{{ entry.description }}</span>
+                  <span class="portal-copy whitespace-nowrap">{{ entry.year }}</span>
+                </div>
+              </template>
             </div>
           </section>
           <dl class="portal-stack">

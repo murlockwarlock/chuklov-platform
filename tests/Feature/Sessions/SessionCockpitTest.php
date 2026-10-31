@@ -19,7 +19,10 @@ use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
+use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalFrequencyPeriodUnit;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -34,8 +37,11 @@ use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\ListClientSessions;
+use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalTestDefinition;
+use App\Modules\Sessions\Domain\Models\MedicalTestValue;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
@@ -414,6 +420,94 @@ final class SessionCockpitTest extends TestCase
             ->assertSee('Файлы сеанса');
     }
 
+    public function test_filament_detail_page_renders_normalized_pain_rows_with_scores_and_frequency(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $result = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-08-16 10:00:00', 'UTC'),
+            pains: [[
+                'name' => 'Шея',
+                'frequency_mode' => 'count',
+                'frequency_count' => 3,
+                'frequency_period_unit' => 'week',
+                'time_of_day' => ['morning', 'evening'],
+                'before_score' => 6,
+                'after_score' => 2,
+            ]],
+        ));
+        $session = MedicalSession::query()->whereKey($result->id)->firstOrFail();
+        MedicalFrequencyPeriodUnit::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('key', 'week')
+            ->update(['is_active' => false]);
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Боли')
+            ->assertSee('Шея')
+            ->assertSee('3 раз за неделя (неактивен)')
+            ->assertSee('Утро, Вечер')
+            ->assertSee('6/10')
+            ->assertSee('2/10');
+    }
+
+    public function test_filament_detail_page_shows_before_and_after_abnormal_test_counters(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'synthetic_posture_test',
+            'name' => 'Синтетический тест осанки',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $abnormal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'abnormal',
+            'label' => 'Отклонение',
+            'is_abnormal' => true,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $normal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'normal',
+            'label' => 'Норма',
+            'is_abnormal' => false,
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+
+        $result = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-08-16 10:00:00', 'UTC'),
+            testResults: [[
+                'test_id' => $test->getKey(),
+                'before_value_id' => $abnormal->getKey(),
+                'after_value_id' => $normal->getKey(),
+            ]],
+        ));
+        $session = MedicalSession::query()->whereKey($result->id)->firstOrFail();
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Нарушения по тестам')
+            ->assertSee('До: 1 · После: 0');
+    }
+
     public function test_filament_session_cockpit_shows_reviewed_clinical_summary_and_canonical_workspace_link(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
@@ -626,6 +720,113 @@ final class SessionCockpitTest extends TestCase
         }
     }
 
+    public function test_filament_create_form_prefills_profile_pains_for_the_first_session(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            pains: [
+                ['name' => 'Шея', 'score' => 7],
+                ['name' => 'Поясница', 'score' => 0],
+            ],
+            painsProvided: true,
+        ));
+        self::assertSame(['Шея', 'Поясница'], array_map(
+            static fn (array $pain): string => $pain['name'],
+            app(MedicalSessionPainInitializer::class)->defaultsForClient($client),
+        ));
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client]);
+        $pains = array_values($component->get('data.pains'));
+        self::assertSame(['Шея', 'Поясница'], array_column($pains, 'name'));
+        self::assertSame([7, 0], array_map(static fn (mixed $score): int => (int) $score, array_column($pains, 'before_score')));
+        self::assertSame([null, null], array_column($pains, 'after_score'));
+        self::assertSame([7, 0], array_map(static fn (mixed $score): int => (int) $score, array_column($pains, 'before_score_ui')));
+        self::assertSame([0, 0], array_map(static fn (mixed $score): int => (int) $score, array_column($pains, 'after_score_ui')));
+    }
+
+    public function test_filament_create_form_prefills_active_clinical_test_protocol(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'synthetic_create_protocol',
+            'name' => 'Синтетический протокол',
+            'section' => 'Синтетика',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client]);
+        $results = array_values($component->get('data.test_results'));
+
+        self::assertCount(1, $results);
+        self::assertSame((int) $test->getKey(), (int) ($results[0]['test_id'] ?? 0));
+        self::assertSame('Синтетика · Синтетический протокол', $results[0]['test_label'] ?? null);
+        self::assertNull($results[0]['before_value_id'] ?? null);
+        self::assertNull($results[0]['after_value_id'] ?? null);
+    }
+
+    public function test_create_form_keeps_clinical_test_protocol_after_live_date_update(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'synthetic_live_protocol',
+            'name' => 'Синтетический тест обновления',
+            'section' => 'Синтетика',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client])
+            ->set('data.occurred_at', '2026-08-16 10:00');
+        $results = array_values($component->get('data.test_results'));
+
+        self::assertCount(1, $results);
+        self::assertSame((int) $test->getKey(), (int) ($results[0]['test_id'] ?? 0));
+        self::assertSame('Синтетика · Синтетический тест обновления', $results[0]['test_label'] ?? null);
+    }
+
+    public function test_session_pain_frequency_and_time_are_optional_with_safe_defaults(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client]);
+
+        $component
+            ->fillForm([
+                'occurred_at' => '2026-08-16 10:00',
+                'specialist_id' => $specialist->getKey(),
+                'pains' => [[
+                    'name' => 'Шея',
+                    'before_score' => 5,
+                ]],
+            ])
+            ->call('create')
+            ->assertHasNoErrors();
+
+        $pain = MedicalSession::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->sole()
+            ->pains()
+            ->sole();
+
+        self::assertSame('permanent', $pain->frequency_mode);
+        self::assertSame(['all'], $pain->time_of_day);
+    }
+
     public function test_filament_create_session_over_livewire_creates_for_fixed_parent_client_and_encrypts_clinical_fields(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
@@ -760,6 +961,62 @@ final class SessionCockpitTest extends TestCase
         $expectedOccurredAt = $session->occurred_at->copy()->utc();
         $actualOccurredAt = Carbon::parse((string) $raw->occurred_at)->utc();
         self::assertTrue($expectedOccurredAt->equalTo($actualOccurredAt));
+    }
+
+    public function test_filament_session_result_action_fills_deterministic_summary_and_confirms_replacement(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $created = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-08-16 10:00:00', 'UTC'),
+            pains: [[
+                'name' => 'Шея',
+                'before_score' => 7,
+                'after_score' => 3,
+            ]],
+            subjectiveFeelings: 'Двигаться стало легче',
+            visualPostureDiagnostics: 'Плечи выровнены',
+        ));
+        $session = MedicalSession::query()->whereKey($created->id)->firstOrFail();
+
+        Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client])
+            ->assertSuccessful()
+            ->assertSchemaComponentExists('cause_ids')
+            ->assertSchemaComponentExists('causes_manual_override')
+            ->assertSchemaComponentExists('derived_causes')
+            ->assertSchemaComponentExists('protocol');
+
+        $component = Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->assertActionExists('fillResult')
+            ->assertActionVisible('suggestSessionPainTags')
+            ->assertActionExists('acceptSessionPainTags')
+            ->mountAction('suggestSessionPainTags')
+            ->assertFormFieldExists('pain_id')
+            ->unmountAction()
+            ->assertDontSee('Автозаполнение алгоритма пока не настроено')
+            ->callAction('fillResult')
+            ->assertNotified('Результат заполнен')
+            ->assertSet('data.result', "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены");
+
+        $component
+            ->fillForm(['result' => 'Ручная правка специалиста'])
+            ->mountAction('fillResult')
+            ->assertActionMounted('fillResult');
+        self::assertSame('Заменить текст результата?', $component->instance()->getMountedAction()?->getModalHeading());
+        $component
+            ->callMountedAction()
+            ->assertNotified('Результат заполнен')
+            ->assertSet('data.result', "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены");
+
+        $component->call('save')->assertHasNoErrors();
+        self::assertSame(
+            "Боли: Шея: было 7, стало 3 из 10\nСубъективные ощущения: Двигаться стало легче\nВизуальная диагностика осанки: Плечи выровнены",
+            app(GetSession::class)->handle($admin, $session->fresh(), $client)?->result,
+        );
     }
 
     public function test_filament_edit_session_rejects_forged_same_organization_other_client_record(): void

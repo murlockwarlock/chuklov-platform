@@ -16,7 +16,9 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $organization_id
- * @property int $obligation_id
+ * @property int|null $obligation_id
+ * @property int|null $account_id
+ * @property int|null $expense_category_id
  * @property FinancialLedgerEntryType $entry_type
  * @property FinancialEntrySource $source
  * @property int $amount_minor
@@ -49,6 +51,18 @@ class FinancialLedgerEntry extends Model
     public function obligation(): BelongsTo
     {
         return $this->belongsTo(FinancialObligation::class, 'obligation_id');
+    }
+
+    /** @return BelongsTo<FinanceAccount, $this> */
+    public function account(): BelongsTo
+    {
+        return $this->belongsTo(FinanceAccount::class, 'account_id');
+    }
+
+    /** @return BelongsTo<FinanceExpenseCategory, $this> */
+    public function expenseCategory(): BelongsTo
+    {
+        return $this->belongsTo(FinanceExpenseCategory::class, 'expense_category_id');
     }
 
     /** @return BelongsTo<User, $this> */

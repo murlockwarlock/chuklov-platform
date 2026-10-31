@@ -3,6 +3,7 @@
 namespace App\Modules\Attachments\Infrastructure\Storage;
 
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Exceptions\InvalidAttachmentException;
 use App\Modules\Attachments\Domain\Exceptions\UnsupportedDicomException;
 use App\Modules\Attachments\Domain\ValueObjects\StoredAttachment;
@@ -13,13 +14,17 @@ use RuntimeException;
 
 final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterface
 {
-    public function maxBytes(): int
+    public function maxBytes(?AttachmentType $attachmentType = null): int
     {
+        if ($attachmentType === AttachmentType::AudioRecording) {
+            return (int) config('medical.audio_attachment_max_bytes', 67_108_864);
+        }
+
         return (int) config('medical.attachment_max_bytes', 20_971_520);
     }
 
     /** @var array<string, list<string>> */
-    private const ALLOWED_MIME_EXTENSIONS = [
+    private const MEDICAL_MIME_EXTENSIONS = [
         'application/pdf' => ['pdf'],
         'text/plain' => ['txt'],
         'image/jpeg' => ['jpg', 'jpeg'],
@@ -27,7 +32,18 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
         'image/webp' => ['webp'],
     ];
 
-    public function store(int $organizationId, UploadedFile $file, string $uuid): StoredAttachment
+    /** @var array<string, list<string>> */
+    private const AUDIO_MIME_EXTENSIONS = [
+        'audio/mpeg' => ['mp3'],
+        'audio/mp4' => ['m4a', 'mp4'],
+        'audio/x-m4a' => ['m4a'],
+        'audio/wav' => ['wav'],
+        'audio/x-wav' => ['wav'],
+        'audio/ogg' => ['ogg'],
+        'audio/webm' => ['webm'],
+    ];
+
+    public function store(int $organizationId, UploadedFile $file, string $uuid, ?AttachmentType $attachmentType = null): StoredAttachment
     {
         if (! $file->isValid()) {
             throw new InvalidAttachmentException('Некорректный или повреждённый файл.');
@@ -47,7 +63,7 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
             throw new InvalidAttachmentException('Файл пуст.');
         }
 
-        $maxBytes = $this->maxBytes();
+        $maxBytes = $this->maxBytes($attachmentType);
 
         if ($size > $maxBytes) {
             $limitMb = round($maxBytes / (1024 * 1024), 1);
@@ -56,12 +72,16 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
 
         $sniffedMime = $this->sniffMimeType($realPath);
 
-        if (! isset(self::ALLOWED_MIME_EXTENSIONS[$sniffedMime])) {
-            throw new InvalidAttachmentException("Неподдерживаемый тип файла ({$sniffedMime}). Допустимы только PDF, текстовые файлы и изображения (JPG, PNG, WebP).");
+        $allowedMimeExtensions = $this->allowedMimeExtensions($attachmentType);
+
+        if (! isset($allowedMimeExtensions[$sniffedMime])) {
+            throw new InvalidAttachmentException($attachmentType === AttachmentType::AudioRecording
+                ? "Неподдерживаемый аудиоформат ({$sniffedMime}). Допустимы MP3, M4A, WAV, OGG и WebM."
+                : "Неподдерживаемый тип файла ({$sniffedMime}). Допустимы только PDF, текстовые файлы и изображения (JPG, PNG, WebP).");
         }
 
         $clientExtension = strtolower((string) $file->getClientOriginalExtension());
-        $allowedExtensions = self::ALLOWED_MIME_EXTENSIONS[$sniffedMime];
+        $allowedExtensions = $allowedMimeExtensions[$sniffedMime];
 
         if ($clientExtension !== '' && ! in_array($clientExtension, $allowedExtensions, true)) {
             throw new InvalidAttachmentException("Расширение файла .{$clientExtension} не соответствует его реальному содержимому ({$sniffedMime}).");
@@ -113,6 +133,14 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
     public function delete(string $storagePath): void
     {
         Storage::disk('private')->delete($storagePath);
+    }
+
+    /** @return array<string, list<string>> */
+    private function allowedMimeExtensions(?AttachmentType $attachmentType): array
+    {
+        return $attachmentType === AttachmentType::AudioRecording
+            ? self::AUDIO_MIME_EXTENSIONS
+            : self::MEDICAL_MIME_EXTENSIONS;
     }
 
     private function assertNotDicom(UploadedFile $file, string $realPath): void

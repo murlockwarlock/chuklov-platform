@@ -3,6 +3,7 @@
 namespace App\Modules\Sessions\Domain\Models;
 
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -14,6 +15,7 @@ use Illuminate\Support\Carbon;
  * @property int $client_id
  * @property int $medical_session_id
  * @property int $medical_attachment_id
+ * @property MedicalSessionAttachmentGallery $gallery
  * @property Carbon $created_at
  * @property Carbon $updated_at
  * @property-read MedicalSession $session
@@ -24,6 +26,7 @@ use Illuminate\Support\Carbon;
     'client_id',
     'medical_session_id',
     'medical_attachment_id',
+    'gallery',
 ])]
 class MedicalSessionAttachment extends Model
 {
@@ -37,5 +40,14 @@ class MedicalSessionAttachment extends Model
     public function attachment(): BelongsTo
     {
         return $this->belongsTo(MedicalAttachment::class, 'medical_attachment_id');
+    }
+
+    protected function casts(): array
+    {
+        return [
+            'gallery' => MedicalSessionAttachmentGallery::class,
+            'created_at' => 'datetime',
+            'updated_at' => 'datetime',
+        ];
     }
 }

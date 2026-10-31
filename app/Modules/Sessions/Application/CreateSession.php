@@ -5,6 +5,7 @@ namespace App\Modules\Sessions\Application;
 use App\Models\User;
 use App\Modules\Identity\Application\EnsureSelfPatientProfile;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Application\GetMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalEncryptorInterface;
 use App\Modules\MedicalProfiles\Domain\Contracts\MedicalKeyResolverInterface;
 use App\Modules\Scheduling\Domain\Models\Booking;
@@ -19,13 +20,17 @@ use Illuminate\Validation\ValidationException;
 
 final readonly class CreateSession
 {
-    private const MAX_FIELD_LENGTH = 10000;
-
     public function __construct(
         private MedicalSessionAuthorization $authorization,
         private MedicalEncryptorInterface $encryptor,
         private MedicalKeyResolverInterface $keyResolver,
         private RecordAuditEvent $audit,
+        private MedicalSessionPainWriter $painWriter,
+        private MedicalSessionPainInitializer $painInitializer,
+        private MedicalSessionPainReader $painReader,
+        private MedicalSessionTestWriter $testWriter,
+        private MedicalSessionTestReader $testReader,
+        private MedicalSessionCauseWriter $causeWriter,
     ) {}
 
     public function handle(User $actor, Client $client, CreateSessionCommand $command): MedicalSessionData
@@ -47,13 +52,16 @@ final readonly class CreateSession
         }
 
         $booking = $this->resolveBooking($orgId, $command, $client, $specialist);
+        $specialComplaints = $this->initialSpecialComplaints($actor, $client, $command->pain);
 
         $keyVersion = $this->keyResolver->getCurrentKeyVersion($orgId);
 
         $encrypted = new EncryptedSessionPayload(
-            encryptedPain: $this->encryptor->encryptField($orgId, $command->pain, $keyVersion),
+            encryptedPain: $this->encryptor->encryptField($orgId, $specialComplaints, $keyVersion),
             encryptedTests: $this->encryptor->encryptField($orgId, $command->tests, $keyVersion),
             encryptedObservations: $this->encryptor->encryptField($orgId, $command->observations, $keyVersion),
+            encryptedSubjectiveFeelings: $this->encryptor->encryptField($orgId, $command->subjectiveFeelings, $keyVersion),
+            encryptedVisualPostureDiagnostics: $this->encryptor->encryptField($orgId, $command->visualPostureDiagnostics, $keyVersion),
             encryptedRootCauseHypothesis: $this->encryptor->encryptField($orgId, $command->rootCauseHypothesis, $keyVersion),
             encryptedProtocol: $this->encryptor->encryptField($orgId, $command->protocol, $keyVersion),
             encryptedResult: $this->encryptor->encryptField($orgId, $command->result, $keyVersion),
@@ -67,7 +75,7 @@ final readonly class CreateSession
 
         $occurredAtUtc = $command->occurredAtUtc();
 
-        return DB::transaction(function () use ($actor, $organization, $client, $specialist, $booking, $command, $encrypted, $keyVersion, $occurredAtUtc, $orgId): MedicalSessionData {
+        return DB::transaction(function () use ($actor, $organization, $client, $specialist, $booking, $command, $specialComplaints, $encrypted, $keyVersion, $occurredAtUtc, $orgId): MedicalSessionData {
             $session = new MedicalSession;
             $session->forceFill([
                 'organization_id' => $orgId,
@@ -79,13 +87,34 @@ final readonly class CreateSession
                 'pain_vas' => $encrypted->encryptedPainVas,
                 'tests' => $encrypted->encryptedTests,
                 'observations' => $encrypted->encryptedObservations,
+                'subjective_feelings' => $encrypted->encryptedSubjectiveFeelings,
+                'visual_posture_diagnostics' => $encrypted->encryptedVisualPostureDiagnostics,
                 'root_cause_hypothesis' => $encrypted->encryptedRootCauseHypothesis,
                 'protocol' => $encrypted->encryptedProtocol,
                 'result' => $encrypted->encryptedResult,
+                'causes_manual_override' => $command->causesManualOverride,
                 'encryption_key_version' => $keyVersion,
                 'occurred_at' => $occurredAtUtc,
             ]);
             $session->save();
+
+            if ($command->pains !== null) {
+                $this->painWriter->replace($session, $command->pains, $keyVersion);
+            } else {
+                $this->painInitializer->initialize($session, $keyVersion);
+            }
+            if ($command->testResults !== null || $command->rootCauses !== null) {
+                $this->testWriter->replace(
+                    $session,
+                    $command->testResults ?? [],
+                    $command->rootCauses ?? [],
+                    $keyVersion,
+                    $command->causesManualOverride ? ($command->causeIds ?? []) : [],
+                );
+            }
+            if ($command->causeIds !== null || $command->causesManualOverride) {
+                $this->causeWriter->replace($session, $command->causeIds ?? [], $command->causesManualOverride);
+            }
 
             $this->audit->handle(
                 organization: $organization,
@@ -108,7 +137,7 @@ final readonly class CreateSession
                 clientId: (int) $client->getKey(),
                 specialistId: (int) $specialist->getKey(),
                 bookingId: $booking?->getKey(),
-                pain: $command->pain,
+                pain: $specialComplaints,
                 tests: $command->tests,
                 observations: $command->observations,
                 rootCauseHypothesis: $command->rootCauseHypothesis,
@@ -119,8 +148,27 @@ final readonly class CreateSession
                 createdAt: $session->created_at,
                 updatedAt: $session->updated_at,
                 painVas: $command->painVas,
+                pains: $this->painReader->forSession($session),
+                subjectiveFeelings: $command->subjectiveFeelings,
+                visualPostureDiagnostics: $command->visualPostureDiagnostics,
+                testResults: $this->testReader->tests($session),
+                rootCauses: $this->testReader->rootCauses($session),
+                causes: $this->testReader->causes($session),
+                causesManualOverride: (bool) $session->causes_manual_override,
             );
         });
+    }
+
+    private function initialSpecialComplaints(User $actor, Client $client, ?string $pain): ?string
+    {
+        if ($pain !== null || MedicalSession::query()
+            ->where('organization_id', $client->organization_id)
+            ->where('client_id', $client->getKey())
+            ->exists()) {
+            return $pain;
+        }
+
+        return app(GetMedicalProfile::class)->handle($actor, $client)?->complaints;
     }
 
     private function resolveBooking(int $orgId, CreateSessionCommand $command, Client $client, Specialist $specialist): ?Booking
@@ -168,13 +216,15 @@ final readonly class CreateSession
             'pain' => $command->pain,
             'tests' => $command->tests,
             'observations' => $command->observations,
+            'subjective_feelings' => $command->subjectiveFeelings,
+            'visual_posture_diagnostics' => $command->visualPostureDiagnostics,
             'root_cause_hypothesis' => $command->rootCauseHypothesis,
             'protocol' => $command->protocol,
             'result' => $command->result,
         ] as $field => $value) {
-            if ($value !== null && mb_strlen($value) > self::MAX_FIELD_LENGTH) {
+            if ($value !== null && mb_strlen($value) > MedicalSessionFieldLimits::MaxTextLength) {
                 throw ValidationException::withMessages([
-                    $field => 'Поле превышает максимальную длину в '.self::MAX_FIELD_LENGTH.' символов.',
+                    $field => 'Поле превышает максимальную длину в '.MedicalSessionFieldLimits::MaxTextLength.' символов.',
                 ]);
             }
         }

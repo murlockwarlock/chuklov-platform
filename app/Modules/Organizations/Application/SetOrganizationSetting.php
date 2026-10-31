@@ -79,6 +79,15 @@ class SetOrganizationSetting
             throw new InvalidArgumentException('The integer setting value is invalid.');
         }
 
+        if (in_array($key, [
+            OrganizationSettingKey::ClientSegmentNewDays,
+            OrganizationSettingKey::ClientSegmentRegularCompletedVisits,
+            OrganizationSettingKey::ClientSegmentDormantDays,
+            OrganizationSettingKey::ClientSegmentSleepingDays,
+        ], true) && (! is_int($value) || $value < 1 || $value > 3650)) {
+            throw new InvalidArgumentException('The client segment threshold is outside the supported range.');
+        }
+
         if ($key === OrganizationSettingKey::OnlineConsultationServiceId
             && (! is_int($value) || $value < 1)) {
             throw new InvalidArgumentException('The consultation service identifier is invalid.');
@@ -128,6 +137,31 @@ class SetOrganizationSetting
         if ($key->value === OrganizationSettingKey::OfficeLocation->value
             && (! is_string($value) || trim($value) === '' || mb_strlen($value) > 500)) {
             throw new InvalidArgumentException('The office location is invalid.');
+        }
+
+        if (in_array($key, [
+            OrganizationSettingKey::AnalyticsTherapyEffectivenessFormulaReference,
+            OrganizationSettingKey::AnalyticsLtvPercentFormulaReference,
+        ], true) && (! is_string($value) || mb_strlen($value) > 2000)) {
+            throw new InvalidArgumentException('The analytics formula reference is invalid.');
+        }
+
+        if (in_array($key, [
+            OrganizationSettingKey::ClientSegmentWarmLeadServiceIds,
+            OrganizationSettingKey::ClientSegmentWarmLeadTargetServiceIds,
+        ], true)) {
+            if (! is_string($value) || mb_strlen($value) > 4096) {
+                throw new InvalidArgumentException('The client segment service list is invalid.');
+            }
+            $decoded = json_decode($value, true);
+            if (! is_array($decoded) || count($decoded) > 100 || array_filter($decoded, static fn (mixed $id): bool => filter_var($id, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false) !== []) {
+                throw new InvalidArgumentException('The client segment service list is invalid.');
+            }
+        }
+
+        if ($key === OrganizationSettingKey::ClientSegmentPenaltyTag
+            && (! is_string($value) || mb_strlen($value) > 80)) {
+            throw new InvalidArgumentException('The client penalty tag is invalid.');
         }
 
         if ($key === OrganizationSettingKey::PatientNotificationRecipients

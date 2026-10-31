@@ -8,6 +8,7 @@ use App\Filament\Resources\Clients\Pages\EditClient;
 use App\Filament\Resources\Clients\Pages\ListClients;
 use App\Filament\Resources\Clients\Pages\ViewClient;
 use App\Filament\Resources\Clients\RelationManagers\ClientAttachmentsRelationManager;
+use App\Filament\Resources\Clients\RelationManagers\ClientAudioRecordingsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientBookingsRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientClinicalAiRelationManager;
 use App\Filament\Resources\Clients\RelationManagers\ClientNotesRelationManager;
@@ -76,6 +77,7 @@ class ClientResource extends LocalizedResource
             ClientBookingsRelationManager::class,
             ClientSurveysRelationManager::class,
             ClientAttachmentsRelationManager::class,
+            ClientAudioRecordingsRelationManager::class,
             ClientClinicalAiRelationManager::class,
             ClientNotesRelationManager::class,
             ClientPatientsRelationManager::class,

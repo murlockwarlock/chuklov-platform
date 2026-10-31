@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Analytics;
 
+use App\Filament\Pages\AnalyticsConsole;
 use App\Filament\Pages\Dashboard;
 use App\Filament\Widgets\AnalyticsAcquisitionWidget;
 use App\Filament\Widgets\AnalyticsAiFailuresWidget;
@@ -12,18 +13,26 @@ use App\Filament\Widgets\AnalyticsSchedulingWidget;
 use App\Filament\Widgets\UpcomingBookingsWidget;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Attribution\Application\AttributionSourceCatalog;
+use App\Modules\Attribution\Domain\Models\ClientAttribution;
+use App\Modules\Feedback\Domain\Models\FeedbackTheme;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Domain\Models\Specialist;
+use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
 use Filament\Facades\Filament;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Livewire\Livewire;
 use Mockery;
 use Tests\TestCase;
@@ -71,6 +80,352 @@ final class AnalyticsDashboardWidgetTest extends TestCase
             ->assertActionExists('filter')
             ->set('filters', ['period' => DashboardPeriod::Today])
             ->assertSet('filters.period', DashboardPeriod::Today);
+    }
+
+    public function test_analytics_console_keeps_multiple_dimensions_and_runs_analysis(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->assertSuccessful()
+            ->fillForm([
+                'dimensions' => ['pain', 'acquisition', 'scheduling', 'segments'],
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён')
+            ->assertSee('Источники клиентов');
+
+        self::assertArrayHasKey('pain', $component->instance()->results);
+        self::assertArrayHasKey('acquisition', $component->instance()->results);
+        self::assertArrayHasKey('scheduling', $component->instance()->results);
+        self::assertArrayHasKey('segments', $component->instance()->results);
+        self::assertSame(['pain', 'acquisition', 'scheduling', 'segments'], $component->instance()->data['dimensions']);
+    }
+
+    public function test_analytics_console_applies_the_selected_client_to_each_requested_dimension(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $selected = Client::factory()->forOrganization($organization)->create(['full_name' => 'Selected client']);
+        $other = Client::factory()->forOrganization($organization)->create(['full_name' => 'Other client']);
+        DB::table('clients')->whereIn('id', [$selected->getKey(), $other->getKey()])->update([
+            'created_at' => '2026-10-10 10:00:00',
+            'updated_at' => '2026-10-10 10:00:00',
+        ]);
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        foreach ([$selected, $other] as $client) {
+            $booking = Booking::factory()
+                ->forClient($client)
+                ->forSpecialist($specialist)
+                ->forService($service)
+                ->create([
+                    'status' => 'completed',
+                    'starts_at' => '2026-10-10 12:00:00',
+                    'created_at' => '2026-10-10 10:00:00',
+                    'updated_at' => '2026-10-10 10:00:00',
+                ]);
+            BookingEvent::factory()->forBooking($booking)->create([
+                'event_type' => 'completed',
+                'occurred_at' => '2026-10-10 12:30:00',
+            ]);
+        }
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition', 'scheduling', 'demographics', 'services', 'booking_statuses'],
+                'client_id' => $selected->getKey(),
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-11',
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame($selected->getKey(), $component->instance()->data['client_id']);
+        self::assertSame(1, $component->instance()->results['acquisition']['new_clients']);
+        self::assertSame(1, $component->instance()->results['scheduling']['bookings']);
+        self::assertSame(1, $component->instance()->results['demographics']['client_count']);
+        self::assertSame(1, $component->instance()->results['services']['visit_count']);
+        self::assertSame(1, $component->instance()->results['booking_statuses']['statuses'][0]['count']);
+    }
+
+    public function test_analytics_console_preserves_and_applies_problem_tag_filter(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $tag = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Шея',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['pain'],
+                'problem_tag_id' => $tag->getKey(),
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame($tag->getKey(), $component->instance()->data['problem_tag_id']);
+        self::assertArrayHasKey('pain', $component->instance()->results);
+    }
+
+    public function test_analytics_console_preserves_taxonomy_filters_for_multiple_dimensions(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $theme = FeedbackTheme::query()->forceCreate([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Восстановление',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $goal = TrackerGoalTag::query()->forceCreate([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Сон',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['feedback', 'goals'],
+                'feedback_theme_id' => $theme->getKey(),
+                'goal_tag_id' => $goal->getKey(),
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame($theme->getKey(), $component->instance()->data['feedback_theme_id']);
+        self::assertSame($goal->getKey(), $component->instance()->data['goal_tag_id']);
+        self::assertArrayHasKey('feedback', $component->instance()->results);
+        self::assertArrayHasKey('goals', $component->instance()->results);
+    }
+
+    public function test_analytics_console_preserves_and_applies_source_filter(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $selected = Client::factory()->forOrganization($organization)->create();
+        $other = Client::factory()->forOrganization($organization)->create();
+        DB::table('clients')->whereIn('id', [$selected->getKey(), $other->getKey()])->update([
+            'created_at' => '2026-10-10 10:00:00',
+            'updated_at' => '2026-10-10 10:00:00',
+        ]);
+        foreach ([[$selected, 'instagram_ads'], [$other, 'telegram']] as [$client, $source]) {
+            $attribution = new ClientAttribution;
+            $attribution->forceFill([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $client->getKey(),
+                'source_type' => 'source',
+                'source' => $source,
+                'capture_channel' => 'portal',
+                'capture_context' => 'test',
+                'captured_at' => now(),
+                'accepted_at' => now(),
+            ])->save();
+        }
+        app(OrganizationContext::class)->set($organization);
+        app(AttributionSourceCatalog::class)->save($admin, [[
+            'source_key' => 'social_media',
+            'label' => 'Социальные сети',
+            'aliases' => [['value' => 'instagram_ads']],
+            'is_active' => true,
+            'sort_order' => 1,
+        ]]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition'],
+                'source_key' => 'social_media',
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-11',
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame('social_media', $component->instance()->data['source_key']);
+        self::assertSame(1, $component->instance()->results['acquisition']['new_clients']);
+        self::assertSame('Социальные сети', $component->instance()->results['acquisition']['sources'][0]['label']);
+    }
+
+    public function test_analytics_console_preserves_purchase_and_booking_status_filters(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['purchases', 'booking_statuses'],
+                'purchase_type' => 'program',
+                'booking_status' => 'cancelled',
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame('program', $component->instance()->data['purchase_type']);
+        self::assertSame('cancelled', $component->instance()->data['booking_status']);
+        self::assertSame([], $component->instance()->results['purchases']['types']);
+        self::assertSame([['key' => 'cancelled', 'label' => 'Отменённые', 'count' => 0]], $component->instance()->results['booking_statuses']['statuses']);
+    }
+
+    public function test_analytics_console_reports_a_dimension_error_without_rendering_partial_result_shape(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $authorizer = Mockery::mock(OrganizationAuthorizer::class, [app(OrganizationContext::class)])->makePartial();
+        $authorizer->shouldReceive('allows')->andReturn(true);
+        $authorizer->shouldReceive('authorize')->andThrow(new AuthorizationException);
+        $this->app->instance(OrganizationAuthorizer::class, $authorizer);
+        Log::shouldReceive('warning')
+            ->once()
+            ->with('analytics.dimension_failed', Mockery::on(
+                static fn (array $context): bool => $context['organization_id'] === $organization->getKey()
+                    && $context['dimension'] === 'scheduling'
+                    && $context['exception'] === AuthorizationException::class
+                    && ! array_key_exists('message', $context),
+            ));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['scheduling'],
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ завершён частично')
+            ->assertSee('Некоторые показатели недоступны')
+            ->assertSee('Записи и визиты')
+            ->assertSee('Не удалось получить результаты выбранных показателей');
+
+        self::assertSame([], $component->instance()->results);
+        self::assertSame(['scheduling' => 'Записи и визиты'], $component->instance()->dimensionErrors);
+    }
+
+    public function test_analytics_console_keeps_available_dimensions_and_warns_on_partial_failure(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $authorizer = Mockery::mock(OrganizationAuthorizer::class, [app(OrganizationContext::class)])->makePartial();
+        $authorizer->shouldReceive('allows')->andReturn(true);
+        $authorizer->shouldReceive('authorize')->andReturnUsing(
+            static function (User $actor, Organization $currentOrganization, OrganizationPermission $permission): mixed {
+                if ($permission === OrganizationPermission::ViewScheduling) {
+                    throw new \RuntimeException('synthetic dimension failure');
+                }
+
+                return $actor->membershipFor($currentOrganization);
+            },
+        );
+        $this->app->instance(OrganizationAuthorizer::class, $authorizer);
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition', 'scheduling'],
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ завершён частично')
+            ->assertSee('Некоторые показатели недоступны')
+            ->assertSee('Записи и визиты');
+
+        self::assertArrayHasKey('acquisition', $component->instance()->results);
+        self::assertArrayNotHasKey('scheduling', $component->instance()->results);
+        self::assertSame(['scheduling' => 'Записи и визиты'], $component->instance()->dimensionErrors);
+    }
+
+    public function test_analytics_export_does_not_return_a_partial_workbook_when_a_dimension_fails(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $authorizer = Mockery::mock(OrganizationAuthorizer::class, [app(OrganizationContext::class)])->makePartial();
+        $authorizer->shouldReceive('allows')->andReturn(true);
+        $authorizer->shouldReceive('authorize')->andReturnUsing(
+            static function (User $actor, Organization $currentOrganization, OrganizationPermission $permission): mixed {
+                if ($permission === OrganizationPermission::ViewScheduling) {
+                    throw new \RuntimeException('synthetic export failure');
+                }
+
+                return $actor->membershipFor($currentOrganization);
+            },
+        );
+        $this->app->instance(OrganizationAuthorizer::class, $authorizer);
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition', 'scheduling'],
+                'period' => DashboardPeriod::Today,
+            ])
+            ->call('export')
+            ->assertNotified('Excel не сформирован')
+            ->assertNoFileDownloaded()
+            ->assertSee('Некоторые показатели недоступны');
+
+        self::assertSame(['scheduling' => 'Записи и визиты'], $component->instance()->dimensionErrors);
+    }
+
+    public function test_analytics_console_rejects_invalid_custom_period_and_exports_after_correction(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition'],
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-02',
+                'end_date' => '2026-10-01',
+            ])
+            ->call('analyze')
+            ->assertNotified('Не удалось выполнить анализ')
+            ->assertHasErrors(['data.end_date']);
+
+        self::assertSame([], $component->instance()->results);
+
+        $component
+            ->call('export')
+            ->assertNotified('Не удалось выполнить экспорт')
+            ->assertNoFileDownloaded()
+            ->fillForm([
+                'dimensions' => ['acquisition'],
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-02',
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён')
+            ->call('export')
+            ->assertFileDownloaded('analytics-2026-10-01-2026-10-02.xlsx');
     }
 
     public function test_analytics_widgets_render_without_replacing_upcoming_widget(): void

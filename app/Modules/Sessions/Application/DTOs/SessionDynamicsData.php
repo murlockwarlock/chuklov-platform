@@ -52,6 +52,8 @@ final readonly class SessionDynamicsData
             'pain_vas' => $session->painVas,
             'tests' => $session->tests,
             'observations' => $session->observations,
+            'subjective_feelings' => $session->subjectiveFeelings,
+            'visual_posture_diagnostics' => $session->visualPostureDiagnostics,
             'root_cause_hypothesis' => $session->rootCauseHypothesis,
             'protocol' => $session->protocol,
             'result' => $session->result,

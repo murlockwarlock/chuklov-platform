@@ -5,6 +5,7 @@ namespace App\Modules\Finance\Domain\Enums;
 enum FinancialLedgerEntryType: string
 {
     case Correction = 'correction';
+    case Expense = 'expense';
     case FakeGatewaySettlement = 'fake_gateway_settlement';
     case GatewaySettlement = 'gateway_settlement';
     case GiftCertificateRedemption = 'gift_certificate_redemption';

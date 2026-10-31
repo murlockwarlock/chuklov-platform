@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 type CrmFixture = {
     email: string;
@@ -45,6 +45,26 @@ function validPdfBuffer(): Buffer {
     ].join('\n'));
 }
 
+function validWavBuffer(): Buffer {
+    const data = Buffer.alloc(1600);
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0, 'ascii');
+    header.writeUInt32LE(36 + data.length, 4);
+    header.write('WAVE', 8, 'ascii');
+    header.write('fmt ', 12, 'ascii');
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(1, 22);
+    header.writeUInt32LE(8000, 24);
+    header.writeUInt32LE(16000, 28);
+    header.writeUInt16LE(2, 32);
+    header.writeUInt16LE(16, 34);
+    header.write('data', 36, 'ascii');
+    header.writeUInt32LE(data.length, 40);
+
+    return Buffer.concat([header, data]);
+}
+
 async function uploadCrmMedicalReport(page: Page, filename: string, expectedOutcome: 'uploaded' | 'limit_rejected' = 'uploaded'): Promise<void> {
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).first().click();
     const dialog = page.getByRole('dialog', { name: 'Загрузить файл' });
@@ -78,7 +98,38 @@ async function uploadCrmMedicalReport(page: Page, filename: string, expectedOutc
     await expect(page.getByText('Файл загружен', { exact: true })).toBeVisible();
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean } = {}): CrmFixture {
+async function removeEmptyRepeaterItems(page: Page, label: string): Promise<void> {
+    const inputs = page.getByLabel(label, { exact: true });
+
+    for (let index = (await inputs.count()) - 1; index >= 0; index -= 1) {
+        const input = inputs.nth(index);
+        if ((await input.inputValue()).trim() !== '') {
+            continue;
+        }
+
+        await input.locator('xpath=ancestor::li[1]').getByRole('button', { name: 'Удалить', exact: true }).first().click();
+        await page.waitForLoadState('networkidle');
+    }
+}
+
+async function setLivewireRangeValue(page: Page, slider: Locator, value: number): Promise<void> {
+    await slider.press('Home');
+    await expect.poll(() => slider.getAttribute('aria-valuenow'), { timeout: 5_000 }).toBe('0.0');
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        const currentValue = Number(await slider.getAttribute('aria-valuenow'));
+        if (currentValue === value) {
+            break;
+        }
+
+        await slider.press(currentValue < value ? 'ArrowRight' : 'ArrowLeft');
+        await page.waitForTimeout(350);
+    }
+
+    await expect(slider).toHaveAttribute('aria-valuenow', `${value}.0`);
+}
+
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -114,6 +165,43 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'CRM Клиент '.$suffix,
         ]);
+        if (${options.taxonomyFlow ? 'true' : 'false'}) {
+            \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => 'E2E проблема '.$suffix,
+                'group_name' => 'E2E группа '.$suffix,
+                'is_active' => true,
+                'sort_order' => 0,
+            ]);
+        }
+        if (${options.clinicalCatalogFlow ? 'true' : 'false'}) {
+            $test = \\App\\Modules\\Sessions\\Domain\\Models\\MedicalTestDefinition::query()->create([
+                'organization_id' => $organization->getKey(),
+                'key' => 'e2e_test_'.$suffix,
+                'name' => 'E2E тест '.$suffix,
+                'section' => 'E2E раздел',
+                'is_active' => true,
+                'sort_order' => 0,
+            ]);
+            foreach ([['normal', 'Норма', false], ['abnormal', 'Отклонение', true]] as [$key, $label, $isAbnormal]) {
+                \\App\\Modules\\Sessions\\Domain\\Models\\MedicalTestValue::query()->create([
+                    'organization_id' => $organization->getKey(),
+                    'medical_test_definition_id' => $test->getKey(),
+                    'key' => $key,
+                    'label' => $label,
+                    'is_abnormal' => $isAbnormal,
+                    'is_active' => true,
+                    'sort_order' => $isAbnormal ? 1 : 0,
+                ]);
+            }
+            \\App\\Modules\\Sessions\\Domain\\Models\\MedicalCauseDefinition::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => 'E2E причина '.$suffix,
+                'group_name' => 'E2E причины',
+                'is_active' => true,
+                'sort_order' => 0,
+            ]);
+        }
         $telegramUsername = null;
         if ($telegramLinkFlow) {
             $telegramUsername = 'crm_'.$suffix;
@@ -567,6 +655,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 PLAYWRIGHT_TELEGRAM_LINK_FLOW: options.telegramLinkFlow ? '1' : '0',
                 PLAYWRIGHT_MESSAGES_FLOW: options.messagesFlow ? '1' : '0',
                 PLAYWRIGHT_GIFT_SALE_FLOW: options.giftSaleFlow ? '1' : '0',
+                PLAYWRIGHT_TAXONOMY_FLOW: options.taxonomyFlow ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -1171,6 +1260,8 @@ async function searchTableFor(page: Page, query: string): Promise<void> {
     await expect(searchInput).toBeVisible();
     await searchInput.fill(query);
     await expect(page.getByRole('row').filter({ hasText: query }).first()).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get('search'), { timeout: 15_000 }).toBe(query);
+    await page.waitForLoadState('networkidle');
 }
 
 async function assertBusinessField(page: Page, label: string, value: string): Promise<void> {
@@ -2062,6 +2153,12 @@ test('staff can complete a visit and record a manual payment through the normal 
     await page.goto(`/admin/bookings/${fixture.financeBookingId}`);
     await expect(page.getByRole('heading', { name: 'Запись на приём', exact: true })).toBeVisible();
 
+    await page.getByRole('link', { name: 'Создать медицинский сеанс', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create\\?booking_id=${fixture.financeBookingId}$`));
+    await expect(page.getByRole('heading', { name: 'Новый сеанс', exact: true })).toBeVisible();
+    await page.goto(`/admin/bookings/${fixture.financeBookingId}`);
+    await expect(page.getByRole('heading', { name: 'Запись на приём', exact: true })).toBeVisible();
+
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     const confirmationDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Подтвердить запись' }).last();
     await expect(confirmationDialog).toBeVisible();
@@ -2227,9 +2324,56 @@ test('staff can use the client cockpit for medical profile and private files', a
     const medicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
     const anamnesis = medicalDialog.getByRole('textbox', { name: 'Анамнез', exact: true });
     await expect(anamnesis).toBeVisible();
+
+    await medicalDialog.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    const profilePainName = medicalDialog.getByLabel('Название или описание боли*', { exact: true }).last();
+    await profilePainName.fill('Боль для проверки шкалы');
+    const profilePainScore = medicalDialog.getByRole('slider', { name: 'Оценка боли', exact: true }).last();
+    await profilePainScore.press('Home');
+    await expect(medicalDialog.getByText('0 / 10', { exact: true })).toBeVisible();
+    for (let index = 0; index < 5; index += 1) {
+        await profilePainScore.press('ArrowRight');
+    }
+    await expect(medicalDialog.getByText('5 / 10', { exact: true })).toBeVisible();
+    await medicalDialog.getByRole('button', { name: 'Без оценки', exact: true }).last().click();
+    await expect(medicalDialog.getByText('Без оценки', { exact: true }).last()).toBeVisible();
+
+    await medicalDialog.getByLabel('Были операции', { exact: true }).check();
+    await medicalDialog.getByRole('button', { name: 'Добавить операцию', exact: true }).click();
+    const operationItem = medicalDialog.getByRole('textbox', { name: 'Описание*', exact: true }).last().locator('xpath=ancestor::li[1]');
+    await operationItem.getByLabel('Год*', { exact: true }).fill('2026');
+    await operationItem.getByLabel('Описание*', { exact: true }).fill('Удаление грыжи');
+    await operationItem.getByLabel('Описание*', { exact: true }).press('Tab');
+    await expect(medicalDialog.getByText('2026 — Удаление грыжи', { exact: true })).toBeVisible();
+
+    await medicalDialog.getByLabel('Были травмы', { exact: true }).check();
+    await expect(medicalDialog.getByRole('button', { name: 'Добавить травму', exact: true })).toBeVisible();
+    await medicalDialog.getByRole('button', { name: 'Добавить травму', exact: true }).click();
+    await expect(medicalDialog.getByText('Новая травма', { exact: true }).last()).toBeVisible();
+    const injuryHeader = medicalDialog.getByText('Новая травма', { exact: true }).last();
+    const injuryFields = medicalDialog.getByRole('textbox', { name: 'Описание*', exact: true }).last();
+    if (await injuryHeader.isVisible() && !await injuryFields.isVisible()) {
+        await injuryHeader.click();
+    }
+    const injuryItem = injuryFields.locator('xpath=ancestor::li[1]');
+    await injuryItem.getByLabel('Год*', { exact: true }).fill('2021');
+    await injuryItem.getByLabel('Описание*', { exact: true }).fill('Перелом ключицы');
+    await injuryItem.getByLabel('Описание*', { exact: true }).press('Tab');
+    await expect(medicalDialog.getByText('2021 — Перелом ключицы', { exact: true })).toBeVisible();
+
     await anamnesis.fill('Запись из клиентского рабочего места');
+    await anamnesis.blur();
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
-    await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
+    await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
+    await page.reload();
+    await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
+    const reopenedMedicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
+    await expect(reopenedMedicalDialog.getByRole('textbox', { name: 'Анамнез', exact: true })).toHaveValue('Запись из клиентского рабочего места');
+    await expect(reopenedMedicalDialog.getByText('2026 — Удаление грыжи', { exact: true })).toBeVisible();
+    await expect(reopenedMedicalDialog.getByText('2021 — Перелом ключицы', { exact: true })).toBeVisible();
+    await expect(reopenedMedicalDialog.getByText('Без оценки', { exact: true }).last()).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(reopenedMedicalDialog).toBeHidden();
 
     await page.getByRole('tab', { name: 'Файлы и МРТ', exact: true }).click();
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
@@ -2329,6 +2473,103 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(attachmentsTable.getByRole('row').filter({ hasText: /ux-[a-e]-report\.pdf/ })).toHaveCount(5);
 });
 
+test('staff can manage private client audio recordings', async ({ page, request }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
+    const audioPanel = page.getByRole('tabpanel', { name: /Аудиозаписи/ });
+    const audioTable = page.getByRole('table', { name: 'Аудиозаписи' });
+    await expect(audioPanel.getByRole('heading', { name: 'Аудиозаписи', exact: true })).toBeVisible();
+    await expect(audioPanel.getByRole('heading', { name: 'Аудиозаписей пока нет', exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Загрузить аудиозапись', exact: true }).click();
+    const audioDialog = page.getByRole('dialog').last();
+    await audioDialog.getByLabel('Название записи*', { exact: true }).fill('Сеанс QA');
+    const audioUploadControl = audioDialog
+        .getByRole('group', { name: 'Аудиофайл*', exact: true })
+        .locator('label')
+        .filter({ hasText: 'Перетащите файлы или выберите', visible: true });
+    const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser'),
+        audioUploadControl.click(),
+    ]);
+    await fileChooser.setFiles({
+        name: 'qa-session.wav',
+        mimeType: 'audio/x-wav',
+        buffer: validWavBuffer(),
+    });
+    const selectedAudio = audioDialog.getByRole('group', { name: 'qa-session.wav', exact: true });
+    await expect(selectedAudio).toBeVisible({ timeout: 15_000 });
+    await expect(selectedAudio.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await audioDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(audioDialog).toBeHidden();
+    await expect(page.getByText('Аудиозапись загружена', { exact: true })).toBeVisible();
+
+    const audioRow = audioTable.getByRole('row').filter({ hasText: 'Сеанс QA' });
+    await expect(audioRow).toHaveCount(1);
+    await expect(audioRow).toBeVisible();
+    await audioRow.getByRole('button', { name: 'Воспроизвести', exact: true }).click();
+    const playbackDialog = page.locator('.fi-modal-window:visible').last();
+    await expect(playbackDialog.locator('audio')).toBeVisible();
+    const playbackSource = await playbackDialog.locator('audio').getAttribute('src');
+    expect(playbackSource).toMatch(/\/admin\/attachments\//);
+    await playbackDialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
+
+    if (playbackSource === null) {
+        throw new Error('The authorized audio preview did not expose a private URL.');
+    }
+
+    const unauthorizedResponse = await request.get(playbackSource, { maxRedirects: 0, timeout: 10_000 });
+    expect([302, 401, 403]).toContain(unauthorizedResponse.status());
+
+    const downloadResponseMatcher = (response: { status(): number; url(): string }): boolean => {
+        const url = new URL(response.url());
+
+        return response.status() === 200
+            && url.pathname.startsWith('/admin/attachments/')
+            && url.searchParams.get('mode') === 'download';
+    };
+    if (test.info().project.name === 'desktop') {
+        const [download, downloadResponse] = await Promise.all([
+            page.waitForEvent('download'),
+            page.waitForResponse(downloadResponseMatcher),
+            audioRow.getByRole('button', { name: 'Скачать', exact: true }).click(),
+        ]);
+        expect(download.suggestedFilename()).toBe('qa-session.wav');
+        expect(downloadResponse.headers()['content-type']).toContain('audio');
+        const downloadPath = await download.path();
+        expect(downloadPath).not.toBeNull();
+        if (downloadPath === null) {
+            throw new Error('The authorized audio download did not produce a file.');
+        }
+        expect(readFileSync(downloadPath)).toEqual(validWavBuffer());
+    } else {
+        const downloadResponse = page.waitForResponse(downloadResponseMatcher);
+        await audioRow.getByRole('button', { name: 'Скачать', exact: true }).click();
+        const response = await downloadResponse;
+        expect(response.headers()['content-type']).toContain('audio');
+        expect(Number(response.headers()['content-length'])).toBeGreaterThan(0);
+        await expect(page).toHaveURL(/\/admin\/attachments\/.+mode=download/, { timeout: 10_000 });
+        await page.goto(`/admin/clients/${fixture.clientId}`);
+        await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
+    }
+
+    await audioRow.getByRole('button', { name: 'Удалить', exact: true }).click();
+    const deleteConfirmation = page
+        .getByRole('alertdialog', { name: 'Удалить', exact: true })
+        .getByRole('button', { name: 'Подтвердить', exact: true });
+    await expect(deleteConfirmation).toBeVisible();
+    await deleteConfirmation.click();
+    await expect(audioRow).toHaveCount(0, { timeout: 15_000 });
+    await page.reload();
+    await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
+    await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA' })).toHaveCount(0);
+
+});
+
 test('staff can complete the clinical AI workflow from the client cockpit', async ({ page }) => {
     test.skip(
         process.env.CLINICAL_AI_E2E_ENABLED !== '1'
@@ -2425,7 +2666,12 @@ test('staff can complete the clinical AI workflow from the client cockpit', asyn
 });
 
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
-    const fixture = createCrmFixture();
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ clinicalCatalogFlow: true });
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const testName = `E2E тест ${suffix}`;
+    const causeName = `E2E причина ${suffix}`;
+    const causeOptionName = `E2E причины: ${causeName}`;
 
     await login(page, fixture);
 
@@ -2438,8 +2684,13 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
 
     await page.goto(`/admin/clients/${fixture.clientId}/sessions`);
-    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Сеансы клиента' })).toBeVisible();
+
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('tab', { name: 'Записи на приём', exact: true }).click();
+    await expect(page.getByText('У клиента пока нет записей на приём.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Создать запись', exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Новый сеанс', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create$`));
@@ -2448,16 +2699,80 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Специалист').click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
-    await page.getByRole('textbox', { name: 'Описание боли', exact: true }).fill('Первичная запись о боли');
+    const protocolItem = page.locator('.fi-fo-repeater-item').filter({ hasText: testName }).last();
+    await expect(protocolItem).toBeVisible();
+    const protocolTestLabel = protocolItem.locator('input[type="hidden"][wire\\:model*="test_results"][wire\\:model*="test_label"]').first();
+    await expect(protocolTestLabel).toHaveValue(/E2E/);
+    await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    await page.getByLabel('Название или описание боли*', { exact: true }).fill('Первичная боль');
+    const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
+    await beforePainScore.press('Home');
+    for (let index = 0; index < 7; index += 1) {
+        await beforePainScore.press('ArrowRight');
+    }
+    const afterPainScore = page.getByRole('slider', { name: 'После сеанса', exact: true });
+    await afterPainScore.press('Home');
+    for (let index = 0; index < 3; index += 1) {
+        await afterPainScore.press('ArrowRight');
+    }
+    await expect(page.getByText('7 / 10', { exact: true })).toBeVisible();
+    await expect(page.getByText('3 / 10', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Без оценки', exact: true }).first().click();
+    await expect(page.getByText('Без оценки', { exact: true }).first()).toBeVisible();
+    await setLivewireRangeValue(page, beforePainScore, 7);
+    await expect(page.getByText('7 / 10', { exact: true })).toBeVisible();
+    await page.getByLabel('Особые жалобы', { exact: true }).fill('Первичная запись о боли');
+    const beforeTestValue = protocolItem.getByRole('combobox', { name: 'До сеанса', exact: true });
+    await expect(beforeTestValue).toBeVisible();
+    await beforeTestValue.click();
+    await page.getByRole('option', { name: 'Норма', exact: true }).click();
+    const afterTestValue = protocolItem.getByRole('combobox', { name: 'После сеанса', exact: true });
+    await afterTestValue.click();
+    await page.getByRole('option', { name: 'Отклонение · нарушение', exact: true }).click();
+    const testCauseSelect = protocolItem.getByRole('combobox', { name: 'Причины нарушений', exact: true });
+    await testCauseSelect.click();
+    await page.getByRole('option', { name: causeOptionName, exact: true }).click();
+    await expect(page.getByText('Причины по результатам тестов', { exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('option', { name: causeOptionName, exact: true }).last()).toBeHidden();
+    const manualCauseButton = page.getByRole('button', { name: 'Изменить список вручную', exact: true });
+    await manualCauseButton.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'nearest' }));
+    await manualCauseButton.click();
+    await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Вернуться к причинам из тестов', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Заполнить', exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Добавить первопричину', exact: true }).click();
+    const rootCauseSelect = page.getByRole('combobox', { name: 'Причина из сеанса', exact: true });
+    await rootCauseSelect.click();
+    const rootCauseOption = page.getByRole('option', { name: causeOptionName, exact: true }).last();
+    await expect(rootCauseOption).toBeVisible();
+    await rootCauseOption.click({ force: true });
+    await page.getByLabel('Дополнительное описание', { exact: true }).fill('E2E описание первопричины');
+    await page.getByLabel('Гипотеза первопричины', { exact: true }).fill('E2E гипотеза');
+    await page.getByLabel('Алгоритм / протокол сеанса', { exact: true }).fill('E2E протокол');
+    await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill('E2E стало легче');
+    await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill('E2E плечи ровнее');
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
     const sessionRow = page.getByRole('row').filter({ hasText: '18.08.2026' });
     await expect(sessionRow).toBeVisible();
-    await sessionRow.getByRole('link', { name: 'Открыть', exact: true }).click();
-    await expect(page.getByText('Первичная запись о боли', { exact: true })).toBeVisible();
-    await expect(page.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
-    await expect(page.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
+    const sessionViewLink = sessionRow.getByRole('link', { name: 'Открыть', exact: true });
+    await sessionViewLink.click({ force: true });
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
+    await expect(page.getByText('Первичная боль', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
+    const testNameText = page.getByText(new RegExp(testName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).last();
+    await expect(testNameText).toBeVisible();
+    await expect(page.getByText(causeName, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('E2E описание первопричины', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Протокол и результат сеанса').getByText('E2E протокол', { exact: true })).toBeVisible();
+    await expect(page.getByText('E2E стало легче', { exact: true })).toBeVisible();
+    await expect(page.getByText('E2E плечи ровнее', { exact: true })).toBeVisible();
+    const dynamics = page.getByLabel('Динамика подтверждённых фактов');
+    await expect(dynamics.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
+    await expect(dynamics.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
 
     await page.getByRole('button', { name: 'Связать файл', exact: true }).click();
     await page.getByLabel('Файл клиента').click();
@@ -2467,16 +2782,397 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Описание боли', exact: true }).fill('Обновлённая запись о боли');
-    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await page.getByLabel('Название или описание боли*', { exact: true }).fill('Обновлённая боль');
+    const resultField = page.getByLabel('Результат после сеанса', { exact: true });
+    await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
+    await expect(resultField).toHaveValue(/было 7, стало 3/);
+    await resultField.fill('Ручная правка перед заполнением');
+    await Promise.all([
+        page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok()),
+        resultField.press('Tab'),
+    ]);
+    await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
+    const replaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
+    await expect(replaceResultDialog).toBeVisible();
+    await expect(replaceResultDialog).toContainText('Текущий текст будет заменён сводкой по данным сеанса.');
+    const replaceResultResponse = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
+    await replaceResultDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await replaceResultResponse;
+    await expect(resultField).toHaveValue(/было 7, стало 3/);
+    const saveSessionButton = page.getByRole('button', { name: 'Сохранить', exact: true });
+    await expect(saveSessionButton).toBeEnabled({ timeout: 30_000 });
+    await saveSessionButton.click();
 
-    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
-    await page.getByRole('row').filter({ hasText: '18.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).click();
-    await expect(page.getByText('Обновлённая запись о боли', { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
+    const updatedSessionLink = page.getByRole('row').filter({ hasText: '18.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).last();
+    await expect(updatedSessionLink).toBeVisible();
+    await expect(updatedSessionLink).toHaveAttribute('href', /\/medical-sessions\/\d+$/);
+    await updatedSessionLink.click({ force: true });
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 30_000 });
+    await expect(page.getByText('Обновлённая боль', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(/было 7, стало 3 из 10/, { exact: false }).first()).toBeVisible();
+    await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'К истории сеансов', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
+});
+
+test('staff can maintain the clinical test catalog and use it in a new session', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const testName = `E2E настроенный тест ${suffix}`;
+    const causeName = `E2E настроенная причина ${suffix}`;
+
+    await login(page, fixture);
+    await page.goto('/admin/medical-clinical-catalog-configuration');
+    await expect(page.getByRole('heading', { name: 'Клинические справочники', exact: true })).toBeVisible();
+
+    const testNameInputs = page.getByLabel('Название теста*', { exact: true });
+    const existingTestCount = await testNameInputs.count();
+    await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
+    await expect.poll(async () => testNameInputs.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(existingTestCount + 1);
+    const testNameInput = page.getByLabel('Название теста*', { exact: true }).last();
+    await expect(testNameInput).toBeVisible();
+    await testNameInput.fill(testName);
+    await testNameInput.press('Tab');
+    const configuredTestItem = testNameInput.locator('xpath=ancestor::li[1]');
+    const sectionInput = configuredTestItem.getByLabel('Раздел', { exact: true });
+    await sectionInput.fill('E2E раздел');
+    await sectionInput.press('Tab');
+    await page.waitForLoadState('networkidle');
+    const addValueButton = configuredTestItem.getByRole('button', { name: 'Добавить значение', exact: true });
+    await expect(addValueButton).toBeVisible();
+    const valueLabels = configuredTestItem.getByLabel('Название значения*', { exact: true });
+    for (let attempt = 0; attempt < 3 && (await valueLabels.count()) < 2; attempt += 1) {
+        await addValueButton.click();
+        try {
+            await expect.poll(async () => valueLabels.count(), { timeout: 5_000 }).toBeGreaterThanOrEqual(2);
+        } catch (error) {
+            if (attempt === 2) {
+                throw error;
+            }
+        }
+    }
+    await expect.poll(async () => valueLabels.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+    await valueLabels.nth(0).fill('Норма');
+    await valueLabels.nth(0).press('Tab');
+    await valueLabels.nth(1).fill('Отклонение');
+    await valueLabels.nth(1).press('Tab');
+    await configuredTestItem.getByLabel('Считать нарушением', { exact: true }).nth(1).check();
+    const activeTestToggle = configuredTestItem.getByLabel('Активен', { exact: true });
+    if (! await activeTestToggle.isChecked()) {
+        await activeTestToggle.check();
+    }
+    const activeValueToggles = configuredTestItem.getByLabel('Активно', { exact: true });
+    await expect(activeValueToggles).toHaveCount(2);
+    for (const toggle of await activeValueToggles.all()) {
+        if (! await toggle.isChecked()) {
+            await toggle.check();
+        }
+    }
+    await removeEmptyRepeaterItems(page, 'Название значения*');
+
+    const causeNameInputs = page.getByLabel('Название причины*', { exact: true });
+    const existingCauseCount = await causeNameInputs.count();
+    await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
+    await expect.poll(async () => causeNameInputs.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(existingCauseCount + 1);
+    const causeNameInput = page.getByLabel('Название причины*', { exact: true }).last();
+    await causeNameInput.fill(causeName);
+    await causeNameInput.press('Tab');
+    const configuredCauseItem = causeNameInput.locator('xpath=ancestor::li[1]');
+    await configuredCauseItem.getByLabel('Группа', { exact: true }).fill('E2E причины');
+    await configuredCauseItem.getByLabel('Группа', { exact: true }).press('Tab');
+    const activeCauseToggle = configuredCauseItem.getByLabel('Активна', { exact: true });
+    if (! await activeCauseToggle.isChecked()) {
+        await activeCauseToggle.check();
+    }
+    await removeEmptyRepeaterItems(page, 'Название теста*');
+    await removeEmptyRepeaterItems(page, 'Название причины*');
+    await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
+
+    await page.reload();
+    await expect(page.getByLabel('Название теста*', { exact: true }).last()).toHaveValue(testName);
+    await expect(page.getByLabel('Название причины*', { exact: true }).last()).toHaveValue(causeName);
+
+    await page.goto(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create`);
+    await expect(page.getByRole('heading', { name: 'Новый сеанс', exact: true })).toBeVisible();
+    const beforeTestValue = page.getByRole('combobox', { name: 'До сеанса', exact: true }).last();
+    await expect(beforeTestValue).toBeVisible();
+    await beforeTestValue.click();
+    const abnormalValueOption = page.getByRole('option').filter({ hasText: 'Отклонение' }).last();
+    await expect(abnormalValueOption).toBeVisible();
+    await abnormalValueOption.click();
+});
+
+test('staff can analyze several dimensions and download a filtered Excel report', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ financeFlow: true });
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+
+    const dimensions = [
+        'Проблемы и динамика боли',
+        'Источники клиентов',
+        'Записи и визиты',
+        'Финансы',
+        'Удовлетворённость и обратная связь',
+        'Цели и задачи',
+        'Демография клиентов',
+        'Услуги и визиты',
+        'Типы покупок',
+        'Статусы записей',
+        'Категории клиентов',
+    ];
+    for (const dimension of dimensions) {
+        const checkbox = page.getByRole('checkbox', { name: dimension, exact: true });
+        await expect(checkbox).toBeVisible();
+        if (! await checkbox.isChecked()) {
+            await checkbox.check();
+        }
+    }
+
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    for (const dimension of dimensions) {
+        await expect(page.getByRole('heading', { name: dimension, exact: true })).toBeVisible();
+    }
+
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('Analytics export did not produce a file.');
+    }
+    const workbookBytes = readFileSync(downloadPath);
+    expect(workbookBytes.subarray(0, 2).toString()).toBe('PK');
+    const workbookXml = execFileSync('unzip', ['-p', downloadPath, 'xl/sharedStrings.xml'], { encoding: 'utf8' });
+    expect(workbookXml).toContain('Показатель');
+    expect(workbookXml).toContain('Финансы');
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Финансы', exact: true })).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+    await expect(page.getByRole('button', { name: 'Анализировать', exact: true })).toBeVisible();
+});
+
+test('owner can configure computed metrics and use them in analytics and Excel', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture();
+    const metricName = `Новые клиенты E2E ${fixture.clientName.slice(-8)}`;
+    const renamedMetricName = `${metricName} обновлено`;
+    const saveMetricsAndWait = async (): Promise<void> => {
+        const saveResponse = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
+        await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
+        await saveResponse;
+        await expect(page.locator('.fi-no-notification.fi-status-success:visible').filter({ hasText: 'Метрики сохранены' }).last()).toBeVisible({ timeout: 20_000 });
+    };
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-metric-settings');
+    await expect(page.getByRole('heading', { name: 'Метрики аналитики', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Снижение боли, %', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Изменение LTV к предыдущему периоду, %', exact: true })).toBeVisible();
+    await expect(page.getByText('Описание формулы владельца', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('база сравнения не определена', { exact: false })).toHaveCount(0);
+
+    for (const width of [320, 390, 768, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+        await expect(page.getByRole('button', { name: 'Сохранить метрики', exact: true })).toBeVisible();
+    }
+
+    const items = page.locator('.fi-fo-repeater-item');
+    const initialItemCount = await items.count();
+    await page.getByRole('button', { name: 'Добавить метрику', exact: true }).click();
+    await expect.poll(async () => items.count()).toBe(initialItemCount + 1);
+    await page.waitForTimeout(1500);
+    const customItem = items.last();
+
+    const choose = async (label: RegExp, option: string): Promise<void> => {
+        const control = customItem.getByRole('combobox', { name: label }).first();
+        if (await control.evaluate((element) => element.tagName === 'SELECT')) {
+            await expect.poll(
+                async () => (await control.locator('option').allTextContents()).map((text) => text.trim()),
+                { timeout: 20_000 },
+            ).toContain(option);
+            await control.selectOption({ label: option });
+            await page.waitForTimeout(750);
+            return;
+        }
+
+        await control.click();
+        const optionLocator = page.getByRole('option', { name: option, exact: true }).last();
+        await expect(optionLocator).toBeVisible({ timeout: 20_000 });
+        await optionLocator.click();
+        await page.waitForTimeout(750);
+    };
+
+    await customItem.getByRole('textbox', { name: /^Название/ }).fill(metricName);
+    await choose(/^Что считаем/, 'Новые клиенты');
+    await choose(/^Агрегация/, 'Количество');
+    await choose(/^Операция/, 'A − B');
+    await choose(/^Основа сравнения/, 'Фиксированное целевое значение');
+    const targetValue = customItem.locator('input[id$=".target_value"]');
+    await expect(targetValue).toBeVisible();
+    await targetValue.fill('1');
+    await targetValue.press('Tab');
+    await choose(/^Если данных нет/, 'Не рассчитывать');
+    await choose(/^Если знаменатель равен 0/, 'Не рассчитывать');
+    await choose(/^Единица/, 'Число');
+    await choose(/^Округление/, '0 знаков');
+    await expect(targetValue).toHaveValue('1');
+    await customItem.getByRole('switch', { name: 'Активна', exact: true }).check();
+    await saveMetricsAndWait();
+
+    await page.reload();
+    const persistedMetricHeading = page.getByRole('heading', { name: metricName, exact: true });
+    await expect(persistedMetricHeading).toBeVisible();
+    const persistedItem = persistedMetricHeading.locator('xpath=ancestor::li[contains(@class,"fi-fo-repeater-item")][1]');
+    await expect(persistedItem.locator('input[id$=".target_value"]')).toHaveValue('1');
+
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const customMetricsDimension = page.getByRole('checkbox', { name: 'Вычисляемые метрики', exact: true });
+    if (! await customMetricsDimension.isChecked()) {
+        const dimensionsUpdate = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
+        await customMetricsDimension.check();
+        await dimensionsUpdate;
+    }
+    await expect(customMetricsDimension).toBeChecked();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    const customMetricsSection = page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]');
+    await expect(customMetricsSection.getByText(metricName, { exact: true })).toBeVisible();
+    await expect(customMetricsSection).toContainText('Число');
+
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
+    ]);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('Computed metrics export did not produce a file.');
+    }
+    const workbookXml = execFileSync('unzip', ['-p', downloadPath, 'xl/sharedStrings.xml'], { encoding: 'utf8' });
+    expect(workbookXml).toContain(metricName);
+    expect(workbookXml).toContain('Число');
+
+    await page.goto('/admin/analytics-metric-settings');
+    const reopenedItem = page.locator('.fi-fo-repeater-item').last();
+    await reopenedItem.getByRole('textbox', { name: /^Название/ }).fill(renamedMetricName);
+    await saveMetricsAndWait();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: renamedMetricName, exact: true })).toBeVisible();
+
+    await page.goto('/admin/analytics-console');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toBeVisible();
+    await expect(page.getByText(metricName, { exact: true })).toHaveCount(0);
+
+    await page.goto('/admin/analytics-metric-settings');
+    await page.locator('.fi-fo-repeater-item').last().getByRole('switch', { name: 'Активна', exact: true }).uncheck();
+    await saveMetricsAndWait();
+    await page.goto('/admin/analytics-console');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toHaveCount(0);
+
+    await page.goto('/admin/analytics-metric-settings');
+    await page.locator('.fi-fo-repeater-item').last().getByRole('switch', { name: 'Активна', exact: true }).check();
+    await saveMetricsAndWait();
+    await page.goto('/admin/analytics-console');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 320, height: 900 });
+    await assertNoHorizontalOverflow(page);
+    await page.setViewportSize({ width: 390, height: 900 });
+    await assertNoHorizontalOverflow(page);
+    await page.setViewportSize({ width: 768, height: 900 });
+    await assertNoHorizontalOverflow(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+});
+
+test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ taxonomyFlow: true });
+    const groupName = `E2E группа ${fixture.clientName.replace(/^CRM Клиент /, '')}`;
+    const renamedGroupName = `${groupName} обновлена`;
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-taxonomy-groups');
+    await expect(page.getByRole('heading', { name: 'Группы аналитики', exact: true })).toBeVisible();
+
+    const problemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
+    const groupNameInputs = problemSection.getByRole('textbox', { name: 'Название группы*', exact: true });
+    let groupIndex = -1;
+    for (let index = 0; index < await groupNameInputs.count(); index += 1) {
+        if ((await groupNameInputs.nth(index).inputValue()) === groupName) {
+            groupIndex = index;
+            break;
+        }
+    }
+    expect(groupIndex).toBeGreaterThanOrEqual(0);
+    await groupNameInputs.nth(groupIndex).fill(renamedGroupName);
+    const activeToggle = problemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(groupIndex);
+    if (await activeToggle.isChecked()) {
+        await activeToggle.uncheck();
+    }
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('Группы аналитики сохранены', { exact: true })).toBeVisible();
+
+    await page.reload();
+    const reopenedProblemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
+    const reopenedNameInputs = reopenedProblemSection.getByRole('textbox', { name: 'Название группы*', exact: true });
+    let reopenedGroupIndex = -1;
+    for (let index = 0; index < await reopenedNameInputs.count(); index += 1) {
+        if ((await reopenedNameInputs.nth(index).inputValue()) === renamedGroupName) {
+            reopenedGroupIndex = index;
+            break;
+        }
+    }
+    expect(reopenedGroupIndex).toBeGreaterThanOrEqual(0);
+    await expect(reopenedProblemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(reopenedGroupIndex)).not.toBeChecked();
+    await expect(page.locator('html')).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+});
+
+test('staff can review human attribution defaults and aliases in CRM', async ({ page }) => {
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto('/admin/attribution-source-settings');
+    await expect(page.getByRole('heading', { name: 'Источники клиентов', exact: true })).toBeVisible();
+    await expect(page.getByText('Какие значения считать этим источником', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Например, для Instagram сюда можно добавить: instagram, ig, insta.', { exact: false }).first()).toBeVisible();
+
+    const sourceInputs = page.getByRole('textbox', { name: 'Название*', exact: true });
+    let instagramIndex = -1;
+    for (let index = 0; index < await sourceInputs.count(); index += 1) {
+        if ((await sourceInputs.nth(index).inputValue()) === 'Instagram') {
+            instagramIndex = index;
+            break;
+        }
+    }
+    expect(instagramIndex).toBeGreaterThanOrEqual(0);
+    const instagramItem = sourceInputs.nth(instagramIndex).locator('xpath=ancestor::li[1]');
+    const aliasInputs = instagramItem.getByRole('textbox', { name: 'Вариант названия / ключ*', exact: true });
+    await expect(aliasInputs).toHaveCount(3);
+    await expect(aliasInputs.nth(0)).toHaveValue('instagram');
+    await expect(aliasInputs.nth(1)).toHaveValue('ig');
+    await expect(aliasInputs.nth(2)).toHaveValue('insta');
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Источники клиентов', exact: true })).toBeVisible();
+    await assertNoHorizontalOverflow(page);
 });
 
 test('crm sidebar navigation operates via SPA mode without full page reloads', async ({ page }) => {

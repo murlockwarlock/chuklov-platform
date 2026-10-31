@@ -10,6 +10,7 @@ use App\Modules\Finance\Application\CurrentCurrencyConfigurationIntegrity;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\FinancialReconciliationProjection;
 use App\Modules\Finance\Domain\Enums\FinancialLedgerEntryType;
+use App\Modules\Finance\Domain\Models\FinanceAccount;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Identity\Domain\Models\Client;
@@ -29,10 +30,13 @@ final class FinanceAnalytics
         private readonly FinancialReconciliationProjection $reconciliation,
     ) {}
 
-    public function handle(User $actor, DashboardPeriod $period): FinanceAnalyticsData
+    public function handle(User $actor, DashboardPeriod $period, ?Client $client = null): FinanceAnalyticsData
     {
         $organization = $this->authorization->authorizeView($actor);
         $organizationId = (int) $organization->getKey();
+        if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
 
         try {
             $configuration = $this->configuration->configuration($organization);
@@ -45,6 +49,7 @@ final class FinanceAnalytics
             $baseCurrency = $validated['base'];
             $obligationTable = (new FinancialObligation)->getTable();
             $ledgerTable = (new FinancialLedgerEntry)->getTable();
+            $clientId = $client?->getKey();
 
             if ($this->reconciliation->hasInvalidReconciliation(
                 FinancialObligation::query()->where('organization_id', $organizationId),
@@ -56,17 +61,22 @@ final class FinanceAnalytics
                 ->where('ledger.organization_id', $organizationId)
                 ->where('ledger.occurred_at', '>=', $period->startUtc)
                 ->where('ledger.occurred_at', '<', $period->endUtc);
+            if ($clientId !== null) {
+                $revenueQuery->whereIn('ledger.obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable));
+            }
+            $revenueQuery->where('ledger.entry_type', '<>', FinancialLedgerEntryType::Expense->value);
             $this->excludeGiftCertificateRedemptions($revenueQuery, $ledgerTable, 'ledger');
-            $revenue = $this->baseAmountSum($revenueQuery);
-            $receipts = $this->receipts($organizationId, $period, $ledgerTable);
-            $cohortClientCount = $this->cohortClientCount($organizationId, $period);
+            $revenue = $this->qualifiedBaseAmountSum($revenueQuery);
+            $expenses = $this->expenses($organizationId, $period, $ledgerTable, $obligationTable, $client);
+            $receipts = $this->receipts($organizationId, $period, $ledgerTable, $obligationTable, $client);
+            $cohortClientCount = $this->cohortClientCount($organizationId, $period, $client);
             $realizedLtv = $cohortClientCount === 0
                 ? null
                 : $this->averageMinor(
-                    $this->cohortLedgerSum($organizationId, $period, $obligationTable, $ledgerTable),
+                    $this->cohortLedgerSum($organizationId, $period, $obligationTable, $ledgerTable, $client),
                     $cohortClientCount,
                 );
-            $debt = $this->periodEndDebt($organizationId, $period, $baseCurrency->value, $obligationTable, $ledgerTable);
+            $debt = $this->periodEndDebt($organizationId, $period, $baseCurrency->value, $obligationTable, $ledgerTable, $client);
 
             return new FinanceAnalyticsData(
                 available: true,
@@ -77,6 +87,9 @@ final class FinanceAnalytics
                 debtMinor: $debt,
                 receiptCount: $receipts['count'],
                 cohortClientCount: $cohortClientCount,
+                expensesMinor: $expenses,
+                cashMovementMinor: BigInteger::of($revenue)->minus($expenses)->toString(),
+                accounts: $this->accounts($organizationId, $period, $ledgerTable, $obligationTable, $baseCurrency->value, $client),
             );
         } catch (\Throwable) {
             return FinanceAnalyticsData::unavailable();
@@ -84,8 +97,9 @@ final class FinanceAnalytics
     }
 
     /** @return array{total: string, count: int} */
-    private function receipts(int $organizationId, DashboardPeriod $period, string $ledgerTable): array
+    private function receipts(int $organizationId, DashboardPeriod $period, string $ledgerTable, string $obligationTable, ?Client $client = null): array
     {
+        $clientId = $client?->getKey();
         $row = DB::table($ledgerTable)
             ->where('organization_id', $organizationId)
             ->where('occurred_at', '>=', $period->startUtc)
@@ -95,6 +109,7 @@ final class FinanceAnalytics
                 FinancialLedgerEntryType::FakeGatewaySettlement->value,
                 FinancialLedgerEntryType::GatewaySettlement->value,
             ])
+            ->when($clientId !== null, fn ($query) => $query->whereIn('obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable)))
             ->where('base_amount_minor', '>', 0)
             ->selectRaw('COALESCE(SUM(base_amount_minor), 0) as total')
             ->selectRaw('COUNT(*) as receipt_count')
@@ -106,24 +121,74 @@ final class FinanceAnalytics
         ];
     }
 
-    private function cohortClientCount(int $organizationId, DashboardPeriod $period): int
+    private function expenses(int $organizationId, DashboardPeriod $period, string $ledgerTable, string $obligationTable, ?Client $client = null): string
+    {
+        $clientId = $client?->getKey();
+        $row = DB::table($ledgerTable)
+            ->where('organization_id', $organizationId)
+            ->where('entry_type', FinancialLedgerEntryType::Expense->value)
+            ->where('occurred_at', '>=', $period->startUtc)
+            ->where('occurred_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->whereIn('obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable)))
+            ->selectRaw('COALESCE(SUM(base_amount_minor), 0) as total')
+            ->first();
+
+        return BigInteger::of($this->integerString($row?->total))->abs()->toString();
+    }
+
+    /** @return list<array{label: string, account_type: string, currency: string, movement_currency: string, movement_minor: string}> */
+    private function accounts(int $organizationId, DashboardPeriod $period, string $ledgerTable, string $obligationTable, string $movementCurrency, ?Client $client = null): array
+    {
+        $clientId = $client?->getKey();
+        $accountTable = (new FinanceAccount)->getTable();
+        $rows = DB::table($accountTable.' as accounts')
+            ->leftJoin($ledgerTable.' as ledger', function (JoinClause $join) use ($period, $organizationId, $obligationTable, $clientId): void {
+                $join
+                    ->on('ledger.organization_id', '=', 'accounts.organization_id')
+                    ->on('ledger.account_id', '=', 'accounts.id')
+                    ->where('ledger.occurred_at', '>=', $period->startUtc)
+                    ->where('ledger.occurred_at', '<', $period->endUtc)
+                    ->when($clientId !== null, fn ($query) => $query->whereIn('ledger.obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable)));
+            })
+            ->where('accounts.organization_id', $organizationId)
+            ->select('accounts.name', 'accounts.account_type', 'accounts.currency')
+            ->selectRaw('COALESCE(SUM(ledger.base_amount_minor), 0) as movement_minor')
+            ->groupBy('accounts.id', 'accounts.name', 'accounts.account_type', 'accounts.currency')
+            ->orderBy('accounts.sort_order')
+            ->orderBy('accounts.name')
+            ->get();
+
+        return array_values($rows->map(fn (object $row): array => [
+            'label' => (string) $row->name,
+            'account_type' => (string) $row->account_type,
+            'currency' => (string) $row->currency,
+            'movement_currency' => $movementCurrency,
+            'movement_minor' => $this->integerString($row->movement_minor),
+        ])->all());
+    }
+
+    private function cohortClientCount(int $organizationId, DashboardPeriod $period, ?Client $client = null): int
     {
         $clientTable = (new Client)->getTable();
+        $clientId = $client?->getKey();
 
         return DB::table($clientTable)
             ->where('organization_id', $organizationId)
             ->where('created_at', '>=', $period->startUtc)
             ->where('created_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('id', $clientId))
             ->count();
     }
 
-    private function cohortLedgerSum(int $organizationId, DashboardPeriod $period, string $obligationTable, string $ledgerTable): string
+    private function cohortLedgerSum(int $organizationId, DashboardPeriod $period, string $obligationTable, string $ledgerTable, ?Client $client = null): string
     {
         $clientTable = (new Client)->getTable();
+        $clientId = $client?->getKey();
         $cohort = DB::table($clientTable)
             ->where('organization_id', $organizationId)
             ->where('created_at', '>=', $period->startUtc)
             ->where('created_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('id', $clientId))
             ->select('id');
 
         $query = DB::table($ledgerTable.' as ledger')
@@ -154,29 +219,44 @@ final class FinanceAnalytics
             });
     }
 
-    private function periodEndDebt(int $organizationId, DashboardPeriod $period, string $baseCurrency, string $obligationTable, string $ledgerTable): string
+    private function periodEndDebt(int $organizationId, DashboardPeriod $period, string $baseCurrency, string $obligationTable, string $ledgerTable, ?Client $client = null): string
     {
-        $obligationTotal = $this->baseAmountSum(
-            DB::table($obligationTable)
-                ->where('organization_id', $organizationId)
-                ->where('base_currency', $baseCurrency)
-                ->where('created_at', '<', $period->endUtc),
-        );
-        $appliedTotal = $this->qualifiedBaseAmountSum(
-            DB::table($ledgerTable.' as ledger')
-                ->join($obligationTable.' as obligations', function (JoinClause $join): void {
-                    $join
-                        ->on('obligations.organization_id', '=', 'ledger.organization_id')
-                        ->on('obligations.id', '=', 'ledger.obligation_id');
-                })
-                ->where('ledger.organization_id', $organizationId)
-                ->where('obligations.organization_id', $organizationId)
-                ->where('obligations.base_currency', $baseCurrency)
-                ->where('obligations.created_at', '<', $period->endUtc)
-                ->where('ledger.occurred_at', '<', $period->endUtc),
-        );
+        $clientId = $client?->getKey();
+        $obligations = DB::table($obligationTable)
+            ->where('organization_id', $organizationId)
+            ->where('base_currency', $baseCurrency)
+            ->where('created_at', '<', $period->endUtc);
+        if ($clientId !== null) {
+            $obligations->where('client_id', $clientId);
+        }
+
+        $applied = DB::table($ledgerTable.' as ledger')
+            ->join($obligationTable.' as obligations', function (JoinClause $join): void {
+                $join
+                    ->on('obligations.organization_id', '=', 'ledger.organization_id')
+                    ->on('obligations.id', '=', 'ledger.obligation_id');
+            })
+            ->where('ledger.organization_id', $organizationId)
+            ->where('obligations.organization_id', $organizationId)
+            ->where('obligations.base_currency', $baseCurrency)
+            ->where('obligations.created_at', '<', $period->endUtc)
+            ->where('ledger.occurred_at', '<', $period->endUtc);
+        if ($clientId !== null) {
+            $applied->where('obligations.client_id', $clientId);
+        }
+
+        $obligationTotal = $this->baseAmountSum($obligations);
+        $appliedTotal = $this->qualifiedBaseAmountSum($applied);
 
         return BigInteger::of($obligationTotal)->minus($appliedTotal)->toString();
+    }
+
+    private function clientObligationIds(int $organizationId, int $clientId, string $obligationTable): Builder
+    {
+        return DB::table($obligationTable)
+            ->where('organization_id', $organizationId)
+            ->where('client_id', $clientId)
+            ->select('id');
     }
 
     private function averageMinor(string $total, int $count): string

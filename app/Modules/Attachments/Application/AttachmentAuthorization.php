@@ -65,6 +65,15 @@ final class AttachmentAuthorization
         return $organization;
     }
 
+    public function authorizeDelete(User $actor, MedicalAttachment $attachment): Organization
+    {
+        $organization = $this->organization();
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
+        $this->assertAttachmentOwned($attachment, $organization);
+
+        return $organization;
+    }
+
     public function authorizeDownload(User $actor, MedicalAttachment $attachment): Organization
     {
         $organization = $this->organization();
