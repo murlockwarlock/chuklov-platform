@@ -5,6 +5,20 @@ canonical authorities remain the existing Medical Profiles, Sessions,
 Attachments, Feedback, Tracker, Attribution, Booking, Commerce, Finance and
 Analytics modules.
 
+## Current implementation iteration
+
+This iteration started from `715b561b9e08fbc7f468f314b6f045121397da3b`.
+The application implementation is in `2576673fa49f0466e096e96cd9aa98c71191d7e5`.
+The acceptance-document commits are documentation-only and are recorded in
+the verification section below after the final document commit.
+
+The two owner files were read literally. An old `ЖДËМ ПОДТВЕРЖДЕНИЯ` marker is
+treated as a deferral in the 23.10 text, not as a current owner prohibition:
+the latest owner decision requires a configurable mechanism with safe defaults
+and synthetic verification. `IMPLEMENTED` therefore means that the technical
+capability and its owner-editable seam exist; it does not mean that unprovided
+medical/business content has been approved by the owner.
+
 ## PR #61 follow-up defect closure
 
 Starting SHA for this follow-up: `263ed0550411bd6735feb9bb9ae2f186c5094f00`.
@@ -20,6 +34,87 @@ analytics or medical authority.
 | 4 | Previous-period comparison wrong across DST | YES | `DashboardPeriod::previousCalendarPeriod()` shifts organization-local calendar dates before one UTC conversion; `AnalyticsMetricEvaluator` delegates to it | `DashboardPeriodTest` covers New York spring-forward/fall-back, today, 7-day, custom and non-DST boundaries | YES — timestamp/query boundaries require PostgreSQL verification | YES — analytics period UI requires final staged browser verification |
 | 5 | Root-cause free text lacked backend limit | YES | shared `MedicalSessionFieldLimits::MaxTextLength` is used by form, CreateSession, UpdateSession and `MedicalSessionTestWriter`; validation is multibyte-safe and transactional | `MedicalPainFlowTest::test_root_cause_free_text_has_a_unicode_safe_authoritative_limit_without_partial_writes` covers 10,000 accepted, 10,001 rejected and reload preservation | YES — encrypted session write and rollback require PostgreSQL verification | YES — CRM validation and corrected submit require final staged browser verification |
 | 6 | Feedback classification could cross clients | YES | `AcceptAnalyticsClassification::acceptFeedback()` checks run client against locked submission client before theme synchronization inside the existing transaction | `AnalyticsAiClassificationTest::test_feedback_classification_rejects_a_run_for_another_client_in_the_same_organization` proves controlled rejection, unchanged review state and no theme pivot write | YES — organization/client guard and transaction atomicity require PostgreSQL verification | YES — review/accept error and normal matching-client flow require final staged browser verification |
+
+## Literal reconciliation matrix
+
+The following matrix is the current implementation decision for every numbered
+requirement in the two supplied files. The path column names the read/write
+authority, not only the visible Filament field.
+
+### Medical file: `ТЗ_для_Ивана_заполнение_данных_клиента_23_10_26.md`
+
+| Status | Literal owner requirement | Фактическое поведение / authoritative path | Расхождение | Решение | Regression evidence | PostgreSQL relevance | Browser relevance |
+|---|---|---|---|---|---|---|---|
+| IMPLEMENTED | Session order: pains, tests, causes, root causes, protocol, subjective feelings, posture, result, before/after photos; no global VAS or objective-changes field | `SessionForm`, `CreateMedicalSession`, `EditMedicalSession`, `SessionInfolist`, `ClinicalTestProtocol`, `GenerateSessionResult` | Old global fields remain only in the persisted legacy model | Hidden from active create/edit; retained read-only in legacy/history projections | `tests/Feature/Sessions/SessionCockpitTest.php`, `tests/Feature/Sessions/MedicalSessionTest.php` | YES — encrypted session fields and normalized relations | REQUIRED — current implementation candidate needs CRM browser run |
+| IMPLEMENTED | Each pain is a repeatable row; all row fields optional; frequency can be unspecified, permanent, or count plus period; 0 differs from no score | `MedicalPainInput`, `MedicalSessionPainWriter`, `MedicalProfilePainWriter`, `SessionForm` | A fully empty repeater row has no business meaning | Empty row is skipped; partial row persists only supplied values; count requires count and active period | `tests/Unit/MedicalPainInputTest.php`, `tests/Feature/MedicalPainFlowTest.php` | YES — nullable encrypted scores and normalized pain rows | REQUIRED — empty/partial/0/NULL UI states |
+| IMPLEMENTED | First session carries profile pains; later sessions carry prior rows with empty current before and visible prior after; history is per pain | `MedicalSessionPainInitializer`, `MedicalSessionPainReader`, session dynamics and client-card projections | No deviation | Existing structured rows are reused; after=0 is carried as a real value | `tests/Feature/MedicalPainFlowTest.php`, `tests/Feature/Sessions/SessionCockpitTest.php` | YES — session lineage and nullable score persistence | REQUIRED — first/second session reload journey |
+| IMPLEMENTED | Configurable clinical-test catalog, grouped list, before/after quick values, abnormal counters, CSV/XLSX import, historical inactive values | `MedicalClinicalCatalog`, `ClinicalTestProtocol`, `MedicalSessionTestWriter`, `MedicalClinicalCatalogConfiguration`, catalog import actions | Old text placeholder is not the owner flow | Active catalog renders as one list; empty catalog has a CRM setup CTA; inactive saved tests remain readable | `tests/Feature/MedicalClinicalCatalogConfigurationTest.php`, `tests/Feature/MedicalPainFlowTest.php` | YES — catalog/result organization scope and historical rows | REQUIRED — 5/60-item list, live counters, mobile |
+| IMPLEMENTED | Causes per abnormal test, aggregate without duplicates, manual correction, return to derived list | `ClinicalTestProtocol`, `MedicalSessionTestWriter`, cause catalog and session form controls | No authoritative algorithm is invented | Derived cause IDs are explicit; manual override is persisted and reversible | `tests/Feature/MedicalPainFlowTest.php`, `tests/Feature/Sessions/SessionCockpitTest.php` | YES — normalized cause references and transaction | REQUIRED — list-based selection and reload |
+| IMPLEMENTED | Up to two root causes, selected cause or free text, stored per session | root-cause repeater in `SessionForm`, session create/update writer, `MedicalSessionFieldLimits` | No deviation | Free text is not restricted to catalog causes; 10,000 Unicode-character backend limit is shared with UI | `tests/Feature/MedicalPainFlowTest.php`, `tests/Feature/Sessions/MedicalSessionTest.php` | YES — protected write and no-partial-write invariant | REQUIRED — 10,000/10,001 validation path |
+| IMPLEMENTED | Free-text algorithm/protocol and a `Заполнить` button that does not overwrite text or call AI yet | `SessionForm` hint action, `GenerateSessionResult` remains deterministic result authority | Old wording deferred AI, not the button | Notification explicitly says automatic fill is not connected; existing text is untouched | `tests/Feature/Sessions/SessionCockpitTest.php` | YES — encrypted protocol persistence | REQUIRED — click and verify unchanged text |
+| IMPLEMENTED | Subjective feelings field in the requested order | `UpdateSession`, `SessionForm`, `SessionInfolist` | No deviation | Existing encrypted field retained | `tests/Feature/Sessions/SessionCockpitTest.php` | YES — encrypted field | REQUIRED — edit/view/reload |
+| IMPLEMENTED | Visual posture diagnostics replaces objective changes | `UpdateSession`, `SessionForm`, `SessionInfolist` | Legacy objective text is not deleted | New writes use posture field; historical value remains readable where applicable | `tests/Feature/Sessions/SessionCockpitTest.php` | YES — encrypted field | REQUIRED — edit/view/reload |
+| IMPLEMENTED | Deterministic result summary from pains, subjective feelings, posture and test counters; manual edit and overwrite confirmation | `GenerateSessionResult`, session page actions and result field | AI prose and unprovided effectiveness formula remain intentionally absent | Result is deterministic and editable; overwrite asks for confirmation | `tests/Feature/Sessions/SessionCockpitTest.php`, `tests/Feature/Analytics/AnalyticsDashboardWidgetTest.php` | YES — protected session write | REQUIRED — generate/edit/confirm/reload |
+| IMPLEMENTED | Two explicit before/after photo galleries with preview, date, download, unlink, reload; reports cannot be photos | `LinkSessionAttachment`, `ListSessionAttachments`, `UnlinkSessionAttachment`, `SessionInfolist`, `ViewMedicalSession`, private attachment stack | `general` files remain a separate session-files area | `before`/`after` accepts image attachment types only; unlink removes the link, not the source attachment | `tests/Feature/Sessions/SessionAttachmentTest.php`, `tests/Feature/Attachments/MedicalAttachmentTest.php` | YES — ownership, private storage and link lifecycle | REQUIRED — 3 before/2 after preview/download/unlink |
+| IMPLEMENTED | Client profile contains per-complaint 0–10 scores and no frequency/time-of-day controls | `MedicalProfileForm`, Portal medical-profile projection, `MedicalProfilePainWriter/Reader` | Existing legacy global values remain historical only | Profile writes use structured complaint rows and carry into first session | `tests/Feature/MedicalPainFlowTest.php`, `tests/Feature/September26MedicalProfileTest.php` | YES — encrypted profile rows | REQUIRED — client save/reload and CRM projection |
+| IMPLEMENTED | Repeatable operations and injuries with year/description; legacy singular fields are not lost | `MedicalProfileHistoryWriter/Reader`, `medical_profile_history_entries`, Portal `MedicalProfile.vue`, CRM clinical projection | Legacy free text is not split into guessed events | New writes use the canonical structured history; legacy values remain historical/readable | `tests/Feature/September26MedicalProfileTest.php`; existing Portal E2E structured-history coverage | YES — canonical history rows and tenant scope | REQUIRED — 0/1/3 rows, remove middle row, reload |
+| IMPLEMENTED | Anamnesis is master-only; client cannot view/edit it | `MedicalProfileAuthorization`, CRM clinical infolist/form, Portal public projection | Existing client-entered text is retained | Portal projection excludes anamnesis; authorized CRM retains optional field | `tests/Feature/September26MedicalProfileTest.php`, `tests/Feature/ClientWorkspaceUxATest.php` | YES — protected profile authorization | REQUIRED — client denial and CRM visibility |
+| IMPLEMENTED | Client uploads analyses/MRI/reports; master sees and can upload in private files | existing client attachment ingress, private storage authorization, client workspace attachments | No deviation | Existing attachment authority reused; no analytics free-text export | `tests/Feature/September26MedicalAttachmentTest.php`, `tests/Feature/Attachments/ClientAttachmentsUxTest.php` | YES — private storage metadata and authorization | REQUIRED — Portal upload and CRM counterpart |
+| IMPLEMENTED | Separate master-only audio section with title, upload, playback, download, delete; configurable safe format/size policy | `ClientAudioRecordingsRelationManager`, `MedicalAudioPolicy`, `UploadMedicalAttachment`, `MedicalAudioSettings` | Business format/size values were not supplied | Safe server allowlist/default and organization policy are editable in CRM; policy cannot exceed server hard cap | `tests/Feature/Attachments/AudioRecordingsTest.php`, `tests/Feature/Attachments/MedicalAudioPolicyTest.php` | YES — private storage and organization policy | REQUIRED — upload/play/download/delete/reload and client denial |
+
+### Analytics file: `ФИЛЬТРЫ КЛИЕНТОВ.docx`
+
+| Status | Literal owner requirement | Фактическое поведение / authoritative path | Расхождение | Решение | Regression evidence | PostgreSQL relevance | Browser relevance |
+|---|---|---|---|---|---|---|---|
+| IMPLEMENTED | Complaints/problems become filterable tags; AI may suggest common or new tags | `SuggestAnalyticsTags`, `AcceptAnalyticsClassification`, `SyncAnalyticsClassificationCandidates`, taxonomy catalogs and candidate review | AI must not silently create active tags | Existing suggestions, new candidates, review/rename/merge/reject/stale lifecycle are organization-scoped; new-candidate generation is safe-disabled until enabled | `tests/Feature/Analytics/AnalyticsAiClassificationTest.php`, `tests/Feature/Analytics/AnalyticsTagCandidateLifecycleTest.php` | YES — classification transaction and tenant scope | REQUIRED — CRM review/correction |
+| IMPLEMENTED | Average pain for the selected client population | `PainAnalytics`, `ClientCohortQuery`, typed analytics source | No deviation | NULL scores are excluded; 0 remains numeric zero | `tests/Feature/Analytics/PainAnalyticsTest.php`, `tests/Feature/Analytics/ClientCohortQueryTest.php` | YES — aggregate query semantics | REQUIRED — console result |
+| IMPLEMENTED | Results after client session order 1/2/3 and reduction percentage | `PainAnalytics`, `AnalyticsMetricEvaluator`, `ClientSessionAxisCatalog` | “Course” has no canonical entity in the existing model | UI/export use owner-configurable chronological client-session semantics and version the rule; standard pain reduction is the existing single formula authority | `tests/Feature/Analytics/PainAnalyticsTest.php`, `tests/Feature/Analytics/ComputedAnalyticsMetricsTest.php` | YES — session ordering and period boundaries | REQUIRED — dimension and metric preview |
+| IMPLEMENTED | Satisfaction 0–10 attached to each client and aggregated | Feedback submission writer/analytics plus the forward PostgreSQL check migration | Historical 1–10 constraint was narrower than the owner UI | Forward migration permits 0..10; invalid values remain rejected | `tests/Feature/FeedbackThemesAnalyticsTest.php`, `tests/Feature/Analytics/FeedbackAnalyticsTest.php` | REQUIRED — PostgreSQL CHECK is authoritative | REQUIRED — client/CRM submission and average |
+| IMPLEMENTED | Client can state what was missing after treatment/course; therapist can enter it; repeated themes aggregate | existing Feedback submission/Portal flow, `FeedbackThemeCatalog`, scenario engine `booking.completed` rules, `FeedbackAnalytics` | Exact business timing/text was not supplied | CRM-manageable scenario delay/template and configurable themes; safe default can be disabled; existing booking-completed feedback is preserved | `tests/Feature/FeedbackThemesAnalyticsTest.php`, `tests/Feature/MilestoneFiveScenarioTest.php`, `tests/Feature/Analytics/FeedbackAnalyticsTest.php` | YES — encrypted source text, theme pivots and scenario idempotency | REQUIRED — client submit, CRM classify, reload |
+| IMPLEMENTED | Goals/tasks are tagged, linked to clients and counted as repeated requests | existing Tracker task/goal-tag authority, `GoalAnalytics`, classification and client-card projection | No second goals store is introduced | Profile goal text enters existing classification/Tracker path; owner can configure goal taxonomy | `tests/Feature/Analytics/GoalAnalyticsTest.php`, `tests/Feature/PortalTrackerPurchaseTest.php`, `tests/Feature/Analytics/AnalyticsAiClassificationTest.php` | YES — Tracker organization scope | REQUIRED — client and CRM views |
+| IMPLEMENTED | All/new/no visits/warm lead/sleeping/cold lead/blacklist/penalty/deleted categories | `ClientSegmentQuery`, `ClientSegmentConfiguration`, `ClientSegmentSettings`, archive state and canonical booking/penalty authorities | “Штрафник” and “Удалены” have no safe invented formula/physical-delete query | Penalty is an owner-managed restriction/tag marker; warm-lead service groups and sleeping threshold are configurable; archived history is used for deleted/archive reporting without weakening retention | `tests/Feature/Analytics/ClientSegmentQueryTest.php`, `tests/Feature/Analytics/ClientCohortQueryTest.php` | YES — segment queries, archive state and historical bookings | REQUIRED — settings, filters and empty states |
+| IMPLEMENTED | Age breakdown and configurable age groups | `DemographicsAnalytics`, `ClientAgeRangeCatalog`, `AnalyticsAgeRangeSettings` | No approved labels beyond the requested examples | Default ranges are safe and replaceable/reorderable/deactivatable in CRM | `tests/Feature/Analytics/DemographicsAndServicesAnalyticsTest.php`, `tests/Feature/Analytics/ClientCohortQueryTest.php` | YES — organization timezone age boundary | REQUIRED — settings/filter/result |
+| IMPLEMENTED | Men/women/children counts and percentages, unknown-safe | `DemographicsAnalytics`, cohort gender/child filters | No deviation | Unknown values are not forced into a known category; zero total is safe | `tests/Feature/Analytics/DemographicsAndServicesAnalyticsTest.php` | YES — aggregate query | REQUIRED — console result |
+| IMPLEMENTED | Country counts and percentages | `DemographicsAnalytics`, cohort country filter | No deviation | Unknown country remains `Не указано` | `tests/Feature/Analytics/DemographicsAndServicesAnalyticsTest.php` | YES — aggregate query | REQUIRED — console result |
+| IMPLEMENTED | Services, visits and specialist statistics | `ServiceVisitAnalytics`, `SchedulingAnalytics`, `BookingStatusAnalytics`, `AnalyticsReportExport` | “Мастера” already exist, so the specialist dimension is now included | Completed visits only for visit counts; cancelled/no-show are not counted as completed; period/filter/timezone is shared | `tests/Feature/Analytics/DemographicsAndServicesAnalyticsTest.php`, `tests/Feature/Analytics/PurchaseAndBookingStatusAnalyticsTest.php` | YES — booking status/period query | REQUIRED — services/specialists UI |
+| IMPLEMENTED | Monetary LTV and configurable percentage/delta presentation | existing financial authority, `AnalyticsMetricEvaluator`, `AnalyticsMetricSettings` typed metric builder | Owner did not provide a new LTV formula | Monetary LTV remains canonical; “change to previous period, %” is a configurable typed metric with explicit basis/NULL policy | `tests/Feature/Analytics/ComputedAnalyticsMetricsTest.php`, `tests/Feature/Analytics/AnalyticsMetricConfigurationTest.php` | YES — integer minor-unit finance source | REQUIRED — metric selection/result |
+| IMPLEMENTED | Analytics console with selectable sections, Analyze, charts and Excel | `AnalyticsConsole`, `resources/views/filament/pages/analytics-console.blade.php`, `AnalyticsReportExport` | No deviation | UI separates cohort, dimensions and period/time rules; live preview and human labels are shown | `tests/Feature/Analytics/AnalyticsDashboardWidgetTest.php`, `tests/Feature/Analytics/AnalyticsReportExportTest.php` | YES — all selected dimensions share cohort query | REQUIRED — multi-select, loading/error/retry/mobile |
+| IMPLEMENTED | Finance: income, expenses, cash movement, accounts/cashboxes, selectable period | `FinanceAnalytics`, existing Finance ledger/reconciliation authority | No second ledger is introduced | Existing currency-safe minor-unit ledger is reused | `tests/Feature/Analytics/FinanceMovementAnalyticsTest.php`, `tests/Feature/Analytics/AnalyticsProjectionTest.php` | YES — ledger, currency and period | REQUIRED — console/export |
+| IMPLEMENTED | Configurable acquisition sources: Telegram, Instagram, SMS, Stories, Contact, YouTube, TikTok, recommendations, partners, web/search/UTM/other | `AttributionSourceCatalog`, `AttributionSourceSettings`, `AcquisitionAnalytics` | Existing owner aliases are preserved | Defaults are added only to an empty catalog; aliases/stable keys/order/active state remain owner-editable | `tests/Feature/Analytics/AttributionSourceCatalogTest.php`, `tests/Feature/Analytics/AnalyticsProjectionTest.php` | YES — organization-scoped mapping | REQUIRED — settings/filter/export |
+| IMPLEMENTED | One-off sessions, packages/programs, certificates, products | `PurchaseAnalytics`, Commerce purchase snapshots and catalog groups | No new purchase authority | Owner-editable purchase groups map onto existing commerce catalog types | `tests/Feature/Analytics/PurchaseAndBookingStatusAnalyticsTest.php`, `tests/Feature/Analytics/AnalyticsReportExportTest.php` | YES — purchase status/type and period | REQUIRED — result/export |
+| IMPLEMENTED | Completed, rescheduled and cancelled order/booking statuses | `BookingStatusAnalytics`, canonical `BookingStatus` and `BookingEvent` lifecycle | Owner wording is not a second order enum | Human labels map to canonical lifecycle; requested/confirmed/no-show remain available where useful | `tests/Feature/Analytics/PurchaseAndBookingStatusAnalyticsTest.php` | YES — booking/event authority | REQUIRED — status filters/results |
+
+### Shared cohort, drill-down and export contract
+
+`ClientCohortFilters` is the typed, organization-scoped filter value object and
+`ClientCohortQuery` is the single query authority. It authorizes the actor,
+applies the organization boundary server-side and returns an Eloquent query
+with correlated `EXISTS`/subqueries rather than materializing all client IDs.
+Analytics Console, every selected dimension, typed metrics, drill-down and
+`AnalyticsReportExport` use that authority. Different filter fields combine
+with AND; multiple values in one field combine with OR; problem tags support
+any/all and include/exclude; NULL, 0, false and no related row remain distinct.
+
+The implemented filter surface is: explicit include/exclude clients, saved
+groups, current segments, archive state, blacklist, problem tags, feedback
+themes, goal tags, age/ranges, gender, child/adult, countries, source aliases,
+services/service groups, specialists, booking statuses/events, completed-visit
+count, last-visit range, purchase groups/statuses, pain-score presence/range
+and satisfaction range. The console shows `Найдено клиентов: N` before Analyze;
+drill-down uses `Показать клиентов`, a human-readable reason and an authorized
+client-card link without medical free text.
+
+Saved groups use `analytics_client_groups`, existing organization-scoped
+membership rows for manual groups, typed dynamic rules, immutable
+`analytics_client_group_versions`, active/archive lifecycle, actor audit and
+the CRM `ClientCohortGroups` page. No historical definition is physically
+deleted.
+
+The export has explicit typed-cell writing for formula-like strings and adds
+`Клиенты` and `Фильтры` metadata alongside thematic sheets. It records human
+filters, AND/OR semantics, include/exclude choices, period, date basis,
+timezone, segment-state meaning, session-axis rule/version and generation
+time. It does not export protected medical free text.
 
 ## Medical owner file
 
@@ -108,26 +203,29 @@ analytics or medical authority.
 
 ## Verification record
 
-Continuation starting SHA: `92ef260997717c4549d1dca1e42b02b079fb4755`.
-Final application source SHA for this acceptance: `9de21be39a8d1e01628031fc68f4c2cd38604e4d`.
-The subsequent acceptance-artifact commit is documentation-only; it does not
-change the deployed application source. The preceding acceptance-artifact
-commit was `ea3e14115668d02a040d7e81c1b7a032d923bb58`; this final
-artifact-only reconciliation is the current PR head, whose exact SHA is
-recorded in the PR description and final report.
+Implementation started at `715b561b9e08fbc7f468f314b6f045121397da3b` and the
+application implementation commit is
+`2576673fa49f0466e096e96cd9aa98c71191d7e5`. This is a real runtime change,
+not a docs-only equivalence pass: the implementation diff contains 79 files,
+including Filament pages, Analytics/Medical application services, four
+forward-only migrations, Blade views and regression tests. The final PR SHA is
+recorded after the acceptance-document commit; no application code is changed
+by the document-only closeout commits.
 
-The exact diff from verified application source `9de21be3` to the current PR
-head contains only this file:
+The four migrations are:
 
-```text
-M docs/verification/23-10-owner-scope-acceptance.md
-```
+- `2026_10_31_120000_create_analytics_client_groups.php` — organization-scoped
+  manual/dynamic saved groups and membership authority;
+- `2026_10_31_120100_allow_unspecified_medical_pain_frequency.php` — preserves
+  an explicitly unspecified pain frequency without converting it to permanent;
+- `2026_10_31_120200_create_analytics_tag_candidates.php` — owner-reviewed AI
+  existing/new taxonomy candidate lifecycle;
+- `2026_10_31_120300_create_analytics_client_group_versions.php` — immutable
+  saved-group definitions and version history.
 
-The runtime-relevant diff is empty. The normalized `git ls-tree -r` manifest
-excluding this acceptance artifact is identical at both revisions:
-`503442e252e95d4c2409662e26d3d21336d64366ae8665be6087fcff18c40d84` across
-2,791 tracked paths. No application source, configuration, dependency lock,
-migration, frontend source/asset, Docker or deployment file changed.
+The previously accepted forward migration
+`2026_10_30_100000_allow_zero_feedback_score.php` remains the PostgreSQL
+authority for the 0–10 satisfaction constraint.
 
 ### WebKit scheduling failures
 
@@ -171,85 +269,48 @@ localized, so this is not called a proven test defect. No scheduling or booking
 production code was changed, and no product defect, data loss, tenant leakage
 or incorrect booking ownership was reproduced.
 
-### Final focused staging and browser acceptance
+### Previous focused staging and browser evidence
 
-The final application source `9de21be3` was deployed with
-`make deploy-staging REVISION=9de21be39a8d1e01628031fc68f4c2cd38604e4d`.
-The deployment reported the exact SHA, healthy app/Horizon/scheduler/Telegram
-runtime, PostgreSQL/pgvector/Redis/private-storage health and `Nothing to
-migrate`. `scripts/staging-smoke.sh` then passed at the exact SHA.
+The earlier verified application source `9de21be3` was deployed through the
+normal protected process. Chromium desktop, WebKit desktop and Chromium mobile
+custom-period journeys passed there, including missing-date, reversed-date,
+367-day rejection, corrected Analyze, reload and back/forward. The earlier
+XLSX flow parsed formula-like labels as explicit strings. Those results remain
+valid evidence for the unchanged hardening code, but are not exact-revision
+evidence for the new implementation commit.
 
-Using the stored separate CRM QA account and real browser clicks, the custom
-period journey passed at that exact staging revision in Chromium desktop
-`1440x900`, WebKit desktop `1440x900`, and Chromium mobile `390x844`:
-
-- custom period with an empty end date showed `Укажите дату окончания произвольного периода.` and no raw `validation.required_if`;
-- reversed dates showed `Дата окончания не может быть раньше даты начала.`;
-- a 367-day range showed `Выберите период не более 366 дней.`;
-- the corrected `2026-10-01`–`2026-10-31` range analyzed pain, services and client segments;
-- a second Analyze succeeded;
-- reload and back/forward preserved `custom` and both dates, without falling back to the default period;
-- the primary page had no horizontal overflow.
-
-Hosted browser regressions at the final source SHA also passed:
-
-- `41202259402`: custom-period test, Chromium desktop, 1/1;
-- `41202744295`: custom-period test, WebKit desktop, 1/1;
-- `41202259555`: both original scheduling tests, WebKit, 2/2.
-
-The temporary duplicate WebKit custom-period dispatch `41202259540` was
-cancelled while the branch-level E2E queue was active and is not used as
-evidence; it was replaced by successful run `41202744295`.
-
-After the preceding documentation-only PR-head commit, three authorized
-attempts were made through the normal protected deployment path. The guard
-completed application health checks, then detected a host listening-port
-inventory change and restored
-`9de21be39a8d1e01628031fc68f4c2cd38604e4d`. The only observed delta was the
-ephemeral UDP endpoint of the external `warp-svc`: the pre-deploy snapshot had
-`0.0.0.0:43169`, while the post-check no longer had that UDP listener; its
-stable TCP listener on `127.0.0.1:40000` remained. Application ports, Nginx,
-PostgreSQL, Redis and Compose services remained unchanged. The guard is in
-`scripts/deploy-staging.sh:869-870` and correctly failed closed; it was not
-bypassed or weakened. This is pre-existing/external staging-host behavior, not
-a change between the verified application source and the docs-only head.
-Exact final revision deployment remains NOT VERIFIED. Follow-up issue:
-[#62](https://github.com/murlockwarlock/chuklov-platform/issues/62).
+The subsequent documentation-only head was rolled back by the protected
+deployment guard after it detected an external `warp-svc` dynamic UDP port
+inventory change. The guard in `scripts/deploy-staging.sh` failed closed and
+was not bypassed. The current implementation candidate requires a normal
+protected deployment and a fresh exact-SHA smoke/browser check after the
+implementation commit; no staging PASS is claimed here before that check.
 
 ### XLSX evidence
 
-The final staging browser flow created four temporary owner-configurable metric
-labels, downloaded a real workbook, parsed it with PhpSpreadsheet, and restored
-the original metric names and inactive states. The workbook contained sheets
-`Сводка`, `Боли`, `Услуги`, `Специалисты`, and `Категории клиентов`.
+The existing `AnalyticsReportExportTest` opens a real generated workbook with
+PhpSpreadsheet and asserts exact `=`, `+`, `-` and `@` values are string cells,
+not formulas, with no visible apostrophe; numeric, boolean and null values keep
+their types. The export implementation now also writes `Клиенты` and
+`Фильтры` metadata sheets and preserves the selected cohort/period metadata. A
+fresh staging download with synthetic labels is required for exact current-SHA
+browser acceptance; no unexecuted staging result is represented as PASS.
 
-| Cell | Exact value | PhpSpreadsheet type | Formula |
-|---|---|---|---|
-| `Сводка!A16` | `=TEST-9de` | `s` | no |
-| `Сводка!A17` | `+TEST-9de` | `s` | no |
-| `Сводка!A18` | `-TEST-9de` | `s` | no |
-| `Сводка!A19` | `@TEST-9de` | `s` | no |
-| `Сводка!B7` | `12` | `n` | no |
+### Verification status at the implementation candidate
 
-No visible apostrophe or business-value mutation was introduced. The local
-workbook and parser output are retained outside the repository under
-`~/.codex/local-artifacts/chuklov-platform/pr61-staging/`.
-
-### Verification status
-
-- Local focused PHP suites, XLSX parser regression, period/DST tests, medical root-cause transaction tests, classification acceptance tests, Pint, changed-file PHPStan and `git diff --check`: PASS. The changed production PHP PHPStan check has zero diagnostics; the existing test-file diagnostics are not part of this follow-up.
-- Hosted CI `41202259360` at `9de21be3`: Integration foundation, concurrency, RAG, privacy/secret scan and Docker/runtime health PASS. Quality is FAIL / PRE-EXISTING BASELINE: `MedicalSessionTest` fails at line 253 on PostgreSQL exclusion constraint `bookings_no_specialist_overlap`, matching the predecessor failure in `41195715334` and its earlier baseline. The full feature run had 2363 passed, 1 failed and 1 skipped. PHPStan remains the known 184-diagnostic baseline; no current-file diagnostic was added.
-- PostgreSQL: PASS for the changed analytics/date/XLSX/classification paths through hosted PostgreSQL jobs and exact staging health. The unrelated Quality baseline failure is not reported as a full Quality PASS.
-- Scope browser acceptance: PASS on runtime-equivalent deployed application source `9de21be3` for the custom-period and XLSX flows listed above; exact final revision browser verification is NOT VERIFIED because the protected deployment guard rolled it back. Partial-dimension browser failure injection was not run against shared staging because there is no safe deterministic staging fault fixture; the partial-result/warning/atomic-export contract is covered by `AnalyticsDashboardWidgetTest` and the hosted feature suite.
-- Full E2E: PARTIAL. Original full run `41195718383` remains 98 passed, 5 skipped and 2 failed; exact WebKit rerun and final isolated target tests pass, but the full 105-test matrix was not rerun at the final source SHA.
-- Staging functional acceptance: PARTIAL; repository smoke and focused real-browser journeys PASS on runtime-equivalent application source `9de21be3`, while exact final SHA verification remains NOT VERIFIED after the protected host-inventory guard rollback.
+- Focused local backend suites: PASS — 246 tests / 1,417 assertions, including cohort filters/groups, all selected dimensions, tag candidates, medical pain, audio policy, sessions, attachments, feedback, finance, scenarios and DST.
+- PHP syntax, Pint, changed-file PHPStan and `git diff --check`: PASS; changed production PHPStan diagnostics: 0. Frontend source was not changed by the current implementation commit beyond existing Blade/Filament views, so no unrelated frontend suite is claimed here.
+- Historical hosted CI `41202259360` at `9de21be3`: Integration foundation, concurrency, RAG, privacy/secret scan and Docker/runtime health PASS. Quality is FAIL / PRE-EXISTING BASELINE: `MedicalSessionTest` fails at line 253 on PostgreSQL exclusion constraint `bookings_no_specialist_overlap`, matching the predecessor failure in `41195715334` and its earlier baseline. The full feature run had 2363 passed, 1 failed and 1 skipped. The new implementation candidate still requires its own hosted CI result.
+- PostgreSQL: NOT RUN for the new implementation candidate until hosted CI and/or the protected staging migration path runs it. Prior PostgreSQL evidence applies to the earlier hardening source only.
+- Scope browser acceptance: NOT RUN for the new implementation candidate. The previous `9de21be3` browser result is historical runtime evidence, not a current-SHA PASS.
+- Full E2E: PARTIAL historical result — the original run had 98 passed, 5 skipped and 2 failed; exact scheduling tests and full WebKit rerun passed independently, with both failures classified above as non-reproducible.
+- Quality: the prior red `MedicalSessionTest / bookings_no_specialist_overlap` and known PHPStan baseline remain pre-existing; current implementation CI must be checked on the pushed candidate and must not be called green while that baseline job is red.
+- Staging functional acceptance: NOT RUN for `2576673f` at this point; the protected deploy guard is never bypassed.
 - Owner acceptance: NOT RUN.
-- Remaining in-scope BLOCKING: 0.
-- Remaining in-scope REAL BUG: 0.
+- Remaining in-scope BLOCKING: 0 in the implementation/tests reviewed here; PostgreSQL and browser acceptance are verification statuses, not silently upgraded implementation claims.
+- Remaining in-scope REAL BUG: 0 identified by the bounded implementation suite; any new hosted finding will be classified separately.
 
-Limitations are limited to the full-suite WebKit scheduling test instability,
-the known unrelated Quality baseline failure, no published diagnostics from
-the original run, no manual shared-staging partial-fault injection, the staging
-host's dynamic `warp-svc` port preventing exact final-head verification, and no
-owner acceptance. The acceptance did not modify credentials, MFA, production
-data, or accepted booking UX.
+Limitations are the unexecuted current-candidate PostgreSQL/browser/staging
+checks, the known unrelated Quality baseline, the non-reproducible scheduling
+failures, and no owner acceptance. No credentials, MFA, production data,
+accepted booking UX or deployment safety guard were changed.
