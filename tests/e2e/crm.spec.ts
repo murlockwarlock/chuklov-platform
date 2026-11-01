@@ -2941,6 +2941,16 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     for (const dimension of dimensions) {
         await expect(page.getByRole('heading', { name: dimension, exact: true })).toBeVisible();
     }
+    const cohortSummary = page.getByText(/Найдено клиентов: \d+ ·/).first();
+    await expect(cohortSummary).toBeVisible();
+    const cohortCount = Number((await cohortSummary.textContent())?.match(/Найдено клиентов: (\d+)/)?.[1]);
+    const demographicsSection = page
+        .getByRole('heading', { name: 'Демография клиентов', exact: true })
+        .locator('xpath=ancestor::section[1]');
+    const demographicsSummary = demographicsSection.locator('p').filter({ hasText: /^Клиентов: \d+$/ }).first();
+    await expect(demographicsSummary).toBeVisible();
+    const demographicsCount = Number((await demographicsSummary.textContent())?.match(/Клиентов: (\d+)/)?.[1]);
+    expect(demographicsCount).toBe(cohortCount);
 
     const [download] = await Promise.all([
         page.waitForEvent('download'),
