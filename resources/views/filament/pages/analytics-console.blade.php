@@ -114,7 +114,7 @@
                         </p>
                         <button type="button" wire:click="showCohortClients" class="text-sm text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>
                     </div>
-                    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ __('Снижение боли, % — изменение оценки боли относительно значения до сеанса. Сеанс 1 / 2 / 3 — :axis.', ['axis' => $results['pain']['session_axis_label'] ?? 'порядок сеансов клиента']) }}</p>
+                    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ __('Снижение боли, % — изменение оценки боли относительно значения до сеанса. Сеанс 1 / 2 / 3 — :axis.', ['axis' => $results['pain']['session_axis_label'] ?? 'порядок сеансов конкретной категории проблемы']) }}</p>
                     @if ($results['pain']['problems'] === [])
                         <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('За выбранный период структурированные категории не найдены.') }}</p>
                     @else

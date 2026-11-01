@@ -11,17 +11,23 @@ final class ClientSessionAxisCatalog
 
     public const string SelectedPeriod = 'selected_period_chronological';
 
+    public const string ProblemChronological = 'problem_chronological';
+
     /** @return array<string, array{label: string, version: string}> */
     public static function definitions(): array
     {
         return [
             self::Chronological => [
-                'label' => 'Порядок сеансов клиента от первого к последнему',
+                'label' => 'Порядок всех сеансов клиента',
                 'version' => 'client-chronological-v1',
             ],
             self::SelectedPeriod => [
                 'label' => 'Порядок сеансов внутри выбранного периода',
                 'version' => 'selected-period-chronological-v1',
+            ],
+            self::ProblemChronological => [
+                'label' => 'Порядок сеансов конкретной категории проблемы',
+                'version' => 'problem-chronological-v1',
             ],
         ];
     }
@@ -44,7 +50,7 @@ final class ClientSessionAxisCatalog
             ->where('organization_id', $organizationId)
             ->where('setting_key', OrganizationSettingKey::AnalyticsSessionAxisSemantics->value)
             ->value('string_value');
-        $key = is_string($key) && array_key_exists($key, self::definitions()) ? $key : self::Chronological;
+        $key = is_string($key) && array_key_exists($key, self::definitions()) ? $key : self::ProblemChronological;
         $definition = self::definitions()[$key];
 
         return ['key' => $key, ...$definition];

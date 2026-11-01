@@ -265,7 +265,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
             app(SetOrganizationSetting::class)->handle(
                 $actor,
                 OrganizationSettingKey::AnalyticsSessionAxisSemantics,
-                (string) ($state['session_axis_semantics'] ?? ClientSessionAxisCatalog::Chronological),
+                (string) ($state['session_axis_semantics'] ?? ClientSessionAxisCatalog::ProblemChronological),
             );
             $this->mount();
             Notification::make()->success()->title(__('Метрики сохранены'))->send();

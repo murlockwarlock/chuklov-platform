@@ -44,7 +44,11 @@ final readonly class PainAnalytics
         }
         $clientId = $client?->getKey();
         $sessionAxis = $this->sessionAxisCatalog->selected($organizationId);
+        $isProblemSpecificAxis = $sessionAxis['key'] === ClientSessionAxisCatalog::ProblemChronological;
         $rankedSessionPeriod = '';
+        $problemTagRankFilter = '';
+        $rankedPainTagFilter = '';
+        $rankedPainTagJoin = '';
 
         $cohortSql = '';
         $bindings = [];
@@ -66,17 +70,55 @@ final readonly class PainAnalytics
             $bindings[] = $period->startUtc;
             $bindings[] = $period->endUtc;
         }
-        $tagFilter = '';
-        if ($problemTagId !== null) {
-            $tagFilter = ' AND pain_tags.medical_problem_tag_id = ?';
+        if ($isProblemSpecificAxis && $problemTagId !== null) {
+            $problemTagRankFilter = ' AND pain_tags.medical_problem_tag_id = ?';
+            $bindings[] = $problemTagId;
+        } elseif ($problemTagId !== null) {
+            $rankedPainTagFilter = ' AND pain_tags.medical_problem_tag_id = ?';
             $bindings[] = $problemTagId;
         }
         $bindings[] = $period->startUtc;
         $bindings[] = $period->endUtc;
 
-        $rows = DB::select(
-            <<<SQL
-            WITH {$cohortSql}ranked_sessions AS (
+        if ($isProblemSpecificAxis) {
+            $rankedSessions = <<<SQL
+            ranked_problem_sessions AS (
+                SELECT DISTINCT
+                    sessions.organization_id,
+                    sessions.client_id,
+                    sessions.id,
+                    sessions.occurred_at,
+                    pain_tags.medical_problem_tag_id AS tag_id
+                FROM medical_sessions AS sessions
+                INNER JOIN medical_session_pains AS pains
+                    ON pains.organization_id = sessions.organization_id
+                    AND pains.client_id = sessions.client_id
+                    AND pains.medical_session_id = sessions.id
+                INNER JOIN medical_session_pain_tags AS pain_tags
+                    ON pain_tags.organization_id = pains.organization_id
+                    AND pain_tags.client_id = pains.client_id
+                    AND pain_tags.medical_session_pain_id = pains.id
+                WHERE sessions.organization_id = ?
+                    {$sessionClientFilter}
+                    {$problemTagRankFilter}
+            ), ranked_sessions AS (
+                SELECT
+                    ranked_problem_sessions.organization_id,
+                    ranked_problem_sessions.client_id,
+                    ranked_problem_sessions.id,
+                    ranked_problem_sessions.occurred_at,
+                    ranked_problem_sessions.tag_id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY ranked_problem_sessions.client_id, ranked_problem_sessions.tag_id
+                        ORDER BY ranked_problem_sessions.occurred_at ASC, ranked_problem_sessions.id ASC
+                    ) AS session_number
+                FROM ranked_problem_sessions
+            )
+            SQL;
+            $rankedPainTagJoin = ' AND pain_tags.medical_problem_tag_id = ranked_sessions.tag_id';
+        } else {
+            $rankedSessions = <<<SQL
+            ranked_sessions AS (
                 SELECT
                     sessions.organization_id,
                     sessions.client_id,
@@ -90,7 +132,13 @@ final readonly class PainAnalytics
                 WHERE sessions.organization_id = ?
                     {$sessionClientFilter}
                     {$rankedSessionPeriod}
-            ), ranked_pains AS (
+            )
+            SQL;
+        }
+
+        $rows = DB::select(
+            <<<SQL
+            WITH {$cohortSql}{$rankedSessions}, ranked_pains AS (
                 SELECT
                     pains.client_id,
                     pains.before_score,
@@ -108,7 +156,8 @@ final readonly class PainAnalytics
                     ON pain_tags.organization_id = pains.organization_id
                     AND pain_tags.client_id = pains.client_id
                     AND pain_tags.medical_session_pain_id = pains.id
-                    {$tagFilter}
+                    {$rankedPainTagFilter}
+                    {$rankedPainTagJoin}
                 INNER JOIN medical_problem_tags AS tags
                     ON tags.organization_id = pain_tags.organization_id
                     AND tags.id = pain_tags.medical_problem_tag_id

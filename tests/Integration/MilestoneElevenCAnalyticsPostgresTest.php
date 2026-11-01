@@ -7,6 +7,7 @@ use App\Modules\Analytics\Application\AcquisitionAnalytics;
 use App\Modules\Analytics\Application\AnalyticsMetricConfiguration;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\FinanceAnalytics;
+use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Analytics\Domain\Models\AnalyticsMetric;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Finance\Domain\Enums\FinancialRoundingMode;
@@ -14,11 +15,14 @@ use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
 use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Sessions\Application\CreateSession;
+use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\QueryException;
@@ -76,6 +80,63 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
         self::assertSame(2, $source->count);
         self::assertTrue($finance->available);
         self::assertSame('1000000000', $finance->revenueMinor);
+    }
+
+    public function test_postgresql_problem_axis_uses_distinct_tag_sessions_and_preserves_null_zero_and_tenant_scope(): void
+    {
+        $this->requirePostgres();
+        [$organization, $admin] = $this->organizationWithAdmin();
+        [$otherOrganization, $otherAdmin] = $this->organizationWithAdmin();
+        $clientA = $this->client($organization, '2026-01-01 10:00:00');
+        $clientB = $this->client($organization, '2026-01-01 11:00:00');
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $otherClient = $this->client($otherOrganization, '2026-01-01 10:00:00');
+        $otherSpecialist = Specialist::factory()->forOrganization($otherOrganization)->create();
+        $neck = $this->problemTag($organization, 'Шея', 1);
+        $zero = $this->problemTag($organization, 'Нулевая оценка', 2);
+        $withoutScore = $this->problemTag($organization, 'Без оценки', 3);
+        $otherNeck = $this->problemTag($otherOrganization, 'Шея', 1);
+
+        $this->createPainSession($admin, $clientA, $specialist, '2026-01-01 09:00:00', [['name' => 'Другая проблема', 'tag_ids' => [], 'before_score' => 8, 'after_score' => 7]]);
+        $this->createPainSession($admin, $clientA, $specialist, '2026-01-02 09:00:00', []);
+        $this->createPainSession($admin, $clientA, $specialist, '2026-01-03 09:00:00', [
+            ['name' => 'Шея утром', 'tag_ids' => [$neck->getKey()], 'before_score' => 10, 'after_score' => 8],
+            ['name' => 'Шея вечером', 'tag_ids' => [$neck->getKey()], 'before_score' => 8, 'after_score' => 6],
+        ]);
+        $this->createPainSession($admin, $clientA, $specialist, '2026-01-03 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 5, 'after_score' => 4]]);
+        $this->createPainSession($admin, $clientA, $specialist, '2026-01-04 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 3, 'after_score' => 1]]);
+        $this->createPainSession($admin, $clientA, $specialist, '2026-01-05 09:00:00', [['name' => 'Нулевая оценка', 'tag_ids' => [$zero->getKey()], 'before_score' => 5, 'after_score' => 0]]);
+        $this->createPainSession($admin, $clientA, $specialist, '2026-01-06 09:00:00', [['name' => 'Без оценки', 'tag_ids' => [$withoutScore->getKey()], 'before_score' => 5, 'after_score' => null]]);
+
+        $this->createPainSession($admin, $clientB, $specialist, '2026-01-01 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 8, 'after_score' => 6]]);
+        $this->createPainSession($admin, $clientB, $specialist, '2026-01-01 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 4, 'after_score' => 2]]);
+        $this->createPainSession($otherAdmin, $otherClient, $otherSpecialist, '2026-01-01 09:00:00', [['name' => 'Шея', 'tag_ids' => [$otherNeck->getKey()], 'before_score' => 10, 'after_score' => 5]]);
+
+        app(OrganizationContext::class)->set($organization);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-01-01', 'end_date' => '2026-01-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-02-01 12:00:00', 'UTC'),
+        );
+        $data = app(PainAnalytics::class)->handle($admin, $period, problemTagId: (int) $neck->getKey());
+        $neckResult = $data->problems[0];
+
+        self::assertSame('problem-chronological-v1', $data->sessionAxisVersion);
+        self::assertSame(2, $neckResult['client_count']);
+        self::assertSame(6, $neckResult['pain_count']);
+        self::assertSame(6.67, $neckResult['session_1_after']);
+        self::assertSame(3.0, $neckResult['session_2_after']);
+        self::assertSame(1.0, $neckResult['session_3_after']);
+
+        $clientResult = app(PainAnalytics::class)->handle($admin, $period, client: $clientA, problemTagId: (int) $neck->getKey())->problems[0];
+        self::assertSame(7.0, $clientResult['session_1_after']);
+        self::assertSame(4.0, $clientResult['session_2_after']);
+        self::assertSame(1.0, $clientResult['session_3_after']);
+
+        $zeroResult = app(PainAnalytics::class)->handle($admin, $period, problemTagId: (int) $zero->getKey())->problems[0];
+        self::assertSame(0.0, $zeroResult['session_1_after']);
+        $nullResult = app(PainAnalytics::class)->handle($admin, $period, problemTagId: (int) $withoutScore->getKey())->problems[0];
+        self::assertNull($nullResult['session_1_after']);
     }
 
     public function test_postgresql_analytics_reserves_low_count_unknown_source_from_known_overflow(): void
@@ -342,6 +403,26 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
         ]);
 
         return $client->refresh();
+    }
+
+    private function problemTag(Organization $organization, string $name, int $sortOrder): MedicalProblemTag
+    {
+        return MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => $name,
+            'is_active' => true,
+            'sort_order' => $sortOrder,
+        ]);
+    }
+
+    /** @param array<int, array<string, mixed>> $pains */
+    private function createPainSession(User $admin, Client $client, Specialist $specialist, string $occurredAt, array $pains): void
+    {
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse($occurredAt, 'UTC'),
+            pains: $pains,
+        ));
     }
 
     private function attribution(Client $client, string $sourceType, ?string $source = null, ?string $referralCode = null, ?string $utmSource = null): void

@@ -11,6 +11,7 @@ type CrmFixture = {
     specialistId: number;
     clientName: string;
     painCountry: string | null;
+    problemTagName: string | null;
     partnerName: string;
     serviceName: string;
     specialistName: string;
@@ -130,7 +131,7 @@ async function setLivewireRangeValue(page: Page, slider: Locator, value: number)
     await expect(slider).toHaveAttribute('aria-valuenow', `${value}.0`);
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -520,6 +521,53 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 ),
             );
         }
+        $problemTagName = null;
+        if (${options.problemAxisFlow ? 'true' : 'false'}) {
+            app(\\App\\Modules\\Organizations\\Application\\SetOrganizationSetting::class)->handle(
+                $admin,
+                \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsSessionAxisSemantics,
+                \\App\\Modules\\Analytics\\Application\\ClientSessionAxisCatalog::ProblemChronological,
+            );
+            $problemTagName = 'E2E шея '.$suffix;
+            $problemTag = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => $problemTagName,
+                'group_name' => 'E2E ось сеансов',
+                'is_active' => true,
+                'sort_order' => 0,
+            ]);
+            foreach (['2026-09-01 09:00:00', '2026-09-02 09:00:00', '2026-09-03 09:00:00'] as $occurredAt) {
+                app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
+                    $admin,
+                    $client,
+                    new \\App\\Modules\\Sessions\\Application\\DTOs\\CreateSessionCommand(
+                        specialistId: $specialist->getKey(),
+                        occurredAt: \\Illuminate\\Support\\Carbon::parse($occurredAt, 'UTC'),
+                        pains: [],
+                    ),
+                );
+            }
+            foreach ([
+                ['2026-10-01 09:00:00', 8],
+                ['2026-10-02 09:00:00', 4],
+                ['2026-10-03 09:00:00', 1],
+            ] as [$occurredAt, $afterScore]) {
+                app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
+                    $admin,
+                    $client,
+                    new \\App\\Modules\\Sessions\\Application\\DTOs\\CreateSessionCommand(
+                        specialistId: $specialist->getKey(),
+                        occurredAt: \\Illuminate\\Support\\Carbon::parse($occurredAt, 'UTC'),
+                        pains: [[
+                            'name' => 'E2E боль шеи',
+                            'tag_ids' => [$problemTag->getKey()],
+                            'before_score' => 10,
+                            'after_score' => $afterScore,
+                        ]],
+                    ),
+                );
+            }
+        }
         if (getenv('CLINICAL_AI_E2E_ENABLED') === '1') {
             $providerName = getenv('CLINICAL_AI_PROVIDER') ?: 'openai';
             $modelName = getenv('CLINICAL_AI_MODEL') ?: '';
@@ -635,6 +683,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'specialistId' => $specialist->getKey(),
             'clientName' => $client->full_name,
             'painCountry' => ${options.painScoreFlow ? '$client->country' : 'null'},
+            'problemTagName' => $problemTagName,
             'partnerName' => $partner->full_name,
             'serviceName' => $service->name,
             'specialistName' => $specialist->display_name,
@@ -3018,6 +3067,84 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     await expect(page.getByRole('heading', { name: 'Финансы', exact: true })).toBeVisible();
     await assertNoHorizontalOverflow(page);
     await expect(page.getByRole('button', { name: 'Анализировать', exact: true })).toBeVisible();
+});
+
+test('analytics problem session axis keeps problem numbering separate from global numbering', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture({ problemAxisFlow: true });
+
+    if (fixture.problemTagName === null) {
+        throw new Error('Problem-axis fixture did not create a problem tag.');
+    }
+
+    const selectReportState = async (): Promise<void> => {
+        await page.locator('#form\\.period').selectOption('custom');
+        await page.locator('#form\\.start_date').fill('2026-10-01');
+        await page.locator('#form\\.end_date').fill('2026-10-31');
+        const problemCategory = page.getByRole('combobox', { name: 'Категория проблемы', exact: true });
+        await problemCategory.click();
+        await page.getByRole('option', { name: fixture.problemTagName as string, exact: true }).click();
+    };
+
+    const painSection = page
+        .getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })
+        .locator('xpath=ancestor::section[1]');
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await selectReportState();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(painSection).toContainText('Порядок сеансов конкретной категории проблемы');
+    await expect(painSection.getByRole('row').filter({ hasText: fixture.problemTagName })).toContainText('8 / 4 / 1');
+
+    await page.goto('/admin/analytics-metric-settings');
+    const sessionAxis = page.getByRole('combobox', { name: 'Как считать сеанс 1 / 2 / 3', exact: true });
+    await expect(sessionAxis).toHaveValue('problem_chronological');
+    await sessionAxis.selectOption('client_chronological');
+    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
+    await expect(page.getByText('Метрики сохранены', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(sessionAxis).toHaveValue('client_chronological');
+
+    await page.goto('/admin/analytics-console');
+    await selectReportState();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(painSection).toContainText('Порядок всех сеансов клиента');
+    await expect(painSection.getByRole('row').filter({ hasText: fixture.problemTagName })).toContainText('— / — / —');
+
+    await page.goto('/admin/analytics-metric-settings');
+    await sessionAxis.selectOption('problem_chronological');
+    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
+    await expect(page.getByText('Метрики сохранены', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(sessionAxis).toHaveValue('problem_chronological');
+
+    await page.goto('/admin/analytics-console');
+    await selectReportState();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(painSection).toContainText('Порядок сеансов конкретной категории проблемы');
+    await expect(painSection.getByRole('row').filter({ hasText: fixture.problemTagName })).toContainText('8 / 4 / 1');
+
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
+    ]);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('Problem-axis analytics export did not produce a file.');
+    }
+    const sharedStringsXml = execFileSync('unzip', ['-p', downloadPath, 'xl/sharedStrings.xml'], { encoding: 'utf8' });
+    expect(sharedStringsXml).toContain('Порядок сеансов конкретной категории проблемы');
+    expect(sharedStringsXml).toContain('problem-chronological-v1');
+    const painSheetXml = execFileSync('unzip', ['-p', downloadPath, 'xl/worksheets/sheet4.xml'], { encoding: 'utf8' });
+    expect(painSheetXml).toContain('<v>8</v>');
+    expect(painSheetXml).toContain('<v>4</v>');
+    expect(painSheetXml).toContain('<v>1</v>');
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await assertNoHorizontalOverflow(page);
 });
 
 test('analytics custom period rejects invalid dates without falling back to the default', async ({ page }) => {

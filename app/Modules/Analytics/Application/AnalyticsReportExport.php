@@ -417,7 +417,8 @@ final readonly class AnalyticsReportExport
             ['Основание даты', $metadata['date_basis'] ?? null],
             ['Часовой пояс', $metadata['timezone'] ?? null],
             ['Состояние сегментов', $metadata['segment_state'] ?? 'Текущее состояние сегментов на момент анализа'],
-            ['Семантика оси сеансов', $metadata['session_axis'] ?? null],
+            ['Ось сеансов', $metadata['session_axis'] ?? null],
+            ['Версия правила', $metadata['session_axis_version'] ?? null],
         ];
         $cohortFilters = (array) ($metadata['cohort_filters'] ?? []);
         if (array_key_exists('pain_score_basis', $cohortFilters)) {

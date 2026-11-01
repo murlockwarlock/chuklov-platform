@@ -718,12 +718,12 @@ final class AnalyticsConsole extends LocalizedPage
                 'segment_state' => 'Текущее состояние сегментов на момент анализа',
                 'cohort_count' => $this->cohortPreviewCount,
                 'session_axis' => $exportResults['pain']['session_axis_label'] ?? null,
+                'session_axis_version' => $exportResults['pain']['session_axis_version']
+                    ?? app(ClientSessionAxisCatalog::class)->selected(app(OrganizationContext::class)->id())['version'],
                 'cohort_clients' => $this->cohortRows($actor, $state, $period),
                 'cohort_filters' => $this->cohortFilters($state)->toArray(),
                 'rule_versions' => [
                     ...$this->cohortRuleVersions($state),
-                    'client_session_axis' => $exportResults['pain']['session_axis_version']
-                        ?? app(ClientSessionAxisCatalog::class)->selected(app(OrganizationContext::class)->id())['version'],
                     ...$this->metricRuleVersions($state),
                 ],
                 'generated_at' => now()->toIso8601String(),

@@ -8,10 +8,15 @@ use App\Modules\Analytics\Application\ClientCohortQuery;
 use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\DemographicsAnalytics;
+use App\Modules\Analytics\Application\PainAnalytics;
 use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Sessions\Application\CreateSession;
+use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
+use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
@@ -173,6 +178,62 @@ final class AnalyticsReportExportTest extends TestCase
         self::assertIsArray($demographicsSummary);
         self::assertSame(2, (int) $demographicsSummary[1]);
         self::assertContains(['Страна', 'RU', '1', '50'], $demographicsSheet->toArray());
+    }
+
+    public function test_pain_export_matches_problem_axis_values_and_human_metadata(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $shoulder = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Плечо',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $neck = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Шея',
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+
+        foreach ([
+            ['2026-01-01 09:00:00', [['name' => 'Плечо', 'tag_ids' => [$shoulder->getKey()], 'before_score' => 8, 'after_score' => 7]]],
+            ['2026-01-02 09:00:00', [['name' => 'Плечо', 'tag_ids' => [$shoulder->getKey()], 'before_score' => 7, 'after_score' => 6]]],
+            ['2026-01-03 09:00:00', []],
+            ['2026-01-04 09:00:00', [['name' => 'Плечо', 'tag_ids' => [$shoulder->getKey()], 'before_score' => 6, 'after_score' => 5]]],
+            ['2026-01-05 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 10, 'after_score' => 8]]],
+            ['2026-01-06 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 8, 'after_score' => 4]]],
+            ['2026-01-07 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 3, 'after_score' => 1]]],
+        ] as [$occurredAt, $pains]) {
+            $this->createSession($admin, $client, $specialist, $occurredAt, $pains);
+        }
+
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-01-01', 'end_date' => '2026-01-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-02-01 12:00:00', 'UTC'),
+        );
+        $pain = app(PainAnalytics::class)->handle($admin, $period, problemTagId: (int) $neck->getKey())->toArray();
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, ['pain' => $pain], metadata: [
+            'session_axis' => $pain['session_axis_label'],
+            'session_axis_version' => $pain['session_axis_version'],
+            'cohort_clients' => [],
+            'cohort_filters' => [],
+        ]));
+
+        $painSheet = $workbook->getSheetByName('Боли');
+        $filters = $workbook->getSheetByName('Фильтры');
+        self::assertNotNull($painSheet);
+        self::assertNotNull($filters);
+        $neckRow = collect($painSheet->toArray())->first(static fn (array $row): bool => ($row[0] ?? null) === 'Шея');
+        self::assertIsArray($neckRow);
+        self::assertSame('8', (string) $neckRow[7]);
+        self::assertSame('4', (string) $neckRow[8]);
+        self::assertSame('1', (string) $neckRow[9]);
+        self::assertContains(['Ось сеансов', 'Порядок сеансов конкретной категории проблемы'], $filters->toArray());
+        self::assertContains(['Версия правила', 'problem-chronological-v1'], $filters->toArray());
     }
 
     public function test_formula_like_labels_remain_exact_explicit_strings_and_numbers_remain_numeric(): void
@@ -366,6 +427,16 @@ final class AnalyticsReportExportTest extends TestCase
         }
 
         return implode('|', $values);
+    }
+
+    /** @param array<int, array<string, mixed>> $pains */
+    private function createSession(User $admin, Client $client, Specialist $specialist, string $occurredAt, array $pains): void
+    {
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse($occurredAt, 'UTC'),
+            pains: $pains,
+        ));
     }
 
     /** @return array{0: Organization, 1: User} */

@@ -13,8 +13,8 @@ final readonly class PainAnalyticsData
         public ?float $averageAfter = null,
         public ?float $averageReduction = null,
         public ?float $averageReductionPercent = null,
-        public string $sessionAxisLabel = 'Порядок сеансов клиента от первого к последнему',
-        public string $sessionAxisVersion = 'client-chronological-v1',
+        public string $sessionAxisLabel = 'Порядок сеансов конкретной категории проблемы',
+        public string $sessionAxisVersion = 'problem-chronological-v1',
     ) {}
 
     /** @return array<string, mixed> */
