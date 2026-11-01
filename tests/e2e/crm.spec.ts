@@ -3324,6 +3324,7 @@ test('analytics service aggregate drilldown intersects the selected service coho
 
     await login(page, fixture);
     await page.goto('/admin/analytics-console');
+    await page.waitForLoadState('networkidle');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
     await selectReport();
 
@@ -3388,6 +3389,7 @@ test('analytics problem aggregate drilldown preserves any mode and intersects se
 
     await login(page, fixture);
     await page.goto('/admin/analytics-console');
+    await page.waitForLoadState('networkidle');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
     await selectReport();
 
@@ -3433,6 +3435,7 @@ test('analytics demographic missing country aggregate drilldown uses a typed unk
 
     await login(page, fixture);
     await page.goto('/admin/analytics-console');
+    await page.waitForLoadState('networkidle');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
     await selectTargetClient();
     const demographicsDimension = page.getByRole('checkbox', { name: 'Демография клиентов', exact: true });
