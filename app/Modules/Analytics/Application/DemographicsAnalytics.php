@@ -54,19 +54,29 @@ final readonly class DemographicsAnalytics
         $childrenCounts = [];
         foreach ($clients as $client) {
             $age = $this->age($client->birth_date, $referenceDate);
-            $ageLabel = $age === null ? 'Не указано' : $this->ageLabel($age, $organizationId);
-            $sexLabel = match ((string) $client->gender) {
-                'MALE' => 'Мужчины',
-                'FEMALE' => 'Женщины',
-                default => 'Не указано',
+            $ageBucket = $age === null ? [
+                'key' => null,
+                'label' => 'Не указано',
+                'unknown' => true,
+            ] : $this->ageBucket($age, $organizationId);
+            $sexBucket = match ((string) $client->gender) {
+                'MALE' => ['key' => 'MALE', 'label' => 'Мужчины', 'unknown' => false],
+                'FEMALE' => ['key' => 'FEMALE', 'label' => 'Женщины', 'unknown' => false],
+                default => ['key' => null, 'label' => 'Не указано', 'unknown' => true],
             };
             $country = trim((string) ($client->country ?? ''));
-            $countryLabel = $country === '' ? 'Не указана' : $country;
-            $childrenLabel = $age === null ? 'Не указано' : ($age < 18 ? 'Дети' : 'Взрослые');
-            $ageCounts[$ageLabel] = ($ageCounts[$ageLabel] ?? 0) + 1;
-            $sexCounts[$sexLabel] = ($sexCounts[$sexLabel] ?? 0) + 1;
-            $countryCounts[$countryLabel] = ($countryCounts[$countryLabel] ?? 0) + 1;
-            $childrenCounts[$childrenLabel] = ($childrenCounts[$childrenLabel] ?? 0) + 1;
+            $countryBucket = $country === ''
+                ? ['key' => null, 'label' => 'Не указана', 'unknown' => true]
+                : ['key' => $country, 'label' => $country, 'unknown' => false];
+            $childrenBucket = $age === null
+                ? ['key' => null, 'label' => 'Не указано', 'unknown' => true]
+                : ($age < 18
+                    ? ['key' => 'children', 'label' => 'Дети', 'unknown' => false]
+                    : ['key' => 'adult', 'label' => 'Взрослые', 'unknown' => false]);
+            $this->incrementBucket($ageCounts, $ageBucket);
+            $this->incrementBucket($sexCounts, $sexBucket);
+            $this->incrementBucket($countryCounts, $countryBucket);
+            $this->incrementBucket($childrenCounts, $childrenBucket);
         }
 
         $total = count($clients);
@@ -80,22 +90,38 @@ final readonly class DemographicsAnalytics
         );
     }
 
-    /** @param array<string, int> $counts
-     * @return list<array{label: string, count: int, percent: float}>
+    /** @param array<string, array{key: string|null, label: string, unknown: bool, count: int}> $counts
+     * @return list<array{key: string|null, label: string, unknown: bool, count: int, percent: float}>
      */
     private function distribution(array $counts, int $total): array
     {
-        arsort($counts);
+        uasort($counts, static fn (array $left, array $right): int => $right['count'] <=> $left['count']);
 
         return array_map(
-            static fn (string $label, int $count): array => [
-                'label' => $label,
-                'count' => $count,
-                'percent' => $total === 0 ? 0.0 : round($count * 100 / $total, 2),
+            static fn (array $bucket): array => [
+                'key' => $bucket['key'],
+                'label' => $bucket['label'],
+                'unknown' => $bucket['unknown'],
+                'count' => $bucket['count'],
+                'percent' => $total === 0 ? 0.0 : round($bucket['count'] * 100 / $total, 2),
             ],
-            array_keys($counts),
             array_values($counts),
         );
+    }
+
+    /** @param array<string, array{key: string|null, label: string, unknown: bool, count: int}> $counts
+     * @param  array{key: string|null, label: string, unknown: bool}  $bucket
+     */
+    private function incrementBucket(array &$counts, array $bucket): void
+    {
+        $bucketKey = $bucket['key'] ?? '__unknown__';
+        $counts[$bucketKey] ??= [
+            'key' => $bucket['key'],
+            'label' => $bucket['label'],
+            'unknown' => $bucket['unknown'],
+            'count' => 0,
+        ];
+        $counts[$bucketKey]['count']++;
     }
 
     private function age(mixed $birthDate, CarbonImmutable $referenceDate): ?int
@@ -110,14 +136,15 @@ final readonly class DemographicsAnalytics
         }
     }
 
-    private function ageLabel(int $age, int $organizationId): string
+    /** @return array{key: string|null, label: string, unknown: bool} */
+    private function ageBucket(int $age, int $organizationId): array
     {
         foreach ($this->ageRanges->rows($organizationId, true) as $range) {
             if ($age >= $range['min'] && ($range['max'] === null || $age <= $range['max'])) {
-                return $range['label'];
+                return ['key' => $range['key'], 'label' => $range['label'], 'unknown' => false];
             }
         }
 
-        return 'Не указано';
+        return ['key' => null, 'label' => 'Не указано', 'unknown' => true];
     }
 }

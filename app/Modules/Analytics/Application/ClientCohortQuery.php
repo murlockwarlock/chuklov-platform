@@ -3,6 +3,8 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\AnalyticsAggregateDimension;
+use App\Modules\Analytics\Application\Data\AnalyticsAggregatePredicate;
 use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
@@ -28,6 +30,7 @@ final readonly class ClientCohortQuery
         private ClientSegmentQuery $segments,
         private AttributionSourceCatalog $sources,
         private PurchaseGroupCatalog $purchaseGroups,
+        private ClientAgeRangeCatalog $ageRanges,
     ) {}
 
     /** @return Builder<Client> */
@@ -284,11 +287,215 @@ final readonly class ClientCohortQuery
     }
 
     /** @param Builder<Client> $query */
+    public function constrainAggregate(
+        Builder $query,
+        AnalyticsAggregatePredicate $predicate,
+        ?DashboardPeriod $period = null,
+    ): void {
+        $organizationId = $this->context->id();
+        $value = $predicate->value;
+
+        switch ($predicate->dimension) {
+            case AnalyticsAggregateDimension::ProblemTag:
+                if (! is_int($value) || $value < 1) {
+                    throw new \InvalidArgumentException('Категория проблемы недоступна для детализации.');
+                }
+                $this->applyProblemTags($query, [$value], 'all', $organizationId, $period);
+
+                return;
+            case AnalyticsAggregateDimension::FeedbackTheme:
+                if (! is_int($value) || $value < 1) {
+                    throw new \InvalidArgumentException('Тема обратной связи недоступна для детализации.');
+                }
+                $query->whereExists(function (QueryBuilder $subquery) use ($organizationId, $period, $value): void {
+                    $subquery->selectRaw('1')
+                        ->from('feedback_submissions as aggregate_submissions')
+                        ->join('feedback_submission_themes as aggregate_links', function (JoinClause $join): void {
+                            $join->on('aggregate_links.organization_id', '=', 'aggregate_submissions.organization_id')
+                                ->on('aggregate_links.feedback_submission_id', '=', 'aggregate_submissions.id');
+                        })
+                        ->whereColumn('aggregate_submissions.client_id', 'clients.id')
+                        ->where('aggregate_submissions.organization_id', $organizationId)
+                        ->where('aggregate_links.feedback_theme_id', $value);
+                    $this->applyPeriod($subquery, 'aggregate_submissions.submitted_at', $period);
+                });
+
+                return;
+            case AnalyticsAggregateDimension::GoalTag:
+                if (! is_int($value) || $value < 1) {
+                    throw new \InvalidArgumentException('Категория цели недоступна для детализации.');
+                }
+                $query->whereExists(function (QueryBuilder $subquery) use ($organizationId, $period, $value): void {
+                    $subquery->selectRaw('1')
+                        ->from('tracker_tasks as aggregate_tasks')
+                        ->join('tracker_task_goal_tags as aggregate_links', function (JoinClause $join): void {
+                            $join->on('aggregate_links.organization_id', '=', 'aggregate_tasks.organization_id')
+                                ->on('aggregate_links.tracker_task_id', '=', 'aggregate_tasks.id');
+                        })
+                        ->whereColumn('aggregate_tasks.client_id', 'clients.id')
+                        ->where('aggregate_tasks.organization_id', $organizationId)
+                        ->where('aggregate_links.tracker_goal_tag_id', $value);
+                    $this->applyPeriod($subquery, 'aggregate_tasks.created_at', $period);
+                });
+
+                return;
+            case AnalyticsAggregateDimension::Service:
+                if (! is_int($value) || $value < 1) {
+                    throw new \InvalidArgumentException('Услуга недоступна для детализации.');
+                }
+                $query->whereHas('bookings', function (Builder $booking) use ($organizationId, $period, $value): void {
+                    $booking->whereColumn('bookings.organization_id', 'clients.organization_id')
+                        ->where('bookings.organization_id', $organizationId)
+                        ->where('bookings.service_id', $value)
+                        ->where('bookings.status', BookingStatus::Completed->value);
+                    $this->applyPeriod($booking, 'bookings.starts_at', $period);
+                });
+
+                return;
+            case AnalyticsAggregateDimension::Specialist:
+                if (! is_int($value) || $value < 1) {
+                    throw new \InvalidArgumentException('Специалист недоступен для детализации.');
+                }
+                $query->whereHas('bookings', function (Builder $booking) use ($organizationId, $period, $value): void {
+                    $booking->whereColumn('bookings.organization_id', 'clients.organization_id')
+                        ->where('bookings.organization_id', $organizationId)
+                        ->where('bookings.specialist_id', $value)
+                        ->where('bookings.status', BookingStatus::Completed->value);
+                    $this->applyPeriod($booking, 'bookings.starts_at', $period);
+                });
+
+                return;
+            case AnalyticsAggregateDimension::AcquisitionSource:
+                if (! is_string($value) || trim($value) === '') {
+                    throw new \InvalidArgumentException('Источник привлечения недоступен для детализации.');
+                }
+                if ($period !== null) {
+                    $query->where('clients.created_at', '>=', $period->startUtc)
+                        ->where('clients.created_at', '<', $period->endUtc);
+                }
+                $this->applySources($query, [$value], $organizationId);
+
+                return;
+            case AnalyticsAggregateDimension::AcquisitionUnknown:
+                if ($period !== null) {
+                    $query->where('clients.created_at', '>=', $period->startUtc)
+                        ->where('clients.created_at', '<', $period->endUtc);
+                }
+                $this->applyUnknownSource($query, $organizationId);
+
+                return;
+            case AnalyticsAggregateDimension::PurchaseGroup:
+                if (! is_string($value) || trim($value) === '') {
+                    throw new \InvalidArgumentException('Группа покупок недоступна для детализации.');
+                }
+                $purchaseCatalogTypes = $this->purchaseGroups->catalogTypesFor($organizationId, [$value], false);
+                $query->whereHas('purchases', function (Builder $purchase) use ($organizationId, $period, $purchaseCatalogTypes): void {
+                    $purchase->whereColumn('commerce_purchases.organization_id', 'clients.organization_id')
+                        ->where('commerce_purchases.organization_id', $organizationId);
+                    $this->applyPeriod($purchase, 'commerce_purchases.created_at', $period);
+                    $purchase->whereHas('items', function (Builder $item) use ($purchaseCatalogTypes): void {
+                        $item->where(function (Builder $types) use ($purchaseCatalogTypes): void {
+                            foreach ($purchaseCatalogTypes as $type) {
+                                $types->orWhereJsonContains('commerce_purchase_items.product_snapshot->catalog_type', $type);
+                            }
+                        });
+                    });
+                });
+
+                return;
+            case AnalyticsAggregateDimension::BookingEvent:
+                if (! is_string($value) || trim($value) === '') {
+                    throw new \InvalidArgumentException('Событие записи недоступно для детализации.');
+                }
+                $query->whereExists(function (QueryBuilder $subquery) use ($organizationId, $period, $value): void {
+                    $subquery->selectRaw('1')
+                        ->from('booking_events as aggregate_events')
+                        ->join('bookings as aggregate_bookings', function (JoinClause $join): void {
+                            $join->on('aggregate_bookings.organization_id', '=', 'aggregate_events.organization_id')
+                                ->on('aggregate_bookings.id', '=', 'aggregate_events.booking_id');
+                        })
+                        ->whereColumn('aggregate_bookings.client_id', 'clients.id')
+                        ->where('aggregate_events.organization_id', $organizationId)
+                        ->where('aggregate_events.event_type', $value);
+                    $this->applyPeriod($subquery, 'aggregate_events.occurred_at', $period);
+                });
+
+                return;
+            case AnalyticsAggregateDimension::Segment:
+                if (! is_string($value) || ! ClientSegment::tryFrom($value) instanceof ClientSegment) {
+                    throw new \InvalidArgumentException('Категория клиентов недоступна для детализации.');
+                }
+                $this->segments->apply($query, ClientSegment::from($value));
+
+                return;
+            case AnalyticsAggregateDimension::AgeRange:
+                if (! is_int($predicate->minimum) || $predicate->minimum < 0 || ($predicate->maximum !== null && $predicate->maximum < $predicate->minimum)) {
+                    throw new \InvalidArgumentException('Возрастной диапазон недоступен для детализации.');
+                }
+                $this->applyAgeRange($query, $predicate->minimum, $predicate->maximum, $period);
+
+                return;
+            case AnalyticsAggregateDimension::AgeUnknown:
+                $this->applyUnknownAge($query, $organizationId, $period);
+
+                return;
+            case AnalyticsAggregateDimension::Sex:
+                if (! is_string($value) || ! in_array($value, ['MALE', 'FEMALE'], true)) {
+                    throw new \InvalidArgumentException('Пол недоступен для детализации.');
+                }
+                $query->where('clients.gender', $value);
+
+                return;
+            case AnalyticsAggregateDimension::SexUnknown:
+                $query->where(function (Builder $unknown): void {
+                    $unknown->whereNull('clients.gender')->orWhereNotIn('clients.gender', ['MALE', 'FEMALE']);
+                });
+
+                return;
+            case AnalyticsAggregateDimension::Children:
+                if (! is_string($value)) {
+                    throw new \InvalidArgumentException('Возрастная категория недоступна для детализации.');
+                }
+                if ($value === 'children') {
+                    $this->applyAgeRange($query, 0, 17, $period);
+
+                    return;
+                }
+                if ($value === 'adult') {
+                    $this->applyAgeRange($query, 18, null, $period);
+
+                    return;
+                }
+                throw new \InvalidArgumentException('Возрастная категория недоступна для детализации.');
+            case AnalyticsAggregateDimension::ChildrenUnknown:
+                $query->whereNull('clients.birth_date');
+
+                return;
+            case AnalyticsAggregateDimension::Country:
+                if (! is_string($value) || trim($value) === '') {
+                    throw new \InvalidArgumentException('Страна недоступна для детализации.');
+                }
+                $query->whereRaw("TRIM(COALESCE(clients.country, '')) = ?", [trim($value)]);
+
+                return;
+            case AnalyticsAggregateDimension::CountryUnknown:
+                $query->where(function (Builder $unknown): void {
+                    $unknown->whereNull('clients.country')->orWhereRaw("TRIM(clients.country) = ''");
+                });
+
+                return;
+        }
+    }
+
+    /** @param Builder<Client> $query */
     private function applyAgeRange(Builder $query, ?int $minimum, ?int $maximum, ?DashboardPeriod $period): void
     {
-        $reference = $period === null
-            ? CarbonImmutable::now($this->context->organization()->defaultTimezone())->startOfDay()
-            : $period->endUtc->setTimezone($period->timezone)->subDay()->startOfDay();
+        $this->applyAgeRangeConditions($query, $minimum, $maximum, $this->ageReference($period));
+    }
+
+    /** @param Builder<Client> $query */
+    private function applyAgeRangeConditions(Builder $query, ?int $minimum, ?int $maximum, CarbonImmutable $reference): void
+    {
         if ($minimum !== null) {
             $query->whereDate('clients.birth_date', '<=', $reference->subYears($minimum)->toDateString());
         }
@@ -296,6 +503,59 @@ final readonly class ClientCohortQuery
             $query->whereDate('clients.birth_date', '>', $reference->subYears($maximum + 1)->toDateString());
         }
         $query->whereNotNull('clients.birth_date');
+    }
+
+    private function ageReference(?DashboardPeriod $period): CarbonImmutable
+    {
+        return $period === null
+            ? CarbonImmutable::now($this->context->organization()->defaultTimezone())->startOfDay()
+            : $period->endUtc->setTimezone($period->timezone)->subDay()->startOfDay();
+    }
+
+    /** @param Builder<Client> $query */
+    private function applyUnknownAge(Builder $query, int $organizationId, ?DashboardPeriod $period): void
+    {
+        $ranges = $this->ageRanges->rows($organizationId, true);
+        $reference = $this->ageReference($period);
+        $query->where(function (Builder $unknown) use ($ranges, $reference): void {
+            $unknown->whereNull('clients.birth_date');
+            if ($ranges === []) {
+                return;
+            }
+
+            $unknown->orWhere(function (Builder $outside) use ($ranges, $reference): void {
+                $outside->whereNotNull('clients.birth_date');
+                foreach ($ranges as $range) {
+                    $outside->whereNot(function (Builder $knownRange) use ($range, $reference): void {
+                        $this->applyAgeRangeConditions($knownRange, $range['min'], $range['max'], $reference);
+                    });
+                }
+            });
+        });
+    }
+
+    /** @param Builder<Client> $query */
+    private function applyUnknownSource(Builder $query, int $organizationId): void
+    {
+        $query->where(function (Builder $unknown) use ($organizationId): void {
+            $unknown->whereDoesntHave('attribution', function (Builder $attribution) use ($organizationId): void {
+                $attribution->where('client_attributions.organization_id', $organizationId);
+            })->orWhereHas('attribution', function (Builder $attribution) use ($organizationId): void {
+                $attribution->where('client_attributions.organization_id', $organizationId)
+                    ->where(function (Builder $kind): void {
+                        $kind->whereNull('client_attributions.source_type')
+                            ->orWhere(function (Builder $direct): void {
+                                $direct->whereIn('client_attributions.source_type', ['legacy', 'source', 'manual'])
+                                    ->whereRaw("NULLIF(TRIM(client_attributions.source), '') IS NULL");
+                            })
+                            ->orWhere(function (Builder $utm): void {
+                                $utm->where('client_attributions.source_type', 'utm')
+                                    ->whereRaw("NULLIF(TRIM(client_attributions.utm_source), '') IS NULL");
+                            })
+                            ->orWhereNotIn('client_attributions.source_type', ['legacy', 'source', 'manual', 'referral', 'utm']);
+                    });
+            });
+        });
     }
 
     /** @param Builder<Client> $query

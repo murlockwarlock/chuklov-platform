@@ -178,17 +178,39 @@ final class AcquisitionAnalytics
         $configured = $this->sourceCatalog->rows($organizationId);
         $buckets = [];
         foreach ($rows as $row) {
-            $label = in_array((string) $row->bucket_kind, [self::SemanticKindUnknown, self::BucketKindOverflow], true)
+            $bucketKind = (string) $row->bucket_kind;
+            $label = in_array($bucketKind, [self::SemanticKindUnknown, self::BucketKindOverflow], true)
                 ? (string) $row->source_label
                 : $this->configuredLabel($row, $configured);
-            $buckets[$label] = ($buckets[$label] ?? 0) + (int) $row->source_count;
+            $sourceKey = $bucketKind === self::SemanticKindUnknown || $bucketKind === self::BucketKindOverflow
+                ? null
+                : $this->sourceKeyForValue((string) ($row->bucket_value ?? ''), $configured)
+                    ?? $this->sourceKeyForLabel($label, $configured);
+            $bucketIdentity = $bucketKind === self::SemanticKindUnknown || $bucketKind === self::BucketKindOverflow
+                ? $bucketKind
+                : $bucketKind.'|'.($sourceKey ?? (string) ($row->bucket_value ?? $label));
+            $buckets[$bucketIdentity] ??= [
+                'count' => 0,
+                'key' => $sourceKey,
+                'kind' => match ($bucketKind) {
+                    self::SemanticKindUnknown => 'unknown',
+                    self::BucketKindOverflow => 'overflow',
+                    default => 'known',
+                },
+                'label' => $label,
+            ];
+            $buckets[$bucketIdentity]['count'] += (int) $row->source_count;
         }
 
-        arsort($buckets);
+        uasort($buckets, static fn (array $left, array $right): int => $right['count'] <=> $left['count']);
 
         return array_map(
-            fn (string $label, int $count): SourceBucket => new SourceBucket(label: $label, count: $count, key: $this->sourceKeyForLabel($label, $configured)),
-            array_keys($buckets),
+            static fn (array $bucket): SourceBucket => new SourceBucket(
+                label: $bucket['label'],
+                count: $bucket['count'],
+                key: $bucket['key'],
+                kind: $bucket['kind'],
+            ),
             array_values($buckets),
         );
     }
@@ -198,6 +220,27 @@ final class AcquisitionAnalytics
     {
         foreach ($configured as $mapping) {
             if ($mapping['label'] === $label) {
+                return $mapping['source_key'];
+            }
+        }
+
+        return null;
+    }
+
+    /** @param list<array{source_key: string, label: string, aliases: list<string>, is_active: bool, sort_order: int}> $configured */
+    private function sourceKeyForValue(string $value, array $configured): ?string
+    {
+        $needle = mb_strtolower(trim($value));
+        if ($needle === '') {
+            return null;
+        }
+        foreach ($configured as $mapping) {
+            $values = [
+                $mapping['source_key'],
+                $mapping['label'],
+                ...$mapping['aliases'],
+            ];
+            if (in_array($needle, array_map(static fn (string $item): string => mb_strtolower(trim($item)), $values), true)) {
                 return $mapping['source_key'];
             }
         }

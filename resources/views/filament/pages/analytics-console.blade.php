@@ -1,6 +1,10 @@
 <x-filament-panels::page>
     {{ $this->content }}
 
+    @php
+        $unknownAggregateValue = \App\Modules\Analytics\Application\Data\AnalyticsAggregatePredicate::UnknownValue;
+    @endphp
+
     @if ($dimensionErrors !== [])
         <div class="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100" role="alert">
             <p class="font-medium">{{ __('Некоторые показатели недоступны') }}</p>
@@ -20,6 +24,9 @@
                     <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ __('Найдено клиентов: :count · фильтры применяются одинаково ко всем выбранным показателям.', ['count' => $cohortPreviewCount]) }}</p>
                     @if ($cohortDrilldownReason !== null)
                         <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ $cohortDrilldownReason }}</p>
+                    @endif
+                    @if ($cohortClientsTruncated)
+                        <p class="mt-1 text-xs text-amber-700 dark:text-amber-300">{{ __('Показаны первые 100 клиентов из найденной выборки.') }}</p>
                     @endif
                 </div>
                 <button type="button" wire:click="showCohortClients" class="rounded-lg bg-primary-600 px-3 py-2 text-sm font-medium text-white hover:bg-primary-500">
@@ -181,7 +188,7 @@
                             <li class="space-y-1">
                                 <div class="flex justify-between gap-3">
                                     <span class="min-w-0 break-words">{{ $source['label'] }}</span>
-                                    <span class="flex flex-wrap items-center justify-end gap-2"><span>{{ $source['count'] }}</span>@if ($source['key'])<button type="button" wire:click="showAggregateClients('acquisition', @js($source['label']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>@endif</span>
+                                    <span class="flex flex-wrap items-center justify-end gap-2"><span>{{ __('Клиентов: :count', ['count' => $source['count']]) }}</span>@if (($source['kind'] ?? 'known') === 'unknown')<button type="button" wire:click="showAggregateClients('acquisition_unknown', @js($unknownAggregateValue))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>@elseif (($source['kind'] ?? 'known') === 'known' && filled($source['key'] ?? null))<button type="button" wire:click="showAggregateClients('acquisition', @js($source['key']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>@endif</span>
                                 </div>
                                 <div class="h-2 rounded-full bg-gray-100 dark:bg-white/10" role="img" aria-label="{{ __('Доля источника :source', ['source' => $source['label']]) }}">
                                     <div class="h-2 rounded-full bg-primary-600" style="width: {{ min(100, max(0, $source['count'] / $maxSourceCount * 100)) }}%"></div>
@@ -315,7 +322,7 @@
                             <ul class="mt-2 space-y-1 text-sm">
                                 @foreach ($results['demographics'][$key] as $item)
                                     <li class="space-y-1">
-                                        <div class="flex justify-between gap-3"><span class="min-w-0 break-words">{{ $item['label'] }}</span><span class="flex flex-wrap items-center justify-end gap-2"><span>{{ $item['count'] }} · {{ $item['percent'] }}%</span>@if ($key === 'age' && $item['label'] !== 'Не указано')<button type="button" wire:click="showAggregateClients('demographics_age', @js($item['label']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>@elseif ($key === 'sex' && in_array($item['label'], ['Мужчины', 'Женщины'], true))<button type="button" wire:click="showAggregateClients('demographics_sex', @js($item['label']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>@elseif ($key === 'children' && in_array($item['label'], ['Дети', 'Взрослые'], true))<button type="button" wire:click="showAggregateClients('demographics_children', @js($item['label']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>@elseif ($key === 'country' && $item['label'] !== 'Не указана')<button type="button" wire:click="showAggregateClients('demographics_country', @js($item['label']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>@endif</span></div>
+                                        <div class="flex justify-between gap-3"><span class="min-w-0 break-words">{{ $item['label'] }}</span><span class="flex flex-wrap items-center justify-end gap-2"><span>{{ $item['count'] }} · {{ $item['percent'] }}%</span>@if ($key === 'age' && ($item['unknown'] || $item['key'] !== null))<button type="button" wire:click="showAggregateClients('{{ $item['unknown'] ? 'demographics_age_unknown' : 'demographics_age' }}', @js($item['unknown'] ? $unknownAggregateValue : $item['key']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>@elseif ($key === 'sex' && ($item['unknown'] || $item['key'] !== null))<button type="button" wire:click="showAggregateClients('{{ $item['unknown'] ? 'demographics_sex_unknown' : 'demographics_sex' }}', @js($item['unknown'] ? $unknownAggregateValue : $item['key']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>@elseif ($key === 'children' && ($item['unknown'] || $item['key'] !== null))<button type="button" wire:click="showAggregateClients('{{ $item['unknown'] ? 'demographics_children_unknown' : 'demographics_children' }}', @js($item['unknown'] ? $unknownAggregateValue : $item['key']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>@elseif ($key === 'country' && ($item['unknown'] || $item['key'] !== null))<button type="button" wire:click="showAggregateClients('demographics_country', @js($item['unknown'] ? $unknownAggregateValue : $item['key']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>@endif</span></div>
                                         <div class="h-2 rounded-full bg-gray-100 dark:bg-white/10" role="img" aria-label="{{ __('Доля категории :category', ['category' => $item['label']]) }}">
                                             <div class="h-2 rounded-full bg-primary-600" style="width: {{ min(100, max(0, $item['percent'])) }}%"></div>
                                         </div>
@@ -378,7 +385,7 @@
                     </div>
                     <ul class="mt-4 space-y-2 text-sm">
                         @foreach ($results['booking_statuses']['statuses'] as $status)
-                            <li class="flex flex-wrap justify-between gap-3"><span>{{ $status['label'] }}</span><span class="flex flex-wrap items-center justify-end gap-2"><span>{{ $status['count'] }}</span><button type="button" wire:click="showAggregateClients('booking_statuses', @js($status['key']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button></span></li>
+                            <li class="flex flex-wrap justify-between gap-3"><span>{{ $status['label'] }}</span><span class="flex flex-wrap items-center justify-end gap-2"><span>{{ __('Событий: :count', ['count' => $status['count']]) }}</span><button type="button" wire:click="showAggregateClients('booking_statuses', @js($status['key']))" class="text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button></span></li>
                         @endforeach
                     </ul>
                 </section>

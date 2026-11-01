@@ -8,5 +8,6 @@ final readonly class SourceBucket
         public string $label,
         public int $count,
         public ?string $key = null,
+        public string $kind = 'known',
     ) {}
 }

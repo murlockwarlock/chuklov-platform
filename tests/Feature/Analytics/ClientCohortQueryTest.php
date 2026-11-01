@@ -410,7 +410,7 @@ final class ClientCohortQueryTest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         self::assertSame([$client->getKey()], app(ClientCohortQuery::class)->for($admin, new ClientCohortFilters(ageMin: 30, ageMax: 44), $period)->pluck('clients.id')->all());
-        self::assertSame([['label' => 'Рабочий возраст', 'count' => 1, 'percent' => 100.0]], app(DemographicsAnalytics::class)->handle($admin, $period)->age);
+        self::assertSame([['key' => 'working_age', 'label' => 'Рабочий возраст', 'unknown' => false, 'count' => 1, 'percent' => 100.0]], app(DemographicsAnalytics::class)->handle($admin, $period)->age);
     }
 
     public function test_booking_filters_use_the_same_selected_event_period_as_analytics_dimensions(): void

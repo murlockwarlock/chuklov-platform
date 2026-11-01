@@ -28,6 +28,17 @@ type CrmFixture = {
     referralStatsCampaignName: string | null;
     telegramUsername: string | null;
     giftProductName: string | null;
+    aggregateServiceAName: string | null;
+    aggregateServiceBName: string | null;
+    aggregateServiceClientAName: string | null;
+    aggregateServiceClientBName: string | null;
+    aggregateServiceClientBothName: string | null;
+    aggregateProblemTagName: string | null;
+    aggregateBackTagName: string | null;
+    aggregateProblemClientNeckName: string | null;
+    aggregateProblemClientBackName: string | null;
+    aggregateProblemClientBothName: string | null;
+    aggregateMissingCountryClientName: string | null;
 };
 
 function validPdfBuffer(): Buffer {
@@ -131,7 +142,7 @@ async function setLivewireRangeValue(page: Page, slider: Locator, value: number)
     await expect(slider).toHaveAttribute('aria-valuenow', `${value}.0`);
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean; aggregateDrilldownFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -234,6 +245,97 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'price_minor' => getenv('PLAYWRIGHT_FINANCE_FLOW') === '1' || $payoutFlow ? 10000 : null,
             'price_currency' => getenv('PLAYWRIGHT_FINANCE_FLOW') === '1' || $payoutFlow ? 'USD' : null,
         ]);
+        $aggregateServiceAName = null;
+        $aggregateServiceBName = null;
+        $aggregateServiceClientAName = null;
+        $aggregateServiceClientBName = null;
+        $aggregateServiceClientBothName = null;
+        $aggregateProblemTagName = null;
+        $aggregateBackTagName = null;
+        $aggregateProblemClientNeckName = null;
+        $aggregateProblemClientBackName = null;
+        $aggregateProblemClientBothName = null;
+        $aggregateMissingCountryClientName = null;
+        if (${options.aggregateDrilldownFlow ? 'true' : 'false'}) {
+            $client->forceFill([
+                'country' => 'E2E known country '.$suffix,
+                'gender' => 'FEMALE',
+                'birth_date' => '1985-06-10',
+            ])->save();
+            $partner->forceFill([
+                'country' => 'E2E known partner country '.$suffix,
+                'gender' => 'MALE',
+                'birth_date' => '1985-06-10',
+            ])->save();
+            $aggregateServiceAName = 'E2E аналитика услуга A '.$suffix;
+            $aggregateServiceBName = 'E2E аналитика услуга B '.$suffix;
+            $aggregateServiceA = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create(['name' => $aggregateServiceAName]);
+            $aggregateServiceB = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create(['name' => $aggregateServiceBName]);
+            $aggregateServiceClientAName = 'E2E клиент услуга A '.$suffix;
+            $aggregateServiceClientBName = 'E2E клиент услуга B '.$suffix;
+            $aggregateServiceClientBothName = 'E2E клиент услуги A B '.$suffix;
+            $aggregateServiceClientA = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateServiceClientAName, 'country' => 'E2E service country '.$suffix]);
+            $aggregateServiceClientB = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateServiceClientBName, 'country' => 'E2E service country '.$suffix]);
+            $aggregateServiceClientBoth = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateServiceClientBothName, 'country' => 'E2E service country '.$suffix]);
+            $aggregateBookingAttributes = [
+                'status' => 'completed',
+                'starts_at' => '2026-10-10 12:00:00',
+                'ends_at' => '2026-10-10 13:00:00',
+                'blocking_ends_at' => '2026-10-10 13:00:00',
+            ];
+            \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()->forClient($aggregateServiceClientA)->forSpecialist($specialist)->forService($aggregateServiceA)->create($aggregateBookingAttributes);
+            \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()->forClient($aggregateServiceClientB)->forSpecialist($specialist)->forService($aggregateServiceB)->create($aggregateBookingAttributes);
+            \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()->forClient($aggregateServiceClientBoth)->forSpecialist($specialist)->forService($aggregateServiceA)->create($aggregateBookingAttributes);
+            \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()->forClient($aggregateServiceClientBoth)->forSpecialist($specialist)->forService($aggregateServiceB)->create($aggregateBookingAttributes);
+            $aggregateProblemTagName = 'E2E аналитика шея '.$suffix;
+            $aggregateBackTagName = 'E2E аналитика спина '.$suffix;
+            $aggregateProblemTag = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => $aggregateProblemTagName,
+                'is_active' => true,
+                'sort_order' => 20,
+            ]);
+            $aggregateBackTag = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => $aggregateBackTagName,
+                'is_active' => true,
+                'sort_order' => 21,
+            ]);
+            $aggregateProblemClientNeckName = 'E2E клиент только шея '.$suffix;
+            $aggregateProblemClientBackName = 'E2E клиент только спина '.$suffix;
+            $aggregateProblemClientBothName = 'E2E клиент шея и спина '.$suffix;
+            $aggregateProblemClientNeck = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateProblemClientNeckName, 'country' => 'E2E problem country '.$suffix]);
+            $aggregateProblemClientBack = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateProblemClientBackName, 'country' => 'E2E problem country '.$suffix]);
+            $aggregateProblemClientBoth = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateProblemClientBothName, 'country' => 'E2E problem country '.$suffix]);
+            $createAggregateSession = static function ($aggregateClient, array $pains) use ($admin, $specialist): void {
+                app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
+                    $admin,
+                    $aggregateClient,
+                    new \\App\\Modules\\Sessions\\Application\\DTOs\\CreateSessionCommand(
+                        specialistId: $specialist->getKey(),
+                        occurredAt: \\Illuminate\\Support\\Carbon::parse('2026-10-10 14:00:00', 'UTC'),
+                        pains: $pains,
+                    ),
+                );
+            };
+            $createAggregateSession($aggregateProblemClientNeck, [[
+                'name' => 'E2E шея', 'tag_ids' => [$aggregateProblemTag->getKey()], 'before_score' => 8, 'after_score' => 4,
+            ]]);
+            $createAggregateSession($aggregateProblemClientBack, [[
+                'name' => 'E2E спина', 'tag_ids' => [$aggregateBackTag->getKey()], 'before_score' => 8, 'after_score' => 4,
+            ]]);
+            $createAggregateSession($aggregateProblemClientBoth, [
+                ['name' => 'E2E шея', 'tag_ids' => [$aggregateProblemTag->getKey()], 'before_score' => 8, 'after_score' => 4],
+                ['name' => 'E2E спина', 'tag_ids' => [$aggregateBackTag->getKey()], 'before_score' => 8, 'after_score' => 4],
+            ]);
+            $aggregateMissingCountryClientName = 'E2E клиент без страны '.$suffix;
+            \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+                'full_name' => $aggregateMissingCountryClientName,
+                'country' => null,
+                'gender' => null,
+                'birth_date' => '1985-06-10',
+            ]);
+        }
         $giftSaleFlow = getenv('PLAYWRIGHT_GIFT_SALE_FLOW') === '1';
         $giftProductName = null;
         if ($giftSaleFlow) {
@@ -700,6 +802,17 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'referralStatsCampaignName' => $referralStatsCampaignName,
             'telegramUsername' => $telegramUsername,
             'giftProductName' => $giftProductName,
+            'aggregateServiceAName' => $aggregateServiceAName,
+            'aggregateServiceBName' => $aggregateServiceBName,
+            'aggregateServiceClientAName' => $aggregateServiceClientAName,
+            'aggregateServiceClientBName' => $aggregateServiceClientBName,
+            'aggregateServiceClientBothName' => $aggregateServiceClientBothName,
+            'aggregateProblemTagName' => $aggregateProblemTagName,
+            'aggregateBackTagName' => $aggregateBackTagName,
+            'aggregateProblemClientNeckName' => $aggregateProblemClientNeckName,
+            'aggregateProblemClientBackName' => $aggregateProblemClientBackName,
+            'aggregateProblemClientBothName' => $aggregateProblemClientBothName,
+            'aggregateMissingCountryClientName' => $aggregateMissingCountryClientName,
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -3150,6 +3263,191 @@ test('analytics problem session axis keeps problem numbering separate from globa
 
     await page.setViewportSize({ width: 390, height: 900 });
     await assertNoHorizontalOverflow(page);
+});
+
+test('analytics service aggregate drilldown intersects the selected service cohort', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture({ aggregateDrilldownFlow: true });
+
+    if (
+        fixture.aggregateServiceAName === null
+        || fixture.aggregateServiceBName === null
+        || fixture.aggregateServiceClientAName === null
+        || fixture.aggregateServiceClientBName === null
+        || fixture.aggregateServiceClientBothName === null
+    ) {
+        throw new Error('Aggregate service fixture did not create the expected records.');
+    }
+
+    const selectServices = async (): Promise<void> => {
+        const services = page.getByRole('combobox', { name: 'Услуги', exact: true });
+        for (const serviceName of [fixture.aggregateServiceAName, fixture.aggregateServiceBName]) {
+            await services.click();
+            await page.getByRole('option', { name: serviceName, exact: true }).click();
+        }
+    };
+
+    const selectReport = async (): Promise<void> => {
+        await page.locator('#form\\.period').selectOption('custom');
+        await page.locator('#form\\.start_date').fill('2026-10-01');
+        await page.locator('#form\\.end_date').fill('2026-10-31');
+        await selectServices();
+        const servicesDimension = page.getByRole('checkbox', { name: 'Услуги и визиты', exact: true });
+        if (! await servicesDimension.isChecked()) {
+            await servicesDimension.check();
+        }
+        await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    };
+
+    const servicesSection = page
+        .getByRole('heading', { name: 'Услуги и визиты', exact: true })
+        .locator('xpath=ancestor::section[1]');
+    const cohortSection = page.getByRole('region', { name: 'Клиенты когорты', exact: true });
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await selectReport();
+
+    const serviceARow = servicesSection.locator('li').filter({ hasText: fixture.aggregateServiceAName }).first();
+    await serviceARow.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    await expect(cohortSection).toContainText(`Строка отчёта: услуга «${fixture.aggregateServiceAName}».`);
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientAName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientBothName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientBName, exact: true })).toHaveCount(0);
+
+    await cohortSection.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    const serviceBRow = servicesSection.locator('li').filter({ hasText: fixture.aggregateServiceBName }).first();
+    await serviceBRow.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    await expect(cohortSection).toContainText(`Строка отчёта: услуга «${fixture.aggregateServiceBName}».`);
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientBName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientBothName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientAName, exact: true })).toHaveCount(0);
+
+    await page.reload();
+    await expect(page.getByRole('combobox', { name: 'Услуги', exact: true })).toContainText(fixture.aggregateServiceAName);
+    await expect(page.getByRole('combobox', { name: 'Услуги', exact: true })).toContainText(fixture.aggregateServiceBName);
+    await page.goto('/admin/analytics-console?aggregate-state=service');
+    await page.goBack();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+});
+
+test('analytics problem aggregate drilldown preserves any mode and intersects selected tags', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture({ aggregateDrilldownFlow: true });
+
+    if (
+        fixture.aggregateProblemTagName === null
+        || fixture.aggregateBackTagName === null
+        || fixture.aggregateProblemClientNeckName === null
+        || fixture.aggregateProblemClientBackName === null
+        || fixture.aggregateProblemClientBothName === null
+    ) {
+        throw new Error('Aggregate problem fixture did not create the expected records.');
+    }
+
+    const problemCategory = page.getByRole('combobox', { name: 'Категории проблем', exact: true });
+    const selectProblems = async (): Promise<void> => {
+        for (const problemName of [fixture.aggregateProblemTagName, fixture.aggregateBackTagName]) {
+            await problemCategory.click();
+            await page.getByRole('option', { name: problemName, exact: true }).click();
+        }
+    };
+
+    const selectReport = async (): Promise<void> => {
+        await page.locator('#form\\.period').selectOption('custom');
+        await page.locator('#form\\.start_date').fill('2026-10-01');
+        await page.locator('#form\\.end_date').fill('2026-10-31');
+        await selectProblems();
+        await page.locator('#form\\.cohort_problem_tag_mode').selectOption('any');
+        await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    };
+
+    const painSection = page
+        .getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })
+        .locator('xpath=ancestor::section[1]');
+    const cohortSection = page.getByRole('region', { name: 'Клиенты когорты', exact: true });
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await selectReport();
+
+    const neckRow = painSection.getByRole('row').filter({ hasText: fixture.aggregateProblemTagName }).first();
+    await neckRow.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    await expect(cohortSection).toContainText(`Строка отчёта: Категория проблемы «${fixture.aggregateProblemTagName}».`);
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientNeckName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientBothName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientBackName, exact: true })).toHaveCount(0);
+    await expect(page.locator('#form\\.cohort_problem_tag_mode')).toHaveValue('any');
+    await expect(problemCategory).toContainText(fixture.aggregateProblemTagName);
+    await expect(problemCategory).toContainText(fixture.aggregateBackTagName);
+
+    await cohortSection.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    const backRow = painSection.getByRole('row').filter({ hasText: fixture.aggregateBackTagName }).first();
+    await backRow.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    await expect(cohortSection).toContainText(`Строка отчёта: Категория проблемы «${fixture.aggregateBackTagName}».`);
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientBackName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientBothName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientNeckName, exact: true })).toHaveCount(0);
+    await expect(page.locator('#form\\.cohort_problem_tag_mode')).toHaveValue('any');
+
+    await page.reload();
+    await expect(page.locator('#form\\.cohort_problem_tag_mode')).toHaveValue('any');
+    await page.goto('/admin/analytics-console?aggregate-state=problem');
+    await page.goBack();
+    await page.goForward();
+    await expect(page.locator('#form\\.cohort_problem_tag_mode')).toHaveValue('any');
+});
+
+test('analytics demographic missing country aggregate drilldown uses a typed unknown predicate', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture({ aggregateDrilldownFlow: true });
+
+    if (fixture.aggregateMissingCountryClientName === null) {
+        throw new Error('Aggregate missing-country fixture did not create the expected client.');
+    }
+
+    const selectTargetClient = async (): Promise<void> => {
+        const clientSelect = page.getByRole('combobox', { name: 'Конкретные клиенты', exact: true });
+        await clientSelect.click();
+        await page.getByRole('textbox', { name: 'Search' }).last().fill(fixture.aggregateMissingCountryClientName as string);
+        await page.getByRole('option', { name: fixture.aggregateMissingCountryClientName, exact: true }).click();
+    };
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await selectTargetClient();
+    const demographicsDimension = page.getByRole('checkbox', { name: 'Демография клиентов', exact: true });
+    if (! await demographicsDimension.isChecked()) {
+        await demographicsDimension.check();
+    }
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+
+    const demographicsSection = page
+        .getByRole('heading', { name: 'Демография клиентов', exact: true })
+        .locator('xpath=ancestor::section[1]');
+    const countryItem = demographicsSection.locator('li').filter({ hasText: 'Не указана' }).first();
+    await expect(countryItem).toBeVisible();
+    await countryItem.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+
+    const cohortSection = page.getByRole('region', { name: 'Клиенты когорты', exact: true });
+    await expect(cohortSection).toContainText('Строка отчёта: страна «Не указана».');
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateMissingCountryClientName, exact: true })).toBeVisible();
+    await expect(cohortSection).not.toContainText('__unknown__');
+
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Анализировать', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(demographicsSection).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 900 });
+    await assertNoHorizontalOverflow(page);
+    await page.goto('/admin/analytics-console?aggregate-state=demographics');
+    await page.goBack();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
 });
 
 test('analytics custom period rejects invalid dates without falling back to the default', async ({ page }) => {

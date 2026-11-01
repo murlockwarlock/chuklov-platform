@@ -100,10 +100,10 @@ final class PurchaseGroupCatalog
     /** @param list<string> $keys
      * @return list<string>
      */
-    public function catalogTypesFor(int $organizationId, array $keys): array
+    public function catalogTypesFor(int $organizationId, array $keys, bool $activeOnly = true): array
     {
         $types = [];
-        foreach ($this->rows($organizationId, true) as $row) {
+        foreach ($this->rows($organizationId, $activeOnly) as $row) {
             if (in_array($row['key'], $keys, true)) {
                 $types = [...$types, ...$row['catalog_types']];
             }

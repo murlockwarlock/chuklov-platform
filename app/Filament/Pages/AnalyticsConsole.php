@@ -15,6 +15,8 @@ use App\Modules\Analytics\Application\ClientAgeRangeCatalog;
 use App\Modules\Analytics\Application\ClientCohortQuery;
 use App\Modules\Analytics\Application\ClientSegmentAnalytics;
 use App\Modules\Analytics\Application\ClientSessionAxisCatalog;
+use App\Modules\Analytics\Application\Data\AnalyticsAggregateDimension;
+use App\Modules\Analytics\Application\Data\AnalyticsAggregatePredicate;
 use App\Modules\Analytics\Application\Data\AnalyticsMetricFilters;
 use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
@@ -59,6 +61,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -70,6 +73,8 @@ use UnitEnum;
 /** @property-read Schema $form */
 final class AnalyticsConsole extends LocalizedPage
 {
+    private const int CohortDisplayLimit = 100;
+
     protected static ?string $title = 'Консоль аналитики';
 
     protected static ?string $navigationLabel = 'Консоль аналитики';
@@ -93,6 +98,8 @@ final class AnalyticsConsole extends LocalizedPage
 
     /** @var list<array<string, mixed>> */
     public array $cohortClients = [];
+
+    public bool $cohortClientsTruncated = false;
 
     public ?string $cohortDrilldownReason = null;
 
@@ -605,6 +612,7 @@ final class AnalyticsConsole extends LocalizedPage
         abort_unless($actor instanceof User, 403);
         $this->dimensionErrors = [];
         $this->cohortClients = [];
+        $this->cohortClientsTruncated = false;
         $this->cohortDrilldownReason = null;
         $this->resetValidation();
         $resolved = $this->validatedStateAndPeriod('анализ');
@@ -629,7 +637,7 @@ final class AnalyticsConsole extends LocalizedPage
         }
 
         $this->cohortDrilldownReason = $this->cohortReason($state);
-        $this->cohortClients = $this->cohortDisplayRows($actor, $state, $period);
+        $this->cohortClients = $this->cohortDisplayRows($actor, $state, $period, limit: self::CohortDisplayLimit);
         Notification::make()->title(__('Анализ обновлён'))->success()->send();
     }
 
@@ -644,7 +652,8 @@ final class AnalyticsConsole extends LocalizedPage
         [$state, $period] = $resolved;
         $this->cohortPreviewCount = $this->previewCountForState($state, $period);
         $this->cohortDrilldownReason = $this->cohortReason($state);
-        $this->cohortClients = $this->cohortDisplayRows($actor, $state, $period);
+        $this->cohortClientsTruncated = false;
+        $this->cohortClients = $this->cohortDisplayRows($actor, $state, $period, limit: self::CohortDisplayLimit);
     }
 
     public function showAggregateClients(string $dimension, string|int $value): void
@@ -658,15 +667,15 @@ final class AnalyticsConsole extends LocalizedPage
 
         [$state, $period] = $resolved;
         try {
-            $state = $this->stateForAggregate($state, $dimension, $value);
+            $predicate = $this->aggregatePredicate($dimension, $value);
         } catch (\InvalidArgumentException $exception) {
             Notification::make()->danger()->title($exception->getMessage())->send();
 
             return;
         }
-        $this->cohortPreviewCount = $this->previewCountForState($state, $period);
-        $this->cohortDrilldownReason = $this->cohortReason($state);
-        $this->cohortClients = $this->cohortDisplayRows($actor, $state, $period);
+        $this->cohortPreviewCount = $this->previewCountForState($state, $period, $predicate);
+        $this->cohortDrilldownReason = $this->aggregateReason($state, $predicate);
+        $this->cohortClients = $this->cohortDisplayRows($actor, $state, $period, $predicate, self::CohortDisplayLimit);
     }
 
     public function export(): ?StreamedResponse
@@ -675,6 +684,7 @@ final class AnalyticsConsole extends LocalizedPage
         abort_unless($actor instanceof User, 403);
         $this->dimensionErrors = [];
         $this->cohortClients = [];
+        $this->cohortClientsTruncated = false;
         $this->resetValidation();
         $resolved = $this->validatedStateAndPeriod('экспорт');
         if ($resolved === null) {
@@ -832,6 +842,7 @@ final class AnalyticsConsole extends LocalizedPage
                 'key' => $source->key,
                 'label' => $source->label,
                 'count' => $source->count,
+                'kind' => $source->kind,
             ], $data->sources),
         ];
     }
@@ -1243,7 +1254,7 @@ final class AnalyticsConsole extends LocalizedPage
     }
 
     /** @param array<string, mixed>|Get $stateOrGet */
-    private function previewCountForState(array|Get $stateOrGet, ?DashboardPeriod $period = null): int
+    private function previewCountForState(array|Get $stateOrGet, ?DashboardPeriod $period = null, ?AnalyticsAggregatePredicate $predicate = null): int
     {
         if ($stateOrGet instanceof Get) {
             $state = [];
@@ -1274,7 +1285,12 @@ final class AnalyticsConsole extends LocalizedPage
         }
 
         try {
-            return app(ClientCohortQuery::class)->previewCount($actor, $this->cohortFilters($state), $period);
+            $query = app(ClientCohortQuery::class)->for($actor, $this->cohortFilters($state), $period);
+            if ($predicate instanceof AnalyticsAggregatePredicate) {
+                app(ClientCohortQuery::class)->constrainAggregate($query, $predicate, $period);
+            }
+
+            return $query->count('clients.id');
         } catch (Throwable) {
             return 0;
         }
@@ -1323,16 +1339,50 @@ final class AnalyticsConsole extends LocalizedPage
     }
 
     /** @param array<string, mixed> $state
+     * @return Builder<Client>
+     */
+    private function cohortClientQuery(
+        User $actor,
+        array $state,
+        DashboardPeriod $period,
+        ?AnalyticsAggregatePredicate $predicate = null,
+    ): Builder {
+        $query = app(ClientCohortQuery::class)->for($actor, $this->cohortFilters($state), $period);
+        if ($predicate instanceof AnalyticsAggregatePredicate) {
+            app(ClientCohortQuery::class)->constrainAggregate($query, $predicate, $period);
+        }
+
+        return $query;
+    }
+
+    /** @param array<string, mixed> $state
      * @return list<array<string, mixed>>
      */
-    private function cohortDisplayRows(User $actor, array $state, DashboardPeriod $period): array
-    {
+    private function cohortDisplayRows(
+        User $actor,
+        array $state,
+        DashboardPeriod $period,
+        ?AnalyticsAggregatePredicate $predicate = null,
+        ?int $limit = null,
+    ): array {
         $sourceOptions = app(AttributionSourceCatalog::class)->optionsForSelection(app(OrganizationContext::class)->id());
-        $reason = $this->cohortReason($state);
+        $reason = $predicate instanceof AnalyticsAggregatePredicate
+            ? $this->aggregateReason($state, $predicate)
+            : $this->cohortReason($state);
 
-        $rows = app(ClientCohortQuery::class)->for($actor, $this->cohortFilters($state), $period)
-            ->orderBy('clients.full_name')
-            ->get(['clients.id', 'clients.full_name', 'clients.gender', 'clients.birth_date', 'clients.country', 'clients.lead_source'])
+        $query = $this->cohortClientQuery($actor, $state, $period, $predicate)
+            ->orderBy('clients.full_name');
+        if ($limit !== null) {
+            $query->limit($limit + 1);
+        }
+        $clients = $query
+            ->get(['clients.id', 'clients.full_name', 'clients.gender', 'clients.birth_date', 'clients.country', 'clients.lead_source']);
+        $this->cohortClientsTruncated = $limit !== null && $clients->count() > $limit;
+        if ($limit !== null) {
+            $clients = $clients->take($limit);
+        }
+
+        $rows = $clients
             ->map(static fn (Client $client): array => [
                 'id' => (int) $client->getKey(),
                 'name' => (string) $client->full_name,
@@ -1416,114 +1466,244 @@ final class AnalyticsConsole extends LocalizedPage
         return $parts === [] ? 'Все клиенты' : 'Соответствует фильтрам: '.implode(', ', $parts);
     }
 
-    /** @param array<string, mixed> $state
-     * @return array<string, mixed>
-     */
-    private function stateForAggregate(array $state, string $dimension, string|int $value): array
+    private function aggregatePredicate(string $dimension, string|int $value): AnalyticsAggregatePredicate
     {
-        $append = static function (array $state, string $key, string|int $value): array {
-            $values = is_array($state[$key] ?? null) ? $state[$key] : [];
-            $values[] = $value;
-            $state[$key] = array_values(array_unique($values));
-
-            return $state;
-        };
+        $organizationId = app(OrganizationContext::class)->id();
+        $unknown = AnalyticsAggregatePredicate::UnknownValue;
         $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
 
         return match ($dimension) {
-            'pain' => $id === false ? throw new \InvalidArgumentException('Категория проблемы недоступна для детализации.') : $this->aggregateProblemState($state, (int) $id, $append),
-            'feedback' => $id === false ? throw new \InvalidArgumentException('Тема обратной связи недоступна для детализации.') : $append($state, 'cohort_feedback_theme_ids', (int) $id),
-            'goals' => $id === false ? throw new \InvalidArgumentException('Категория цели недоступна для детализации.') : $append($state, 'cohort_goal_tag_ids', (int) $id),
-            'services' => $id === false ? throw new \InvalidArgumentException('Услуга недоступна для детализации.') : $append($state, 'cohort_service_ids', (int) $id),
-            'specialists' => $id === false ? throw new \InvalidArgumentException('Специалист недоступен для детализации.') : $append($state, 'cohort_specialist_ids', (int) $id),
-            'purchases' => $append($state, 'cohort_purchase_types', (string) $value),
-            'booking_statuses' => $append($state, 'cohort_booking_event_types', (string) $value),
-            'segments' => $append($state, 'cohort_segments', (string) $value),
-            'acquisition' => $this->aggregateSourceState($state, (string) $value, $append),
-            'demographics_age' => $this->aggregateAgeState($state, (string) $value),
-            'demographics_sex' => $this->aggregateSexState($state, (string) $value, $append),
-            'demographics_children' => match ((string) $value) {
-                'Дети' => [...$state, 'cohort_children' => true, 'cohort_age_min' => null, 'cohort_age_max' => null, 'cohort_age_range' => null],
-                'Взрослые' => [...$state, 'cohort_children' => false, 'cohort_age_min' => null, 'cohort_age_max' => null, 'cohort_age_range' => null],
-                default => throw new \InvalidArgumentException('Категория возраста недоступна для детализации.'),
-            },
-            'demographics_country' => $this->aggregateCountryState($state, (string) $value, $append),
+            'pain' => $id === false
+                ? throw new \InvalidArgumentException('Категория проблемы недоступна для детализации.')
+                : $this->aggregateCatalogPredicate(
+                    AnalyticsAggregateDimension::ProblemTag,
+                    (int) $id,
+                    app(MedicalProblemTagCatalog::class)->optionsForSelection($organizationId, [(int) $id]),
+                    'Категория проблемы',
+                ),
+            'feedback' => $id === false
+                ? throw new \InvalidArgumentException('Тема обратной связи недоступна для детализации.')
+                : $this->aggregateCatalogPredicate(
+                    AnalyticsAggregateDimension::FeedbackTheme,
+                    (int) $id,
+                    app(FeedbackThemeCatalog::class)->optionsForSelection($organizationId, [(int) $id]),
+                    'Тема обратной связи',
+                ),
+            'goals' => $id === false
+                ? throw new \InvalidArgumentException('Категория цели недоступна для детализации.')
+                : $this->aggregateCatalogPredicate(
+                    AnalyticsAggregateDimension::GoalTag,
+                    (int) $id,
+                    app(TrackerGoalTagCatalog::class)->optionsForSelection($organizationId, [(int) $id]),
+                    'Категория цели',
+                ),
+            'services' => $this->aggregateServicePredicate($id),
+            'specialists' => $this->aggregateSpecialistPredicate($id),
+            'acquisition' => $this->aggregateSourcePredicate((string) $value),
+            'acquisition_unknown' => (string) $value === $unknown
+                ? new AnalyticsAggregatePredicate(AnalyticsAggregateDimension::AcquisitionUnknown, $unknown, displayLabel: 'источник привлечения «Не указан»')
+                : throw new \InvalidArgumentException('Источник привлечения недоступен для детализации.'),
+            'purchases' => $this->aggregatePurchasePredicate((string) $value),
+            'booking_statuses' => $this->aggregateBookingPredicate((string) $value),
+            'segments' => $this->aggregateSegmentPredicate((string) $value),
+            'demographics_age' => $this->aggregateAgePredicate((string) $value),
+            'demographics_age_unknown' => (string) $value === $unknown
+                ? new AnalyticsAggregatePredicate(AnalyticsAggregateDimension::AgeUnknown, $unknown, displayLabel: 'возраст «Не указано»')
+                : throw new \InvalidArgumentException('Возрастной диапазон недоступен для детализации.'),
+            'demographics_sex' => $this->aggregateSexPredicate((string) $value),
+            'demographics_sex_unknown' => (string) $value === $unknown
+                ? new AnalyticsAggregatePredicate(AnalyticsAggregateDimension::SexUnknown, $unknown, displayLabel: 'пол «Не указано»')
+                : throw new \InvalidArgumentException('Пол недоступен для детализации.'),
+            'demographics_children' => $this->aggregateChildrenPredicate((string) $value),
+            'demographics_children_unknown' => (string) $value === $unknown
+                ? new AnalyticsAggregatePredicate(AnalyticsAggregateDimension::ChildrenUnknown, $unknown, displayLabel: 'возрастная категория «Не указано»')
+                : throw new \InvalidArgumentException('Возрастная категория недоступна для детализации.'),
+            'demographics_country' => (string) $value === $unknown
+                ? new AnalyticsAggregatePredicate(AnalyticsAggregateDimension::CountryUnknown, $unknown, displayLabel: 'страна «Не указана»')
+                : $this->aggregateCountryPredicate((string) $value),
             default => throw new \InvalidArgumentException('Для этого агрегата детализация клиентов недоступна.'),
         };
     }
 
-    /** @param array<string, mixed> $state
-     * @param  callable(array<string, mixed>, string, string|int): array<string, mixed>  $append
-     * @return array<string, mixed>
-     */
-    private function aggregateProblemState(array $state, int $tagId, callable $append): array
-    {
-        $state = $append($state, 'cohort_problem_tag_ids', $tagId);
-        $state['cohort_problem_tag_mode'] = 'all';
-        $state['cohort_exclude_problem_tag_ids'] = array_values(array_diff((array) ($state['cohort_exclude_problem_tag_ids'] ?? []), [$tagId]));
+    /** @param array<int|string, string> $options */
+    private function aggregateCatalogPredicate(
+        AnalyticsAggregateDimension $dimension,
+        int $id,
+        array $options,
+        string $label,
+    ): AnalyticsAggregatePredicate {
+        if (! array_key_exists($id, $options)) {
+            throw new \InvalidArgumentException($label.' недоступна для детализации.');
+        }
 
-        return $state;
+        return new AnalyticsAggregatePredicate(
+            dimension: $dimension,
+            value: $id,
+            displayLabel: $label.' «'.$options[$id].'»',
+        );
     }
 
-    /** @param array<string, mixed> $state
-     * @param  callable(array<string, mixed>, string, string|int): array<string, mixed>  $append
-     * @return array<string, mixed>
-     */
-    private function aggregateSourceState(array $state, string $label, callable $append): array
+    private function aggregateServicePredicate(int|false $id): AnalyticsAggregatePredicate
     {
-        foreach (app(AttributionSourceCatalog::class)->rows(app(OrganizationContext::class)->id()) as $mapping) {
-            if ($mapping['label'] === $label) {
-                return $append($state, 'cohort_source_keys', $mapping['source_key']);
+        if ($id === false) {
+            throw new \InvalidArgumentException('Услуга недоступна для детализации.');
+        }
+        $service = Service::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->find($id);
+        if (! $service instanceof Service) {
+            throw new \InvalidArgumentException('Услуга недоступна для детализации.');
+        }
+
+        return new AnalyticsAggregatePredicate(
+            dimension: AnalyticsAggregateDimension::Service,
+            value: (int) $service->getKey(),
+            displayLabel: 'услуга «'.$service->name.'»',
+        );
+    }
+
+    private function aggregateSpecialistPredicate(int|false $id): AnalyticsAggregatePredicate
+    {
+        if ($id === false) {
+            throw new \InvalidArgumentException('Специалист недоступен для детализации.');
+        }
+        $specialist = Specialist::query()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->find($id);
+        if (! $specialist instanceof Specialist) {
+            throw new \InvalidArgumentException('Специалист недоступен для детализации.');
+        }
+
+        return new AnalyticsAggregatePredicate(
+            dimension: AnalyticsAggregateDimension::Specialist,
+            value: (int) $specialist->getKey(),
+            displayLabel: 'специалист «'.$specialist->display_name.'»',
+        );
+    }
+
+    private function aggregateSourcePredicate(string $key): AnalyticsAggregatePredicate
+    {
+        $key = trim($key);
+        foreach (app(AttributionSourceCatalog::class)->rows(app(OrganizationContext::class)->id()) as $source) {
+            if ($source['source_key'] === $key) {
+                return new AnalyticsAggregatePredicate(
+                    dimension: AnalyticsAggregateDimension::AcquisitionSource,
+                    value: $key,
+                    displayLabel: 'источник привлечения «'.$source['label'].'»',
+                );
             }
         }
 
         throw new \InvalidArgumentException('Источник привлечения недоступен для детализации.');
     }
 
-    /** @param array<string, mixed> $state
-     * @return array<string, mixed>
-     */
-    private function aggregateAgeState(array $state, string $label): array
+    private function aggregatePurchasePredicate(string $key): AnalyticsAggregatePredicate
     {
-        foreach (app(ClientAgeRangeCatalog::class)->rows(app(OrganizationContext::class)->id()) as $range) {
-            if ($range['label'] === $label) {
-                return [
-                    ...$state,
-                    'cohort_age_min' => $range['min'],
-                    'cohort_age_max' => $range['max'],
-                    'cohort_age_range' => null,
-                    'cohort_children' => null,
-                ];
+        $key = trim($key);
+        $label = app(PurchaseGroupCatalog::class)->options(app(OrganizationContext::class)->id(), false)[$key] ?? null;
+        if (! is_string($label)) {
+            throw new \InvalidArgumentException('Группа покупок недоступна для детализации.');
+        }
+
+        return new AnalyticsAggregatePredicate(
+            dimension: AnalyticsAggregateDimension::PurchaseGroup,
+            value: $key,
+            displayLabel: 'группа покупок «'.$label.'»',
+        );
+    }
+
+    private function aggregateBookingPredicate(string $key): AnalyticsAggregatePredicate
+    {
+        $label = BookingStatusAnalytics::options()[$key] ?? null;
+        if (! is_string($label)) {
+            throw new \InvalidArgumentException('Событие записи недоступно для детализации.');
+        }
+
+        return new AnalyticsAggregatePredicate(
+            dimension: AnalyticsAggregateDimension::BookingEvent,
+            value: $key,
+            displayLabel: 'событие записи «'.$label.'»',
+        );
+    }
+
+    private function aggregateSegmentPredicate(string $key): AnalyticsAggregatePredicate
+    {
+        $segment = ClientSegment::tryFrom($key);
+        if (! $segment instanceof ClientSegment) {
+            throw new \InvalidArgumentException('Категория клиентов недоступна для детализации.');
+        }
+
+        return new AnalyticsAggregatePredicate(
+            dimension: AnalyticsAggregateDimension::Segment,
+            value: $segment->value,
+            displayLabel: 'категория клиентов «'.$segment->label().'»',
+        );
+    }
+
+    private function aggregateAgePredicate(string $key): AnalyticsAggregatePredicate
+    {
+        foreach (app(ClientAgeRangeCatalog::class)->rows(app(OrganizationContext::class)->id(), true) as $range) {
+            if ($range['key'] === $key) {
+                return new AnalyticsAggregatePredicate(
+                    dimension: AnalyticsAggregateDimension::AgeRange,
+                    value: $range['key'],
+                    minimum: $range['min'],
+                    maximum: $range['max'],
+                    displayLabel: 'возраст «'.$range['label'].'»',
+                );
             }
         }
 
         throw new \InvalidArgumentException('Возрастной диапазон недоступен для детализации.');
     }
 
-    /** @param array<string, mixed> $state
-     * @param  callable(array<string, mixed>, string, string|int): array<string, mixed>  $append
-     * @return array<string, mixed>
-     */
-    private function aggregateSexState(array $state, string $label, callable $append): array
+    private function aggregateSexPredicate(string $value): AnalyticsAggregatePredicate
     {
-        return match ($label) {
-            'Мужчины' => $append($state, 'cohort_genders', 'MALE'),
-            'Женщины' => $append($state, 'cohort_genders', 'FEMALE'),
-            default => throw new \InvalidArgumentException('Пол недоступен для детализации.'),
-        };
-    }
-
-    /** @param array<string, mixed> $state
-     * @param  callable(array<string, mixed>, string, string|int): array<string, mixed>  $append
-     * @return array<string, mixed>
-     */
-    private function aggregateCountryState(array $state, string $label, callable $append): array
-    {
-        if ($label === 'Не указана') {
-            throw new \InvalidArgumentException('Клиенты без страны не поддерживают точную детализацию.');
+        $labels = ['MALE' => 'Мужчины', 'FEMALE' => 'Женщины'];
+        if (! array_key_exists($value, $labels)) {
+            throw new \InvalidArgumentException('Пол недоступен для детализации.');
         }
 
-        return $append($state, 'cohort_countries', $label);
+        return new AnalyticsAggregatePredicate(
+            dimension: AnalyticsAggregateDimension::Sex,
+            value: $value,
+            displayLabel: 'пол «'.$labels[$value].'»',
+        );
+    }
+
+    private function aggregateChildrenPredicate(string $value): AnalyticsAggregatePredicate
+    {
+        $labels = ['children' => 'Дети', 'adult' => 'Взрослые'];
+        if (! array_key_exists($value, $labels)) {
+            throw new \InvalidArgumentException('Возрастная категория недоступна для детализации.');
+        }
+
+        return new AnalyticsAggregatePredicate(
+            dimension: AnalyticsAggregateDimension::Children,
+            value: $value,
+            displayLabel: 'возрастная категория «'.$labels[$value].'»',
+        );
+    }
+
+    private function aggregateCountryPredicate(string $value): AnalyticsAggregatePredicate
+    {
+        $value = trim($value);
+        if ($value === '') {
+            throw new \InvalidArgumentException('Страна недоступна для детализации.');
+        }
+
+        return new AnalyticsAggregatePredicate(
+            dimension: AnalyticsAggregateDimension::Country,
+            value: $value,
+            displayLabel: 'страна «'.$value.'»',
+        );
+    }
+
+    /** @param array<string, mixed> $state */
+    private function aggregateReason(array $state, AnalyticsAggregatePredicate $predicate): string
+    {
+        return 'Базовая выборка: '.implode('; ', $this->cohortFilterLabels($state))
+            .'. Строка отчёта: '.$predicate->displayLabel.'.';
     }
 
     /** @return array<int|string, string> */

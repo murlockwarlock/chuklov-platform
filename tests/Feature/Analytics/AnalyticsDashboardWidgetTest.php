@@ -271,7 +271,224 @@ final class AnalyticsDashboardWidgetTest extends TestCase
             ->call('showAggregateClients', 'services', $service->getKey());
 
         self::assertSame([$selected->full_name], array_column($component->instance()->cohortClients, 'name'));
-        self::assertStringContainsString('записи и услуги', (string) $component->instance()->cohortDrilldownReason);
+        self::assertStringContainsString('услуга «Комплексная терапия»', (string) $component->instance()->cohortDrilldownReason);
+    }
+
+    public function test_service_aggregate_drilldown_intersects_base_or_without_mutating_form_or_session_state(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $serviceA = Service::factory()->forOrganization($organization)->create(['name' => 'Сервис A']);
+        $serviceB = Service::factory()->forOrganization($organization)->create(['name' => 'Сервис B']);
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $clientA = Client::factory()->forOrganization($organization)->create(['full_name' => 'Клиент A']);
+        $clientB = Client::factory()->forOrganization($organization)->create(['full_name' => 'Клиент B']);
+        $clientBoth = Client::factory()->forOrganization($organization)->create(['full_name' => 'Клиент A+B']);
+        $foreignOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+        $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create(['full_name' => 'Чужой клиент']);
+        $foreignSpecialist = Specialist::factory()->forOrganization($foreignOrganization)->create();
+        $foreignService = Service::factory()->forOrganization($foreignOrganization)->create(['name' => 'Сервис A']);
+        $bookingAttributes = [
+            'status' => 'completed',
+            'starts_at' => '2026-10-10 12:00:00',
+            'ends_at' => '2026-10-10 13:00:00',
+            'blocking_ends_at' => '2026-10-10 13:00:00',
+        ];
+        Booking::factory()->forClient($clientA)->forSpecialist($specialist)->forService($serviceA)->create($bookingAttributes);
+        Booking::factory()->forClient($clientB)->forSpecialist($specialist)->forService($serviceB)->create($bookingAttributes);
+        Booking::factory()->forClient($clientBoth)->forSpecialist($specialist)->forService($serviceA)->create($bookingAttributes);
+        Booking::factory()->forClient($clientBoth)->forSpecialist($specialist)->forService($serviceB)->create($bookingAttributes);
+        Booking::factory()->forClient($foreignClient)->forSpecialist($foreignSpecialist)->forService($foreignService)->create($bookingAttributes);
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['services'],
+                'cohort_service_ids' => [$serviceA->getKey(), $serviceB->getKey()],
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-11',
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+        $beforeData = $component->instance()->data;
+        $beforeSession = session()->get('analytics.console.state.'.$organization->getKey());
+
+        $component->call('showAggregateClients', 'services', $serviceA->getKey());
+
+        self::assertSame(['Клиент A', 'Клиент A+B'], array_column($component->instance()->cohortClients, 'name'));
+        self::assertSame(2, $component->instance()->cohortPreviewCount);
+        self::assertSame($beforeData, $component->instance()->data);
+        self::assertSame($beforeSession, session()->get('analytics.console.state.'.$organization->getKey()));
+        self::assertStringContainsString('услуга «Сервис A»', (string) $component->instance()->cohortDrilldownReason);
+
+        $component->call('showAggregateClients', 'services', $serviceB->getKey());
+
+        self::assertSame(['Клиент A+B', 'Клиент B'], array_column($component->instance()->cohortClients, 'name'));
+        self::assertSame(2, $component->instance()->cohortPreviewCount);
+        self::assertSame(['Сервис A', 'Сервис B'], $component->instance()->results['services']['services'] !== []
+            ? array_column($component->instance()->results['services']['services'], 'name')
+            : []);
+
+        $component
+            ->call('export')
+            ->assertFileDownloaded('analytics-2026-10-01-2026-10-11.xlsx');
+        self::assertSame(3, $component->instance()->cohortPreviewCount);
+    }
+
+    public function test_problem_aggregate_drilldown_intersects_any_without_turning_it_into_all_or_duplication(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $neck = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Шея',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $back = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Спина',
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $neckClient = Client::factory()->forOrganization($organization)->create(['full_name' => 'Только шея']);
+        $backClient = Client::factory()->forOrganization($organization)->create(['full_name' => 'Только спина']);
+        $bothClient = Client::factory()->forOrganization($organization)->create(['full_name' => 'Шея и спина']);
+        $singleSessionClient = Client::factory()->forOrganization($organization)->create(['full_name' => 'Две боли в одном сеансе']);
+        $foreignOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+        $foreignAdmin = User::factory()->forOrganization($foreignOrganization, OrganizationRole::Administrator)->create();
+        $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create(['full_name' => 'Чужая шея']);
+        $foreignSpecialist = Specialist::factory()->forOrganization($foreignOrganization)->create();
+        $foreignNeck = MedicalProblemTag::query()->create([
+            'organization_id' => $foreignOrganization->getKey(),
+            'name' => 'Шея',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+
+        app(OrganizationContext::class)->set($organization);
+        $this->createPainSession($admin, $neckClient, $specialist, '2026-10-05 09:00:00', [[
+            'name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 8, 'after_score' => 6,
+        ]]);
+        $this->createPainSession($admin, $backClient, $specialist, '2026-10-05 10:00:00', [[
+            'name' => 'Спина', 'tag_ids' => [$back->getKey()], 'before_score' => 8, 'after_score' => 6,
+        ]]);
+        $this->createPainSession($admin, $bothClient, $specialist, '2026-10-05 11:00:00', [[
+            'name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 8, 'after_score' => 6,
+        ]]);
+        $this->createPainSession($admin, $bothClient, $specialist, '2026-10-05 12:00:00', [[
+            'name' => 'Спина', 'tag_ids' => [$back->getKey()], 'before_score' => 8, 'after_score' => 6,
+        ]]);
+        $this->createPainSession($admin, $singleSessionClient, $specialist, '2026-10-05 13:00:00', [
+            ['name' => 'Шея утром', 'tag_ids' => [$neck->getKey()], 'before_score' => 8, 'after_score' => 8],
+            ['name' => 'Шея вечером', 'tag_ids' => [$neck->getKey()], 'before_score' => 8, 'after_score' => 6],
+        ]);
+        app(OrganizationContext::class)->set($foreignOrganization);
+        $this->createPainSession($foreignAdmin, $foreignClient, $foreignSpecialist, '2026-10-05 14:00:00', [[
+            'name' => 'Шея', 'tag_ids' => [$foreignNeck->getKey()], 'before_score' => 8, 'after_score' => 6,
+        ]]);
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['pain'],
+                'cohort_problem_tag_ids' => [$neck->getKey(), $back->getKey()],
+                'cohort_problem_tag_mode' => 'any',
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-11',
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+        $beforeData = $component->instance()->data;
+        $beforeSession = session()->get('analytics.console.state.'.$organization->getKey());
+
+        $component->call('showAggregateClients', 'pain', $neck->getKey());
+
+        self::assertSame(['Две боли в одном сеансе', 'Только шея', 'Шея и спина'], array_column($component->instance()->cohortClients, 'name'));
+        self::assertSame(3, $component->instance()->cohortPreviewCount);
+        self::assertSame('any', $component->instance()->data['cohort_problem_tag_mode']);
+        self::assertSame($beforeData, $component->instance()->data);
+        self::assertSame($beforeSession, session()->get('analytics.console.state.'.$organization->getKey()));
+
+        $component->call('showAggregateClients', 'pain', $back->getKey());
+
+        self::assertSame(['Только спина', 'Шея и спина'], array_column($component->instance()->cohortClients, 'name'));
+        self::assertSame('any', $component->instance()->data['cohort_problem_tag_mode']);
+    }
+
+    public function test_source_aggregate_uses_stable_key_and_exact_new_client_period(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        app(AttributionSourceCatalog::class)->save($admin, [
+            ['source_key' => 'instagram', 'label' => 'Instagram владелец', 'aliases' => [], 'is_active' => true, 'sort_order' => 1],
+            ['source_key' => 'telegram', 'label' => 'Telegram владелец', 'aliases' => [], 'is_active' => true, 'sort_order' => 2],
+        ]);
+        $instagram = Client::factory()->forOrganization($organization)->create(['full_name' => 'Instagram клиент', 'created_at' => '2026-10-05 10:00:00']);
+        $telegram = Client::factory()->forOrganization($organization)->create(['full_name' => 'Telegram клиент', 'created_at' => '2026-10-05 10:00:00']);
+        $oldInstagram = Client::factory()->forOrganization($organization)->create(['full_name' => 'Старый Instagram', 'created_at' => '2026-09-05 10:00:00']);
+        $foreignOrganization = Organization::factory()->create(['timezone' => 'UTC']);
+        $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create(['full_name' => 'Чужой Instagram', 'created_at' => '2026-10-05 10:00:00']);
+        $this->createAttribution($organization, $instagram, 'instagram');
+        $this->createAttribution($organization, $telegram, 'telegram');
+        $this->createAttribution($organization, $oldInstagram, 'instagram');
+        $this->createAttribution($foreignOrganization, $foreignClient, 'instagram');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->fillForm([
+                'dimensions' => ['acquisition'],
+                'cohort_source_keys' => ['instagram', 'telegram'],
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-11',
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+        $beforeData = $component->instance()->data;
+        $beforeSession = session()->get('analytics.console.state.'.$organization->getKey());
+        $instagramRow = collect($component->instance()->results['acquisition']['sources'])->firstWhere('key', 'instagram');
+
+        self::assertSame('known', $instagramRow['kind']);
+        self::assertSame(1, $instagramRow['count']);
+        $component->call('showAggregateClients', 'acquisition', 'instagram');
+
+        self::assertSame(['Instagram клиент'], array_column($component->instance()->cohortClients, 'name'));
+        self::assertSame(1, $component->instance()->cohortPreviewCount);
+        self::assertSame($beforeData, $component->instance()->data);
+        self::assertSame($beforeSession, session()->get('analytics.console.state.'.$organization->getKey()));
+        self::assertStringContainsString('Instagram владелец', (string) $component->instance()->cohortDrilldownReason);
+    }
+
+    private function createAttribution(Organization $organization, Client $client, string $source): void
+    {
+        $attribution = new ClientAttribution;
+        $attribution->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'source_type' => 'source',
+            'source' => $source,
+            'capture_channel' => 'test',
+            'capture_context' => 'analytics',
+            'captured_at' => '2026-10-05 10:00:00',
+            'accepted_at' => '2026-10-05 10:00:00',
+        ])->save();
+    }
+
+    /** @param array<int, mixed> $pains */
+    private function createPainSession(User $admin, Client $client, Specialist $specialist, string $occurredAt, array $pains): void
+    {
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse($occurredAt, 'UTC'),
+            pains: $pains,
+        ));
     }
 
     public function test_analytics_console_preserves_taxonomy_filters_for_multiple_dimensions(): void
