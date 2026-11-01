@@ -3144,9 +3144,9 @@ test('analytics problem session axis keeps problem numbering separate from globa
     expect(sharedStringsXml).toContain('Порядок сеансов конкретной категории проблемы');
     expect(sharedStringsXml).toContain('problem-chronological-v1');
     const painSheetXml = execFileSync('unzip', ['-p', downloadPath, 'xl/worksheets/sheet4.xml'], { encoding: 'utf8' });
-    expect(painSheetXml).toContain('<v>8</v>');
-    expect(painSheetXml).toContain('<v>4</v>');
-    expect(painSheetXml).toContain('<v>1</v>');
+    expect(painSheetXml).toMatch(/<v>8(?:\.0)?<\/v>/);
+    expect(painSheetXml).toMatch(/<v>4(?:\.0)?<\/v>/);
+    expect(painSheetXml).toMatch(/<v>1(?:\.0)?<\/v>/);
 
     await page.setViewportSize({ width: 390, height: 900 });
     await assertNoHorizontalOverflow(page);
