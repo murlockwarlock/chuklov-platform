@@ -212,6 +212,83 @@ horizontal-overflow checks. The staging catalog had no active problem-tag
 options, so the synthetic 8/4/1 problem-value slice is evidenced by the hosted
 browser fixture rather than by creating additional staging medical data.
 
+## Aggregate drill-down follow-up
+
+This bounded pass started from the last staging-verified application source
+`bbd671255c8919e948d2d4c2e84dd3784ab2e050`. The current PR head before this
+implementation was `9e2e44c035de27237c49fcce51ae7071ddeedfec`; its diff from
+that application source was documentation/E2E-only, so it was not treated as a
+runtime baseline.
+
+The old `AnalyticsConsole::stateForAggregate()` appended a clicked row value
+to the persisted cohort state. A base `Услуги = A OR B` therefore remained
+`A OR B` when the user opened the A row, and a base `Категории проблем = Neck
+OR Back` with mode `any` could be changed to `Neck AND Back`. Source and age
+rows also reconstructed predicates from display labels, and missing-country
+rows could not be opened exactly.
+
+The fix adds the typed `AnalyticsAggregatePredicate` and
+`AnalyticsAggregateDimension` abstractions inside the existing analytics
+authority. `ClientCohortQuery` continues to construct the base cohort and now
+constrains that same query with an exact aggregate predicate. IDs, stable
+source keys, purchase group keys, booking event keys, segment values and
+configured age-range keys are validated server-side. Demographic missing
+values use typed predicates that distinguish NULL/empty from known values.
+The UI keeps human labels and shows a concrete reason such as
+`Базовая выборка: ... Строка отчёта: услуга «Массаж».` Technical keys are not
+rendered.
+
+The service regression proves `A OR B` intersected with service A returns A
+and A+B only, and the B row independently returns B and A+B. The problem
+regression proves `any` remains `any`, Neck returns Neck-only plus Neck+Back,
+and Back returns Back-only plus Neck+Back. Two pain rows carrying one tag in
+one medical session produce one client result and one exact predicate match;
+existing row aggregation semantics are unchanged. The source regression uses
+the stable configured key rather than the display label. Typed regressions
+cover feedback themes, goals, specialists, purchases, booking events,
+segments, configured age ranges, sex, children, country, tenant scope,
+period scope, NULL/empty unknown buckets and deterministic result handling.
+
+Aggregate drill-down never writes `cohort_*` fields, `problem_tag_mode`,
+session-backed filters or saved-group state. The regression compares form/data
+and session state before and after service, problem and source drill-down.
+Ordinary XLSX export remains based on the base cohort and is not changed by
+opening a row; no separate drill-down export action was added.
+
+Focused local feature coverage is PASS for the aggregate predicate, dashboard,
+cohort, export and adjacent analytics suites: the aggregate-focused subset
+passed 42 tests and 291 assertions; the wider focused analytics run passed 77
+tests and 610 assertions. Local Playwright was attempted but NOT VERIFIED
+because the local E2E server returned HTTP 500: its PostgreSQL instance has no
+`chuklov` role.
+
+The final application candidate for this bounded pass is
+`cb7d34f5499ec65d64c8a44a767fa7cd5f711424` (the implementation is in
+`b743d67dc769e08ca8cc6b948803903fe95c70b7`; later commits only stabilized the
+hosted fixture and browser selectors). Hosted PostgreSQL run
+[`41324609707`](https://github.com/murlockwarlock/chuklov-platform/actions/runs/41324609707)
+passed the focused integration job, including exact aggregate predicates,
+tenant scope and NULL/empty handling. Hosted focused browser run
+[`41324119735`](https://github.com/murlockwarlock/chuklov-platform/actions/runs/41324119735)
+passed all 9 synthetic aggregate scenarios: service, problem and missing
+country on Chromium desktop, Chromium mobile and WebKit desktop.
+
+The protected staging deploy of exact application SHA
+`cb7d34f5499ec65d64c8a44a767fa7cd5f711424` passed. Migrations reported
+`Nothing to migrate`, the protected runtime health checks passed, and
+`scripts/staging-smoke.sh` passed with the same SHA. Staging browser acceptance
+then used the saved QA CRM session on the real `/admin/analytics-console` path.
+For the base cohort `Synthetic proof service 20261010` plus
+`Индивидуальная консультация`, the report row showed `1 · 1 клиентов`; opening
+the row showed exactly one client, `Synthetic acceptance 20261009`, and the
+reason `Строка отчёта: услуга «Synthetic proof service 20261010».` The two
+service selections remained unchanged after close, reload and back/forward;
+`__unknown__` was not rendered and the document had no horizontal overflow.
+The visible journey passed at Chromium 1440px, Chromium 390px and WebKit
+1440px. WebKit emitted non-visible Livewire page errors while replaying browser
+history, but the expected result, state and layout assertions still passed;
+console-clean verification is therefore not claimed as a separate PASS.
+
 ## Literal reconciliation matrix
 
 The following matrix is the current implementation decision for every numbered
