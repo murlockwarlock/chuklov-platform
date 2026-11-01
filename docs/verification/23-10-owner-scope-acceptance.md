@@ -158,6 +158,60 @@ normal deploy of `e5d4b609` stopped in remote preflight at line 412 while
 writing `shared/backups/predeploy-e5d4b6090b22efdb116d43181ec428927419370b/captured-at.txt`:
 `No space left on device`, before migrations, release switching or restart.
 
+## Problem-specific session-axis follow-up
+
+This bounded follow-up started from
+`7178e7b1df10b76691e5a5d8ef40baa89e5995ce`.
+
+The old `PainAnalytics` behavior ranked medical sessions globally per client.
+Therefore a complaint first appearing on global session 5 could be reported as
+problem session 5 instead of problem session 1. The regression fixture exposed
+that mismatch with earlier sessions for other complaints, a later neck
+complaint, an independent back complaint, multiple clients, a foreign
+organization and two neck rows in one session.
+
+The fix extends the existing `ClientSessionAxisCatalog` with the
+`problem_chronological` authority. Its owner-facing label is
+`Порядок сеансов конкретной категории проблемы` and its rule version is
+`problem-chronological-v1`; the internal key is not rendered as owner-facing
+configuration text. For each organization, client and problem tag, distinct
+medical-session/tag pairs are ranked by `occurred_at`, then medical-session ID.
+The resulting ordinal is shared by all pain rows for that tag in that session.
+Different tags, clients and organizations have independent sequences. Existing
+aggregation semantics and average/reduction formulas were not changed.
+
+The missing-setting default is now problem-specific, while an explicit owner
+selection remains authoritative. `client_chronological` retains the previous
+global semantics. The problem-specific axis ranks against the client's full
+history and applies the selected DashboardPeriod to report events after
+ranking; the existing period-specific mode remains separate. The regression
+also covers the selected problem filter, equal timestamps, NULL versus zero,
+and period behavior.
+
+Regression coverage is in
+`tests/Feature/Analytics/PainAnalyticsTest.php`,
+`tests/Feature/Analytics/AnalyticsMetricConfigurationTest.php`,
+`tests/Feature/Analytics/AnalyticsReportExportTest.php` and
+`tests/Integration/MilestoneElevenCAnalyticsPostgresTest.php`. The focused
+browser contract is in `tests/e2e/crm.spec.ts`.
+
+Hosted PostgreSQL run `41311070914` passed the affected integration job at
+`bdc50962`, covering window ranking, distinct session/tag pairs, tenant scope,
+deterministic ordering, period filtering and NULL/0 behavior. Hosted focused
+browser run `41312657472` passed 3/3 scenarios at `ea24fd65`, including actual
+category selection, Analyze, axis switching, reload persistence, XLSX and the
+390px overflow assertion. The generated XLSX contains the same session 1/2/3
+values as the report and writes the human label plus
+`problem-chronological-v1` in its metadata.
+
+The application candidate `bbd671255c8919e948d2d4c2e84dd3784ab2e050` was
+deployed through the protected staging path. Migrations reported no pending
+work and `scripts/staging-smoke.sh` passed. Direct Chromium staging checks at
+1440px and 390px passed axis setting persistence, Analyze, export metadata and
+horizontal-overflow checks. The staging catalog had no active problem-tag
+options, so the synthetic 8/4/1 problem-value slice is evidenced by the hosted
+browser fixture rather than by creating additional staging medical data.
+
 ## Literal reconciliation matrix
 
 The following matrix is the current implementation decision for every numbered
@@ -538,10 +592,10 @@ metadata cohort count equals the demographic denominator.
 - Owner acceptance: NOT RUN.
 - Remaining in-scope BLOCKING: 0 for this bounded pain-score pass.
 - Remaining confirmed REAL BUG / follow-up work not addressed in this pass:
-  problem-specific session axis; aggregate drill-down; atomic saved group CRUD;
-  AI candidate lifecycle; legacy root-cause field; preview error state;
-  human-friendly config; LTV percentage safe default. These findings are not
-  claimed fixed here.
+  aggregate drill-down; atomic saved group CRUD; AI candidate lifecycle;
+  legacy root-cause field; preview error state; human-friendly config; LTV
+  percentage safe default. These findings are not claimed fixed here. The
+  problem-specific session-axis item is covered by the follow-up above.
 
 Limitations are the known unrelated repository PHPStan baseline, the partial
 historical full-E2E result, the non-reproducible scheduling failures and no
