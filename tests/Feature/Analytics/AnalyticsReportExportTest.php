@@ -4,9 +4,15 @@ namespace Tests\Feature\Analytics;
 
 use App\Models\User;
 use App\Modules\Analytics\Application\AnalyticsReportExport;
+use App\Modules\Analytics\Application\ClientCohortQuery;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
+use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Analytics\Application\DemographicsAnalytics;
+use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -116,6 +122,57 @@ final class AnalyticsReportExportTest extends TestCase
         self::assertNotContains('После', $demographicsSheet->toArray()[0]);
         self::assertNotContains('До', $servicesSheet->toArray()[0]);
         self::assertStringNotContainsString('TRUE', $this->workbookText($workbook));
+    }
+
+    public function test_demographics_export_keeps_the_full_cohort_denominator(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Client::factory()->forOrganization($organization)->create([
+            'birth_date' => '1985-10-31',
+            'gender' => 'FEMALE',
+            'country' => 'RU',
+            'created_at' => '2025-01-15 10:00:00',
+            'updated_at' => '2025-01-15 10:00:00',
+        ]);
+        Client::factory()->forOrganization($organization)->create([
+            'birth_date' => '1985-11-01',
+            'gender' => 'MALE',
+            'country' => 'KZ',
+            'created_at' => '2026-10-15 10:00:00',
+            'updated_at' => '2026-10-15 10:00:00',
+        ]);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+        $filters = new ClientCohortFilters(countries: ['KZ', 'RU']);
+        $cohortCount = app(ClientCohortQuery::class)->previewCount($admin, $filters, $period);
+        $demographics = app(DemographicsAnalytics::class)->handle($admin, $period, cohortFilters: $filters);
+
+        self::assertSame(2, $cohortCount);
+        self::assertSame($cohortCount, $demographics->clientCount);
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download(
+            $admin,
+            ['demographics' => $demographics->toArray()],
+            metadata: ['cohort_count' => $cohortCount],
+        ));
+
+        $summary = $workbook->getSheetByName('Сводка');
+        $demographicsSheet = $workbook->getSheetByName('Демография');
+        self::assertNotNull($summary);
+        self::assertNotNull($demographicsSheet);
+        $cohortSummary = collect($summary->toArray())->first(
+            static fn (array $row): bool => ($row[0] ?? null) === 'Найдено клиентов',
+        );
+        self::assertIsArray($cohortSummary);
+        self::assertSame(2, (int) $cohortSummary[1]);
+        $demographicsSummary = collect($summary->toArray())->first(
+            static fn (array $row): bool => ($row[0] ?? null) === 'Клиенты в демографии',
+        );
+        self::assertIsArray($demographicsSummary);
+        self::assertSame(2, (int) $demographicsSummary[1]);
+        self::assertContains(['Страна', 'RU', '1', '50'], $demographicsSheet->toArray());
     }
 
     public function test_formula_like_labels_remain_exact_explicit_strings_and_numbers_remain_numeric(): void

@@ -34,9 +34,12 @@ final readonly class DemographicsAnalytics
         $clientId = $client?->getKey();
         $clients = DB::table('clients')
             ->where('organization_id', $organizationId)
-            ->where('created_at', '>=', $period->startUtc)
-            ->where('created_at', '<', $period->endUtc)
-            ->when($clientId !== null, fn ($query) => $query->where('id', $clientId))
+            ->when($clientId !== null, function ($query) use ($clientId, $period): void {
+                $query
+                    ->where('id', $clientId)
+                    ->where('created_at', '>=', $period->startUtc)
+                    ->where('created_at', '<', $period->endUtc);
+            })
             ->when($cohortFilters !== null, function ($query) use ($cohortFilters, $period): void {
                 $this->cohorts->constrain($query, 'clients.id', $cohortFilters, $period);
             })

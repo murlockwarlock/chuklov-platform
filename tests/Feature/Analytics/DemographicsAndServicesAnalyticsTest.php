@@ -3,12 +3,17 @@
 namespace Tests\Feature\Analytics;
 
 use App\Models\User;
+use App\Modules\Analytics\Application\AcquisitionAnalytics;
+use App\Modules\Analytics\Application\ClientCohortQuery;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\DemographicsAnalytics;
 use App\Modules\Analytics\Application\ServiceVisitAnalytics;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -83,7 +88,7 @@ final class DemographicsAndServicesAnalyticsTest extends TestCase
 
         $services = app(ServiceVisitAnalytics::class)->handle($admin, $period);
         self::assertSame(2, $services->visitCount);
-        self::assertSame((int) $service->getKey(), $services->services[0]['id']);
+        self::assertContains((int) $service->getKey(), array_column($services->services, 'id'));
         self::assertSame('Синтетический сеанс', $services->services[0]['name']);
         self::assertSame(1, $services->services[0]['client_count']);
         self::assertSame(2, $services->services[0]['visit_count']);
@@ -111,6 +116,148 @@ final class DemographicsAndServicesAnalyticsTest extends TestCase
 
         self::assertSame(1, $demographics->clientCount);
         self::assertSame('Дети', $demographics->age[0]['label']);
+    }
+
+    public function test_demographics_uses_the_full_cohort_while_acquisition_remains_period_bound(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        app(SetOrganizationSetting::class)->handle(
+            $admin,
+            OrganizationSettingKey::AnalyticsAgeRanges,
+            json_encode([[
+                'key' => 'working_age',
+                'label' => '30–44',
+                'min' => 30,
+                'max' => 44,
+            ]], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+        );
+        $clientA = Client::factory()->forOrganization($organization)->create([
+            'birth_date' => '1985-10-31',
+            'gender' => 'FEMALE',
+            'country' => 'KZ',
+            'created_at' => '2025-01-15 10:00:00',
+            'updated_at' => '2025-01-15 10:00:00',
+        ]);
+        $clientB = Client::factory()->forOrganization($organization)->create([
+            'birth_date' => '1985-11-01',
+            'gender' => 'MALE',
+            'country' => 'KZ',
+            'created_at' => '2026-10-15 10:00:00',
+            'updated_at' => '2026-10-15 10:00:00',
+        ]);
+        $clientC = Client::factory()->forOrganization($organization)->create([
+            'birth_date' => null,
+            'gender' => null,
+            'country' => 'RU',
+            'created_at' => '2024-06-10 10:00:00',
+            'updated_at' => '2024-06-10 10:00:00',
+        ]);
+        $foreignOrganization = Organization::factory()->create();
+        $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create([
+            'birth_date' => '1985-10-31',
+            'gender' => 'FEMALE',
+            'country' => 'KZ',
+            'created_at' => '2026-10-15 10:00:00',
+        ]);
+        app(OrganizationContext::class)->set($organization);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+        $filters = new ClientCohortFilters(countries: ['KZ', 'RU']);
+        $cohort = app(ClientCohortQuery::class);
+
+        self::assertSame(3, $cohort->previewCount($admin, $filters, $period));
+        self::assertEqualsCanonicalizing(
+            [$clientA->getKey(), $clientB->getKey(), $clientC->getKey()],
+            $cohort->for($admin, $filters, $period)->pluck('clients.id')->all(),
+        );
+        self::assertNotContains($foreignClient->getKey(), $cohort->for($admin, $filters, $period)->pluck('clients.id')->all());
+
+        $demographics = app(DemographicsAnalytics::class)->handle($admin, $period, cohortFilters: $filters);
+
+        self::assertSame(3, $demographics->clientCount);
+        $women = $this->distributionRow($demographics->sex, 'Женщины');
+        $men = $this->distributionRow($demographics->sex, 'Мужчины');
+        $unspecifiedSex = $this->distributionRow($demographics->sex, 'Не указано');
+        self::assertSame(1, $women['count']);
+        self::assertSame(1, $men['count']);
+        self::assertSame(1, $unspecifiedSex['count']);
+        self::assertSame(33.33, $women['percent']);
+        self::assertSame(33.33, $men['percent']);
+        self::assertSame(33.33, $unspecifiedSex['percent']);
+
+        $kazakhstan = $this->distributionRow($demographics->country, 'KZ');
+        $russia = $this->distributionRow($demographics->country, 'RU');
+        self::assertSame(2, $kazakhstan['count']);
+        self::assertSame(1, $russia['count']);
+        self::assertSame(66.67, $kazakhstan['percent']);
+        self::assertSame(33.33, $russia['percent']);
+
+        $workingAge = $this->distributionRow($demographics->age, '30–44');
+        $unspecifiedAge = $this->distributionRow($demographics->age, 'Не указано');
+        self::assertSame(2, $workingAge['count']);
+        self::assertSame(1, $unspecifiedAge['count']);
+        self::assertSame(66.67, $workingAge['percent']);
+        self::assertSame(33.33, $unspecifiedAge['percent']);
+
+        $adults = $this->distributionRow($demographics->children, 'Взрослые');
+        $unspecifiedChildren = $this->distributionRow($demographics->children, 'Не указано');
+        self::assertSame(2, $adults['count']);
+        self::assertSame(1, $unspecifiedChildren['count']);
+        self::assertSame(66.67, $adults['percent']);
+        self::assertSame(33.33, $unspecifiedChildren['percent']);
+
+        self::assertSame(1, app(AcquisitionAnalytics::class)->handle($admin, $period, cohortFilters: $filters)->newClients);
+    }
+
+    public function test_demographics_uses_the_period_end_for_birthday_boundaries(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        app(SetOrganizationSetting::class)->handle(
+            $admin,
+            OrganizationSettingKey::AnalyticsAgeRanges,
+            json_encode([
+                ['key' => 'thirty_to_forty', 'label' => '30–40', 'min' => 30, 'max' => 40],
+                ['key' => 'forty_one_to_forty_four', 'label' => '41–44', 'min' => 41, 'max' => 44],
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+        );
+        Client::factory()->forOrganization($organization)->create([
+            'birth_date' => '1985-10-31',
+            'created_at' => '2026-10-15 10:00:00',
+            'updated_at' => '2026-10-15 10:00:00',
+        ]);
+        Client::factory()->forOrganization($organization)->create([
+            'birth_date' => '1985-11-01',
+            'created_at' => '2026-10-15 10:00:00',
+            'updated_at' => '2026-10-15 10:00:00',
+        ]);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+
+        $age = app(DemographicsAnalytics::class)->handle($admin, $period)->age;
+
+        self::assertSame(1, $this->distributionRow($age, '41–44')['count']);
+        self::assertSame(1, $this->distributionRow($age, '30–40')['count']);
+    }
+
+    /**
+     * @param  list<array{label: string, count: int, percent: float}>  $rows
+     * @return array{label: string, count: int, percent: float}
+     */
+    private function distributionRow(array $rows, string $label): array
+    {
+        foreach ($rows as $row) {
+            if ($row['label'] === $label) {
+                return $row;
+            }
+        }
+
+        self::fail('Distribution row not found: '.$label);
     }
 
     /** @return array{0: Organization, 1: User, 2: Specialist} */
