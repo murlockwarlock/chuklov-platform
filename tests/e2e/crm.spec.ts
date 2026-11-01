@@ -3083,7 +3083,10 @@ test('analytics problem session axis keeps problem numbering separate from globa
         await page.locator('#form\\.end_date').fill('2026-10-31');
         const problemCategory = page.getByRole('combobox', { name: 'Категория проблемы', exact: true });
         await problemCategory.click();
-        await page.getByRole('option', { name: fixture.problemTagName as string, exact: true }).click();
+        await page.getByRole('textbox', { name: 'Search' }).fill(fixture.problemTagName as string);
+        const problemOption = page.getByRole('option', { name: fixture.problemTagName as string, exact: true });
+        await expect(problemOption).toBeVisible({ timeout: 15_000 });
+        await problemOption.click();
     };
 
     const painSection = page
