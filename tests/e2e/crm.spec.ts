@@ -129,7 +129,7 @@ async function setLivewireRangeValue(page: Page, slider: Locator, value: number)
     await expect(slider).toHaveAttribute('aria-valuenow', `${value}.0`);
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -501,6 +501,21 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 result: 'Предыдущий подтверждённый результат',
             ),
         );
+        if (${options.painScoreFlow ? 'true' : 'false'}) {
+            app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
+                $admin,
+                $client,
+                new \\App\\Modules\\Sessions\\Application\\DTOs\\CreateSessionCommand(
+                    specialistId: $specialist->getKey(),
+                    occurredAt: \\Illuminate\\Support\\Carbon::parse('2026-10-10 09:00:00', 'UTC'),
+                    pains: [[
+                        'name' => 'E2E боль после сеанса',
+                        'before_score' => null,
+                        'after_score' => 2,
+                    ]],
+                ),
+            );
+        }
         if (getenv('CLINICAL_AI_E2E_ENABLED') === '1') {
             $providerName = getenv('CLINICAL_AI_PROVIDER') ?: 'openai';
             $modelName = getenv('CLINICAL_AI_MODEL') ?: '';
@@ -2910,11 +2925,20 @@ test('staff can maintain the clinical test catalog and use it in a new session',
 
 test('staff can analyze several dimensions and download a filtered Excel report', async ({ page }) => {
     test.setTimeout(90_000);
-    const fixture = createCrmFixture({ financeFlow: true });
+    const fixture = createCrmFixture({ financeFlow: true, painScoreFlow: true });
 
     await login(page, fixture);
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+
+    await page.locator('#form\\.period').selectOption('custom');
+    await page.locator('#form\\.start_date').fill('2026-10-01');
+    await page.locator('#form\\.end_date').fill('2026-10-31');
+    const painBasis = page.locator('#form\\.cohort_pain_score_basis');
+    await expect(painBasis).toBeVisible();
+    await painBasis.selectOption('session_after');
+    await page.locator('#form\\.cohort_has_pain_score').selectOption('1');
+    await expect(page.getByText('Источник оценки боли', { exact: true })).toBeVisible();
 
     const dimensions = [
         'Проблемы и динамика боли',
@@ -2944,6 +2968,7 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     const cohortSummary = page.getByText(/Найдено клиентов: \d+ ·/).first();
     await expect(cohortSummary).toBeVisible();
     const cohortCount = Number((await cohortSummary.textContent())?.match(/Найдено клиентов: (\d+)/)?.[1]);
+    expect(cohortCount).toBe(1);
     const demographicsSection = page
         .getByRole('heading', { name: 'Демография клиентов', exact: true })
         .locator('xpath=ancestor::section[1]');
@@ -2967,6 +2992,19 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     const workbookXml = execFileSync('unzip', ['-p', downloadPath, 'xl/sharedStrings.xml'], { encoding: 'utf8' });
     expect(workbookXml).toContain('Показатель');
     expect(workbookXml).toContain('Финансы');
+    expect(workbookXml).toContain('Источник оценки боли');
+    expect(workbookXml).toContain('После сеанса');
+    expect(workbookXml).not.toContain('session_after');
+
+    await page.reload();
+    await expect(page.locator('#form\\.cohort_pain_score_basis')).toHaveValue('session_after');
+    await page.goto('/admin/analytics-console?pain-basis=history');
+    await page.goBack();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await page.locator('#form\\.cohort_pain_score_basis').selectOption('session_before');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByText(/Найдено клиентов: 0 ·/).first()).toBeVisible();
 
     await page.setViewportSize({ width: 390, height: 900 });
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();

@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application\Data;
 
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
+use App\Modules\Analytics\Domain\Enums\PainScoreBasis;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
 
@@ -10,6 +11,8 @@ final readonly class ClientCohortFilters
 {
     /** @var list<string> */
     public array $segments;
+
+    public PainScoreBasis $painScoreBasis;
 
     /** @param list<int> $clientIds
      * @param  list<int>  $excludeClientIds
@@ -64,8 +67,10 @@ final readonly class ClientCohortFilters
         public ?int $painScoreMax = null,
         public ?int $satisfactionMin = null,
         public ?int $satisfactionMax = null,
+        mixed $painScoreBasis = PainScoreBasis::Any,
     ) {
         $this->segments = self::normalizeSegments($segments);
+        $this->painScoreBasis = PainScoreBasis::fromInput($painScoreBasis);
         if (! in_array($problemTagMode, ['any', 'all'], true)) {
             throw new InvalidArgumentException('The problem tag mode is invalid.');
         }
@@ -136,6 +141,7 @@ final readonly class ClientCohortFilters
             painScoreMax: self::nullableInt($data['pain_score_max'] ?? null),
             satisfactionMin: self::nullableInt($data['satisfaction_min'] ?? null),
             satisfactionMax: self::nullableInt($data['satisfaction_max'] ?? null),
+            painScoreBasis: $data['pain_score_basis'] ?? PainScoreBasis::Any->value,
         );
     }
 
@@ -174,6 +180,7 @@ final readonly class ClientCohortFilters
             'has_pain_score' => $this->hasPainScore,
             'pain_score_min' => $this->painScoreMin,
             'pain_score_max' => $this->painScoreMax,
+            'pain_score_basis' => $this->painScoreBasis->value,
             'satisfaction_min' => $this->satisfactionMin,
             'satisfaction_max' => $this->satisfactionMax,
         ];

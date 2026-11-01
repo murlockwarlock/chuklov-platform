@@ -13,6 +13,7 @@ use App\Filament\Widgets\AnalyticsSchedulingWidget;
 use App\Filament\Widgets\UpcomingBookingsWidget;
 use App\Models\User;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Analytics\Domain\Enums\PainScoreBasis;
 use App\Modules\Attribution\Application\AttributionSourceCatalog;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
 use App\Modules\Feedback\Domain\Models\FeedbackTheme;
@@ -26,8 +27,11 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Sessions\Application\CreateSession;
+use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
+use Carbon\CarbonImmutable;
 use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -180,6 +184,55 @@ final class AnalyticsDashboardWidgetTest extends TestCase
 
         self::assertSame($tag->getKey(), $component->instance()->data['problem_tag_id']);
         self::assertArrayHasKey('pain', $component->instance()->results);
+    }
+
+    public function test_analytics_console_uses_the_selected_pain_score_basis_for_preview_and_analysis(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        $afterClient = Client::factory()->forOrganization($organization)->create();
+        $beforeClient = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        app(OrganizationContext::class)->set($organization);
+        app(CreateSession::class)->handle($admin, $afterClient, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-10-10 10:00:00', 'UTC'),
+            pains: [['name' => 'После сеанса', 'before_score' => null, 'after_score' => 2]],
+        ));
+        app(CreateSession::class)->handle($admin, $beforeClient, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-10-10 11:00:00', 'UTC'),
+            pains: [['name' => 'До сеанса', 'before_score' => 4, 'after_score' => null]],
+        ));
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AnalyticsConsole::class)
+            ->assertSuccessful()
+            ->assertSee('Источник оценки боли')
+            ->assertSee('После сеанса')
+            ->fillForm([
+                'dimensions' => ['pain'],
+                'period' => DashboardPeriod::Custom,
+                'start_date' => '2026-10-01',
+                'end_date' => '2026-10-31',
+                'cohort_pain_score_basis' => PainScoreBasis::SessionAfter->value,
+                'cohort_has_pain_score' => '1',
+            ])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame(PainScoreBasis::SessionAfter->value, $component->instance()->data['cohort_pain_score_basis']);
+        self::assertSame(1, $component->instance()->cohortPreviewCount);
+        self::assertStringContainsString('оценка боли: После сеанса', (string) $component->instance()->cohortDrilldownReason);
+
+        $component
+            ->fillForm(['cohort_pain_score_basis' => PainScoreBasis::SessionBefore->value])
+            ->call('analyze')
+            ->assertNotified('Анализ обновлён');
+
+        self::assertSame(PainScoreBasis::SessionBefore->value, $component->instance()->data['cohort_pain_score_basis']);
+        self::assertSame(1, $component->instance()->cohortPreviewCount);
+        self::assertStringContainsString('оценка боли: До сеанса', (string) $component->instance()->cohortDrilldownReason);
     }
 
     public function test_analytics_console_drills_down_from_a_service_aggregate_to_the_same_cohort_query(): void

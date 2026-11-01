@@ -11,6 +11,7 @@ use App\Modules\Analytics\Application\DemographicsAnalytics;
 use App\Modules\Analytics\Application\SaveAnalyticsClientGroup;
 use App\Modules\Analytics\Application\ServiceVisitAnalytics;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
+use App\Modules\Analytics\Domain\Enums\PainScoreBasis;
 use App\Modules\Analytics\Domain\Models\AnalyticsClientGroup;
 use App\Modules\Analytics\Domain\Models\AnalyticsClientGroupVersion;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
@@ -28,6 +29,8 @@ use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Services\Domain\Models\Service;
+use App\Modules\Sessions\Application\CreateSession;
+use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -515,6 +518,131 @@ final class ClientCohortQueryTest extends TestCase
         );
     }
 
+    public function test_pain_score_basis_filters_profile_and_session_scores_with_period_and_tenant_scope(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $profile = Client::factory()->forOrganization($organization)->create();
+        $before = Client::factory()->forOrganization($organization)->create();
+        $afterZero = Client::factory()->forOrganization($organization)->create();
+        $afterHigh = Client::factory()->forOrganization($organization)->create();
+        $unrated = Client::factory()->forOrganization($organization)->create();
+        $outsidePeriod = Client::factory()->forOrganization($organization)->create();
+        $foreignOrganization = Organization::factory()->create();
+        $foreignAdmin = User::factory()->forOrganization($foreignOrganization, OrganizationRole::Administrator)->create();
+        $foreign = Client::factory()->forOrganization($foreignOrganization)->create();
+
+        app(UpdateMedicalProfile::class)->handle($admin, $profile, new UpdateMedicalProfileCommand(
+            pains: [['name' => 'Профиль', 'score' => 5]],
+            painsProvided: true,
+        ));
+        app(OrganizationContext::class)->set($foreignOrganization);
+        app(UpdateMedicalProfile::class)->handle($foreignAdmin, $foreign, new UpdateMedicalProfileCommand(
+            pains: [['name' => 'Чужой профиль', 'score' => 5]],
+            painsProvided: true,
+        ));
+        app(OrganizationContext::class)->set($organization);
+
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $createSession = app(CreateSession::class);
+        $createSessionFor = static function (Client $client, string $occurredAt, ?int $beforeScore, ?int $afterScore) use ($admin, $specialist, $createSession): void {
+            $createSession->handle($admin, $client, new CreateSessionCommand(
+                specialistId: (int) $specialist->getKey(),
+                occurredAt: CarbonImmutable::parse($occurredAt, 'UTC'),
+                pains: [[
+                    'name' => 'Сеансовая боль',
+                    'before_score' => $beforeScore,
+                    'after_score' => $afterScore,
+                ]],
+            ));
+        };
+        $createSessionFor($before, '2026-10-05 10:00:00', 4, null);
+        $createSessionFor($afterZero, '2026-10-06 10:00:00', null, 0);
+        $createSessionFor($afterHigh, '2026-10-07 10:00:00', null, 7);
+        $createSessionFor($outsidePeriod, '2026-09-30 10:00:00', null, 2);
+
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+        app(OrganizationContext::class)->set($organization);
+        $ids = static fn (ClientCohortFilters $filters): array => app(ClientCohortQuery::class)
+            ->for($admin, $filters, $period)
+            ->pluck('clients.id')
+            ->sort()
+            ->values()
+            ->all();
+
+        self::assertSame(
+            [$profile->getKey(), $before->getKey(), $afterZero->getKey(), $afterHigh->getKey()],
+            $ids(new ClientCohortFilters(hasPainScore: true, painScoreBasis: PainScoreBasis::Any)),
+        );
+        self::assertSame(
+            [$unrated->getKey(), $outsidePeriod->getKey()],
+            $ids(new ClientCohortFilters(hasPainScore: false, painScoreBasis: PainScoreBasis::Any)),
+        );
+        self::assertSame([$profile->getKey()], $ids(new ClientCohortFilters(
+            hasPainScore: true,
+            painScoreBasis: PainScoreBasis::Profile,
+        )));
+        self::assertSame([$before->getKey()], $ids(new ClientCohortFilters(
+            hasPainScore: true,
+            painScoreBasis: PainScoreBasis::SessionBefore,
+        )));
+        self::assertSame(
+            [$afterZero->getKey(), $afterHigh->getKey()],
+            $ids(new ClientCohortFilters(hasPainScore: true, painScoreBasis: PainScoreBasis::SessionAfter)),
+        );
+        self::assertSame(
+            [$afterZero->getKey()],
+            $ids(new ClientCohortFilters(
+                painScoreBasis: PainScoreBasis::SessionAfter,
+                painScoreMin: 0,
+                painScoreMax: 3,
+            )),
+        );
+        self::assertSame(
+            [$afterHigh->getKey()],
+            $ids(new ClientCohortFilters(
+                painScoreBasis: PainScoreBasis::SessionAfter,
+                painScoreMin: 5,
+                painScoreMax: 10,
+            )),
+        );
+        self::assertSame(
+            [$afterZero->getKey()],
+            $ids(new ClientCohortFilters(
+                hasPainScore: true,
+                painScoreBasis: PainScoreBasis::SessionAfter,
+                painScoreMin: 0,
+                painScoreMax: 0,
+            )),
+        );
+        self::assertNotContains(
+            $outsidePeriod->getKey(),
+            $ids(new ClientCohortFilters(hasPainScore: true, painScoreBasis: PainScoreBasis::SessionAfter)),
+        );
+        self::assertNotContains($foreign->getKey(), $ids(new ClientCohortFilters(
+            hasPainScore: true,
+            painScoreBasis: PainScoreBasis::Any,
+        )));
+    }
+
+    public function test_unknown_pain_score_basis_is_rejected_instead_of_defaulting_to_any(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        ClientCohortFilters::fromArray(['pain_score_basis' => 'unknown']);
+    }
+
+    public function test_missing_pain_score_basis_defaults_to_any(): void
+    {
+        self::assertSame(
+            PainScoreBasis::Any->value,
+            ClientCohortFilters::fromArray([])->toArray()['pain_score_basis'],
+        );
+    }
+
     public function test_query_requires_view_clients_permission(): void
     {
         [$organization] = $this->fixture();
@@ -545,7 +673,10 @@ final class ClientCohortQueryTest extends TestCase
             'group_type' => 'dynamic',
             'is_active' => true,
             'sort_order' => 2,
-            'rule_definition' => ['genders' => ['FEMALE']],
+            'rule_definition' => [
+                'genders' => ['FEMALE'],
+                'pain_score_basis' => PainScoreBasis::SessionAfter->value,
+            ],
         ]);
 
         self::assertSame(1, $manual->version);
@@ -559,6 +690,15 @@ final class ClientCohortQueryTest extends TestCase
             app(ClientCohortQuery::class)->for($admin, new ClientCohortFilters(savedGroupIds: [$manual->getKey(), $dynamic->getKey()]))->pluck('clients.id')->sort()->values()->all(),
         );
         self::assertSame('dynamic', AnalyticsClientGroup::query()->findOrFail($dynamic->getKey())->group_type);
+        self::assertSame(PainScoreBasis::SessionAfter->value, $dynamic->rule_definition['pain_score_basis']);
+        self::assertSame(
+            PainScoreBasis::SessionAfter->value,
+            AnalyticsClientGroupVersion::query()
+                ->where('analytics_client_group_id', $dynamic->getKey())
+                ->where('version', 1)
+                ->firstOrFail()
+                ->rule_definition['pain_score_basis'],
+        );
     }
 
     public function test_saved_group_update_keeps_the_previous_definition_as_a_immutable_version(): void

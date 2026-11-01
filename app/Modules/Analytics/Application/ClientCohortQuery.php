@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
+use App\Modules\Analytics\Domain\Enums\PainScoreBasis;
 use App\Modules\Analytics\Domain\Models\AnalyticsClientGroup;
 use App\Modules\Attribution\Application\AttributionSourceCatalog;
 use App\Modules\Identity\Domain\Models\Client;
@@ -429,24 +430,43 @@ final readonly class ClientCohortQuery
     /** @param Builder<Client> $query */
     private function applyPainScore(Builder $query, ClientCohortFilters $filters, int $organizationId, ?DashboardPeriod $period): void
     {
+        $sources = $this->painScoreSources($filters->painScoreBasis);
         if ($filters->hasPainScore === true) {
-            $query->where(function (Builder $branch) use ($organizationId, $period): void {
-                $this->applyPainScoreExists($branch, 'medical_profile_pains', 'score', $organizationId, $period);
-                $this->applyPainScoreExists($branch, 'medical_session_pains', 'before_score', $organizationId, $period);
+            $query->where(function (Builder $branch) use ($organizationId, $period, $sources): void {
+                foreach ($sources as [$table, $column]) {
+                    $this->applyPainScoreExists($branch, $table, $column, $organizationId, $period);
+                }
             });
         } elseif ($filters->hasPainScore === false) {
-            $this->applyPainScoreNotExists($query, 'medical_profile_pains', 'score', $organizationId);
-            $this->applyPainScoreNotExists($query, 'medical_session_pains', 'before_score', $organizationId, $period);
+            foreach ($sources as [$table, $column]) {
+                $this->applyPainScoreNotExists($query, $table, $column, $organizationId, $period);
+            }
         }
 
         if ($filters->painScoreMin === null && $filters->painScoreMax === null) {
             return;
         }
 
-        $query->where(function (Builder $branch) use ($filters, $organizationId, $period): void {
-            $this->applyPainScoreExists($branch, 'medical_profile_pains', 'score', $organizationId, $period, $filters->painScoreMin, $filters->painScoreMax);
-            $this->applyPainScoreExists($branch, 'medical_session_pains', 'before_score', $organizationId, $period, $filters->painScoreMin, $filters->painScoreMax);
+        $query->where(function (Builder $branch) use ($filters, $organizationId, $period, $sources): void {
+            foreach ($sources as [$table, $column]) {
+                $this->applyPainScoreExists($branch, $table, $column, $organizationId, $period, $filters->painScoreMin, $filters->painScoreMax);
+            }
         });
+    }
+
+    /** @return list<array{0: string, 1: string}> */
+    private function painScoreSources(PainScoreBasis $basis): array
+    {
+        return match ($basis) {
+            PainScoreBasis::Any => [
+                ['medical_profile_pains', 'score'],
+                ['medical_session_pains', 'before_score'],
+                ['medical_session_pains', 'after_score'],
+            ],
+            PainScoreBasis::Profile => [['medical_profile_pains', 'score']],
+            PainScoreBasis::SessionBefore => [['medical_session_pains', 'before_score']],
+            PainScoreBasis::SessionAfter => [['medical_session_pains', 'after_score']],
+        };
     }
 
     /** @param Builder<Client> $query */

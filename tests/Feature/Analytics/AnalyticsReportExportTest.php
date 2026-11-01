@@ -246,7 +246,12 @@ final class AnalyticsReportExportTest extends TestCase
                 ['name' => '=CLIENT()', 'gender' => 'FEMALE', 'birth_date' => '1985-06-10', 'country' => '+KZ', 'source' => '@instagram'],
                 ['name' => 'Обычный клиент', 'gender' => null, 'birth_date' => null, 'country' => null, 'source' => null],
             ],
-            'cohort_filters' => ['genders' => ['FEMALE'], 'ageMin' => 30, 'ageMax' => 44],
+            'cohort_filters' => [
+                'genders' => ['FEMALE'],
+                'ageMin' => 30,
+                'ageMax' => 44,
+                'pain_score_basis' => 'session_after',
+            ],
             'rule_versions' => ['client_cohort' => '1'],
             'generated_at' => '2026-10-31T12:00:00+00:00',
         ]));
@@ -263,6 +268,9 @@ final class AnalyticsReportExportTest extends TestCase
         self::assertSame('+KZ', $clients->getCell('D2')->getValue());
         self::assertSame(DataType::TYPE_STRING, $clients->getCell('D2')->getDataType());
         self::assertSame(['Параметр', 'Значение'], $filters->toArray()[0]);
+        self::assertStringContainsString('Источник оценки боли', $this->workbookText($workbook));
+        self::assertStringContainsString('После сеанса', $this->workbookText($workbook));
+        self::assertStringNotContainsString('session_after', $this->workbookText($workbook));
         self::assertStringContainsString('AND', $this->workbookText($workbook));
     }
 

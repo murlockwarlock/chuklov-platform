@@ -28,6 +28,7 @@ use App\Modules\Analytics\Application\PurchaseGroupCatalog;
 use App\Modules\Analytics\Application\SchedulingAnalytics;
 use App\Modules\Analytics\Application\ServiceVisitAnalytics;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
+use App\Modules\Analytics\Domain\Enums\PainScoreBasis;
 use App\Modules\Attribution\Application\AttributionSourceCatalog;
 use App\Modules\Feedback\Application\FeedbackThemeCatalog;
 use App\Modules\Finance\Application\FinancialReconciliationContract;
@@ -147,6 +148,7 @@ final class AnalyticsConsole extends LocalizedPage
             'cohort_last_visit_to' => null,
             'cohort_purchase_types' => [],
             'cohort_purchase_statuses' => [],
+            'cohort_pain_score_basis' => PainScoreBasis::Any->value,
             'cohort_has_pain_score' => null,
             'cohort_pain_score_min' => null,
             'cohort_pain_score_max' => null,
@@ -383,6 +385,11 @@ final class AnalyticsConsole extends LocalizedPage
                             ->options(['1' => 'Есть оценка', '0' => 'Без оценки'])
                             ->live()
                             ->nullable(),
+                        Select::make('cohort_pain_score_basis')
+                            ->label(__('Источник оценки боли'))
+                            ->options(PainScoreBasis::labels())
+                            ->default(PainScoreBasis::Any->value)
+                            ->live(),
                         Select::make('cohort_pain_score_min')
                             ->label(__('Оценка боли от'))
                             ->options(self::scoreOptions())
@@ -1122,7 +1129,10 @@ final class AnalyticsConsole extends LocalizedPage
             $labels[] = 'Последний визит: '.($filters->lastVisitFrom ?? '—').' — '.($filters->lastVisitTo ?? '—');
         }
         if ($filters->hasPainScore !== null) {
+            $labels[] = 'Источник оценки боли: '.$filters->painScoreBasis->label();
             $labels[] = 'Оценка боли: '.($filters->hasPainScore ? 'Есть оценка' : 'Без оценки');
+        } elseif ($filters->painScoreMin !== null || $filters->painScoreMax !== null) {
+            $labels[] = 'Источник оценки боли: '.$filters->painScoreBasis->label();
         }
         if ($filters->painScoreMin !== null || $filters->painScoreMax !== null) {
             $labels[] = 'Диапазон боли: '.($filters->painScoreMin ?? 0).'–'.($filters->painScoreMax ?? 10);
@@ -1223,6 +1233,7 @@ final class AnalyticsConsole extends LocalizedPage
             lastVisitTo: is_string($first($state['cohort_last_visit_to'] ?? null)) ? $first($state['cohort_last_visit_to']) : null,
             purchaseTypes: $list($state['cohort_purchase_types'] ?? []),
             purchaseStatuses: $list($state['cohort_purchase_statuses'] ?? []),
+            painScoreBasis: PainScoreBasis::fromInput($state['cohort_pain_score_basis'] ?? PainScoreBasis::Any->value),
             hasPainScore: $bool($state['cohort_has_pain_score'] ?? null),
             painScoreMin: is_numeric($first($state['cohort_pain_score_min'] ?? null)) ? (int) $first($state['cohort_pain_score_min']) : null,
             painScoreMax: is_numeric($first($state['cohort_pain_score_max'] ?? null)) ? (int) $first($state['cohort_pain_score_max']) : null,
@@ -1281,7 +1292,7 @@ final class AnalyticsConsole extends LocalizedPage
             'cohort_specialist_ids' => [], 'cohort_booking_statuses' => [], 'cohort_booking_event_types' => [], 'cohort_completed_visits_min' => null,
             'cohort_completed_visits_max' => null, 'cohort_last_visit_from' => null, 'cohort_last_visit_to' => null,
             'cohort_purchase_types' => [], 'cohort_purchase_statuses' => [], 'cohort_has_pain_score' => null,
-            'cohort_pain_score_min' => null, 'cohort_pain_score_max' => null, 'cohort_satisfaction_min' => null,
+            'cohort_pain_score_basis' => PainScoreBasis::Any->value, 'cohort_pain_score_min' => null, 'cohort_pain_score_max' => null, 'cohort_satisfaction_min' => null,
             'cohort_satisfaction_max' => null,
         ];
     }
@@ -1396,7 +1407,7 @@ final class AnalyticsConsole extends LocalizedPage
             $parts[] = 'покупки';
         }
         if ($filters->hasPainScore !== null || $filters->painScoreMin !== null || $filters->painScoreMax !== null) {
-            $parts[] = 'оценка боли';
+            $parts[] = 'оценка боли: '.$filters->painScoreBasis->label();
         }
         if ($filters->satisfactionMin !== null || $filters->satisfactionMax !== null) {
             $parts[] = 'удовлетворённость';

@@ -9,6 +9,7 @@ use App\Modules\Analytics\Application\BookingStatusAnalytics;
 use App\Modules\Analytics\Application\PurchaseGroupCatalog;
 use App\Modules\Analytics\Application\SaveAnalyticsClientGroup;
 use App\Modules\Analytics\Domain\Enums\ClientSegment;
+use App\Modules\Analytics\Domain\Enums\PainScoreBasis;
 use App\Modules\Attribution\Application\AttributionSourceCatalog;
 use App\Modules\Commerce\Domain\Enums\PurchaseStatus;
 use App\Modules\Feedback\Application\FeedbackThemeCatalog;
@@ -116,6 +117,7 @@ final class ClientCohortGroups extends LocalizedPage
                 'rule_purchase_types' => $row['rule_definition']['purchase_types'] ?? [],
                 'rule_purchase_statuses' => $row['rule_definition']['purchase_statuses'] ?? [],
                 'rule_has_pain_score' => $row['rule_definition']['has_pain_score'] ?? null,
+                'rule_pain_score_basis' => $row['rule_definition']['pain_score_basis'] ?? PainScoreBasis::Any->value,
                 'rule_pain_score_min' => $row['rule_definition']['pain_score_min'] ?? null,
                 'rule_pain_score_max' => $row['rule_definition']['pain_score_max'] ?? null,
                 'rule_satisfaction_min' => $row['rule_definition']['satisfaction_min'] ?? null,
@@ -305,6 +307,11 @@ final class ClientCohortGroups extends LocalizedPage
                                 ->options(['1' => 'Есть оценка', '0' => 'Без оценки'])
                                 ->nullable()
                                 ->visible(fn (Get $get): bool => $get('group_type') === 'dynamic'),
+                            Select::make('rule_pain_score_basis')
+                                ->label(__('Правила: источник оценки боли'))
+                                ->options(PainScoreBasis::labels())
+                                ->default(PainScoreBasis::Any->value)
+                                ->visible(fn (Get $get): bool => $get('group_type') === 'dynamic'),
                             Select::make('rule_pain_score_min')
                                 ->label(__('Правила: боль от'))
                                 ->options(self::scoreOptions())
@@ -390,6 +397,7 @@ final class ClientCohortGroups extends LocalizedPage
                         'purchase_types' => $group['rule_purchase_types'] ?? [],
                         'purchase_statuses' => $group['rule_purchase_statuses'] ?? [],
                         'has_pain_score' => $group['rule_has_pain_score'] ?? null,
+                        'pain_score_basis' => $group['rule_pain_score_basis'] ?? PainScoreBasis::Any->value,
                         'pain_score_min' => $group['rule_pain_score_min'] ?? null,
                         'pain_score_max' => $group['rule_pain_score_max'] ?? null,
                         'satisfaction_min' => $group['rule_satisfaction_min'] ?? null,

@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Application;
 
 use App\Models\User;
+use App\Modules\Analytics\Domain\Enums\PainScoreBasis;
 use App\Modules\Finance\Application\FinancialReconciliationContract;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -418,6 +419,10 @@ final readonly class AnalyticsReportExport
             ['Состояние сегментов', $metadata['segment_state'] ?? 'Текущее состояние сегментов на момент анализа'],
             ['Семантика оси сеансов', $metadata['session_axis'] ?? null],
         ];
+        $cohortFilters = (array) ($metadata['cohort_filters'] ?? []);
+        if (array_key_exists('pain_score_basis', $cohortFilters)) {
+            $rows[] = ['Источник оценки боли', PainScoreBasis::fromInput($cohortFilters['pain_score_basis'])->label()];
+        }
         foreach ((array) ($metadata['filters'] ?? []) as $filter) {
             $rows[] = ['Выбранный фильтр', is_scalar($filter) ? (string) $filter : json_encode($filter, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)];
         }
@@ -460,6 +465,8 @@ final readonly class AnalyticsReportExport
             'problemTagMode' => 'Режим категорий проблем',
             'exclude_problem_tag_ids' => 'Исключить категории проблем',
             'excludeProblemTagIds' => 'Исключить категории проблем',
+            'pain_score_basis' => 'Источник оценки боли',
+            'painScoreBasis' => 'Источник оценки боли',
             'feedback_theme_ids' => 'Темы обратной связи',
             'feedbackThemeIds' => 'Темы обратной связи',
             'goal_tag_ids' => 'Категории целей',
