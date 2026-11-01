@@ -9,10 +9,14 @@ Analytics modules.
 
 This iteration started from `715b561b9e08fbc7f468f314b6f045121397da3b`.
 The initial application implementation is in
-`2576673fa49f0466e096e96cd9aa98c71191d7e5`. The current application/runtime
-candidate is `a687639cc4cff72ee952809adb960c673ce7547f`; it includes the
-PostgreSQL-compatible aggregate grouping correction and matching regression
-coverage. The remaining closeout change is documentation-only.
+`2576673fa49f0466e096e96cd9aa98c71191d7e5`. The previous staging-verified
+application source is `a687639cc4cff72ee952809adb960c673ce7547f`; it includes
+the PostgreSQL-compatible aggregate grouping correction and matching regression
+coverage. This follow-up's application candidate is
+`499c7322929a30387d56c57df36ead0c01b74750`; it adds the problem-tag and
+special-segment semantics correction described below. The follow-up candidate
+is not deployed because the protected staging release path still stops on the
+known remote `ENOSPC` preflight failure.
 The acceptance-document commits are documentation-only and are recorded in
 the verification section below after the final document commit.
 
@@ -38,6 +42,27 @@ analytics or medical authority.
 | 4 | Previous-period comparison wrong across DST | YES | `DashboardPeriod::previousCalendarPeriod()` shifts organization-local calendar dates before one UTC conversion; `AnalyticsMetricEvaluator` delegates to it | `DashboardPeriodTest` covers New York spring-forward/fall-back, today, 7-day, custom and non-DST boundaries | YES — timestamp/query boundaries require PostgreSQL verification | YES — analytics period UI requires final staged browser verification |
 | 5 | Root-cause free text lacked backend limit | YES | shared `MedicalSessionFieldLimits::MaxTextLength` is used by form, CreateSession, UpdateSession and `MedicalSessionTestWriter`; validation is multibyte-safe and transactional | `MedicalPainFlowTest::test_root_cause_free_text_has_a_unicode_safe_authoritative_limit_without_partial_writes` covers 10,000 accepted, 10,001 rejected and reload preservation | YES — encrypted session write and rollback require PostgreSQL verification | YES — CRM validation and corrected submit require final staged browser verification |
 | 6 | Feedback classification could cross clients | YES | `AcceptAnalyticsClassification::acceptFeedback()` checks run client against locked submission client before theme synchronization inside the existing transaction | `AnalyticsAiClassificationTest::test_feedback_classification_rejects_a_run_for_another_client_in_the_same_organization` proves controlled rejection, unchanged review state and no theme pivot write | YES — organization/client guard and transaction atomicity require PostgreSQL verification | YES — review/accept error and normal matching-client flow require final staged browser verification |
+
+## Problem-tag and segment semantics follow-up
+
+This follow-up started from `df9dac20272b1e486125b2861d85dfaf145a59a1` after
+the selected client-segment OR correction. The confirmed problem-tag defect was
+that `problem_tag_mode=any` applied every selected category with `where`,
+therefore requiring all categories. The fix keeps `all` as AND, makes `any`
+use a grouped OR, preserves exclude semantics as rejection when any selected
+category exists, and normalizes the special `all` segment out of the typed
+multiselect before the cohort query is built.
+
+The regression contract is
+`ClientCohortQueryTest::test_problem_tag_modes_use_any_or_all_and_exclude_any_matching_tag`
+plus
+`ClientCohortQueryTest::test_all_segment_is_normalized_before_multiselect_query`.
+The synthetic fixture covers neck-only, back-only, both-category and
+neither-category clients. Hosted candidate run `41286645922` executes these
+feature tests against the PostgreSQL service; exact job status is recorded in
+the verification section below. The new application candidate remains
+`NOT VERIFIED` in staging because staging is still on
+`a687639cc4cff72ee952809adb960c673ce7547f`.
 
 ## Literal reconciliation matrix
 
@@ -96,8 +121,10 @@ applies the organization boundary server-side and returns an Eloquent query
 with correlated `EXISTS`/subqueries rather than materializing all client IDs.
 Analytics Console, every selected dimension, typed metrics, drill-down and
 `AnalyticsReportExport` use that authority. Different filter fields combine
-with AND; multiple values in one field combine with OR; problem tags support
-any/all and include/exclude; NULL, 0, false and no related row remain distinct.
+with AND; multiple values in one field combine with OR; problem-tag `any` is OR,
+problem-tag `all` is AND, exclude rejects a client when any selected excluded
+category exists, and the special `all` segment is normalized out before
+multiselect evaluation; NULL, 0, false and no related row remain distinct.
 
 The implemented filter surface is: explicit include/exclude clients, saved
 groups, current segments, archive state, blacklist, problem tags, feedback
@@ -215,10 +242,10 @@ do not upgrade an unexecuted browser or external-provider observation to
 Implementation started at `715b561b9e08fbc7f468f314b6f045121397da3b`. The
 implementation diff contains 79 files, including Filament pages,
 Analytics/Medical application services, four forward-only migrations, Blade
-views and regression tests. The current application/runtime candidate is
-`a687639cc4cff72ee952809adb960c673ce7547f`; its last change is a runtime-safe
-PostgreSQL grouping correction. The closeout commit containing this document
-does not change deployable application behavior.
+views and regression tests. The previous staging-verified application source
+is `a687639cc4cff72ee952809adb960c673ce7547f`; the follow-up application
+candidate is `499c7322929a30387d56c57df36ead0c01b74750` and changes the existing
+cohort query/filter authorities plus their PostgreSQL regression coverage.
 
 The four migrations are:
 
@@ -301,22 +328,21 @@ contract. It did not constitute owner acceptance of every medical workflow;
 the relevant automated medical/session/attachment tests and the existing
 staging smoke remain the evidence for those paths.
 
-The preceding closeout head was the documentation-only revision
-`36990107ffc1dd137e4dfc5e9e1a51e03e75da57`; the current PR head is the commit
-containing this verification record. One normal protected deploy was attempted
-with that preceding exact revision after the document push. The deployment
-failed during remote preflight with `ENOSPC` while npm populated the remote
-cache (`/root/.npm/_cacache`, exit 228), before migrations, release switching
-or application restart. The safety guard was not changed or bypassed. A smoke
-run against a detached `a687639c` worktree confirmed the deployed revision
-remained `a687639c` and all staging health/CRM/Portal checks passed.
+The follow-up application commit `499c7322929a30387d56c57df36ead0c01b74750`
+was pushed to the PR branch. No new staging release was forced after the
+previous normal protected deploy attempt stopped during remote preflight with
+`ENOSPC` while npm populated `/root/.npm/_cacache` (exit 228), before
+migrations, release switching or application restart. The safety guard was not
+changed or bypassed. A smoke run against a detached `a687639c` worktree
+confirmed the deployed revision remained `a687639c` and all staging
+health/CRM/Portal checks passed.
 
-Therefore exact-final-revision staging is `NOT VERIFIED`; staging functional
-acceptance is `PASS` only for the runtime-equivalent application revision
-`a687639cc4cff72ee952809adb960c673ce7547f`. The exact diff from that deployed
-application source to the final PR head is this acceptance document only; no
-deployable application tree, migration, dependency, asset or runtime file
-changed.
+Therefore exact-follow-up-revision staging is `NOT VERIFIED`; staging
+functional acceptance is `PASS` only for the runtime-equivalent application
+revision `a687639cc4cff72ee952809adb960c673ce7547f`. The exact diff from that
+deployed application source to the current PR includes the cohort query/filter
+fix and regression tests, so the new semantics require a staging recheck after
+the remote disk-space blocker is resolved.
 
 ### XLSX evidence
 
@@ -337,6 +363,19 @@ metadata and thematic sheet names were checked in both Chromium and WebKit.
   unspecified-frequency contract.
 - PHP syntax, Pint, changed-file PHPStan and `git diff --check`: PASS;
   changed-file PHPStan diagnostics: 0.
+- Problem-tag and special-segment regression: PASS — local `ClientCohortQueryTest`
+  is 14/14 with 38 assertions; the two new contracts are 2/2 with 7
+  assertions. The hosted PostgreSQL feature job also reports the new
+  `any`/`all`/exclude and `all`-normalization tests as PASS.
+- Hosted candidate run `41286645922` at application commit `499c7322` ran
+  against PostgreSQL. Its Integration foundation, RAG and concurrency jobs and
+  privacy scan are PASS. Quality feature tests are PASS for the changed
+  `ClientCohortQueryTest` but the full feature job is FAIL on four unrelated
+  baseline tests (`GoalAnalyticsTest` twice, `FeedbackThemesAnalyticsTest` and
+  the known `MedicalSessionTest` overlap fixture); PHP static checks are also
+  the existing repository baseline. Docker runtime health repeats the known
+  runner-only `Horizon is inactive` failure. No failure names the changed
+  cohort files or new regression tests.
 - Hosted focused run `41230782443` at `a687639c`: PostgreSQL feature tests
   PASS, including the corrected group-by queries. The overall Quality job is
   FAIL only at the repository's existing PHP static-analysis baseline (184
@@ -364,12 +403,15 @@ metadata and thematic sheet names were checked in both Chromium and WebKit.
   2 skipped, 0 failed. Both scheduling findings remain classified as
   `NON-REPRODUCIBLE INTERMITTENT E2E FAILURE / likely order or setup dependent;
   product scheduling regression not reproduced`.
-- Staging functional acceptance: PASS for the focused analytics scope on exact
-  application revision `a687639c`; owner-wide medical acceptance is not
-  claimed by this focused journey.
+- Staging functional acceptance: PASS for the previously verified focused
+  analytics scope on exact application revision `a687639c`; the new candidate
+  `499c7322` is NOT VERIFIED in staging because the guarded release path remains
+  blocked by remote `ENOSPC`.
 - Owner acceptance: NOT RUN.
 - Remaining in-scope BLOCKING: 0.
-- Remaining in-scope REAL BUG: 0.
+- Remaining in-scope confirmed REAL BUG after this follow-up: 0. This is limited
+  to the enumerated PR findings and does not claim owner-wide acceptance or
+  exact-head staging verification.
 
 Limitations are the known unrelated repository PHPStan baseline, the partial
 historical full-E2E result, the non-reproducible scheduling failures and no
