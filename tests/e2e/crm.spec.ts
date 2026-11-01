@@ -3307,6 +3307,7 @@ test('analytics service aggregate drilldown intersects the selected service coho
 
     const selectReport = async (): Promise<void> => {
         await page.locator('#form\\.period').selectOption('custom');
+        await page.waitForLoadState('networkidle');
         await page.locator('#form\\.start_date').fill('2026-10-01');
         await page.locator('#form\\.end_date').fill('2026-10-31');
         await selectServices();
@@ -3375,6 +3376,7 @@ test('analytics problem aggregate drilldown preserves any mode and intersects se
 
     const selectReport = async (): Promise<void> => {
         await page.locator('#form\\.period').selectOption('custom');
+        await page.waitForLoadState('networkidle');
         await page.locator('#form\\.start_date').fill('2026-10-01');
         await page.locator('#form\\.end_date').fill('2026-10-31');
         await selectProblems();
