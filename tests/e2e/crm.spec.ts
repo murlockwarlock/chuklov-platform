@@ -3299,7 +3299,7 @@ test('analytics service aggregate drilldown intersects the selected service coho
     }
 
     const selectServices = async (): Promise<void> => {
-        const services = page.getByRole('combobox', { name: 'Услуги', exact: true });
+        const services = page.locator('[id="form.cohort_service_ids"]');
         for (const serviceName of [fixture.aggregateServiceAName, fixture.aggregateServiceBName]) {
             await selectAnalyticsOption(page, services, serviceName);
         }
@@ -3365,7 +3365,7 @@ test('analytics problem aggregate drilldown preserves any mode and intersects se
         throw new Error('Aggregate problem fixture did not create the expected records.');
     }
 
-    const problemCategory = page.getByRole('combobox', { name: 'Категории проблем', exact: true });
+    const problemCategory = page.locator('[id="form.cohort_problem_tag_ids"]');
     const selectProblems = async (): Promise<void> => {
         for (const problemName of [fixture.aggregateProblemTagName, fixture.aggregateBackTagName]) {
             await selectAnalyticsOption(page, problemCategory, problemName);
