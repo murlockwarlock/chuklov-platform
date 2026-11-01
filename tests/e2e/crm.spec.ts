@@ -1078,8 +1078,11 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
 
 async function selectAnalyticsOption(page: Page, combobox: Locator, optionName: string): Promise<void> {
     await expect(combobox).toBeVisible({ timeout: 15_000 });
-    await combobox.click();
-    const dropdown = page.locator('.fi-dropdown-panel:visible').last();
+    let dropdown = page.locator('.fi-dropdown-panel:visible').last();
+    if (await dropdown.count() === 0) {
+        await combobox.click();
+        dropdown = page.locator('.fi-dropdown-panel:visible').last();
+    }
     await expect(dropdown).toBeVisible({ timeout: 15_000 });
 
     const search = dropdown.locator('input[type="text"]:visible');
