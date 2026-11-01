@@ -20,6 +20,13 @@ known remote `ENOSPC` preflight failure.
 The acceptance-document commits are documentation-only and are recorded in
 the verification section below after the final document commit.
 
+The current bounded pass started from `56820ac063b2424984a2c86dcf0c78d0c1599571`.
+It addresses only the demographics denominator mismatch. The application
+candidate is `9c77520fd06dbd4643de16f952420b415c4cab64`: demographics now use
+the complete final client cohort, while Acquisition remains period-bound. The
+candidate also contains the focused browser regression for the shared cohort
+and demographic denominator. It has not been deployed to staging.
+
 The two owner files were read literally. An old `ЖДËМ ПОДТВЕРЖДЕНИЯ` marker is
 treated as a deferral in the 23.10 text, not as a current owner prohibition:
 the latest owner decision requires a configurable mechanism with safe defaults
@@ -63,6 +70,42 @@ feature tests against the PostgreSQL service; exact job status is recorded in
 the verification section below. The new application candidate remains
 `NOT VERIFIED` in staging because staging is still on
 `a687639cc4cff72ee952809adb960c673ce7547f`.
+
+## Demographics cohort denominator follow-up
+
+The confirmed defect was that `DemographicsAnalytics` applied the selected
+DashboardPeriod to `clients.created_at` after constructing the cohort. An old
+client could therefore be present in the cohort preview and other dimensions
+but disappear from age, sex, children/adults and country aggregates. That
+incorrectly treated acquisition-by-period as the demographic denominator.
+
+The fix keeps the existing `ClientCohortQuery` authority and starts every
+demographic aggregate from the full organization-scoped final cohort. The
+period-created filter remains only for the existing concrete-`Client` path.
+`AcquisitionAnalytics` was not changed and continues to count only clients
+created in the selected period. Age is calculated once against the local end
+of the selected period in the organization IANA timezone; no second UTC
+conversion is applied. Unknown birth dates and countries remain safe labeled
+categories (`Не указано` / `Не указана`).
+
+The regression fixture has three clients in one organization: an old female
+KZ client, a period-created male KZ client and an older RU client with no birth
+date or sex, plus a foreign-organization client. The cohort preview and
+demographics both return 3; sex is 1/1/1, countries are KZ=2 and RU=1, ages
+are 30–44=2 and unspecified=1, adults are 2 and unspecified=1, and all
+percentages use 3 as denominator. Acquisition returns only the one new
+period-created client. The birthday regression covers a birthday exactly on
+the local period-end reference date and the following day.
+
+Regression coverage is in
+`DemographicsAndServicesAnalyticsTest::test_demographics_uses_the_full_cohort_while_acquisition_remains_period_bound`,
+`DemographicsAndServicesAnalyticsTest::test_demographics_uses_the_period_end_for_birthday_boundaries`
+and
+`AnalyticsReportExportTest::test_demographics_export_keeps_the_full_cohort_denominator`.
+The XLSX regression opens the generated workbook and checks that the old client
+is present on `Демография` and that the cohort metadata count matches the
+demographic denominator. The focused CRM browser flow also asserts that
+`Найдено клиентов: N` equals `Клиентов: N` after Analyze.
 
 ## Literal reconciliation matrix
 
@@ -243,9 +286,11 @@ Implementation started at `715b561b9e08fbc7f468f314b6f045121397da3b`. The
 implementation diff contains 79 files, including Filament pages,
 Analytics/Medical application services, four forward-only migrations, Blade
 views and regression tests. The previous staging-verified application source
-is `a687639cc4cff72ee952809adb960c673ce7547f`; the follow-up application
-candidate is `499c7322929a30387d56c57df36ead0c01b74750` and changes the existing
-cohort query/filter authorities plus their PostgreSQL regression coverage.
+is `a687639cc4cff72ee952809adb960c673ce7547f`; the problem-tag follow-up
+application candidate was `499c7322929a30387d56c57df36ead0c01b74750`. The
+current demographics application candidate is
+`9c77520fd06dbd4643de16f952420b415c4cab64` and extends the existing analytics
+authorities with the full-cohort demographic denominator and its regressions.
 
 The four migrations are:
 
@@ -328,21 +373,22 @@ contract. It did not constitute owner acceptance of every medical workflow;
 the relevant automated medical/session/attachment tests and the existing
 staging smoke remain the evidence for those paths.
 
-The follow-up application commit `499c7322929a30387d56c57df36ead0c01b74750`
-was pushed to the PR branch. No new staging release was forced after the
-previous normal protected deploy attempt stopped during remote preflight with
-`ENOSPC` while npm populated `/root/.npm/_cacache` (exit 228), before
-migrations, release switching or application restart. The safety guard was not
-changed or bypassed. A smoke run against a detached `a687639c` worktree
-confirmed the deployed revision remained `a687639c` and all staging
-health/CRM/Portal checks passed.
+The problem-tag application commit `499c7322929a30387d56c57df36ead0c01b74750`
+and the current demographics candidate
+`9c77520fd06dbd4643de16f952420b415c4cab64` were pushed to the PR branch. No
+new staging release was forced after the normal protected deploy path stopped
+during remote preflight with `ENOSPC` while npm populated
+`/root/.npm/_cacache` (exit 228), before migrations, release switching or
+application restart. The safety guard was not changed or bypassed. A smoke run
+against a detached `a687639c` worktree confirmed the deployed revision remains
+`a687639c` and all staging health/CRM/Portal checks passed.
 
-Therefore exact-follow-up-revision staging is `NOT VERIFIED`; staging
-functional acceptance is `PASS` only for the runtime-equivalent application
-revision `a687639cc4cff72ee952809adb960c673ce7547f`. The exact diff from that
-deployed application source to the current PR includes the cohort query/filter
-fix and regression tests, so the new semantics require a staging recheck after
-the remote disk-space blocker is resolved.
+Therefore exact-current-candidate staging is `NOT VERIFIED`; staging
+functional acceptance is `PASS` only for the previously verified
+runtime-equivalent application revision `a687639cc4cff72ee952809adb960c673ce7547f`.
+The exact diff from that deployed application source to the current PR includes
+the demographics denominator fix and regression tests, so the new semantics
+require a staging recheck after the remote disk-space blocker is resolved.
 
 ### XLSX evidence
 
@@ -353,16 +399,20 @@ their types. The export implementation now also writes `Клиенты` and
 `Фильтры` metadata sheets and preserves the selected cohort/period metadata.
 The current staging download was a real XLSX and was opened as a ZIP; its
 metadata and thematic sheet names were checked in both Chromium and WebKit.
+`AnalyticsReportExportTest::test_demographics_export_keeps_the_full_cohort_denominator`
+also proves that an old cohort client is present on `Демография` and that the
+metadata cohort count equals the demographic denominator.
 
 ### Verification status at the current application candidate
 
-- Focused local backend suites: PASS — 246 tests / 1,417 assertions for the
-  implementation scope, followed by the PostgreSQL-sensitive correction suite:
-  52 tests / 328 assertions. The latter covers cohort queries, dashboard
-  widgets, specialist/service aggregates, goal grouping, medical pain and the
-  unspecified-frequency contract.
+- Focused local backend suites: PASS — 43 tests / 341 assertions across
+  `DemographicsAndServicesAnalyticsTest`, `ClientCohortQueryTest`,
+  `AnalyticsReportExportTest` and `AnalyticsDashboardWidgetTest`. This includes
+  the complete-cohort denominator, period-bound acquisition, birthday-boundary
+  and XLSX regressions.
 - PHP syntax, Pint, changed-file PHPStan and `git diff --check`: PASS;
   changed-file PHPStan diagnostics: 0.
+- Focused E2E source lint: PASS — `npx eslint tests/e2e/crm.spec.ts`.
 - Problem-tag and special-segment regression: PASS — local `ClientCohortQueryTest`
   is 14/14 with 38 assertions; the two new contracts are 2/2 with 7
   assertions. The hosted PostgreSQL feature job also reports the new
@@ -388,15 +438,26 @@ metadata and thematic sheet names were checked in both Chromium and WebKit.
   the runner. The normal staging deployment and smoke above verified Horizon
   active for the current candidate; no deployment guard or quality gate was
   bypassed.
-- PostgreSQL: PASS for the affected implementation paths through the hosted
-  PostgreSQL feature job and protected staging migration/smoke. The historical
-  unrelated `MedicalSessionTest / bookings_no_specialist_overlap` baseline
-  remains outside this owner scope.
-- Scope browser acceptance: PASS for the current deployed application
-  candidate — Chromium 1440px, WebKit desktop and WebKit 390x900 covered the
-  focused analytics custom-period, Analyze, XLSX, reload/history and responsive
-  contract. The earlier Chromium mobile evidence remains available in the
-  local QA artifacts, but is not used to inflate the WebKit result.
+- Hosted focused candidate run `41292537566` at application candidate
+  `9c77520f` ran the affected feature tests against PostgreSQL and the feature
+  step passed. The overall Quality job is FAIL only at the existing repository
+  PHP static-analysis baseline; no changed demographics/cohort/export file is
+  named in the diagnostics. Format, frontend lint/typecheck/build, migrations
+  and dependency audits passed; unrelated integration jobs were intentionally
+  skipped by the focused workflow input.
+- Hosted focused browser run `41292543763`: PASS — the exact analytics test
+  passed in desktop, mobile and WebKit projects, 3/3 tests. The browser
+  assertion compared the visible cohort count with the demographic count after
+  the real Analyze interaction.
+- PostgreSQL: PASS for the affected cohort subquery, organization scope,
+  period/timestamp handling, configured age ranges and percentage/count
+  assertions in the hosted focused feature step. Exact-current-candidate
+  staging PostgreSQL verification remains NOT VERIFIED because the candidate
+  was not deployed.
+- Scope browser acceptance: PASS for the hosted focused analytics browser
+  contract in desktop, mobile and WebKit projects, including the visible shared
+  denominator assertion. Exact-current-candidate staging browser acceptance
+  remains NOT VERIFIED because the candidate was not deployed.
 - Full E2E: PARTIAL — the original run had 98 passed, 5 skipped and 2 failed;
   exact scheduling comparisons were 3/3 PASS on both baseline and current,
   application-source checks passed, and the full WebKit rerun was 33 passed,
@@ -404,14 +465,16 @@ metadata and thematic sheet names were checked in both Chromium and WebKit.
   `NON-REPRODUCIBLE INTERMITTENT E2E FAILURE / likely order or setup dependent;
   product scheduling regression not reproduced`.
 - Staging functional acceptance: PASS for the previously verified focused
-  analytics scope on exact application revision `a687639c`; the new candidate
-  `499c7322` is NOT VERIFIED in staging because the guarded release path remains
-  blocked by remote `ENOSPC`.
+  analytics scope on exact application revision `a687639c`; the current
+  demographics candidate `9c77520f` is NOT VERIFIED in staging because the
+  guarded release path remains blocked by remote `ENOSPC`.
 - Owner acceptance: NOT RUN.
-- Remaining in-scope BLOCKING: 0.
-- Remaining in-scope confirmed REAL BUG after this follow-up: 0. This is limited
-  to the enumerated PR findings and does not claim owner-wide acceptance or
-  exact-head staging verification.
+- Remaining in-scope BLOCKING: 0 for this bounded demographics pass.
+- Remaining confirmed REAL BUG / follow-up work not addressed in this pass:
+  pain-score basis / after_score; problem-specific session axis; aggregate
+  drill-down; atomic saved group CRUD; AI candidate lifecycle; legacy
+  root-cause field; preview error state; human-friendly config; LTV percentage
+  safe default. These findings are not claimed fixed here.
 
 Limitations are the known unrelated repository PHPStan baseline, the partial
 historical full-E2E result, the non-reproducible scheduling failures and no
