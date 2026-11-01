@@ -10,6 +10,7 @@ type CrmFixture = {
     serviceId: number;
     specialistId: number;
     clientName: string;
+    painCountry: string | null;
     partnerName: string;
     serviceName: string;
     specialistName: string;
@@ -165,6 +166,9 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'CRM Клиент '.$suffix,
         ]);
+        if (${options.painScoreFlow ? 'true' : 'false'}) {
+            $client->update(['country' => 'E2E-PAIN-'.$suffix]);
+        }
         if (${options.taxonomyFlow ? 'true' : 'false'}) {
             \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()->create([
                 'organization_id' => $organization->getKey(),
@@ -630,6 +634,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'serviceId' => $service->getKey(),
             'specialistId' => $specialist->getKey(),
             'clientName' => $client->full_name,
+            'painCountry' => ${options.painScoreFlow ? '$client->country' : 'null'},
             'partnerName' => $partner->full_name,
             'serviceName' => $service->name,
             'specialistName' => $specialist->display_name,
@@ -2938,6 +2943,7 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     await expect(painBasis).toBeVisible();
     await painBasis.selectOption('session_after');
     await page.locator('#form\\.cohort_has_pain_score').selectOption('1');
+    await page.locator('#form\\.cohort_countries').selectOption(fixture.painCountry as string);
     await expect(page.getByText('Источник оценки боли', { exact: true })).toBeVisible();
 
     const dimensions = [
