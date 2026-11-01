@@ -27,6 +27,13 @@ the complete final client cohort, while Acquisition remains period-bound. The
 candidate also contains the focused browser regression for the shared cohort
 and demographic denominator. It has not been deployed to staging.
 
+The current bounded pain-score pass started from
+`4fb503bfd1078dde01b127dd3c3a3543547e2641`. Its application candidate is
+`e5d4b6090b22efdb116d43181ec428927419370b`; it adds an explicit typed pain
+score basis and does not change the previously accepted cohort or demographic
+semantics. It has not been deployed to staging because the normal protected
+release stopped during remote preflight with `ENOSPC`.
+
 The two owner files were read literally. An old `ЖДËМ ПОДТВЕРЖДЕНИЯ` marker is
 treated as a deferral in the 23.10 text, not as a current owner prohibition:
 the latest owner decision requires a configurable mechanism with safe defaults
@@ -107,6 +114,50 @@ is present on `Демография` and that the cohort metadata count matches 
 demographic denominator. The focused CRM browser flow also asserts that
 `Найдено клиентов: N` equals `Клиентов: N` after Analyze.
 
+## Pain-score basis follow-up
+
+The old runtime applied the pain-score presence and range filters only to
+`medical_profile_pains.score` and `medical_session_pains.before_score`.
+`medical_session_pains.after_score` was omitted. Consequently an after-only
+client could be treated as `Без оценки`, a real `after_score = 0` could be
+lost, and a range could not target the post-session value. The first regression
+run from `4fb503bfd1078dde01b127dd3c3a3543547e2641` failed as expected: the
+old query returned only the profile/before clients instead of the expected
+profile/before/after cohort.
+
+The fix adds the typed `PainScoreBasis` to `ClientCohortFilters` with the safe
+backward-compatible default `any` and the owner-facing labels `Любая оценка`,
+`Медицинский профиль`, `До сеанса` and `После сеанса`. `any` uses OR across
+profile, before-session and after-session values; each specific basis uses
+only its selected source. Presence is based on non-NULL values, so `0` remains
+a real score. Min/max applies only to the selected source. Session bases use
+the selected DashboardPeriod on `medical_sessions.occurred_at`; profile scores
+remain valid independently of that period. Unknown basis values are rejected
+with a controlled validation error rather than silently becoming `any`.
+
+The synthetic PostgreSQL regression has clients A–G: profile-only, before-only,
+after-zero, after-seven, no-score, after-score outside the period and a foreign
+tenant client. It proves `any` presence, no-score, each specific basis, both
+after-score ranges, exact zero, period exclusion, the profile/session period
+split and organization isolation. Legacy saved dynamic groups without the new
+field normalize to `any`; new rule definitions and immutable versions preserve
+the selected basis. The Analytics Console preview/Analyze path, human reason
+and XLSX `Фильтры` sheet use the same filter object and show `Источник оценки
+боли` without internal enum keys.
+
+`ClientCohortQueryTest`, `AnalyticsDashboardWidgetTest` and
+`AnalyticsReportExportTest` cover the backend, saved-group compatibility,
+controlled invalid input and export contracts. Hosted run `41296535965` passed
+the focused PostgreSQL feature step with 37 tests and 252 assertions. Hosted
+run `41296535979` passed the exact analytics browser journey in Chromium,
+WebKit and 390px mobile: basis selection, preview, range, Analyze, XLSX,
+reload, history navigation, basis switching and horizontal-overflow assertion.
+The exact candidate remains `NOT VERIFIED` in staging; staging is still on
+`a687639cc4cff72ee952809adb960c673ce7547f` with a green health contract. The
+normal deploy of `e5d4b609` stopped in remote preflight at line 412 while
+writing `shared/backups/predeploy-e5d4b6090b22efdb116d43181ec428927419370b/captured-at.txt`:
+`No space left on device`, before migrations, release switching or restart.
+
 ## Literal reconciliation matrix
 
 The following matrix is the current implementation decision for every numbered
@@ -173,8 +224,10 @@ The implemented filter surface is: explicit include/exclude clients, saved
 groups, current segments, archive state, blacklist, problem tags, feedback
 themes, goal tags, age/ranges, gender, child/adult, countries, source aliases,
 services/service groups, specialists, booking statuses/events, completed-visit
-count, last-visit range, purchase groups/statuses, pain-score presence/range
-and satisfaction range. The console shows `Найдено клиентов: N` before Analyze;
+count, last-visit range, purchase groups/statuses, pain-score presence/range/
+basis and satisfaction range. Pain-score profile values are not period-bound;
+session before/after values are constrained by the selected medical-session
+period. The console shows `Найдено клиентов: N` before Analyze;
 drill-down uses `Показать клиентов`, a human-readable reason and an authorized
 client-card link without medical free text.
 
@@ -291,6 +344,9 @@ application candidate was `499c7322929a30387d56c57df36ead0c01b74750`. The
 current demographics application candidate is
 `9c77520fd06dbd4643de16f952420b415c4cab64` and extends the existing analytics
 authorities with the full-cohort demographic denominator and its regressions.
+The current pain-score application candidate is
+`e5d4b6090b22efdb116d43181ec428927419370b` and extends the same authorities
+with typed source selection, after-score filtering and its regressions.
 
 The four migrations are:
 
@@ -373,15 +429,17 @@ contract. It did not constitute owner acceptance of every medical workflow;
 the relevant automated medical/session/attachment tests and the existing
 staging smoke remain the evidence for those paths.
 
-The problem-tag application commit `499c7322929a30387d56c57df36ead0c01b74750`
-and the current demographics candidate
-`9c77520fd06dbd4643de16f952420b415c4cab64` were pushed to the PR branch. No
-new staging release was forced after the normal protected deploy path stopped
-during remote preflight with `ENOSPC` while npm populated
-`/root/.npm/_cacache` (exit 228), before migrations, release switching or
-application restart. The safety guard was not changed or bypassed. A smoke run
-against a detached `a687639c` worktree confirmed the deployed revision remains
-`a687639c` and all staging health/CRM/Portal checks passed.
+The problem-tag application commit `499c7322929a30387d56c57df36ead0c01b74750`,
+the demographics candidate
+`9c77520fd06dbd4643de16f952420b415c4cab64` and the current pain-score
+candidate `e5d4b6090b22efdb116d43181ec428927419370b` were pushed to the PR
+branch. No new staging release was forced after the normal protected deploy
+path stopped during remote preflight with `ENOSPC` while writing the final
+predeploy capture file (remote script line 412), before migrations, release
+switching or application restart. The safety guard was not changed or bypassed.
+A read-only health check confirmed the deployed revision remains
+`a687639cc4cff72ee952809adb960c673ce7547f`; database, pgvector, Redis and
+private storage are healthy.
 
 Therefore exact-current-candidate staging is `NOT VERIFIED`; staging
 functional acceptance is `PASS` only for the previously verified
@@ -405,11 +463,10 @@ metadata cohort count equals the demographic denominator.
 
 ### Verification status at the current application candidate
 
-- Focused local backend suites: PASS — 43 tests / 341 assertions across
-  `DemographicsAndServicesAnalyticsTest`, `ClientCohortQueryTest`,
-  `AnalyticsReportExportTest` and `AnalyticsDashboardWidgetTest`. This includes
-  the complete-cohort denominator, period-bound acquisition, birthday-boundary
-  and XLSX regressions.
+- Focused local backend suites: PASS — 43 tests / 335 assertions across
+  `ClientCohortQueryTest`, `AnalyticsDashboardWidgetTest` and
+  `AnalyticsReportExportTest`. This includes pain basis, invalid-basis,
+  saved-group compatibility, NULL/0, period/tenant and XLSX regressions.
 - PHP syntax, Pint, changed-file PHPStan and `git diff --check`: PASS;
   changed-file PHPStan diagnostics: 0.
 - Focused E2E source lint: PASS — `npx eslint tests/e2e/crm.spec.ts`.
@@ -449,6 +506,16 @@ metadata cohort count equals the demographic denominator.
   passed in desktop, mobile and WebKit projects, 3/3 tests. The browser
   assertion compared the visible cohort count with the demographic count after
   the real Analyze interaction.
+- Hosted pain-score candidate run `41296535965`: PostgreSQL feature step PASS —
+  37 tests / 252 assertions, including `any`, each specific basis, NULL/0,
+  period-bound session scores, profile period independence, invalid input,
+  saved-group persistence and organization scope. Quality static checks FAIL
+  only on the pre-existing repository-wide PHPStan baseline; no changed
+  application file is named in the diagnostics.
+- Hosted pain-score browser run `41296535979`: PASS — the exact analytics
+  journey passed in Chromium desktop, WebKit desktop and 390px mobile, 3/3
+  tests. It exercised basis selection, live preview, range, Analyze, XLSX,
+  reload, back/forward, basis switching and horizontal-overflow checks.
 - PostgreSQL: PASS for the affected cohort subquery, organization scope,
   period/timestamp handling, configured age ranges and percentage/count
   assertions in the hosted focused feature step. Exact-current-candidate
@@ -466,15 +533,15 @@ metadata cohort count equals the demographic denominator.
   product scheduling regression not reproduced`.
 - Staging functional acceptance: PASS for the previously verified focused
   analytics scope on exact application revision `a687639c`; the current
-  demographics candidate `9c77520f` is NOT VERIFIED in staging because the
+  pain-score candidate `e5d4b609` is NOT VERIFIED in staging because the
   guarded release path remains blocked by remote `ENOSPC`.
 - Owner acceptance: NOT RUN.
-- Remaining in-scope BLOCKING: 0 for this bounded demographics pass.
+- Remaining in-scope BLOCKING: 0 for this bounded pain-score pass.
 - Remaining confirmed REAL BUG / follow-up work not addressed in this pass:
-  pain-score basis / after_score; problem-specific session axis; aggregate
-  drill-down; atomic saved group CRUD; AI candidate lifecycle; legacy
-  root-cause field; preview error state; human-friendly config; LTV percentage
-  safe default. These findings are not claimed fixed here.
+  problem-specific session axis; aggregate drill-down; atomic saved group CRUD;
+  AI candidate lifecycle; legacy root-cause field; preview error state;
+  human-friendly config; LTV percentage safe default. These findings are not
+  claimed fixed here.
 
 Limitations are the known unrelated repository PHPStan baseline, the partial
 historical full-E2E result, the non-reproducible scheduling failures and no
