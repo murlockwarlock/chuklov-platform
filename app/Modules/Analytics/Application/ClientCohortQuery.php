@@ -337,8 +337,8 @@ final readonly class ClientCohortQuery
      */
     private function applyProblemTags(Builder $query, array $tagIds, string $mode, int $organizationId, ?DashboardPeriod $period): void
     {
-        $matches = function (Builder $branch, int $tagId) use ($organizationId, $period): void {
-            $branch->where(function (Builder $exists) use ($tagId, $organizationId, $period): void {
+        $matches = function (Builder $branch, int $tagId, bool $or = false) use ($organizationId, $period): void {
+            $constraint = function (Builder $exists) use ($tagId, $organizationId, $period): void {
                 $exists->whereExists(function ($subquery) use ($tagId, $organizationId): void {
                     $subquery->selectRaw('1')
                         ->from('medical_profile_pains as pains')
@@ -366,7 +366,15 @@ final readonly class ClientCohortQuery
                         });
                     }
                 });
-            });
+            };
+
+            if ($or) {
+                $branch->orWhere($constraint);
+
+                return;
+            }
+
+            $branch->where($constraint);
         };
 
         if ($mode === 'exclude') {
@@ -412,8 +420,8 @@ final readonly class ClientCohortQuery
         }
 
         $query->where(function (Builder $branch) use ($tagIds, $matches): void {
-            foreach ($tagIds as $tagId) {
-                $matches($branch, $tagId);
+            foreach ($tagIds as $index => $tagId) {
+                $matches($branch, $tagId, $index > 0);
             }
         });
     }

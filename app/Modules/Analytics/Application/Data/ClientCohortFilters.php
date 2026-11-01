@@ -2,11 +2,15 @@
 
 namespace App\Modules\Analytics\Application\Data;
 
+use App\Modules\Analytics\Domain\Enums\ClientSegment;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
 
 final readonly class ClientCohortFilters
 {
+    /** @var list<string> */
+    public array $segments;
+
     /** @param list<int> $clientIds
      * @param  list<int>  $excludeClientIds
      * @param  list<int>  $savedGroupIds
@@ -30,7 +34,7 @@ final readonly class ClientCohortFilters
         public array $clientIds = [],
         public array $excludeClientIds = [],
         public array $savedGroupIds = [],
-        public array $segments = [],
+        array $segments = [],
         public ?bool $archived = null,
         public ?bool $blacklist = null,
         public array $problemTagIds = [],
@@ -61,6 +65,7 @@ final readonly class ClientCohortFilters
         public ?int $satisfactionMin = null,
         public ?int $satisfactionMax = null,
     ) {
+        $this->segments = self::normalizeSegments($segments);
         if (! in_array($problemTagMode, ['any', 'all'], true)) {
             throw new InvalidArgumentException('The problem tag mode is invalid.');
         }
@@ -172,6 +177,17 @@ final readonly class ClientCohortFilters
             'satisfaction_min' => $this->satisfactionMin,
             'satisfaction_max' => $this->satisfactionMax,
         ];
+    }
+
+    /** @param list<string> $segments
+     * @return list<string>
+     */
+    private static function normalizeSegments(array $segments): array
+    {
+        return array_values(array_unique(array_filter(
+            array_map(static fn (mixed $segment): string => trim((string) $segment), $segments),
+            static fn (string $segment): bool => $segment !== '' && $segment !== ClientSegment::All->value,
+        )));
     }
 
     private static function nullableInt(mixed $value): ?int

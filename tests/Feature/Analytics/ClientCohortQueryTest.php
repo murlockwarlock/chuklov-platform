@@ -150,6 +150,99 @@ final class ClientCohortQueryTest extends TestCase
         self::assertNotContains($unmatchedClient->getKey(), $ids);
     }
 
+    public function test_problem_tag_modes_use_any_or_all_and_exclude_any_matching_tag(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $neck = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Шея',
+            'group_name' => 'Проблемы',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $back = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Спина',
+            'group_name' => 'Проблемы',
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+        $clients = [
+            'neck' => Client::factory()->forOrganization($organization)->create(),
+            'back' => Client::factory()->forOrganization($organization)->create(),
+            'both' => Client::factory()->forOrganization($organization)->create(),
+            'neither' => Client::factory()->forOrganization($organization)->create(),
+        ];
+
+        $updateProfile = app(UpdateMedicalProfile::class);
+        $updateProfile->handle($admin, $clients['neck'], new UpdateMedicalProfileCommand(
+            pains: [['name' => 'Шея', 'score' => 5, 'tag_ids' => [$neck->getKey()]]],
+            painsProvided: true,
+        ));
+        $updateProfile->handle($admin, $clients['back'], new UpdateMedicalProfileCommand(
+            pains: [['name' => 'Спина', 'score' => 5, 'tag_ids' => [$back->getKey()]]],
+            painsProvided: true,
+        ));
+        $updateProfile->handle($admin, $clients['both'], new UpdateMedicalProfileCommand(
+            pains: [
+                ['name' => 'Шея', 'score' => 5, 'tag_ids' => [$neck->getKey()]],
+                ['name' => 'Спина', 'score' => 5, 'tag_ids' => [$back->getKey()]],
+            ],
+            painsProvided: true,
+        ));
+        app(OrganizationContext::class)->set($organization);
+        $query = app(ClientCohortQuery::class);
+
+        $anyIds = $query->for($admin, new ClientCohortFilters(
+            problemTagIds: [$neck->getKey(), $back->getKey()],
+            problemTagMode: 'any',
+        ))->pluck('clients.id')->sort()->values()->all();
+        $allIds = $query->for($admin, new ClientCohortFilters(
+            problemTagIds: [$neck->getKey(), $back->getKey()],
+            problemTagMode: 'all',
+        ))->pluck('clients.id')->sort()->values()->all();
+        $excludedIds = $query->for($admin, new ClientCohortFilters(
+            excludeProblemTagIds: [$neck->getKey(), $back->getKey()],
+        ))->pluck('clients.id')->sort()->values()->all();
+
+        self::assertSame(
+            [$clients['neck']->getKey(), $clients['back']->getKey(), $clients['both']->getKey()],
+            $anyIds,
+        );
+        self::assertSame([$clients['both']->getKey()], $allIds);
+        self::assertSame([$clients['neither']->getKey()], $excludedIds);
+    }
+
+    public function test_all_segment_is_normalized_before_multiselect_query(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $now = CarbonImmutable::now('UTC');
+        $newClient = Client::factory()->forOrganization($organization)->create([
+            'created_at' => $now->subDays(3),
+            'updated_at' => $now->subDays(3),
+        ]);
+        $oldClient = Client::factory()->forOrganization($organization)->create([
+            'created_at' => $now->subDays(90),
+            'updated_at' => $now->subDays(90),
+        ]);
+        app(OrganizationContext::class)->set($organization);
+        $query = app(ClientCohortQuery::class);
+        $allFilters = new ClientCohortFilters(
+            segments: [ClientSegment::All->value],
+        );
+        $allAndNewFilters = new ClientCohortFilters(
+            segments: [ClientSegment::All->value, ClientSegment::NewClients->value],
+        );
+
+        $allIds = $query->for($admin, $allFilters)->pluck('clients.id')->sort()->values()->all();
+        $allAndNewIds = $query->for($admin, $allAndNewFilters)->pluck('clients.id')->sort()->values()->all();
+
+        self::assertSame([], $allFilters->segments);
+        self::assertSame([ClientSegment::NewClients->value], $allAndNewFilters->segments);
+        self::assertSame([$newClient->getKey(), $oldClient->getKey()], $allIds);
+        self::assertSame([$newClient->getKey()], $allAndNewIds);
+    }
+
     public function test_six_client_owner_fixture_returns_one_exact_cohort_to_preview_and_dimensions(): void
     {
         [$organization, $admin] = $this->fixture();
