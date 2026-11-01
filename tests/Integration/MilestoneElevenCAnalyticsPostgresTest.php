@@ -97,6 +97,7 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
         $withoutScore = $this->problemTag($organization, 'Без оценки', 3);
         $otherNeck = $this->problemTag($otherOrganization, 'Шея', 1);
 
+        app(OrganizationContext::class)->set($organization);
         $this->createPainSession($admin, $clientA, $specialist, '2026-01-01 09:00:00', [['name' => 'Другая проблема', 'tag_ids' => [], 'before_score' => 8, 'after_score' => 7]]);
         $this->createPainSession($admin, $clientA, $specialist, '2026-01-02 09:00:00', []);
         $this->createPainSession($admin, $clientA, $specialist, '2026-01-03 09:00:00', [
