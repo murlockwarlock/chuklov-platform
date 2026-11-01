@@ -1077,16 +1077,17 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
 }
 
 async function selectAnalyticsOption(page: Page, combobox: Locator, optionName: string): Promise<void> {
+    await expect(combobox).toBeVisible({ timeout: 15_000 });
     await combobox.click();
-    const dropdown = page.locator('div[role="listbox"]:visible').last();
-    await expect(dropdown).toBeVisible();
+    const dropdown = page.locator('.fi-dropdown-panel:visible').last();
+    await expect(dropdown).toBeVisible({ timeout: 15_000 });
 
     const search = dropdown.locator('input[type="text"]:visible');
     if (await search.count() > 0) {
         await search.fill(optionName);
     }
 
-    const option = dropdown.getByRole('option', { name: optionName, exact: true });
+    const option = dropdown.getByRole('option').filter({ hasText: optionName }).first();
     await expect(option).toBeVisible({ timeout: 15_000 });
     await option.click();
     await expect(combobox).toContainText(optionName, { timeout: 15_000 });
