@@ -245,7 +245,13 @@ final class SessionForm
                             ->reorderable()
                             ->addActionLabel(__('Добавить первопричину'))
                             ->columnSpanFull(),
-                        Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),
+                        Hidden::make('root_cause_hypothesis')->dehydrated()->nullable(),
+                        Placeholder::make('legacy_root_cause_hypothesis')
+                            ->label(__('Старая гипотеза первопричины (только для истории)'))
+                            ->content(fn (Get $get): string => filled($get('root_cause_hypothesis'))
+                                ? (string) $get('root_cause_hypothesis')
+                                : __('Нет сохранённого значения'))
+                            ->columnSpanFull(),
                         Textarea::make('protocol')
                             ->label(__('Алгоритм сеанса (пошаговый протокол сеанса)'))
                             ->rows(3)
@@ -261,8 +267,28 @@ final class SessionForm
                                 })),
                         Textarea::make('subjective_feelings')->label(__('Субъективные ощущения клиента после сеанса'))->rows(3)->placeholder(__('Что клиент почувствовал после сеанса')),
                         Textarea::make('visual_posture_diagnostics')->label(__('Визуальная диагностика осанки'))->rows(3)->placeholder(__('Изменения линии плеч, таза и позвоночника')),
-                        Textarea::make('result')->label(__('Результат после сеанса'))->rows(3)->placeholder(__('Эффект после процедур/до следующего сеанса')),
+                        Textarea::make('result')
+                            ->label(__('Результат после сеанса'))
+                            ->rows(3)
+                            ->placeholder(__('Эффект после процедур/до следующего сеанса'))
+                            ->hintAction(Action::make('fillResult')
+                                ->label(__('Заполнить'))
+                                ->icon('heroicon-o-sparkles')
+                                ->action(static function (): void {
+                                    Notification::make()
+                                        ->title(__('Сначала сохраните сеанс'))
+                                        ->info()
+                                        ->send();
+                                })),
                     ])->columnSpanFull(),
+                Section::make(__('Фото до / после'))
+                    ->schema([
+                        Placeholder::make('session_photos_after_save')
+                            ->hiddenLabel()
+                            ->content(__('Сначала сохраните сеанс. Затем добавьте несколько фотографий до и после сеанса на странице просмотра.'))
+                            ->columnSpanFull(),
+                    ])
+                    ->columnSpanFull(),
             ]);
     }
 

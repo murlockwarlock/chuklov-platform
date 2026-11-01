@@ -52,6 +52,8 @@ final class AnalyticsReportExportTest extends TestCase
                     'name' => 'Шея и плечевой пояс',
                     'group' => 'Опорно-двигательная система',
                     'client_count' => 2,
+                    'before_score_count' => 2,
+                    'after_score_count' => 2,
                     'average_before' => 7.5,
                     'average_after' => 3.25,
                     'average_reduction' => 4.25,
@@ -108,11 +110,11 @@ final class AnalyticsReportExportTest extends TestCase
         self::assertNotNull($financeSheet);
 
         self::assertSame(
-            ['Проблема', 'Группа', 'Клиентов', 'Среднее до', 'Среднее после', 'Снижение', 'Снижение, %', 'Сеанс 1 после', 'Сеанс 2 после', 'Сеанс 3 после'],
+            ['Проблема', 'Группа', 'Клиентов', 'Оценок до', 'Оценок после', 'Среднее до', 'Среднее после', 'Снижение', 'Снижение, %', 'Сеанс 1 после', 'Сеанс 2 после', 'Сеанс 3 после'],
             $painSheet->toArray()[0],
         );
         self::assertContains(
-            ['Шея и плечевой пояс', 'Опорно-двигательная система', '2', '7.5', '3.25', '4.25', '56.67', '4', '3', '2'],
+            ['Шея и плечевой пояс', 'Опорно-двигательная система', '2', '2', '2', '7.5', '3.25', '4.25', '56.67', '4', '3', '2'],
             $painSheet->toArray(),
         );
         self::assertSame(['Параметр', 'Значение', 'Количество', 'Доля, %'], $demographicsSheet->toArray()[0]);
@@ -229,9 +231,9 @@ final class AnalyticsReportExportTest extends TestCase
         self::assertNotNull($filters);
         $neckRow = collect($painSheet->toArray())->first(static fn (array $row): bool => ($row[0] ?? null) === 'Шея');
         self::assertIsArray($neckRow);
-        self::assertSame('8', (string) $neckRow[7]);
-        self::assertSame('4', (string) $neckRow[8]);
-        self::assertSame('1', (string) $neckRow[9]);
+        self::assertSame('8', (string) $neckRow[9]);
+        self::assertSame('4', (string) $neckRow[10]);
+        self::assertSame('1', (string) $neckRow[11]);
         self::assertContains(['Ось сеансов', 'Порядок сеансов конкретной категории проблемы'], $filters->toArray());
         self::assertContains(['Версия правила', 'problem-chronological-v1'], $filters->toArray());
     }

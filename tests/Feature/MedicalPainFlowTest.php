@@ -381,6 +381,21 @@ final class MedicalPainFlowTest extends TestCase
         self::assertStringContainsString('Визуальная диагностика осанки: Плечи выровнены', $generated);
     }
 
+    public function test_generated_result_keeps_named_pain_rows_without_scores_as_null_data(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+
+        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-22 09:00:00', 'UTC'),
+            pains: [['name' => 'Плечо без оценки']],
+        ));
+
+        $generated = app(GenerateSessionResult::class)->handle($admin, MedicalSession::findOrFail($session->id), $client);
+
+        self::assertStringContainsString('Плечо без оценки: было нет данных, стало нет данных из 10', $generated);
+    }
+
     public function test_configured_tests_values_causes_and_root_causes_round_trip_per_session(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

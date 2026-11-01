@@ -85,6 +85,8 @@ final class AnalyticsMetricSettings extends LocalizedPage
             'preview_period' => DashboardPeriod::LastThirtyDays,
             'session_axis_semantics' => app(ClientSessionAxisCatalog::class)->selected(app(OrganizationContext::class)->id())['key'],
             'metrics' => app(AnalyticsMetricConfiguration::class)->formValues(),
+            'therapy_effectiveness_formula_reference' => app(AnalyticsMetricConfiguration::class)->values()['therapy_effectiveness']['formula_reference'],
+            'ltv_percent_formula_reference' => app(AnalyticsMetricConfiguration::class)->values()['ltv_percent']['formula_reference'],
         ]);
     }
 
@@ -233,6 +235,22 @@ final class AnalyticsMetricSettings extends LocalizedPage
                         ->options(ClientSessionAxisCatalog::options())
                         ->required(),
                 ])
+                ->columnSpanFull(),
+            Section::make(__('Определения процентных показателей'))
+                ->description(__('Текст фиксирует согласованные владельцем определения. Пока определение процента эффективности или LTV не заполнено, соответствующий показатель остаётся выключенным.'))
+                ->schema([
+                    Textarea::make('therapy_effectiveness_formula_reference')
+                        ->label(__('Определение процента эффективности терапии'))
+                        ->helperText(__('Сама формула не выдумывается системой и должна быть подтверждена владельцем.'))
+                        ->rows(3)
+                        ->maxLength(2000),
+                    Textarea::make('ltv_percent_formula_reference')
+                        ->label(__('Определение процента LTV'))
+                        ->helperText(__('Обязательно перед включением метрики «Изменение LTV к предыдущему периоду, %».'))
+                        ->rows(3)
+                        ->maxLength(2000),
+                ])
+                ->columns(['default' => 1, 'sm' => 2])
                 ->columnSpanFull(),
         ])->statePath('data');
     }

@@ -55,7 +55,8 @@ final readonly class SuggestAnalyticsTags
         }
 
         $availableTags = $this->normalizeTags($availableTags);
-        if ($availableTags === []) {
+        $allowNewCandidates = $this->newTagCandidatesEnabled((int) $organization->getKey());
+        if ($availableTags === [] && ! $allowNewCandidates) {
             return $this->failedResult(0, 'taxonomy_not_configured');
         }
         $organizationId = (int) $organization->getKey();
@@ -65,6 +66,7 @@ final readonly class SuggestAnalyticsTags
             'source_id' => $sourceId,
             'source_text' => mb_substr($sourceText, 0, 4000),
             'tags' => $availableTags,
+            'allow_new_candidates' => $allowNewCandidates,
         ], JSON_THROW_ON_ERROR));
         [$run, $shouldExecute] = $this->claim($organizationId, $taxonomy, $sourceType, $sourceId, $clientId, $digest, $force);
         if (! $shouldExecute) {
@@ -108,7 +110,7 @@ final readonly class SuggestAnalyticsTags
             $suggestions = $this->validateOutput(
                 $result->outputPayload,
                 $availableTags,
-                $this->newTagCandidatesEnabled($organizationId),
+                $allowNewCandidates,
             );
             if (! $result->isSuccess() || $suggestions === null) {
                 return $this->fail($run, $result->isSuccess() ? 'invalid_output' : 'ai_failed', $result->errorMessageSanitized);

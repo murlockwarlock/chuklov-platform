@@ -606,7 +606,17 @@ final class AnalyticsDashboardWidgetTest extends TestCase
 
         $authorizer = Mockery::mock(OrganizationAuthorizer::class, [app(OrganizationContext::class)])->makePartial();
         $authorizer->shouldReceive('allows')->andReturn(true);
-        $authorizer->shouldReceive('authorize')->andThrow(new AuthorizationException);
+        $authorizationCalls = 0;
+        $authorizer->shouldReceive('authorize')->andReturnUsing(
+            function (User $actor, Organization $currentOrganization, OrganizationPermission $permission) use (&$authorizationCalls): mixed {
+                $authorizationCalls++;
+                if ($authorizationCalls > 1) {
+                    throw new AuthorizationException;
+                }
+
+                return $actor->membershipFor($currentOrganization);
+            },
+        );
         $this->app->instance(OrganizationAuthorizer::class, $authorizer);
         Log::shouldReceive('warning')
             ->once()
@@ -722,6 +732,9 @@ final class AnalyticsDashboardWidgetTest extends TestCase
             ->assertHasErrors(['data.end_date']);
 
         self::assertSame([], $component->instance()->results);
+        self::assertSame('invalid', $component->instance()->cohortPreviewStatus);
+        self::assertNull($component->instance()->cohortPreviewCount);
+        self::assertNotNull($component->instance()->cohortPreviewError);
 
         $component
             ->call('export')
@@ -737,6 +750,10 @@ final class AnalyticsDashboardWidgetTest extends TestCase
             ->assertNotified('Анализ обновлён')
             ->call('export')
             ->assertFileDownloaded('analytics-2026-10-01-2026-10-02.xlsx');
+
+        self::assertSame('success', $component->instance()->cohortPreviewStatus);
+        self::assertSame(0, $component->instance()->cohortPreviewCount);
+        self::assertNull($component->instance()->cohortPreviewError);
     }
 
     public function test_analytics_console_uses_human_messages_for_missing_custom_dates(): void

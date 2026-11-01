@@ -16,7 +16,28 @@
         </div>
     @endif
 
-    @if ($cohortPreviewCount !== null)
+    @if ($cohortPreviewStatus === 'invalid')
+        <div class="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100" role="alert">
+            <p class="font-medium">{{ __('Проверьте фильтры') }}</p>
+            <p class="mt-1">{{ $cohortPreviewError ?? __('Исправьте значения и повторите действие.') }}</p>
+        </div>
+    @elseif ($cohortPreviewStatus === 'error')
+        <div class="mt-6 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900 dark:border-red-400/30 dark:bg-red-400/10 dark:text-red-100" role="alert">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                    <p class="font-medium">{{ __('Предпросмотр временно недоступен') }}</p>
+                    <p class="mt-1">{{ __('Повторите анализ ещё раз.') }}</p>
+                </div>
+                <button type="button" wire:click="analyze" class="rounded-lg bg-red-700 px-3 py-2 text-sm font-medium text-white hover:bg-red-800">{{ __('Повторить') }}</button>
+            </div>
+        </div>
+    @elseif ($cohortPreviewStatus === 'loading')
+        <div class="mt-6 rounded-xl border border-gray-200 bg-gray-50 p-4 text-sm text-gray-700 dark:border-white/10 dark:bg-white/5 dark:text-gray-200" role="status">
+            {{ __('Обновляем предпросмотр…') }}
+        </div>
+    @endif
+
+    @if ($cohortPreviewStatus === 'success' && $cohortPreviewCount !== null)
         <section class="mt-6 rounded-xl border border-gray-200 bg-white p-6 shadow-sm dark:border-white/10 dark:bg-gray-900" aria-label="{{ __('Клиенты когорты') }}">
             <div class="flex flex-wrap items-center justify-between gap-3">
                 <div>
@@ -117,11 +138,15 @@
                     <div class="flex flex-wrap items-baseline justify-between gap-3">
                         <h2 class="text-base font-semibold text-gray-950 dark:text-white">{{ __('Проблемы и динамика боли') }}</h2>
                         <p class="text-sm text-gray-500 dark:text-gray-400">
-                            {{ __('Клиенты: :clients · Сеансы: :sessions', ['clients' => $results['pain']['client_count'], 'sessions' => $results['pain']['session_count']]) }}
+                            {{ __('Клиенты: :clients · Сеансы: :sessions · Оценки до: :before · после: :after', ['clients' => $results['pain']['client_count'], 'sessions' => $results['pain']['session_count'], 'before' => $results['pain']['before_score_count'], 'after' => $results['pain']['after_score_count']]) }}
                         </p>
                         <button type="button" wire:click="showCohortClients" class="text-sm text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>
                     </div>
-                    <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ __('Снижение боли, % — изменение оценки боли относительно значения до сеанса. Сеанс 1 / 2 / 3 — :axis.', ['axis' => $results['pain']['session_axis_label'] ?? 'порядок сеансов конкретной категории проблемы']) }}</p>
+                    @if ($results['pain']['effectiveness_available'] ?? false)
+                        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ __('Процент эффективности терапии рассчитан по утверждённому владельцем определению. Сеанс 1 / 2 / 3 — :axis.', ['axis' => $results['pain']['session_axis_label'] ?? 'порядок сеансов конкретной категории проблемы']) }}</p>
+                    @else
+                        <p class="mt-2 text-sm text-amber-700 dark:text-amber-300">{{ __('Процент эффективности терапии не настроен. Заполните определение и включите метрику в настройках аналитики.') }}</p>
+                    @endif
                     @if ($results['pain']['problems'] === [])
                         <p class="mt-4 text-sm text-gray-500 dark:text-gray-400">{{ __('За выбранный период структурированные категории не найдены.') }}</p>
                     @else
@@ -142,10 +167,13 @@
                                 <tr>
                                     <th class="px-3 py-2">{{ __('Категория') }}</th>
                                     <th class="px-3 py-2">{{ __('Клиенты') }}</th>
+                                    <th class="px-3 py-2">{{ __('Оценки до / после') }}</th>
                                     <th class="px-3 py-2">{{ __('До') }}</th>
                                     <th class="px-3 py-2">{{ __('После') }}</th>
                                     <th class="px-3 py-2">{{ __('Среднее снижение') }}</th>
-                                    <th class="px-3 py-2">{{ __('Снижение боли, %') }}</th>
+                                    @if ($results['pain']['effectiveness_available'] ?? false)
+                                        <th class="px-3 py-2">{{ __('Снижение боли, %') }}</th>
+                                    @endif
                                     <th class="px-3 py-2">{{ __('Сеанс 1 / 2 / 3 после') }}</th>
                                     <th class="px-3 py-2"></th>
                                 </tr>
@@ -157,10 +185,13 @@
                                             {{ $problem['group'] ? $problem['group'].': ' : '' }}{{ $problem['name'] }}
                                         </td>
                                         <td class="px-3 py-3">{{ $problem['client_count'] }}</td>
+                                        <td class="px-3 py-3">{{ $problem['before_score_count'] }} / {{ $problem['after_score_count'] }}</td>
                                         <td class="px-3 py-3">{{ $problem['average_before'] ?? '—' }}</td>
                                         <td class="px-3 py-3">{{ $problem['average_after'] ?? '—' }}</td>
                                         <td class="px-3 py-3">{{ $problem['average_reduction'] ?? '—' }}</td>
-                                        <td class="px-3 py-3">{{ $problem['average_reduction_percent'] === null ? __('Недостаточно данных') : $problem['average_reduction_percent'].'%' }}</td>
+                                        @if ($results['pain']['effectiveness_available'] ?? false)
+                                            <td class="px-3 py-3">{{ $problem['average_reduction_percent'] === null ? __('Недостаточно данных') : $problem['average_reduction_percent'].'%' }}</td>
+                                        @endif
                                         <td class="px-3 py-3">{{ $problem['session_1_after'] ?? '—' }} / {{ $problem['session_2_after'] ?? '—' }} / {{ $problem['session_3_after'] ?? '—' }}</td>
                                         <td class="px-3 py-3"><button type="button" wire:click="showAggregateClients('pain', {{ (int) $problem['tag_id'] }})" class="whitespace-nowrap text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button></td>
                                     </tr>

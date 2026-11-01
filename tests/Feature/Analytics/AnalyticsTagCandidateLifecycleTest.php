@@ -100,6 +100,75 @@ final class AnalyticsTagCandidateLifecycleTest extends TestCase
         self::assertSame([['id' => MedicalProblemTag::query()->where('organization_id', $organization->getKey())->where('name', 'Новая категория боли')->value('id'), 'label' => 'Новая категория боли']], $run->refresh()->suggestions);
     }
 
+    public function test_new_candidate_can_be_renamed_before_it_is_created_and_then_accepted_with_the_reviewed_label(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $run = $this->candidateRun($organization, [['id' => null, 'label' => 'Слишком длинное описание боли']]);
+        $candidate = new AnalyticsTagCandidate;
+        $candidate->forceFill([
+            'organization_id' => $organization->getKey(),
+            'classification_run_id' => $run->getKey(),
+            'client_id' => null,
+            'taxonomy' => 'complaints',
+            'source_type' => 'synthetic',
+            'source_id' => 1,
+            'candidate_type' => 'new',
+            'label' => 'Слишком длинное описание боли',
+            'status' => AnalyticsTagCandidateStatus::NeedsReview,
+            'version' => 1,
+        ]);
+        $candidate->save();
+
+        app(ReviewAnalyticsTagCandidate::class)->handle($admin, (int) $candidate->getKey(), 'rename', 'Боль при наклоне');
+
+        self::assertDatabaseCount('medical_problem_tags', 0);
+        self::assertDatabaseHas('analytics_tag_candidates', [
+            'id' => $candidate->getKey(),
+            'status' => AnalyticsTagCandidateStatus::NeedsReview->value,
+            'label' => 'Боль при наклоне',
+            'reviewed_label' => 'Боль при наклоне',
+        ]);
+        self::assertSame([['id' => null, 'label' => 'Боль при наклоне']], $run->refresh()->suggestions);
+
+        app(ReviewAnalyticsTagCandidate::class)->handle($admin, (int) $candidate->getKey(), 'accept');
+
+        self::assertDatabaseHas('medical_problem_tags', [
+            'organization_id' => $organization->getKey(),
+            'name' => 'Боль при наклоне',
+            'is_active' => true,
+        ]);
+        self::assertDatabaseHas('analytics_tag_candidates', [
+            'id' => $candidate->getKey(),
+            'status' => AnalyticsTagCandidateStatus::Accepted->value,
+        ]);
+    }
+
+    public function test_owner_can_explicitly_rename_an_existing_authoritative_tag_from_a_review_candidate(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $tag = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Старая категория',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $run = $this->candidateRun($organization, [['id' => $tag->getKey(), 'label' => 'Старая категория']]);
+        app(SyncAnalyticsClassificationCandidates::class)->handle($run);
+        $candidate = AnalyticsTagCandidate::query()->firstOrFail();
+
+        app(ReviewAnalyticsTagCandidate::class)->handle($admin, (int) $candidate->getKey(), 'rename_existing', 'Новая категория');
+
+        self::assertDatabaseHas('medical_problem_tags', [
+            'id' => $tag->getKey(),
+            'name' => 'Новая категория',
+        ]);
+        self::assertDatabaseHas('analytics_tag_candidates', [
+            'id' => $candidate->getKey(),
+            'status' => AnalyticsTagCandidateStatus::Renamed->value,
+            'reviewed_label' => 'Новая категория',
+        ]);
+    }
+
     public function test_pending_candidates_become_stale_when_their_classification_source_changes(): void
     {
         [$organization] = $this->fixture();

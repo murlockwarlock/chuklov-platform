@@ -12,6 +12,7 @@ use App\Modules\Analytics\Application\AcceptAnalyticsClassification;
 use App\Modules\Analytics\Application\SuggestAnalyticsTags;
 use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
 use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
+use App\Modules\Attachments\Application\AttachmentAuthorization;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\DTOs\MedicalPainData;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
@@ -26,10 +27,13 @@ use App\Modules\Sessions\Application\LinkMedicalSessionBooking;
 use App\Modules\Sessions\Application\MedicalClinicalCatalog;
 use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\UpdateSession;
+use App\Modules\Sessions\Application\UploadSessionPhoto;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
@@ -45,6 +49,7 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
 
@@ -310,7 +315,13 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->reorderable()
                             ->addActionLabel(__('Добавить первопричину'))
                             ->columnSpanFull(),
-                        Textarea::make('root_cause_hypothesis')->label(__('Гипотеза первопричины'))->rows(3)->placeholder(__('Предполагаемая причина состояния')),
+                        Hidden::make('root_cause_hypothesis')->dehydrated()->nullable(),
+                        Placeholder::make('legacy_root_cause_hypothesis')
+                            ->label(__('Старая гипотеза первопричины (только для истории)'))
+                            ->content(fn (Get $get): string => filled($get('root_cause_hypothesis'))
+                                ? (string) $get('root_cause_hypothesis')
+                                : __('Нет сохранённого значения'))
+                            ->columnSpanFull(),
                         Textarea::make('protocol')
                             ->label(__('Алгоритм сеанса (пошаговый протокол сеанса)'))
                             ->rows(3)
@@ -331,10 +342,71 @@ class EditMedicalSession extends LocalizedEditRecord
                             ->rows(3)
                             ->live(onBlur: true)
                             ->placeholder(__('Эффект после процедур/до следующего сеанса'))
+                            ->hintAction(Action::make('fillResultField')
+                                ->label(__('Заполнить'))
+                                ->icon('heroicon-o-sparkles')
+                                ->requiresConfirmation(fn (Get $get): bool => filled($get('result')))
+                                ->modalHeading(fn (Get $get): ?string => filled($get('result')) ? (string) __('Заменить текст результата?') : null)
+                                ->modalDescription(fn (Get $get): ?string => filled($get('result')) ? (string) __('Текущий текст будет заменён сводкой по данным сеанса.') : null)
+                                ->action(function (Set $set): void {
+                                    $actor = $this->actor();
+                                    $record = $this->getRecord();
+                                    abort_unless($record instanceof MedicalSession, 404);
+                                    $result = app(GenerateSessionResult::class)->handle($actor, $record, $this->parentClient());
+                                    $set('result', $result);
+                                    $this->resultFormVersion++;
+                                    Notification::make()->title(__('Результат заполнен'))->success()->send();
+                                }))
                             ->key(fn (): string => 'session-result-'.$this->resultFormVersion),
                     ])
                     ->columnSpanFull(),
+                Section::make(__('Фото до / после'))
+                    ->schema([
+                        Placeholder::make('session_photos_hint')
+                            ->hiddenLabel()
+                            ->content(__('Добавьте фотографии в нужную галерею. Файлы сохраняются в приватном хранилище.'))
+                            ->columnSpanFull(),
+                        Actions::make([
+                            $this->uploadPhotoFormAction(MedicalSessionAttachmentGallery::Before),
+                            $this->uploadPhotoFormAction(MedicalSessionAttachmentGallery::After),
+                        ])->columnSpanFull(),
+                    ])
+                    ->columnSpanFull(),
             ]);
+    }
+
+    private function uploadPhotoFormAction(MedicalSessionAttachmentGallery $gallery): Action
+    {
+        $label = $gallery === MedicalSessionAttachmentGallery::Before
+            ? __('Загрузить фото до сеанса')
+            : __('Загрузить фото после сеанса');
+
+        return Action::make('uploadForm'.ucfirst($gallery->value).'Photo')
+            ->label($label)
+            ->icon('heroicon-o-arrow-up-tray')
+            ->schema([
+                FileUpload::make('file')
+                    ->label(__('Фото'))
+                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                    ->maxSize((int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024))
+                    ->storeFiles(false)
+                    ->required(),
+            ])
+            ->modalSubmitActionLabel(__('Загрузить'))
+            ->action(function (array $data) use ($gallery): void {
+                $file = $data['file'] ?? null;
+                abort_unless($file instanceof UploadedFile, 422);
+                app(UploadSessionPhoto::class)->handle(
+                    $this->actor(),
+                    $this->session(),
+                    $this->parentClient(),
+                    $file,
+                    $gallery,
+                );
+                Notification::make()->success()->title(__('Фото загружено в галерею'))->send();
+            })
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord())
+                && app(AttachmentAuthorization::class)->allowsUpload($this->actor(), $this->parentClient()));
     }
 
     /**

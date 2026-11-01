@@ -22,10 +22,11 @@ final readonly class AnalyticsClientGroupCatalog
     }
 
     /** @return array<int, array<string, mixed>> */
-    public function rows(): array
+    public function rows(bool $includeArchived = false): array
     {
         $groups = AnalyticsClientGroup::query()
             ->where('organization_id', $this->context->id())
+            ->when(! $includeArchived, fn ($query) => $query->where('is_active', true)->whereNull('archived_at'))
             ->with(['clients:id'])
             ->withCount('clients')
             ->orderBy('sort_order')

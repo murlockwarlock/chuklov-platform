@@ -30,7 +30,7 @@ final readonly class ReviewAnalyticsTagCandidate
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSettings);
         $decision = trim($decision);
-        if (! in_array($decision, ['accept', 'rename', 'merge', 'reject'], true)) {
+        if (! in_array($decision, ['accept', 'rename', 'rename_existing', 'merge', 'reject'], true)) {
             throw ValidationException::withMessages(['candidate' => 'Выберите корректное решение по кандидату.']);
         }
 
@@ -57,21 +57,38 @@ final readonly class ReviewAnalyticsTagCandidate
             }
 
             $target = $targetTagId !== null ? $this->targetTag($candidate->taxonomy, (int) $organization->getKey(), $targetTagId) : null;
-            if ($decision === 'merge' && $target === null) {
+            if (in_array($decision, ['merge', 'rename_existing'], true) && $target === null && $candidate->suggested_existing_id === null) {
                 throw ValidationException::withMessages(['candidate' => 'Для переименования или объединения выберите существующую категорию.']);
             }
             $reviewedLabel = $label !== null ? trim($label) : null;
-            if ($decision === 'rename' && ($reviewedLabel === null || $reviewedLabel === '')) {
+            if (in_array($decision, ['rename', 'rename_existing'], true) && ($reviewedLabel === null || $reviewedLabel === '')) {
                 throw ValidationException::withMessages(['candidate' => 'Укажите новое название кандидата.']);
             }
             if ($decision === 'accept' && $candidate->candidate_type === 'new') {
-                $target = $this->createTag($candidate, $candidate->label);
+                $target = $this->createTag($candidate, $reviewedLabel ?? $candidate->reviewed_label ?? $candidate->label);
             } elseif ($decision === 'accept' && $target === null) {
                 $target = $this->targetTag($candidate->taxonomy, (int) $organization->getKey(), (int) $candidate->suggested_existing_id);
             } elseif ($decision === 'rename' && $candidate->candidate_type === 'new') {
-                $target = $this->createTag($candidate, $reviewedLabel);
-            } elseif ($decision === 'rename') {
-                $target = $this->targetTag($candidate->taxonomy, (int) $organization->getKey(), (int) $candidate->suggested_existing_id);
+                $this->updateRunSuggestion($run, $candidate, null, $reviewedLabel, keepUnresolved: true);
+                $candidate->forceFill([
+                    'label' => $reviewedLabel,
+                    'reviewed_label' => $reviewedLabel,
+                    'reviewed_by_user_id' => $actor->getKey(),
+                    'reviewed_at' => now(),
+                    'version' => (int) $candidate->version + 1,
+                ])->save();
+                $this->audit->handle($organization, $actor, 'analytics.tag_candidate.reviewed', $candidate::class, (string) $candidate->getKey(), [
+                    'decision' => $decision,
+                    'taxonomy' => $candidate->taxonomy,
+                    'candidate_type' => $candidate->candidate_type,
+                ]);
+
+                return $candidate->refresh();
+            } elseif (in_array($decision, ['rename', 'rename_existing'], true)) {
+                $target ??= $this->targetTag($candidate->taxonomy, (int) $organization->getKey(), (int) $candidate->suggested_existing_id);
+                if ($decision === 'rename_existing') {
+                    $this->renameTag($target, $reviewedLabel, (int) $organization->getKey());
+                }
             }
             if ($decision !== 'reject' && $target === null) {
                 throw ValidationException::withMessages(['candidate' => 'Не удалось определить категорию для применения решения.']);
@@ -80,12 +97,12 @@ final readonly class ReviewAnalyticsTagCandidate
                 $run,
                 $candidate,
                 $decision === 'reject' ? null : (int) $target->getKey(),
-                $decision === 'rename' ? $reviewedLabel : $target?->name,
+                in_array($decision, ['rename', 'rename_existing'], true) ? $reviewedLabel : $target?->name,
             );
             $candidate->forceFill([
                 'status' => match ($decision) {
                     'accept' => AnalyticsTagCandidateStatus::Accepted,
-                    'rename' => AnalyticsTagCandidateStatus::Renamed,
+                    'rename', 'rename_existing' => AnalyticsTagCandidateStatus::Renamed,
                     'merge' => AnalyticsTagCandidateStatus::Merged,
                     default => AnalyticsTagCandidateStatus::Rejected,
                 },
@@ -140,6 +157,13 @@ final readonly class ReviewAnalyticsTagCandidate
             'goals' => TrackerGoalTag::class,
             default => throw ValidationException::withMessages(['candidate' => 'Новые категории для этого типа не поддерживаются.']),
         };
+        $label = trim($label);
+        if ($label === '' || mb_strlen($label) > 255) {
+            throw ValidationException::withMessages(['candidate' => 'Название категории должно содержать от 1 до 255 символов.']);
+        }
+        if ($this->hasDuplicateName($model, (int) $candidate->organization_id, $label)) {
+            throw ValidationException::withMessages(['candidate' => 'Категория с таким названием уже существует.']);
+        }
         $tag = new $model;
         $tag->forceFill([
             'organization_id' => $candidate->organization_id,
@@ -152,11 +176,35 @@ final readonly class ReviewAnalyticsTagCandidate
         return $tag;
     }
 
+    private function renameTag(MedicalProblemTag|FeedbackTheme|TrackerGoalTag $tag, string $label, int $organizationId): void
+    {
+        $label = trim($label);
+        if ($label === '' || mb_strlen($label) > 255) {
+            throw ValidationException::withMessages(['candidate' => 'Название категории должно содержать от 1 до 255 символов.']);
+        }
+        if ($this->hasDuplicateName($tag::class, $organizationId, $label, (int) $tag->getKey())) {
+            throw ValidationException::withMessages(['candidate' => 'Категория с таким названием уже существует.']);
+        }
+        $tag->forceFill(['name' => $label])->save();
+    }
+
+    private function hasDuplicateName(string $model, int $organizationId, string $name, ?int $ignoreId = null): bool
+    {
+        $normalizedName = mb_strtolower(trim($name));
+
+        return $model::query()
+            ->where('organization_id', $organizationId)
+            ->when($ignoreId !== null, fn ($query) => $query->whereKeyNot($ignoreId))
+            ->get(['id', 'name'])
+            ->contains(static fn (MedicalProblemTag|FeedbackTheme|TrackerGoalTag $record): bool => mb_strtolower(trim($record->name)) === $normalizedName);
+    }
+
     private function updateRunSuggestion(
         AnalyticsClassificationRun $run,
         AnalyticsTagCandidate $candidate,
         ?int $targetId,
         ?string $targetLabel,
+        bool $keepUnresolved = false,
     ): void {
         $suggestions = is_array($run->suggestions) ? $run->suggestions : [];
         $updated = [];
@@ -172,6 +220,8 @@ final readonly class ReviewAnalyticsTagCandidate
             }
             if ($targetId !== null) {
                 $updated[] = ['id' => $targetId, 'label' => $targetLabel ?? $candidate->label];
+            } elseif ($keepUnresolved) {
+                $updated[] = ['id' => null, 'label' => $targetLabel ?? $candidate->label];
             }
         }
         $run->forceFill(['suggestions' => $updated, 'updated_at' => now()])->save();

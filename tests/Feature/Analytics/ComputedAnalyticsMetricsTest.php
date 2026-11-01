@@ -16,7 +16,9 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Services\Domain\Models\Service;
@@ -96,6 +98,20 @@ final class ComputedAnalyticsMetricsTest extends TestCase
     {
         [$organization, $admin] = $this->organizationWithAdmin();
         $this->configureFinance($organization);
+        app(SetOrganizationSetting::class)->handle(
+            $admin,
+            OrganizationSettingKey::AnalyticsLtvPercentFormulaReference,
+            'Сравнение LTV с предыдущим сопоставимым периодом.',
+        );
+        $configuration = app(AnalyticsMetricConfiguration::class);
+        $metrics = array_map(static function (array $metric): array {
+            if ($metric['stable_key'] === 'ltv_change_percent') {
+                $metric['active'] = true;
+            }
+
+            return $metric;
+        }, $configuration->formValues());
+        $configuration->saveMetrics($admin, $metrics);
         $this->cohortPayment($organization, '2026-09-10 09:00:00', 10000, 'previous-ltv');
         $this->cohortPayment($organization, '2026-10-10 09:00:00', 12000, 'current-ltv');
         $period = $this->period($organization);
@@ -336,7 +352,7 @@ final class ComputedAnalyticsMetricsTest extends TestCase
 
     private function preset(string $stableKey): AnalyticsMetric
     {
-        return app(AnalyticsMetricConfiguration::class)->metrics(true)->firstOrFail(
+        return app(AnalyticsMetricConfiguration::class)->metrics()->firstOrFail(
             fn (AnalyticsMetric $metric): bool => $metric->stable_key === $stableKey,
         );
     }

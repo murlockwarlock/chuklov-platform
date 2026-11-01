@@ -78,6 +78,8 @@ final class PainAnalyticsTest extends TestCase
 
         self::assertSame(1, $data->clientCount);
         self::assertSame(2, $data->sessionCount);
+        self::assertSame(2, $data->beforeScoreCount);
+        self::assertSame(2, $data->afterScoreCount);
         self::assertCount(1, $data->problems);
         self::assertSame('Шейный отдел', $data->problems[0]['name']);
         self::assertSame(1, $data->problems[0]['client_count']);
@@ -123,6 +125,10 @@ final class PainAnalyticsTest extends TestCase
         $data = app(PainAnalytics::class)->handle($admin, $period);
 
         self::assertNull($data->problems[0]['average_reduction_percent']);
+        self::assertSame(1, $data->beforeScoreCount);
+        self::assertSame(2, $data->afterScoreCount);
+        self::assertSame(1, $data->problems[0]['before_score_count']);
+        self::assertSame(2, $data->problems[0]['after_score_count']);
     }
 
     public function test_problem_analytics_can_filter_to_one_tenant_problem_tag(): void

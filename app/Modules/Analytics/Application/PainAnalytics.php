@@ -170,6 +170,8 @@ final readonly class PainAnalytics
                 tag_group,
                 COUNT(DISTINCT client_id) AS client_count,
                 COUNT(*) AS pain_count,
+                COUNT(before_score) AS before_score_count,
+                COUNT(after_score) AS after_score_count,
                 AVG(before_score) AS average_before,
                 AVG(after_score) AS average_after,
                 AVG(CASE WHEN before_score IS NOT NULL AND after_score IS NOT NULL THEN before_score - after_score END) AS average_reduction,
@@ -235,6 +237,8 @@ final readonly class PainAnalytics
             })
             ->selectRaw('AVG(pains.before_score) as average_before')
             ->selectRaw('AVG(pains.after_score) as average_after')
+            ->selectRaw('COUNT(pains.before_score) as before_score_count')
+            ->selectRaw('COUNT(pains.after_score) as after_score_count')
             ->selectRaw('AVG(CASE WHEN pains.before_score IS NOT NULL AND pains.after_score IS NOT NULL THEN pains.before_score - pains.after_score END) as average_reduction')
             ->selectRaw('AVG(CASE WHEN pains.before_score > 0 AND pains.after_score IS NOT NULL THEN ((pains.before_score - pains.after_score) * 100.0 / pains.before_score) END) as average_reduction_percent');
         if ($cohortFilters !== null) {
@@ -254,6 +258,8 @@ final readonly class PainAnalytics
                     'group' => isset($values['tag_group']) ? (string) $values['tag_group'] : null,
                     'client_count' => (int) ($values['client_count'] ?? 0),
                     'pain_count' => (int) ($values['pain_count'] ?? 0),
+                    'before_score_count' => (int) ($values['before_score_count'] ?? 0),
+                    'after_score_count' => (int) ($values['after_score_count'] ?? 0),
                     'average_before' => self::nullableFloat($values['average_before'] ?? null),
                     'average_after' => self::nullableFloat($values['average_after'] ?? null),
                     'average_reduction' => self::nullableFloat($values['average_reduction'] ?? null),
@@ -266,6 +272,8 @@ final readonly class PainAnalytics
                     'session_3_after' => self::nullableFloat($values['session_three_after'] ?? null),
                 ];
             }, $rows)),
+            beforeScoreCount: (int) ($summary?->before_score_count ?? 0),
+            afterScoreCount: (int) ($summary?->after_score_count ?? 0),
             averageBefore: self::nullableFloat($summary?->average_before),
             averageAfter: self::nullableFloat($summary?->average_after),
             averageReduction: self::nullableFloat($summary?->average_reduction),

@@ -24,9 +24,6 @@ final readonly class GenerateSessionResult
 
         $lines = [];
         foreach ($data->pains as $pain) {
-            if ($pain->beforeScore === null && $pain->afterScore === null) {
-                continue;
-            }
             $before = $pain->beforeScore === null ? 'нет данных' : (string) $pain->beforeScore;
             $after = $pain->afterScore === null ? 'нет данных' : (string) $pain->afterScore;
             $lines[] = $pain->name.': было '.$before.', стало '.$after.' из 10';

@@ -457,6 +457,31 @@ final class SessionCockpitTest extends TestCase
             ->assertSee('2/10');
     }
 
+    public function test_filament_detail_page_does_not_render_unspecified_frequency_as_permanent(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $result = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse('2026-08-16 10:00:00', 'UTC'),
+            pains: [[
+                'name' => 'Плечо',
+                'frequency_mode' => 'unspecified',
+                'before_score' => 4,
+            ]],
+        ));
+        $session = MedicalSession::query()->whereKey($result->id)->firstOrFail();
+
+        $this->actingAs($admin)
+            ->get($this->relativeUrl(ViewMedicalSession::getUrl([
+                'client' => $client,
+                'record' => $session,
+            ], shouldGuessMissingParameters: true)))
+            ->assertSuccessful()
+            ->assertSee('Не указана')
+            ->assertDontSee('Постоянная');
+    }
+
     public function test_filament_detail_page_shows_before_and_after_abnormal_test_counters(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

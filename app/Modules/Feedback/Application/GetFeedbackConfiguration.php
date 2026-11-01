@@ -47,9 +47,9 @@ final class GetFeedbackConfiguration
             ->all();
 
         return [
-            'enabled' => $configuration->enabled ?? true,
+            'enabled' => $configuration->enabled ?? false,
             'positiveThreshold' => $configuration->positive_threshold ?? 8,
-            'lowScoreFeedbackRequired' => $configuration->low_score_feedback_required ?? true,
+            'lowScoreFeedbackRequired' => $configuration->low_score_feedback_required ?? false,
             'reviewLinks' => [
                 'ru' => $configuration?->review_url_ru,
                 'en' => $configuration?->review_url_en,

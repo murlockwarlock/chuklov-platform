@@ -17,6 +17,7 @@ use App\Modules\Sessions\Application\GetSessionDynamics;
 use App\Modules\Sessions\Application\LinkSessionAttachment;
 use App\Modules\Sessions\Application\ListSessionAttachments;
 use App\Modules\Sessions\Application\UnlinkSessionAttachment;
+use App\Modules\Sessions\Application\UploadSessionPhoto;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Specialists\Domain\Models\Specialist;
@@ -24,8 +25,10 @@ use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
@@ -94,6 +97,30 @@ final class SessionAttachmentTest extends TestCase
             (int) $report->getKey(),
             MedicalSessionAttachmentGallery::After,
         );
+    }
+
+    public function test_session_photo_upload_creates_private_attachment_and_gallery_relation(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        Storage::fake('private');
+        $session = $this->makeSession($admin, $client, $specialist);
+
+        $sessionAttachment = app(UploadSessionPhoto::class)->handle(
+            $admin,
+            $session,
+            $client,
+            UploadedFile::fake()->image('before.jpg'),
+            MedicalSessionAttachmentGallery::Before,
+        );
+        $attachment = $sessionAttachment->attachment()->firstOrFail();
+
+        self::assertSame(AttachmentType::PosturePhoto, $attachment->attachment_type);
+        Storage::disk('private')->assertExists($attachment->storage_path);
+        $this->assertDatabaseHas('medical_session_attachments', [
+            'medical_session_id' => $session->getKey(),
+            'medical_attachment_id' => $attachment->getKey(),
+            'gallery' => MedicalSessionAttachmentGallery::Before->value,
+        ]);
     }
 
     public function test_link_rejects_foreign_organization_and_wrong_client_attachments(): void

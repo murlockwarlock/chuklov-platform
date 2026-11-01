@@ -35,6 +35,8 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use Tests\TestCase;
 
 final class ClientCohortQueryTest extends TestCase
@@ -413,6 +415,22 @@ final class ClientCohortQueryTest extends TestCase
         self::assertSame([['key' => 'working_age', 'label' => 'Рабочий возраст', 'unknown' => false, 'count' => 1, 'percent' => 100.0]], app(DemographicsAnalytics::class)->handle($admin, $period)->age);
     }
 
+    public function test_owner_age_ranges_reject_overlapping_active_ranges_at_the_storage_boundary(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        app(OrganizationContext::class)->set($organization);
+
+        $this->expectException(InvalidArgumentException::class);
+        app(SetOrganizationSetting::class)->handle(
+            $admin,
+            OrganizationSettingKey::AnalyticsAgeRanges,
+            json_encode([
+                ['key' => 'first', 'label' => 'Первый', 'min' => 0, 'max' => 18, 'active' => true],
+                ['key' => 'second', 'label' => 'Второй', 'min' => 18, 'max' => 30, 'active' => true],
+            ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE),
+        );
+    }
+
     public function test_booking_filters_use_the_same_selected_event_period_as_analytics_dimensions(): void
     {
         [$organization, $admin] = $this->fixture();
@@ -630,7 +648,7 @@ final class ClientCohortQueryTest extends TestCase
 
     public function test_unknown_pain_score_basis_is_rejected_instead_of_defaulting_to_any(): void
     {
-        $this->expectException(\InvalidArgumentException::class);
+        $this->expectException(InvalidArgumentException::class);
 
         ClientCohortFilters::fromArray(['pain_score_basis' => 'unknown']);
     }
@@ -735,6 +753,112 @@ final class ClientCohortQueryTest extends TestCase
             ->where('version', 2)
             ->firstOrFail()
             ->client_ids);
+    }
+
+    public function test_batch_saved_group_mutation_rolls_back_earlier_groups_when_a_later_group_is_invalid(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $save = app(SaveAnalyticsClientGroup::class);
+        $existing = $save->handle($admin, [
+            'name' => 'Уже существует',
+            'group_type' => 'manual',
+            'is_active' => true,
+        ]);
+
+        try {
+            $save->handleMany($admin, [
+                [
+                    'data' => [
+                        'name' => 'Откатить эту группу',
+                        'group_type' => 'manual',
+                        'is_active' => true,
+                    ],
+                    'client_ids' => [],
+                ],
+                [
+                    'data' => [
+                        'name' => 'Уже существует',
+                        'group_type' => 'manual',
+                        'is_active' => true,
+                    ],
+                    'client_ids' => [],
+                ],
+            ]);
+            self::fail('The batch should reject a duplicate group name.');
+        } catch (ValidationException) {
+            self::assertDatabaseMissing('analytics_client_groups', ['name' => 'Откатить эту группу']);
+            self::assertDatabaseCount('analytics_client_group_versions', 1);
+            self::assertDatabaseHas('analytics_client_groups', ['id' => $existing->getKey(), 'version' => 1]);
+        }
+    }
+
+    public function test_saved_group_update_rejects_a_stale_editor_version_without_mutating_the_group(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $save = app(SaveAnalyticsClientGroup::class);
+        $group = $save->handle($admin, [
+            'name' => 'Синхронная группа',
+            'group_type' => 'manual',
+            'is_active' => true,
+        ]);
+        $save->handle($admin, [
+            'id' => $group->getKey(),
+            'version' => 1,
+            'name' => 'Обновлённая группа',
+            'group_type' => 'manual',
+            'is_active' => true,
+        ]);
+
+        try {
+            $save->handle($admin, [
+                'id' => $group->getKey(),
+                'version' => 1,
+                'name' => 'Устаревшее обновление',
+                'group_type' => 'manual',
+                'is_active' => true,
+            ]);
+            self::fail('The stale editor should be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertStringContainsString('изменена в другом окне', (string) collect($exception->errors())->flatten()->first());
+        }
+
+        self::assertDatabaseHas('analytics_client_groups', [
+            'id' => $group->getKey(),
+            'name' => 'Обновлённая группа',
+            'version' => 2,
+        ]);
+    }
+
+    public function test_saved_group_rejects_foreign_manual_clients_and_dynamic_references(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $foreignOrganization = Organization::factory()->create();
+        $foreignClient = Client::factory()->forOrganization($foreignOrganization)->create();
+        $foreignService = Service::factory()->forOrganization($foreignOrganization)->create();
+        $save = app(SaveAnalyticsClientGroup::class);
+
+        try {
+            $save->handle($admin, [
+                'name' => 'Чужой клиент',
+                'group_type' => 'manual',
+                'is_active' => true,
+            ], [(int) $foreignClient->getKey()]);
+            self::fail('A manual group must reject foreign clients.');
+        } catch (ValidationException $exception) {
+            self::assertNotEmpty($exception->errors());
+        }
+
+        try {
+            $save->handle($admin, [
+                'name' => 'Чужая услуга',
+                'group_type' => 'dynamic',
+                'is_active' => true,
+                'rule_definition' => ['service_ids' => [$foreignService->getKey()]],
+            ]);
+            self::fail('A dynamic group must reject foreign references.');
+        } catch (ValidationException $exception) {
+            self::assertNotEmpty($exception->errors());
+        }
     }
 
     public function test_inactive_saved_group_is_not_silently_ignored_by_a_restored_cohort(): void

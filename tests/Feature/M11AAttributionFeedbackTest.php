@@ -229,6 +229,15 @@ final class M11AAttributionFeedbackTest extends TestCase
     {
         $organization = $this->organizationWithClientRecords();
         $client = Client::factory()->forOrganization($organization)->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: true,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+        );
         $fingerprint = app(FeedbackRequestFingerprint::class)->handle([
             'client_id' => $client->getKey(),
             'score' => 4,
@@ -252,6 +261,23 @@ final class M11AAttributionFeedbackTest extends TestCase
             'score' => 8,
             'idempotency_key' => 'm11a-hmac-conflict',
         ])->assertInvalid('idempotency_key');
+    }
+
+    public function test_feedback_is_disabled_until_an_owner_configuration_exists(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->get(route('portal.feedback'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Feedback')
+                ->where('feedback.enabled', false));
+
+        $this->post(route('portal.feedback.store'), [
+            'score' => 10,
+            'idempotency_key' => 'feedback-disabled-default',
+        ])->assertInvalid('score');
     }
 
     public function test_referral_link_registration_is_same_organization_first_wins_and_idempotent(): void

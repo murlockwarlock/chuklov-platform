@@ -74,11 +74,12 @@ final readonly class AnalyticsMetricConfiguration
     /** @param array<string, mixed> $data */
     public function save(User $actor, array $data): void
     {
-        if (array_key_exists('metrics', $data)) {
-            $this->saveMetrics($actor, is_array($data['metrics']) ? array_values($data['metrics']) : []);
-        }
-
-        $this->saveLegacyReferences($actor, $data);
+        DB::transaction(function () use ($actor, $data): void {
+            $this->saveLegacyReferences($actor, $data);
+            if (array_key_exists('metrics', $data)) {
+                $this->saveMetrics($actor, is_array($data['metrics']) ? array_values($data['metrics']) : []);
+            }
+        });
     }
 
     /** @param array<int, mixed> $metrics */
@@ -88,7 +89,18 @@ final readonly class AnalyticsMetricConfiguration
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSettings);
         $this->ensurePresets();
 
-        DB::transaction(function () use ($actor, $organization, $metrics): void {
+        $therapyFormulaConfigured = $this->context->organization()->settings()
+            ->where('setting_key', OrganizationSettingKey::AnalyticsTherapyEffectivenessFormulaReference->value)
+            ->whereNotNull('string_value')
+            ->whereRaw("TRIM(string_value) <> ''")
+            ->exists();
+        $ltvFormulaConfigured = $this->context->organization()->settings()
+            ->where('setting_key', OrganizationSettingKey::AnalyticsLtvPercentFormulaReference->value)
+            ->whereNotNull('string_value')
+            ->whereRaw("TRIM(string_value) <> ''")
+            ->exists();
+
+        DB::transaction(function () use ($actor, $organization, $metrics, $therapyFormulaConfigured, $ltvFormulaConfigured): void {
             $existing = AnalyticsMetric::query()
                 ->where('organization_id', $organization->getKey())
                 ->lockForUpdate()
@@ -112,6 +124,20 @@ final readonly class AnalyticsMetricConfiguration
                 }
 
                 $normalized = $this->validator->validate($data, $metric, $known);
+                if (($data['stable_key'] ?? null) === 'ltv_change_percent'
+                    && (bool) ($data['active'] ?? false)
+                    && ! $ltvFormulaConfigured) {
+                    throw ValidationException::withMessages([
+                        'metrics' => 'Перед включением процентного LTV укажите утверждённое определение формулы ниже.',
+                    ]);
+                }
+                if (($data['stable_key'] ?? null) === 'pain_reduction_percent'
+                    && (bool) ($data['active'] ?? false)
+                    && ! $therapyFormulaConfigured) {
+                    throw ValidationException::withMessages([
+                        'metrics' => 'Перед включением процента эффективности терапии укажите утверждённое определение формулы ниже.',
+                    ]);
+                }
                 $stableKey = $metric instanceof AnalyticsMetric ? $metric->stable_key : $this->newStableKey($existing);
                 $wasChanged = $metric === null || $this->changed($metric, $normalized);
                 $metric ??= new AnalyticsMetric;
@@ -339,7 +365,7 @@ final readonly class AnalyticsMetricConfiguration
                 'stable_key' => 'pain_reduction_percent',
                 'name' => 'Снижение боли, %',
                 'description' => 'Процентное снижение средней боли до и после сеанса.',
-                'active' => true,
+                'active' => false,
                 'output_unit' => 'percent',
                 'decimal_precision' => 2,
                 'source_a_key' => AnalyticsMetricSourceCatalog::PainAverageBefore,
@@ -358,7 +384,7 @@ final readonly class AnalyticsMetricConfiguration
                 'stable_key' => 'ltv_change_percent',
                 'name' => 'Изменение LTV к предыдущему периоду, %',
                 'description' => 'Изменение денежного LTV новых клиентов относительно предыдущего сопоставимого периода.',
-                'active' => true,
+                'active' => false,
                 'output_unit' => 'percent',
                 'decimal_precision' => 2,
                 'source_a_key' => AnalyticsMetricSourceCatalog::FinanceNewClientLtv,

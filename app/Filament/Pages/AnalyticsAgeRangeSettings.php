@@ -11,6 +11,7 @@ use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -23,6 +24,8 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use LogicException;
 use UnitEnum;
 
@@ -71,7 +74,7 @@ final class AnalyticsAgeRangeSettings extends LocalizedPage
                     Repeater::make('ranges')
                         ->label(__('Диапазоны'))
                         ->schema([
-                            TextInput::make('key')->label(__('Ключ'))->required()->maxLength(40),
+                            Hidden::make('key')->default(fn (): string => 'age_'.Str::lower(Str::random(20)))->dehydrated(),
                             TextInput::make('label')->label(__('Название'))->required()->maxLength(80),
                             TextInput::make('min')->label(__('От'))->integer()->minValue(0)->maxValue(150)->required(),
                             TextInput::make('max')->label(__('До'))->integer()->minValue(0)->maxValue(150)->nullable(),
@@ -105,18 +108,47 @@ final class AnalyticsAgeRangeSettings extends LocalizedPage
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         $rows = [];
+        $labels = [];
+        $keys = [];
         foreach ((array) ($this->form->getState()['ranges'] ?? []) as $row) {
             if (! is_array($row)) {
                 continue;
             }
+            $label = trim((string) ($row['label'] ?? ''));
+            $min = (int) ($row['min'] ?? 0);
+            $max = ($row['max'] ?? '') === '' ? null : (int) $row['max'];
+            if ($label === '' || ($max !== null && $max < $min)) {
+                throw ValidationException::withMessages(['ranges' => __('Проверьте название и границы возрастного диапазона.')]);
+            }
+            if (isset($labels[mb_strtolower($label)])) {
+                throw ValidationException::withMessages(['ranges' => __('Названия возрастных диапазонов не должны повторяться.')]);
+            }
+            $labels[mb_strtolower($label)] = true;
+            $key = trim((string) ($row['key'] ?? ''));
+            if ($key === '' || isset($keys[$key])) {
+                do {
+                    $key = 'age_'.Str::lower(Str::random(20));
+                } while (isset($keys[$key]));
+            }
+            $keys[$key] = true;
             $rows[] = [
-                'key' => trim((string) ($row['key'] ?? '')),
-                'label' => trim((string) ($row['label'] ?? '')),
-                'min' => (int) ($row['min'] ?? 0),
-                'max' => ($row['max'] ?? '') === '' ? null : (int) $row['max'],
+                'key' => $key,
+                'label' => $label,
+                'min' => $min,
+                'max' => $max,
                 'active' => (bool) ($row['active'] ?? true),
                 'sort_order' => max(0, (int) ($row['sort_order'] ?? 0)),
             ];
+        }
+        $activeRows = array_values(array_filter($rows, static fn (array $row): bool => $row['active']));
+        foreach ($activeRows as $index => $row) {
+            foreach (array_slice($activeRows, $index + 1) as $other) {
+                $rowEnd = $row['max'] ?? PHP_INT_MAX;
+                $otherEnd = $other['max'] ?? PHP_INT_MAX;
+                if ($row['min'] <= $otherEnd && $other['min'] <= $rowEnd) {
+                    throw ValidationException::withMessages(['ranges' => __('Активные возрастные диапазоны не должны пересекаться.')]);
+                }
+            }
         }
         app(SetOrganizationSetting::class)->handle($actor, OrganizationSettingKey::AnalyticsAgeRanges, json_encode($rows, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
         Notification::make()->success()->title(__('Возрастные диапазоны сохранены'))->send();

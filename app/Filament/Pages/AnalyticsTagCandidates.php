@@ -16,6 +16,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Tracker\Application\TrackerGoalTagCatalog;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -102,19 +103,32 @@ final class AnalyticsTagCandidates extends LocalizedPage
                             TextInput::make('label')->label(__('Предложение'))->disabled()->dehydrated(false),
                             Hidden::make('taxonomy')->dehydrated(false),
                             TextInput::make('taxonomy_label')->label(__('Категория'))->disabled()->dehydrated(false),
+                            Placeholder::make('source_context')
+                                ->label(__('Контекст источника'))
+                                ->content(fn (Get $get): string => trim(implode(' · ', array_filter([
+                                    (string) $get('source_type'),
+                                    filled($get('source_id')) ? 'ID '.(string) $get('source_id') : null,
+                                    filled($get('client_label')) ? (string) $get('client_label') : null,
+                                ]))))
+                                ->columnSpanFull(),
+                            Hidden::make('source_type')->dehydrated(false),
+                            Hidden::make('source_id')->dehydrated(false),
+                            Hidden::make('client_label')->dehydrated(false),
+                            Hidden::make('candidate_type')->dehydrated(false),
                             Select::make('decision')
                                 ->label(__('Решение'))
-                                ->options(['accept' => 'Принять', 'rename' => 'Переименовать', 'merge' => 'Объединить', 'reject' => 'Отклонить'])
+                                ->options(['accept' => 'Принять', 'rename' => 'Переименовать', 'rename_existing' => 'Переименовать существующую категорию', 'merge' => 'Объединить', 'reject' => 'Отклонить'])
                                 ->live(),
                             TextInput::make('reviewed_label')
-                                ->label(__('Новое название'))
+                                ->label(__('Итоговое название'))
                                 ->maxLength(255)
-                                ->visible(fn (Get $get): bool => $get('decision') === 'rename'),
+                                ->visible(fn (Get $get): bool => in_array($get('decision'), ['rename', 'rename_existing'], true)
+                                    || ($get('decision') === 'accept' && $get('candidate_type') === 'new')),
                             Select::make('target_tag_id')
                                 ->label(__('Существующая категория'))
                                 ->options(fn (Get $get): array => $this->tagOptions((string) $get('taxonomy')))
                                 ->searchable()
-                                ->visible(fn (Get $get): bool => in_array($get('decision'), ['rename', 'merge'], true)),
+                                ->visible(fn (Get $get): bool => in_array($get('decision'), ['rename_existing', 'merge'], true)),
                             TextInput::make('id')->hidden()->dehydrated(true),
                         ])
                         ->columns(['default' => 1, 'sm' => 2, 'lg' => 3])

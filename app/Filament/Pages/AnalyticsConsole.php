@@ -61,6 +61,7 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -95,6 +96,10 @@ final class AnalyticsConsole extends LocalizedPage
     public array $dimensionErrors = [];
 
     public ?int $cohortPreviewCount = null;
+
+    public string $cohortPreviewStatus = 'idle';
+
+    public ?string $cohortPreviewError = null;
 
     /** @var list<array<string, mixed>> */
     public array $cohortClients = [];
@@ -174,6 +179,32 @@ final class AnalyticsConsole extends LocalizedPage
         ];
         $saved = session()->get($this->stateSessionKey(), []);
         $this->form->fill([...$defaults, ...(is_array($saved) ? $saved : [])]);
+    }
+
+    public function updatedData(mixed $value = null, ?string $key = null): void
+    {
+        if ($this->cohortPreviewStatus === 'idle') {
+            return;
+        }
+
+        try {
+            $state = $this->form->getState();
+            $period = DashboardPeriod::fromFilters($state, app(OrganizationContext::class)->organization()->defaultTimezone());
+        } catch (ValidationException $exception) {
+            $this->cohortPreviewStatus = 'invalid';
+            $this->cohortPreviewCount = null;
+            $this->cohortPreviewError = $this->firstValidationMessage($exception);
+
+            return;
+        } catch (\InvalidArgumentException $exception) {
+            $this->cohortPreviewStatus = 'invalid';
+            $this->cohortPreviewCount = null;
+            $this->cohortPreviewError = $exception->getMessage();
+
+            return;
+        }
+
+        $this->refreshPreview($state, $period, notify: false);
     }
 
     public function form(Schema $schema): Schema
@@ -283,17 +314,20 @@ final class AnalyticsConsole extends LocalizedPage
                             ->integer()
                             ->minValue(0)
                             ->maxValue(150)
+                            ->live(onBlur: true)
                             ->nullable(),
                         TextInput::make('cohort_age_max')
                             ->label(__('Возраст до'))
                             ->integer()
                             ->minValue(0)
                             ->maxValue(150)
+                            ->live(onBlur: true)
                             ->nullable(),
                         Select::make('cohort_age_range')
                             ->label(__('Настроенный возрастной диапазон'))
                             ->options(fn (): array => app(ClientAgeRangeCatalog::class)->options(app(OrganizationContext::class)->id()))
                             ->searchable()
+                            ->live()
                             ->nullable()
                             ->helperText(__('Диапазоны настраиваются в разделе «Возрастные диапазоны».')),
                         Select::make('cohort_countries')
@@ -361,21 +395,25 @@ final class AnalyticsConsole extends LocalizedPage
                             ->label(__('Завершённых визитов от'))
                             ->integer()
                             ->minValue(0)
+                            ->live(onBlur: true)
                             ->nullable(),
                         TextInput::make('cohort_completed_visits_max')
                             ->label(__('Завершённых визитов до'))
                             ->integer()
                             ->minValue(0)
+                            ->live(onBlur: true)
                             ->nullable(),
                         DatePicker::make('cohort_last_visit_from')
                             ->label(__('Последний визит от'))
                             ->native(false)
                             ->displayFormat('d.m.Y')
+                            ->live(onBlur: true)
                             ->nullable(),
                         DatePicker::make('cohort_last_visit_to')
                             ->label(__('Последний визит до'))
                             ->native(false)
                             ->displayFormat('d.m.Y')
+                            ->live(onBlur: true)
                             ->nullable(),
                         Select::make('cohort_purchase_types')
                             ->label(__('Типы покупок'))
@@ -419,7 +457,7 @@ final class AnalyticsConsole extends LocalizedPage
                             ->nullable(),
                         Placeholder::make('cohort_preview')
                             ->label(__('Предпросмотр'))
-                            ->content(fn (Get $get): string => 'Найдено клиентов: '.$this->previewCountForState($get)),
+                            ->content(fn (): string => $this->previewTextForState()),
                     ])
                     ->columns(['default' => 1, 'sm' => 2, 'lg' => 3])
                     ->columnSpanFull(),
@@ -557,6 +595,7 @@ final class AnalyticsConsole extends LocalizedPage
                             ->label(__('Начало'))
                             ->format('Y-m-d')
                             ->displayFormat('d.m.Y')
+                            ->live(onBlur: true)
                             ->requiredIf('period', DashboardPeriod::Custom)
                             ->validationMessages([
                                 'required_if' => __('Укажите дату начала произвольного периода.'),
@@ -566,6 +605,7 @@ final class AnalyticsConsole extends LocalizedPage
                             ->label(__('Конец'))
                             ->format('Y-m-d')
                             ->displayFormat('d.m.Y')
+                            ->live(onBlur: true)
                             ->requiredIf('period', DashboardPeriod::Custom)
                             ->validationMessages([
                                 'required_if' => __('Укажите дату окончания произвольного периода.'),
@@ -620,7 +660,9 @@ final class AnalyticsConsole extends LocalizedPage
             return;
         }
         [$state, $period] = $resolved;
-        $this->cohortPreviewCount = $this->previewCountForState($state, $period);
+        if (! $this->refreshPreview($state, $period)) {
+            return;
+        }
         session()->put($this->stateSessionKey(), $this->persistedState($state));
         $calculated = $this->calculateDimensions($actor, $state, $period);
         $this->results = $calculated['results'];
@@ -650,7 +692,9 @@ final class AnalyticsConsole extends LocalizedPage
             return;
         }
         [$state, $period] = $resolved;
-        $this->cohortPreviewCount = $this->previewCountForState($state, $period);
+        if (! $this->refreshPreview($state, $period)) {
+            return;
+        }
         $this->cohortDrilldownReason = $this->cohortReason($state);
         $this->cohortClientsTruncated = false;
         $this->cohortClients = $this->cohortDisplayRows($actor, $state, $period, limit: self::CohortDisplayLimit);
@@ -673,7 +717,9 @@ final class AnalyticsConsole extends LocalizedPage
 
             return;
         }
-        $this->cohortPreviewCount = $this->previewCountForState($state, $period, $predicate);
+        if (! $this->refreshPreview($state, $period, $predicate)) {
+            return;
+        }
         $this->cohortDrilldownReason = $this->aggregateReason($state, $predicate);
         $this->cohortClients = $this->cohortDisplayRows($actor, $state, $period, $predicate, self::CohortDisplayLimit);
     }
@@ -691,7 +737,9 @@ final class AnalyticsConsole extends LocalizedPage
             return null;
         }
         [$state, $period] = $resolved;
-        $this->cohortPreviewCount = $this->previewCountForState($state, $period);
+        if (! $this->refreshPreview($state, $period)) {
+            return null;
+        }
         $calculated = $this->calculateDimensions($actor, $state, $period);
         $this->results = $calculated['results'];
         $this->dimensionErrors = $calculated['errors'];
@@ -712,6 +760,7 @@ final class AnalyticsConsole extends LocalizedPage
         $currency = is_array($exportResults['finance'] ?? null)
             ? ($exportResults['finance']['currency'] ?? null)
             : null;
+        $metricValues = app(AnalyticsMetricConfiguration::class)->values();
 
         return app(AnalyticsReportExport::class)->download(
             $actor,
@@ -736,6 +785,10 @@ final class AnalyticsConsole extends LocalizedPage
                     ...$this->cohortRuleVersions($state),
                     ...$this->metricRuleVersions($state),
                 ],
+                'formula_definitions' => [
+                    'therapy_effectiveness' => $metricValues['therapy_effectiveness']['formula_reference'] ?? null,
+                    'ltv_percent' => $metricValues['ltv_percent']['formula_reference'] ?? null,
+                ],
                 'generated_at' => now()->toIso8601String(),
             ],
         );
@@ -750,6 +803,9 @@ final class AnalyticsConsole extends LocalizedPage
             $period = DashboardPeriod::fromFilters($state, $organization->defaultTimezone());
             $this->cohortFilters($state);
         } catch (ValidationException $exception) {
+            $this->cohortPreviewStatus = 'invalid';
+            $this->cohortPreviewCount = null;
+            $this->cohortPreviewError = $this->firstValidationMessage($exception);
             foreach ($exception->errors() as $field => $messages) {
                 $field = str_starts_with($field, 'data.') ? $field : 'data.'.$field;
                 foreach ((array) $messages as $message) {
@@ -764,6 +820,9 @@ final class AnalyticsConsole extends LocalizedPage
 
             return null;
         } catch (\InvalidArgumentException $exception) {
+            $this->cohortPreviewStatus = 'invalid';
+            $this->cohortPreviewCount = null;
+            $this->cohortPreviewError = $exception->getMessage();
             $this->addError('data.cohort_filters', $exception->getMessage());
             Notification::make()
                 ->title(__('Не удалось выполнить :operation', ['operation' => $operation]))
@@ -799,7 +858,7 @@ final class AnalyticsConsole extends LocalizedPage
             $key = (string) $dimension;
             try {
                 $results[$key] = match ($key) {
-                    'pain' => app(PainAnalytics::class)->handle($actor, $period, $client, $problemTagId, $cohortFilters)->toArray(),
+                    'pain' => $this->pain($actor, $period, $client, $problemTagId, $cohortFilters),
                     'acquisition' => $this->acquisition($actor, $period, $client, $sourceKey, $cohortFilters),
                     'scheduling' => $this->scheduling($actor, $period, $client, $cohortFilters),
                     'finance' => $this->finance($actor, $period, $client, $cohortFilters),
@@ -829,6 +888,26 @@ final class AnalyticsConsole extends LocalizedPage
             'results' => array_filter($results, static fn (mixed $result): bool => is_array($result)),
             'errors' => $errors,
         ];
+    }
+
+    /** @return array<string, mixed> */
+    private function pain(User $actor, DashboardPeriod $period, ?Client $client, ?int $problemTagId, ?ClientCohortFilters $cohortFilters): array
+    {
+        $data = app(PainAnalytics::class)->handle($actor, $period, $client, $problemTagId, $cohortFilters)->toArray();
+        $effectivenessAvailable = app(AnalyticsMetricConfiguration::class)->metrics(true)
+            ->contains(static fn ($metric): bool => $metric->stable_key === 'pain_reduction_percent');
+        $data['effectiveness_available'] = $effectivenessAvailable;
+
+        if (! $effectivenessAvailable) {
+            $data['average_reduction_percent'] = null;
+            $data['problems'] = array_map(static function (array $problem): array {
+                $problem['average_reduction_percent'] = null;
+
+                return $problem;
+            }, $data['problems']);
+        }
+
+        return $data;
     }
 
     /** @return array<string, mixed> */
@@ -1253,8 +1332,10 @@ final class AnalyticsConsole extends LocalizedPage
         );
     }
 
-    /** @param array<string, mixed>|Get $stateOrGet */
-    private function previewCountForState(array|Get $stateOrGet, ?DashboardPeriod $period = null, ?AnalyticsAggregatePredicate $predicate = null): int
+    /** @param array<string, mixed>|Get $stateOrGet
+     * @return array{count: int|null, status: string, error: string|null}
+     */
+    private function previewStateForState(array|Get $stateOrGet, ?DashboardPeriod $period = null, ?AnalyticsAggregatePredicate $predicate = null): array
     {
         if ($stateOrGet instanceof Get) {
             $state = [];
@@ -1275,13 +1356,13 @@ final class AnalyticsConsole extends LocalizedPage
         if ($period === null) {
             try {
                 $period = DashboardPeriod::fromFilters($state, app(OrganizationContext::class)->organization()->defaultTimezone());
-            } catch (ValidationException) {
-                return 0;
+            } catch (ValidationException $exception) {
+                return ['count' => null, 'status' => 'invalid', 'error' => $this->firstValidationMessage($exception)];
             }
         }
         $actor = Auth::user();
         if (! $actor instanceof User) {
-            return 0;
+            return ['count' => null, 'status' => 'error', 'error' => 'Предпросмотр временно недоступен.'];
         }
 
         try {
@@ -1290,10 +1371,69 @@ final class AnalyticsConsole extends LocalizedPage
                 app(ClientCohortQuery::class)->constrainAggregate($query, $predicate, $period);
             }
 
-            return $query->count('clients.id');
-        } catch (Throwable) {
-            return 0;
+            return ['count' => (int) $query->count('clients.id'), 'status' => 'success', 'error' => null];
+        } catch (ValidationException $exception) {
+            return ['count' => null, 'status' => 'invalid', 'error' => $this->firstValidationMessage($exception)];
+        } catch (\InvalidArgumentException $exception) {
+            return ['count' => null, 'status' => 'invalid', 'error' => $exception->getMessage()];
+        } catch (AuthorizationException) {
+            return ['count' => null, 'status' => 'error', 'error' => 'Предпросмотр временно недоступен.'];
+        } catch (Throwable $exception) {
+            Log::warning('analytics.cohort_preview_failed', [
+                'organization_id' => app(OrganizationContext::class)->id(),
+                'exception' => $exception::class,
+                'request_id' => request()->header('X-Request-Id'),
+            ]);
+
+            return ['count' => null, 'status' => 'error', 'error' => 'Предпросмотр временно недоступен.'];
         }
+    }
+
+    /** @param array<string, mixed>|Get $stateOrGet */
+    private function refreshPreview(array|Get $stateOrGet, ?DashboardPeriod $period = null, ?AnalyticsAggregatePredicate $predicate = null, bool $notify = true): bool
+    {
+        $this->cohortPreviewStatus = 'loading';
+        $this->cohortPreviewError = null;
+        $preview = $this->previewStateForState($stateOrGet, $period, $predicate);
+        $this->cohortPreviewStatus = $preview['status'];
+        $this->cohortPreviewCount = $preview['count'];
+        $this->cohortPreviewError = $preview['error'];
+        if ($preview['status'] === 'success') {
+            return true;
+        }
+
+        if ($notify) {
+            Notification::make()
+                ->danger()
+                ->title($preview['status'] === 'invalid' ? __('Проверьте фильтры') : __('Предпросмотр временно недоступен'))
+                ->body($preview['error'] ?? __('Повторите попытку.'))
+                ->send();
+        }
+
+        return false;
+    }
+
+    private function previewTextForState(): string
+    {
+        if ($this->cohortPreviewStatus === 'idle') {
+            return __('Нажмите «Анализировать», чтобы проверить когорту.');
+        }
+
+        if ($this->cohortPreviewStatus === 'success') {
+            return __('Найдено клиентов: :count', ['count' => $this->cohortPreviewCount ?? 0]);
+        }
+        if ($this->cohortPreviewStatus === 'invalid') {
+            return __('Проверьте фильтры: :error', ['error' => $this->cohortPreviewError ?? __('некорректное значение')]);
+        }
+
+        return __('Предпросмотр временно недоступен.');
+    }
+
+    private function firstValidationMessage(ValidationException $exception): string
+    {
+        $message = collect($exception->errors())->flatten()->first();
+
+        return is_string($message) && $message !== '' ? $message : __('Проверьте фильтры.');
     }
 
     /** @return array<string, mixed> */
@@ -1872,11 +2012,7 @@ final class AnalyticsConsole extends LocalizedPage
      */
     private function metricRuleVersions(array $state): array
     {
-        if (! in_array('custom_metrics', (array) ($state['dimensions'] ?? []), true)) {
-            return [];
-        }
-
-        return app(AnalyticsMetricConfiguration::class)->metrics(true)
+        return app(AnalyticsMetricConfiguration::class)->metrics()
             ->mapWithKeys(static fn ($metric): array => [
                 'metric_'.$metric->stable_key => 'metric-'.$metric->stable_key.'-v'.$metric->version,
             ])

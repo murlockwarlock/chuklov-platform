@@ -45,10 +45,14 @@ final class PurchaseGroupCatalog
         }
         $keys = array_column($rows, 'key');
         $types = [];
+        $activeTypes = [];
         foreach ($rows as $row) {
             $types = [...$types, ...$row['catalog_types']];
+            if ($row['active']) {
+                $activeTypes = [...$activeTypes, ...$row['catalog_types']];
+            }
         }
-        if ($rows === [] || count($keys) !== count(array_unique($keys)) || count($types) !== count(array_unique($types))) {
+        if ($rows === [] || count($keys) !== count(array_unique($keys)) || count($activeTypes) !== count(array_unique($activeTypes))) {
             return $this->filterRows(self::defaults(), $activeOnly);
         }
 

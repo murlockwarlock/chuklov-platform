@@ -197,6 +197,8 @@ class SetOrganizationSetting
                 throw new InvalidArgumentException('The analytics age ranges are invalid.');
             }
             $keys = [];
+            $labels = [];
+            $activeRanges = [];
             foreach ($decoded as $range) {
                 if (! is_array($range)
                     || ! is_string($range['key'] ?? null)
@@ -216,10 +218,27 @@ class SetOrganizationSetting
                 if (array_key_exists('sort_order', $range) && (! is_int($range['sort_order']) || $range['sort_order'] < 0)) {
                     throw new InvalidArgumentException('The analytics age ranges are invalid.');
                 }
+                $labelKey = mb_strtolower(trim($range['label']));
+                if (isset($labels[$labelKey])) {
+                    throw new InvalidArgumentException('The analytics age range labels must be unique.');
+                }
+                $labels[$labelKey] = true;
                 if (in_array($range['key'], $keys, true)) {
                     throw new InvalidArgumentException('The analytics age ranges are invalid.');
                 }
                 $keys[] = $range['key'];
+                if (($range['active'] ?? true) === true) {
+                    $activeRanges[] = $range;
+                }
+            }
+            foreach ($activeRanges as $index => $range) {
+                foreach (array_slice($activeRanges, $index + 1) as $other) {
+                    $rangeEnd = $range['max'] ?? PHP_INT_MAX;
+                    $otherEnd = $other['max'] ?? PHP_INT_MAX;
+                    if ($range['min'] <= $otherEnd && $other['min'] <= $rangeEnd) {
+                        throw new InvalidArgumentException('Active analytics age ranges must not overlap.');
+                    }
+                }
             }
         }
 
@@ -251,6 +270,9 @@ class SetOrganizationSetting
                     throw new InvalidArgumentException('The analytics purchase groups are invalid.');
                 }
                 $keys[] = $group['key'];
+                if (($group['active'] ?? true) !== true) {
+                    continue;
+                }
                 foreach ($group['catalog_types'] as $type) {
                     if (! is_string($type) || trim($type) === '' || mb_strlen($type) > 80 || in_array($type, $types, true)) {
                         throw new InvalidArgumentException('The analytics purchase groups are invalid.');

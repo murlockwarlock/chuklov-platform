@@ -9,6 +9,8 @@ final readonly class PainAnalyticsData
         public int $clientCount,
         public int $sessionCount,
         public array $problems,
+        public int $beforeScoreCount = 0,
+        public int $afterScoreCount = 0,
         public ?float $averageBefore = null,
         public ?float $averageAfter = null,
         public ?float $averageReduction = null,
@@ -23,6 +25,8 @@ final readonly class PainAnalyticsData
         return [
             'client_count' => $this->clientCount,
             'session_count' => $this->sessionCount,
+            'before_score_count' => $this->beforeScoreCount,
+            'after_score_count' => $this->afterScoreCount,
             'problems' => $this->problems,
             'average_before' => $this->averageBefore,
             'average_after' => $this->averageAfter,

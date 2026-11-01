@@ -10,9 +10,11 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
+use App\Modules\Services\Domain\Enums\CatalogItemType;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Repeater;
-use Filament\Forms\Components\TagsInput;
+use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Notifications\Notification;
@@ -21,9 +23,12 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use LogicException;
 use UnitEnum;
 
@@ -73,13 +78,15 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
                     Repeater::make('groups')
                         ->label(__('Группы'))
                         ->schema([
-                            TextInput::make('key')->label(__('Ключ'))->required()->maxLength(40),
+                            Hidden::make('key')->default(fn (): string => 'purchase_'.Str::lower(Str::random(20)))->dehydrated(),
                             TextInput::make('label')->label(__('Название'))->required()->maxLength(120),
-                            TagsInput::make('catalog_types')
+                            Select::make('catalog_types')
                                 ->label(__('Типы каталога'))
+                                ->multiple()
+                                ->searchable()
+                                ->options(fn (Get $get): array => $this->catalogTypeOptions((array) $get('catalog_types')))
                                 ->required()
-                                ->placeholder(__('service, program, ...'))
-                                ->helperText(__('Стабильные типы из сохранённого снимка покупки.')),
+                                ->helperText(__('Выберите понятные категории покупок. Старые исторические типы сохраняются автоматически.')),
                             Toggle::make('active')->label(__('Активна'))->default(true),
                             TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
                         ])
@@ -111,15 +118,34 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         $groups = [];
+        $mappedActiveTypes = [];
+        $keys = [];
         foreach ((array) ($this->form->getState()['groups'] ?? []) as $group) {
             if (! is_array($group)) {
                 continue;
             }
+            $active = (bool) ($group['active'] ?? true);
+            $types = array_values(array_filter(array_map('strval', (array) ($group['catalog_types'] ?? []))));
+            if ($active) {
+                foreach ($types as $type) {
+                    if (isset($mappedActiveTypes[$type])) {
+                        throw ValidationException::withMessages(['groups' => __('Один исторический тип покупки нельзя включить сразу в несколько активных групп.')]);
+                    }
+                    $mappedActiveTypes[$type] = true;
+                }
+            }
+            $key = trim((string) ($group['key'] ?? ''));
+            if ($key === '' || isset($keys[$key])) {
+                do {
+                    $key = 'purchase_'.Str::lower(Str::random(20));
+                } while (isset($keys[$key]));
+            }
+            $keys[$key] = true;
             $groups[] = [
-                'key' => trim((string) ($group['key'] ?? '')),
+                'key' => $key,
                 'label' => trim((string) ($group['label'] ?? '')),
-                'catalog_types' => array_values(array_filter(array_map('strval', (array) ($group['catalog_types'] ?? [])))),
-                'active' => (bool) ($group['active'] ?? true),
+                'catalog_types' => $types,
+                'active' => $active,
                 'sort_order' => max(0, (int) ($group['sort_order'] ?? 0)),
             ];
         }
@@ -131,5 +157,30 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
         );
         $this->mount();
         Notification::make()->success()->title(__('Группы покупок сохранены'))->send();
+    }
+
+    /** @param list<string> $selected */
+    private function catalogTypeOptions(array $selected): array
+    {
+        $options = [
+            CatalogItemType::Service->value => __('Разовые сеансы'),
+            'program' => __('Пакеты и программы'),
+            CatalogItemType::GiftCertificate->value => __('Сертификаты'),
+            CatalogItemType::PhysicalProduct->value => __('Товары'),
+            CatalogItemType::OnlineProduct->value => __('Онлайн-продукты'),
+            'unknown' => __('Другие покупки'),
+        ];
+        foreach (app(PurchaseGroupCatalog::class)->rows(app(OrganizationContext::class)->id(), false) as $row) {
+            foreach ($row['catalog_types'] as $type) {
+                $options[$type] ??= __('Исторический тип: :type', ['type' => $type]);
+            }
+        }
+        foreach ($selected as $type) {
+            if (is_string($type) && $type !== '') {
+                $options[$type] ??= __('Исторический тип: :type', ['type' => $type]);
+            }
+        }
+
+        return $options;
     }
 }

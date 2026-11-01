@@ -27,6 +27,8 @@ final class FeedbackThemesAnalyticsTest extends TestCase
 
     public function test_feedback_themes_support_zero_score_manual_classification_and_aggregate_analytics(): void
     {
+        CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-10-15 12:00:00', 'UTC'));
+
         [$organization, $admin, $client] = $this->fixture();
         app(SaveFeedbackConfiguration::class)->handle(
             actor: $admin,
@@ -73,6 +75,7 @@ final class FeedbackThemesAnalyticsTest extends TestCase
         $clientData = app(FeedbackAnalytics::class)->handle($admin, $period, $client);
         self::assertSame(1, $clientData->submissionCount);
         self::assertSame(0.0, $clientData->averageScore);
+
     }
 
     public function test_specialist_can_record_feedback_for_a_client_through_the_crm_form(): void
@@ -122,5 +125,12 @@ final class FeedbackThemesAnalyticsTest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         return [$organization, $admin, $client];
+    }
+
+    protected function tearDown(): void
+    {
+        CarbonImmutable::setTestNow();
+
+        parent::tearDown();
     }
 }

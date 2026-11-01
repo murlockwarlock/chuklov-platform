@@ -27,6 +27,7 @@ final readonly class SaveAnalyticsTaxonomyGroups
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSettings);
         $normalized = $this->normalize($groupsByTaxonomy);
+        $this->assertExistingGroupsBelongToOrganization((int) $organization->getKey(), $normalized);
 
         DB::transaction(function () use ($organization, $actor, $normalized): void {
             $total = 0;
@@ -170,6 +171,29 @@ final readonly class SaveAnalyticsTaxonomyGroups
             ->where('organization_id', $organizationId)
             ->where('group_name', $oldName)
             ->update(['group_name' => $newName, 'updated_at' => now()]);
+    }
+
+    /** @param array<string, list<array{id:int|null,original_name:string|null,name:string,is_active:bool,sort_order:int}>> $groupsByTaxonomy */
+    private function assertExistingGroupsBelongToOrganization(int $organizationId, array $groupsByTaxonomy): void
+    {
+        foreach ($groupsByTaxonomy as $taxonomy => $groups) {
+            $ids = array_values(array_filter(array_map(
+                static fn (array $group): ?int => $group['id'],
+                $groups,
+            ), static fn (?int $id): bool => $id !== null));
+            if ($ids === []) {
+                continue;
+            }
+
+            $count = AnalyticsTaxonomyGroup::query()
+                ->where('organization_id', $organizationId)
+                ->where('taxonomy', $taxonomy)
+                ->whereIn('id', $ids)
+                ->count();
+            if ($count !== count(array_unique($ids))) {
+                throw ValidationException::withMessages(['groups' => 'Выбранная группа аналитики недоступна в этой организации.']);
+            }
+        }
     }
 
     /** @return list<string> */

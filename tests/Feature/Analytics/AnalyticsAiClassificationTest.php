@@ -13,6 +13,7 @@ use App\Modules\AI\Domain\Models\AiPromptVersion;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Analytics\Application\AcceptAnalyticsClassification;
 use App\Modules\Analytics\Application\SuggestAnalyticsTags;
+use App\Modules\Analytics\Domain\Enums\AnalyticsTagCandidateStatus;
 use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
 use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
 use App\Modules\Feedback\Application\SaveFeedbackConfiguration;
@@ -24,7 +25,9 @@ use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
@@ -279,6 +282,63 @@ final class AnalyticsAiClassificationTest extends TestCase
         self::assertSame('invalid_output', $result->errorCode);
         self::assertSame([], $result->suggestions);
         self::assertSame(1, $calls);
+    }
+
+    public function test_empty_taxonomy_can_create_a_new_review_candidate_when_owner_enabled_it(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $this->activePrompt($organization);
+        app(SetOrganizationSetting::class)->handle($admin, OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled, true);
+        $this->app->instance(AiWorkflowEngine::class, new class implements AiWorkflowEngine
+        {
+            public function run(int $organizationId, AiRunRequest $request): AiRunResult
+            {
+                $aiRun = new AiRun;
+                $aiRun->forceFill([
+                    'organization_id' => $organizationId,
+                    'capability' => $request->capability,
+                    'workflow_key' => $request->workflowKey,
+                    'origin' => $request->origin,
+                    'initiated_by_user_id' => $request->initiatedByUserId,
+                    'client_id' => $request->clientId,
+                    'status' => AiRunStatus::Succeeded,
+                    'execution_mode' => $request->executionMode,
+                    'prompt_version_id' => $request->promptVersionId,
+                    'idempotency_key' => $request->idempotencyKey,
+                ])->save();
+
+                return new AiRunResult(
+                    runId: (int) $aiRun->getKey(),
+                    status: AiRunStatus::Succeeded,
+                    outputPayload: ['tags' => ['Новая задача']],
+                );
+            }
+
+            public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+            {
+                throw new \LogicException('Not used in classification test.');
+            }
+        });
+        app(OrganizationContext::class)->set($organization);
+
+        $result = app(SuggestAnalyticsTags::class)->handle(
+            actor: $admin,
+            taxonomy: 'goals',
+            sourceType: 'tracker_task',
+            sourceId: 101,
+            clientId: null,
+            sourceText: 'Хочу восстановить подвижность.',
+            availableTags: [],
+        );
+
+        self::assertSame(ClassificationRunStatus::NeedsReview, $result->status);
+        self::assertSame([['id' => null, 'label' => 'Новая задача', 'candidate_type' => 'new']], $result->suggestions);
+        self::assertDatabaseHas('analytics_tag_candidates', [
+            'organization_id' => $organization->getKey(),
+            'candidate_type' => 'new',
+            'label' => 'Новая задача',
+            'status' => AnalyticsTagCandidateStatus::NeedsReview->value,
+        ]);
     }
 
     public function test_source_change_during_ai_execution_cannot_publish_old_suggestions(): void

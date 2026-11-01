@@ -136,10 +136,15 @@ final readonly class AnalyticsReportExport
             foreach ([
                 'client_count' => 'Клиенты с проблемами',
                 'session_count' => 'Сеансы с оценкой боли',
+                'before_score_count' => 'Оценки боли до сеанса',
+                'after_score_count' => 'Оценки боли после сеанса',
             ] as $key => $label) {
                 if (array_key_exists($key, $results['pain'])) {
                     $rows[] = [$label, $results['pain'][$key], null];
                 }
+            }
+            if (($results['pain']['effectiveness_available'] ?? true) === false) {
+                $rows[] = ['Процент эффективности терапии', 'Не настроено владельцем', null];
             }
         }
         if (isset($results['demographics']['client_count'])) {
@@ -236,24 +241,35 @@ final readonly class AnalyticsReportExport
     private function writePain(Worksheet $sheet, array $data): void
     {
         $rows = [];
+        $effectivenessAvailable = ($data['effectiveness_available'] ?? true) === true;
         foreach ((array) ($data['problems'] ?? []) as $problem) {
             if (is_array($problem)) {
-                $rows[] = [
+                $row = [
                     (string) ($problem['name'] ?? '—'),
                     $problem['group'] ?? null,
                     (int) ($problem['client_count'] ?? 0),
+                    $problem['before_score_count'] ?? null,
+                    $problem['after_score_count'] ?? null,
                     $problem['average_before'] ?? null,
                     $problem['average_after'] ?? null,
                     $problem['average_reduction'] ?? null,
-                    $problem['average_reduction_percent'] ?? null,
                     $problem['session_1_after'] ?? null,
                     $problem['session_2_after'] ?? null,
                     $problem['session_3_after'] ?? null,
                 ];
+                if ($effectivenessAvailable) {
+                    array_splice($row, 8, 0, [$problem['average_reduction_percent'] ?? null]);
+                }
+                $rows[] = $row;
             }
         }
 
-        $this->writeRows($sheet, $rows, ['Проблема', 'Группа', 'Клиентов', 'Среднее до', 'Среднее после', 'Снижение', 'Снижение, %', 'Сеанс 1 после', 'Сеанс 2 после', 'Сеанс 3 после']);
+        $headers = ['Проблема', 'Группа', 'Клиентов', 'Оценок до', 'Оценок после', 'Среднее до', 'Среднее после', 'Снижение'];
+        if ($effectivenessAvailable) {
+            $headers[] = 'Снижение, %';
+        }
+        $headers = [...$headers, 'Сеанс 1 после', 'Сеанс 2 после', 'Сеанс 3 после'];
+        $this->writeRows($sheet, $rows, $headers);
     }
 
     /** @param array<string, mixed> $data */
@@ -432,6 +448,14 @@ final readonly class AnalyticsReportExport
         }
         foreach ((array) ($metadata['rule_versions'] ?? []) as $key => $version) {
             $rows[] = ['Версия правила: '.self::humanFilterKey((string) $key), (string) $version];
+        }
+        foreach ((array) ($metadata['formula_definitions'] ?? []) as $key => $definition) {
+            $label = match ((string) $key) {
+                'therapy_effectiveness' => 'Определение процента эффективности терапии',
+                'ltv_percent' => 'Определение процента LTV',
+                default => 'Определение метрики',
+            };
+            $rows[] = [$label, is_string($definition) && trim($definition) !== '' ? $definition : 'Не настроено владельцем'];
         }
         if (isset($metadata['generated_at'])) {
             $rows[] = ['Сформировано', $metadata['generated_at']];

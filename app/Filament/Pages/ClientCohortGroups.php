@@ -62,6 +62,9 @@ final class ClientCohortGroups extends LocalizedPage
     /** @var array<string, mixed>|null */
     public ?array $data = null;
 
+    /** @var array<int, int> */
+    private array $initialGroupVersions = [];
+
     public static function canAccess(): bool
     {
         $actor = Auth::user();
@@ -82,9 +85,14 @@ final class ClientCohortGroups extends LocalizedPage
 
     public function mount(): void
     {
+        $rows = app(AnalyticsClientGroupCatalog::class)->rows(includeArchived: true);
+        $this->initialGroupVersions = collect($rows)
+            ->mapWithKeys(static fn (array $row): array => [(int) $row['id'] => (int) $row['version']])
+            ->all();
         $this->form->fill([
             'groups' => array_map(static fn (array $row): array => [
                 'id' => $row['id'],
+                'version' => $row['version'],
                 'name' => $row['name'],
                 'description' => $row['description'],
                 'group_type' => $row['group_type'],
@@ -139,7 +147,11 @@ final class ClientCohortGroups extends LocalizedPage
                             TextInput::make('name')->label(__('Название'))->required()->maxLength(160),
                             Textarea::make('description')->label(__('Описание'))->maxLength(2000)->rows(2)->nullable(),
                             Select::make('group_type')->label(__('Тип'))->options(['manual' => 'Ручная', 'dynamic' => 'Динамическая'])->required()->live(),
-                            Toggle::make('is_active')->label(__('Активна'))->default(true),
+                            Toggle::make('is_active')
+                                ->label(__('Активна (снимите, чтобы архивировать)'))
+                                ->helperText(__('Архивирование сохраняет историю и прежние версии группы.'))
+                                ->default(true),
+                            Hidden::make('version')->dehydrated(true),
                             TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
                             Select::make('client_ids')
                                 ->label(__('Клиенты группы'))
@@ -337,6 +349,12 @@ final class ClientCohortGroups extends LocalizedPage
                         ->defaultItems(0)
                         ->addActionLabel(__('Добавить группу'))
                         ->reorderable()
+                        ->deleteAction(fn (Action $action): Action => $action
+                            ->label(__('Архивировать'))
+                            ->requiresConfirmation()
+                            ->modalHeading(__('Архивировать группу?'))
+                            ->modalDescription(__('Группа исчезнет из активной формы, но её версии и история сохранятся.'))
+                            ->modalSubmitActionLabel(__('Архивировать')))
                         ->columnSpanFull(),
                 ])
                 ->columnSpanFull(),
@@ -361,56 +379,95 @@ final class ClientCohortGroups extends LocalizedPage
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         try {
-            foreach ((array) ($this->form->getState()['groups'] ?? []) as $group) {
-                $type = (string) ($group['group_type'] ?? 'manual');
-                app(SaveAnalyticsClientGroup::class)->handle($actor, [
-                    'id' => $group['id'] ?? null,
-                    'name' => $group['name'] ?? '',
-                    'description' => $group['description'] ?? null,
-                    'group_type' => $type,
-                    'is_active' => (bool) ($group['is_active'] ?? true),
-                    'sort_order' => (int) ($group['sort_order'] ?? 0),
-                    'rule_definition' => [
-                        'segments' => $group['rule_segments'] ?? [],
-                        'genders' => $group['rule_genders'] ?? [],
-                        'source_keys' => $group['rule_source_keys'] ?? [],
-                        'service_ids' => $group['rule_service_ids'] ?? [],
-                        'service_categories' => $group['rule_service_categories'] ?? [],
-                        'problem_tag_ids' => $group['rule_problem_tag_ids'] ?? [],
-                        'feedback_theme_ids' => $group['rule_feedback_theme_ids'] ?? [],
-                        'goal_tag_ids' => $group['rule_goal_tag_ids'] ?? [],
-                        'specialist_ids' => $group['rule_specialist_ids'] ?? [],
-                        'countries' => $group['rule_countries'] ?? [],
-                        'age_min' => $group['rule_age_min'] ?? null,
-                        'age_max' => $group['rule_age_max'] ?? null,
-                        'archived' => $group['rule_archived'] ?? null,
-                        'blacklist' => $group['rule_blacklist'] ?? null,
-                        'problem_tag_mode' => $group['rule_problem_tag_mode'] ?? 'any',
-                        'exclude_problem_tag_ids' => $group['rule_exclude_problem_tag_ids'] ?? [],
-                        'children' => $group['rule_children'] ?? null,
-                        'booking_statuses' => $group['rule_booking_statuses'] ?? [],
-                        'booking_event_types' => $group['rule_booking_event_types'] ?? [],
-                        'completed_visits_min' => $group['rule_completed_visits_min'] ?? null,
-                        'completed_visits_max' => $group['rule_completed_visits_max'] ?? null,
-                        'last_visit_from' => $group['rule_last_visit_from'] ?? null,
-                        'last_visit_to' => $group['rule_last_visit_to'] ?? null,
-                        'purchase_types' => $group['rule_purchase_types'] ?? [],
-                        'purchase_statuses' => $group['rule_purchase_statuses'] ?? [],
-                        'has_pain_score' => $group['rule_has_pain_score'] ?? null,
-                        'pain_score_basis' => $group['rule_pain_score_basis'] ?? PainScoreBasis::Any->value,
-                        'pain_score_min' => $group['rule_pain_score_min'] ?? null,
-                        'pain_score_max' => $group['rule_pain_score_max'] ?? null,
-                        'satisfaction_min' => $group['rule_satisfaction_min'] ?? null,
-                        'satisfaction_max' => $group['rule_satisfaction_max'] ?? null,
-                    ],
-                ], array_values(array_map('intval', (array) ($group['client_ids'] ?? []))));
+            $state = $this->form->getState();
+            $entries = [];
+            $submittedIds = [];
+            foreach ((array) ($state['groups'] ?? []) as $group) {
+                if (! is_array($group)) {
+                    continue;
+                }
+                $id = filter_var($group['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+                if ($id !== false) {
+                    $submittedIds[] = (int) $id;
+                }
+                $entries[] = [
+                    'data' => $this->groupData($group),
+                    'client_ids' => array_values(array_map('intval', (array) ($group['client_ids'] ?? []))),
+                ];
             }
+            foreach (app(AnalyticsClientGroupCatalog::class)->rows(includeArchived: true) as $row) {
+                if ($row['is_active'] && ! in_array((int) $row['id'], $submittedIds, true)) {
+                    $entries[] = [
+                        'data' => [
+                            'id' => $row['id'],
+                            'version' => $this->initialGroupVersions[(int) $row['id']] ?? $row['version'],
+                            'name' => $row['name'],
+                            'description' => $row['description'],
+                            'group_type' => $row['group_type'],
+                            'is_active' => false,
+                            'sort_order' => $row['sort_order'],
+                            'rule_definition' => $row['rule_definition'],
+                        ],
+                        'client_ids' => array_values(array_map('intval', (array) $row['client_ids'])),
+                    ];
+                }
+            }
+            app(SaveAnalyticsClientGroup::class)->handleMany($actor, $entries);
             $this->mount();
             Notification::make()->success()->title(__('Группы клиентов сохранены'))->send();
         } catch (ValidationException $exception) {
             $message = collect($exception->errors())->flatten()->first();
             Notification::make()->danger()->title(is_string($message) ? $message : __('Проверьте группы клиентов.'))->send();
         }
+    }
+
+    /** @param array<string, mixed> $group
+     * @return array<string, mixed>
+     */
+    private function groupData(array $group): array
+    {
+        return [
+            'id' => $group['id'] ?? null,
+            'version' => $group['version'] ?? null,
+            'name' => $group['name'] ?? '',
+            'description' => $group['description'] ?? null,
+            'group_type' => (string) ($group['group_type'] ?? 'manual'),
+            'is_active' => (bool) ($group['is_active'] ?? true),
+            'sort_order' => (int) ($group['sort_order'] ?? 0),
+            'rule_definition' => [
+                'segments' => $group['rule_segments'] ?? [],
+                'genders' => $group['rule_genders'] ?? [],
+                'source_keys' => $group['rule_source_keys'] ?? [],
+                'service_ids' => $group['rule_service_ids'] ?? [],
+                'service_categories' => $group['rule_service_categories'] ?? [],
+                'problem_tag_ids' => $group['rule_problem_tag_ids'] ?? [],
+                'feedback_theme_ids' => $group['rule_feedback_theme_ids'] ?? [],
+                'goal_tag_ids' => $group['rule_goal_tag_ids'] ?? [],
+                'specialist_ids' => $group['rule_specialist_ids'] ?? [],
+                'countries' => $group['rule_countries'] ?? [],
+                'age_min' => $group['rule_age_min'] ?? null,
+                'age_max' => $group['rule_age_max'] ?? null,
+                'archived' => $group['rule_archived'] ?? null,
+                'blacklist' => $group['rule_blacklist'] ?? null,
+                'problem_tag_mode' => $group['rule_problem_tag_mode'] ?? 'any',
+                'exclude_problem_tag_ids' => $group['rule_exclude_problem_tag_ids'] ?? [],
+                'children' => $group['rule_children'] ?? null,
+                'booking_statuses' => $group['rule_booking_statuses'] ?? [],
+                'booking_event_types' => $group['rule_booking_event_types'] ?? [],
+                'completed_visits_min' => $group['rule_completed_visits_min'] ?? null,
+                'completed_visits_max' => $group['rule_completed_visits_max'] ?? null,
+                'last_visit_from' => $group['rule_last_visit_from'] ?? null,
+                'last_visit_to' => $group['rule_last_visit_to'] ?? null,
+                'purchase_types' => $group['rule_purchase_types'] ?? [],
+                'purchase_statuses' => $group['rule_purchase_statuses'] ?? [],
+                'has_pain_score' => $group['rule_has_pain_score'] ?? null,
+                'pain_score_basis' => $group['rule_pain_score_basis'] ?? PainScoreBasis::Any->value,
+                'pain_score_min' => $group['rule_pain_score_min'] ?? null,
+                'pain_score_max' => $group['rule_pain_score_max'] ?? null,
+                'satisfaction_min' => $group['rule_satisfaction_min'] ?? null,
+                'satisfaction_max' => $group['rule_satisfaction_max'] ?? null,
+            ],
+        ];
     }
 
     /** @return array<int|string, string> */

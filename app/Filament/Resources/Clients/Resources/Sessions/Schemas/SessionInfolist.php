@@ -150,7 +150,7 @@ final class SessionInfolist
                 Section::make(__('Протокол и результат сеанса'))
                     ->schema([
                         TextEntry::make('root_cause_hypothesis')
-                            ->label(__('Первопричина'))
+                            ->label(__('Старая гипотеза первопричины (только для истории)'))
                             ->state(fn (MedicalSession $record, TextEntry $entry): ?string => self::sessionData($record, $entry)?->rootCauseHypothesis)
                             ->placeholder(__('Не заполнено'))
                             ->columnSpanFull()
@@ -409,12 +409,14 @@ final class SessionInfolist
         return array_map(static function ($pain) use ($periods, $timeLabels): array {
             $periodKey = $pain->frequencyPeriodUnit;
             $periodLabel = is_string($periodKey) ? ($periods[$periodKey] ?? __('период')) : __('период');
-            $frequency = $pain->frequencyMode === 'count'
-                ? __(':count раз за :period', [
+            $frequency = match ($pain->frequencyMode) {
+                'count' => __(':count раз за :period', [
                     'count' => $pain->frequencyCount ?? '—',
                     'period' => $periodLabel,
-                ])
-                : __('Постоянная');
+                ]),
+                'permanent' => __('Постоянная'),
+                default => __('Не указана'),
+            };
 
             $times = array_map(
                 static fn (string $time): string => $timeLabels[$time] ?? $time,

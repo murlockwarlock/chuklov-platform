@@ -13,6 +13,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -26,6 +27,8 @@ final class AnalyticsMetricConfigurationTest extends TestCase
         app(OrganizationContext::class)->set($organization);
 
         $configuration = app(AnalyticsMetricConfiguration::class);
+        self::assertFalse($configuration->metrics()->firstWhere('stable_key', 'pain_reduction_percent')?->active);
+        self::assertFalse($configuration->metrics()->firstWhere('stable_key', 'ltv_change_percent')?->active);
         self::assertFalse($configuration->values()['therapy_effectiveness']['configured']);
         self::assertFalse($configuration->values()['ltv_percent']['configured']);
 
@@ -39,8 +42,8 @@ final class AnalyticsMetricConfigurationTest extends TestCase
             ->assertSuccessful()
             ->assertSee('Снижение боли, %')
             ->assertSee('LTV новых клиентов')
-            ->assertDontSee('Описание формулы владельца')
-            ->assertDontSee('Описание формул сохранено');
+            ->assertSee('Определение процента LTV')
+            ->assertSee('Определение процента эффективности терапии');
 
         $values = $configuration->values();
         self::assertSame('Утверждённая формула снижения боли после курса.', $values['therapy_effectiveness']['formula_reference']);
@@ -84,6 +87,40 @@ final class AnalyticsMetricConfigurationTest extends TestCase
         $explicitData = $explicit->instance()->data;
         self::assertIsArray($explicitData);
         self::assertSame(ClientSessionAxisCatalog::Chronological, $explicitData['session_axis_semantics']);
+    }
+
+    public function test_ltv_percentage_cannot_be_activated_without_an_owner_definition(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        $configuration = app(AnalyticsMetricConfiguration::class);
+        $metrics = array_map(static function (array $metric): array {
+            if ($metric['stable_key'] === 'ltv_change_percent') {
+                $metric['active'] = true;
+            }
+
+            return $metric;
+        }, $configuration->formValues());
+
+        $this->expectException(ValidationException::class);
+        $configuration->saveMetrics($admin, $metrics);
+    }
+
+    public function test_therapy_percentage_cannot_be_activated_without_an_owner_definition(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        $configuration = app(AnalyticsMetricConfiguration::class);
+        $metrics = array_map(static function (array $metric): array {
+            if ($metric['stable_key'] === 'pain_reduction_percent') {
+                $metric['active'] = true;
+            }
+
+            return $metric;
+        }, $configuration->formValues());
+
+        $this->expectException(ValidationException::class);
+        $configuration->saveMetrics($admin, $metrics);
     }
 
     /** @return array{0: Organization, 1: User} */
