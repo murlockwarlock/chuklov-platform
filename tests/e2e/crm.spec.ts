@@ -3104,7 +3104,7 @@ test('analytics problem session axis keeps problem numbering separate from globa
     await expect(painSection.getByRole('row').filter({ hasText: fixture.problemTagName })).toContainText('8 / 4 / 1');
 
     await page.goto('/admin/analytics-metric-settings');
-    const sessionAxis = page.getByRole('combobox', { name: 'Как считать сеанс 1 / 2 / 3', exact: true });
+    const sessionAxis = page.locator('#form\\.session_axis_semantics');
     await expect(sessionAxis).toHaveValue('problem_chronological');
     await sessionAxis.selectOption('client_chronological');
     await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
