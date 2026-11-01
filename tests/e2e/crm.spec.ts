@@ -1076,6 +1076,22 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
 }
 
+async function selectAnalyticsOption(page: Page, combobox: Locator, optionName: string): Promise<void> {
+    await combobox.click();
+    const dropdown = page.locator('div[role="listbox"]:visible').last();
+    await expect(dropdown).toBeVisible();
+
+    const search = dropdown.locator('input[type="text"]:visible');
+    if (await search.count() > 0) {
+        await search.fill(optionName);
+    }
+
+    const option = dropdown.getByRole('option', { name: optionName, exact: true });
+    await expect(option).toBeVisible({ timeout: 15_000 });
+    await option.click();
+    await expect(combobox).toContainText(optionName, { timeout: 15_000 });
+}
+
 test('multi-specialist Journal keeps the accepted layout and slot ownership', async ({ page }) => {
     test.setTimeout(60_000);
 
@@ -3284,8 +3300,7 @@ test('analytics service aggregate drilldown intersects the selected service coho
     const selectServices = async (): Promise<void> => {
         const services = page.getByRole('combobox', { name: 'Услуги', exact: true });
         for (const serviceName of [fixture.aggregateServiceAName, fixture.aggregateServiceBName]) {
-            await services.click();
-            await page.getByRole('option', { name: serviceName, exact: true }).click();
+            await selectAnalyticsOption(page, services, serviceName);
         }
     };
 
@@ -3352,8 +3367,7 @@ test('analytics problem aggregate drilldown preserves any mode and intersects se
     const problemCategory = page.getByRole('combobox', { name: 'Категории проблем', exact: true });
     const selectProblems = async (): Promise<void> => {
         for (const problemName of [fixture.aggregateProblemTagName, fixture.aggregateBackTagName]) {
-            await problemCategory.click();
-            await page.getByRole('option', { name: problemName, exact: true }).click();
+            await selectAnalyticsOption(page, problemCategory, problemName);
         }
     };
 
@@ -3413,9 +3427,7 @@ test('analytics demographic missing country aggregate drilldown uses a typed unk
 
     const selectTargetClient = async (): Promise<void> => {
         const clientSelect = page.getByRole('combobox', { name: 'Конкретные клиенты', exact: true });
-        await clientSelect.click();
-        await page.getByRole('textbox', { name: 'Search' }).last().fill(fixture.aggregateMissingCountryClientName as string);
-        await page.getByRole('option', { name: fixture.aggregateMissingCountryClientName, exact: true }).click();
+        await selectAnalyticsOption(page, clientSelect, fixture.aggregateMissingCountryClientName as string);
     };
 
     await login(page, fixture);
