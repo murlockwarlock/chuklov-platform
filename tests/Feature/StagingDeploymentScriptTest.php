@@ -94,6 +94,18 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringContainsString('DYNAMIC_BANS', $normalizer);
         self::assertStringContainsString('trusted_normalizer="$script_directory/normalize-fail2ban-elements.awk"', $script);
         self::assertStringContainsString('[[ ! -f "$trusted_normalizer" || ! -r "$trusted_normalizer" ]]', $script);
+        self::assertStringContainsString('release_retention_script="$script_directory/staging-release-retention.sh"', $script);
+        self::assertStringContainsString('[[ ! -f "$release_retention_script" || ! -r "$release_retention_script" ]]', $script);
+        self::assertStringContainsString('STAGING_ROOT must be /opt/chuklov-staging.', $script);
+        self::assertStringContainsString('remote_retention_script="/tmp/chuklov-$revision-staging-release-retention.sh"', $script);
+        self::assertStringContainsString('scp "${ssh_options[@]}" "$retention_script" "$remote:$remote_retention_script"', $script);
+        self::assertStringContainsString('failed_release_grace_hours="${STAGING_FAILED_RELEASE_GRACE_HOURS:-}"', $script);
+        self::assertStringContainsString('failed_release_grace_hours="${11:-}"', $script);
+        self::assertStringContainsString('if ! bash "$remote_retention_script" --cleanup "$root" "$staging_release_retention" "$failed_release_grace_hours"; then', $script);
+        self::assertStringContainsString('mark_failed_release()', $script);
+        self::assertStringContainsString('failed_target="$candidate.failed-retry"', $script);
+        self::assertStringContainsString("printf '%s\\n' \"\$revision\" > \"\$release/.staging-deploy-success\"", $script);
+        self::assertStringContainsString('rm -rf -- "$canonical"', file_get_contents(base_path('scripts/staging-release-retention.sh')));
         self::assertStringContainsString('cp -- "$trusted_normalizer" "$normalizer"', $script);
         self::assertStringNotContainsString('tar -xOf "$archive" scripts/normalize-fail2ban-elements.awk > "$normalizer"', $script);
         self::assertStringContainsString('awk -f "$remote_normalizer" > "$output"', $script);
@@ -129,6 +141,16 @@ class StagingDeploymentScriptTest extends TestCase
         self::assertStringNotContainsString('docker volume rm', $script);
         self::assertStringNotContainsString('redis-cli flush', $script);
         self::assertStringNotContainsString('FLUSHALL', $script);
+
+        $activation = strpos($script, 'mv "$compose.next" "$compose"');
+        $retention = strpos($script, 'bash "$remote_retention_script" --cleanup');
+        $rollbackTrap = strpos($script, 'trap - ERR', $retention);
+
+        self::assertIsInt($activation);
+        self::assertIsInt($retention);
+        self::assertIsInt($rollbackTrap);
+        self::assertGreaterThan($activation, $retention);
+        self::assertGreaterThan($retention, $rollbackTrap);
     }
 
     #[Test]
@@ -370,7 +392,7 @@ class StagingDeploymentScriptTest extends TestCase
                 'STAGING_HOST=staging.example.test',
                 'STAGING_USER=deployer',
                 'STAGING_SSH_KEY=/tmp/staging-test-key',
-                'STAGING_ROOT=/tmp/staging-root',
+                'STAGING_ROOT=/opt/chuklov-staging',
                 'STAGING_PROJECT=staging-test',
                 'STAGING_HEALTH_URL=http://staging.example.test/health',
                 'STAGING_EXPECTED_HOST_PORT=127.0.0.1:18080',
@@ -399,8 +421,9 @@ class StagingDeploymentScriptTest extends TestCase
             self::assertIsString($trustedNormalizer);
             self::assertSame($trustedNormalizer, $normalizer);
             self::assertIsArray($sourcePaths);
-            self::assertCount(2, $sourcePaths);
+            self::assertCount(3, $sourcePaths);
             self::assertFileDoesNotExist($sourcePaths[1]);
+            self::assertFileDoesNotExist($sourcePaths[2]);
         } finally {
             $filesystem->remove($environment);
             $filesystem->remove($checkout);
@@ -764,6 +787,10 @@ BASH);
             base_path('scripts/normalize-fail2ban-elements.awk'),
             $checkout.'/scripts/normalize-fail2ban-elements.awk',
         );
+        $filesystem->copy(
+            base_path('scripts/staging-release-retention.sh'),
+            $checkout.'/scripts/staging-release-retention.sh',
+        );
         file_put_contents($checkout.'/bin/scp', <<<'BASH'
 #!/usr/bin/env bash
 set -Eeuo pipefail
@@ -772,7 +799,7 @@ source_path=''
 for argument in "$@"; do
     case "$argument" in
         *:*) ;;
-        *.tar|*.awk) source_path="$argument" ;;
+        *.tar|*.awk|*.sh) source_path="$argument" ;;
     esac
 done
 
@@ -786,6 +813,7 @@ printf '%s\n' "$source_path" >> "$TEST_CAPTURE_DIRECTORY/source-paths.txt"
 case "$source_path" in
     *.tar) cp -- "$source_path" "$TEST_CAPTURE_DIRECTORY/target.tar" ;;
     *.awk) cp -- "$source_path" "$TEST_CAPTURE_DIRECTORY/normalizer.awk" ;;
+    *.sh) cp -- "$source_path" "$TEST_CAPTURE_DIRECTORY/retention.sh" ;;
     *) echo 'Unexpected copy source.' >&2; exit 1 ;;
 esac
 BASH);

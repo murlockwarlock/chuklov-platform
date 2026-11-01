@@ -13,6 +13,8 @@ The isolated staging host uses `scripts/deploy-staging.sh`. Copy `.env.staging-d
 
 The script refuses a dirty working tree, unexpected current revision, unexpected app binding, or incomplete Compose service set. It captures nginx, nftables, listening ports, systemd, PM2, Docker, and host PostgreSQL baselines; creates and validates a staging-only PostgreSQL dump; builds locked PHP/Node artifacts; validates the updated Compose file; runs forward staging migrations; atomically switches the release; recreates app, Horizon, scheduler, and Telegram; reconciles PostgreSQL/Redis without needless stateful restart; verifies health; and compares unrelated infrastructure with the baseline. Failure after switching restores the previous application release and runtime Compose file. It never rolls back migrations automatically, deletes volumes, prunes Docker, or changes nginx/firewall configuration.
 
+After a successful staging switch and health verification, the deployment lifecycle retains the active release plus five latest successful releases. Failed or incomplete release directories use a separate 48-hour grace period and are cleaned only by a later successful deployment; symlink-protected targets are never removed. `STAGING_RELEASE_RETENTION` and `STAGING_FAILED_RELEASE_GRACE_HOURS` can override these defaults in the ignored staging environment.
+
 Host Nginx configuration has a separate, narrowly scoped deployment target because the app release procedure intentionally preserves host routing. Review the exact host diff and current SHA-256 values before running it:
 
 ```bash
