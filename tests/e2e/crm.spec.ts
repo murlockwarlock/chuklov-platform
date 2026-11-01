@@ -3077,14 +3077,16 @@ test('analytics problem session axis keeps problem numbering separate from globa
         throw new Error('Problem-axis fixture did not create a problem tag.');
     }
 
+    const problemTagOptionName = `E2E ось сеансов: ${fixture.problemTagName}`;
+
     const selectReportState = async (): Promise<void> => {
         await page.locator('#form\\.period').selectOption('custom');
         await page.locator('#form\\.start_date').fill('2026-10-01');
         await page.locator('#form\\.end_date').fill('2026-10-31');
         const problemCategory = page.getByRole('combobox', { name: 'Категория проблемы', exact: true });
         await problemCategory.click();
-        await page.getByRole('textbox', { name: 'Search' }).fill(fixture.problemTagName as string);
-        const problemOption = page.getByRole('option', { name: fixture.problemTagName as string, exact: true });
+        await page.getByRole('textbox', { name: 'Search' }).fill(problemTagOptionName);
+        const problemOption = page.getByRole('option', { name: problemTagOptionName, exact: true });
         await expect(problemOption).toBeVisible({ timeout: 15_000 });
         await problemOption.click();
     };
