@@ -1090,6 +1090,7 @@ async function selectAnalyticsOption(page: Page, combobox: Locator, optionName: 
     const option = dropdown.getByRole('option').filter({ hasText: optionName }).first();
     await expect(option).toBeVisible({ timeout: 15_000 });
     await option.click();
+    await page.waitForLoadState('networkidle');
     await expect(combobox).toContainText(optionName, { timeout: 15_000 });
 }
 
