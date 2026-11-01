@@ -10,6 +10,7 @@ use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\DemographicsAnalytics;
 use App\Modules\Analytics\Application\SaveAnalyticsClientGroup;
 use App\Modules\Analytics\Application\ServiceVisitAnalytics;
+use App\Modules\Analytics\Domain\Enums\ClientSegment;
 use App\Modules\Analytics\Domain\Models\AnalyticsClientGroup;
 use App\Modules\Analytics\Domain\Models\AnalyticsClientGroupVersion;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
@@ -96,6 +97,57 @@ final class ClientCohortQueryTest extends TestCase
         self::assertSame([$matching->getKey()], $query->pluck('clients.id')->all());
         self::assertNotContains($foreign->getKey(), $query->pluck('clients.id')->all());
         self::assertSame(1, app(ClientCohortQuery::class)->previewCount($admin, $filters));
+    }
+
+    public function test_selected_client_segments_are_combined_with_or(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $now = CarbonImmutable::now('UTC');
+        $newClient = Client::factory()->forOrganization($organization)->create([
+            'created_at' => $now->subDays(3),
+            'updated_at' => $now->subDays(3),
+            'gender' => 'FEMALE',
+        ]);
+        $regularClient = Client::factory()->forOrganization($organization)->create([
+            'created_at' => $now->subDays(90),
+            'updated_at' => $now->subDays(90),
+            'gender' => 'FEMALE',
+        ]);
+        $unmatchedClient = Client::factory()->forOrganization($organization)->create([
+            'created_at' => $now->subDays(90),
+            'updated_at' => $now->subDays(90),
+            'gender' => 'MALE',
+        ]);
+        $service = Service::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+
+        foreach (range(1, 3) as $visit) {
+            $startsAt = $now->subDays($visit + 3);
+            Booking::factory()
+                ->forOrganization($organization)
+                ->forClient($regularClient)
+                ->forService($service)
+                ->forSpecialist($specialist)
+                ->create([
+                    'status' => BookingStatus::Completed->value,
+                    'starts_at' => $startsAt,
+                    'ends_at' => $startsAt->addHour(),
+                    'blocking_ends_at' => $startsAt->addHour(),
+                ]);
+        }
+
+        app(OrganizationContext::class)->set($organization);
+
+        $ids = app(ClientCohortQuery::class)->for($admin, new ClientCohortFilters(
+            segments: [ClientSegment::NewClients->value, ClientSegment::Regular->value],
+            genders: ['FEMALE'],
+        ))->pluck('clients.id')->sort()->values()->all();
+
+        self::assertSame(
+            [$newClient->getKey(), $regularClient->getKey()],
+            $ids,
+        );
+        self::assertNotContains($unmatchedClient->getKey(), $ids);
     }
 
     public function test_six_client_owner_fixture_returns_one_exact_cohort_to_preview_and_dimensions(): void

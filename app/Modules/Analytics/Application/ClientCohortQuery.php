@@ -71,11 +71,22 @@ final readonly class ClientCohortQuery
             $filters->blacklist ? $query->whereHas('bookingRestrictions', $blacklist) : $query->whereDoesntHave('bookingRestrictions', $blacklist);
         }
         if ($filters->segments !== []) {
-            foreach ($filters->segments as $segment) {
-                $query->where(function (Builder $branch) use ($segment): void {
-                    $this->segments->apply($branch, ClientSegment::tryFrom($segment) ?? throw new \InvalidArgumentException('The client segment is invalid.'));
-                });
-            }
+            $query->where(function (Builder $branch) use ($filters): void {
+                foreach ($filters->segments as $index => $segment) {
+                    $apply = function (Builder $segmentQuery) use ($segment): void {
+                        $this->segments->apply(
+                            $segmentQuery,
+                            ClientSegment::tryFrom($segment) ?? throw new \InvalidArgumentException('The client segment is invalid.'),
+                        );
+                    };
+
+                    if ($index === 0) {
+                        $branch->where($apply);
+                    } else {
+                        $branch->orWhere($apply);
+                    }
+                }
+            });
         }
         if ($filters->savedGroupIds !== []) {
             $groups = AnalyticsClientGroup::query()
