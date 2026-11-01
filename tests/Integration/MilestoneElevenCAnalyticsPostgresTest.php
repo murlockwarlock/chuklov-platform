@@ -110,6 +110,7 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
 
         $this->createPainSession($admin, $clientB, $specialist, '2026-01-01 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 8, 'after_score' => 6]]);
         $this->createPainSession($admin, $clientB, $specialist, '2026-01-01 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 4, 'after_score' => 2]]);
+        app(OrganizationContext::class)->set($otherOrganization);
         $this->createPainSession($otherAdmin, $otherClient, $otherSpecialist, '2026-01-01 09:00:00', [['name' => 'Шея', 'tag_ids' => [$otherNeck->getKey()], 'before_score' => 10, 'after_score' => 5]]);
 
         app(OrganizationContext::class)->set($organization);
