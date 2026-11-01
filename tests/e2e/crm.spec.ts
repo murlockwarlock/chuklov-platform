@@ -2943,7 +2943,8 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     await expect(painBasis).toBeVisible();
     await painBasis.selectOption('session_after');
     await page.locator('#form\\.cohort_has_pain_score').selectOption('1');
-    await page.locator('#form\\.cohort_countries').selectOption(fixture.painCountry as string);
+    await page.getByRole('combobox', { name: 'Страны', exact: true }).click();
+    await page.getByRole('option', { name: fixture.painCountry as string, exact: true }).click();
     await expect(page.getByText('Источник оценки боли', { exact: true })).toBeVisible();
 
     const dimensions = [
