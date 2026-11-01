@@ -831,6 +831,8 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
                 DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+                MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                    ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
                 PLAYWRIGHT_FINANCE_FLOW: options.financeFlow ? '1' : '0',
                 PLAYWRIGHT_PAYOUT_FLOW: options.payoutFlow ? '1' : '0',
                 PLAYWRIGHT_REFERRAL_STATS_FLOW: options.referralStatsFlow ? '1' : '0',

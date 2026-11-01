@@ -202,6 +202,9 @@ final class MilestoneElevenCAnalyticsPostgresTest extends TestCase
             'name' => 'PostgreSQL neck', 'tag_ids' => [$otherNeck->getKey()], 'before_score' => 8, 'after_score' => 6,
         ]]);
 
+        Client::query()
+            ->whereIn('organization_id', [$organization->getKey(), $otherOrganization->getKey()])
+            ->update(['country' => 'KZ']);
         $unknownCountryClient = $this->client($organization, '2026-10-05 17:00:00');
         $unknownCountryClient->forceFill(['country' => null])->save();
         app(OrganizationContext::class)->set($organization);
