@@ -3236,7 +3236,7 @@ test('analytics problem session axis keeps problem numbering separate from globa
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
     await selectReportState();
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
-    await expect(painSection).toContainText('Порядок сеансов конкретной категории проблемы');
+    await expect(painSection).toContainText('Сеанс 1 / 2 / 3 после');
     await expect(painSection.getByRole('row').filter({ hasText: fixture.problemTagName })).toContainText('8 / 4 / 1');
 
     await page.goto('/admin/analytics-metric-settings');
@@ -3264,7 +3264,7 @@ test('analytics problem session axis keeps problem numbering separate from globa
     await page.goto('/admin/analytics-console');
     await selectReportState();
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
-    await expect(painSection).toContainText('Порядок сеансов конкретной категории проблемы');
+    await expect(painSection).toContainText('Сеанс 1 / 2 / 3 после');
     await expect(painSection.getByRole('row').filter({ hasText: fixture.problemTagName })).toContainText('8 / 4 / 1');
 
     const [download] = await Promise.all([
