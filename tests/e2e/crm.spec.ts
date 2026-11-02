@@ -3362,11 +3362,14 @@ test('analytics demographics show the known country total in the screen and Exce
     expect(workbookXml).toContain('Стран представлено');
 
     await page.reload();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
     await expect(demographicsSection).toContainText('Стран представлено: 1');
     await page.goto('/admin/analytics-console?country-count=1');
     await page.goBack();
     await page.goForward();
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Демография клиентов', exact: true }).locator('xpath=ancestor::section[1]')).toContainText('Стран представлено: 1');
 });
 
 test('analytics problem session axis keeps problem numbering separate from global numbering', async ({ page }) => {
