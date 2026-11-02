@@ -420,9 +420,9 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         }
         if (${options.countryCountFlow ? 'true' : 'false'}) {
             $countryCountClientNames = [
-                'kzA' => 'E2E страна KZ Alpha '.$suffix,
-                'kzB' => 'E2E страна KZ Beta '.$suffix,
-                'ru' => 'E2E страна RU Client '.$suffix,
+                'kzA' => 'E2E страна Kazakhstan Alpha '.$suffix,
+                'kzB' => 'E2E страна Kazakhstan Beta '.$suffix,
+                'ru' => 'E2E страна Russia Client '.$suffix,
                 'unknown' => 'E2E страна без Country '.$suffix,
             ];
             foreach ([
