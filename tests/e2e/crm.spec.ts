@@ -3110,8 +3110,8 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(causeName, { exact: true }).first()).toBeVisible();
     await expect(page.getByText('E2E описание первопричины', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Протокол и результат сеанса').getByText('E2E протокол', { exact: true })).toBeVisible();
-    await expect(page.getByText(oldSubjective, { exact: true })).toBeVisible();
-    await expect(page.getByText(oldPosture, { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Особые жалобы').getByText(oldSubjective, { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Визуальная диагностика осанки').getByText(oldPosture, { exact: true })).toBeVisible();
     const dynamics = page.getByLabel('Динамика подтверждённых фактов');
     await expect(dynamics.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
     await expect(dynamics.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
@@ -4017,7 +4017,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await page.getByText('Принять категории боли', { exact: true }).click();
     const acceptPainDialog = page.locator('.fi-modal-window:visible').last();
     await expect(acceptPainDialog).toBeVisible();
-    await acceptPainDialog.getByRole('combobox', { name: 'Боль клиента', exact: true }).click();
+    await acceptPainDialog.getByRole('combobox', { name: /^Боль клиента/ }).click();
     await page.getByRole('option', { name: fixture.tagCandidatePainName, exact: true }).click();
     await expect(acceptPainDialog.getByRole('combobox', { name: 'Категории проблемы', exact: true })).toContainText(`${fixture.candidateLabel} принято`);
     await acceptPainDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
