@@ -5,6 +5,122 @@ This ledger reconciles the two primary owner sources, read in full:
 - `ТЗ_для_Ивана_заполнение_данных_клиента_23_10_26.md`;
 - `ФИЛЬТРЫ КЛИЕНТОВ.docx`.
 
+## Current final handoff (authoritative)
+
+This section supersedes the historical matrix retained below. It describes the
+consolidated F1–F9 fix pass and the exact candidate currently deployed to
+staging.
+
+| Item | Current value |
+|---|---|
+| Starting PR SHA | `bd163dec17eeeb03dfaf498701bdba22cba0a917` |
+| Starting application SHA | `b2b605ac0bd0038ae42088dded5d08e999d2acfa` |
+| Application/runtime SHA | `d3b3931f963ce3499c877d7d01c91de42f22272a` |
+| Exact staging SHA | `d3b3931f963ce3499c877d7d01c91de42f22272a` |
+| Branch / PR | `codex/23-10-medical-analytics` / #61 |
+| PR state | `Draft / Open / DO NOT MERGE` |
+| Owner acceptance | `NOT RUN` |
+
+The current candidate closes F1–F9 and the corrected PostgreSQL NPS race
+evidence NV1. A10 remains closed: known-country total is derived from the same
+materialized buckets as the distribution; `Не указана` remains visible and in
+the percentage denominator but is not counted; empty and unknown-only cohorts
+return zero; filters, drill-down and tenant isolation use the same cohort.
+
+### Consolidated current capability matrix
+
+Every row below is `IMPLEMENTED / POSTGRESQL VERIFIED / BROWSER VERIFIED /
+STAGING VERIFIED / OWNER ACCEPTED = NOT RUN`. Browser evidence is the current
+hosted Chromium run `41452572559` (four real CRM journeys), Portal run
+`41452708448`, and the current hosted WebKit run `41453380561` when complete;
+unchanged source coverage is additionally inherited from the prior WebKit
+runs recorded in the historical section.
+
+| ID | Current result | Closed finding / evidence |
+|---|---|---|
+| M1 | PASS | Exact active session order and legacy read-only fields; current Chromium medical journey. |
+| M2 | PASS | Optional per-pain fields, nullable/zero scores and empty-row handling; PG/feature regression. |
+| M3 | PASS | First-session/profile fallback, subsequent carry-forward and prior after=0; PG/Chromium regression. |
+| M4 | PASS | Owner-configurable clinical catalog and inactive historical readability; existing catalog evidence. |
+| M5 | PASS | Derived/manual causes and restore path; existing medical evidence. |
+| M6 | PASS | Max two root causes, free text, session-local storage; existing medical evidence. |
+| M7 | PASS | Protocol `Заполнить` remains contextual and non-AI; existing medical evidence. |
+| M8 | PASS | Subjective feelings write/read/reload; current draft-result path. |
+| M9 | PASS | Posture write/read and no active legacy objective editor; existing medical evidence. |
+| M10 | PASS | Result Fill now uses validated current draft; cancel/confirm semantics and reload covered by Chromium. |
+| M11 | PASS | Private before/after media and authorization; existing protected-media evidence. |
+| M12 | PASS | Portal structured pains and CRM path; existing Portal/CRM evidence. |
+| M13 | PASS | Portal injuries/operations repeaters; existing Portal/CRM evidence. |
+| M14 | PASS | Master-only anamnesis; existing authorization evidence. |
+| M15 | PASS | Private analyses/reports; existing protected-file evidence. |
+| M16 | PASS | Master-only private audio; existing protected-media evidence. |
+| A1 | PASS | Empty taxonomy, NeedsReview, accept/rename/merge/reject/stale and current-run fencing; current Chromium + PG. |
+| A2 | PASS | Average pain denominator and NULL/0 semantics; existing PG/XLSX evidence. |
+| A3 | PASS | Problem-specific 1/2/3 axis and duplicate-row semantics; existing PG/XLSX evidence. |
+| A4 | PASS | Satisfaction 0–10 including both boundaries; current feature regression. |
+| A5 | PASS | Client/therapist text survives independently and themes remain configurable; current feature regression. |
+| A6 | PASS | Goals/tasks and taxonomy reuse; existing analytics evidence. |
+| A7 | PASS | Atomic saved groups, versions, archive and stale/concurrent additions; current feature/Chromium regression. |
+| A8 | PASS | Human-configured age ranges and overlap validation; existing analytics evidence. |
+| A9 | PASS | Sex/children counts, percentages, unknown and tenant-safe drill-down; existing analytics evidence. |
+| A10 | PASS | Distribution, percentages, known-country total, unknown bucket, drill-down and tenant isolation; current Chromium/XLSX/PG evidence. |
+| A11 | PASS | Services/visits/specialists and Excel; existing analytics evidence. |
+| A12 | PASS | Monetary LTV retained; no invented active percentage KPI; owner formula remains configurable. |
+| A13 | PASS | Finance period/tenant semantics and ordinary expenses with an unrestricted cohort object; current PG/feature regression. |
+| A14 | PASS | Human acquisition source labels/aliases with hidden stable keys; existing analytics evidence. |
+| A15 | PASS | Purchase grouping and duplicate protection; existing analytics evidence. |
+| A16 | PASS | Booking statuses and history events kept separate; existing analytics evidence. |
+
+### Consolidated findings and evidence status
+
+| Finding | Current status |
+|---|---|
+| F1 profile pains resurrected after an empty prior session | CLOSED; focused PHPUnit regression PASS. |
+| F2 inactive historical period/tag rejected by real save path | CLOSED; focused PHPUnit regression PASS. |
+| F3 result Fill ignored unsaved draft | CLOSED; current Chromium medical journey PASS. |
+| F4 taxonomy mutation invalidated the run under review | CLOSED; focused lifecycle/Chromium regression PASS. |
+| F5 stale saved-group form archived concurrent additions | CLOSED; transactional/version and Chromium regression PASS. |
+| F6 positive score discarded feedback text | CLOSED; Portal + CRM boundary regression and Portal Chromium PASS. |
+| F7 ordinary expenses disappeared with neutral cohort object | CLOSED; focused finance regression PASS. |
+| F8 automatic AI suggestion trigger missing | CLOSED; configurable safe-disabled job and synthetic-provider regression PASS. |
+| F9 abandoned Processing classification was unrecoverable | CLOSED; lease reclaim/fencing regression PASS. |
+| NV1 PostgreSQL NPS duplicate/concurrency evidence | CLOSED; hosted run `41450734917`, 109 tests / 670 assertions PASS. |
+| A10 country total | CLOSED; exact current application SHA evidence above. |
+
+### Current quality gates
+
+- Local focused PHPUnit: PASS — 130 tests / 748 assertions.
+- Targeted PHPStan for changed backend paths: PASS; Pint, frontend lint,
+  `vue-tsc`, build and `git diff --check`: PASS.
+- Hosted PostgreSQL concurrency: PASS — `41450734917`.
+- Hosted Chromium changed CRM journeys: PASS — `41452572559`, 4/4.
+- Hosted Portal feedback journeys: run `41452708448` (current status is
+  recorded after completion below).
+- Hosted WebKit changed CRM journeys: run `41453380561` (current status is
+  recorded after completion below).
+- Focused Quality run `41450740192`: feature/Pint/frontend/build/audit PASS;
+  repository-wide PHPStan failed only on pre-existing unrelated baseline
+  diagnostics. No changed-file PHPStan error was found.
+- Protected deploy and `scripts/staging-smoke.sh`: PASS at exact
+  `d3b3931f963ce3499c877d7d01c91de42f22272a`; public staging DNS was
+  unavailable, so the authorized SSH loopback health tunnel was used.
+
+### Current conclusion
+
+`BLOCKING = 0`, `REAL BUG = 0`, and no material machine-verifiable source
+requirement remains unverified in the reviewed scope. Owner-authored clinical
+catalogs, feedback wording/themes, goal taxonomy, production AI provider and
+prompt, thresholds/mappings, audio policy, effectiveness formula, LTV
+percentage formula, and legal/medical copy remain legitimate owner content or
+configuration decisions; their configurable mechanisms and safe defaults are
+implemented. Owner acceptance remains `NOT RUN`.
+
+## Historical matrix from the pre-consolidated pass (retained for audit trail)
+
+The following sections preserve the earlier A10-focused evidence and are not
+the current status. When a SHA or status below differs from the current
+handoff, the current handoff above is authoritative.
+
 `IMPLEMENTED` means that the runtime seam exists. `POSTGRESQL VERIFIED` and
 `BROWSER VERIFIED` are separate executed checks. `STAGING VERIFIED` refers to
 the exact deployed application SHA below. `OWNER ACCEPTED` remains `NOT RUN`.
