@@ -15,24 +15,28 @@ is intentionally `NOT RUN`: only the owner can accept business content.
 |---|---|
 | Starting PR SHA | `2c4010fef38d13e37a3c03f91d33e8a216200b7e` |
 | Starting runtime SHA | `b743d67dc769e08ca8cc6b948803903fe95c70b7` |
-| Final runtime/application SHA | `6c51f7e773fddb2a31105186f93019354a6e41d2` |
-| Final PR SHA | documentation-only commit after this reconciliation (recorded in Git history) |
-| Staging application SHA | `6c51f7e773fddb2a31105186f93019354a6e41d2` |
+| Final runtime/application SHA | `01014d0ba5a06adc846568343c43e709ff3a441a` |
+| Final PR SHA | current branch HEAD at final handoff (reported outside this self-referential artifact) |
+| Staging application SHA | `01014d0ba5a06adc846568343c43e709ff3a441a` |
 | Branch / PR | `codex/23-10-medical-analytics` / #61 Draft, Open, DO NOT MERGE |
 | Owner acceptance | `NOT RUN` |
 
 `IMPLEMENTED` means that the runtime seam exists and is covered by focused
 regression evidence. `POSTGRESQL VERIFIED` means that the relevant PostgreSQL
-schema/query/transaction check was actually run. `BROWSER VERIFIED` means that
-the user-visible action was exercised in a browser on the final staging
-application SHA. A green unit test, a DOM field, or an HTTP 200 is not browser
+schema/query/transaction check was actually run. Browser evidence in this
+matrix was exercised on staging runtime
+`6c51f7e773fddb2a31105186f93019354a6e41d2`; the final application SHA
+`01014d0ba5a06adc846568343c43e709ff3a441a` contains only static-analysis and
+defensive-input corrections in already exercised paths, but an exact
+final-SHA browser rerun was not available in this continuation and is not
+claimed. A green unit test, a DOM field, or an HTTP 200 is not browser
 verification.
 
 ## Medical source matrix
 
 | ID / source requirement | IMPLEMENTED | POSTGRESQL VERIFIED | BROWSER VERIFIED | STAGING VERIFIED | OWNER ACCEPTED | OWNER CONTENT REQUIRED |
 |---|---|---|---|---|---|---|
-| M1. Active session order: pain → tests → causes → root causes → protocol → subjective → posture → result → photos; no active legacy editors | YES. `root_cause_hypothesis` is retained read-only; legacy observations are retained for history only; exact labels/order are in the session form. | PASS: session limits/relations and transactional writes covered by session feature tests and local PG migration gate. | VERIFIED. Final staging create/edit/view showed the required order, read-only legacy block, and no editable global VAS/objective-change field. | PASS: exact SHA deployed and health/smoke passed. | NOT RUN | Clinical catalog content. |
+| M1. Active session order: pain → tests → causes → root causes → protocol → subjective → posture → result → photos; no active legacy editors | YES. `root_cause_hypothesis` is retained read-only; legacy observations are retained for history only; exact labels/order are in the session form. | PASS: session limits/relations and transactional writes covered by session feature tests and local PG migration gate. | VERIFIED. Prior staging create/edit/view showed the required order, read-only legacy block, and no editable global VAS/objective-change field. | PASS: exact SHA deployed and health/smoke passed. | NOT RUN | Clinical catalog content. |
 | M2. Repeatable pain constructor, optional fields, frequency/time units, 0 vs NULL, empty-row safety | YES. Add/delete rows, configurable units, nullable scores, no fake empty medical row. | PASS: nullable score/frequency checks and session persistence verified on local PostgreSQL. | VERIFIED. Three rows were saved/reloaded; unspecified/permanent/count frequency, count/week, 0, NULL and partial values were observed. | PASS | NOT RUN | Owner-selected frequency units/content. |
 | M3. Carry-forward and per-pain history | YES. Previous names/frequency/time copy; current before remains NULL; previous after is retained. | PASS: session ordering and nullable score queries covered. | VERIFIED. Second staging session showed all three copied pains, previous after 1/0/3, empty current before, and client history. | PASS | NOT RUN | None beyond owner acceptance. |
 | M4. Configurable clinical test catalog, groups, values, abnormal flag, lifecycle, import seam, counters | YES. Owner configuration UI and synthetic fixtures exist; inactive historical values remain readable. | PASS: catalog/session relations and constraints covered by feature tests/local PG gate. | PARTIALLY VERIFIED. Synthetic test, section, values, abnormal flag and active lifecycle were configured and used in a session; CSV/XLSX import and 40–60-row usability were not exercised in this run. | PASS | NOT RUN | Real clinical test catalog and values. |
@@ -53,15 +57,15 @@ verification.
 
 | ID / source requirement | IMPLEMENTED | POSTGRESQL VERIFIED | BROWSER VERIFIED | STAGING VERIFIED | OWNER ACCEPTED | OWNER CONTENT REQUIRED |
 |---|---|---|---|---|---|---|
-| A1. Complaint taxonomy, common tag, AI existing/new candidate review lifecycle, filters/statistics | YES. Existing/new/NeedsReview/accept/rename/merge/reject/stale/audit/org/permission paths share taxonomy authority; empty taxonomy can accept a new candidate. | PASS: candidate uniqueness, tenant scope, review transitions and feedback/client guards covered by focused tests/local PG. | PARTIALLY VERIFIED. Final staging console filter/analyze flow ran; candidate review and AI new-tag lifecycle were not clicked in this browser run. | PASS | NOT RUN | Real taxonomy labels, AI prompts and activation policy. |
+| A1. Complaint taxonomy, common tag, AI existing/new candidate review lifecycle, filters/statistics | YES. Existing/new/NeedsReview/accept/rename/merge/reject/stale/audit/org/permission paths share taxonomy authority; empty taxonomy can accept a new candidate. | PASS: candidate uniqueness, tenant scope, review transitions and feedback/client guards covered by focused tests/local PG. | PARTIALLY VERIFIED. Prior staging console filter/analyze flow ran; candidate review and AI new-tag lifecycle were not clicked in this browser run. | PASS | NOT RUN | Real taxonomy labels, AI prompts and activation policy. |
 | A2. Average pain, NULL excluded/0 included, denominator disclosed, screen/XLSX | YES. Count is `COUNT(score)` and 0 remains valid. | PASS: local PG aggregation/read-only checks and focused tests. | PARTIALLY VERIFIED. Pain dimension, shared cohort count and XLSX action ran; a populated pain fixture was not available in this staging slice. | PASS | NOT RUN | None. |
 | A3. Therapy result 1/2/3 and percentage, problem-specific session axis | YES. Typed axis and configured metric infrastructure; no invented formula. | PASS: window/ranking and aggregate tests/local PG. | NOT VERIFIED for populated 1/2/3 rows in this browser run; console Analyze and configuration-required state were observed. | PASS | NOT RUN | Owner formula/metric definition where not supplied. |
-| A4. Satisfaction 0–10, client/manual entry, aggregate and PostgreSQL CHECK | YES. Portal/CRM paths and score validation. | PASS: `feedback_submissions.score_check` verified on PostgreSQL. | NOT VERIFIED for client submission in browser; console feedback section was included in a final Analyze. | PASS | NOT RUN | None beyond content. |
-| A5. “What was missing” client/therapist paths, themes, timing and safe disabled default | YES. Configured scenarios, portal submission, CRM manual path and theme aggregation; no-content state is disabled safely. | PASS: feedback tables/constraints and theme aggregation tests. | NOT VERIFIED for Portal/CRM submission in browser; safe no-content state was included in final console output. | PASS | NOT RUN | Feedback wording, timing and themes. |
+| A4. Satisfaction 0–10, client/manual entry, aggregate and PostgreSQL CHECK | YES. Portal/CRM paths and score validation. | PASS: `feedback_submissions.score_check` verified on PostgreSQL. | NOT VERIFIED for client submission in browser; console feedback section was included in a prior Analyze. | PASS | NOT RUN | None beyond content. |
+| A5. “What was missing” client/therapist paths, themes, timing and safe disabled default | YES. Configured scenarios, portal submission, CRM manual path and theme aggregation; no-content state is disabled safely. | PASS: feedback tables/constraints and theme aggregation tests. | NOT VERIFIED for Portal/CRM submission in browser; safe no-content state was included in prior console output. | PASS | NOT RUN | Feedback wording, timing and themes. |
 | A6. Client goals/tasks attached to client, categories counted, same AI taxonomy/manual correction | YES. Existing goal/tag authority is reused; no second task store. | PASS: goal/client/tag organization tests. | NOT VERIFIED for a populated goal workflow in browser. | PASS | NOT RUN | Goal taxonomy/content. |
-| A7. Client categories, saved/manual and dynamic groups, atomic CRUD/versioning/concurrency/archive | YES. Preflight validation, single transaction, immutable versions, tenant/stale guards and explicit archive. | PASS: migrations, unique indexes, FKs and local PG transaction/schema gate; hosted race gate not rerun in this pass. | PARTIALLY VERIFIED. Final CRM browser created a manual group, saved/reloaded its generated hidden key, and archived it explicitly; stale-editor, invalid-second-row and concurrency paths were not clicked. | PASS | NOT RUN | Segment thresholds/service mappings. |
+| A7. Client categories, saved/manual and dynamic groups, atomic CRUD/versioning/concurrency/archive | YES. Preflight validation, single transaction, immutable versions, tenant/stale guards and explicit archive. | PASS: migrations, unique indexes, FKs and local PG transaction/schema gate; hosted race gate not rerun in this pass. | PARTIALLY VERIFIED. Prior CRM browser created a manual group, saved/reloaded its generated hidden key, and archived it explicitly; stale-editor, invalid-second-row and concurrency paths were not clicked. | PASS | NOT RUN | Segment thresholds/service mappings. |
 | A8. Age filter/stats/ranges/timezone; owner never types internal keys | YES. Generated hidden keys, overlap validation, human labels and timezone end-date. | PASS: local PG timezone/query checks and focused tests. | PARTIALLY VERIFIED. Age min/max invalid/corrected/empty flows and demographic Analyze ran; owner range CRUD was not exercised. | PASS | NOT RUN | Real age ranges/labels. |
-| A9. Sex/women/men/children, unknown-safe counts/percentages and exact drill-down | YES. Full-cohort demographics and typed missing-value predicates. | PASS: local PG aggregate/drill-down checks. | PARTIALLY VERIFIED. Demographics, charts and exact aggregate drill-down ran on the final console; all unknown/tenant variants were not separately seeded. | PASS | NOT RUN | None. |
+| A9. Sex/women/men/children, unknown-safe counts/percentages and exact drill-down | YES. Full-cohort demographics and typed missing-value predicates. | PASS: local PG aggregate/drill-down checks. | PARTIALLY VERIFIED. Demographics, charts and exact aggregate drill-down ran on the prior console; all unknown/tenant variants were not separately seeded. | PASS | NOT RUN | None. |
 | A10. Country filter, unknown bucket, exact missing drill-down, tenant isolation | YES. Unknown typed predicate and organization scope. | PASS: local PG aggregate/drill-down checks. | PARTIALLY VERIFIED. Country filter changed the preview and aggregate drill-down ran; missing-country and second-tenant slices were not separately opened. | PASS | NOT RUN | None. |
 | A11. Services/visits/specialists, owner-managed service grouping, exact drill-down and XLSX | YES. Existing Service UI remains authority; analytics consumes configured category. | PASS: local PG aggregate/window checks. | NOT VERIFIED for populated service/specialist rows in browser. | PASS | NOT RUN | Owner service categories. |
 | A12. LTV percentage output without invented formula | YES. Canonical monetary LTV remains; undefined percent metric is inactive/configuration-required and explicit activation is preserved. | PASS: metric configuration migration/queries verified locally on PostgreSQL. | PARTIALLY VERIFIED. Final console showed configuration-required/disabled metric messaging; owner activation/formula editing was not exercised. | PASS | NOT RUN | Exact LTV% formula and activation. |
@@ -74,20 +78,21 @@ verification.
 
 | Requirement | IMPLEMENTED | POSTGRESQL VERIFIED | BROWSER VERIFIED | STAGING VERIFIED | OWNER ACCEPTED |
 |---|---|---|---|---|---|
-| Selectable sections with checkboxes, `Анализировать`, loading/success/warning/error/retry, shared base cohort | YES. `AnalyticsConsole` exposes explicit status/error state and preserves successful dimensions without pretending partial success is full success. | PASS: focused dashboard/cohort/export tests and local PG query gate. | PARTIALLY VERIFIED. Final staging browser selected multiple sections, ran Analyze on cohorts 50 and 0, and exercised validation; partial-failure retry was not forced. | PASS: exact SHA deployed; smoke PASS. | NOT RUN |
-| Graphical presentation uses the same aggregate values as screen | YES. Chart payload is derived from the same dimension result. | PASS in focused analytics tests. | PARTIALLY VERIFIED. Final Analyze rendered 92 SVG chart elements and matching screen counts; each chart series was not independently recalculated in browser. | PASS | NOT RUN |
-| Excel download: Клиенты, Фильтры, thematic sheets, timezone/period/rule versions/generated_at, explicit cell types/formula safety | YES. Export writer uses explicit types and formula-injection protection; undefined metrics are configuration-required. | PASS: XLSX tests plus local/hosted PG source queries. | VERIFIED for the user action: final staging browser downloaded a real `.xlsx` after Analyze. Workbook cell/type assertions are covered locally. | PASS | NOT RUN |
-| 0/1/many dimensions, empty cohort distinct from invalid/error, reload/back/forward/mobile overflow | YES. Preview state is `idle/loading/success/invalid/error`; failed queries do not return 0. | PASS: focused preview/error tests. | VERIFIED. Final staging browser observed non-empty 50, filtered/empty 0, reversed-date field error, correction, restore, reload/back/forward and no horizontal overflow at 390/768/1440. | PASS | NOT RUN |
+| Selectable sections with checkboxes, `Анализировать`, loading/success/warning/error/retry, shared base cohort | YES. `AnalyticsConsole` exposes explicit status/error state and preserves successful dimensions without pretending partial success is full success. | PASS: focused dashboard/cohort/export tests and local PG query gate. | PARTIALLY VERIFIED. Prior staging browser selected multiple sections, ran Analyze on cohorts 50 and 0, and exercised validation; partial-failure retry was not forced. | PASS: exact SHA deployed; smoke PASS. | NOT RUN |
+| Graphical presentation uses the same aggregate values as screen | YES. Chart payload is derived from the same dimension result. | PASS in focused analytics tests. | PARTIALLY VERIFIED. Prior Analyze rendered 92 SVG chart elements and matching screen counts; each chart series was not independently recalculated in browser. | PASS | NOT RUN |
+| Excel download: Клиенты, `Фильтры`, thematic sheets, timezone/period/rule versions/generated_at, explicit cell types/formula safety | YES. Export writer uses explicit types and formula-injection protection; undefined metrics are configuration-required. | PASS: XLSX tests plus local/hosted PG source queries. | VERIFIED for the user action: prior staging browser downloaded a real `.xlsx` after Analyze. Workbook cell/type assertions are covered locally. | PASS | NOT RUN |
+| 0/1/many dimensions, empty cohort distinct from invalid/error, reload/back/forward/mobile overflow | YES. Preview state is `idle/loading/success/invalid/error`; failed queries do not return 0. | PASS: focused preview/error tests. | VERIFIED. Prior staging browser observed non-empty 50, filtered/empty 0, reversed-date field error, correction, restore, reload/back/forward and no horizontal overflow at 390/768/1440. | PASS | NOT RUN |
 
 ## Known remaining evidence limits
 
 - Portal browser acceptance is `NOT VERIFIED` because the saved QA Portal
   session returned 401. No credentials or MFA material was printed or
   regenerated in this pass.
-- Analytics browser acceptance is complete for the console contract on the
-  final staging SHA. Individual source dimensions marked `NOT VERIFIED` or
-  `PARTIALLY VERIFIED` above still need their own populated fixtures and
-  actions before they can be upgraded.
+- Analytics and Medical browser evidence above was captured on the prior
+  runtime SHA `6c51f7e773fddb2a31105186f93019354a6e41d2`; exact final-SHA
+  browser rerun is `NOT RUN`. Individual source dimensions marked `NOT
+  VERIFIED` or `PARTIALLY VERIFIED` still need their own populated fixtures
+  and actions before they can be upgraded.
 - Owner acceptance is `NOT RUN`.
 - Real medical catalog values, authored feedback wording, business thresholds,
   mappings, audio policy choices, AI prompt activation and the exact LTV%
@@ -99,14 +104,16 @@ verification.
 - Focused local regression set: 158 tests / 977 assertions, PASS.
 - Local checks: `vendor/bin/pint --dirty`, `git diff --check`, and the target
   analytics/medical feature suites, PASS.
+- Changed-file PHPStan gate for the reconciliation corrections, PASS. Full
+  repository PHPStan still reports pre-existing findings outside this scope.
 - Local PostgreSQL: non-destructive migrations and read-only checks for the
   new migrations, unique indexes, tenant FKs/checks, nullable pain scores,
   feedback 0–10 constraint, JSON snapshots, timestamps/timezones, window
   functions and pgvector, PASS.
 - Staging deploy: exact application SHA
-  `6c51f7e773fddb2a31105186f93019354a6e41d2`; both new migrations applied;
+  `01014d0ba5a06adc846568343c43e709ff3a441a`; both new migrations applied;
   health and `scripts/staging-smoke.sh` PASS.
-- Final staging browser evidence used the QA CRM account and a synthetic
+- Prior staging browser evidence used the QA CRM account and a synthetic
   client/catalog only. Medical session IDs 24 and 25 covered the complete
   session path; the analytics console covered non-empty/empty/error/reload/
   history/mobile flows; the CRM audio relation covered three uploads,
