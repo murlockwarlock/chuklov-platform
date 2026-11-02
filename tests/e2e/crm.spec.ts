@@ -47,6 +47,8 @@ type CrmFixture = {
     } | null;
     candidateLabel: string | null;
     staleCandidateLabel: string | null;
+    tagCandidatePainName: string | null;
+    tagCandidateUnrelatedClientName: string | null;
 };
 
 function validPdfBuffer(): Buffer {
@@ -163,6 +165,8 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
         $candidateLabel = null;
         $staleCandidateLabel = null;
+        $tagCandidatePainName = null;
+        $tagCandidateUnrelatedClientName = null;
         \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::query()
             ->where('organization_id', $organization->getKey())
             ->update([
@@ -232,6 +236,23 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         if (${options.tagCandidateFlow ? 'true' : 'false'}) {
             $candidateLabel = 'E2E новый кандидат '.$suffix;
             $staleCandidateLabel = 'E2E устаревший кандидат '.$suffix;
+            $tagCandidatePainName = 'E2E источник боли '.$suffix;
+            $tagCandidateUnrelatedClientName = 'E2E unrelated analytics client '.$suffix;
+            app(\\App\\Modules\\MedicalProfiles\\Application\\UpdateMedicalProfile::class)->handle(
+                $admin,
+                $client,
+                new \\App\\Modules\\MedicalProfiles\\Application\\DTOs\\UpdateMedicalProfileCommand(
+                    pains: [['name' => $tagCandidatePainName, 'score' => 7]],
+                    painsProvided: true,
+                ),
+            );
+            $sourcePain = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('client_id', $client->getKey())
+                ->sole();
+            \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+                'full_name' => $tagCandidateUnrelatedClientName,
+            ]);
             $setting = $organization->settings()->where('setting_key', \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled->value)->first()
                 ?? new \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationSetting;
             $setting->forceFill([
@@ -247,8 +268,8 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                     'organization_id' => $organization->getKey(),
                     'client_id' => $client->getKey(),
                     'taxonomy' => $taxonomy,
-                    'source_type' => 'synthetic_e2e',
-                    'source_id' => $client->getKey(),
+                    'source_type' => $taxonomy === 'complaints' ? 'medical_profile_pain' : 'synthetic_e2e',
+                    'source_id' => $taxonomy === 'complaints' ? $sourcePain->getKey() : $client->getKey(),
                     'source_digest' => hash('sha256', $label),
                     'status' => $runStatus === 'needs_review'
                         ? \\App\\Modules\\Analytics\\Domain\\Enums\\ClassificationRunStatus::NeedsReview
@@ -261,8 +282,8 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                     'classification_run_id' => $run->getKey(),
                     'client_id' => $client->getKey(),
                     'taxonomy' => $taxonomy,
-                    'source_type' => 'synthetic_e2e',
-                    'source_id' => $client->getKey(),
+                    'source_type' => $taxonomy === 'complaints' ? 'medical_profile_pain' : 'synthetic_e2e',
+                    'source_id' => $taxonomy === 'complaints' ? $sourcePain->getKey() : $client->getKey(),
                     'candidate_type' => 'new',
                     'suggested_existing_id' => null,
                     'label' => $label,
@@ -919,6 +940,8 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'countryCountClientNames' => $countryCountClientNames,
             'candidateLabel' => $candidateLabel,
             'staleCandidateLabel' => $staleCandidateLabel,
+            'tagCandidatePainName' => $tagCandidatePainName,
+            'tagCandidateUnrelatedClientName' => $tagCandidateUnrelatedClientName,
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -2983,6 +3006,13 @@ test('staff can create, view, and edit a client session from the CRM client flow
     const testName = `E2E тест ${suffix}`;
     const causeName = `E2E причина ${suffix}`;
     const causeOptionName = `E2E причины: ${causeName}`;
+    const oldPainName = `OLD PAIN ${suffix}`;
+    const draftPainName = `DRAFT PAIN UNIQUE ${suffix}`;
+    const oldSubjective = `OLD SUBJECTIVE ${suffix}`;
+    const draftSubjective = `DRAFT SUBJECTIVE UNIQUE ${suffix}`;
+    const oldPosture = `OLD POSTURE ${suffix}`;
+    const draftPosture = `DRAFT POSTURE UNIQUE ${suffix}`;
+    const oldManualResult = `OLD MANUAL RESULT ${suffix}`;
 
     await login(page, fixture);
 
@@ -3015,7 +3045,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     const protocolTestLabel = protocolItem.locator('input[type="hidden"][wire\\:model*="test_results"][wire\\:model*="test_label"]').first();
     await expect(protocolTestLabel).toHaveValue(/E2E/);
     await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
-    await page.getByLabel('Название или описание боли', { exact: true }).fill('Первичная боль');
+    await page.getByLabel('Название или описание боли', { exact: true }).fill(oldPainName);
     const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
     await beforePainScore.press('Home');
     for (let index = 0; index < 7; index += 1) {
@@ -3032,7 +3062,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText('Без оценки', { exact: true }).first()).toBeVisible();
     await setLivewireRangeValue(page, beforePainScore, 7);
     await expect(page.getByText('7 / 10', { exact: true })).toBeVisible();
-    await page.getByLabel('Особые жалобы', { exact: true }).fill('Первичная запись о боли');
+    await page.getByLabel('Особые жалобы', { exact: true }).fill(oldSubjective);
     const beforeTestValue = protocolItem.getByRole('combobox', { name: 'До сеанса', exact: true });
     await expect(beforeTestValue).toBeVisible();
     await beforeTestValue.click();
@@ -3062,8 +3092,9 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Дополнительное описание', { exact: true }).fill('E2E описание первопричины');
     await expect(page.getByLabel('Гипотеза первопричины', { exact: true })).toHaveCount(0);
     await page.getByLabel('Алгоритм сеанса (пошаговый протокол сеанса)', { exact: true }).fill('E2E протокол');
-    await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill('E2E стало легче');
-    await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill('E2E плечи ровнее');
+    await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill(oldSubjective);
+    await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill(oldPosture);
+    await page.getByLabel('Результат после сеанса', { exact: true }).fill(oldManualResult);
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
@@ -3072,15 +3103,15 @@ test('staff can create, view, and edit a client session from the CRM client flow
     const sessionViewLink = sessionRow.getByRole('link', { name: 'Открыть', exact: true });
     await sessionViewLink.click({ force: true });
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
-    await expect(page.getByText('Первичная боль', { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
+    await expect(page.getByText(oldPainName, { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByLabel('Особые жалобы').getByText(oldSubjective, { exact: true })).toBeVisible();
     const testNameText = page.getByText(new RegExp(testName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).last();
     await expect(testNameText).toBeVisible();
     await expect(page.getByText(causeName, { exact: true }).first()).toBeVisible();
     await expect(page.getByText('E2E описание первопричины', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Протокол и результат сеанса').getByText('E2E протокол', { exact: true })).toBeVisible();
-    await expect(page.getByText('E2E стало легче', { exact: true })).toBeVisible();
-    await expect(page.getByText('E2E плечи ровнее', { exact: true })).toBeVisible();
+    await expect(page.getByText(oldSubjective, { exact: true })).toBeVisible();
+    await expect(page.getByText(oldPosture, { exact: true })).toBeVisible();
     const dynamics = page.getByLabel('Динамика подтверждённых фактов');
     await expect(dynamics.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
     await expect(dynamics.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
@@ -3093,23 +3124,39 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
-    await page.getByLabel('Название или описание боли', { exact: true }).fill('Обновлённая боль');
+    await page.getByLabel('Название или описание боли', { exact: true }).fill(draftPainName);
+    const draftBeforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
+    const draftAfterPainScore = page.getByRole('slider', { name: 'После сеанса', exact: true });
+    await setLivewireRangeValue(page, draftBeforePainScore, 2);
+    await setLivewireRangeValue(page, draftAfterPainScore, 8);
+    const editedProtocolItem = page.locator('.fi-fo-repeater-item').filter({ hasText: testName }).last();
+    await editedProtocolItem.getByRole('combobox', { name: 'До сеанса', exact: true }).click();
+    await page.getByRole('option', { name: 'Отклонение · нарушение', exact: true }).click();
+    await editedProtocolItem.getByRole('combobox', { name: 'После сеанса', exact: true }).click();
+    await page.getByRole('option', { name: 'Норма', exact: true }).click();
+    await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill(draftSubjective);
+    await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill(draftPosture);
     const resultField = page.getByLabel('Результат после сеанса', { exact: true });
-    await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
-    await expect(resultField).toHaveValue(/было 7, стало 3/);
-    await resultField.fill('Ручная правка перед заполнением');
-    await Promise.all([
-        page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok()),
-        resultField.press('Tab'),
-    ]);
     await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
     const replaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
     await expect(replaceResultDialog).toBeVisible();
     await expect(replaceResultDialog).toContainText('Текущий текст будет заменён сводкой по данным сеанса.');
+    await replaceResultDialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+    await expect(replaceResultDialog).toBeHidden();
+    await expect(resultField).toHaveValue(oldManualResult);
+    await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
+    const confirmedReplaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
+    await expect(confirmedReplaceResultDialog).toBeVisible();
     const replaceResultResponse = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
-    await replaceResultDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await confirmedReplaceResultDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
     await replaceResultResponse;
-    await expect(resultField).toHaveValue(/было 7, стало 3/);
+    await expect(resultField).toHaveValue(new RegExp(`${draftPainName}: было 2, стало 8 из 10`));
+    await expect(resultField).toHaveValue(new RegExp(`Субъективные ощущения: ${draftSubjective}`));
+    await expect(resultField).toHaveValue(new RegExp(`Визуальная диагностика осанки: ${draftPosture}`));
+    await expect(resultField).toHaveValue(/Нарушения по тестам: было 1, стало 0\./);
+    await expect(resultField).not.toHaveValue(new RegExp(oldPainName));
+    await expect(resultField).not.toHaveValue(new RegExp(oldSubjective));
+    await expect(resultField).not.toHaveValue(new RegExp(oldPosture));
     const saveSessionButton = page.getByRole('button', { name: 'Сохранить', exact: true });
     await expect(saveSessionButton).toBeEnabled({ timeout: 30_000 });
     await saveSessionButton.click();
@@ -3120,9 +3167,12 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(updatedSessionLink).toHaveAttribute('href', /\/medical-sessions\/\d+$/);
     await updatedSessionLink.click({ force: true });
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 30_000 });
-    await expect(page.getByText('Обновлённая боль', { exact: true })).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/было 7, стало 3 из 10/, { exact: false }).first()).toBeVisible();
-    await expect(page.getByLabel('Особые жалобы').getByText('Первичная запись о боли', { exact: true })).toBeVisible();
+    await expect(page.getByText(draftPainName, { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(new RegExp(`${draftPainName}: было 2, стало 8 из 10`), { exact: false }).first()).toBeVisible();
+    await expect(page.getByLabel('Особые жалобы').getByText(oldSubjective, { exact: true })).toBeVisible();
+    await expect(page.getByText(draftSubjective, { exact: true })).toBeVisible();
+    await expect(page.getByText(draftPosture, { exact: true })).toBeVisible();
+    await expect(page.getByText(/Нарушения по тестам: было 1, стало 0\./, { exact: false })).toBeVisible();
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'К истории сеансов', exact: true }).click();
@@ -3912,7 +3962,12 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     test.setTimeout(90_000);
     const fixture = createCrmFixture({ tagCandidateFlow: true });
 
-    if (fixture.candidateLabel === null || fixture.staleCandidateLabel === null) {
+    if (
+        fixture.candidateLabel === null
+        || fixture.staleCandidateLabel === null
+        || fixture.tagCandidatePainName === null
+        || fixture.tagCandidateUnrelatedClientName === null
+    ) {
         throw new Error('Tag candidate fixture did not create the expected candidates.');
     }
 
@@ -3956,12 +4011,35 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
         return false;
     }).toBe(false);
 
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Доступ к трекеру', exact: true }).click();
+    await page.getByText('Принять категории боли', { exact: true }).click();
+    const acceptPainDialog = page.locator('.fi-modal-window:visible').last();
+    await expect(acceptPainDialog).toBeVisible();
+    await acceptPainDialog.getByRole('combobox', { name: 'Боль клиента', exact: true }).click();
+    await page.getByRole('option', { name: fixture.tagCandidatePainName, exact: true }).click();
+    await expect(acceptPainDialog.getByRole('combobox', { name: 'Категории проблемы', exact: true })).toContainText(`${fixture.candidateLabel} принято`);
+    await acceptPainDialog.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page.getByText('Категории боли сохранены', { exact: true })).toBeVisible();
+    await page.reload();
+
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
     const problemCategories = page.getByRole('combobox', { name: 'Категории проблем', exact: true });
     await problemCategories.click();
     await expect(page.getByRole('option', { name: `${fixture.candidateLabel} принято`, exact: true })).toBeVisible();
-    await page.keyboard.press('Escape');
+    await page.getByRole('option', { name: `${fixture.candidateLabel} принято`, exact: true }).click();
+    const problemDimension = page.getByRole('checkbox', { name: 'Проблемы и динамика боли', exact: true });
+    if (! await problemDimension.isChecked()) {
+        await problemDimension.check();
+    }
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    const cohortSection = page.getByRole('region', { name: 'Клиенты когорты', exact: true });
+    await expect(cohortSection).toContainText('Найдено клиентов: 1');
+    await cohortSection.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    await expect(cohortSection.getByRole('link', { name: fixture.clientName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.tagCandidateUnrelatedClientName, exact: true })).toHaveCount(0);
 
     await page.goto('/admin/analytics-tag-candidates');
     const staleItem = await candidateItemFor(fixture.staleCandidateLabel);

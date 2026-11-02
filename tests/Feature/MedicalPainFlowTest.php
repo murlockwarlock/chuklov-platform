@@ -423,11 +423,43 @@ final class MedicalPainFlowTest extends TestCase
     public function test_generated_result_can_use_current_unsaved_draft_values(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'draft_test',
+            'name' => 'Черновой тест',
+            'section' => 'Черновик',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $oldValue = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'old',
+            'label' => 'Старое состояние',
+            'is_abnormal' => false,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $draftValue = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'draft',
+            'label' => 'Черновое состояние',
+            'is_abnormal' => true,
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
         $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::parse('2026-10-22 09:00:00', 'UTC'),
             pains: [['name' => 'Сохранённая боль', 'before_score' => 4, 'after_score' => 3]],
             subjectiveFeelings: 'Старое ощущение',
+            visualPostureDiagnostics: 'Старая осанка',
+            testResults: [[
+                'test_id' => $test->getKey(),
+                'before_value_id' => $oldValue->getKey(),
+                'after_value_id' => $oldValue->getKey(),
+            ]],
         ));
 
         $generated = app(GenerateSessionResult::class)->handleDraft(
@@ -438,14 +470,21 @@ final class MedicalPainFlowTest extends TestCase
                 'pains' => [['name' => 'Черновая боль', 'before_score' => 9, 'after_score' => 1]],
                 'subjective_feelings' => 'Новое ощущение',
                 'visual_posture_diagnostics' => 'Новая осанка',
-                'test_results' => [],
+                'test_results' => [[
+                    'test_id' => $test->getKey(),
+                    'before_value_id' => $draftValue->getKey(),
+                    'after_value_id' => $oldValue->getKey(),
+                ]],
             ],
         );
 
         self::assertStringContainsString('Черновая боль: было 9, стало 1 из 10', $generated);
         self::assertStringContainsString('Субъективные ощущения: Новое ощущение', $generated);
         self::assertStringContainsString('Визуальная диагностика осанки: Новая осанка', $generated);
+        self::assertStringContainsString('Нарушения по тестам: было 1, стало 0.', $generated);
         self::assertStringNotContainsString('Сохранённая боль', $generated);
+        self::assertStringNotContainsString('Старое ощущение', $generated);
+        self::assertStringNotContainsString('Старая осанка', $generated);
         self::assertSame($organization->getKey(), $client->organization_id);
     }
 
