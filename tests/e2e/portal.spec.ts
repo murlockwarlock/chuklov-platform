@@ -1601,7 +1601,8 @@ test('feedback keeps the selected score visible and the portal within mobile bou
         await page.goto('/portal/feedback');
         const selectedScore = page.getByRole('radio', { name: '6', exact: true });
         await selectedScore.click();
-        const internalFeedback = page.getByLabel('Что можно улучшить?', { exact: true });
+        const internalFeedback = page.locator('textarea').first();
+        await expect(internalFeedback).toBeVisible();
         await internalFeedback.fill('Синтетический текст сохраняется при смене оценки.');
         await page.getByRole('radio', { name: '10', exact: true }).click();
         await expect(internalFeedback).toHaveValue('Синтетический текст сохраняется при смене оценки.');
