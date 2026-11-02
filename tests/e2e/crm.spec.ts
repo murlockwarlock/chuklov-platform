@@ -3800,7 +3800,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await page.goto('/admin/analytics-tag-candidates');
     await expect(page.getByRole('heading', { name: 'Кандидаты тегов', exact: true })).toBeVisible();
 
-    const candidateItem = page.locator('.fi-fo-repeater-item').filter({ hasText: fixture.candidateLabel }).first();
+    const candidateItem = page.locator(`input[value="${fixture.candidateLabel}"]`).locator('xpath=ancestor::*[contains(@class, "fi-fo-repeater-item")][1]');
     await expect(candidateItem).toBeVisible();
     await expect(candidateItem).toContainText('Жалобы и проблемы');
     const decision = candidateItem.getByRole('combobox', { name: 'Решение', exact: true });
@@ -3811,7 +3811,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await reviewedLabel.fill(`${fixture.candidateLabel} принято`);
     await page.getByRole('button', { name: 'Сохранить решения', exact: true }).click();
     await expect(page.getByText('Решения по кандидатам сохранены', { exact: true })).toBeVisible();
-    await expect(page.getByText(fixture.candidateLabel, { exact: true })).toHaveCount(0);
+    await expect(page.locator(`input[value="${fixture.candidateLabel}"]`)).toHaveCount(0);
 
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
@@ -3821,7 +3821,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await page.keyboard.press('Escape');
 
     await page.goto('/admin/analytics-tag-candidates');
-    const staleItem = page.locator('.fi-fo-repeater-item').filter({ hasText: fixture.staleCandidateLabel }).first();
+    const staleItem = page.locator(`input[value="${fixture.staleCandidateLabel}"]`).locator('xpath=ancestor::*[contains(@class, "fi-fo-repeater-item")][1]');
     await expect(staleItem).toBeVisible();
     const staleDecision = staleItem.getByRole('combobox', { name: 'Решение', exact: true });
     await staleDecision.click();
@@ -3829,7 +3829,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await staleItem.getByLabel('Итоговое название', { exact: true }).fill(`${fixture.staleCandidateLabel} принято`);
     await page.getByRole('button', { name: 'Сохранить решения', exact: true }).click();
     await expect(page.getByText('Источник кандидата уже устарел. Запустите классификацию повторно.', { exact: true })).toBeVisible();
-    await expect(page.getByText(fixture.staleCandidateLabel, { exact: true })).toBeVisible();
+    await expect(page.locator(`input[value="${fixture.staleCandidateLabel}"]`)).toBeVisible();
     await page.setViewportSize({ width: 390, height: 900 });
     await assertNoHorizontalOverflow(page);
 });
