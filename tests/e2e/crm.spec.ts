@@ -3589,10 +3589,10 @@ test('staff can maintain three independent session pains through save and reload
     await secondFrequency.press('Tab');
     await page.waitForTimeout(1_000);
     await expect(secondFrequency).toHaveValue('count');
-    const frequencyCount = page.getByLabel('Количество', { exact: true }).filter({ visible: true }).last();
+    const frequencyCount = secondPainEdit.getByRole('spinbutton', { name: /Количество/ });
     await expect(frequencyCount).toBeVisible({ timeout: 10_000 });
     await frequencyCount.fill('2');
-    await page.getByRole('combobox', { name: 'Период', exact: true }).filter({ visible: true }).last().selectOption('week');
+    await secondPainEdit.getByRole('combobox', { name: /Период/ }).selectOption('week');
     await secondPainEdit.getByRole('checkbox', { name: 'Весь день', exact: true }).uncheck();
     await secondPainEdit.getByRole('checkbox', { name: 'Утро', exact: true }).check();
     await secondPainEdit.getByRole('checkbox', { name: 'Вечер', exact: true }).check();
