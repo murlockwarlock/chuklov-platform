@@ -50,6 +50,7 @@ type CrmFixture = {
     staleCandidateLabel: string | null;
     tagCandidatePainName: string | null;
     tagCandidateUnrelatedClientName: string | null;
+    medicalHistoryPainName: string | null;
 };
 
 async function startAnalyticsProviderStub(label: string): Promise<Server> {
@@ -136,6 +137,34 @@ function validWavBuffer(): Buffer {
     return Buffer.concat([header, data]);
 }
 
+function validPngBuffer(): Buffer {
+    return Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+}
+
+async function uploadSessionPhoto(page: Page, label: string, filename: string): Promise<void> {
+    await page.getByRole('button', { name: label, exact: true }).click();
+    const dialog = page.getByRole('dialog').last();
+    const uploadControl = dialog
+        .getByRole('group', { name: 'Фото*', exact: true })
+        .locator('label')
+        .filter({ hasText: 'Перетащите файлы или выберите', visible: true });
+    const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser'),
+        uploadControl.click(),
+    ]);
+    await fileChooser.setFiles({
+        name: filename,
+        mimeType: 'image/png',
+        buffer: validPngBuffer(),
+    });
+    const selectedPhoto = dialog.getByRole('group', { name: filename, exact: true });
+    await expect(selectedPhoto).toBeVisible({ timeout: 15_000 });
+    await expect(selectedPhoto.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await dialog.getByRole('button', { name: 'Загрузить', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText('Фото загружено в галерею', { exact: true })).toBeVisible();
+}
+
 async function uploadCrmMedicalReport(page: Page, filename: string, expectedOutcome: 'uploaded' | 'limit_rejected' = 'uploaded'): Promise<void> {
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).first().click();
     const dialog = page.getByRole('dialog', { name: 'Загрузить файл' });
@@ -200,7 +229,7 @@ async function setLivewireRangeValue(page: Page, slider: Locator, value: number)
     await expect(slider).toHaveAttribute('aria-valuenow', `${value}.0`);
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean; aggregateDrilldownFlow?: boolean; countryCountFlow?: boolean; tagCandidateFlow?: boolean; savedGroupFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean; aggregateDrilldownFlow?: boolean; countryCountFlow?: boolean; tagCandidateFlow?: boolean; savedGroupFlow?: boolean; medicalHistoryFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -780,6 +809,25 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 result: 'Предыдущий подтверждённый результат',
             ),
         );
+        $medicalHistoryPainName = null;
+        if (${options.medicalHistoryFlow ? 'true' : 'false'}) {
+            $medicalHistoryPainName = 'HISTORY PAIN '.$suffix;
+            foreach ([['2026-07-01 09:00:00', 6, 0], ['2026-07-02 09:00:00', 5, 4]] as [$occurredAt, $beforeScore, $afterScore]) {
+                app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
+                    $admin,
+                    $client,
+                    new \\App\\Modules\\Sessions\\Application\\DTOs\\CreateSessionCommand(
+                        specialistId: $specialist->getKey(),
+                        occurredAt: \\Illuminate\\Support\\Carbon::parse($occurredAt, 'UTC'),
+                        pains: [[
+                            'name' => $medicalHistoryPainName,
+                            'before_score' => $beforeScore,
+                            'after_score' => $afterScore,
+                        ]],
+                    ),
+                );
+            }
+        }
         if (${options.painScoreFlow ? 'true' : 'false'}) {
             app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
                 $admin,
@@ -990,6 +1038,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'staleCandidateLabel' => $staleCandidateLabel,
             'tagCandidatePainName' => $tagCandidatePainName,
             'tagCandidateUnrelatedClientName' => $tagCandidateUnrelatedClientName,
+            'medicalHistoryPainName' => $medicalHistoryPainName,
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -3217,31 +3266,36 @@ test('staff can manage private client audio recordings', async ({ page, request 
     await expect(audioPanel.getByRole('heading', { name: 'Аудиозаписи', exact: true })).toBeVisible();
     await expect(audioPanel.getByRole('heading', { name: 'Аудиозаписей пока нет', exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Загрузить аудиозапись', exact: true }).click();
-    const audioDialog = page.getByRole('dialog').last();
-    await audioDialog.getByLabel('Название записи*', { exact: true }).fill('Сеанс QA');
-    const audioUploadControl = audioDialog
-        .getByRole('group', { name: 'Аудиофайл*', exact: true })
-        .locator('label')
-        .filter({ hasText: 'Перетащите файлы или выберите', visible: true });
-    const [fileChooser] = await Promise.all([
-        page.waitForEvent('filechooser'),
-        audioUploadControl.click(),
-    ]);
-    await fileChooser.setFiles({
-        name: 'qa-session.wav',
-        mimeType: 'audio/x-wav',
-        buffer: validWavBuffer(),
-    });
-    const selectedAudio = audioDialog.getByRole('group', { name: 'qa-session.wav', exact: true });
-    await expect(selectedAudio).toBeVisible({ timeout: 15_000 });
-    await expect(selectedAudio.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
-    await audioDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
-    await expect(audioDialog).toBeHidden();
-    await expect(page.getByText('Аудиозапись загружена', { exact: true })).toBeVisible();
+    for (const index of [1, 2, 3]) {
+        await page.getByRole('button', { name: 'Загрузить аудиозапись', exact: true }).click();
+        const audioDialog = page.getByRole('dialog').last();
+        const title = `Сеанс QA ${index}`;
+        const filename = `qa-session-${index}.wav`;
+        await audioDialog.getByLabel('Название записи*', { exact: true }).fill(title);
+        const audioUploadControl = audioDialog
+            .getByRole('group', { name: 'Аудиофайл*', exact: true })
+            .locator('label')
+            .filter({ hasText: 'Перетащите файлы или выберите', visible: true });
+        const [fileChooser] = await Promise.all([
+            page.waitForEvent('filechooser'),
+            audioUploadControl.click(),
+        ]);
+        await fileChooser.setFiles({
+            name: filename,
+            mimeType: 'audio/x-wav',
+            buffer: validWavBuffer(),
+        });
+        const selectedAudio = audioDialog.getByRole('group', { name: filename, exact: true });
+        await expect(selectedAudio).toBeVisible({ timeout: 15_000 });
+        await expect(selectedAudio.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
+        await audioDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+        await expect(audioDialog).toBeHidden();
+        await expect(page.getByText('Аудиозапись загружена', { exact: true })).toBeVisible();
+        await expect(audioTable.getByRole('row').filter({ hasText: title })).toHaveCount(1);
+    }
 
-    const audioRow = audioTable.getByRole('row').filter({ hasText: 'Сеанс QA' });
-    await expect(audioRow).toHaveCount(1);
+    const audioRow = audioTable.getByRole('row').filter({ hasText: 'Сеанс QA 1' });
+    await expect(audioTable.getByRole('row').filter({ hasText: /Сеанс QA [123]/ })).toHaveCount(3);
     await expect(audioRow).toBeVisible();
     await audioRow.getByRole('button', { name: 'Воспроизвести', exact: true }).click();
     const playbackDialog = page.locator('.fi-modal-window:visible').last();
@@ -3270,7 +3324,7 @@ test('staff can manage private client audio recordings', async ({ page, request 
             page.waitForResponse(downloadResponseMatcher),
             audioRow.getByRole('button', { name: 'Скачать', exact: true }).click(),
         ]);
-        expect(download.suggestedFilename()).toBe('qa-session.wav');
+        expect(download.suggestedFilename()).toBe('qa-session-1.wav');
         expect(downloadResponse.headers()['content-type']).toContain('audio');
         const downloadPath = await download.path();
         expect(downloadPath).not.toBeNull();
@@ -3289,16 +3343,19 @@ test('staff can manage private client audio recordings', async ({ page, request 
         await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
     }
 
-    await audioRow.getByRole('button', { name: 'Удалить', exact: true }).click();
+    const deletedAudioRow = audioTable.getByRole('row').filter({ hasText: 'Сеанс QA 2' });
+    await deletedAudioRow.getByRole('button', { name: 'Удалить', exact: true }).click();
     const deleteConfirmation = page
         .getByRole('alertdialog', { name: 'Удалить', exact: true })
         .getByRole('button', { name: 'Подтвердить', exact: true });
     await expect(deleteConfirmation).toBeVisible();
     await deleteConfirmation.click();
-    await expect(audioRow).toHaveCount(0, { timeout: 15_000 });
+    await expect(deletedAudioRow).toHaveCount(0, { timeout: 15_000 });
     await page.reload();
     await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
-    await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA' })).toHaveCount(0);
+    await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA 1' })).toHaveCount(1);
+    await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA 2' })).toHaveCount(0);
+    await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA 3' })).toHaveCount(1);
 
 });
 
@@ -3434,6 +3491,32 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByRole('link', { name: 'Новый сеанс', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create$`));
 
+    const assertSessionBlockOrder = async (): Promise<void> => {
+        const labels = [
+            'Боли',
+            'Клинические тесты',
+            'Причины по результатам тестов',
+            'Первопричина нарушений',
+            'Алгоритм сеанса (пошаговый протокол сеанса)',
+            'Субъективные ощущения клиента после сеанса',
+            'Визуальная диагностика осанки',
+            'Результат после сеанса',
+            'Фото до / после',
+        ];
+        const positions: number[] = [];
+        for (const label of labels) {
+            const box = await page.getByText(label, { exact: true }).last().boundingBox();
+            if (box === null) {
+                throw new Error(`Medical session block is not positioned: ${label}`);
+            }
+            positions.push(box.y);
+        }
+        expect(positions).toEqual([...positions].sort((left, right) => left - right));
+        await expect(page.getByLabel('Гипотеза первопричины', { exact: true })).toHaveCount(0);
+        await expect(page.getByLabel('Шкала интенсивности боли (ВАШ):', { exact: true })).toHaveCount(0);
+    };
+    await assertSessionBlockOrder();
+
     await page.getByLabel('Дата и время сеанса').fill('2026-08-18T09:00');
     await page.getByLabel('Специалист').click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
@@ -3527,6 +3610,50 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(dynamics.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
     await expect(dynamics.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
 
+    for (const filename of ['session-before-1.png', 'session-before-2.png', 'session-before-3.png']) {
+        await uploadSessionPhoto(page, 'Загрузить фото до сеанса', filename);
+    }
+    for (const filename of ['session-after-1.png', 'session-after-2.png']) {
+        await uploadSessionPhoto(page, 'Загрузить фото после сеанса', filename);
+    }
+    for (const filename of ['session-before-1.png', 'session-before-2.png', 'session-before-3.png']) {
+        const photo = page.getByRole('img', { name: filename, exact: true });
+        await expect(photo).toHaveCount(1);
+        const photoCard = photo.locator('xpath=ancestor::article[1]');
+        await expect(photoCard).toContainText(/\d{2}\.\d{2}\.\d{4}/);
+    }
+    for (const filename of ['session-after-1.png', 'session-after-2.png']) {
+        await expect(page.getByRole('img', { name: filename, exact: true })).toHaveCount(1);
+    }
+    const previewPhoto = page.getByRole('link', { name: 'Открыть фото session-before-1.png', exact: true });
+    const previewPhotoHref = await previewPhoto.getAttribute('href');
+    expect(previewPhotoHref).toMatch(/\/admin\/attachments\//);
+    if (previewPhotoHref === null) {
+        throw new Error('The photo preview did not expose a private URL.');
+    }
+    const previewPhotoResponse = await page.request.get(previewPhotoHref);
+    expect(previewPhotoResponse.status()).toBe(200);
+    const photoDownload = previewPhoto.locator('xpath=ancestor::article[1]').getByRole('link', { name: 'Скачать', exact: true });
+    const photoDownloadHref = await photoDownload.getAttribute('href');
+    expect(photoDownloadHref).toMatch(/mode=download/);
+    if (photoDownloadHref === null) {
+        throw new Error('The photo download did not expose a private URL.');
+    }
+    const photoDownloadResponse = await page.request.get(photoDownloadHref);
+    expect(photoDownloadResponse.status()).toBe(200);
+    await page.getByRole('button', { name: 'Отвязать файл', exact: true }).click();
+    const unlinkPhotoDialog = page.getByRole('dialog').last();
+    await unlinkPhotoDialog.getByLabel('Связанный файл', { exact: true }).click();
+    await page.getByRole('option', { name: 'session-before-1.png', exact: true }).click();
+    await unlinkPhotoDialog.getByRole('button', { name: 'Отвязать', exact: true }).click();
+    await expect(page.getByRole('img', { name: 'session-before-1.png', exact: true })).toHaveCount(0);
+    await page.reload();
+    await expect(page.getByRole('img', { name: 'session-before-1.png', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('img', { name: 'session-before-2.png', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('img', { name: 'session-before-3.png', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('img', { name: 'session-after-1.png', exact: true })).toHaveCount(1);
+    await expect(page.getByRole('img', { name: 'session-after-2.png', exact: true })).toHaveCount(1);
+
     await page.getByRole('button', { name: 'Связать файл', exact: true }).click();
     await page.getByLabel('Файл клиента').click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.attachmentFilename);
@@ -3535,6 +3662,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
+    await assertSessionBlockOrder();
     await expect(page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true })).toHaveValue(oldSubjective);
     await expect(page.getByLabel('Визуальная диагностика осанки', { exact: true })).toHaveValue(oldPosture);
     await expect(page.getByLabel('Результат после сеанса', { exact: true })).toHaveValue(new RegExp(`${oldPainName}: было 7, стало 3 из 10`));
@@ -3553,6 +3681,8 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill(draftSubjective);
     await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill(draftPosture);
     const resultField = page.getByLabel('Результат после сеанса', { exact: true });
+    await resultField.fill(oldManualResult);
+    await resultField.blur();
     await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
     const replaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
     await expect(replaceResultDialog).toBeVisible();
@@ -3593,6 +3723,29 @@ test('staff can create, view, and edit a client session from the CRM client flow
 
     await page.getByRole('link', { name: 'К истории сеансов', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
+});
+
+test('staff can read per-pain history with a persisted zero after score', async ({ page }) => {
+    test.setTimeout(60_000);
+    const fixture = createCrmFixture({ medicalHistoryFlow: true });
+    const historyPainName = fixture.medicalHistoryPainName;
+    if (historyPainName === null) {
+        throw new Error('Medical history fixture did not return a pain name.');
+    }
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    const historyLabel = page.getByText('История боли', { exact: true });
+    await expect(historyLabel).toBeVisible();
+    const historySection = historyLabel.locator('xpath=ancestor::section[1]');
+    await expect(historySection).toContainText(historyPainName);
+    await expect(historySection.getByText(historyPainName, { exact: true })).toHaveCount(2);
+    await expect(historySection).toContainText('6');
+    await expect(historySection).toContainText('0');
+    await expect(historySection).toContainText('5');
+    await expect(historySection).toContainText('4');
+    await page.reload();
+    await expect(page.getByText(historyPainName, { exact: true })).toHaveCount(2);
 });
 
 test('staff can maintain the clinical test catalog and use it in a new session', async ({ page }) => {

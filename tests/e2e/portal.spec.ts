@@ -2651,6 +2651,12 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.getByRole('button', { name: 'Добавить травму', exact: true }).click();
     await page.locator('#medical-injuries-year-1').fill('2021');
     await page.locator('#medical-injuries-description-1').fill('Synthetic second injury');
+    await page.getByRole('button', { name: 'Добавить травму', exact: true }).click();
+    await page.locator('#medical-injuries-year-2').fill('2022');
+    await page.locator('#medical-injuries-description-2').fill('Synthetic third injury');
+    await page.locator('[data-medical-history="injury"] > div').nth(1).getByRole('button', { name: 'Удалить строку', exact: true }).click();
+    await expect(page.locator('#medical-injuries-year-0')).toHaveValue('2020');
+    await expect(page.locator('#medical-injuries-year-1')).toHaveValue('2022');
     await expect(page.locator('#medical-injuries-year-0')).toHaveAttribute('type', 'text');
     await expect(page.locator('#medical-injuries-year-0')).toHaveAttribute('inputmode', 'numeric');
     await expect(page.locator('#medical-injuries-year-0')).toHaveAttribute('placeholder', 'Например, 2020');
