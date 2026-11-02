@@ -3800,7 +3800,18 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await page.goto('/admin/analytics-tag-candidates');
     await expect(page.getByRole('heading', { name: 'Кандидаты тегов', exact: true })).toBeVisible();
 
-    const candidateItem = page.locator(`input[value="${fixture.candidateLabel}"]`).locator('xpath=ancestor::li[1]');
+    const candidateItemFor = async (label: string): Promise<Locator> => {
+        const inputs = page.getByRole('textbox', { name: 'Предложение', exact: true });
+        for (let index = 0; index < await inputs.count(); index += 1) {
+            if (await inputs.nth(index).inputValue() === label) {
+                return inputs.nth(index).locator('xpath=ancestor::li[1]');
+            }
+        }
+
+        throw new Error(`Candidate ${label} was not rendered.`);
+    };
+
+    const candidateItem = await candidateItemFor(fixture.candidateLabel);
     await expect(candidateItem).toBeVisible();
     await expect(candidateItem).toContainText('Жалобы и проблемы');
     const decision = candidateItem.getByRole('combobox', { name: 'Решение', exact: true });
@@ -3811,7 +3822,16 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await reviewedLabel.fill(`${fixture.candidateLabel} принято`);
     await page.getByRole('button', { name: 'Сохранить решения', exact: true }).click();
     await expect(page.getByText('Решения по кандидатам сохранены', { exact: true })).toBeVisible();
-    await expect(page.locator(`input[value="${fixture.candidateLabel}"]`)).toHaveCount(0);
+    await expect.poll(async () => {
+        const inputs = page.getByRole('textbox', { name: 'Предложение', exact: true });
+        for (let index = 0; index < await inputs.count(); index += 1) {
+            if (await inputs.nth(index).inputValue() === fixture.candidateLabel) {
+                return true;
+            }
+        }
+
+        return false;
+    }).toBe(false);
 
     await page.goto('/admin/analytics-console');
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
@@ -3821,7 +3841,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await page.keyboard.press('Escape');
 
     await page.goto('/admin/analytics-tag-candidates');
-    const staleItem = page.locator(`input[value="${fixture.staleCandidateLabel}"]`).locator('xpath=ancestor::li[1]');
+    const staleItem = await candidateItemFor(fixture.staleCandidateLabel);
     await expect(staleItem).toBeVisible();
     const staleDecision = staleItem.getByRole('combobox', { name: 'Решение', exact: true });
     await staleDecision.click();
@@ -3829,7 +3849,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await staleItem.getByLabel('Итоговое название', { exact: true }).fill(`${fixture.staleCandidateLabel} принято`);
     await page.getByRole('button', { name: 'Сохранить решения', exact: true }).click();
     await expect(page.getByText('Источник кандидата уже устарел. Запустите классификацию повторно.', { exact: true })).toBeVisible();
-    await expect(page.locator(`input[value="${fixture.staleCandidateLabel}"]`)).toBeVisible();
+    await expect(staleItem.getByRole('textbox', { name: 'Предложение', exact: true })).toHaveValue(fixture.staleCandidateLabel);
     await page.setViewportSize({ width: 390, height: 900 });
     await assertNoHorizontalOverflow(page);
 });
