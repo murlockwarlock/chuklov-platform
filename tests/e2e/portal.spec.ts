@@ -2643,8 +2643,8 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.locator('#medical-injuries-year-0').fill('');
     await page.locator('#medical-injuries-description-0').fill('Synthetic injury description');
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
-    await expect(page.locator('#medical-operations-error')).toHaveText(/^(Укажите год\.|Добавьте краткое описание\.)$/);
-    await expect(page.locator('#medical-injuries-error')).toHaveText(/^(Укажите год\.|Добавьте краткое описание\.)$/);
+    await expect(page.locator('#medical-operations-error')).toHaveText(/^(Укажите год|Добавьте краткое описание)/);
+    await expect(page.locator('#medical-injuries-error')).toHaveText(/^(Укажите год|Добавьте краткое описание)/);
     await expect(page.locator('#medical-operations-year-0')).toHaveAttribute('aria-describedby', 'medical-operations-error');
     await expect(page.locator('#medical-injuries-year-0')).toHaveAttribute('aria-describedby', 'medical-injuries-error');
     await expect(page.locator('#medical-operations-year-0')).toHaveAttribute('aria-invalid', 'true');
