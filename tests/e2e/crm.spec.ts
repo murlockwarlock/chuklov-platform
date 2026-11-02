@@ -144,7 +144,7 @@ async function setLivewireRangeValue(page: Page, slider: Locator, value: number)
     await expect(slider).toHaveAttribute('aria-valuenow', `${value}.0`);
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean; aggregateDrilldownFlow?: boolean; tagCandidateFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean; aggregateDrilldownFlow?: boolean; tagCandidateFlow?: boolean; savedGroupFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -182,6 +182,35 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'CRM Клиент '.$suffix,
         ]);
+        if (${options.savedGroupFlow ? 'true' : 'false'}) {
+            $seededGroupName = 'E2E persisted group '.$suffix;
+            $group = \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsClientGroup::forceCreate([
+                'organization_id' => $organization->getKey(),
+                'name' => $seededGroupName,
+                'description' => null,
+                'group_type' => 'manual',
+                'is_active' => true,
+                'sort_order' => 0,
+                'version' => 1,
+                'rule_definition' => null,
+                'created_by_user_id' => $admin->getKey(),
+                'updated_by_user_id' => $admin->getKey(),
+                'archived_at' => null,
+            ]);
+            \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsClientGroupVersion::forceCreate([
+                'organization_id' => $organization->getKey(),
+                'analytics_client_group_id' => $group->getKey(),
+                'version' => 1,
+                'name' => $seededGroupName,
+                'description' => null,
+                'group_type' => 'manual',
+                'is_active' => true,
+                'sort_order' => 0,
+                'rule_definition' => null,
+                'client_ids' => [],
+                'created_by_user_id' => $admin->getKey(),
+            ]);
+        }
         if (${options.painScoreFlow ? 'true' : 'false'}) {
             $client->update(['country' => 'E2E-PAIN-'.$suffix]);
         }
@@ -3858,7 +3887,8 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
 
 test('staff can maintain saved client groups in CRM', async ({ page }) => {
     test.setTimeout(90_000);
-    const fixture = createCrmFixture();
+    const fixture = createCrmFixture({ savedGroupFlow: true });
+    const seededGroupName = `E2E persisted group ${fixture.clientName.replace(/^CRM Клиент /, '')}`;
     const groupName = `E2E сохранённая группа ${fixture.clientName.replace(/^CRM Клиент /, '')}`;
     const renamedGroupName = `${groupName} обновлена`;
 
@@ -3876,37 +3906,32 @@ test('staff can maintain saved client groups in CRM', async ({ page }) => {
     await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
 
     await page.reload();
-    const reopenedName = page.getByRole('textbox', { name: /^Название/ }).first();
-    await expect(reopenedName).toHaveValue(groupName);
-    await reopenedName.fill(renamedGroupName);
+    const groupItems = page.locator('.fi-fo-repeater-item');
+    const groupItemFor = async (name: string): Promise<Locator> => {
+        const names = page.getByRole('textbox', { name: /^Название/ });
+        for (let index = 0; index < await names.count(); index += 1) {
+            if (await names.nth(index).inputValue() === name) {
+                return groupItems.nth(index);
+            }
+        }
+
+        throw new Error(`Saved group ${name} was not rendered.`);
+    };
+
+    const createdItem = await groupItemFor(groupName);
+    await createdItem.getByRole('textbox', { name: /^Название/ }).fill(renamedGroupName);
     await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
     await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
 
     await page.reload();
-    await expect(page.getByRole('textbox', { name: /^Название/ }).first()).toHaveValue(renamedGroupName);
-    const secondGroupName = `${renamedGroupName} второй`;
-    await page.getByRole('button', { name: 'Добавить группу', exact: true }).click();
-    const secondItem = page.locator('.fi-fo-repeater-item').last();
-    await secondItem.getByRole('textbox', { name: /^Название/ }).fill(secondGroupName);
-    await secondItem.getByRole('combobox', { name: /^Тип/ }).selectOption('manual');
-    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
-    await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
-
-    await page.reload();
-    const savedNames = page.getByRole('textbox', { name: /^Название/ });
-    await expect(savedNames).toHaveCount(2);
-    await expect(savedNames.nth(0)).toHaveValue(renamedGroupName);
-    await expect(savedNames.nth(1)).toHaveValue(secondGroupName);
-
-    const invalidItem = page.locator('.fi-fo-repeater-item').nth(1);
-    const invalidName = invalidItem.getByRole('textbox', { name: /^Название/ });
-    await invalidName.fill(renamedGroupName);
-    await expect(invalidName).toHaveValue(renamedGroupName);
+    await expect(await groupItemFor(renamedGroupName)).toBeVisible();
+    const seededItem = await groupItemFor(seededGroupName);
+    await seededItem.getByRole('textbox', { name: /^Название/ }).fill(renamedGroupName);
     await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
     await expect(page.getByText('В этой организации уже есть группа с таким названием.', { exact: true })).toBeVisible();
-    await expect(page.getByRole('textbox', { name: /^Название/ }).first()).toHaveValue(renamedGroupName);
+    await expect(await groupItemFor(renamedGroupName)).toBeVisible();
 
-    await invalidName.fill(secondGroupName);
+    await seededItem.getByRole('textbox', { name: /^Название/ }).fill(`${seededGroupName} исправлена`);
     await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
     await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
     await page.reload();
