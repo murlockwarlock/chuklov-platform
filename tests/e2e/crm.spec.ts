@@ -3338,9 +3338,9 @@ test('analytics demographics show the known country total in the screen and Exce
         .locator('xpath=ancestor::section[1]');
     await expect(demographicsSection.locator('p').filter({ hasText: 'Клиентов: 4' })).toBeVisible();
     await expect(demographicsSection.locator('p').filter({ hasText: 'Стран представлено: 2' })).toBeVisible();
-    await expect(demographicsSection.locator('li').filter({ hasText: /^KZ/ })).toContainText('2 · 50%');
-    await expect(demographicsSection.locator('li').filter({ hasText: /^RU/ })).toContainText('1 · 25%');
-    await expect(demographicsSection.locator('li').filter({ hasText: /^Не указана/ })).toContainText('1 · 25%');
+    await expect(demographicsSection.locator('li').filter({ hasText: 'KZ' }).first()).toContainText('2 · 50%');
+    await expect(demographicsSection.locator('li').filter({ hasText: 'RU' }).first()).toContainText('1 · 25%');
+    await expect(demographicsSection.locator('li').filter({ hasText: 'Не указана' }).first()).toContainText('1 · 25%');
 
     const countries = page.getByRole('combobox', { name: 'Страны', exact: true });
     await selectAnalyticsOption(page, countries, 'KZ');
