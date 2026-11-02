@@ -42,6 +42,7 @@ type BookingFixtureOptions = {
     longServiceTitle?: boolean;
     homeVisit?: boolean;
     withServiceImage?: boolean;
+    feedbackEnabled?: boolean;
     tracker?: 'empty' | 'task' | 'checkins';
     duplicateOfficeLocation?: boolean;
 };
@@ -66,6 +67,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withServiceImage = getenv('PLAYWRIGHT_WITH_SERVICE_IMAGE') === '1';
+        $feedbackEnabled = getenv('PLAYWRIGHT_FEEDBACK_ENABLED') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
         $withServiceCredit = getenv('PLAYWRIGHT_WITH_SERVICE_CREDIT') === '1';
@@ -90,6 +92,12 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 'updated_at' => now(),
             ],
         ], ['organization_id', 'feature_key'], ['enabled', 'updated_at']);
+        if ($feedbackEnabled) {
+            \\App\\Modules\\Feedback\\Domain\\Models\\FeedbackConfiguration::query()->updateOrCreate(
+                ['organization_id' => $organization->getKey()],
+                ['enabled' => true, 'positive_threshold' => 8, 'low_score_feedback_required' => true],
+            );
+        }
         foreach ([
             'offer' => 'offer_consent',
             'privacy' => 'privacy_consent',
@@ -762,6 +770,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
                 PLAYWRIGHT_HOME_VISIT: normalizedOptions.homeVisit ? '1' : '0',
                 PLAYWRIGHT_WITH_SERVICE_IMAGE: normalizedOptions.withServiceImage ? '1' : '0',
+                PLAYWRIGHT_FEEDBACK_ENABLED: normalizedOptions.feedbackEnabled ? '1' : '0',
                 PLAYWRIGHT_DUPLICATE_OFFICE_LOCATION: normalizedOptions.duplicateOfficeLocation ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -1574,7 +1583,7 @@ test('confirmed client greeting follows the saved locale after reload', async ({
 });
 
 test('feedback keeps the selected score visible and the portal within mobile bounds', async ({ page }) => {
-    const fixture = createBookingFixture();
+    const fixture = createBookingFixture({ feedbackEnabled: true });
 
     await page.context().addCookies([{
         name: fixture.cookieName,
@@ -1587,9 +1596,14 @@ test('feedback keeps the selected score visible and the portal within mobile bou
         await page.goto('/portal/feedback');
         const selectedScore = page.getByRole('radio', { name: '6', exact: true });
         await selectedScore.click();
-        await expect(selectedScore).toHaveAttribute('aria-checked', 'true');
-        await expect(selectedScore).toHaveAttribute('aria-pressed', 'true');
-        await expect(selectedScore).toHaveClass(/portal-score-option--selected/);
+        const internalFeedback = page.getByLabel('Что можно улучшить?', { exact: true });
+        await internalFeedback.fill('Синтетический текст сохраняется при смене оценки.');
+        await page.getByRole('radio', { name: '10', exact: true }).click();
+        await expect(internalFeedback).toHaveValue('Синтетический текст сохраняется при смене оценки.');
+        const positiveScore = page.getByRole('radio', { name: '10', exact: true });
+        await expect(positiveScore).toHaveAttribute('aria-checked', 'true');
+        await expect(positiveScore).toHaveAttribute('aria-pressed', 'true');
+        await expect(positiveScore).toHaveClass(/portal-score-option--selected/);
         await expect(page.getByRole('radio', { name: '5', exact: true })).not.toHaveClass(/portal-score-option--selected/);
         await assertNoHorizontalOverflow(page);
     }
