@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { createServer, type Server } from 'node:http';
 import { expect, test, type Locator, type Page } from '@playwright/test';
@@ -1236,30 +1236,40 @@ function setAutomaticAnalyticsSuggestions(enabled: boolean): void {
     });
 }
 
-function runAnalyticsClassificationWorker(): void {
-    execFileSync('php', [
-        'artisan',
-        'queue:work',
-        'redis',
-        '--queue=analytics-classification',
-        '--once',
-        '--tries=1',
-        '--timeout=45',
-    ], {
-        encoding: 'utf8',
-        env: {
-            ...process.env,
-            APP_ENV: 'e2e',
-            DB_CONNECTION: 'pgsql',
-            DB_HOST: '127.0.0.1',
-            DB_PORT: '5432',
-            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
-            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
-            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
-            MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
-                ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
+function runAnalyticsClassificationWorker(): Promise<void> {
+    return new Promise((resolve, reject) => {
+        execFile('php', [
+            'artisan',
+            'queue:work',
+            'redis',
+            '--queue=analytics-classification',
+            '--once',
+            '--tries=1',
+            '--timeout=45',
+        ], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                APP_ENV: 'e2e',
+                DB_CONNECTION: 'pgsql',
+                DB_HOST: '127.0.0.1',
+                DB_PORT: '5432',
+                DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+                DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+                DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+                MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                    ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        }, (error, stdout, stderr) => {
+            if (error !== null) {
+                reject(new Error(`${stderr}${stdout}`));
+
+                return;
+            }
+
+            resolve();
+        });
     });
 }
 
@@ -4485,7 +4495,7 @@ test('automatic analytics suggestions follow a real source save into NeedsReview
         await profileDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
         await expect(profileDialog).toBeHidden({ timeout: 15_000 });
 
-        runAnalyticsClassificationWorker();
+        await runAnalyticsClassificationWorker();
 
         await page.goto('/admin/analytics-tag-candidates');
         const enabledState = readAutomaticAnalyticsState(automaticFixture.sourcePainId, candidateLabelSuffix);
@@ -4511,7 +4521,7 @@ test('automatic analytics suggestions follow a real source save into NeedsReview
         await disabledProfileDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
         await expect(disabledProfileDialog).toBeHidden({ timeout: 15_000 });
 
-        runAnalyticsClassificationWorker();
+        await runAnalyticsClassificationWorker();
 
         await page.goto('/admin/analytics-tag-candidates');
         await expect.poll(async () => {
