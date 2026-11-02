@@ -3454,6 +3454,75 @@ test('staff can complete the clinical AI workflow from the client cockpit', asyn
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
+test('staff can fill the current create medical result in the CRM client flow', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ clinicalCatalogFlow: true });
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const testName = `E2E тест ${suffix}`;
+    const painName = `CREATE WEBKIT PAIN ${suffix}`;
+    const subjective = `CREATE WEBKIT SUBJECTIVE ${suffix}`;
+    const posture = `CREATE WEBKIT POSTURE ${suffix}`;
+    const manualResult = `CREATE WEBKIT MANUAL ${suffix}`;
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('tab', { name: 'Записи на приём', exact: true }).click();
+    await page.getByRole('link', { name: 'Новый сеанс', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create$`));
+
+    await page.getByLabel('Дата и время сеанса').fill('2026-08-19T09:00');
+    await page.getByLabel('Специалист').click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
+    await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
+
+    const protocolItem = page.locator('.fi-fo-repeater-item').filter({ hasText: testName }).last();
+    await expect(protocolItem).toBeVisible();
+    await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    await page.getByLabel('Название или описание боли', { exact: true }).fill(painName);
+    const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
+    const afterPainScore = page.getByRole('slider', { name: 'После сеанса', exact: true });
+    await setLivewireRangeValue(page, beforePainScore, 6);
+    await setLivewireRangeValue(page, afterPainScore, 0);
+    await page.getByLabel('Особые жалобы', { exact: true }).fill(subjective);
+    await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill(subjective);
+    await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill(posture);
+
+    const beforeTestValue = protocolItem.getByRole('combobox', { name: 'До сеанса', exact: true });
+    await beforeTestValue.click();
+    await page.getByRole('option', { name: 'Отклонение · нарушение', exact: true }).click();
+    const afterTestValue = protocolItem.getByRole('combobox', { name: 'После сеанса', exact: true });
+    await afterTestValue.click();
+    await page.getByRole('option', { name: 'Норма', exact: true }).click();
+
+    const resultField = page.getByLabel('Результат после сеанса', { exact: true });
+    await resultField.fill(manualResult);
+    await resultField.blur();
+    const fillResultButton = page.getByRole('button', { name: 'Заполнить', exact: true }).last();
+    await fillResultButton.click();
+    const cancelDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
+    await expect(cancelDialog).toBeVisible();
+    await cancelDialog.getByRole('button', { name: 'Отменить', exact: true }).click();
+    await expect(resultField).toHaveValue(manualResult);
+    await fillResultButton.click();
+    const confirmDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await expect(resultField).toHaveValue(new RegExp(`${painName}: было 6, стало 0 из 10`));
+    await expect(resultField).toHaveValue(new RegExp(`Субъективные ощущения: ${subjective}`));
+    await expect(resultField).toHaveValue(new RegExp(`Визуальная диагностика осанки: ${posture}`));
+    await expect(resultField).not.toHaveValue(manualResult);
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
+    const sessionRow = page.getByRole('row').filter({ hasText: '19.08.2026' });
+    await expect(sessionRow).toBeVisible();
+    await sessionRow.getByRole('link', { name: 'Открыть', exact: true }).click({ force: true });
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
+    await expect(page.getByText(new RegExp(`${painName}: было 6, стало 0 из 10`), { exact: false })).toBeVisible();
+    await expect(page.getByText(subjective, { exact: true })).toBeVisible();
+    await expect(page.getByText(posture, { exact: true })).toBeVisible();
+});
+
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
     test.setTimeout(90_000);
     const fixture = createCrmFixture({ clinicalCatalogFlow: true });
