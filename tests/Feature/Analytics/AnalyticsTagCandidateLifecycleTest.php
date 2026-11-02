@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Analytics;
 
+use App\Filament\Pages\AnalyticsTagCandidates;
 use App\Models\User;
 use App\Modules\Analytics\Application\MarkAnalyticsClassificationsStale;
 use App\Modules\Analytics\Application\ReviewAnalyticsTagCandidate;
@@ -15,8 +16,11 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use Livewire\Features\SupportTesting\Testable;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class AnalyticsTagCandidateLifecycleTest extends TestCase
@@ -216,6 +220,36 @@ final class AnalyticsTagCandidateLifecycleTest extends TestCase
 
         $this->expectException(ValidationException::class);
         app(ReviewAnalyticsTagCandidate::class)->handle($admin, (int) $candidate->getKey(), 'accept');
+    }
+
+    public function test_pending_candidate_review_controls_are_enabled_in_the_filament_page(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $run = $this->candidateRun($organization, [['id' => null, 'label' => 'Browser candidate']]);
+        $candidate = new AnalyticsTagCandidate;
+        $candidate->forceFill([
+            'organization_id' => $organization->getKey(),
+            'classification_run_id' => $run->getKey(),
+            'taxonomy' => 'complaints',
+            'source_type' => 'synthetic',
+            'source_id' => 3,
+            'candidate_type' => 'new',
+            'label' => 'Browser candidate',
+            'status' => AnalyticsTagCandidateStatus::NeedsReview,
+            'version' => 1,
+        ])->save();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        /** @var Testable<AnalyticsTagCandidates> $component */
+        $component = Livewire::actingAs($admin)
+            ->test(new AnalyticsTagCandidates)
+            ->assertSuccessful();
+        $html = $component->html();
+
+        self::assertDoesNotMatchRegularExpression(
+            '/<select[^>]+wire:model\.live="data\.candidates\.[^"]+\.decision"[^>]+disabled="disabled"/s',
+            $html,
+        );
     }
 
     /** @param list<array<string, mixed>> $suggestions */

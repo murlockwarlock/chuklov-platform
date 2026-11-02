@@ -129,7 +129,7 @@ final class AnalyticsTagCandidates extends LocalizedPage
                                 ->options(fn (Get $get): array => $this->tagOptions((string) $get('taxonomy')))
                                 ->searchable()
                                 ->visible(fn (Get $get): bool => in_array($get('decision'), ['rename_existing', 'merge'], true)),
-                            TextInput::make('id')->hidden()->dehydrated(true),
+                            Hidden::make('id')->dehydrated(true),
                         ])
                         ->columns(['default' => 1, 'sm' => 2, 'lg' => 3])
                         ->defaultItems(0)
