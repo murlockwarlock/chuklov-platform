@@ -5,7 +5,101 @@ This ledger reconciles the two primary owner sources, read in full:
 - `ТЗ_для_Ивана_заполнение_данных_клиента_23_10_26.md`;
 - `ФИЛЬТРЫ КЛИЕНТОВ.docx`.
 
-## Current final handoff (authoritative)
+## Current Medical final handoff (authoritative for this review)
+
+This section is the fresh consolidated Medical evidence pack. It supersedes
+older Medical rows below; the analytics ledger is retained separately for audit
+history and is not re-audited by this pass.
+
+| Item | Current value |
+|---|---|
+| Starting PR SHA | `eb800e9b8fcbd4e59cae0f4c2965bf9aa52a9cdc` |
+| Starting application SHA | `ab4e3db9e396cc2f782bdf9cab8693c4be79d7a1` |
+| Final application SHA | `ec2c26798333616c3bda0f90b8894a84734c3326` |
+| Exact staging SHA | `ec2c26798333616c3bda0f90b8894a84734c3326` |
+| Evidence-test head before this documentation update | `436e5eeebb51051637244e061f36df624dcede9e` |
+| Branch / PR | `codex/23-10-medical-analytics` / #61 |
+| PR state | `Draft / Open / DO NOT MERGE` |
+| Owner acceptance | `NOT RUN` |
+
+### Fresh Medical M1–M16 matrix
+
+Each row is `IMPLEMENTED`; DB-sensitive rows also have the hosted PostgreSQL
+gate below. Chromium evidence is the fresh exact-runtime journey; WebKit is the
+focused MR-1 journey where noted; staging is the protected deployment at the
+exact application SHA above. Owner acceptance remains `NOT RUN`.
+
+| ID | IMPLEMENTED | PostgreSQL | Chromium | WebKit | Staging | OWNER ACCEPTANCE |
+|---|---|---|---|---|---|---|
+| M1 | Yes — exact active order, create/edit, no global VAS/old objective/root-cause hypothesis editors | PASS | VERIFIED — CRM order: боли → тесты → причины → первопричина → протокол → субъективные ощущения → осанка → результат → фото; create and edit checked | Not required for focused MR-1 | PASS | NOT RUN |
+| M2 | Yes — independent repeatable pains, frequency, time-of-day, nullable/0 scores, special complaints | PASS | VERIFIED — 3 independent rows, save/reload/edit/delete, permanent/count-period, multi time-of-day, NULL and explicit 0 | Not required for focused MR-1 | PASS | NOT RUN |
+| M3 | Yes — first profile seed, previous-session carry-forward, empty previous session stays `[]`, inactive historical references and tenant checks | PASS | VERIFIED — first/next/delete-all flows, previous after beside empty current before, zero retained, per-pain history opened from UI | Not required for focused MR-1 | PASS | NOT RUN |
+| M4 | Yes — owner-configurable catalog, before/after, abnormal state and inactive historical readability | PASS | VERIFIED — synthetic owner/admin catalog and same catalog authority in session | Not required for focused MR-1 | PASS | NOT RUN |
+| M5 | Yes — abnormal-test derivation, manual correction, restore-derived path, deduplication | PASS | VERIFIED — synthetic abnormal test → causes, manual correction, restore, save/reload | Not required for focused MR-1 | PASS | NOT RUN |
+| M6 | Yes — max two configurable references plus free text and historical inactive readability | PASS | VERIFIED — one/two roots, third rejected, free text and reload | Not required for focused MR-1 | PASS | NOT RUN |
+| M7 | Yes — authored protocol text and nearby non-AI `Заполнить` behavior | PASS | VERIFIED — authored text preserved; Fill is deterministic/non-AI and reload-safe | Not required for focused MR-1 | PASS | NOT RUN |
+| M8 | Yes — editable protected subjective feelings and result input | PASS | VERIFIED — unique text save/reload and included in result | PASS — create draft value included | PASS | NOT RUN |
+| M9 | Yes — editable current posture, no conflicting legacy editor | PASS | VERIFIED — unique posture save/reload and included in result | PASS — create draft value included | PASS | NOT RUN |
+| M10 | Yes — deterministic current-draft Result Fill, overwrite confirmation and edit parity | PASS | VERIFIED — CREATE unsaved pain/subjective/posture/test changes reflected; Cancel preserves manual text, Confirm replaces, save/reload; EDIT parity also passed | PASS — run `41500554077`, 1/1, 52.6s | PASS | NOT RUN |
+| M11 | Yes — private before/after galleries, multiple files, preview/download/unlink/reload | PASS | VERIFIED — 3 before + 2 after, upload dates visible, preview/private download, unlink one and reload | Out of focused MR-1 scope | PASS | NOT RUN |
+| M12 | Yes — Portal structured complaints with own nullable scores, free complaint, no frequency/time/global scale | PASS | VERIFIED — Portal 390px save/reload; CRM same structured data and first-session initialization | Not required for focused MR-1 | PASS | NOT RUN |
+| M13 | Yes — injuries and operations repeaters with presence UX and no resurrection | PASS | VERIFIED — both collections 0/1/3, delete middle, save/reload, CRM exact remaining rows | Not required for focused MR-1 | PASS | NOT RUN |
+| M14 | Yes — master/staff-only anamnesis with protected tenant authorization | PASS | VERIFIED — Portal hidden/direct denied; CRM master edit/save/reload | Not required for focused MR-1 | PASS | NOT RUN |
+| M15 | Yes — authorized private analyses/reports across Portal and CRM | PASS | VERIFIED — Portal upload/reload/download, CRM shared visibility and staff upload, unauthorized/cross-tenant denied, no raw path | Not required for focused MR-1 | PASS | NOT RUN |
+| M16 | Yes — separate master-only audio records with title/file/play/download/delete/reload | PASS | VERIFIED — 3 synthetic records, play/download, delete one, reload leaves 2; Portal denied | Not required for focused MR-1 | PASS | NOT RUN |
+
+### Fresh evidence runs
+
+- PostgreSQL Medical gate: hosted run `41493607472`, job `125442690438` —
+  PostgreSQL connection/schema confirmed; `122 passed`, `829 assertions`.
+  The focused suite covered MedicalPainFlow, first-session profile
+  initialization, carry-forward, previous-after `0`, zero-pain no-fallback,
+  inactive historical period/tag references, foreign/tenant rejection,
+  nullable scores and `0` vs `NULL`, session ordering/exclusion, transactions,
+  and private media metadata/auth constraints.
+- Chromium CRM Medical journey: hosted run `41493613697`, job
+  `125444253544` — 4/4 passed in 1.7 minutes on application SHA
+  `ec2c267…`; exact active order, medical catalog/causes/root causes,
+  CREATE and EDIT Result Fill, 3+2 photos, upload dates, private preview and
+  download, unlink/reload, audio and per-pain history were exercised.
+- Chromium Portal journey: hosted run `41494732858`, job `125446582917` —
+  mobile 390px, 1/1 passed in 45.1s on application SHA `ec2c267…`; profile
+  pains, score `0`, nullable/free complaint, no forbidden controls,
+  injuries/operations 0/1/3/delete-middle/reload, Portal files, CRM
+  cross-surface visibility and denied Portal anamnesis/audio paths were
+  exercised.
+- Focused WebKit MR-1: hosted run `41500554077`, job `125466618914` — 1/1
+  passed in 52.6s on evidence-test head
+  `436e5eeebb51051637244e061f36df624dcede9e`; CREATE draft values,
+  explicit zero, confirmation Cancel/Confirm, save and reload passed.
+- Protected staging deploy: `make deploy-staging` succeeded; read-only
+  `/opt/chuklov-staging/REVISION` matched `ec2c267…`; app, PostgreSQL,
+  Redis, Horizon, scheduler, Telegram and private storage health were green.
+  `scripts/staging-smoke.sh` passed all checks (public DNS required a local
+  `curl --resolve` transport override; no staging configuration changed).
+
+### Medical findings and completeness
+
+- MR-1 was a confirmed REAL BUG: CREATE Result Fill previously stopped at
+  `Сначала сохраните сеанс`. It is fixed by shared draft-to-result generation
+  from current unsaved form state; no hidden save and no AI call.
+- Harness-only issues found during the pass (WebKit photo/select locators and
+  the deploy normalizer temporary path) were fixed without changing Medical
+  runtime semantics. They are not remaining Medical findings.
+- Medical BLOCKING: `0`.
+- Medical REAL BUG: `0` (MR-1 closed).
+- Medical MATERIAL NOT VERIFIED: `0`.
+- Additional literal Medical source gaps: **No additional literal Medical
+  source gap found**.
+- Legitimate Medical OWNER CONTENT REQUIRED: real clinical test catalog,
+  causes/root-cause labels, medical wording, audio MIME/size policy values,
+  effectiveness formula and legal copy. Synthetic labels proved the
+  owner-configurable mechanisms; these values do not block implementation.
+
+The older analytics-focused handoff and matrices below are retained as an
+audit trail and are not current Medical evidence.
+
+## Historical consolidated handoff (analytics ledger; retained for audit trail)
 
 This section supersedes the historical matrix retained below. It records the
 evidence pass, the one minimal runtime fix required by the browser journey, and
