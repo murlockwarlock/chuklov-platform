@@ -2637,7 +2637,6 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.locator('input[name="injuries"][value="false"]').check();
     await expect(page.locator('[data-medical-history="injury"]')).toHaveCount(0);
     await page.locator('input[name="injuries"][value="true"]').check();
-    await page.getByRole('button', { name: 'Добавить операцию', exact: true }).click();
     await page.locator('#medical-operations-year-0').fill('');
     await page.locator('#medical-operations-description-0').fill('Synthetic scar location');
     await page.getByRole('button', { name: 'Добавить травму', exact: true }).click();
