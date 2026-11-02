@@ -3643,7 +3643,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     expect(photoDownloadResponse.status()).toBe(200);
     await page.getByRole('button', { name: 'Отвязать файл', exact: true }).click();
     const unlinkPhotoDialog = page.getByRole('dialog').last();
-    await unlinkPhotoDialog.getByRole('button', { name: 'Связанный файл', exact: true }).click();
+    await unlinkPhotoDialog.getByRole('combobox', { name: 'Связанный файл', exact: true }).click();
     await page.getByRole('option', { name: 'session-before-1.png', exact: true }).click();
     await unlinkPhotoDialog.getByRole('button', { name: 'Отвязать', exact: true }).click();
     await expect(page.getByRole('img', { name: 'session-before-1.png', exact: true })).toHaveCount(0);
