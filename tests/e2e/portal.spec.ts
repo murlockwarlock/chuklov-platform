@@ -94,7 +94,8 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         ], ['organization_id', 'feature_key'], ['enabled', 'updated_at']);
         if ($feedbackEnabled) {
             $feedbackConfiguration = \\App\\Modules\\Feedback\\Domain\\Models\\FeedbackConfiguration::query()
-                ->firstOrNew(['organization_id' => $organization->getKey()]);
+                ->where('organization_id', $organization->getKey())
+                ->first() ?? new \\App\\Modules\\Feedback\\Domain\\Models\\FeedbackConfiguration;
             $feedbackConfiguration->forceFill([
                 'organization_id' => $organization->getKey(),
                 'enabled' => true,
