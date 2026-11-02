@@ -1,682 +1,123 @@
-# 23.10 owner scope acceptance
-
-This is the literal reconciliation of the two owner files dated 23.10. The
-canonical authorities remain the existing Medical Profiles, Sessions,
-Attachments, Feedback, Tracker, Attribution, Booking, Commerce, Finance and
-Analytics modules.
-
-## Current implementation iteration
-
-This iteration started from `715b561b9e08fbc7f468f314b6f045121397da3b`.
-The initial application implementation is in
-`2576673fa49f0466e096e96cd9aa98c71191d7e5`. The previous staging-verified
-application source is `a687639cc4cff72ee952809adb960c673ce7547f`; it includes
-the PostgreSQL-compatible aggregate grouping correction and matching regression
-coverage. This follow-up's application candidate is
-`499c7322929a30387d56c57df36ead0c01b74750`; it adds the problem-tag and
-special-segment semantics correction described below. The follow-up candidate
-is not deployed because the protected staging release path still stops on the
-known remote `ENOSPC` preflight failure.
-The acceptance-document commits are documentation-only and are recorded in
-the verification section below after the final document commit.
-
-The current bounded pass started from `56820ac063b2424984a2c86dcf0c78d0c1599571`.
-It addresses only the demographics denominator mismatch. The application
-candidate is `9c77520fd06dbd4643de16f952420b415c4cab64`: demographics now use
-the complete final client cohort, while Acquisition remains period-bound. The
-candidate also contains the focused browser regression for the shared cohort
-and demographic denominator. It has not been deployed to staging.
-
-The current bounded pain-score pass started from
-`4fb503bfd1078dde01b127dd3c3a3543547e2641`. Its application candidate is
-`e5d4b6090b22efdb116d43181ec428927419370b`; it adds an explicit typed pain
-score basis and does not change the previously accepted cohort or demographic
-semantics. It has not been deployed to staging because the normal protected
-release stopped during remote preflight with `ENOSPC`.
-
-The two owner files were read literally. An old `ЖДËМ ПОДТВЕРЖДЕНИЯ` marker is
-treated as a deferral in the 23.10 text, not as a current owner prohibition:
-the latest owner decision requires a configurable mechanism with safe defaults
-and synthetic verification. `IMPLEMENTED` therefore means that the technical
-capability and its owner-editable seam exist; it does not mean that unprovided
-medical/business content has been approved by the owner.
-
-## PR #61 follow-up defect closure
-
-Starting SHA for this follow-up: `263ed0550411bd6735feb9bb9ae2f186c5094f00`.
-The checks below cover the six confirmed findings reproduced from that
-candidate; they extend the acceptance matrix rather than creating a second
-analytics or medical authority.
-
-| # | Finding | Implemented | Authoritative path | Regression / acceptance evidence | PostgreSQL relevance | Browser relevance |
-|---:|---|---|---|---|---|---|
-| 1 | XLSX formula injection | YES | `AnalyticsReportExport::writeRow()` writes every export cell with an explicit PhpSpreadsheet type; no untrusted `fromArray()` path remains | `AnalyticsReportExportTest::test_formula_like_labels_remain_exact_explicit_strings_and_numbers_remain_numeric` opens the actual XLSX and checks exact values, string types, non-formula cells, numeric, boolean and null types | YES — labels and aggregates originate from tenant data; current candidate PostgreSQL gate is reported separately | YES — download path must be exercised at the final staged revision |
-| 2 | Partial analytics shown as full success | YES | `AnalyticsConsole::calculateDimensions()`, `analyze()` and `export()` preserve successful dimensions, record human errors, log only safe context, and make export atomic | `AnalyticsDashboardWidgetTest` covers single failure, mixed success/warning and no partial workbook; all-success regression remains green | YES — dimension authorization/query failures run against organization-scoped data; current candidate PostgreSQL gate is reported separately | YES — warning, retry and download behavior require final staged browser verification |
-| 3 | Invalid custom range silently defaulted | YES | `DashboardPeriod::validatedCustomRange()` is shared by console analyze/export; Filament field errors are populated by `validatedStateAndPeriod()` | `DashboardPeriodTest` covers missing, malformed, reversed, overlong, exact 366-day ranges; console test covers reject, correction, analyze and export | YES — period filtering and organization timezone boundaries require PostgreSQL verification | YES — invalid/corrected form and reload require final staged browser verification |
-| 4 | Previous-period comparison wrong across DST | YES | `DashboardPeriod::previousCalendarPeriod()` shifts organization-local calendar dates before one UTC conversion; `AnalyticsMetricEvaluator` delegates to it | `DashboardPeriodTest` covers New York spring-forward/fall-back, today, 7-day, custom and non-DST boundaries | YES — timestamp/query boundaries require PostgreSQL verification | YES — analytics period UI requires final staged browser verification |
-| 5 | Root-cause free text lacked backend limit | YES | shared `MedicalSessionFieldLimits::MaxTextLength` is used by form, CreateSession, UpdateSession and `MedicalSessionTestWriter`; validation is multibyte-safe and transactional | `MedicalPainFlowTest::test_root_cause_free_text_has_a_unicode_safe_authoritative_limit_without_partial_writes` covers 10,000 accepted, 10,001 rejected and reload preservation | YES — encrypted session write and rollback require PostgreSQL verification | YES — CRM validation and corrected submit require final staged browser verification |
-| 6 | Feedback classification could cross clients | YES | `AcceptAnalyticsClassification::acceptFeedback()` checks run client against locked submission client before theme synchronization inside the existing transaction | `AnalyticsAiClassificationTest::test_feedback_classification_rejects_a_run_for_another_client_in_the_same_organization` proves controlled rejection, unchanged review state and no theme pivot write | YES — organization/client guard and transaction atomicity require PostgreSQL verification | YES — review/accept error and normal matching-client flow require final staged browser verification |
-
-## Problem-tag and segment semantics follow-up
-
-This follow-up started from `df9dac20272b1e486125b2861d85dfaf145a59a1` after
-the selected client-segment OR correction. The confirmed problem-tag defect was
-that `problem_tag_mode=any` applied every selected category with `where`,
-therefore requiring all categories. The fix keeps `all` as AND, makes `any`
-use a grouped OR, preserves exclude semantics as rejection when any selected
-category exists, and normalizes the special `all` segment out of the typed
-multiselect before the cohort query is built.
-
-The regression contract is
-`ClientCohortQueryTest::test_problem_tag_modes_use_any_or_all_and_exclude_any_matching_tag`
-plus
-`ClientCohortQueryTest::test_all_segment_is_normalized_before_multiselect_query`.
-The synthetic fixture covers neck-only, back-only, both-category and
-neither-category clients. Hosted candidate run `41286645922` executes these
-feature tests against the PostgreSQL service; exact job status is recorded in
-the verification section below. The new application candidate remains
-`NOT VERIFIED` in staging because staging is still on
-`a687639cc4cff72ee952809adb960c673ce7547f`.
-
-## Demographics cohort denominator follow-up
-
-The confirmed defect was that `DemographicsAnalytics` applied the selected
-DashboardPeriod to `clients.created_at` after constructing the cohort. An old
-client could therefore be present in the cohort preview and other dimensions
-but disappear from age, sex, children/adults and country aggregates. That
-incorrectly treated acquisition-by-period as the demographic denominator.
-
-The fix keeps the existing `ClientCohortQuery` authority and starts every
-demographic aggregate from the full organization-scoped final cohort. The
-period-created filter remains only for the existing concrete-`Client` path.
-`AcquisitionAnalytics` was not changed and continues to count only clients
-created in the selected period. Age is calculated once against the local end
-of the selected period in the organization IANA timezone; no second UTC
-conversion is applied. Unknown birth dates and countries remain safe labeled
-categories (`Не указано` / `Не указана`).
-
-The regression fixture has three clients in one organization: an old female
-KZ client, a period-created male KZ client and an older RU client with no birth
-date or sex, plus a foreign-organization client. The cohort preview and
-demographics both return 3; sex is 1/1/1, countries are KZ=2 and RU=1, ages
-are 30–44=2 and unspecified=1, adults are 2 and unspecified=1, and all
-percentages use 3 as denominator. Acquisition returns only the one new
-period-created client. The birthday regression covers a birthday exactly on
-the local period-end reference date and the following day.
-
-Regression coverage is in
-`DemographicsAndServicesAnalyticsTest::test_demographics_uses_the_full_cohort_while_acquisition_remains_period_bound`,
-`DemographicsAndServicesAnalyticsTest::test_demographics_uses_the_period_end_for_birthday_boundaries`
-and
-`AnalyticsReportExportTest::test_demographics_export_keeps_the_full_cohort_denominator`.
-The XLSX regression opens the generated workbook and checks that the old client
-is present on `Демография` and that the cohort metadata count matches the
-demographic denominator. The focused CRM browser flow also asserts that
-`Найдено клиентов: N` equals `Клиентов: N` after Analyze.
-
-## Pain-score basis follow-up
-
-The old runtime applied the pain-score presence and range filters only to
-`medical_profile_pains.score` and `medical_session_pains.before_score`.
-`medical_session_pains.after_score` was omitted. Consequently an after-only
-client could be treated as `Без оценки`, a real `after_score = 0` could be
-lost, and a range could not target the post-session value. The first regression
-run from `4fb503bfd1078dde01b127dd3c3a3543547e2641` failed as expected: the
-old query returned only the profile/before clients instead of the expected
-profile/before/after cohort.
-
-The fix adds the typed `PainScoreBasis` to `ClientCohortFilters` with the safe
-backward-compatible default `any` and the owner-facing labels `Любая оценка`,
-`Медицинский профиль`, `До сеанса` and `После сеанса`. `any` uses OR across
-profile, before-session and after-session values; each specific basis uses
-only its selected source. Presence is based on non-NULL values, so `0` remains
-a real score. Min/max applies only to the selected source. Session bases use
-the selected DashboardPeriod on `medical_sessions.occurred_at`; profile scores
-remain valid independently of that period. Unknown basis values are rejected
-with a controlled validation error rather than silently becoming `any`.
-
-The synthetic PostgreSQL regression has clients A–G: profile-only, before-only,
-after-zero, after-seven, no-score, after-score outside the period and a foreign
-tenant client. It proves `any` presence, no-score, each specific basis, both
-after-score ranges, exact zero, period exclusion, the profile/session period
-split and organization isolation. Legacy saved dynamic groups without the new
-field normalize to `any`; new rule definitions and immutable versions preserve
-the selected basis. The Analytics Console preview/Analyze path, human reason
-and XLSX `Фильтры` sheet use the same filter object and show `Источник оценки
-боли` without internal enum keys.
-
-`ClientCohortQueryTest`, `AnalyticsDashboardWidgetTest` and
-`AnalyticsReportExportTest` cover the backend, saved-group compatibility,
-controlled invalid input and export contracts. Hosted run `41296535965` passed
-the focused PostgreSQL feature step with 37 tests and 252 assertions. Hosted
-run `41296535979` passed the exact analytics browser journey in Chromium,
-WebKit and 390px mobile: basis selection, preview, range, Analyze, XLSX,
-reload, history navigation, basis switching and horizontal-overflow assertion.
-The exact candidate remains `NOT VERIFIED` in staging; staging is still on
-`a687639cc4cff72ee952809adb960c673ce7547f` with a green health contract. The
-normal deploy of `e5d4b609` stopped in remote preflight at line 412 while
-writing `shared/backups/predeploy-e5d4b6090b22efdb116d43181ec428927419370b/captured-at.txt`:
-`No space left on device`, before migrations, release switching or restart.
-
-## Problem-specific session-axis follow-up
-
-This bounded follow-up started from
-`7178e7b1df10b76691e5a5d8ef40baa89e5995ce`.
-
-The old `PainAnalytics` behavior ranked medical sessions globally per client.
-Therefore a complaint first appearing on global session 5 could be reported as
-problem session 5 instead of problem session 1. The regression fixture exposed
-that mismatch with earlier sessions for other complaints, a later neck
-complaint, an independent back complaint, multiple clients, a foreign
-organization and two neck rows in one session.
-
-The fix extends the existing `ClientSessionAxisCatalog` with the
-`problem_chronological` authority. Its owner-facing label is
-`Порядок сеансов конкретной категории проблемы` and its rule version is
-`problem-chronological-v1`; the internal key is not rendered as owner-facing
-configuration text. For each organization, client and problem tag, distinct
-medical-session/tag pairs are ranked by `occurred_at`, then medical-session ID.
-The resulting ordinal is shared by all pain rows for that tag in that session.
-Different tags, clients and organizations have independent sequences. Existing
-aggregation semantics and average/reduction formulas were not changed.
-
-The missing-setting default is now problem-specific, while an explicit owner
-selection remains authoritative. `client_chronological` retains the previous
-global semantics. The problem-specific axis ranks against the client's full
-history and applies the selected DashboardPeriod to report events after
-ranking; the existing period-specific mode remains separate. The regression
-also covers the selected problem filter, equal timestamps, NULL versus zero,
-and period behavior.
-
-Regression coverage is in
-`tests/Feature/Analytics/PainAnalyticsTest.php`,
-`tests/Feature/Analytics/AnalyticsMetricConfigurationTest.php`,
-`tests/Feature/Analytics/AnalyticsReportExportTest.php` and
-`tests/Integration/MilestoneElevenCAnalyticsPostgresTest.php`. The focused
-browser contract is in `tests/e2e/crm.spec.ts`.
-
-Hosted PostgreSQL run `41311070914` passed the affected integration job at
-`bdc50962`, covering window ranking, distinct session/tag pairs, tenant scope,
-deterministic ordering, period filtering and NULL/0 behavior. Hosted focused
-browser run `41312657472` passed 3/3 scenarios at `ea24fd65`, including actual
-category selection, Analyze, axis switching, reload persistence, XLSX and the
-390px overflow assertion. The generated XLSX contains the same session 1/2/3
-values as the report and writes the human label plus
-`problem-chronological-v1` in its metadata.
-
-The application candidate `bbd671255c8919e948d2d4c2e84dd3784ab2e050` was
-deployed through the protected staging path. Migrations reported no pending
-work and `scripts/staging-smoke.sh` passed. Direct Chromium staging checks at
-1440px and 390px passed axis setting persistence, Analyze, export metadata and
-horizontal-overflow checks. The staging catalog had no active problem-tag
-options, so the synthetic 8/4/1 problem-value slice is evidenced by the hosted
-browser fixture rather than by creating additional staging medical data.
-
-## Aggregate drill-down follow-up
-
-This bounded pass started from the last staging-verified application source
-`bbd671255c8919e948d2d4c2e84dd3784ab2e050`. The current PR head before this
-implementation was `9e2e44c035de27237c49fcce51ae7071ddeedfec`; its diff from
-that application source was documentation/E2E-only, so it was not treated as a
-runtime baseline.
-
-The old `AnalyticsConsole::stateForAggregate()` appended a clicked row value
-to the persisted cohort state. A base `Услуги = A OR B` therefore remained
-`A OR B` when the user opened the A row, and a base `Категории проблем = Neck
-OR Back` with mode `any` could be changed to `Neck AND Back`. Source and age
-rows also reconstructed predicates from display labels, and missing-country
-rows could not be opened exactly.
-
-The fix adds the typed `AnalyticsAggregatePredicate` and
-`AnalyticsAggregateDimension` abstractions inside the existing analytics
-authority. `ClientCohortQuery` continues to construct the base cohort and now
-constrains that same query with an exact aggregate predicate. IDs, stable
-source keys, purchase group keys, booking event keys, segment values and
-configured age-range keys are validated server-side. Demographic missing
-values use typed predicates that distinguish NULL/empty from known values.
-The UI keeps human labels and shows a concrete reason such as
-`Базовая выборка: ... Строка отчёта: услуга «Массаж».` Technical keys are not
-rendered.
-
-The service regression proves `A OR B` intersected with service A returns A
-and A+B only, and the B row independently returns B and A+B. The problem
-regression proves `any` remains `any`, Neck returns Neck-only plus Neck+Back,
-and Back returns Back-only plus Neck+Back. Two pain rows carrying one tag in
-one medical session produce one client result and one exact predicate match;
-existing row aggregation semantics are unchanged. The source regression uses
-the stable configured key rather than the display label. Typed regressions
-cover feedback themes, goals, specialists, purchases, booking events,
-segments, configured age ranges, sex, children, country, tenant scope,
-period scope, NULL/empty unknown buckets and deterministic result handling.
-
-Aggregate drill-down never writes `cohort_*` fields, `problem_tag_mode`,
-session-backed filters or saved-group state. The regression compares form/data
-and session state before and after service, problem and source drill-down.
-Ordinary XLSX export remains based on the base cohort and is not changed by
-opening a row; no separate drill-down export action was added.
-
-Focused local feature coverage is PASS for the aggregate predicate, dashboard,
-cohort, export and adjacent analytics suites: the aggregate-focused subset
-passed 42 tests and 291 assertions; the wider focused analytics run passed 77
-tests and 610 assertions. Local Playwright was attempted but NOT VERIFIED
-because the local E2E server returned HTTP 500: its PostgreSQL instance has no
-`chuklov` role.
-
-The final application candidate for this bounded pass is
-`cb7d34f5499ec65d64c8a44a767fa7cd5f711424` (the implementation is in
-`b743d67dc769e08ca8cc6b948803903fe95c70b7`; later commits only stabilized the
-hosted fixture and browser selectors). Hosted PostgreSQL run
-[`41324609707`](https://github.com/murlockwarlock/chuklov-platform/actions/runs/41324609707)
-passed the focused integration job, including exact aggregate predicates,
-tenant scope and NULL/empty handling. Hosted focused browser run
-[`41324119735`](https://github.com/murlockwarlock/chuklov-platform/actions/runs/41324119735)
-passed all 9 synthetic aggregate scenarios: service, problem and missing
-country on Chromium desktop, Chromium mobile and WebKit desktop.
-
-The protected staging deploy of exact application SHA
-`cb7d34f5499ec65d64c8a44a767fa7cd5f711424` passed. Migrations reported
-`Nothing to migrate`, the protected runtime health checks passed, and
-`scripts/staging-smoke.sh` passed with the same SHA. Staging browser acceptance
-then used the saved QA CRM session on the real `/admin/analytics-console` path.
-For the base cohort `Synthetic proof service 20261010` plus
-`Индивидуальная консультация`, the report row showed `1 · 1 клиентов`; opening
-the row showed exactly one client, `Synthetic acceptance 20261009`, and the
-reason `Строка отчёта: услуга «Synthetic proof service 20261010».` The two
-service selections remained unchanged after close, reload and back/forward;
-`__unknown__` was not rendered and the document had no horizontal overflow.
-The visible journey passed at Chromium 1440px, Chromium 390px and WebKit
-1440px. WebKit emitted non-visible Livewire page errors while replaying browser
-history, but the expected result, state and layout assertions still passed;
-console-clean verification is therefore not claimed as a separate PASS.
-
-## Literal reconciliation matrix
-
-The following matrix is the current implementation decision for every numbered
-requirement in the two supplied files. The path column names the read/write
-authority, not only the visible Filament field.
-
-### Medical file: `ТЗ_для_Ивана_заполнение_данных_клиента_23_10_26.md`
-
-| Status | Literal owner requirement | Фактическое поведение / authoritative path | Расхождение | Решение | Regression evidence | PostgreSQL relevance | Browser relevance |
-|---|---|---|---|---|---|---|---|
-| IMPLEMENTED | Session order: pains, tests, causes, root causes, protocol, subjective feelings, posture, result, before/after photos; no global VAS or objective-changes field | `SessionForm`, `CreateMedicalSession`, `EditMedicalSession`, `SessionInfolist`, `ClinicalTestProtocol`, `GenerateSessionResult` | Old global fields remain only in the persisted legacy model | Hidden from active create/edit; retained read-only in legacy/history projections | `tests/Feature/Sessions/SessionCockpitTest.php`, `tests/Feature/Sessions/MedicalSessionTest.php` | YES — encrypted session fields and normalized relations | REQUIRED — current implementation candidate needs CRM browser run |
-| IMPLEMENTED | Each pain is a repeatable row; all row fields optional; frequency can be unspecified, permanent, or count plus period; 0 differs from no score | `MedicalPainInput`, `MedicalSessionPainWriter`, `MedicalProfilePainWriter`, `SessionForm` | A fully empty repeater row has no business meaning | Empty row is skipped; partial row persists only supplied values; count requires count and active period | `tests/Unit/MedicalPainInputTest.php`, `tests/Feature/MedicalPainFlowTest.php` | YES — nullable encrypted scores and normalized pain rows | REQUIRED — empty/partial/0/NULL UI states |
-| IMPLEMENTED | First session carries profile pains; later sessions carry prior rows with empty current before and visible prior after; history is per pain | `MedicalSessionPainInitializer`, `MedicalSessionPainReader`, session dynamics and client-card projections | No deviation | Existing structured rows are reused; after=0 is carried as a real value | `tests/Feature/MedicalPainFlowTest.php`, `tests/Feature/Sessions/SessionCockpitTest.php` | YES — session lineage and nullable score persistence | REQUIRED — first/second session reload journey |
-| IMPLEMENTED | Configurable clinical-test catalog, grouped list, before/after quick values, abnormal counters, CSV/XLSX import, historical inactive values | `MedicalClinicalCatalog`, `ClinicalTestProtocol`, `MedicalSessionTestWriter`, `MedicalClinicalCatalogConfiguration`, catalog import actions | Old text placeholder is not the owner flow | Active catalog renders as one list; empty catalog has a CRM setup CTA; inactive saved tests remain readable | `tests/Feature/MedicalClinicalCatalogConfigurationTest.php`, `tests/Feature/MedicalPainFlowTest.php` | YES — catalog/result organization scope and historical rows | REQUIRED — 5/60-item list, live counters, mobile |
-| IMPLEMENTED | Causes per abnormal test, aggregate without duplicates, manual correction, return to derived list | `ClinicalTestProtocol`, `MedicalSessionTestWriter`, cause catalog and session form controls | No authoritative algorithm is invented | Derived cause IDs are explicit; manual override is persisted and reversible | `tests/Feature/MedicalPainFlowTest.php`, `tests/Feature/Sessions/SessionCockpitTest.php` | YES — normalized cause references and transaction | REQUIRED — list-based selection and reload |
-| IMPLEMENTED | Up to two root causes, selected cause or free text, stored per session | root-cause repeater in `SessionForm`, session create/update writer, `MedicalSessionFieldLimits` | No deviation | Free text is not restricted to catalog causes; 10,000 Unicode-character backend limit is shared with UI | `tests/Feature/MedicalPainFlowTest.php`, `tests/Feature/Sessions/MedicalSessionTest.php` | YES — protected write and no-partial-write invariant | REQUIRED — 10,000/10,001 validation path |
-| IMPLEMENTED | Free-text algorithm/protocol and a `Заполнить` button that does not overwrite text or call AI yet | `SessionForm` hint action, `GenerateSessionResult` remains deterministic result authority | Old wording deferred AI, not the button | Notification explicitly says automatic fill is not connected; existing text is untouched | `tests/Feature/Sessions/SessionCockpitTest.php` | YES — encrypted protocol persistence | REQUIRED — click and verify unchanged text |
-| IMPLEMENTED | Subjective feelings field in the requested order | `UpdateSession`, `SessionForm`, `SessionInfolist` | No deviation | Existing encrypted field retained | `tests/Feature/Sessions/SessionCockpitTest.php` | YES — encrypted field | REQUIRED — edit/view/reload |
-| IMPLEMENTED | Visual posture diagnostics replaces objective changes | `UpdateSession`, `SessionForm`, `SessionInfolist` | Legacy objective text is not deleted | New writes use posture field; historical value remains readable where applicable | `tests/Feature/Sessions/SessionCockpitTest.php` | YES — encrypted field | REQUIRED — edit/view/reload |
-| IMPLEMENTED | Deterministic result summary from pains, subjective feelings, posture and test counters; manual edit and overwrite confirmation | `GenerateSessionResult`, session page actions and result field | AI prose and unprovided effectiveness formula remain intentionally absent | Result is deterministic and editable; overwrite asks for confirmation | `tests/Feature/Sessions/SessionCockpitTest.php`, `tests/Feature/Analytics/AnalyticsDashboardWidgetTest.php` | YES — protected session write | REQUIRED — generate/edit/confirm/reload |
-| IMPLEMENTED | Two explicit before/after photo galleries with preview, date, download, unlink, reload; reports cannot be photos | `LinkSessionAttachment`, `ListSessionAttachments`, `UnlinkSessionAttachment`, `SessionInfolist`, `ViewMedicalSession`, private attachment stack | `general` files remain a separate session-files area | `before`/`after` accepts image attachment types only; unlink removes the link, not the source attachment | `tests/Feature/Sessions/SessionAttachmentTest.php`, `tests/Feature/Attachments/MedicalAttachmentTest.php` | YES — ownership, private storage and link lifecycle | REQUIRED — 3 before/2 after preview/download/unlink |
-| IMPLEMENTED | Client profile contains per-complaint 0–10 scores and no frequency/time-of-day controls | `MedicalProfileForm`, Portal medical-profile projection, `MedicalProfilePainWriter/Reader` | Existing legacy global values remain historical only | Profile writes use structured complaint rows and carry into first session | `tests/Feature/MedicalPainFlowTest.php`, `tests/Feature/September26MedicalProfileTest.php` | YES — encrypted profile rows | REQUIRED — client save/reload and CRM projection |
-| IMPLEMENTED | Repeatable operations and injuries with year/description; legacy singular fields are not lost | `MedicalProfileHistoryWriter/Reader`, `medical_profile_history_entries`, Portal `MedicalProfile.vue`, CRM clinical projection | Legacy free text is not split into guessed events | New writes use the canonical structured history; legacy values remain historical/readable | `tests/Feature/September26MedicalProfileTest.php`; existing Portal E2E structured-history coverage | YES — canonical history rows and tenant scope | REQUIRED — 0/1/3 rows, remove middle row, reload |
-| IMPLEMENTED | Anamnesis is master-only; client cannot view/edit it | `MedicalProfileAuthorization`, CRM clinical infolist/form, Portal public projection | Existing client-entered text is retained | Portal projection excludes anamnesis; authorized CRM retains optional field | `tests/Feature/September26MedicalProfileTest.php`, `tests/Feature/ClientWorkspaceUxATest.php` | YES — protected profile authorization | REQUIRED — client denial and CRM visibility |
-| IMPLEMENTED | Client uploads analyses/MRI/reports; master sees and can upload in private files | existing client attachment ingress, private storage authorization, client workspace attachments | No deviation | Existing attachment authority reused; no analytics free-text export | `tests/Feature/September26MedicalAttachmentTest.php`, `tests/Feature/Attachments/ClientAttachmentsUxTest.php` | YES — private storage metadata and authorization | REQUIRED — Portal upload and CRM counterpart |
-| IMPLEMENTED | Separate master-only audio section with title, upload, playback, download, delete; configurable safe format/size policy | `ClientAudioRecordingsRelationManager`, `MedicalAudioPolicy`, `UploadMedicalAttachment`, `MedicalAudioSettings` | Business format/size values were not supplied | Safe server allowlist/default and organization policy are editable in CRM; policy cannot exceed server hard cap | `tests/Feature/Attachments/AudioRecordingsTest.php`, `tests/Feature/Attachments/MedicalAudioPolicyTest.php` | YES — private storage and organization policy | REQUIRED — upload/play/download/delete/reload and client denial |
-
-### Analytics file: `ФИЛЬТРЫ КЛИЕНТОВ.docx`
-
-| Status | Literal owner requirement | Фактическое поведение / authoritative path | Расхождение | Решение | Regression evidence | PostgreSQL relevance | Browser relevance |
-|---|---|---|---|---|---|---|---|
-| IMPLEMENTED | Complaints/problems become filterable tags; AI may suggest common or new tags | `SuggestAnalyticsTags`, `AcceptAnalyticsClassification`, `SyncAnalyticsClassificationCandidates`, taxonomy catalogs and candidate review | AI must not silently create active tags | Existing suggestions, new candidates, review/rename/merge/reject/stale lifecycle are organization-scoped; new-candidate generation is safe-disabled until enabled | `tests/Feature/Analytics/AnalyticsAiClassificationTest.php`, `tests/Feature/Analytics/AnalyticsTagCandidateLifecycleTest.php` | YES — classification transaction and tenant scope | REQUIRED — CRM review/correction |
-| IMPLEMENTED | Average pain for the selected client population | `PainAnalytics`, `ClientCohortQuery`, typed analytics source | No deviation | NULL scores are excluded; 0 remains numeric zero | `tests/Feature/Analytics/PainAnalyticsTest.php`, `tests/Feature/Analytics/ClientCohortQueryTest.php` | YES — aggregate query semantics | REQUIRED — console result |
-| IMPLEMENTED | Results after client session order 1/2/3 and reduction percentage | `PainAnalytics`, `AnalyticsMetricEvaluator`, `ClientSessionAxisCatalog` | “Course” has no canonical entity in the existing model | UI/export use owner-configurable chronological client-session semantics and version the rule; standard pain reduction is the existing single formula authority | `tests/Feature/Analytics/PainAnalyticsTest.php`, `tests/Feature/Analytics/ComputedAnalyticsMetricsTest.php` | YES — session ordering and period boundaries | REQUIRED — dimension and metric preview |
-| IMPLEMENTED | Satisfaction 0–10 attached to each client and aggregated | Feedback submission writer/analytics plus the forward PostgreSQL check migration | Historical 1–10 constraint was narrower than the owner UI | Forward migration permits 0..10; invalid values remain rejected | `tests/Feature/FeedbackThemesAnalyticsTest.php`, `tests/Feature/Analytics/FeedbackAnalyticsTest.php` | REQUIRED — PostgreSQL CHECK is authoritative | REQUIRED — client/CRM submission and average |
-| IMPLEMENTED | Client can state what was missing after treatment/course; therapist can enter it; repeated themes aggregate | existing Feedback submission/Portal flow, `FeedbackThemeCatalog`, scenario engine `booking.completed` rules, `FeedbackAnalytics` | Exact business timing/text was not supplied | CRM-manageable scenario delay/template and configurable themes; safe default can be disabled; existing booking-completed feedback is preserved | `tests/Feature/FeedbackThemesAnalyticsTest.php`, `tests/Feature/MilestoneFiveScenarioTest.php`, `tests/Feature/Analytics/FeedbackAnalyticsTest.php` | YES — encrypted source text, theme pivots and scenario idempotency | REQUIRED — client submit, CRM classify, reload |
-| IMPLEMENTED | Goals/tasks are tagged, linked to clients and counted as repeated requests | existing Tracker task/goal-tag authority, `GoalAnalytics`, classification and client-card projection | No second goals store is introduced | Profile goal text enters existing classification/Tracker path; owner can configure goal taxonomy | `tests/Feature/Analytics/GoalAnalyticsTest.php`, `tests/Feature/PortalTrackerPurchaseTest.php`, `tests/Feature/Analytics/AnalyticsAiClassificationTest.php` | YES — Tracker organization scope | REQUIRED — client and CRM views |
-| IMPLEMENTED | All/new/no visits/warm lead/sleeping/cold lead/blacklist/penalty/deleted categories | `ClientSegmentQuery`, `ClientSegmentConfiguration`, `ClientSegmentSettings`, archive state and canonical booking/penalty authorities | “Штрафник” and “Удалены” have no safe invented formula/physical-delete query | Penalty is an owner-managed restriction/tag marker; warm-lead service groups and sleeping threshold are configurable; archived history is used for deleted/archive reporting without weakening retention | `tests/Feature/Analytics/ClientSegmentQueryTest.php`, `tests/Feature/Analytics/ClientCohortQueryTest.php` | YES — segment queries, archive state and historical bookings | REQUIRED — settings, filters and empty states |
-| IMPLEMENTED | Age breakdown and configurable age groups | `DemographicsAnalytics`, `ClientAgeRangeCatalog`, `AnalyticsAgeRangeSettings` | No approved labels beyond the requested examples | Default ranges are safe and replaceable/reorderable/deactivatable in CRM | `tests/Feature/Analytics/DemographicsAndServicesAnalyticsTest.php`, `tests/Feature/Analytics/ClientCohortQueryTest.php` | YES — organization timezone age boundary | REQUIRED — settings/filter/result |
-| IMPLEMENTED | Men/women/children counts and percentages, unknown-safe | `DemographicsAnalytics`, cohort gender/child filters | No deviation | Unknown values are not forced into a known category; zero total is safe | `tests/Feature/Analytics/DemographicsAndServicesAnalyticsTest.php` | YES — aggregate query | REQUIRED — console result |
-| IMPLEMENTED | Country counts and percentages | `DemographicsAnalytics`, cohort country filter | No deviation | Unknown country remains `Не указано` | `tests/Feature/Analytics/DemographicsAndServicesAnalyticsTest.php` | YES — aggregate query | REQUIRED — console result |
-| IMPLEMENTED | Services, visits and specialist statistics | `ServiceVisitAnalytics`, `SchedulingAnalytics`, `BookingStatusAnalytics`, `AnalyticsReportExport` | “Мастера” already exist, so the specialist dimension is now included | Completed visits only for visit counts; cancelled/no-show are not counted as completed; period/filter/timezone is shared | `tests/Feature/Analytics/DemographicsAndServicesAnalyticsTest.php`, `tests/Feature/Analytics/PurchaseAndBookingStatusAnalyticsTest.php` | YES — booking status/period query | REQUIRED — services/specialists UI |
-| IMPLEMENTED | Monetary LTV and configurable percentage/delta presentation | existing financial authority, `AnalyticsMetricEvaluator`, `AnalyticsMetricSettings` typed metric builder | Owner did not provide a new LTV formula | Monetary LTV remains canonical; “change to previous period, %” is a configurable typed metric with explicit basis/NULL policy | `tests/Feature/Analytics/ComputedAnalyticsMetricsTest.php`, `tests/Feature/Analytics/AnalyticsMetricConfigurationTest.php` | YES — integer minor-unit finance source | REQUIRED — metric selection/result |
-| IMPLEMENTED | Analytics console with selectable sections, Analyze, charts and Excel | `AnalyticsConsole`, `resources/views/filament/pages/analytics-console.blade.php`, `AnalyticsReportExport` | No deviation | UI separates cohort, dimensions and period/time rules; live preview and human labels are shown | `tests/Feature/Analytics/AnalyticsDashboardWidgetTest.php`, `tests/Feature/Analytics/AnalyticsReportExportTest.php` | YES — all selected dimensions share cohort query | REQUIRED — multi-select, loading/error/retry/mobile |
-| IMPLEMENTED | Finance: income, expenses, cash movement, accounts/cashboxes, selectable period | `FinanceAnalytics`, existing Finance ledger/reconciliation authority | No second ledger is introduced | Existing currency-safe minor-unit ledger is reused | `tests/Feature/Analytics/FinanceMovementAnalyticsTest.php`, `tests/Feature/Analytics/AnalyticsProjectionTest.php` | YES — ledger, currency and period | REQUIRED — console/export |
-| IMPLEMENTED | Configurable acquisition sources: Telegram, Instagram, SMS, Stories, Contact, YouTube, TikTok, recommendations, partners, web/search/UTM/other | `AttributionSourceCatalog`, `AttributionSourceSettings`, `AcquisitionAnalytics` | Existing owner aliases are preserved | Defaults are added only to an empty catalog; aliases/stable keys/order/active state remain owner-editable | `tests/Feature/Analytics/AttributionSourceCatalogTest.php`, `tests/Feature/Analytics/AnalyticsProjectionTest.php` | YES — organization-scoped mapping | REQUIRED — settings/filter/export |
-| IMPLEMENTED | One-off sessions, packages/programs, certificates, products | `PurchaseAnalytics`, Commerce purchase snapshots and catalog groups | No new purchase authority | Owner-editable purchase groups map onto existing commerce catalog types | `tests/Feature/Analytics/PurchaseAndBookingStatusAnalyticsTest.php`, `tests/Feature/Analytics/AnalyticsReportExportTest.php` | YES — purchase status/type and period | REQUIRED — result/export |
-| IMPLEMENTED | Completed, rescheduled and cancelled order/booking statuses | `BookingStatusAnalytics`, canonical `BookingStatus` and `BookingEvent` lifecycle | Owner wording is not a second order enum | Human labels map to canonical lifecycle; requested/confirmed/no-show remain available where useful | `tests/Feature/Analytics/PurchaseAndBookingStatusAnalyticsTest.php` | YES — booking/event authority | REQUIRED — status filters/results |
-
-### Shared cohort, drill-down and export contract
-
-`ClientCohortFilters` is the typed, organization-scoped filter value object and
-`ClientCohortQuery` is the single query authority. It authorizes the actor,
-applies the organization boundary server-side and returns an Eloquent query
-with correlated `EXISTS`/subqueries rather than materializing all client IDs.
-Analytics Console, every selected dimension, typed metrics, drill-down and
-`AnalyticsReportExport` use that authority. Different filter fields combine
-with AND; multiple values in one field combine with OR; problem-tag `any` is OR,
-problem-tag `all` is AND, exclude rejects a client when any selected excluded
-category exists, and the special `all` segment is normalized out before
-multiselect evaluation; NULL, 0, false and no related row remain distinct.
-
-The implemented filter surface is: explicit include/exclude clients, saved
-groups, current segments, archive state, blacklist, problem tags, feedback
-themes, goal tags, age/ranges, gender, child/adult, countries, source aliases,
-services/service groups, specialists, booking statuses/events, completed-visit
-count, last-visit range, purchase groups/statuses, pain-score presence/range/
-basis and satisfaction range. Pain-score profile values are not period-bound;
-session before/after values are constrained by the selected medical-session
-period. The console shows `Найдено клиентов: N` before Analyze;
-drill-down uses `Показать клиентов`, a human-readable reason and an authorized
-client-card link without medical free text.
-
-Saved groups use `analytics_client_groups`, existing organization-scoped
-membership rows for manual groups, typed dynamic rules, immutable
-`analytics_client_group_versions`, active/archive lifecycle, actor audit and
-the CRM `ClientCohortGroups` page. No historical definition is physically
-deleted.
-
-The export has explicit typed-cell writing for formula-like strings and adds
-`Клиенты` and `Фильтры` metadata alongside thematic sheets. It records human
-filters, AND/OR semantics, include/exclude choices, period, date basis,
-timezone, segment-state meaning, session-axis rule/version and generation
-time. It does not export protected medical free text.
-
-The `YES` implementation statuses in the two matrices describe the actual
-technical capability and owner-editable seam. They are not owner acceptance and
-do not upgrade an unexecuted browser or external-provider observation to
-`VERIFIED`; those verification states are recorded below.
-
-## Medical owner file
-
-| # | Scope | Implemented | Authoritative path | Regression / acceptance evidence | PostgreSQL relevance | Browser relevance |
-|---:|---|---|---|---|---|---|
-| 1 | Session field order | YES | app/Filament/Resources/Clients/Resources/Sessions/Schemas/SessionForm.php, EditMedicalSession.php, SessionInfolist.php | tests/Feature/Sessions/SessionCockpitTest.php | YES — session persistence remains the database authority | YES — session create/edit/view journey |
-| 2 | Pain constructor | YES | MedicalSessionPainInitializer, CreateMedicalSession, CreateSession, SessionForm | tests/Feature/MedicalPainFlowTest.php, SessionCockpitTest::test_filament_create_form_prefills_profile_pains_for_the_first_session | YES — normalized pain rows and nullable scores | YES — first-session form |
-| 3 | Pain carry-forward/history | YES | MedicalSessionPainReader, MedicalSessionPainInitializer, GetSessionDynamics | MedicalPainFlowTest, SessionCockpitTest including first-session prefill regression | YES — previous/current rows and NULL/0 persistence | YES — second-session journey |
-| 4 | Clinical tests | YES | ClinicalTestProtocol, MedicalClinicalCatalog, MedicalSessionTestWriter, ImportMedicalClinicalCatalogCsv | MedicalClinicalCatalogConfigurationTest, MedicalPainFlowTest; covers XLSX, 60 active tests, blank rows and inactive historical tests | YES — normalized test/value/result rows | YES — list protocol, live counters and reload |
-| 5 | Causes | YES | ClinicalTestProtocol, MedicalClinicalCatalog, MedicalSessionTestWriter | MedicalPainFlowTest configured causes/results round trip | YES — organization-scoped cause/value references | YES — list protocol cause selection |
-| 6 | Root causes | YES | MedicalSessionTestWriter, session form manual/derived cause controls | MedicalPainFlowTest root-cause and manual-override cases | YES — max-two normalized root-cause rows | YES — manual override and restore |
-| 7 | Protocol | YES | GenerateSessionResult, EditMedicalSession deterministic fillResult action | SessionCockpitTest deterministic summary and confirmation | YES — encrypted session field | YES — confirmation and overwrite journey |
-| 8 | Subjective feelings | YES | UpdateSession, SessionForm, SessionInfolist | SessionCockpitTest session snapshot/reopen coverage | YES — encrypted session field | YES — edit/view/reload |
-| 9 | Posture diagnostics | YES | UpdateSession, SessionForm, SessionInfolist | SessionCockpitTest session snapshot/reopen coverage | YES — encrypted session field | YES — edit/view/reload |
-| 10 | Result | YES | GenerateSessionResult, SessionForm, SessionInfolist | SessionCockpitTest deterministic result regression | YES — encrypted session field | YES — result generation and reload |
-| 11 | Before/after photos | YES | LinkSessionAttachment, ListSessionAttachments, SessionInfolist, ViewMedicalSession, private attachment URLs | SessionAttachmentTest linking/unlinking, tenant ownership and PDF rejection | YES — gallery links, ownership and attachment constraints | YES — two galleries, preview, download, unlink, reload |
-| 12 | Profile pains | YES | MedicalProfilePainWriter, MedicalProfilePainReader, GetClientMedicalProfile, ClientWorkspaceInfolist | MedicalPainFlowTest, September26MedicalProfileTest | YES — encrypted profile pain rows | YES — profile edit and client-card history |
-| 13 | Injuries/operations | YES | MedicalProfileHistoryWriter/Reader, portal controller/application, resources/js/Pages/Portal/MedicalProfile.vue | September26MedicalProfileTest structured 5-row save/reload/remove; tests/e2e/portal.spec.ts 0/1/3-row journeys | YES — medical_profile_history_entries is the canonical store | YES — Portal repeaters and CRM projection |
-| 14 | Anamnesis master-only | YES | MedicalProfileAuthorization, ClinicalProfileInfolist, portal medical-profile projection | September26MedicalProfileTest, ClientWorkspaceUxATest authorization coverage | YES — protected encrypted profile data | YES — portal does not render/edit anamnesis |
-| 15 | Analyses/reports | YES | private attachment upload/download authorization and client attachment stack | September26MedicalAttachmentTest, ClientWorkspaceUxATest | YES — private storage metadata and ownership | YES — Portal upload and CRM access |
-| 16 | Audio | YES | ClientAudioRecordingsRelationManager, AttachmentType::AudioRecording, private storage | tests/Feature/Attachments/AudioRecordingsTest.php | YES — private attachment rows/storage metadata | YES — master-only play/download/delete |
-
-## Analytics owner file
-
-| # | Scope | Implemented | Authoritative path | Regression / acceptance evidence | PostgreSQL relevance | Browser relevance |
-|---:|---|---|---|---|---|---|
-| 1 | Complaints/tags | YES | SuggestAnalyticsTags, AcceptAnalyticsClassification, medical/session pain authorities, taxonomy groups | AnalyticsAiClassificationTest, PainAnalyticsTest | YES — tenant-scoped classification rows and pivots | YES — review, accept and manual correction |
-| 2 | Average pain | YES | PainAnalytics, ClientPainHistory | PainAnalyticsTest, ComputedAnalyticsMetricsTest | YES — aggregate query and nullable score semantics | YES — Analytics console and client card |
-| 3 | Therapy results sessions 1/2/3 + % | YES | PainAnalytics standard reduction formula and AnalyticsMetricEvaluator | PainAnalyticsTest, ComputedAnalyticsMetricsTest | YES — period/aggregation semantics | YES — result table and custom metric |
-| 4 | Satisfaction 0–10 | YES | Feedback submission validation/storage, FeedbackAnalytics | FeedbackThemesAnalyticsTest, MilestoneElevenADatabaseTest | YES — forward migration 2026_10_30_100000_allow_zero_feedback_score.php; PostgreSQL constraint test is required | YES — Portal and CRM submission |
-| 5 | What lacked/themes | YES | existing Feedback submission/scenario engine, FeedbackThemeCatalog, FeedbackAnalytics | tests/Feature/FeedbackThemesAnalyticsTest.php, FeedbackAnalyticsTest | YES — feedback/theme pivots and idempotency | YES — client form, CRM manual entry and configurable scenario |
-| 6 | Goals/tasks | YES | AssignTrackerTask, TrackerGoalTagCatalog, GoalAnalytics, existing AI classification; profile-goal prefill in ViewClient | TrackerPlanCrmTest, GoalAnalyticsTest, AnalyticsAiClassificationTest | YES — Tracker task/tag authority | YES — profile goal enters Tracker, tags and aggregates |
-| 7 | Client categories | YES | ClientSegmentQuery, ClientSegmentConfiguration, ClientSegmentSettings, Client archive lifecycle | ClientSegmentQueryTest including zero-state, thresholds, warm lead, penalty and archive | YES — archive migration and segment queries must run on PostgreSQL | YES — segment settings and Analytics console |
-| 8 | Age | YES | DemographicsAnalytics | DemographicsAndServicesAnalyticsTest | YES — timezone boundary query | YES — console demographics |
-| 9 | Sex/children | YES | DemographicsAnalytics | DemographicsAndServicesAnalyticsTest | YES — aggregate query with unknown/zero-safe output | YES — console demographics |
-| 10 | Country | YES | DemographicsAnalytics | DemographicsAndServicesAnalyticsTest | YES — aggregate query with unknown values | YES — console demographics |
-| 11 | Services + specialists | YES | ServiceVisitAnalytics, AnalyticsConsole, AnalyticsReportExport | DemographicsAndServicesAnalyticsTest, AnalyticsReportExportTest completed/cancelled/no-show and two specialists | YES — completed-booking and period semantics | YES — console specialist section |
-| 12 | LTV | YES | AnalyticsMetricConfiguration, AnalyticsMetricEvaluator, FinancialReconciliationContract | ComputedAnalyticsMetricsTest, AnalyticsMetricConfigurationTest | YES — currency-safe integer minor-unit source | YES — monetary LTV and typed percentage metric |
-| 13 | Finance | YES | FinanceAnalytics, FinancialReconciliationContract, existing ledger | AnalyticsProjectionTest, FinanceMovementAnalyticsTest | YES — ledger, currency and period authority | YES — finance console/export |
-| 14 | Acquisition source | YES | AttributionSourceCatalog, AcquisitionAnalytics, UTM/alias mapping | AttributionSourceCatalogTest, AnalyticsProjectionTest | YES — organization-scoped mappings | YES — source settings/filter/export |
-| 15 | Purchase types | YES | PurchaseAnalytics, Commerce purchase snapshots | PurchaseAndBookingStatusAnalyticsTest, AnalyticsReportExportTest | YES — purchase authority and period filters | YES — console/export |
-| 16 | Booking/order statuses | YES | BookingStatusAnalytics, canonical Booking lifecycle/events | PurchaseAndBookingStatusAnalyticsTest, AnalyticsDashboardWidgetTest | YES — status/event aggregation | YES — console filters/results |
-| — | Charts | YES | resources/views/filament/pages/analytics-console.blade.php responsive bar/list visualizations | AnalyticsDashboardWidgetTest and console browser journey | YES — charts consume backend aggregates | YES — desktop/mobile responsive review |
-| — | Excel | YES | AnalyticsReportExport, including semantic Специалисты sheet | AnalyticsReportExportTest parses actual XLSX and checks Unicode headers, filters, metrics and specialist rows | YES — export reflects PostgreSQL-backed aggregates | YES — actual download from console |
-
-## Configurable business-data seams
-
-- Clinical tests, sections, order, active state, values, human labels,
-  abnormal flags, causes and problem tags: MedicalClinicalCatalogConfiguration
-  plus CSV/XLSX import.
-- Feedback themes, Tracker goal tags, complaint/problem tags and taxonomy
-  groups: existing CRM configuration pages and classification review.
-- Post-course feedback: existing scenario rules/actions, configurable
-  booking.completed timing/delay/template and the new
-  client.completed_visits condition; the safe default remains disabled until
-  an owner creates a rule.
-- Client segment thresholds, warm-lead qualifying/target service groups and
-  penalty marker: ClientSegmentSettings.
-- Acquisition labels, stable keys, aliases, active state and order:
-  AttributionSourceSettings; defaults are provisioned only for an empty
-  catalog.
-- Typed analytics metrics and the LTV comparison preset:
-  AnalyticsMetricSettings; no formula-reference pseudo-setting is exposed as
-  normal user configuration.
-- Archived-client lifecycle: CRM archived state preserves history and is
-  reportable as Удалённые / архивные; it does not physically delete medical
-  data.
-
-## Literal reconciliation notes
-
-- The owner files use the legacy singular operation/injury fields as the
-  starting UX description. The current owner decision requires repeatable
-  structured rows, so new Portal writes use medical_profile_history_entries.
-  Legacy encrypted fields and legacy years remain readable and are not guessed
-  or split automatically.
-- The owner files describe cold lead as a no-show and penalty without
-  inventing a business formula. The implementation uses canonical
-  BookingStatus::NoShow and an owner-managed existing broadcast-client tag.
-- The owner files allow deleted analytics only where historical data can be
-  retained safely. The implementation provides an additive archive timestamp,
-  preserving protected history instead of weakening physical-deletion/privacy
-  rules.
-- The accepted universal typed metric builder remains the analytics authority;
-  the LTV percentage preset is exposed as a typed metric rather than a
-  hardcoded report formula.
-
-## Verification record
-
-Implementation started at `715b561b9e08fbc7f468f314b6f045121397da3b`. The
-implementation diff contains 79 files, including Filament pages,
-Analytics/Medical application services, four forward-only migrations, Blade
-views and regression tests. The previous staging-verified application source
-is `a687639cc4cff72ee952809adb960c673ce7547f`; the problem-tag follow-up
-application candidate was `499c7322929a30387d56c57df36ead0c01b74750`. The
-current demographics application candidate is
-`9c77520fd06dbd4643de16f952420b415c4cab64` and extends the existing analytics
-authorities with the full-cohort demographic denominator and its regressions.
-The current pain-score application candidate is
-`e5d4b6090b22efdb116d43181ec428927419370b` and extends the same authorities
-with typed source selection, after-score filtering and its regressions.
-
-The four migrations are:
-
-- `2026_10_31_120000_create_analytics_client_groups.php` — organization-scoped
-  manual/dynamic saved groups and membership authority;
-- `2026_10_31_120100_allow_unspecified_medical_pain_frequency.php` — preserves
-  an explicitly unspecified pain frequency without converting it to permanent;
-- `2026_10_31_120200_create_analytics_tag_candidates.php` — owner-reviewed AI
-  existing/new taxonomy candidate lifecycle;
-- `2026_10_31_120300_create_analytics_client_group_versions.php` — immutable
-  saved-group definitions and version history.
-
-The previously accepted forward migration
-`2026_10_30_100000_allow_zero_feedback_score.php` remains the PostgreSQL
-authority for the 0–10 satisfaction constraint.
-
-### WebKit scheduling failures
-
-The original full run was `41195718383` (job
-`124521357372`, head `7cb0f96e9c60d58ef55c9914b0d9a07534571f29`). The workflow
-ran 105 tests with one worker, Playwright retries `0`, `trace: on-first-retry`,
-and no explicit retry. The WebKit runtime was Playwright WebKit 26.5 / build
-2336. The workflow used `APP_ENV=testing`, PostgreSQL, Redis, the seeded test
-organization, and the `desktop`, `mobile` and `webkit` projects from
-`playwright.config.ts`.
-
-| Exact failed test | Project / viewport | Timeout | Failure evidence | Published artifacts |
-|---|---|---:|---|---|
-| `tests/e2e/crm.spec.ts:895:1 — multi-specialist Journal keeps the accepted layout and slot ownership` | `webkit`; the test explicitly sets `390x900` | test 60 s; assertion 5 s | `expect(locator).toBeVisible()` for `getByRole('heading', { name: 'Журнал записей', exact: true })`; no element after `goto('/admin/bookings?...')`; source line 904 | none: the manual dispatch did not set `publish_diagnostics=true`; no retry means no trace/video; runner log only names `test-results/.../error-context.md` |
-| `tests/e2e/crm.spec.ts:1465:1 — staff can create a backdated booking from the ordinary availability form` | `webkit` Desktop Safari project viewport (`1280x720`) | test 60 s | `locator.click` timed out waiting for exact `getByText('CRM Специалист qm6ruugmhk1v')` at source line 1475 after opening `Специалист*` | none for the same reason |
-
-The comparison command executed by the hosted E2E workflow was:
-
-```text
-npx playwright test tests/e2e/crm.spec.ts -g 'multi-specialist Journal|staff can create a backdated booking from the ordinary availability form' --project webkit
-```
-
-The command used the same workflow setup, browser installation, seed strategy,
-environment, worker count, locale/timezone defaults and retry policy for every
-SHA. The PR base is `8b85efb65ee5d7cf80940cbec29c26a004871f56`; it was not run
-because both exact tests were already passing on the pre-fix baseline and the
-current candidate, so an additional base run would not distinguish a product
-regression.
-
-| SHA | Hosted runs / attempts | Result |
-|---|---|---|
-| `263ed0550411bd6735feb9bb9ae2f186c5094f00` | `41199320637`, `41199587646`, `41199587671` | 3/3 exact runs PASS; both tests pass |
-| `92ef260997717c4549d1dca1e42b02b079fb4755` | `41199320313`, `41199587531`, `41199587852` | 3/3 exact runs PASS; both tests pass |
-| `9de21be39a8d1e01628031fc68f4c2cd38604e4d` | `41202259555` | 2/2 exact tests PASS |
-| `92ef260997717c4549d1dca1e42b02b079fb4755`, full WebKit file | `41200144359` | 33 passed, 2 skipped, 0 failed; both scheduling tests pass in the full WebKit file |
-
-Both failures are therefore classified separately as `NON-REPRODUCIBLE
-INTERMITTENT E2E FAILURE / likely order or setup dependent; product scheduling
-regression not reproduced`. No concrete race or shared-state defect was
-localized, so this is not called a proven test defect. No scheduling or booking
-production code was changed, and no product defect, data loss, tenant leakage
-or incorrect booking ownership was reproduced.
-
-### Current staging and browser evidence
-
-The current application/runtime candidate
-`a687639cc4cff72ee952809adb960c673ce7547f` was deployed through the normal
-protected process. The four forward-only migrations completed, application,
-Horizon, scheduler, Telegram and mail services were healthy, and
-`scripts/staging-smoke.sh` reported `STAGING SHA OK a687639` and
-`STAGING SMOKE: PASS`.
-
-Actual Chromium staging interaction at 1440px passed the custom-period
-missing-date, reversed-date and over-366-day errors, corrected Analyze,
-multi-dimension results, XLSX download/ZIP validation, reload and back/forward.
-The downloaded workbook contained `Сводка`, `Клиенты`, `Фильтры`, `Демография`,
-`Боли`, `Услуги` and `Специалисты`; formula-like synthetic strings remained
-explicit string cells without visible apostrophes, while numeric values kept
-numeric cells. The same journey in real WebKit passed at desktop and 390x900:
-all three validation errors, Analyze, workbook sheets, reload, back/forward and
-`scrollWidth === clientWidth` were checked by actual browser interaction.
-
-The staging browser journey covered the shared analytics console and export
-contract. It did not constitute owner acceptance of every medical workflow;
-the relevant automated medical/session/attachment tests and the existing
-staging smoke remain the evidence for those paths.
-
-The problem-tag application commit `499c7322929a30387d56c57df36ead0c01b74750`,
-the demographics candidate
-`9c77520fd06dbd4643de16f952420b415c4cab64` and the current pain-score
-candidate `e5d4b6090b22efdb116d43181ec428927419370b` were pushed to the PR
-branch. No new staging release was forced after the normal protected deploy
-path stopped during remote preflight with `ENOSPC` while writing the final
-predeploy capture file (remote script line 412), before migrations, release
-switching or application restart. The safety guard was not changed or bypassed.
-A read-only health check confirmed the deployed revision remains
-`a687639cc4cff72ee952809adb960c673ce7547f`; database, pgvector, Redis and
-private storage are healthy.
-
-Therefore exact-current-candidate staging is `NOT VERIFIED`; staging
-functional acceptance is `PASS` only for the previously verified
-runtime-equivalent application revision `a687639cc4cff72ee952809adb960c673ce7547f`.
-The exact diff from that deployed application source to the current PR includes
-the demographics denominator fix and regression tests, so the new semantics
-require a staging recheck after the remote disk-space blocker is resolved.
-
-### XLSX evidence
-
-The existing `AnalyticsReportExportTest` opens a real generated workbook with
-PhpSpreadsheet and asserts exact `=`, `+`, `-` and `@` values are string cells,
-not formulas, with no visible apostrophe; numeric, boolean and null values keep
-their types. The export implementation now also writes `Клиенты` and
-`Фильтры` metadata sheets and preserves the selected cohort/period metadata.
-The current staging download was a real XLSX and was opened as a ZIP; its
-metadata and thematic sheet names were checked in both Chromium and WebKit.
-`AnalyticsReportExportTest::test_demographics_export_keeps_the_full_cohort_denominator`
-also proves that an old cohort client is present on `Демография` and that the
-metadata cohort count equals the demographic denominator.
-
-### Verification status at the current application candidate
-
-- Focused local backend suites: PASS — 43 tests / 335 assertions across
-  `ClientCohortQueryTest`, `AnalyticsDashboardWidgetTest` and
-  `AnalyticsReportExportTest`. This includes pain basis, invalid-basis,
-  saved-group compatibility, NULL/0, period/tenant and XLSX regressions.
-- PHP syntax, Pint, changed-file PHPStan and `git diff --check`: PASS;
-  changed-file PHPStan diagnostics: 0.
-- Focused E2E source lint: PASS — `npx eslint tests/e2e/crm.spec.ts`.
-- Problem-tag and special-segment regression: PASS — local `ClientCohortQueryTest`
-  is 14/14 with 38 assertions; the two new contracts are 2/2 with 7
-  assertions. The hosted PostgreSQL feature job also reports the new
-  `any`/`all`/exclude and `all`-normalization tests as PASS.
-- Hosted candidate run `41286645922` at application commit `499c7322` ran
-  against PostgreSQL. Its Integration foundation, RAG and concurrency jobs and
-  privacy scan are PASS. Quality feature tests are PASS for the changed
-  `ClientCohortQueryTest` but the full feature job is FAIL on four unrelated
-  baseline tests (`GoalAnalyticsTest` twice, `FeedbackThemesAnalyticsTest` and
-  the known `MedicalSessionTest` overlap fixture); PHP static checks are also
-  the existing repository baseline. Docker runtime health repeats the known
-  runner-only `Horizon is inactive` failure. No failure names the changed
-  cohort files or new regression tests.
-- Hosted focused run `41230782443` at `a687639c`: PostgreSQL feature tests
-  PASS, including the corrected group-by queries. The overall Quality job is
-  FAIL only at the repository's existing PHP static-analysis baseline (184
-  diagnostics; none in changed files); format, frontend lint/typecheck/build,
-  Composer audit and npm audit passed. Other jobs were intentionally skipped by
-  the focused workflow input.
-- Hosted implementation run `41230001307` at the preceding docs head had the
-  same PostgreSQL group-by failures before `a687639c` fixed them and a separate
-  Docker runtime `Verify Horizon runtime` failure (`Horizon is inactive`) in
-  the runner. The normal staging deployment and smoke above verified Horizon
-  active for the current candidate; no deployment guard or quality gate was
-  bypassed.
-- Hosted focused candidate run `41292537566` at application candidate
-  `9c77520f` ran the affected feature tests against PostgreSQL and the feature
-  step passed. The overall Quality job is FAIL only at the existing repository
-  PHP static-analysis baseline; no changed demographics/cohort/export file is
-  named in the diagnostics. Format, frontend lint/typecheck/build, migrations
-  and dependency audits passed; unrelated integration jobs were intentionally
-  skipped by the focused workflow input.
-- Hosted focused browser run `41292543763`: PASS — the exact analytics test
-  passed in desktop, mobile and WebKit projects, 3/3 tests. The browser
-  assertion compared the visible cohort count with the demographic count after
-  the real Analyze interaction.
-- Hosted pain-score candidate run `41296535965`: PostgreSQL feature step PASS —
-  37 tests / 252 assertions, including `any`, each specific basis, NULL/0,
-  period-bound session scores, profile period independence, invalid input,
-  saved-group persistence and organization scope. Quality static checks FAIL
-  only on the pre-existing repository-wide PHPStan baseline; no changed
-  application file is named in the diagnostics.
-- Hosted pain-score browser run `41296535979`: PASS — the exact analytics
-  journey passed in Chromium desktop, WebKit desktop and 390px mobile, 3/3
-  tests. It exercised basis selection, live preview, range, Analyze, XLSX,
-  reload, back/forward, basis switching and horizontal-overflow checks.
-- PostgreSQL: PASS for the affected cohort subquery, organization scope,
-  period/timestamp handling, configured age ranges and percentage/count
-  assertions in the hosted focused feature step. Exact-current-candidate
-  staging PostgreSQL verification remains NOT VERIFIED because the candidate
-  was not deployed.
-- Scope browser acceptance: PASS for the hosted focused analytics browser
-  contract in desktop, mobile and WebKit projects, including the visible shared
-  denominator assertion. Exact-current-candidate staging browser acceptance
-  remains NOT VERIFIED because the candidate was not deployed.
-- Full E2E: PARTIAL — the original run had 98 passed, 5 skipped and 2 failed;
-  exact scheduling comparisons were 3/3 PASS on both baseline and current,
-  application-source checks passed, and the full WebKit rerun was 33 passed,
-  2 skipped, 0 failed. Both scheduling findings remain classified as
-  `NON-REPRODUCIBLE INTERMITTENT E2E FAILURE / likely order or setup dependent;
-  product scheduling regression not reproduced`.
-- Staging functional acceptance: PASS for the previously verified focused
-  analytics scope on exact application revision `a687639c`; the current
-  pain-score candidate `e5d4b609` is NOT VERIFIED in staging because the
-  guarded release path remains blocked by remote `ENOSPC`.
-- Owner acceptance: NOT RUN.
-- Remaining in-scope BLOCKING: 0 for this bounded pain-score pass.
-- Remaining confirmed REAL BUG / follow-up work not addressed in this pass:
-  aggregate drill-down; atomic saved group CRUD; AI candidate lifecycle;
-  legacy root-cause field; preview error state; human-friendly config; LTV
-  percentage safe default. These findings are not claimed fixed here. The
-  problem-specific session-axis item is covered by the follow-up above.
-
-Limitations are the known unrelated repository PHPStan baseline, the partial
-historical full-E2E result, the non-reproducible scheduling failures and no
-owner acceptance. Business labels, thresholds and catalog content remain
-owner-editable configuration; that is intentional and not an implementation
-blocker. No credentials, MFA, production data, accepted booking UX or
-deployment safety guard were changed.
+# 23.10 owner-scope reconciliation
+
+This document is the current evidence matrix for the two owner sources dated
+23.10. The sources were reread in full from:
+
+- `ТЗ_для_Ивана_заполнение_данных_клиента_23_10_26.md`;
+- `ФИЛЬТРЫ КЛИЕНТОВ.docx`.
+
+The matrix distinguishes code presence from observable proof. `OWNER ACCEPTED`
+is intentionally `NOT RUN`: only the owner can accept business content.
+
+## Candidate and evidence boundary
+
+| Item | Value |
+|---|---|
+| Starting PR SHA | `2c4010fef38d13e37a3c03f91d33e8a216200b7e` |
+| Starting runtime SHA | `b743d67dc769e08ca8cc6b948803903fe95c70b7` |
+| Final runtime/application SHA | `6c51f7e773fddb2a31105186f93019354a6e41d2` |
+| Final PR SHA | documentation-only commit after this reconciliation (recorded in Git history) |
+| Staging application SHA | `6c51f7e773fddb2a31105186f93019354a6e41d2` |
+| Branch / PR | `codex/23-10-medical-analytics` / #61 Draft, Open, DO NOT MERGE |
+| Owner acceptance | `NOT RUN` |
+
+`IMPLEMENTED` means that the runtime seam exists and is covered by focused
+regression evidence. `POSTGRESQL VERIFIED` means that the relevant PostgreSQL
+schema/query/transaction check was actually run. `BROWSER VERIFIED` means that
+the user-visible action was exercised in a browser on the final staging
+application SHA. A green unit test, a DOM field, or an HTTP 200 is not browser
+verification.
+
+## Medical source matrix
+
+| ID / source requirement | IMPLEMENTED | POSTGRESQL VERIFIED | BROWSER VERIFIED | STAGING VERIFIED | OWNER ACCEPTED | OWNER CONTENT REQUIRED |
+|---|---|---|---|---|---|---|
+| M1. Active session order: pain → tests → causes → root causes → protocol → subjective → posture → result → photos; no active legacy editors | YES. `root_cause_hypothesis` is retained read-only; legacy observations are retained for history only; exact labels/order are in the session form. | PASS: session limits/relations and transactional writes covered by session feature tests and local PG migration gate. | VERIFIED. Final staging create/edit/view showed the required order, read-only legacy block, and no editable global VAS/objective-change field. | PASS: exact SHA deployed and health/smoke passed. | NOT RUN | Clinical catalog content. |
+| M2. Repeatable pain constructor, optional fields, frequency/time units, 0 vs NULL, empty-row safety | YES. Add/delete rows, configurable units, nullable scores, no fake empty medical row. | PASS: nullable score/frequency checks and session persistence verified on local PostgreSQL. | VERIFIED. Three rows were saved/reloaded; unspecified/permanent/count frequency, count/week, 0, NULL and partial values were observed. | PASS | NOT RUN | Owner-selected frequency units/content. |
+| M3. Carry-forward and per-pain history | YES. Previous names/frequency/time copy; current before remains NULL; previous after is retained. | PASS: session ordering and nullable score queries covered. | VERIFIED. Second staging session showed all three copied pains, previous after 1/0/3, empty current before, and client history. | PASS | NOT RUN | None beyond owner acceptance. |
+| M4. Configurable clinical test catalog, groups, values, abnormal flag, lifecycle, import seam, counters | YES. Owner configuration UI and synthetic fixtures exist; inactive historical values remain readable. | PASS: catalog/session relations and constraints covered by feature tests/local PG gate. | PARTIALLY VERIFIED. Synthetic test, section, values, abnormal flag and active lifecycle were configured and used in a session; CSV/XLSX import and 40–60-row usability were not exercised in this run. | PASS | NOT RUN | Real clinical test catalog and values. |
+| M5. Test causes: many, configurable, deduplicated aggregate, manual correction/restore | YES. Derived/manual/restore paths and catalog lifecycle exist. | PASS: cause/session transaction and organization scoping covered. | VERIFIED. Synthetic abnormal test cause was selected, manually edited, restored, reloaded and displayed in history. | PASS | NOT RUN | Real cause catalog. |
+| M6. Max two root causes plus free text, session-local, Unicode 10,000 boundary, no partial write | YES. Shared multibyte limit, max-two validation, transactional writer; legacy hypothesis is not a second editor. | PASS: local PostgreSQL migration/write gate and focused session tests. | VERIFIED. Two root causes and comments were saved/reloaded; no active hypothesis editor appeared. Unicode boundary was not typed through browser in this run. | PASS | NOT RUN | Real root-cause catalog. |
+| M7. Exact protocol label and nearby Fill notification without AI/mutation | YES. Exact label and action are adjacent; create action explains save-first and does not mutate text. | PASS: session field persistence tests. | VERIFIED. Text stayed unchanged and the save-first notification appeared. | PASS | NOT RUN | Owner wording for future AI activation, if desired. |
+| M8. Subjective feelings field, save/view/reload | YES | PASS | VERIFIED. Saved text was visible in view and in the generated result summary. | PASS | NOT RUN | Owner wording/content. |
+| M9. Visual posture diagnostics replaces active objective-change editor | YES. Exact field and read-only legacy history. | PASS | VERIFIED. Saved posture text was visible; no active objective-change editor appeared. | PASS | NOT RUN | Owner wording/content. |
+| M10. Result field Fill summary, editable, overwrite confirmation/cancel, deterministic NULL-safe summary | YES. Summary uses pain rows, subjective, posture and abnormal counts; overwrite is explicit. | PASS: export/session aggregation and nullable score checks. | VERIFIED. Generated, edited, cancelled overwrite, confirmed overwrite, saved and reloaded the result on staging. | PASS | NOT RUN | Owner-authored result wording beyond deterministic summary. |
+| M11. Separate before/after photo galleries, preview/download/unlink/private auth | YES. Private upload, typed image validation, gallery relation and generic unlink preserve the source file. | PASS: attachment relations, tenant guards and private storage checks. | VERIFIED. Three before and two after uploads, preview popup, download, unlink and reload were exercised; four linked photos remained. | PASS | NOT RUN | Owner size/formats within hard cap. |
+| M12. Portal structured pains with own scores plus free complaints; CRM first-session initialization | YES. Portal/master storage and first-session carry-forward seams exist. | PASS: medical profile pain constraints and session initialization tests/local PG. | NOT VERIFIED. Saved Portal browser session is expired (401); no new authentication challenge was generated. | Code deployed; smoke only | NOT RUN | Owner-entered profile content. |
+| M13. Repeatable injuries/operations with presence toggle and conditional UX | YES. Portal repeaters/toggles and master read path exist; singular legacy fields retained. | PASS: profile JSON/row persistence and tenant checks. | NOT VERIFIED. Portal session expired; conditional 0/1/3-row interaction was not exercised in browser. | Code deployed; smoke only | NOT RUN | Real injury/operation content. |
+| M14. Anamnesis is master-only; old client content is retained | YES. Master field and portal authorization are separate. | PASS: policy/organization tests and profile persistence. | NOT VERIFIED. Portal denial and master edit were not both exercised because Portal session is expired. | Code deployed; smoke only | NOT RUN | Owner-entered anamnesis text. |
+| M15. Portal “Результаты анализов” upload and CRM/private files cross-surface | YES. Portal upload, CRM file area and private authorization seams exist. | PASS: attachment type/tenant/private-storage tests. | NOT VERIFIED. Portal cross-surface upload was not exercised because the saved Portal session is expired. | Code deployed; smoke only | NOT RUN | None beyond owner content. |
+| M16. Separate CRM audio section, playback/download/delete/reload, client denial, owner policy | YES. Audio catalog/storage, policy UI and client denial seam exist with hard server cap. | PASS: private attachment authorization and tenant checks. | PARTIALLY VERIFIED. CRM browser uploaded 3 WAV files, opened playback, downloaded, deleted one and reloaded; Portal denial was not exercised because the saved Portal session is expired. | PASS | NOT RUN | Formats/max business size and real audio files. |
+
+## Analytics source matrix
+
+| ID / source requirement | IMPLEMENTED | POSTGRESQL VERIFIED | BROWSER VERIFIED | STAGING VERIFIED | OWNER ACCEPTED | OWNER CONTENT REQUIRED |
+|---|---|---|---|---|---|---|
+| A1. Complaint taxonomy, common tag, AI existing/new candidate review lifecycle, filters/statistics | YES. Existing/new/NeedsReview/accept/rename/merge/reject/stale/audit/org/permission paths share taxonomy authority; empty taxonomy can accept a new candidate. | PASS: candidate uniqueness, tenant scope, review transitions and feedback/client guards covered by focused tests/local PG. | PARTIALLY VERIFIED. Final staging console filter/analyze flow ran; candidate review and AI new-tag lifecycle were not clicked in this browser run. | PASS | NOT RUN | Real taxonomy labels, AI prompts and activation policy. |
+| A2. Average pain, NULL excluded/0 included, denominator disclosed, screen/XLSX | YES. Count is `COUNT(score)` and 0 remains valid. | PASS: local PG aggregation/read-only checks and focused tests. | PARTIALLY VERIFIED. Pain dimension, shared cohort count and XLSX action ran; a populated pain fixture was not available in this staging slice. | PASS | NOT RUN | None. |
+| A3. Therapy result 1/2/3 and percentage, problem-specific session axis | YES. Typed axis and configured metric infrastructure; no invented formula. | PASS: window/ranking and aggregate tests/local PG. | NOT VERIFIED for populated 1/2/3 rows in this browser run; console Analyze and configuration-required state were observed. | PASS | NOT RUN | Owner formula/metric definition where not supplied. |
+| A4. Satisfaction 0–10, client/manual entry, aggregate and PostgreSQL CHECK | YES. Portal/CRM paths and score validation. | PASS: `feedback_submissions.score_check` verified on PostgreSQL. | NOT VERIFIED for client submission in browser; console feedback section was included in a final Analyze. | PASS | NOT RUN | None beyond content. |
+| A5. “What was missing” client/therapist paths, themes, timing and safe disabled default | YES. Configured scenarios, portal submission, CRM manual path and theme aggregation; no-content state is disabled safely. | PASS: feedback tables/constraints and theme aggregation tests. | NOT VERIFIED for Portal/CRM submission in browser; safe no-content state was included in final console output. | PASS | NOT RUN | Feedback wording, timing and themes. |
+| A6. Client goals/tasks attached to client, categories counted, same AI taxonomy/manual correction | YES. Existing goal/tag authority is reused; no second task store. | PASS: goal/client/tag organization tests. | NOT VERIFIED for a populated goal workflow in browser. | PASS | NOT RUN | Goal taxonomy/content. |
+| A7. Client categories, saved/manual and dynamic groups, atomic CRUD/versioning/concurrency/archive | YES. Preflight validation, single transaction, immutable versions, tenant/stale guards and explicit archive. | PASS: migrations, unique indexes, FKs and local PG transaction/schema gate; hosted race gate not rerun in this pass. | NOT VERIFIED for saved-group CRUD/concurrency in browser. | PASS | NOT RUN | Segment thresholds/service mappings. |
+| A8. Age filter/stats/ranges/timezone; owner never types internal keys | YES. Generated hidden keys, overlap validation, human labels and timezone end-date. | PASS: local PG timezone/query checks and focused tests. | PARTIALLY VERIFIED. Age min/max invalid/corrected/empty flows and demographic Analyze ran; owner range CRUD was not exercised. | PASS | NOT RUN | Real age ranges/labels. |
+| A9. Sex/women/men/children, unknown-safe counts/percentages and exact drill-down | YES. Full-cohort demographics and typed missing-value predicates. | PASS: local PG aggregate/drill-down checks. | PARTIALLY VERIFIED. Demographics, charts and exact aggregate drill-down ran on the final console; all unknown/tenant variants were not separately seeded. | PASS | NOT RUN | None. |
+| A10. Country filter, unknown bucket, exact missing drill-down, tenant isolation | YES. Unknown typed predicate and organization scope. | PASS: local PG aggregate/drill-down checks. | PARTIALLY VERIFIED. Country filter changed the preview and aggregate drill-down ran; missing-country and second-tenant slices were not separately opened. | PASS | NOT RUN | None. |
+| A11. Services/visits/specialists, owner-managed service grouping, exact drill-down and XLSX | YES. Existing Service UI remains authority; analytics consumes configured category. | PASS: local PG aggregate/window checks. | NOT VERIFIED for populated service/specialist rows in browser. | PASS | NOT RUN | Owner service categories. |
+| A12. LTV percentage output without invented formula | YES. Canonical monetary LTV remains; undefined percent metric is inactive/configuration-required and explicit activation is preserved. | PASS: metric configuration migration/queries verified locally on PostgreSQL. | PARTIALLY VERIFIED. Final console showed configuration-required/disabled metric messaging; owner activation/formula editing was not exercised. | PASS | NOT RUN | Exact LTV% formula and activation. |
+| A13. Finance income/expenses/cash/accounts, periods, auth, minor units, XLSX | YES. Existing finance authority and analytics export path. | PASS: local PG finance aggregation/schema checks. | NOT VERIFIED for populated finance rows in browser. | PASS | NOT RUN | Currency/business policy. |
+| A14. Configurable acquisition sources, aliases, active/order/UTM; hidden stable keys | YES. Human label/alias/order UI generates/retains stable keys. | PASS: source settings constraints and organization scope. | PARTIALLY VERIFIED. Source filter changed the preview and displayed the human label Telegram; settings CRUD/UTM mapping was not exercised. | PASS | NOT RUN | Owner source labels, aliases and mappings. |
+| A15. Purchase grouping over canonical types; hidden keys, duplicate guard, historical unknown/deactivation | YES. Human type selector and generated group key; historical mappings remain readable. | PASS: purchase JSON snapshots, unique mappings and tenant checks. | NOT VERIFIED for purchase settings or populated purchase rows in browser. | PASS | NOT RUN | Owner purchase grouping. |
+| A16. Booking statuses/events completed/rescheduled/cancelled, counts/filter/drill-down | YES. Status and event axes remain separate. | PASS: local PG booking aggregate/event checks. | NOT VERIFIED for populated booking status/event rows in browser. | PASS | NOT RUN | None. |
+
+## Console, charts and Excel
+
+| Requirement | IMPLEMENTED | POSTGRESQL VERIFIED | BROWSER VERIFIED | STAGING VERIFIED | OWNER ACCEPTED |
+|---|---|---|---|---|---|
+| Selectable sections with checkboxes, `Анализировать`, loading/success/warning/error/retry, shared base cohort | YES. `AnalyticsConsole` exposes explicit status/error state and preserves successful dimensions without pretending partial success is full success. | PASS: focused dashboard/cohort/export tests and local PG query gate. | PARTIALLY VERIFIED. Final staging browser selected multiple sections, ran Analyze on cohorts 50 and 0, and exercised validation; partial-failure retry was not forced. | PASS: exact SHA deployed; smoke PASS. | NOT RUN |
+| Graphical presentation uses the same aggregate values as screen | YES. Chart payload is derived from the same dimension result. | PASS in focused analytics tests. | PARTIALLY VERIFIED. Final Analyze rendered 92 SVG chart elements and matching screen counts; each chart series was not independently recalculated in browser. | PASS | NOT RUN |
+| Excel download: Клиенты, Фильтры, thematic sheets, timezone/period/rule versions/generated_at, explicit cell types/formula safety | YES. Export writer uses explicit types and formula-injection protection; undefined metrics are configuration-required. | PASS: XLSX tests plus local/hosted PG source queries. | VERIFIED for the user action: final staging browser downloaded a real `.xlsx` after Analyze. Workbook cell/type assertions are covered locally. | PASS | NOT RUN |
+| 0/1/many dimensions, empty cohort distinct from invalid/error, reload/back/forward/mobile overflow | YES. Preview state is `idle/loading/success/invalid/error`; failed queries do not return 0. | PASS: focused preview/error tests. | VERIFIED. Final staging browser observed non-empty 50, filtered/empty 0, reversed-date field error, correction, restore, reload/back/forward and no horizontal overflow at 390/768/1440. | PASS | NOT RUN |
+
+## Known remaining evidence limits
+
+- Portal browser acceptance is `NOT VERIFIED` because the saved QA Portal
+  session returned 401. No credentials or MFA material was printed or
+  regenerated in this pass.
+- Analytics browser acceptance is complete for the console contract on the
+  final staging SHA. Individual source dimensions marked `NOT VERIFIED` or
+  `PARTIALLY VERIFIED` above still need their own populated fixtures and
+  actions before they can be upgraded.
+- Owner acceptance is `NOT RUN`.
+- Real medical catalog values, authored feedback wording, business thresholds,
+  mappings, audio policy choices, AI prompt activation and the exact LTV%
+  formula remain owner content/configuration decisions. The technical seams
+  and safe defaults are implemented.
+
+## Verification records
+
+- Focused local regression set: 158 tests / 977 assertions, PASS.
+- Local checks: `vendor/bin/pint --dirty`, `git diff --check`, and the target
+  analytics/medical feature suites, PASS.
+- Local PostgreSQL: non-destructive migrations and read-only checks for the
+  new migrations, unique indexes, tenant FKs/checks, nullable pain scores,
+  feedback 0–10 constraint, JSON snapshots, timestamps/timezones, window
+  functions and pgvector, PASS.
+- Staging deploy: exact application SHA
+  `6c51f7e773fddb2a31105186f93019354a6e41d2`; both new migrations applied;
+  health and `scripts/staging-smoke.sh` PASS.
+- Final staging browser evidence used the QA CRM account and a synthetic
+  client/catalog only. Medical session IDs 24 and 25 covered the complete
+  session path; the analytics console covered non-empty/empty/error/reload/
+  history/mobile flows; the CRM audio relation covered three uploads,
+  playback, download, delete and reload.
+
+## Deliberately not changed
+
+- PR #67 release-retention work was not modified.
+- No medical reference catalog, effectiveness formula, LTV% formula, legal
+  text, AI prose or authored feedback wording was invented.
+- No physical deletion shortcut was added for historical groups, files,
+  sessions or archived clients.
+- No production deployment, merge, squash, rebase, force-push or Ready
+  transition was performed.
