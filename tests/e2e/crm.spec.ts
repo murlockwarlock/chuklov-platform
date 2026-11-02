@@ -1301,9 +1301,14 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
         $profile = $source?->profile;
         $currentPains = $profile === null ? [] : app(\\App\\Modules\\MedicalProfiles\\Application\\MedicalProfilePainReader::class)
             ->forProfile($profile);
-        $aiRun = $run?->ai_run_id === null
+        $aiRun = $source?->client_id === null
             ? null
-            : \\App\\Modules\\AI\\Domain\\Models\\AiRun::query()->whereKey($run->ai_run_id)->first();
+            : \\App\\Modules\\AI\\Domain\\Models\\AiRun::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('client_id', $source->client_id)
+                ->where('workflow_key', 'analytics_classification')
+                ->latest('id')
+                ->first();
         $attempt = $aiRun === null
             ? null
             : \\App\\Modules\\AI\\Domain\\Models\\AiRunAttempt::query()->where('ai_run_id', $aiRun->getKey())->latest('id')->first();
