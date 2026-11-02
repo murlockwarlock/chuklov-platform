@@ -3525,6 +3525,78 @@ test('staff can fill the current create medical result in the CRM client flow', 
     await expect(page.getByText(posture, { exact: true }).first()).toBeVisible();
 });
 
+test('staff can maintain three independent session pains through save and reload', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const painNames = [
+        `THREE PAIN ONE ${suffix}`,
+        `THREE PAIN TWO ${suffix}`,
+        `THREE PAIN THREE ${suffix}`,
+    ];
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('tab', { name: 'Записи на приём', exact: true }).click();
+    await page.getByRole('link', { name: 'Новый сеанс', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create$`));
+    await page.getByLabel('Дата и время сеанса').fill('2026-08-20T09:00');
+    await page.getByLabel('Специалист').click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
+    await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
+
+    for (const painName of painNames) {
+        await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+        const painInput = page.getByLabel('Название или описание боли', { exact: true }).last();
+        await painInput.fill(painName);
+        const painItem = painInput.locator('xpath=ancestor::li[1]');
+        await expect(painItem).toBeVisible();
+    }
+
+    const firstPain = page.getByLabel('Название или описание боли', { exact: true }).nth(0).locator('xpath=ancestor::li[1]');
+    const firstBefore = firstPain.getByRole('slider', { name: 'До сеанса', exact: true });
+    const firstAfter = firstPain.getByRole('slider', { name: 'После сеанса', exact: true });
+    await setLivewireRangeValue(page, firstBefore, 7);
+    await setLivewireRangeValue(page, firstAfter, 3);
+    await firstPain.getByRole('combobox', { name: 'Частота', exact: true }).click();
+    await page.getByRole('option', { name: 'Постоянно', exact: true }).click();
+
+    const secondPain = page.getByLabel('Название или описание боли', { exact: true }).nth(1).locator('xpath=ancestor::li[1]');
+    await secondPain.getByRole('combobox', { name: 'Частота', exact: true }).click();
+    await page.getByRole('option', { name: 'Количество раз за период', exact: true }).click();
+    await secondPain.getByLabel('Количество', { exact: true }).fill('2');
+    await secondPain.getByRole('combobox', { name: 'Период', exact: true }).click();
+    await page.getByRole('option', { name: 'неделя', exact: true }).click();
+    await secondPain.getByRole('checkbox', { name: 'Весь день', exact: true }).uncheck();
+    await secondPain.getByRole('checkbox', { name: 'Утро', exact: true }).check();
+    await secondPain.getByRole('checkbox', { name: 'Вечер', exact: true }).check();
+    await setLivewireRangeValue(page, secondPain.getByRole('slider', { name: 'До сеанса', exact: true }), 4);
+    await secondPain.getByRole('button', { name: 'Указать 0', exact: true }).last().click();
+
+    const thirdPain = page.getByLabel('Название или описание боли', { exact: true }).nth(2).locator('xpath=ancestor::li[1]');
+    await expect(thirdPain.getByText('Без оценки', { exact: true }).first()).toBeVisible();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
+    const sessionRow = page.getByRole('row').filter({ hasText: '20.08.2026' });
+    await expect(sessionRow).toBeVisible();
+    await sessionRow.getByRole('link', { name: 'Открыть', exact: true }).click({ force: true });
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
+    for (const painName of painNames) {
+        await expect(page.getByText(painName, { exact: true })).toBeVisible();
+    }
+
+    await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
+    const secondPainEdit = page.getByLabel('Название или описание боли', { exact: true }).nth(1).locator('xpath=ancestor::li[1]');
+    await expect(secondPainEdit.getByText('0 / 10', { exact: true })).toBeVisible();
+    await secondPainEdit.getByRole('button', { name: 'Удалить', exact: true }).first().click();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
+    await page.getByRole('row').filter({ hasText: '20.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).click({ force: true });
+    await expect(page.getByText(painNames[0], { exact: true })).toBeVisible();
+    await expect(page.getByText(painNames[1], { exact: true })).toHaveCount(0);
+    await expect(page.getByText(painNames[2], { exact: true })).toBeVisible();
+});
+
 test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
     test.setTimeout(90_000);
     const fixture = createCrmFixture({ clinicalCatalogFlow: true });
