@@ -8,12 +8,14 @@ use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
 use App\Modules\AI\Application\Actions\ExecuteAiRun;
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
 use App\Modules\AI\Application\Actions\ReconcileExpiredAiRun;
+use App\Modules\AI\Application\Actions\ResolveAiExecutionCandidates;
 use App\Modules\AI\Application\Data\AiRunRequest;
 use App\Modules\AI\Domain\Contracts\AiContextAssemblerInterface;
 use App\Modules\AI\Domain\Contracts\AiToolRegistryInterface;
 use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiErrorCategory;
+use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Enums\AiRunStatus;
@@ -344,6 +346,107 @@ class AiWorkflowEngineTest extends TestCase
         $this->assertNotNull($attempt);
         $this->assertSame(BudgetReservationStatus::Settled, $attempt->budget_reservation_status);
         $this->assertNotNull($attempt->settled_estimated_cost_minor_units);
+    }
+
+    public function test_credentialless_provider_records_a_null_credential_revision(): void
+    {
+        DynamicWorkflowAgent::fake(['credentialless provider response']);
+        $providerOptions = ['base_url' => 'http://ollama.example'];
+        $provider = AiProviderConfiguration::create([
+            'organization_id' => $this->organization->id,
+            'provider_name' => 'ollama',
+            'display_name' => 'Credentialless Ollama',
+            'is_enabled' => true,
+            'health_status' => ProviderHealthStatus::Healthy,
+            'credential_id' => null,
+            'options' => $providerOptions,
+            'tested_credential_revision' => null,
+            'tested_configuration_digest' => AiProviderExecutionConfiguration::digest('ollama', $providerOptions),
+        ]);
+        $pricing = new AiPricingSnapshot(currency: 'USD', inputCostPerMillionMinorUnits: 15, outputCostPerMillionMinorUnits: 60);
+        $capabilities = [AiCapability::ClientCompanion->value];
+        $model = AiModelConfiguration::create([
+            'organization_id' => $this->organization->id,
+            'provider_config_id' => $provider->id,
+            'model_name' => 'credentialless-ollama-test',
+            'display_name' => 'Credentialless Ollama Test',
+            'is_enabled' => true,
+            'lifecycle_status' => 'active',
+            'capabilities' => $capabilities,
+            'pricing_snapshot' => $pricing->toArray(),
+            'failover_priority' => 1,
+        ]);
+        $release = AiModelRelease::create([
+            'organization_id' => $this->organization->id,
+            'model_config_id' => $model->id,
+            'release_number' => 1,
+            'status' => 'active',
+            'provider_name' => 'ollama',
+            'model_name' => 'credentialless-ollama-test',
+            'capabilities' => $capabilities,
+            'pricing_snapshot' => $pricing->toArray(),
+            'activated_at' => Carbon::now(),
+        ]);
+        $model->update(['active_release_id' => $release->id]);
+
+        $prompt = AiPrompt::create([
+            'organization_id' => $this->organization->id,
+            'key' => 'credentialless_provider_prompt',
+            'name' => 'Credentialless provider prompt',
+            'capability' => AiCapability::ClientCompanion,
+        ]);
+        $promptVersion = AiPromptVersion::create([
+            'organization_id' => $this->organization->id,
+            'prompt_id' => $prompt->id,
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Return the test response.',
+            'user_prompt_template' => '{{query}}',
+            'context_policy' => ['include_rag' => false],
+            'allowed_tools' => [],
+            'activated_at' => Carbon::now(),
+        ]);
+        $prompt->update(['active_version_id' => $promptVersion->id]);
+
+        $snapshot = app(ResolveAiExecutionCandidates::class)->snapshot(
+            organizationId: $this->organization->id,
+            request: new AiRunRequest(
+                capability: AiCapability::ClientCompanion,
+                workflowKey: 'credentialless_provider_revision',
+                executionMode: AiExecutionMode::Async,
+                promptVersionId: $promptVersion->id,
+                modelReleaseId: $release->id,
+            ),
+            safetyControls: null,
+        );
+        self::assertCount(1, $snapshot);
+        self::assertNull($snapshot[0]['credential_revision']);
+
+        Queue::fake();
+        $run = app(DispatchAsyncAiRun::class)->handle($this->user, new AiRunRequest(
+            capability: AiCapability::ClientCompanion,
+            workflowKey: 'credentialless_provider_revision',
+            executionMode: AiExecutionMode::Async,
+            promptVersionId: $promptVersion->id,
+            modelReleaseId: $release->id,
+            inputVariables: ['query' => 'credentialless provider'],
+        ));
+        $resolved = app(ResolveAiExecutionCandidates::class)->resolveSnapshot(
+            organizationId: $this->organization->id,
+            run: $run->fresh(),
+            safetyControls: null,
+        );
+        self::assertCount(1, $resolved);
+        (new ProcessAiRunJob(
+            organizationId: $this->organization->id,
+            runId: $run->id,
+        ))->handle(app(AiWorkflowEngine::class), app(ReconcileExpiredAiRun::class));
+
+        $run->refresh();
+        self::assertSame(AiRunStatus::Succeeded, $run->status, (string) $run->error_message_sanitized);
+        $attempt = AiRunAttempt::query()->where('ai_run_id', $run->id)->firstOrFail();
+        self::assertNull($attempt->credential_id);
+        self::assertNull($attempt->credential_revision);
     }
 
     public function test_active_prompt_version_is_the_only_model_instruction_source(): void
