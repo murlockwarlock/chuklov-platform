@@ -115,9 +115,9 @@ are called out explicitly; `OWNER ACCEPTED` remains `NOT RUN`.
 ### Current conclusion
 
 `BLOCKING = 0`, `REAL BUG = 0`. F3, F4, F9 and exact staging evidence are
-verified. F8's trigger/worker contract is verified on PostgreSQL; the only
-unexecuted slice is the optional browser journey with a controlled synthetic AI
-provider, which is explicitly not claimed. Owner-authored clinical catalogs,
+verified. F8's trigger/worker contract is verified on PostgreSQL; the browser
+journey with a controlled synthetic AI provider was not executed and is
+explicitly not claimed. Owner-authored clinical catalogs,
 feedback wording/themes, goal taxonomy, production AI provider and prompt,
 thresholds/mappings, audio policy, effectiveness formula, LTV percentage
 formula, and legal/medical copy remain legitimate owner content or
