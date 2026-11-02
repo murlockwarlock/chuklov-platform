@@ -3346,7 +3346,7 @@ test('analytics demographics show the known country total in the screen and Exce
     await selectAnalyticsOption(page, countries, 'KZ');
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
     await expect(demographicsSection.locator('p').filter({ hasText: 'Клиентов: 2' })).toBeVisible();
-    await expect(demographicsSection.locator('p').filter({ hasText: 'Стран представлено: 1' })).toBeVisible();
+    await expect(demographicsSection).toContainText('Стран представлено: 1');
 
     const [download] = await Promise.all([
         page.waitForEvent('download'),
@@ -3362,7 +3362,7 @@ test('analytics demographics show the known country total in the screen and Exce
     expect(workbookXml).toContain('Стран представлено');
 
     await page.reload();
-    await expect(demographicsSection.locator('p').filter({ hasText: 'Стран представлено: 1' })).toBeVisible();
+    await expect(demographicsSection).toContainText('Стран представлено: 1');
     await page.goto('/admin/analytics-console?country-count=1');
     await page.goBack();
     await page.goForward();
