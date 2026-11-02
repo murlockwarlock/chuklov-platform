@@ -25,7 +25,6 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use LogicException;
 use UnitEnum;
 
@@ -118,10 +117,14 @@ final class AnalyticsAgeRangeSettings extends LocalizedPage
             $min = (int) ($row['min'] ?? 0);
             $max = ($row['max'] ?? '') === '' ? null : (int) $row['max'];
             if ($label === '' || ($max !== null && $max < $min)) {
-                throw ValidationException::withMessages(['ranges' => __('Проверьте название и границы возрастного диапазона.')]);
+                $this->notifyValidation(__('Проверьте название и границы возрастного диапазона.'));
+
+                return;
             }
             if (isset($labels[mb_strtolower($label)])) {
-                throw ValidationException::withMessages(['ranges' => __('Названия возрастных диапазонов не должны повторяться.')]);
+                $this->notifyValidation(__('Названия возрастных диапазонов не должны повторяться.'));
+
+                return;
             }
             $labels[mb_strtolower($label)] = true;
             $key = trim((string) ($row['key'] ?? ''));
@@ -146,11 +149,22 @@ final class AnalyticsAgeRangeSettings extends LocalizedPage
                 $rowEnd = $row['max'] ?? PHP_INT_MAX;
                 $otherEnd = $other['max'] ?? PHP_INT_MAX;
                 if ($row['min'] <= $otherEnd && $other['min'] <= $rowEnd) {
-                    throw ValidationException::withMessages(['ranges' => __('Активные возрастные диапазоны не должны пересекаться.')]);
+                    $this->notifyValidation(__('Активные возрастные диапазоны не должны пересекаться.'));
+
+                    return;
                 }
             }
         }
         app(SetOrganizationSetting::class)->handle($actor, OrganizationSettingKey::AnalyticsAgeRanges, json_encode($rows, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE));
         Notification::make()->success()->title(__('Возрастные диапазоны сохранены'))->send();
+    }
+
+    private function notifyValidation(string $message): void
+    {
+        Notification::make()
+            ->danger()
+            ->title(__('Не удалось сохранить возрастные диапазоны'))
+            ->body($message)
+            ->send();
     }
 }
