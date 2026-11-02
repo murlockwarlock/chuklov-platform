@@ -3876,7 +3876,6 @@ test('staff can maintain saved client groups in CRM', async ({ page }) => {
     await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
 
     await page.reload();
-    const reopenedItems = page.locator('.fi-fo-repeater-item');
     const reopenedName = page.getByRole('textbox', { name: /^Название/ }).first();
     await expect(reopenedName).toHaveValue(groupName);
     await reopenedName.fill(renamedGroupName);
@@ -3885,18 +3884,30 @@ test('staff can maintain saved client groups in CRM', async ({ page }) => {
 
     await page.reload();
     await expect(page.getByRole('textbox', { name: /^Название/ }).first()).toHaveValue(renamedGroupName);
+    const secondGroupName = `${renamedGroupName} второй`;
     await page.getByRole('button', { name: 'Добавить группу', exact: true }).click();
-    const invalidItem = reopenedItems.last();
+    const secondItem = page.locator('.fi-fo-repeater-item').last();
+    await secondItem.getByRole('combobox', { name: /^Тип/ }).selectOption('manual');
+    await page.waitForTimeout(500);
+    await secondItem.getByRole('textbox', { name: /^Название/ }).fill(secondGroupName);
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
+
+    await page.reload();
+    const savedNames = page.getByRole('textbox', { name: /^Название/ });
+    await expect(savedNames).toHaveCount(2);
+    await expect(savedNames.nth(0)).toHaveValue(renamedGroupName);
+    await expect(savedNames.nth(1)).toHaveValue(secondGroupName);
+
+    const invalidItem = page.locator('.fi-fo-repeater-item').nth(1);
     const invalidName = invalidItem.getByRole('textbox', { name: /^Название/ });
-    await invalidName.fill(renamedGroupName);
-    await invalidItem.getByRole('combobox', { name: /^Тип/ }).selectOption('manual');
     await invalidName.fill(renamedGroupName);
     await expect(invalidName).toHaveValue(renamedGroupName);
     await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
     await expect(page.getByText('В этой организации уже есть группа с таким названием.', { exact: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: /^Название/ }).first()).toHaveValue(renamedGroupName);
 
-    await invalidItem.getByRole('textbox', { name: /^Название/ }).fill(`${renamedGroupName} 2`);
+    await invalidName.fill(secondGroupName);
     await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
     await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
     await page.reload();
