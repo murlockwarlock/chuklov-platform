@@ -3174,7 +3174,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByLabel('Особые жалобы').getByText(oldSubjective, { exact: true })).toBeVisible();
     await expect(page.getByText(draftSubjective, { exact: true })).toBeVisible();
     await expect(page.getByText(draftPosture, { exact: true })).toBeVisible();
-    await expect(page.getByText(/Нарушения по тестам: было 1, стало 0\./, { exact: false })).toBeVisible();
+    await expect(page.getByLabel('Протокол и результат сеанса').getByText(/Нарушения по тестам: было 1, стало 0\./, { exact: false }).first()).toBeVisible();
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'К истории сеансов', exact: true }).click();
