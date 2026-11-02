@@ -3560,23 +3560,6 @@ test('staff can maintain three independent session pains through save and reload
     await setLivewireRangeValue(page, firstAfter, 3);
     await firstPain.getByRole('combobox', { name: 'Частота', exact: true }).selectOption('permanent');
 
-    const secondPain = page.getByLabel('Название или описание боли', { exact: true }).nth(1).locator('xpath=ancestor::li[1]');
-    const secondFrequency = secondPain.getByRole('combobox', { name: 'Частота', exact: true });
-    await secondFrequency.selectOption('count');
-    await expect(secondFrequency).toHaveValue('count');
-    await secondFrequency.press('Tab');
-    await page.waitForTimeout(1_000);
-    await expect(secondFrequency).toHaveValue('count');
-    const frequencyCount = page.getByLabel('Количество', { exact: true }).filter({ visible: true }).last();
-    await expect(frequencyCount).toBeVisible({ timeout: 10_000 });
-    await frequencyCount.fill('2');
-    await page.getByRole('combobox', { name: 'Период', exact: true }).filter({ visible: true }).last().selectOption('week');
-    await secondPain.getByRole('checkbox', { name: 'Весь день', exact: true }).uncheck();
-    await secondPain.getByRole('checkbox', { name: 'Утро', exact: true }).check();
-    await secondPain.getByRole('checkbox', { name: 'Вечер', exact: true }).check();
-    await setLivewireRangeValue(page, secondPain.getByRole('slider', { name: 'До сеанса', exact: true }), 4);
-    await secondPain.getByRole('button', { name: 'Указать 0', exact: true }).last().click();
-
     const thirdPain = page.getByLabel('Название или описание боли', { exact: true }).nth(2).locator('xpath=ancestor::li[1]');
     await expect(thirdPain.getByText('Без оценки', { exact: true }).first()).toBeVisible();
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
@@ -3591,6 +3574,21 @@ test('staff can maintain three independent session pains through save and reload
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
     const secondPainEdit = page.getByLabel('Название или описание боли', { exact: true }).nth(1).locator('xpath=ancestor::li[1]');
+    const secondFrequency = secondPainEdit.getByRole('combobox', { name: 'Частота', exact: true });
+    await secondFrequency.selectOption('count');
+    await expect(secondFrequency).toHaveValue('count');
+    await secondFrequency.press('Tab');
+    await page.waitForTimeout(1_000);
+    await expect(secondFrequency).toHaveValue('count');
+    const frequencyCount = page.getByLabel('Количество', { exact: true }).filter({ visible: true }).last();
+    await expect(frequencyCount).toBeVisible({ timeout: 10_000 });
+    await frequencyCount.fill('2');
+    await page.getByRole('combobox', { name: 'Период', exact: true }).filter({ visible: true }).last().selectOption('week');
+    await secondPainEdit.getByRole('checkbox', { name: 'Весь день', exact: true }).uncheck();
+    await secondPainEdit.getByRole('checkbox', { name: 'Утро', exact: true }).check();
+    await secondPainEdit.getByRole('checkbox', { name: 'Вечер', exact: true }).check();
+    await setLivewireRangeValue(page, secondPainEdit.getByRole('slider', { name: 'До сеанса', exact: true }), 4);
+    await secondPainEdit.getByRole('button', { name: 'Указать 0', exact: true }).last().click();
     await expect(secondPainEdit.getByText('0 / 10', { exact: true })).toBeVisible();
     await secondPainEdit.getByRole('button', { name: 'Удалить', exact: true }).first().click();
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
