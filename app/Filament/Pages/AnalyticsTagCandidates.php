@@ -77,8 +77,12 @@ final class AnalyticsTagCandidates extends LocalizedPage
         $enabled = app(OrganizationContext::class)->organization()->settings()
             ->where('setting_key', OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled->value)
             ->value('boolean_value') === true;
+        $automatic = app(OrganizationContext::class)->organization()->settings()
+            ->where('setting_key', OrganizationSettingKey::AnalyticsAiAutomaticTagSuggestionsEnabled->value)
+            ->value('boolean_value') === true;
         $this->form->fill([
             'allow_new_candidates' => $enabled,
+            'automatic_suggestions' => $automatic,
             'candidates' => array_map(static fn (array $candidate): array => $candidate + [
                 'taxonomy_label' => self::taxonomyLabel((string) ($candidate['taxonomy'] ?? '')),
                 'decision' => null,
@@ -92,9 +96,10 @@ final class AnalyticsTagCandidates extends LocalizedPage
     {
         return $schema->components([
             Section::make(__('Настройки предложений'))
-                ->description(__('Новые категории не создаются автоматически. Включение разрешает только сохранять неизвестное предложение как кандидата на ручную проверку.'))
+                ->description(__('Автоматические предложения только создают запись на ручную проверку. Категории не активируются без решения владельца.'))
                 ->schema([
                     Toggle::make('allow_new_candidates')->label(__('Сохранять кандидатов новых категорий')),
+                    Toggle::make('automatic_suggestions')->label(__('Предлагать теги автоматически при изменении данных')),
                 ]),
             Section::make(__('Ожидают проверки'))
                 ->schema([
@@ -162,6 +167,11 @@ final class AnalyticsTagCandidates extends LocalizedPage
                 $actor,
                 OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled,
                 (bool) ($data['allow_new_candidates'] ?? false),
+            );
+            app(SetOrganizationSetting::class)->handle(
+                $actor,
+                OrganizationSettingKey::AnalyticsAiAutomaticTagSuggestionsEnabled,
+                (bool) ($data['automatic_suggestions'] ?? false),
             );
             foreach (is_array($data['candidates'] ?? null) ? $data['candidates'] : [] as $candidate) {
                 if (! is_array($candidate) || ! is_string($candidate['decision'] ?? null) || ! is_numeric($candidate['id'] ?? null)) {

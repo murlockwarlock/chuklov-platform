@@ -4,6 +4,7 @@ namespace Tests\Feature\Analytics;
 
 use App\Filament\Pages\FinanceExpenseEntry;
 use App\Models\User;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Analytics\Application\FinanceAnalytics;
 use App\Modules\Finance\Application\FinanceMovementConfiguration;
@@ -67,6 +68,9 @@ final class FinanceMovementAnalyticsTest extends TestCase
         self::assertSame('2500', $data->expensesMinor);
         self::assertSame('-2500', $data->cashMovementMinor);
         self::assertSame('-2500', $data->accounts[0]['movement_minor']);
+        $unrestricted = app(FinanceAnalytics::class)->handle($admin, $period, cohortFilters: new ClientCohortFilters);
+        self::assertSame('2500', $unrestricted->expensesMinor);
+        self::assertSame('-2500', $unrestricted->accounts[0]['movement_minor']);
         self::assertSame(-2500, app(FinancialLedgerPresentationContract::class)->validatePaymentAmount($first)->minorUnits());
     }
 

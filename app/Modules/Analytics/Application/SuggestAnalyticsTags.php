@@ -9,6 +9,7 @@ use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiExecutionMode;
 use App\Modules\AI\Domain\Enums\AiRunOrigin;
 use App\Modules\AI\Domain\Models\AiPrompt;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
 use App\Modules\Analytics\Application\Data\ClassificationResultData;
 use App\Modules\Analytics\Domain\Enums\AnalyticsTagCandidateStatus;
 use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
@@ -20,8 +21,10 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\OrganizationSetting;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Throwable;
 
 final readonly class SuggestAnalyticsTags
@@ -68,7 +71,7 @@ final readonly class SuggestAnalyticsTags
             'tags' => $availableTags,
             'allow_new_candidates' => $allowNewCandidates,
         ], JSON_THROW_ON_ERROR));
-        [$run, $shouldExecute] = $this->claim($organizationId, $taxonomy, $sourceType, $sourceId, $clientId, $digest, $force);
+        [$run, $shouldExecute, $leaseToken] = $this->claim($organizationId, $taxonomy, $sourceType, $sourceId, $clientId, $digest, $force);
         if (! $shouldExecute) {
             return $this->result($run);
         }
@@ -81,7 +84,7 @@ final readonly class SuggestAnalyticsTags
                 ->whereNotNull('active_version_id')
                 ->first();
             if ($prompt === null || $prompt->active_version_id === null) {
-                return $this->fail($run, 'configuration_required', 'Классификатор аналитики не настроен.');
+                return $this->fail($run, $leaseToken, 'configuration_required', 'Классификатор аналитики не настроен.');
             }
 
             $result = $this->workflowEngine->run($organizationId, new AiRunRequest(
@@ -113,19 +116,22 @@ final readonly class SuggestAnalyticsTags
                 $allowNewCandidates,
             );
             if (! $result->isSuccess() || $suggestions === null) {
-                return $this->fail($run, $result->isSuccess() ? 'invalid_output' : 'ai_failed', $result->errorMessageSanitized);
+                return $this->fail($run, $leaseToken, $result->isSuccess() ? 'invalid_output' : 'ai_failed', $result->errorMessageSanitized);
             }
 
             $updated = AnalyticsClassificationRun::query()
                 ->whereKey($run->getKey())
                 ->where('status', ClassificationRunStatus::Processing->value)
                 ->where('source_digest', $run->source_digest)
+                ->where('processing_lease_token', $leaseToken)
                 ->update([
                     'status' => ClassificationRunStatus::NeedsReview->value,
                     'ai_run_id' => $result->runId,
                     'suggestions' => $suggestions,
                     'error_code' => null,
                     'error_message_sanitized' => null,
+                    'processing_lease_token' => null,
+                    'processing_lease_expires_at' => null,
                     'updated_at' => now(),
                 ]);
             if ($updated === 0) {
@@ -140,11 +146,11 @@ final readonly class SuggestAnalyticsTags
 
             return $this->result($run->refresh());
         } catch (Throwable $exception) {
-            return $this->fail($run, 'ai_failed', 'Классификация не выполнена.');
+            return $this->fail($run, $leaseToken, 'ai_failed', 'Классификация не выполнена.');
         }
     }
 
-    /** @return array{0: AnalyticsClassificationRun, 1: bool} */
+    /** @return array{0: AnalyticsClassificationRun, 1: bool, 2: string|null} */
     private function claim(int $organizationId, string $taxonomy, string $sourceType, int $sourceId, ?int $clientId, string $digest, bool $force): array
     {
         try {
@@ -163,6 +169,8 @@ final readonly class SuggestAnalyticsTags
                             'status' => ClassificationRunStatus::Stale,
                             'error_code' => 'source_changed',
                             'error_message_sanitized' => 'Источник классификации изменился.',
+                            'processing_lease_token' => null,
+                            'processing_lease_expires_at' => null,
                             'updated_at' => now(),
                         ])->save();
                         AnalyticsTagCandidate::query()
@@ -184,22 +192,31 @@ final readonly class SuggestAnalyticsTags
                     ->lockForUpdate()
                     ->first();
                 if ($run instanceof AnalyticsClassificationRun) {
-                    if ($run->status === ClassificationRunStatus::Processing
-                        || (! $force && ! in_array($run->status, [ClassificationRunStatus::Failed, ClassificationRunStatus::Stale], true))) {
-                        return [$run, false];
+                    $now = now();
+                    $leaseActive = $run->processing_lease_expires_at !== null
+                        && CarbonImmutable::parse((string) $run->processing_lease_expires_at)->isFuture();
+                    if (($run->status === ClassificationRunStatus::Processing && $leaseActive)
+                        || ($run->status !== ClassificationRunStatus::Processing
+                            && ! $force
+                            && ! in_array($run->status, [ClassificationRunStatus::Failed, ClassificationRunStatus::Stale], true))) {
+                        return [$run, false, null];
                     }
+                    $leaseToken = (string) Str::uuid();
                     $run->forceFill([
                         'status' => ClassificationRunStatus::Processing,
                         'attempt_count' => $run->attempt_count + 1,
                         'suggestions' => null,
                         'error_code' => null,
                         'error_message_sanitized' => null,
+                        'processing_lease_token' => $leaseToken,
+                        'processing_lease_expires_at' => $now->copy()->addSeconds(AiRuntimeLimits::companionProcessingLeaseSeconds()),
                         'updated_at' => now(),
                     ])->save();
 
-                    return [$run, true];
+                    return [$run, true, $leaseToken];
                 }
 
+                $leaseToken = (string) Str::uuid();
                 $run = new AnalyticsClassificationRun;
                 $run->forceFill([
                     'organization_id' => $organizationId,
@@ -210,9 +227,11 @@ final readonly class SuggestAnalyticsTags
                     'source_digest' => $digest,
                     'status' => ClassificationRunStatus::Processing,
                     'attempt_count' => 1,
+                    'processing_lease_token' => $leaseToken,
+                    'processing_lease_expires_at' => now()->addSeconds(AiRuntimeLimits::companionProcessingLeaseSeconds()),
                 ])->save();
 
-                return [$run, true];
+                return [$run, true, $leaseToken];
             });
         } catch (UniqueConstraintViolationException) {
             $run = AnalyticsClassificationRun::query()
@@ -223,7 +242,7 @@ final readonly class SuggestAnalyticsTags
                 ->where('source_digest', $digest)
                 ->firstOrFail();
 
-            return [$run, false];
+            return [$run, false, null];
         }
     }
 
@@ -283,16 +302,23 @@ final readonly class SuggestAnalyticsTags
         }, $availableTags)));
     }
 
-    private function fail(AnalyticsClassificationRun $run, string $code, ?string $message): ClassificationResultData
+    private function fail(AnalyticsClassificationRun $run, ?string $leaseToken, string $code, ?string $message): ClassificationResultData
     {
+        if ($leaseToken === null) {
+            return $this->result($run->refresh());
+        }
+
         $updated = AnalyticsClassificationRun::query()
             ->whereKey($run->getKey())
             ->where('status', ClassificationRunStatus::Processing->value)
             ->where('source_digest', $run->source_digest)
+            ->where('processing_lease_token', $leaseToken)
             ->update([
                 'status' => ClassificationRunStatus::Failed->value,
                 'error_code' => $code,
                 'error_message_sanitized' => $message !== null ? mb_substr($message, 0, 500) : null,
+                'processing_lease_token' => null,
+                'processing_lease_expires_at' => null,
                 'updated_at' => now(),
             ]);
         if ($updated === 0) {

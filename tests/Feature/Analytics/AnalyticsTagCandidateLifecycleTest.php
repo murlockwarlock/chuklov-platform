@@ -75,6 +75,7 @@ final class AnalyticsTagCandidateLifecycleTest extends TestCase
     {
         [$organization, $admin] = $this->fixture();
         $run = $this->candidateRun($organization, [['id' => null, 'label' => 'Новая категория боли']]);
+        $otherRun = $this->candidateRun($organization, [['id' => 99, 'label' => 'Другая категория боли']]);
         $candidate = new AnalyticsTagCandidate;
         $candidate->forceFill([
             'organization_id' => $organization->getKey(),
@@ -101,6 +102,8 @@ final class AnalyticsTagCandidateLifecycleTest extends TestCase
             'id' => $candidate->getKey(),
             'status' => AnalyticsTagCandidateStatus::Accepted->value,
         ]);
+        self::assertSame(ClassificationRunStatus::NeedsReview, $run->refresh()->status);
+        self::assertSame(ClassificationRunStatus::Stale, $otherRun->refresh()->status);
         self::assertSame([['id' => MedicalProblemTag::query()->where('organization_id', $organization->getKey())->where('name', 'Новая категория боли')->value('id'), 'label' => 'Новая категория боли']], $run->refresh()->suggestions);
     }
 

@@ -123,7 +123,12 @@ class EditMedicalSession extends LocalizedEditRecord
                     $actor = $this->actor();
                     $record = $this->getRecord();
                     abort_unless($record instanceof MedicalSession, 404);
-                    $result = app(GenerateSessionResult::class)->handle($actor, $record, $this->parentClient());
+                    $result = app(GenerateSessionResult::class)->handleDraft(
+                        $actor,
+                        $record,
+                        $this->parentClient(),
+                        $this->draftForResult(),
+                    );
                     $this->data['result'] = $result;
                     $this->resultFormVersion++;
                     $this->form->fillPartially(['result' => $result], ['result']);
@@ -352,7 +357,12 @@ class EditMedicalSession extends LocalizedEditRecord
                                     $actor = $this->actor();
                                     $record = $this->getRecord();
                                     abort_unless($record instanceof MedicalSession, 404);
-                                    $result = app(GenerateSessionResult::class)->handle($actor, $record, $this->parentClient());
+                                    $result = app(GenerateSessionResult::class)->handleDraft(
+                                        $actor,
+                                        $record,
+                                        $this->parentClient(),
+                                        $this->draftForResult(),
+                                    );
                                     $set('result', $result);
                                     $this->resultFormVersion++;
                                     Notification::make()->title(__('Результат заполнен'))->success()->send();
@@ -782,6 +792,14 @@ class EditMedicalSession extends LocalizedEditRecord
         abort_unless($session instanceof MedicalSession, 404);
 
         return $session;
+    }
+
+    /** @return array<string, mixed> */
+    private function draftForResult(): array
+    {
+        $state = $this->form->getState();
+
+        return is_array($state) ? $state : [];
     }
 
     private static function scoreDisplay(mixed $value): string

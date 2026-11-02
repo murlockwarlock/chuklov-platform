@@ -19,8 +19,10 @@ final readonly class MedicalSessionPainWriter
         private MedicalProblemTagCatalog $tags,
     ) {}
 
-    /** @param array<int, mixed> $rawPains */
-    public function replace(MedicalSession $session, array $rawPains, int $keyVersion, bool $allowInactiveFrequencyPeriods = false, bool $allowInactiveProblemTags = false): void
+    /** @param array<int, mixed> $rawPains
+     * @param  array<string, array{frequency_period_unit: string|null, tag_ids: list<int>}>  $historicalPainValues
+     */
+    public function replace(MedicalSession $session, array $rawPains, int $keyVersion, bool $allowInactiveFrequencyPeriods = false, bool $allowInactiveProblemTags = false, array $historicalPainValues = []): void
     {
         $existing = $session->pains()->with('problemTags')->lockForUpdate()->get()->keyBy('lineage_key');
         $inputs = [];
@@ -39,12 +41,16 @@ final readonly class MedicalSessionPainWriter
             }
             $lineages[$lineage] = true;
             $existingPain = $existing->get($lineage);
+            $historicalValues = $historicalPainValues[$lineage] ?? null;
             $preservedTagIds = $existingPain instanceof MedicalSessionPain ? $existingPain->problemTags->modelKeys() : [];
             if ($allowInactiveProblemTags) {
                 $preservedTagIds = [...$preservedTagIds, ...$input->tagIds];
+            } elseif (is_array($historicalValues)) {
+                $preservedTagIds = [...$preservedTagIds, ...array_intersect($input->tagIds, $historicalValues['tag_ids'])];
             }
             if ($input->frequencyMode === 'count' && $input->frequencyPeriodUnit !== null) {
                 $canKeepInactivePeriod = $allowInactiveFrequencyPeriods
+                    || (is_array($historicalValues) && $historicalValues['frequency_period_unit'] === $input->frequencyPeriodUnit)
                     || ($existingPain instanceof MedicalSessionPain
                         && $existingPain->frequency_mode === 'count'
                         && $existingPain->frequency_period_unit === $input->frequencyPeriodUnit);

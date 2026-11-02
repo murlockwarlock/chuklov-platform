@@ -32,7 +32,6 @@ const form = useForm<{
     idempotency_key: `portal-feedback-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`,
 });
 
-const lowScore = computed(() => form.score !== null && form.score < props.feedback.positiveThreshold);
 const resultDestinations = computed(() => {
     if (props.result === null) {
         return [];
@@ -49,9 +48,6 @@ const scoreOptions = Array.from({ length: 11 }, (_, score) => score);
 
 function selectScore(score: number): void {
     form.score = score;
-    if (!lowScore.value) {
-        form.internal_feedback = '';
-    }
 }
 
 function submit(): void {
@@ -147,14 +143,13 @@ function submit(): void {
           {{ form.errors.score }}
         </p>
         <label
-          v-if="lowScore"
           class="portal-field"
         >
           <span class="portal-label">{{ t('feedback.internalFeedback') }}</span>
           <textarea
             v-model="form.internal_feedback"
             class="portal-input min-h-32"
-            :required="props.feedback.lowScoreFeedbackRequired"
+            :required="props.feedback.lowScoreFeedbackRequired && form.score !== null && form.score < props.feedback.positiveThreshold"
             maxlength="4000"
           />
           <span class="portal-copy portal-copy--small">{{ t('feedback.internalHint') }}</span>

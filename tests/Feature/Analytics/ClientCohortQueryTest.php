@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Analytics;
 
+use App\Filament\Pages\ClientCohortGroups;
 use App\Models\User;
 use App\Modules\Analytics\Application\AcquisitionAnalytics;
 use App\Modules\Analytics\Application\ClientCohortQuery;
@@ -33,10 +34,12 @@ use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
+use Filament\Facades\Filament;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class ClientCohortQueryTest extends TestCase
@@ -829,6 +832,48 @@ final class ClientCohortQueryTest extends TestCase
         ]);
     }
 
+    public function test_stale_group_archive_rejects_without_archiving_the_newer_definition(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $save = app(SaveAnalyticsClientGroup::class);
+        $group = $save->handle($admin, [
+            'name' => 'Архивируемая группа',
+            'group_type' => 'manual',
+            'is_active' => true,
+        ]);
+        $save->handle($admin, [
+            'id' => $group->getKey(),
+            'version' => 1,
+            'name' => 'Архивируемая группа обновлена',
+            'group_type' => 'manual',
+            'is_active' => true,
+        ]);
+
+        try {
+            $save->handleMany($admin, [[
+                'data' => [
+                    'id' => $group->getKey(),
+                    'version' => 1,
+                    'name' => 'Архивируемая группа',
+                    'group_type' => 'manual',
+                    'is_active' => false,
+                ],
+                'client_ids' => [],
+            ]]);
+            self::fail('A stale archive should be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertStringContainsString('изменена в другом окне', (string) collect($exception->errors())->flatten()->first());
+        }
+
+        self::assertDatabaseHas('analytics_client_groups', [
+            'id' => $group->getKey(),
+            'name' => 'Архивируемая группа обновлена',
+            'version' => 2,
+            'is_active' => true,
+        ]);
+        self::assertSame($organization->getKey(), $group->organization_id);
+    }
+
     public function test_saved_group_rejects_foreign_manual_clients_and_dynamic_references(): void
     {
         [$organization, $admin] = $this->fixture();
@@ -873,6 +918,24 @@ final class ClientCohortQueryTest extends TestCase
 
         $this->expectExceptionMessage('больше не активна');
         app(ClientCohortQuery::class)->for($admin, new ClientCohortFilters(savedGroupIds: [$group->getKey()]));
+    }
+
+    public function test_stale_group_form_does_not_archive_a_group_created_after_mount(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $component = Livewire::actingAs($admin)->test(ClientCohortGroups::class);
+        $createdAfterMount = app(SaveAnalyticsClientGroup::class)->handle($admin, [
+            'name' => 'Создано после открытия формы',
+            'group_type' => 'manual',
+            'is_active' => true,
+        ]);
+
+        $component->call('save');
+
+        self::assertTrue((bool) $createdAfterMount->refresh()->is_active);
+        self::assertNull($createdAfterMount->archived_at);
+        self::assertSame($organization->getKey(), $createdAfterMount->organization_id);
     }
 
     public function test_unknown_purchase_group_is_not_silently_treated_as_a_catalog_type(): void

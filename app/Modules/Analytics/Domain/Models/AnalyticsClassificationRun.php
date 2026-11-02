@@ -25,6 +25,7 @@ class AnalyticsClassificationRun extends Model
             'suggestions' => 'array',
             'attempt_count' => 'integer',
             'accepted_at' => 'immutable_datetime',
+            'processing_lease_expires_at' => 'immutable_datetime',
         ];
     }
 

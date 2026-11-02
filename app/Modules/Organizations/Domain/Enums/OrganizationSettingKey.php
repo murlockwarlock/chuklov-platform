@@ -33,6 +33,7 @@ enum OrganizationSettingKey: string
     case MedicalAudioAllowedMimeTypes = 'medical_audio_allowed_mime_types';
     case MedicalAudioBusinessMaxBytes = 'medical_audio_business_max_bytes';
     case AnalyticsAiNewTagCandidatesEnabled = 'analytics_ai_new_tag_candidates_enabled';
+    case AnalyticsAiAutomaticTagSuggestionsEnabled = 'analytics_ai_automatic_tag_suggestions_enabled';
     case AnalyticsAgeRanges = 'analytics_age_ranges';
     case AnalyticsPurchaseGroups = 'analytics_purchase_groups';
     case AnalyticsSessionAxisSemantics = 'analytics_session_axis_semantics';
@@ -56,7 +57,8 @@ enum OrganizationSettingKey: string
             self::B2bZoomHostLicensed,
             self::TrackerFreeMode,
             self::TrackerEnabled,
-            self::AnalyticsAiNewTagCandidatesEnabled => OrganizationSettingType::Boolean,
+            self::AnalyticsAiNewTagCandidatesEnabled,
+            self::AnalyticsAiAutomaticTagSuggestionsEnabled => OrganizationSettingType::Boolean,
             default => OrganizationSettingType::String,
         };
     }

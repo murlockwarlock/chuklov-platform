@@ -16,6 +16,7 @@ use App\Modules\Analytics\Application\SuggestAnalyticsTags;
 use App\Modules\Analytics\Domain\Enums\AnalyticsTagCandidateStatus;
 use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
 use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
+use App\Modules\Analytics\Infrastructure\Jobs\AutoSuggestAnalyticsTags;
 use App\Modules\Feedback\Application\SaveFeedbackConfiguration;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Feedback\Domain\Models\FeedbackTheme;
@@ -782,6 +783,168 @@ final class AnalyticsAiClassificationTest extends TestCase
 
         self::assertFalse((bool) $theme->refresh()->is_active);
         self::assertSame(ClassificationRunStatus::Stale, $run->refresh()->status);
+    }
+
+    public function test_automatic_feedback_source_suggestion_is_configurable_and_stays_in_review(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $this->activePrompt($organization);
+        app(SetOrganizationSetting::class)->handle($admin, OrganizationSettingKey::AnalyticsAiAutomaticTagSuggestionsEnabled, true);
+        $theme = new FeedbackTheme;
+        $theme->forceFill([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Время ответа',
+            'group_name' => null,
+            'is_active' => true,
+            'sort_order' => 1,
+        ])->save();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $submission = new FeedbackSubmission;
+        $submission->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => $client->getKey(),
+            'score' => 4,
+            'internal_feedback' => 'Нужно быстрее отвечать клиенту.',
+            'source' => 'portal',
+            'idempotency_key' => 'automatic-feedback',
+            'request_hash' => hash('sha256', 'automatic-feedback'),
+            'submitted_at' => now(),
+        ])->save();
+        $calls = 0;
+        $this->app->instance(AiWorkflowEngine::class, new class($calls) implements AiWorkflowEngine
+        {
+            public function __construct(private int &$calls) {}
+
+            public function run(int $organizationId, AiRunRequest $request): AiRunResult
+            {
+                $this->calls++;
+                $aiRun = new AiRun;
+                $aiRun->forceFill([
+                    'organization_id' => $organizationId,
+                    'capability' => $request->capability,
+                    'workflow_key' => $request->workflowKey,
+                    'origin' => $request->origin,
+                    'initiated_by_user_id' => $request->initiatedByUserId,
+                    'client_id' => $request->clientId,
+                    'status' => AiRunStatus::Succeeded,
+                    'execution_mode' => $request->executionMode,
+                    'prompt_version_id' => $request->promptVersionId,
+                    'idempotency_key' => $request->idempotencyKey,
+                ])->save();
+
+                return new AiRunResult(
+                    runId: (int) $aiRun->getKey(),
+                    status: AiRunStatus::Succeeded,
+                    outputPayload: ['tags' => ['Время ответа']],
+                );
+            }
+
+            public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+            {
+                throw new \LogicException('Not used in automatic classification test.');
+            }
+        });
+
+        app()->call([new AutoSuggestAnalyticsTags(
+            organizationId: (int) $organization->getKey(),
+            sourceType: 'feedback_submission',
+            sourceId: (int) $submission->getKey(),
+        ), 'handle']);
+
+        $run = AnalyticsClassificationRun::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('source_type', 'feedback_submission')
+            ->where('source_id', $submission->getKey())
+            ->sole();
+        self::assertSame(ClassificationRunStatus::NeedsReview, $run->status);
+        self::assertSame([['id' => $theme->getKey(), 'label' => 'Время ответа']], $run->suggestions);
+        self::assertSame(1, $calls);
+    }
+
+    public function test_expired_classification_lease_is_reclaimed_but_active_force_retry_is_fenced(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $this->activePrompt($organization);
+        $sourceText = 'Хочу легче двигаться.';
+        $availableTags = [['id' => 1, 'label' => 'Подвижность']];
+        $digest = hash('sha256', json_encode([
+            'taxonomy' => 'goals',
+            'source_type' => 'tracker_task',
+            'source_id' => 501,
+            'source_text' => $sourceText,
+            'tags' => $availableTags,
+            'allow_new_candidates' => false,
+        ], JSON_THROW_ON_ERROR));
+        $run = new AnalyticsClassificationRun;
+        $run->forceFill([
+            'organization_id' => $organization->getKey(),
+            'client_id' => null,
+            'taxonomy' => 'goals',
+            'source_type' => 'tracker_task',
+            'source_id' => 501,
+            'source_digest' => $digest,
+            'status' => ClassificationRunStatus::Processing,
+            'attempt_count' => 1,
+            'processing_lease_token' => 'expired-token',
+            'processing_lease_expires_at' => now()->subMinute(),
+        ])->save();
+        $calls = 0;
+        $this->app->instance(AiWorkflowEngine::class, new class($calls) implements AiWorkflowEngine
+        {
+            public function __construct(private int &$calls) {}
+
+            public function run(int $organizationId, AiRunRequest $request): AiRunResult
+            {
+                $this->calls++;
+
+                return new AiRunResult(
+                    runId: 0,
+                    status: AiRunStatus::Succeeded,
+                    outputPayload: ['tags' => ['Неизвестная категория']],
+                );
+            }
+
+            public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+            {
+                throw new \LogicException('Not used in lease test.');
+            }
+        });
+        app(OrganizationContext::class)->set($organization);
+
+        $result = app(SuggestAnalyticsTags::class)->handle(
+            actor: $admin,
+            taxonomy: 'goals',
+            sourceType: 'tracker_task',
+            sourceId: 501,
+            clientId: null,
+            sourceText: $sourceText,
+            availableTags: $availableTags,
+        );
+        self::assertSame(ClassificationRunStatus::Failed, $result->status);
+        self::assertSame('invalid_output', $result->errorCode);
+        self::assertSame(2, $run->refresh()->attempt_count);
+        self::assertNull($run->processing_lease_token);
+        self::assertNull($run->processing_lease_expires_at);
+        self::assertSame(1, $calls);
+
+        $run->forceFill([
+            'status' => ClassificationRunStatus::Processing,
+            'processing_lease_token' => 'active-token',
+            'processing_lease_expires_at' => now()->addMinutes(5),
+        ])->save();
+        $replayed = app(SuggestAnalyticsTags::class)->handle(
+            actor: $admin,
+            taxonomy: 'goals',
+            sourceType: 'tracker_task',
+            sourceId: 501,
+            clientId: null,
+            sourceText: $sourceText,
+            availableTags: $availableTags,
+            force: true,
+        );
+        self::assertSame(ClassificationRunStatus::Processing, $replayed->status);
+        self::assertSame(1, $calls);
+        self::assertSame(2, $run->refresh()->attempt_count);
     }
 
     /** @return array{0: Organization, 1: User} */

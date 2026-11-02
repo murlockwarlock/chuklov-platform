@@ -207,6 +207,7 @@ return [
                 'ai-companion',
                 'ai-companion-delivery',
                 'ai-evaluations',
+                'analytics-classification',
                 'telegram-typing',
                 'notifications',
                 (string) config('referrals.queue', env('REFERRALS_QUEUE', 'referrals')),

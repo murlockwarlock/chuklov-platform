@@ -118,10 +118,6 @@ final class RecordNpsSubmission
             throw ValidationException::withMessages(['internal_feedback' => 'Расскажите, что можно улучшить.']);
         }
 
-        if ($band === NpsBand::Positive) {
-            $internalFeedback = null;
-        }
-
         $requestHash = $this->fingerprint->handle([
             'client_id' => $client->getKey(),
             'score' => $score,

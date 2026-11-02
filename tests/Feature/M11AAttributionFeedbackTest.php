@@ -407,6 +407,39 @@ final class M11AAttributionFeedbackTest extends TestCase
         self::assertSame(2, FeedbackSubmission::query()->where('client_id', $client->id)->count());
     }
 
+    public function test_feedback_text_is_preserved_at_score_boundaries_for_portal_and_crm(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: true,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+        );
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->post(route('portal.feedback.store'), [
+            'score' => 10,
+            'internal_feedback' => 'Портал: не хватило времени на вопросы.',
+            'idempotency_key' => 'feedback-boundary-10',
+        ])->assertRedirect(route('portal.feedback'));
+
+        $crm = app(RecordNpsSubmission::class)->handleForStaff(
+            actor: $admin,
+            client: $client,
+            score: 0,
+            internalFeedback: 'CRM: нужна более подробная обратная связь.',
+            idempotencyKey: 'feedback-boundary-0',
+        );
+
+        self::assertSame('Портал: не хватило времени на вопросы.', FeedbackSubmission::query()->where('idempotency_key', 'feedback-boundary-10')->sole()->internal_feedback);
+        self::assertSame('CRM: нужна более подробная обратная связь.', $crm->internal_feedback);
+    }
+
     public function test_low_feedback_creates_internal_scenario_escalation_without_public_review_delivery(): void
     {
         $organization = $this->organizationWithClientRecords();
@@ -519,9 +552,10 @@ final class M11AAttributionFeedbackTest extends TestCase
         $positive = app(RecordNpsSubmission::class)->handle(
             client: $client,
             score: 8,
-            internalFeedback: 'Этот текст не должен сохраниться для positive band.',
+            internalFeedback: 'Комментарий сохраняется независимо от positive band.',
             idempotencyKey: 'threshold-eight',
         );
+        self::assertSame('Комментарий сохраняется независимо от positive band.', $positive->internal_feedback);
         $positiveEvent = ScenarioEvent::query()->where('aggregate_id', (string) $positive->getKey())->sole();
 
         self::assertSame('positive', $positiveEvent->payload['band']);

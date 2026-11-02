@@ -30,7 +30,7 @@ final class MarkAnalyticsClassificationsStale
         });
     }
 
-    public function forTaxonomy(int $organizationId, string $taxonomy): int
+    public function forTaxonomy(int $organizationId, string $taxonomy, ?int $exceptRunId = null): int
     {
         if ($organizationId < 1 || trim($taxonomy) === '') {
             return 0;
@@ -43,13 +43,14 @@ final class MarkAnalyticsClassificationsStale
             $taxonomies[] = 'problems';
         }
 
-        return DB::transaction(function () use ($organizationId, $taxonomies): int {
+        return DB::transaction(function () use ($organizationId, $taxonomies, $exceptRunId): int {
             $updated = AnalyticsClassificationRun::query()
                 ->where('organization_id', $organizationId)
                 ->whereIn('taxonomy', array_values(array_unique($taxonomies)))
+                ->when($exceptRunId !== null, fn ($query) => $query->whereKeyNot($exceptRunId))
                 ->where('status', '!=', ClassificationRunStatus::Stale->value)
                 ->update($this->stalePayload());
-            $this->markCandidatesStaleForTaxonomies($organizationId, $taxonomies);
+            $this->markCandidatesStaleForTaxonomies($organizationId, $taxonomies, $exceptRunId);
 
             return $updated;
         });
@@ -71,12 +72,15 @@ final class MarkAnalyticsClassificationsStale
     }
 
     /** @param list<string> $taxonomies */
-    private function markCandidatesStaleForTaxonomies(int $organizationId, array $taxonomies): void
+    private function markCandidatesStaleForTaxonomies(int $organizationId, array $taxonomies, ?int $exceptRunId = null): void
     {
         AnalyticsTagCandidate::query()
             ->where('organization_id', $organizationId)
             ->where('status', AnalyticsTagCandidateStatus::NeedsReview->value)
-            ->whereHas('classificationRun', fn ($query) => $query->whereIn('taxonomy', $taxonomies))
+            ->whereHas('classificationRun', function ($query) use ($taxonomies, $exceptRunId): void {
+                $query->whereIn('taxonomy', $taxonomies)
+                    ->when($exceptRunId !== null, fn ($query) => $query->whereKeyNot($exceptRunId));
+            })
             ->update([
                 'status' => AnalyticsTagCandidateStatus::Stale->value,
                 'review_note' => 'Таксономия классификации изменилась.',
@@ -92,6 +96,8 @@ final class MarkAnalyticsClassificationsStale
             'suggestions' => null,
             'error_code' => 'source_changed',
             'error_message_sanitized' => 'Источник классификации изменился.',
+            'processing_lease_token' => null,
+            'processing_lease_expires_at' => null,
             'updated_at' => now(),
         ];
     }

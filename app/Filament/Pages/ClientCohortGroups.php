@@ -41,6 +41,7 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Locked;
 use LogicException;
 use UnitEnum;
 
@@ -63,7 +64,8 @@ final class ClientCohortGroups extends LocalizedPage
     public ?array $data = null;
 
     /** @var array<int, int> */
-    private array $initialGroupVersions = [];
+    #[Locked]
+    public array $initialGroupVersions = [];
 
     public static function canAccess(): bool
     {
@@ -396,11 +398,13 @@ final class ClientCohortGroups extends LocalizedPage
                 ];
             }
             foreach (app(AnalyticsClientGroupCatalog::class)->rows(includeArchived: true) as $row) {
-                if ($row['is_active'] && ! in_array((int) $row['id'], $submittedIds, true)) {
+                if ($row['is_active']
+                    && array_key_exists((int) $row['id'], $this->initialGroupVersions)
+                    && ! in_array((int) $row['id'], $submittedIds, true)) {
                     $entries[] = [
                         'data' => [
                             'id' => $row['id'],
-                            'version' => $this->initialGroupVersions[(int) $row['id']] ?? $row['version'],
+                            'version' => $this->initialGroupVersions[(int) $row['id']],
                             'name' => $row['name'],
                             'description' => $row['description'],
                             'group_type' => $row['group_type'],

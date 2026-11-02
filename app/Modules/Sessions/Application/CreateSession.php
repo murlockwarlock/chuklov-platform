@@ -55,6 +55,9 @@ final readonly class CreateSession
         $specialComplaints = $this->initialSpecialComplaints($actor, $client, $command->pain);
 
         $keyVersion = $this->keyResolver->getCurrentKeyVersion($orgId);
+        $historicalPainValues = $command->pains === null
+            ? []
+            : $this->painInitializer->historicalPainValuesForClient($client, $command->occurredAtUtc());
 
         $encrypted = new EncryptedSessionPayload(
             encryptedPain: $this->encryptor->encryptField($orgId, $specialComplaints, $keyVersion),
@@ -75,7 +78,7 @@ final readonly class CreateSession
 
         $occurredAtUtc = $command->occurredAtUtc();
 
-        return DB::transaction(function () use ($actor, $organization, $client, $specialist, $booking, $command, $specialComplaints, $encrypted, $keyVersion, $occurredAtUtc, $orgId): MedicalSessionData {
+        return DB::transaction(function () use ($actor, $organization, $client, $specialist, $booking, $command, $specialComplaints, $encrypted, $keyVersion, $occurredAtUtc, $orgId, $historicalPainValues): MedicalSessionData {
             $session = new MedicalSession;
             $session->forceFill([
                 'organization_id' => $orgId,
@@ -99,7 +102,7 @@ final readonly class CreateSession
             $session->save();
 
             if ($command->pains !== null) {
-                $this->painWriter->replace($session, $command->pains, $keyVersion);
+                $this->painWriter->replace($session, $command->pains, $keyVersion, historicalPainValues: $historicalPainValues);
             } else {
                 $this->painInitializer->initialize($session, $keyVersion);
             }

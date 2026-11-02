@@ -5,6 +5,7 @@ namespace Tests\Integration;
 use App\Models\User;
 use App\Modules\Attribution\Application\CapturePreAuthAttribution;
 use App\Modules\Feedback\Application\RecordNpsSubmission;
+use App\Modules\Feedback\Application\SaveFeedbackConfiguration;
 use App\Modules\Finance\Application\RecordFinancialSettlementEvent;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
@@ -217,12 +218,21 @@ final class MilestoneElevenAConcurrencyTest extends TestCase
     {
         $this->requirePostgres();
         [$organization, , $client] = $this->referralFixture();
+        $actor = User::factory()->forOrganization($organization)->create();
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $actor,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: false,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+        );
         $results = Concurrency::driver('process')->run([
             static fn (): string => self::submitNpsInProcess($organization->getKey(), $client->getKey()),
             static fn (): string => self::submitNpsInProcess($organization->getKey(), $client->getKey()),
         ]);
 
-        self::assertNotContains('error', $results);
+        self::assertSame([], array_filter($results, static fn (string $result): bool => str_starts_with($result, 'error:')));
         self::assertSame(1, DB::table('feedback_submissions')
             ->where('organization_id', $organization->getKey())
             ->where('client_id', $client->getKey())

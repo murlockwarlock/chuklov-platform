@@ -186,6 +186,25 @@ final readonly class ClientCohortFilters
         ];
     }
 
+    public function isUnrestricted(): bool
+    {
+        foreach ($this->toArray() as $key => $value) {
+            if ($key === 'pain_score_basis' && $value === PainScoreBasis::Any->value) {
+                continue;
+            }
+            if ($key === 'problem_tag_mode' && $this->problemTagIds === [] && $this->excludeProblemTagIds === []) {
+                continue;
+            }
+            if ($value === null || $value === [] || $value === '') {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
     /** @param list<string> $segments
      * @return list<string>
      */

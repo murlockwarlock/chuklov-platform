@@ -63,7 +63,7 @@ final class FinanceAnalytics
                 ->where('ledger.organization_id', $organizationId)
                 ->where('ledger.occurred_at', '>=', $period->startUtc)
                 ->where('ledger.occurred_at', '<', $period->endUtc);
-            if ($clientId !== null || $cohortFilters !== null) {
+            if ($clientId !== null || $this->hasCohortRestriction($cohortFilters)) {
                 $revenueQuery->whereIn('ledger.obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable, $cohortFilters, $period));
             }
             $revenueQuery->where('ledger.entry_type', '<>', FinancialLedgerEntryType::Expense->value);
@@ -111,7 +111,7 @@ final class FinanceAnalytics
                 FinancialLedgerEntryType::FakeGatewaySettlement->value,
                 FinancialLedgerEntryType::GatewaySettlement->value,
             ])
-            ->when($clientId !== null || $cohortFilters !== null, fn ($query) => $query->whereIn('obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable, $cohortFilters, $period)))
+            ->when($clientId !== null || $this->hasCohortRestriction($cohortFilters), fn ($query) => $query->whereIn('obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable, $cohortFilters, $period)))
             ->where('base_amount_minor', '>', 0)
             ->selectRaw('COALESCE(SUM(base_amount_minor), 0) as total')
             ->selectRaw('COUNT(*) as receipt_count')
@@ -131,7 +131,7 @@ final class FinanceAnalytics
             ->where('entry_type', FinancialLedgerEntryType::Expense->value)
             ->where('occurred_at', '>=', $period->startUtc)
             ->where('occurred_at', '<', $period->endUtc)
-            ->when($clientId !== null || $cohortFilters !== null, fn ($query) => $query->whereIn('obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable, $cohortFilters, $period)))
+            ->when($clientId !== null || $this->hasCohortRestriction($cohortFilters), fn ($query) => $query->whereIn('obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable, $cohortFilters, $period)))
             ->selectRaw('COALESCE(SUM(base_amount_minor), 0) as total')
             ->first();
 
@@ -150,7 +150,7 @@ final class FinanceAnalytics
                     ->on('ledger.account_id', '=', 'accounts.id')
                     ->where('ledger.occurred_at', '>=', $period->startUtc)
                     ->where('ledger.occurred_at', '<', $period->endUtc)
-                    ->when($clientId !== null || $cohortFilters !== null, fn ($query) => $query->whereIn('ledger.obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable, $cohortFilters, $period)));
+                    ->when($clientId !== null || $this->hasCohortRestriction($cohortFilters), fn ($query) => $query->whereIn('ledger.obligation_id', $this->clientObligationIds($organizationId, $clientId, $obligationTable, $cohortFilters, $period)));
             })
             ->where('accounts.organization_id', $organizationId)
             ->select('accounts.name', 'accounts.account_type', 'accounts.currency')
@@ -179,7 +179,7 @@ final class FinanceAnalytics
             ->where('created_at', '>=', $period->startUtc)
             ->where('created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('id', $clientId));
-        if ($cohortFilters !== null) {
+        if ($this->hasCohortRestriction($cohortFilters)) {
             $this->cohorts->constrain($query, 'clients.id', $cohortFilters, $period);
         }
 
@@ -196,7 +196,7 @@ final class FinanceAnalytics
             ->where('created_at', '<', $period->endUtc)
             ->when($clientId !== null, fn ($query) => $query->where('id', $clientId))
             ->select('id');
-        if ($cohortFilters !== null) {
+        if ($this->hasCohortRestriction($cohortFilters)) {
             $this->cohorts->constrain($cohort, 'clients.id', $cohortFilters, $period);
         }
 
@@ -237,7 +237,7 @@ final class FinanceAnalytics
             ->where('created_at', '<', $period->endUtc);
         if ($clientId !== null) {
             $obligations->where('client_id', $clientId);
-        } elseif ($cohortFilters !== null) {
+        } elseif ($cohortFilters instanceof ClientCohortFilters && $this->hasCohortRestriction($cohortFilters)) {
             $obligations->whereIn('client_id', $this->cohortClientIds($cohortFilters, $period));
         }
 
@@ -254,7 +254,7 @@ final class FinanceAnalytics
             ->where('ledger.occurred_at', '<', $period->endUtc);
         if ($clientId !== null) {
             $applied->where('obligations.client_id', $clientId);
-        } elseif ($cohortFilters !== null) {
+        } elseif ($cohortFilters instanceof ClientCohortFilters && $this->hasCohortRestriction($cohortFilters)) {
             $applied->whereIn('obligations.client_id', $this->cohortClientIds($cohortFilters, $period));
         }
 
@@ -270,7 +270,7 @@ final class FinanceAnalytics
             ->where('organization_id', $organizationId)
             ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId))
             ->select('id');
-        if ($cohortFilters !== null) {
+        if ($cohortFilters instanceof ClientCohortFilters && $this->hasCohortRestriction($cohortFilters)) {
             $query->whereIn('client_id', $this->cohortClientIds($cohortFilters, $period));
         }
 
@@ -280,6 +280,11 @@ final class FinanceAnalytics
     private function cohortClientIds(ClientCohortFilters $filters, ?DashboardPeriod $period): Builder
     {
         return $this->cohorts->query($filters, $period)->select('clients.id')->toBase();
+    }
+
+    private function hasCohortRestriction(?ClientCohortFilters $filters): bool
+    {
+        return $filters !== null && ! $filters->isUnrestricted();
     }
 
     private function averageMinor(string $total, int $count): string

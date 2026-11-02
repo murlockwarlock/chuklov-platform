@@ -105,6 +105,30 @@ final class MedicalPainFlowTest extends TestCase
         self::assertSame($organization->getKey(), $client->organization_id);
     }
 
+    public function test_empty_previous_session_does_not_fall_back_to_profile_pains(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            pains: [['name' => 'Профильная боль', 'score' => 6]],
+            painsProvided: true,
+        ));
+
+        $first = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-01 09:00:00', 'UTC'),
+            pains: [],
+        ));
+        self::assertSame([], $first->pains);
+
+        $next = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-08 09:00:00', 'UTC'),
+        ));
+
+        self::assertSame([], $next->pains);
+        self::assertSame($organization->getKey(), $client->organization_id);
+    }
+
     public function test_frequency_periods_are_owner_editable_and_used_by_session_pains(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();
@@ -394,6 +418,35 @@ final class MedicalPainFlowTest extends TestCase
         $generated = app(GenerateSessionResult::class)->handle($admin, MedicalSession::findOrFail($session->id), $client);
 
         self::assertStringContainsString('Плечо без оценки: было нет данных, стало нет данных из 10', $generated);
+    }
+
+    public function test_generated_result_can_use_current_unsaved_draft_values(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $session = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::parse('2026-10-22 09:00:00', 'UTC'),
+            pains: [['name' => 'Сохранённая боль', 'before_score' => 4, 'after_score' => 3]],
+            subjectiveFeelings: 'Старое ощущение',
+        ));
+
+        $generated = app(GenerateSessionResult::class)->handleDraft(
+            actor: $admin,
+            session: MedicalSession::findOrFail($session->id),
+            client: $client,
+            draft: [
+                'pains' => [['name' => 'Черновая боль', 'before_score' => 9, 'after_score' => 1]],
+                'subjective_feelings' => 'Новое ощущение',
+                'visual_posture_diagnostics' => 'Новая осанка',
+                'test_results' => [],
+            ],
+        );
+
+        self::assertStringContainsString('Черновая боль: было 9, стало 1 из 10', $generated);
+        self::assertStringContainsString('Субъективные ощущения: Новое ощущение', $generated);
+        self::assertStringContainsString('Визуальная диагностика осанки: Новая осанка', $generated);
+        self::assertStringNotContainsString('Сохранённая боль', $generated);
+        self::assertSame($organization->getKey(), $client->organization_id);
     }
 
     public function test_configured_tests_values_causes_and_root_causes_round_trip_per_session(): void

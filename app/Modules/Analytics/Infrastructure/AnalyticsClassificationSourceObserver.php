@@ -3,6 +3,7 @@
 namespace App\Modules\Analytics\Infrastructure;
 
 use App\Modules\Analytics\Application\MarkAnalyticsClassificationsStale;
+use App\Modules\Analytics\Infrastructure\Jobs\AutoSuggestAnalyticsTags;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Feedback\Domain\Models\FeedbackTheme;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
@@ -56,24 +57,28 @@ final class AnalyticsClassificationSourceObserver
 
         if ($model instanceof MedicalProfilePain) {
             $this->stale->forSource($organizationId, 'medical_profile_pain', (int) $model->getKey());
+            AutoSuggestAnalyticsTags::dispatch($organizationId, 'medical_profile_pain', (int) $model->getKey())->afterCommit();
 
             return;
         }
 
         if ($model instanceof MedicalSessionPain) {
             $this->stale->forSource($organizationId, 'medical_session_pain', (int) $model->getKey());
+            AutoSuggestAnalyticsTags::dispatch($organizationId, 'medical_session_pain', (int) $model->getKey())->afterCommit();
 
             return;
         }
 
         if ($model instanceof FeedbackSubmission) {
             $this->stale->forSource($organizationId, 'feedback_submission', (int) $model->getKey());
+            AutoSuggestAnalyticsTags::dispatch($organizationId, 'feedback_submission', (int) $model->getKey())->afterCommit();
 
             return;
         }
 
         if ($model instanceof TrackerTask) {
             $this->stale->forSource($organizationId, 'tracker_task', (int) $model->getKey());
+            AutoSuggestAnalyticsTags::dispatch($organizationId, 'tracker_task', (int) $model->getKey())->afterCommit();
 
             return;
         }

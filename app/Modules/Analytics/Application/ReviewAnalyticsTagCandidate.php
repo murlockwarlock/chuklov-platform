@@ -23,6 +23,7 @@ final readonly class ReviewAnalyticsTagCandidate
         private OrganizationContext $context,
         private OrganizationAuthorizer $authorizer,
         private RecordAuditEvent $audit,
+        private MarkAnalyticsClassificationsStale $stale,
     ) {}
 
     public function handle(User $actor, int $candidateId, string $decision, ?string $label = null, ?int $targetTagId = null): AnalyticsTagCandidate
@@ -64,8 +65,10 @@ final readonly class ReviewAnalyticsTagCandidate
             if (in_array($decision, ['rename', 'rename_existing'], true) && ($reviewedLabel === null || $reviewedLabel === '')) {
                 throw ValidationException::withMessages(['candidate' => 'Укажите новое название кандидата.']);
             }
+            $taxonomyMutated = false;
             if ($decision === 'accept' && $candidate->candidate_type === 'new') {
                 $target = $this->createTag($candidate, $reviewedLabel ?? $candidate->reviewed_label ?? $candidate->label);
+                $taxonomyMutated = true;
             } elseif ($decision === 'accept' && $target === null) {
                 $target = $this->targetTag($candidate->taxonomy, (int) $organization->getKey(), (int) $candidate->suggested_existing_id);
             } elseif ($decision === 'rename' && $candidate->candidate_type === 'new') {
@@ -88,10 +91,14 @@ final readonly class ReviewAnalyticsTagCandidate
                 $target ??= $this->targetTag($candidate->taxonomy, (int) $organization->getKey(), (int) $candidate->suggested_existing_id);
                 if ($decision === 'rename_existing') {
                     $this->renameTag($target, $reviewedLabel, (int) $organization->getKey());
+                    $taxonomyMutated = true;
                 }
             }
             if ($decision !== 'reject' && $target === null) {
                 throw ValidationException::withMessages(['candidate' => 'Не удалось определить категорию для применения решения.']);
+            }
+            if ($taxonomyMutated) {
+                $this->stale->forTaxonomy((int) $organization->getKey(), $candidate->taxonomy, (int) $run->getKey());
             }
             $this->updateRunSuggestion(
                 $run,
@@ -171,7 +178,10 @@ final readonly class ReviewAnalyticsTagCandidate
             'group_name' => null,
             'is_active' => true,
             'sort_order' => 0,
-        ])->save();
+        ]);
+        $model::withoutEvents(static function () use ($tag): void {
+            $tag->save();
+        });
 
         return $tag;
     }
@@ -185,7 +195,10 @@ final readonly class ReviewAnalyticsTagCandidate
         if ($this->hasDuplicateName($tag::class, $organizationId, $label, (int) $tag->getKey())) {
             throw ValidationException::withMessages(['candidate' => 'Категория с таким названием уже существует.']);
         }
-        $tag->forceFill(['name' => $label])->save();
+        $tag->forceFill(['name' => $label]);
+        $tag::withoutEvents(static function () use ($tag): void {
+            $tag->save();
+        });
     }
 
     private function hasDuplicateName(string $model, int $organizationId, string $name, ?int $ignoreId = null): bool

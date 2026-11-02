@@ -7,6 +7,7 @@ use App\Modules\MedicalProfiles\Application\DTOs\MedicalPainData;
 use App\Modules\MedicalProfiles\Application\MedicalProfilePainReader;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
+use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -41,7 +42,11 @@ final readonly class MedicalSessionPainInitializer
             ->orderByDesc('id')
             ->first();
 
-        if ($previous instanceof MedicalSession && $previous->pains()->exists()) {
+        if ($previous instanceof MedicalSession) {
+            if (! $previous->pains()->exists()) {
+                return [];
+            }
+
             $previousData = collect($this->sessionPains->forSession($previous))->keyBy('lineageKey');
 
             return array_values($previous->pains()->orderBy('sort_order')->orderBy('id')->get()->map(function (MedicalSessionPain $pain) use ($previousData): array {
@@ -79,6 +84,37 @@ final readonly class MedicalSessionPainInitializer
             'previous_after_score' => null,
             'tag_ids' => $pain->tagIds,
         ])->all());
+    }
+
+    /** @return array<string, array{frequency_period_unit: string|null, tag_ids: list<int>}> */
+    public function historicalPainValuesForClient(Client $client, DateTimeInterface $occurredAt): array
+    {
+        $previous = MedicalSession::query()
+            ->where('organization_id', $client->organization_id)
+            ->where('client_id', $client->getKey())
+            ->where('occurred_at', '<=', $occurredAt)
+            ->orderByDesc('occurred_at')
+            ->orderByDesc('id')
+            ->first();
+
+        if ($previous instanceof MedicalSession) {
+            return collect($this->sessionPains->forSession($previous))
+                ->mapWithKeys(static fn (MedicalPainData $pain): array => [(string) $pain->lineageKey => [
+                    'frequency_period_unit' => $pain->frequencyPeriodUnit,
+                    'tag_ids' => $pain->tagIds,
+                ]])->all();
+        }
+
+        $profile = $client->medicalProfile()->first();
+        if ($profile === null) {
+            return [];
+        }
+
+        return collect($this->profilePains->forProfile($profile))
+            ->mapWithKeys(static fn (MedicalPainData $pain): array => [(string) $pain->lineageKey => [
+                'frequency_period_unit' => null,
+                'tag_ids' => $pain->tagIds,
+            ]])->all();
     }
 
     public function initialize(MedicalSession $session, int $keyVersion): void
