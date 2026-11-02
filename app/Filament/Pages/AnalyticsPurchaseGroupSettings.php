@@ -28,7 +28,6 @@ use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
-use Illuminate\Validation\ValidationException;
 use LogicException;
 use UnitEnum;
 
@@ -129,7 +128,9 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
             if ($active) {
                 foreach ($types as $type) {
                     if (isset($mappedActiveTypes[$type])) {
-                        throw ValidationException::withMessages(['groups' => __('Один исторический тип покупки нельзя включить сразу в несколько активных групп.')]);
+                        $this->notifyValidation(__('Один исторический тип покупки нельзя включить сразу в несколько активных групп.'));
+
+                        return;
                     }
                     $mappedActiveTypes[$type] = true;
                 }
@@ -157,6 +158,15 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
         );
         $this->mount();
         Notification::make()->success()->title(__('Группы покупок сохранены'))->send();
+    }
+
+    private function notifyValidation(string $message): void
+    {
+        Notification::make()
+            ->danger()
+            ->title(__('Не удалось сохранить группы покупок'))
+            ->body($message)
+            ->send();
     }
 
     /**
