@@ -3143,7 +3143,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     const replaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
     await expect(replaceResultDialog).toBeVisible();
     await expect(replaceResultDialog).toContainText('Текущий текст будет заменён сводкой по данным сеанса.');
-    await replaceResultDialog.getByRole('button', { name: 'Отмена', exact: true }).click();
+    await replaceResultDialog.getByRole('button', { name: 'Отменить', exact: true }).click();
     await expect(replaceResultDialog).toBeHidden();
     await expect(resultField).toHaveValue(oldManualResult);
     await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
@@ -4022,7 +4022,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await acceptPainDialog.getByRole('combobox', { name: /^Боль клиента/ }).click();
     await page.getByRole('option', { name: fixture.tagCandidatePainName, exact: true }).click();
     await expect(acceptPainDialog.getByRole('combobox', { name: 'Категории проблемы', exact: true })).toContainText(`${fixture.candidateLabel} принято`);
-    await acceptPainDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await acceptPainDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
     await expect(page.getByText('Категории боли сохранены', { exact: true })).toBeVisible();
     await page.reload();
 
