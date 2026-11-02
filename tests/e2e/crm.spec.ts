@@ -3520,7 +3520,7 @@ test('staff can fill the current create medical result in the CRM client flow', 
     await expect(sessionRow).toBeVisible();
     await sessionRow.getByRole('link', { name: 'Открыть', exact: true }).click({ force: true });
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
-    await expect(page.getByText(new RegExp(`${painName}: было 6, стало 0 из 10`), { exact: false })).toBeVisible();
+    await expect(page.getByText(new RegExp(`${painName}: было 6, стало 0 из 10`), { exact: false }).first()).toBeVisible();
     await expect(page.getByText(subjective, { exact: true })).toBeVisible();
     await expect(page.getByText(posture, { exact: true })).toBeVisible();
 });
