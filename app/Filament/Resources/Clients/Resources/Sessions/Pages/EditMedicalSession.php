@@ -799,7 +799,7 @@ class EditMedicalSession extends LocalizedEditRecord
     {
         $state = $this->form->getState();
 
-        return is_array($state) ? $state : [];
+        return $state;
     }
 
     private static function scoreDisplay(mixed $value): string
