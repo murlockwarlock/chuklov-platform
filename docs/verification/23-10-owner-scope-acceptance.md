@@ -17,7 +17,7 @@ history and is not re-audited by this pass.
 | Starting application SHA | `ab4e3db9e396cc2f782bdf9cab8693c4be79d7a1` |
 | Final application SHA | `ec2c26798333616c3bda0f90b8894a84734c3326` |
 | Exact staging SHA | `ec2c26798333616c3bda0f90b8894a84734c3326` |
-| Evidence-test head before this documentation update | `436e5eeebb51051637244e061f36df624dcede9e` |
+| Evidence-test head before this documentation update | `320c2db78d665936d92e5f648c6100ca474701bb` |
 | Branch / PR | `codex/23-10-medical-analytics` / #61 |
 | PR state | `Draft / Open / DO NOT MERGE` |
 | Owner acceptance | `NOT RUN` |
@@ -32,7 +32,7 @@ exact application SHA above. Owner acceptance remains `NOT RUN`.
 | ID | IMPLEMENTED | PostgreSQL | Chromium | WebKit | Staging | OWNER ACCEPTANCE |
 |---|---|---|---|---|---|---|
 | M1 | Yes — exact active order, create/edit, no global VAS/old objective/root-cause hypothesis editors | PASS | VERIFIED — CRM order: боли → тесты → причины → первопричина → протокол → субъективные ощущения → осанка → результат → фото; create and edit checked | Not required for focused MR-1 | PASS | NOT RUN |
-| M2 | Yes — independent repeatable pains, frequency, time-of-day, nullable/0 scores, special complaints | PASS | VERIFIED — 3 independent rows, save/reload/edit/delete, permanent/count-period, multi time-of-day, NULL and explicit 0 | Not required for focused MR-1 | PASS | NOT RUN |
+| M2 | Yes — independent repeatable pains, frequency, time-of-day, nullable/0 scores, special complaints | PASS | VERIFIED — consolidated run `41513311767` plus focused M2 run `41512574506`: 3 independent rows, save/reload/edit/delete, permanent/count-period, multi time-of-day, NULL and explicit 0 | Not required for focused MR-1 | PASS | NOT RUN |
 | M3 | Yes — first profile seed, previous-session carry-forward, empty previous session stays `[]`, inactive historical references and tenant checks | PASS | VERIFIED — first/next/delete-all flows, previous after beside empty current before, zero retained, per-pain history opened from UI | Not required for focused MR-1 | PASS | NOT RUN |
 | M4 | Yes — owner-configurable catalog, before/after, abnormal state and inactive historical readability | PASS | VERIFIED — synthetic owner/admin catalog and same catalog authority in session | Not required for focused MR-1 | PASS | NOT RUN |
 | M5 | Yes — abnormal-test derivation, manual correction, restore-derived path, deduplication | PASS | VERIFIED — synthetic abnormal test → causes, manual correction, restore, save/reload | Not required for focused MR-1 | PASS | NOT RUN |
@@ -57,11 +57,17 @@ exact application SHA above. Owner acceptance remains `NOT RUN`.
   inactive historical period/tag references, foreign/tenant rejection,
   nullable scores and `0` vs `NULL`, session ordering/exclusion, transactions,
   and private media metadata/auth constraints.
-- Chromium CRM Medical journey: hosted run `41493613697`, job
-  `125444253544` — 4/4 passed in 1.7 minutes on application SHA
+- Chromium CRM Medical journey: fresh consolidated hosted run `41513311767`,
+  job `125510392061` — 5/5 passed in 2.4 minutes on application SHA
   `ec2c267…`; exact active order, medical catalog/causes/root causes,
-  CREATE and EDIT Result Fill, 3+2 photos, upload dates, private preview and
-  download, unlink/reload, audio and per-pain history were exercised.
+  CREATE and EDIT Result Fill, three independent pains with permanent and
+  count-period frequency, multi time-of-day, NULL/0, delete/reload,
+  3+2 photos, upload dates, private preview and download, unlink/reload,
+  audio and per-pain history were exercised.
+- Focused M2 rerun: hosted run `41512574506`, job `125507898728` — 1/1
+  passed in 26.7s on evidence-test head `320c2db7…`; persisted frequency,
+  time-of-day and explicit zero were asserted after reload before deleting the
+  middle pain.
 - Chromium Portal journey: hosted run `41494732858`, job `125446582917` —
   mobile 390px, 1/1 passed in 45.1s on application SHA `ec2c267…`; profile
   pains, score `0`, nullable/free complaint, no forbidden controls,
