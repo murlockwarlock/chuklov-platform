@@ -252,6 +252,49 @@ final class AnalyticsTagCandidateLifecycleTest extends TestCase
         );
     }
 
+    public function test_stale_candidate_review_shows_an_actionable_filament_notification(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $run = $this->candidateRun($organization, [['id' => null, 'label' => 'Stale browser candidate']]);
+        $candidate = new AnalyticsTagCandidate;
+        $candidate->forceFill([
+            'organization_id' => $organization->getKey(),
+            'classification_run_id' => $run->getKey(),
+            'taxonomy' => 'complaints',
+            'source_type' => (string) $run->source_type,
+            'source_id' => (int) $run->source_id,
+            'candidate_type' => 'new',
+            'label' => 'Stale browser candidate',
+            'status' => AnalyticsTagCandidateStatus::NeedsReview,
+            'version' => 1,
+        ])->save();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        /** @var Testable<AnalyticsTagCandidates> $component */
+        $component = Livewire::actingAs($admin)->test(new AnalyticsTagCandidates);
+        $state = $component->instance()->data;
+        self::assertIsArray($state);
+        self::assertIsArray($state['candidates'] ?? null);
+        $key = array_key_first($state['candidates']);
+        self::assertIsString($key);
+        $state['candidates'][$key]['decision'] = 'accept';
+
+        app(MarkAnalyticsClassificationsStale::class)->forSource(
+            (int) $organization->getKey(),
+            (string) $run->source_type,
+            (int) $run->source_id,
+        );
+
+        $component->fillForm($state)
+            ->call('save')
+            ->assertNotified('Кандидат уже обработан или устарел.');
+
+        self::assertDatabaseHas('analytics_tag_candidates', [
+            'id' => $candidate->getKey(),
+            'status' => AnalyticsTagCandidateStatus::Stale->value,
+        ]);
+    }
+
     /** @param list<array<string, mixed>> $suggestions */
     private function candidateRun(Organization $organization, array $suggestions): AnalyticsClassificationRun
     {

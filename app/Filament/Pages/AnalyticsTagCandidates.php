@@ -31,6 +31,7 @@ use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\ValidationException;
 use LogicException;
 use UnitEnum;
 
@@ -156,25 +157,30 @@ final class AnalyticsTagCandidates extends LocalizedPage
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         $data = $this->form->getState();
-        app(SetOrganizationSetting::class)->handle(
-            $actor,
-            OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled,
-            (bool) ($data['allow_new_candidates'] ?? false),
-        );
-        foreach (is_array($data['candidates'] ?? null) ? $data['candidates'] : [] as $candidate) {
-            if (! is_array($candidate) || ! is_string($candidate['decision'] ?? null) || ! is_numeric($candidate['id'] ?? null)) {
-                continue;
-            }
-            app(ReviewAnalyticsTagCandidate::class)->handle(
-                actor: $actor,
-                candidateId: (int) $candidate['id'],
-                decision: $candidate['decision'],
-                label: is_string($candidate['reviewed_label'] ?? null) ? $candidate['reviewed_label'] : null,
-                targetTagId: is_numeric($candidate['target_tag_id'] ?? null) ? (int) $candidate['target_tag_id'] : null,
+        try {
+            app(SetOrganizationSetting::class)->handle(
+                $actor,
+                OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled,
+                (bool) ($data['allow_new_candidates'] ?? false),
             );
+            foreach (is_array($data['candidates'] ?? null) ? $data['candidates'] : [] as $candidate) {
+                if (! is_array($candidate) || ! is_string($candidate['decision'] ?? null) || ! is_numeric($candidate['id'] ?? null)) {
+                    continue;
+                }
+                app(ReviewAnalyticsTagCandidate::class)->handle(
+                    actor: $actor,
+                    candidateId: (int) $candidate['id'],
+                    decision: $candidate['decision'],
+                    label: is_string($candidate['reviewed_label'] ?? null) ? $candidate['reviewed_label'] : null,
+                    targetTagId: is_numeric($candidate['target_tag_id'] ?? null) ? (int) $candidate['target_tag_id'] : null,
+                );
+            }
+            $this->mount();
+            Notification::make()->success()->title(__('Решения по кандидатам сохранены'))->send();
+        } catch (ValidationException $exception) {
+            $message = collect($exception->errors())->flatten()->first();
+            Notification::make()->danger()->title(is_string($message) ? $message : __('Проверьте решения по кандидатам.'))->send();
         }
-        $this->mount();
-        Notification::make()->success()->title(__('Решения по кандидатам сохранены'))->send();
     }
 
     /** @return array<int, string> */
