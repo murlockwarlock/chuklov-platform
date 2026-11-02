@@ -3887,12 +3887,11 @@ test('staff can maintain saved client groups in CRM', async ({ page }) => {
     await expect(page.getByRole('textbox', { name: /^Название/ }).first()).toHaveValue(renamedGroupName);
     await page.getByRole('button', { name: 'Добавить группу', exact: true }).click();
     const invalidItem = reopenedItems.last();
+    const invalidName = invalidItem.getByRole('textbox', { name: /^Название/ });
+    await invalidName.fill(renamedGroupName);
     await invalidItem.getByRole('combobox', { name: /^Тип/ }).selectOption('manual');
-    await page.waitForTimeout(500);
-    await invalidItem.getByRole('textbox', { name: /^Название/ }).fill(renamedGroupName);
-    await expect(invalidItem.getByRole('textbox', { name: /^Название/ })).toHaveValue(renamedGroupName);
-    await expect(invalidItem.getByRole('combobox', { name: /^Тип/ })).toHaveValue('manual');
-    await page.waitForTimeout(750);
+    await invalidName.fill(renamedGroupName);
+    await expect(invalidName).toHaveValue(renamedGroupName);
     await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
     await expect(page.getByText('В этой организации уже есть группа с таким названием.', { exact: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: /^Название/ }).first()).toHaveValue(renamedGroupName);
