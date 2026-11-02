@@ -3604,7 +3604,7 @@ test('staff can maintain three independent session pains through save and reload
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
     await page.getByRole('row').filter({ hasText: '20.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).click({ force: true });
-    await expect(page.getByText('2 раза за неделя', { exact: true })).toBeVisible();
+    await expect(page.getByText('2 раз за неделя', { exact: true })).toBeVisible();
     await expect(page.getByText('Утро, Вечер', { exact: true })).toBeVisible();
     await expect(page.getByText('0/10', { exact: true })).toBeVisible();
 
