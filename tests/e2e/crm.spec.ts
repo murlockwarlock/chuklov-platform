@@ -39,6 +39,12 @@ type CrmFixture = {
     aggregateProblemClientBackName: string | null;
     aggregateProblemClientBothName: string | null;
     aggregateMissingCountryClientName: string | null;
+    countryCountClientNames: {
+        kzA: string;
+        kzB: string;
+        ru: string;
+        unknown: string;
+    } | null;
     candidateLabel: string | null;
     staleCandidateLabel: string | null;
 };
@@ -144,7 +150,7 @@ async function setLivewireRangeValue(page: Page, slider: Locator, value: number)
     await expect(slider).toHaveAttribute('aria-valuenow', `${value}.0`);
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean; aggregateDrilldownFlow?: boolean; tagCandidateFlow?: boolean; savedGroupFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean; aggregateDrilldownFlow?: boolean; countryCountFlow?: boolean; tagCandidateFlow?: boolean; savedGroupFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -331,6 +337,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         $aggregateProblemClientBackName = null;
         $aggregateProblemClientBothName = null;
         $aggregateMissingCountryClientName = null;
+        $countryCountClientNames = null;
         if (${options.aggregateDrilldownFlow ? 'true' : 'false'}) {
             $client->forceFill([
                 'country' => 'E2E known country '.$suffix,
@@ -410,6 +417,27 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 'gender' => null,
                 'birth_date' => '1985-06-10',
             ]);
+        }
+        if (${options.countryCountFlow ? 'true' : 'false'}) {
+            $countryCountClientNames = [
+                'kzA' => 'E2E страна KZ A '.$suffix,
+                'kzB' => 'E2E страна KZ B '.$suffix,
+                'ru' => 'E2E страна RU '.$suffix,
+                'unknown' => 'E2E страна без страны '.$suffix,
+            ];
+            foreach ([
+                [$countryCountClientNames['kzA'], 'KZ'],
+                [$countryCountClientNames['kzB'], 'KZ'],
+                [$countryCountClientNames['ru'], 'RU'],
+                [$countryCountClientNames['unknown'], null],
+            ] as [$name, $country]) {
+                \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+                    'full_name' => $name,
+                    'country' => $country,
+                    'created_at' => '2026-10-10 10:00:00',
+                    'updated_at' => '2026-10-10 10:00:00',
+                ]);
+            }
         }
         $giftSaleFlow = getenv('PLAYWRIGHT_GIFT_SALE_FLOW') === '1';
         $giftProductName = null;
@@ -888,6 +916,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'aggregateProblemClientBackName' => $aggregateProblemClientBackName,
             'aggregateProblemClientBothName' => $aggregateProblemClientBothName,
             'aggregateMissingCountryClientName' => $aggregateMissingCountryClientName,
+            'countryCountClientNames' => $countryCountClientNames,
             'candidateLabel' => $candidateLabel,
             'staleCandidateLabel' => $staleCandidateLabel,
         ], JSON_THROW_ON_ERROR);
@@ -3282,6 +3311,64 @@ test('staff can analyze several dimensions and download a filtered Excel report'
     await expect(page.getByRole('button', { name: 'Анализировать', exact: true })).toBeVisible();
 });
 
+test('analytics demographics show the known country total in the screen and Excel', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture({ countryCountFlow: true });
+    if (fixture.countryCountClientNames === null) {
+        throw new Error('Country-count fixture did not create the expected clients.');
+    }
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await page.locator('#form\\.period').selectOption('custom');
+    await page.locator('#form\\.start_date').fill('2026-10-01');
+    await page.locator('#form\\.end_date').fill('2026-10-31');
+    const clientSelect = page.getByRole('combobox', { name: 'Конкретные клиенты', exact: true });
+    for (const clientName of Object.values(fixture.countryCountClientNames)) {
+        await selectAnalyticsOption(page, clientSelect, clientName);
+    }
+    const demographicsDimension = page.getByRole('checkbox', { name: 'Демография клиентов', exact: true });
+    if (! await demographicsDimension.isChecked()) {
+        await demographicsDimension.check();
+    }
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+
+    const demographicsSection = page
+        .getByRole('heading', { name: 'Демография клиентов', exact: true })
+        .locator('xpath=ancestor::section[1]');
+    await expect(demographicsSection.locator('p').filter({ hasText: 'Клиентов: 4' })).toBeVisible();
+    await expect(demographicsSection.locator('p').filter({ hasText: 'Стран представлено: 2' })).toBeVisible();
+    await expect(demographicsSection.locator('li').filter({ hasText: /^KZ/ })).toContainText('2 · 50%');
+    await expect(demographicsSection.locator('li').filter({ hasText: /^RU/ })).toContainText('1 · 25%');
+    await expect(demographicsSection.locator('li').filter({ hasText: /^Не указана/ })).toContainText('1 · 25%');
+
+    const countries = page.getByRole('combobox', { name: 'Страны', exact: true });
+    await selectAnalyticsOption(page, countries, 'KZ');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(demographicsSection.locator('p').filter({ hasText: 'Клиентов: 2' })).toBeVisible();
+    await expect(demographicsSection.locator('p').filter({ hasText: 'Стран представлено: 1' })).toBeVisible();
+
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
+    ]);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('Country-count analytics export did not produce a file.');
+    }
+    const workbookXml = execFileSync('unzip', ['-p', downloadPath, 'xl/sharedStrings.xml'], { encoding: 'utf8' });
+    expect(workbookXml).toContain('Всего представлено');
+    expect(workbookXml).toContain('Стран представлено');
+
+    await page.reload();
+    await expect(demographicsSection.locator('p').filter({ hasText: 'Стран представлено: 1' })).toBeVisible();
+    await page.goto('/admin/analytics-console?country-count=1');
+    await page.goBack();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+});
+
 test('analytics problem session axis keeps problem numbering separate from global numbering', async ({ page }) => {
     test.setTimeout(120_000);
     const fixture = createCrmFixture({ problemAxisFlow: true });
@@ -3530,6 +3617,7 @@ test('analytics demographic missing country aggregate drilldown uses a typed unk
     const demographicsSection = page
         .getByRole('heading', { name: 'Демография клиентов', exact: true })
         .locator('xpath=ancestor::section[1]');
+    await expect(demographicsSection.locator('p').filter({ hasText: 'Стран представлено: 0' })).toBeVisible();
     const countryItem = demographicsSection.locator('li').filter({ hasText: 'Не указана' }).first();
     await expect(countryItem).toBeVisible();
     await countryItem.getByRole('button', { name: 'Показать клиентов', exact: true }).click();

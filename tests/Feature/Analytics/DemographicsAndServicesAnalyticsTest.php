@@ -212,6 +212,58 @@ final class DemographicsAndServicesAnalyticsTest extends TestCase
         self::assertSame(1, app(AcquisitionAnalytics::class)->handle($admin, $period, cohortFilters: $filters)->newClients);
     }
 
+    public function test_demographics_counts_known_countries_from_the_same_cohort_buckets(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Client::factory()->forOrganization($organization)->create(['country' => 'KZ', 'created_at' => '2026-10-10 10:00:00']);
+        Client::factory()->forOrganization($organization)->create(['country' => 'KZ', 'created_at' => '2026-10-11 10:00:00']);
+        Client::factory()->forOrganization($organization)->create(['country' => 'RU', 'created_at' => '2026-10-12 10:00:00']);
+        $unknownCountryClient = Client::factory()->forOrganization($organization)->create(['country' => '', 'created_at' => '2026-10-13 10:00:00']);
+        $foreignOrganization = Organization::factory()->create();
+        Client::factory()->forOrganization($foreignOrganization)->create(['country' => 'US', 'created_at' => '2026-10-10 10:00:00']);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+
+        $demographics = app(DemographicsAnalytics::class)->handle($admin, $period);
+
+        self::assertSame(4, $demographics->clientCount);
+        self::assertSame(2, $demographics->countryCount);
+        self::assertSame(2, $this->distributionRow($demographics->country, 'KZ')['count']);
+        self::assertSame(1, $this->distributionRow($demographics->country, 'RU')['count']);
+        self::assertSame(1, $this->distributionRow($demographics->country, 'Не указана')['count']);
+        self::assertSame(50.0, $this->distributionRow($demographics->country, 'KZ')['percent']);
+        self::assertSame(25.0, $this->distributionRow($demographics->country, 'RU')['percent']);
+        self::assertSame(25.0, $this->distributionRow($demographics->country, 'Не указана')['percent']);
+
+        $kazakhstan = app(DemographicsAnalytics::class)->handle(
+            $admin,
+            $period,
+            cohortFilters: new ClientCohortFilters(countries: ['KZ']),
+        );
+        self::assertSame(1, $kazakhstan->countryCount);
+        self::assertSame(2, $kazakhstan->clientCount);
+
+        $missing = app(DemographicsAnalytics::class)->handle(
+            $admin,
+            $period,
+            cohortFilters: new ClientCohortFilters(clientIds: [(int) $unknownCountryClient->getKey()]),
+        );
+        self::assertSame(0, $missing->countryCount);
+        self::assertSame(1, $this->distributionRow($missing->country, 'Не указана')['count']);
+
+        $empty = app(DemographicsAnalytics::class)->handle(
+            $admin,
+            $period,
+            cohortFilters: new ClientCohortFilters(clientIds: [PHP_INT_MAX]),
+        );
+        self::assertSame(0, $empty->clientCount);
+        self::assertSame(0, $empty->countryCount);
+        self::assertSame([], $empty->country);
+    }
+
     public function test_demographics_uses_the_period_end_for_birthday_boundaries(): void
     {
         [$organization, $admin] = $this->fixture();

@@ -80,9 +80,14 @@ final readonly class DemographicsAnalytics
         }
 
         $total = count($clients);
+        $countryCount = count(array_filter(
+            $countryCounts,
+            static fn (array $bucket): bool => $bucket['unknown'] === false,
+        ));
 
         return new DemographicsAnalyticsData(
             clientCount: $total,
+            countryCount: $countryCount,
             age: $this->distribution($ageCounts, $total),
             sex: $this->distribution($sexCounts, $total),
             country: $this->distribution($countryCounts, $total),

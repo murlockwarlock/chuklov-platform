@@ -347,6 +347,7 @@
                         <button type="button" wire:click="showCohortClients" class="text-sm text-primary-600 hover:underline">{{ __('Показать клиентов') }}</button>
                     </div>
                     <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ __('Клиентов: :count', ['count' => $results['demographics']['client_count']]) }}</p>
+                    <p class="text-sm text-gray-500 dark:text-gray-400">{{ __('Стран представлено: :count', ['count' => $results['demographics']['country_count']]) }}</p>
                     @foreach (['age' => 'Возраст', 'sex' => 'Пол', 'children' => 'Дети и взрослые', 'country' => 'Страна'] as $key => $label)
                         <div class="mt-4">
                             <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ __($label) }}</h3>

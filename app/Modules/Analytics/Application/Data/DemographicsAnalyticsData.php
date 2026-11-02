@@ -11,6 +11,7 @@ final readonly class DemographicsAnalyticsData
      */
     public function __construct(
         public int $clientCount,
+        public int $countryCount,
         public array $age,
         public array $sex,
         public array $country,
@@ -22,6 +23,7 @@ final readonly class DemographicsAnalyticsData
     {
         return [
             'client_count' => $this->clientCount,
+            'country_count' => $this->countryCount,
             'age' => $this->age,
             'sex' => $this->sex,
             'country' => $this->country,

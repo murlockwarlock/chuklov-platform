@@ -150,6 +150,9 @@ final readonly class AnalyticsReportExport
         if (isset($results['demographics']['client_count'])) {
             $rows[] = ['Клиенты в демографии', $results['demographics']['client_count'], null];
         }
+        if (isset($results['demographics']['country_count'])) {
+            $rows[] = ['Стран представлено', $results['demographics']['country_count'], null];
+        }
         if (isset($results['services']['visit_count'])) {
             $rows[] = ['Визиты по услугам', $results['services']['visit_count'], null];
             $rows[] = ['Специалисты в отчёте', count((array) ($results['services']['specialists'] ?? [])), null];
@@ -226,6 +229,9 @@ final readonly class AnalyticsReportExport
     private function writeDemographics(Worksheet $sheet, array $data): void
     {
         $rows = [];
+        if (array_key_exists('country_count', $data)) {
+            $rows[] = ['Страны', 'Всего представлено', (int) $data['country_count'], null];
+        }
         foreach (['age' => 'Возраст', 'sex' => 'Пол', 'children' => 'Дети и взрослые', 'country' => 'Страна'] as $key => $label) {
             foreach ((array) ($data[$key] ?? []) as $item) {
                 if (is_array($item)) {

@@ -182,6 +182,51 @@ final class AnalyticsReportExportTest extends TestCase
         self::assertContains(['Страна', 'RU', '1', '50'], $demographicsSheet->toArray());
     }
 
+    public function test_demographics_export_includes_the_known_country_total(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Client::factory()->forOrganization($organization)->create(['country' => 'KZ', 'created_at' => '2026-10-10 10:00:00']);
+        Client::factory()->forOrganization($organization)->create(['country' => 'KZ', 'created_at' => '2026-10-11 10:00:00']);
+        Client::factory()->forOrganization($organization)->create(['country' => 'RU', 'created_at' => '2026-10-12 10:00:00']);
+        Client::factory()->forOrganization($organization)->create(['country' => null, 'created_at' => '2026-10-13 10:00:00']);
+        $foreignOrganization = Organization::factory()->create();
+        Client::factory()->forOrganization($foreignOrganization)->create(['country' => 'US', 'created_at' => '2026-10-10 10:00:00']);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+        $demographics = app(DemographicsAnalytics::class)->handle($admin, $period);
+
+        self::assertSame(4, $demographics->clientCount);
+        self::assertSame(2, $demographics->countryCount);
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download(
+            $admin,
+            ['demographics' => $demographics->toArray()],
+        ));
+
+        $demographicsSheet = $workbook->getSheetByName('Демография');
+        self::assertNotNull($demographicsSheet);
+        self::assertSame(['Страны', 'Всего представлено', '2', null], $demographicsSheet->toArray()[1]);
+        self::assertSame(DataType::TYPE_NUMERIC, $demographicsSheet->getCell('C2')->getDataType());
+        self::assertContains(['Страна', 'KZ', '2', '50'], $demographicsSheet->toArray());
+        self::assertContains(['Страна', 'RU', '1', '25'], $demographicsSheet->toArray());
+        self::assertContains(['Страна', 'Не указана', '1', '25'], $demographicsSheet->toArray());
+
+        $kazakhstan = app(DemographicsAnalytics::class)->handle(
+            $admin,
+            $period,
+            cohortFilters: new ClientCohortFilters(countries: ['KZ']),
+        );
+        $filteredWorkbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download(
+            $admin,
+            ['demographics' => $kazakhstan->toArray()],
+        ));
+        $filteredDemographics = $filteredWorkbook->getSheetByName('Демография');
+        self::assertNotNull($filteredDemographics);
+        self::assertSame(['Страны', 'Всего представлено', '1', null], $filteredDemographics->toArray()[1]);
+    }
+
     public function test_pain_export_matches_problem_axis_values_and_human_metadata(): void
     {
         [$organization, $admin] = $this->fixture();
