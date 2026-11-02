@@ -133,7 +133,6 @@ final class AnalyticsTagCandidates extends LocalizedPage
                         ])
                         ->columns(['default' => 1, 'sm' => 2, 'lg' => 3])
                         ->defaultItems(0)
-                        ->disabled(fn (Get $get): bool => $get('id') === null)
                         ->columnSpanFull(),
                 ])->columnSpanFull(),
         ])->statePath('data');
