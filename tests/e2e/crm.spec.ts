@@ -3869,8 +3869,9 @@ test('staff can maintain saved client groups in CRM', async ({ page }) => {
     const repeaterItems = page.locator('.fi-fo-repeater-item');
     await page.getByRole('button', { name: 'Добавить группу', exact: true }).click();
     const firstItem = repeaterItems.last();
-    await firstItem.getByRole('textbox', { name: /^Название/ }).fill(groupName);
     await firstItem.getByRole('combobox', { name: /^Тип/ }).selectOption('manual');
+    await page.waitForTimeout(500);
+    await firstItem.getByRole('textbox', { name: /^Название/ }).fill(groupName);
     await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
     await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
 
@@ -3886,8 +3887,9 @@ test('staff can maintain saved client groups in CRM', async ({ page }) => {
     await expect(page.getByRole('textbox', { name: /^Название/ }).first()).toHaveValue(renamedGroupName);
     await page.getByRole('button', { name: 'Добавить группу', exact: true }).click();
     const invalidItem = reopenedItems.last();
-    await invalidItem.getByRole('textbox', { name: /^Название/ }).fill(renamedGroupName);
     await invalidItem.getByRole('combobox', { name: /^Тип/ }).selectOption('manual');
+    await page.waitForTimeout(500);
+    await invalidItem.getByRole('textbox', { name: /^Название/ }).fill(renamedGroupName);
     await expect(invalidItem.getByRole('textbox', { name: /^Название/ })).toHaveValue(renamedGroupName);
     await expect(invalidItem.getByRole('combobox', { name: /^Тип/ })).toHaveValue('manual');
     await page.waitForTimeout(750);
