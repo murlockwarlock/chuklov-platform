@@ -1229,6 +1229,8 @@ function setAutomaticAnalyticsSuggestions(enabled: boolean): void {
             DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
             DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
             DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+            MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
         },
         stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -1254,6 +1256,8 @@ function runAnalyticsClassificationWorker(): void {
             DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
             DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
             DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+            MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
         },
         stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -1318,6 +1322,8 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
             DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
             DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
             DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+            MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
         },
         stdio: ['ignore', 'pipe', 'pipe'],
     });
