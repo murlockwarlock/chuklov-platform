@@ -3547,8 +3547,11 @@ test('staff can maintain three independent session pains through save and reload
 
     for (const painName of painNames) {
         await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+        await page.waitForLoadState('networkidle');
         const painInput = page.getByLabel('Название или описание боли', { exact: true }).last();
         await painInput.fill(painName);
+        await painInput.blur();
+        await page.waitForLoadState('networkidle');
         const painItem = painInput.locator('xpath=ancestor::li[1]');
         await expect(painItem).toBeVisible();
     }
