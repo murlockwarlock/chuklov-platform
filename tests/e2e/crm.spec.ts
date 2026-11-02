@@ -3802,10 +3802,14 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
 
     const candidateItemFor = async (label: string): Promise<Locator> => {
         const inputs = page.getByRole('textbox', { name: 'Предложение', exact: true });
-        for (let index = 0; index < await inputs.count(); index += 1) {
-            if (await inputs.nth(index).inputValue() === label) {
-                return inputs.nth(index).locator('xpath=ancestor::li[1]');
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+            for (let index = 0; index < await inputs.count(); index += 1) {
+                if (await inputs.nth(index).inputValue() === label) {
+                    return inputs.nth(index).locator('xpath=ancestor::li[1]');
+                }
             }
+
+            await page.waitForTimeout(250);
         }
 
         throw new Error(`Candidate ${label} was not rendered.`);
