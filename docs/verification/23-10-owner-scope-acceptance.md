@@ -74,9 +74,8 @@ exact application SHA above. Owner acceptance remains `NOT RUN`.
   injuries/operations 0/1/3/delete-middle/reload, Portal files, CRM
   cross-surface visibility and denied Portal anamnesis/audio paths were
   exercised.
-- Focused WebKit MR-1: hosted run `41500554077`, job `125466618914` — 1/1
-  passed in 52.6s on evidence-test head
-  `436e5eeebb51051637244e061f36df624dcede9e`; CREATE draft values,
+- Focused WebKit MR-1: fresh hosted run `41514224413`, job `125513519189` —
+  1/1 passed in 1.1 minutes on final PR head `87e77a0c…`; CREATE draft values,
   explicit zero, confirmation Cancel/Confirm, save and reload passed.
 - Protected staging deploy: `make deploy-staging` succeeded; read-only
   `/opt/chuklov-staging/REVISION` matched `ec2c267…`; app, PostgreSQL,
