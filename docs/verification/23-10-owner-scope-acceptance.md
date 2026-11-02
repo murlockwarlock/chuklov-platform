@@ -14,8 +14,8 @@ Synthetic QA data proves configurable mechanisms; it is not production content.
 
 | Item | Value |
 |---|---|
-| Starting PR SHA for this final verification pass | `973cdc133a86198cb94bf1817dd30fdf7d786c7f` |
-| Starting application SHA for this final verification pass | `d168eeaf93209585cb36644460949c307d671403` |
+| Starting PR SHA for this final verification pass | `508d89dba1574a42bdeabe7bc30c8a3775dde9ca` |
+| Starting application SHA for this final verification pass | `8c1e407505b19b9a1704d200b9df9ee43557ffc3` |
 | Historical reconciliation baseline | PR `2c4010fef38d13e37a3c03f91d33e8a216200b7e`, runtime `b743d67dc769e08ca8cc6b948803903fe95c70b7` |
 | Final PR SHA | Documentation-only closeout commits after the application SHA; exact final head is reported with the final handoff |
 | Final application SHA | `8c1e407505b19b9a1704d200b9df9ee43557ffc3` |
@@ -83,22 +83,27 @@ with synthetic labels and then safely deactivated.
 | Selectable sections, `Анализировать`, preview idle/loading/success/invalid/error, retry and shared cohort | YES | PASS | VERIFIED — Chromium 390/768/1440: live preview, correction without refresh, invalid-date field error, valid empty `0`, Analyze, reload/back/forward; no query failure was forced destructively | PASS | NOT RUN |
 | Charts use the same aggregate payload as tables | YES | PASS | VERIFIED — Chromium Analyze rendered matching table/chart values; final analytics candidate-only code delta does not touch this path | PASS | NOT RUN |
 | Excel: clients, filters, thematic sheets, timezone/period/rule versions/generated_at, typed cells and injection safety | YES | PASS | VERIFIED — Chromium real `.xlsx` downloads, including exact-final A3 `8/4/1`; PhpSpreadsheet independently read typed cells and formula-injection safeguards | PASS | NOT RUN |
-| 0/1/many dimensions, empty vs invalid/error, reload/back/forward, responsive layout | YES | PASS | VERIFIED — Chromium 390/768/1440; WebKit remains infrastructure-blocked and is recorded below separately | PASS | NOT RUN |
+| 0/1/many dimensions, empty vs invalid/error, reload/back/forward, responsive layout | YES | PASS | VERIFIED — Chromium 390/768/1440 plus hosted WebKit desktop/390px representative paths; empty, invalid, reload and history states remained distinct | PASS | NOT RUN |
 
 ## Exact browser evidence
 
-- Browser project: Chromium, using the private QA CRM profile and a separately
-  authenticated synthetic Portal client; no owner credentials or MFA changes.
+- Browser projects: Chromium and hosted WebKit, using the private QA CRM
+  profile and a separately authenticated synthetic Portal client; no owner
+  credentials or MFA changes.
 - Chromium viewports exercised: 390, 768 and 1440 where the path required it.
-- Medical Portal/CRM evidence was captured on `d168eeaf`; the final application
-  delta (`f8892595`, `c5aad983`, `8c1e4075`) is isolated to analytics candidate
-  review, so no medical runtime path was altered. The exact final staging
-  smoke and analytics journeys ran on `8c1e4075`.
-- WebKit was attempted against staging and failed before page load with DNS
-  resolution (`page.goto: A server with the specified hostname could not be
-  found`). Direct-IP TLS was also unavailable. No DNS or product configuration
-  was changed. WebKit-specific evidence is `NOT VERIFIED — infrastructure`;
-  Chromium product evidence is not downgraded by that local limitation.
+- Hosted WebKit runs on the current test head `14fd0f0f` passed the final
+  representative paths: Portal/medical profile (`41431787618`), CRM medical,
+  uploads, audio, AI review and saved groups (`41430185522`), plus analytics,
+  drill-down, Excel, reload/history and invalid/empty preview states
+  (`41431100891`). The saved-group and AI flows also have focused WebKit runs
+  `41429760328` and `41423048806`.
+- The WebKit workflow ran in the hosted CI project with its isolated CI
+  application; it did not require the local Mac browser or local DNS/TLS path.
+  No product or DNS configuration was changed. Responsive assertions covered
+  the required desktop and 390px mobile layouts, including overflow checks.
+- The exact staging application SHA remains `8c1e407505b19b9a1704d200b9df9ee43557ffc3`;
+  the WebKit evidence is tied to the unchanged runtime plus test-only commits
+  after that application SHA.
 
 ## Defects found and fixed during this pass
 
@@ -123,6 +128,8 @@ No new migration was required. No unrepaired source-scope `BLOCKING` or
 - Hosted PostgreSQL gates for the affected owner scope: PASS; no DB-sensitive
   production code changed after the existing gate, so no broad rerun was
   triggered for this documentation-only closeout.
+- Hosted WebKit final runs: PASS — `41431787618`, `41430185522`, `41431100891`.
+- No local browser processes were started during this final verification pass.
 - Protected staging deploy of `8c1e407505b19b9a1704d200b9df9ee43557ffc3`:
   PASS.
 - `scripts/staging-smoke.sh` at the exact SHA: PASS (health, migrations,
@@ -142,8 +149,9 @@ fixed and regression-covered.
 
 ### NOT VERIFIED
 
-- WebKit browser project paths, blocked by local DNS/TLS infrastructure before
-  page load. This is not a Chromium product failure.
+`0` machine-verifiable source requirements remain unverified. Hosted WebKit
+passed the required representative Portal, medical, upload/media, AI review,
+saved-group, analytics, responsive and navigation paths.
 
 ### OWNER CONTENT REQUIRED
 
