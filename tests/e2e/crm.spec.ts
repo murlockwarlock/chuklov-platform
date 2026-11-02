@@ -2531,7 +2531,7 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(anamnesis).toBeVisible();
 
     await medicalDialog.getByRole('button', { name: 'Добавить боль', exact: true }).click();
-    const profilePainName = medicalDialog.getByLabel('Название или описание боли*', { exact: true }).last();
+    const profilePainName = medicalDialog.getByLabel('Название или описание боли', { exact: true }).last();
     await profilePainName.fill('Боль для проверки шкалы');
     const profilePainScore = medicalDialog.getByRole('slider', { name: 'Оценка боли', exact: true }).last();
     await profilePainScore.press('Home');
@@ -2909,7 +2909,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     const protocolTestLabel = protocolItem.locator('input[type="hidden"][wire\\:model*="test_results"][wire\\:model*="test_label"]').first();
     await expect(protocolTestLabel).toHaveValue(/E2E/);
     await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
-    await page.getByLabel('Название или описание боли*', { exact: true }).fill('Первичная боль');
+    await page.getByLabel('Название или описание боли', { exact: true }).fill('Первичная боль');
     const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
     await beforePainScore.press('Home');
     for (let index = 0; index < 7; index += 1) {
@@ -2987,7 +2987,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
-    await page.getByLabel('Название или описание боли*', { exact: true }).fill('Обновлённая боль');
+    await page.getByLabel('Название или описание боли', { exact: true }).fill('Обновлённая боль');
     const resultField = page.getByLabel('Результат после сеанса', { exact: true });
     await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
     await expect(resultField).toHaveValue(/было 7, стало 3/);
