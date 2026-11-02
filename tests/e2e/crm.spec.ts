@@ -207,11 +207,11 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 'integer_value' => null,
                 'boolean_value' => true,
             ])->save();
-            foreach ([[$candidateLabel, 'needs_review'], [$staleCandidateLabel, 'succeeded']] as [$label, $runStatus]) {
+            foreach ([[$candidateLabel, 'complaints', 'needs_review'], [$staleCandidateLabel, 'feedback', 'succeeded']] as [$label, $taxonomy, $runStatus]) {
                 $run = \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsClassificationRun::forceCreate([
                     'organization_id' => $organization->getKey(),
                     'client_id' => $client->getKey(),
-                    'taxonomy' => 'complaints',
+                    'taxonomy' => $taxonomy,
                     'source_type' => 'synthetic_e2e',
                     'source_id' => $client->getKey(),
                     'source_digest' => hash('sha256', $label),
@@ -225,7 +225,7 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                     'organization_id' => $organization->getKey(),
                     'classification_run_id' => $run->getKey(),
                     'client_id' => $client->getKey(),
-                    'taxonomy' => 'complaints',
+                    'taxonomy' => $taxonomy,
                     'source_type' => 'synthetic_e2e',
                     'source_id' => $client->getKey(),
                     'candidate_type' => 'new',
