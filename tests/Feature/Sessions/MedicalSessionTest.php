@@ -250,7 +250,11 @@ final class MedicalSessionTest extends TestCase
             ->forClient($client)
             ->forSpecialist($specialist)
             ->forService($service)
-            ->create();
+            ->create([
+                'starts_at' => now()->addDays(3)->setTime(12, 0),
+                'ends_at' => now()->addDays(3)->setTime(13, 0),
+                'blocking_ends_at' => now()->addDays(3)->setTime(13, 0),
+            ]);
         $session = MedicalSession::findOrFail(app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
             specialistId: (int) $specialist->getKey(),
             occurredAt: Carbon::now('UTC'),
