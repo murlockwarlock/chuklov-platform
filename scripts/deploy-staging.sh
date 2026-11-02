@@ -81,7 +81,7 @@ ssh_options=(
 )
 remote="${STAGING_USER}@${STAGING_HOST}"
 remote_archive="/tmp/chuklov-$revision.tar"
-remote_normalizer="/tmp/chuklov-$revision-normalize-fail2ban-elements.awk"
+remote_normalizer="$STAGING_ROOT/shared/.chuklov-$revision-normalize-fail2ban-elements.awk"
 
 scp "${ssh_options[@]}" "$archive" "$remote:$remote_archive"
 scp "${ssh_options[@]}" "$normalizer" "$remote:$remote_normalizer"
