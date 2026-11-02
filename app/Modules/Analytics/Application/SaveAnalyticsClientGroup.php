@@ -54,7 +54,7 @@ final readonly class SaveAnalyticsClientGroup
         }
     }
 
-    /** @param list<array{data: array<string, mixed>, client_ids: list<int>}> $groups */
+    /** @param array<int, mixed> $groups */
     public function handleMany(User $actor, array $groups): void
     {
         $organization = $this->context->organization();
@@ -62,16 +62,21 @@ final readonly class SaveAnalyticsClientGroup
         $prepared = [];
         $names = [];
         foreach ($groups as $entry) {
-            if (! is_array($entry) || ! is_array($entry['data'] ?? null) || ! is_array($entry['client_ids'] ?? null)) {
+            if (! is_array($entry)) {
                 throw ValidationException::withMessages(['groups' => 'Проверьте данные всех групп перед сохранением.']);
             }
-            [$name, $type, $ruleDefinition, $normalizedClientIds] = $this->prepare($entry['data'], $entry['client_ids']);
+            $entryData = $entry['data'] ?? null;
+            $entryClientIds = $entry['client_ids'] ?? null;
+            if (! is_array($entryData) || ! is_array($entryClientIds)) {
+                throw ValidationException::withMessages(['groups' => 'Проверьте данные всех групп перед сохранением.']);
+            }
+            [$name, $type, $ruleDefinition, $normalizedClientIds] = $this->prepare($entryData, $entryClientIds);
             $this->assertReferencesBelongToOrganization($organization, $type, $ruleDefinition, $normalizedClientIds);
             $nameKey = mb_strtolower($name);
             if (isset($names[$nameKey])) {
                 throw ValidationException::withMessages(['name' => 'В этой организации уже есть группа с таким названием.']);
             }
-            $id = filter_var($entry['data']['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            $id = filter_var($entryData['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
             $duplicate = $this->hasDuplicateName(
                 $organization,
                 $name,
@@ -81,7 +86,7 @@ final readonly class SaveAnalyticsClientGroup
                 throw ValidationException::withMessages(['name' => 'В этой организации уже есть группа с таким названием.']);
             }
             $names[$nameKey] = true;
-            $prepared[] = [$entry['data'], $name, $type, $ruleDefinition, $normalizedClientIds];
+            $prepared[] = [$entryData, $name, $type, $ruleDefinition, $normalizedClientIds];
         }
 
         try {
@@ -96,7 +101,7 @@ final readonly class SaveAnalyticsClientGroup
     }
 
     /** @param array<string, mixed> $data
-     * @param  list<int>  $clientIds
+     * @param  array<int, mixed>  $clientIds
      * @return array{0: string, 1: string, 2: array<string, mixed>|null, 3: list<int>}
      */
     private function prepare(array $data, array $clientIds): array
@@ -142,11 +147,17 @@ final readonly class SaveAnalyticsClientGroup
         array $normalizedClientIds,
     ): AnalyticsClientGroup {
         $id = filter_var($data['id'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-        $group = $id === false
-            ? new AnalyticsClientGroup
-            : AnalyticsClientGroup::query()->where('organization_id', $organization->getKey())->whereKey($id)->lockForUpdate()->first();
-        if ($id !== false && ! $group instanceof AnalyticsClientGroup) {
-            throw ValidationException::withMessages(['id' => 'Выбранная группа недоступна в этой организации.']);
+        if ($id === false) {
+            $group = new AnalyticsClientGroup;
+        } else {
+            $group = AnalyticsClientGroup::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey($id)
+                ->lockForUpdate()
+                ->first();
+            if (! $group instanceof AnalyticsClientGroup) {
+                throw ValidationException::withMessages(['id' => 'Выбранная группа недоступна в этой организации.']);
+            }
         }
         $expectedVersion = filter_var($data['version'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
         if ($group->exists && $expectedVersion !== false && (int) $group->version !== (int) $expectedVersion) {
@@ -246,7 +257,12 @@ final readonly class SaveAnalyticsClientGroup
             throw ValidationException::withMessages(['client_ids' => 'Все выбранные клиенты должны принадлежать текущей организации.']);
         }
 
-        return array_map('intval', $validClientIds);
+        $normalizedIds = [];
+        foreach ($validClientIds as $clientId) {
+            $normalizedIds[] = (int) $clientId;
+        }
+
+        return $normalizedIds;
     }
 
     /** @param array<string, mixed>|null $ruleDefinition */

@@ -84,7 +84,7 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
                                 ->label(__('Типы каталога'))
                                 ->multiple()
                                 ->searchable()
-                                ->options(fn (Get $get): array => $this->catalogTypeOptions((array) $get('catalog_types')))
+                                ->options(fn (Get $get): array => $this->catalogTypeOptions($this->selectedCatalogTypes($get('catalog_types'))))
                                 ->required()
                                 ->helperText(__('Выберите понятные категории покупок. Старые исторические типы сохраняются автоматически.')),
                             Toggle::make('active')->label(__('Активна'))->default(true),
@@ -159,7 +159,10 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
         Notification::make()->success()->title(__('Группы покупок сохранены'))->send();
     }
 
-    /** @param list<string> $selected */
+    /**
+     * @param  list<string>  $selected
+     * @return array<string, string>
+     */
     private function catalogTypeOptions(array $selected): array
     {
         $options = [
@@ -176,11 +179,24 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
             }
         }
         foreach ($selected as $type) {
-            if (is_string($type) && $type !== '') {
+            if ($type !== '') {
                 $options[$type] ??= __('Исторический тип: :type', ['type' => $type]);
             }
         }
 
         return $options;
+    }
+
+    /** @return list<string> */
+    private function selectedCatalogTypes(mixed $state): array
+    {
+        $selected = [];
+        foreach ((array) $state as $value) {
+            if (is_string($value) && $value !== '') {
+                $selected[] = $value;
+            }
+        }
+
+        return $selected;
     }
 }

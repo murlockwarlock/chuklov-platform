@@ -272,12 +272,12 @@ final readonly class PainAnalytics
                     'session_3_after' => self::nullableFloat($values['session_three_after'] ?? null),
                 ];
             }, $rows)),
-            beforeScoreCount: (int) ($summary?->before_score_count ?? 0),
-            afterScoreCount: (int) ($summary?->after_score_count ?? 0),
-            averageBefore: self::nullableFloat($summary?->average_before),
-            averageAfter: self::nullableFloat($summary?->average_after),
-            averageReduction: self::nullableFloat($summary?->average_reduction),
-            averageReductionPercent: self::nullableFloat($summary?->average_reduction_percent),
+            beforeScoreCount: (int) ($summary->before_score_count ?? 0),
+            afterScoreCount: (int) ($summary->after_score_count ?? 0),
+            averageBefore: self::nullableFloat($summary->average_before ?? null),
+            averageAfter: self::nullableFloat($summary->average_after ?? null),
+            averageReduction: self::nullableFloat($summary->average_reduction ?? null),
+            averageReductionPercent: self::nullableFloat($summary->average_reduction_percent ?? null),
             sessionAxisLabel: $sessionAxis['label'],
             sessionAxisVersion: $sessionAxis['version'],
         );
