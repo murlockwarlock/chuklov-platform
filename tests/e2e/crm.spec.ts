@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
 type CrmFixture = {
@@ -50,6 +51,53 @@ type CrmFixture = {
     tagCandidatePainName: string | null;
     tagCandidateUnrelatedClientName: string | null;
 };
+
+async function startAnalyticsProviderStub(label: string): Promise<Server> {
+    const server = createServer((request, response) => {
+        if (request.method !== 'POST' || request.url !== '/api/chat') {
+            response.writeHead(404).end();
+
+            return;
+        }
+
+        request.resume();
+        request.on('end', () => {
+            response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+                model: 'e2e-analytics-stub',
+                message: {
+                    role: 'assistant',
+                    content: JSON.stringify({ tags: [label] }),
+                },
+                done: true,
+                done_reason: 'stop',
+                prompt_eval_count: 1,
+                eval_count: 1,
+            }));
+        });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => resolve());
+    });
+
+    return server;
+}
+
+function analyticsProviderStubPort(server: Server): number {
+    const address = server.address();
+    if (address === null || typeof address === 'string') {
+        throw new Error('Analytics provider stub did not expose a TCP port.');
+    }
+
+    return address.port;
+}
+
+async function closeAnalyticsProviderStub(server: Server): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+        server.close((error) => error === undefined ? resolve() : reject(error));
+    });
+}
 
 function validPdfBuffer(): Buffer {
     return Buffer.from([
@@ -978,6 +1026,288 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
     }
 
     return JSON.parse(output.trim().split('\n').at(-1) ?? '') as CrmFixture;
+}
+
+function configureAutomaticAnalyticsFixture(fixture: CrmFixture, providerPort: number, candidateLabel: string): {
+    sourcePainName: string;
+    disabledSourcePainName: string;
+    candidateLabel: string;
+    sourcePainId: number;
+    disabledSourcePainId: number;
+} {
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const sourcePainName = `E2E Auto Source ${suffix}`;
+    const disabledSourcePainName = `E2E Auto Disabled Source ${suffix}`;
+    const encodedEmail = Buffer.from(fixture.email).toString('base64');
+    const encodedSourcePainName = Buffer.from(sourcePainName).toString('base64');
+    const encodedDisabledSourcePainName = Buffer.from(disabledSourcePainName).toString('base64');
+
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $adminEmail = base64_decode('${encodedEmail}', true);
+        $sourcePainName = base64_decode('${encodedSourcePainName}', true);
+        $disabledSourcePainName = base64_decode('${encodedDisabledSourcePainName}', true);
+        $admin = \\App\\Models\\User::query()->where('email', $adminEmail)->firstOrFail();
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey(${fixture.clientId})
+            ->firstOrFail();
+        app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::withoutEvents(function () use ($admin, $client, $sourcePainName, $disabledSourcePainName): void {
+            app(\\App\\Modules\\MedicalProfiles\\Application\\UpdateMedicalProfile::class)->handle(
+                $admin,
+                $client,
+                new \\App\\Modules\\MedicalProfiles\\Application\\DTOs\\UpdateMedicalProfileCommand(
+                    pains: [
+                        ['name' => $sourcePainName, 'score' => 4],
+                        ['name' => $disabledSourcePainName, 'score' => 5],
+                    ],
+                    painsProvided: true,
+                ),
+            );
+        });
+        $setBoolean = static function (string $key, bool $value) use ($organization): void {
+            $setting = $organization->settings()->where('setting_key', $key)->first()
+                ?? new \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationSetting;
+            $setting->forceFill([
+                'organization_id' => $organization->getKey(),
+                'setting_key' => $key,
+                'value_type' => \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingType::Boolean,
+                'string_value' => null,
+                'integer_value' => null,
+                'boolean_value' => $value,
+            ])->save();
+        };
+        $setBoolean(\\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiAutomaticTagSuggestionsEnabled->value, true);
+        $setBoolean(\\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled->value, true);
+        $providerOptions = ['base_url' => 'http://127.0.0.1:${providerPort}'];
+        $provider = \\App\\Modules\\AI\\Domain\\Models\\AiProviderConfiguration::query()->updateOrCreate(
+            ['organization_id' => $organization->getKey(), 'provider_name' => 'ollama'],
+            [
+                'display_name' => 'E2E analytics provider',
+                'is_enabled' => true,
+                'health_status' => 'healthy',
+                'credential_id' => null,
+                'options' => $providerOptions,
+                'tested_credential_revision' => null,
+                'tested_configuration_digest' => \\App\\Modules\\AI\\Infrastructure\\Providers\\AiProviderExecutionConfiguration::digest('ollama', $providerOptions),
+            ],
+        );
+        $pricing = (new \\App\\Modules\\AI\\Domain\\ValueObjects\\AiPricingSnapshot('USD', 15, 60))->toArray();
+        $capabilities = [\\App\\Modules\\AI\\Domain\\Enums\\AiCapability::GeneralAssistant->value];
+        $model = \\App\\Modules\\AI\\Domain\\Models\\AiModelConfiguration::query()->firstOrNew([
+            'organization_id' => $organization->getKey(),
+            'provider_config_id' => $provider->getKey(),
+            'model_name' => 'e2e-analytics-stub',
+        ]);
+        $model->forceFill([
+            'display_name' => 'E2E analytics provider',
+            'is_enabled' => true,
+            'lifecycle_status' => 'active',
+            'capabilities' => $capabilities,
+            'pricing_snapshot' => $pricing,
+            'failover_priority' => 1,
+        ])->save();
+        $release = \\App\\Modules\\AI\\Domain\\Models\\AiModelRelease::query()->firstOrNew([
+            'organization_id' => $organization->getKey(),
+            'model_config_id' => $model->getKey(),
+            'release_number' => 1,
+        ]);
+        $release->forceFill([
+            'status' => 'active',
+            'provider_name' => 'ollama',
+            'model_name' => 'e2e-analytics-stub',
+            'capabilities' => $capabilities,
+            'pricing_snapshot' => $pricing,
+            'activated_at' => now(),
+        ])->save();
+        $model->forceFill(['active_release_id' => $release->getKey()])->save();
+        $prompt = \\App\\Modules\\AI\\Domain\\Models\\AiPrompt::query()->firstOrNew([
+            'organization_id' => $organization->getKey(),
+            'key' => 'analytics_classification',
+        ]);
+        $prompt->forceFill([
+            'name' => 'E2E analytics classification',
+            'capability' => \\App\\Modules\\AI\\Domain\\Enums\\AiCapability::GeneralAssistant,
+        ])->save();
+        $version = \\App\\Modules\\AI\\Domain\\Models\\AiPromptVersion::query()->firstOrNew([
+            'organization_id' => $organization->getKey(),
+            'prompt_id' => $prompt->getKey(),
+            'version' => 1,
+        ]);
+        $version->forceFill([
+            'status' => 'active',
+            'system_prompt' => 'Return only JSON with the tags array.',
+            'user_prompt_template' => '{{source_text}} {{allowed_tags}}',
+            'variables_schema' => [],
+            'parameter_config' => [],
+            'context_policy' => [],
+            'output_schema' => [
+                'type' => 'object',
+                'properties' => ['tags' => ['type' => 'array', 'items' => ['type' => 'string']]],
+                'required' => ['tags'],
+            ],
+            'allowed_tools' => [],
+            'activated_at' => now(),
+        ])->save();
+        $prompt->forceFill(['active_version_id' => $version->getKey()])->save();
+        $sourcePain = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->where('name', $sourcePainName)
+            ->firstOrFail();
+        $disabledSourcePain = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->where('name', $disabledSourcePainName)
+            ->firstOrFail();
+        echo json_encode([
+            'sourcePainId' => $sourcePain->getKey(),
+            'disabledSourcePainId' => $disabledSourcePain->getKey(),
+        ], JSON_THROW_ON_ERROR);
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-auto-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    let output: string;
+    try {
+        output = execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                XDG_CONFIG_HOME: psyshConfigDirectory,
+                DB_CONNECTION: 'pgsql',
+                DB_HOST: '127.0.0.1',
+                DB_PORT: '5432',
+                DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+                DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+                DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+                MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                    ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+    } catch (error) {
+        const details = error as { stderr?: Buffer; stdout?: Buffer };
+        throw new Error(`${details.stderr?.toString() ?? ''}${details.stdout?.toString() ?? ''}`);
+    }
+
+    const state = JSON.parse(output.trim().split('\n').at(-1) ?? '') as {
+        sourcePainId: number;
+        disabledSourcePainId: number;
+    };
+
+    return { sourcePainName, disabledSourcePainName, candidateLabel, ...state };
+}
+
+function setAutomaticAnalyticsSuggestions(enabled: boolean): void {
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $setting = $organization->settings()->where('setting_key', \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiAutomaticTagSuggestionsEnabled->value)->first()
+            ?? new \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationSetting;
+        $setting->forceFill([
+            'organization_id' => $organization->getKey(),
+            'setting_key' => \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiAutomaticTagSuggestionsEnabled->value,
+            'value_type' => \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingType::Boolean,
+            'string_value' => null,
+            'integer_value' => null,
+            'boolean_value' => ${enabled ? 'true' : 'false'},
+        ])->save();
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-auto-setting-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            XDG_CONFIG_HOME: psyshConfigDirectory,
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+}
+
+function runAnalyticsClassificationWorker(): void {
+    execFileSync('php', [
+        'artisan',
+        'queue:work',
+        'redis',
+        '--queue=analytics-classification',
+        '--once',
+        '--tries=1',
+        '--timeout=45',
+    ], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            APP_ENV: 'e2e',
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+}
+
+function readAutomaticAnalyticsState(sourceId: number, label: string): {
+    runStatus: string | null;
+    candidateStatus: string | null;
+    activeTagCount: number;
+} {
+    const encodedLabel = Buffer.from(label).toString('base64');
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $label = base64_decode('${encodedLabel}', true);
+        $run = \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsClassificationRun::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('source_type', 'medical_profile_pain')
+            ->where('source_id', ${sourceId})
+            ->latest('id')
+            ->first();
+        $candidate = $run === null ? null : \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsTagCandidate::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('classification_run_id', $run->getKey())
+            ->latest('id')
+            ->first();
+        echo json_encode([
+            'runStatus' => $run?->status?->value,
+            'candidateStatus' => $candidate?->status?->value,
+            'activeTagCount' => \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('name', $label)
+                ->where('is_active', true)
+                ->count(),
+        ], JSON_THROW_ON_ERROR);
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-auto-state-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    const output = execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            XDG_CONFIG_HOME: psyshConfigDirectory,
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    return JSON.parse(output.trim().split('\n').at(-1) ?? '') as {
+        runStatus: string | null;
+        candidateStatus: string | null;
+        activeTagCount: number;
+    };
 }
 
 function readCrmBookingSnapshot(bookingId: number): { startsAtUtc: string; scheduleTimezone: string } {
@@ -4054,6 +4384,104 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await expect(staleItem.getByRole('textbox', { name: 'Предложение', exact: true })).toHaveValue(fixture.staleCandidateLabel);
     await page.setViewportSize({ width: 390, height: 900 });
     await assertNoHorizontalOverflow(page);
+});
+
+test('automatic analytics suggestions follow a real source save into NeedsReview', async ({ page }) => {
+    test.setTimeout(120_000);
+    const candidateLabelSuffix = `E2E Auto Suggest ${Date.now()}`;
+    const providerStub = await startAnalyticsProviderStub(candidateLabelSuffix);
+    let fixture: CrmFixture | null = null;
+
+    const findPainInput = async (dialog: Locator, currentValue: string): Promise<Locator> => {
+        const inputs = dialog.getByLabel('Название или описание боли', { exact: true });
+        for (let index = 0; index < await inputs.count(); index += 1) {
+            if (await inputs.nth(index).inputValue() === currentValue) {
+                return inputs.nth(index);
+            }
+        }
+
+        throw new Error(`Medical profile pain ${currentValue} was not rendered.`);
+    };
+
+    const findPendingCandidate = async (label: string): Promise<Locator> => {
+        const inputs = page.getByRole('textbox', { name: 'Предложение', exact: true });
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+            for (let index = 0; index < await inputs.count(); index += 1) {
+                if (await inputs.nth(index).inputValue() === label) {
+                    return inputs.nth(index).locator('xpath=ancestor::li[1]');
+                }
+            }
+
+            await page.waitForTimeout(250);
+        }
+
+        throw new Error(`Automatic candidate ${label} was not rendered.`);
+    };
+
+    try {
+        fixture = createCrmFixture();
+        const automaticFixture = configureAutomaticAnalyticsFixture(fixture, analyticsProviderStubPort(providerStub), candidateLabelSuffix);
+        const automaticSourceValue = `${automaticFixture.sourcePainName} changed through CRM`;
+        const disabledSourceValue = `${automaticFixture.disabledSourcePainName} changed through CRM`;
+
+        await login(page, fixture);
+        await page.goto(`/admin/clients/${fixture.clientId}`);
+        await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
+        const profileDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
+        await (await findPainInput(profileDialog, automaticFixture.sourcePainName)).fill(automaticSourceValue);
+        await profileDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+        await expect(profileDialog).toBeHidden({ timeout: 15_000 });
+
+        runAnalyticsClassificationWorker();
+
+        await page.goto('/admin/analytics-tag-candidates');
+        await expect(page.getByRole('heading', { name: 'Кандидаты тегов', exact: true })).toBeVisible();
+        await expect(page.getByText('Ожидают проверки', { exact: true })).toBeVisible();
+        const pendingCandidate = await findPendingCandidate(candidateLabelSuffix);
+        await expect(pendingCandidate).toBeVisible();
+        await expect(pendingCandidate.getByRole('textbox', { name: 'Категория', exact: true })).toHaveValue('Жалобы и проблемы');
+        await expect(pendingCandidate).toContainText('medical_profile_pain');
+        await expect(pendingCandidate).toContainText(`ID ${automaticFixture.sourcePainId}`);
+        const enabledState = readAutomaticAnalyticsState(automaticFixture.sourcePainId, candidateLabelSuffix);
+        expect(enabledState.runStatus).toBe('needs_review');
+        expect(enabledState.candidateStatus).toBe('needs_review');
+        expect(enabledState.activeTagCount).toBe(0);
+
+        await page.reload();
+        await expect(page.getByText('Ожидают проверки', { exact: true })).toBeVisible();
+        await expect(await findPendingCandidate(candidateLabelSuffix)).toBeVisible();
+
+        setAutomaticAnalyticsSuggestions(false);
+        await page.goto(`/admin/clients/${fixture.clientId}`);
+        await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
+        const disabledProfileDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
+        await (await findPainInput(disabledProfileDialog, automaticFixture.disabledSourcePainName)).fill(disabledSourceValue);
+        await disabledProfileDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+        await expect(disabledProfileDialog).toBeHidden({ timeout: 15_000 });
+
+        runAnalyticsClassificationWorker();
+
+        await page.goto('/admin/analytics-tag-candidates');
+        await expect.poll(async () => {
+            const inputs = page.getByRole('textbox', { name: 'Предложение', exact: true });
+            for (let index = 0; index < await inputs.count(); index += 1) {
+                if (await inputs.nth(index).inputValue() === candidateLabelSuffix) {
+                    return true;
+                }
+            }
+
+            return false;
+        }).toBe(false);
+        const disabledState = readAutomaticAnalyticsState(automaticFixture.disabledSourcePainId, candidateLabelSuffix);
+        expect(disabledState.runStatus).toBeNull();
+        expect(disabledState.candidateStatus).toBeNull();
+        expect(disabledState.activeTagCount).toBe(0);
+    } finally {
+        if (fixture !== null) {
+            setAutomaticAnalyticsSuggestions(false);
+        }
+        await closeAnalyticsProviderStub(providerStub);
+    }
 });
 
 test('staff can maintain saved client groups in CRM', async ({ page }) => {
