@@ -3887,9 +3887,8 @@ test('staff can maintain saved client groups in CRM', async ({ page }) => {
     const secondGroupName = `${renamedGroupName} второй`;
     await page.getByRole('button', { name: 'Добавить группу', exact: true }).click();
     const secondItem = page.locator('.fi-fo-repeater-item').last();
-    await secondItem.getByRole('combobox', { name: /^Тип/ }).selectOption('manual');
-    await page.waitForTimeout(500);
     await secondItem.getByRole('textbox', { name: /^Название/ }).fill(secondGroupName);
+    await secondItem.getByRole('combobox', { name: /^Тип/ }).selectOption('manual');
     await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
     await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
 
