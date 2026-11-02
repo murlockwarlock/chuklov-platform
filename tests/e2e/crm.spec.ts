@@ -3800,7 +3800,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await page.goto('/admin/analytics-tag-candidates');
     await expect(page.getByRole('heading', { name: 'Кандидаты тегов', exact: true })).toBeVisible();
 
-    const candidateItem = page.locator(`input[value="${fixture.candidateLabel}"]`).locator('xpath=ancestor::*[contains(@class, "fi-fo-repeater-item")][1]');
+    const candidateItem = page.locator(`input[value="${fixture.candidateLabel}"]`).locator('xpath=ancestor::li[1]');
     await expect(candidateItem).toBeVisible();
     await expect(candidateItem).toContainText('Жалобы и проблемы');
     const decision = candidateItem.getByRole('combobox', { name: 'Решение', exact: true });
@@ -3821,7 +3821,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await page.keyboard.press('Escape');
 
     await page.goto('/admin/analytics-tag-candidates');
-    const staleItem = page.locator(`input[value="${fixture.staleCandidateLabel}"]`).locator('xpath=ancestor::*[contains(@class, "fi-fo-repeater-item")][1]');
+    const staleItem = page.locator(`input[value="${fixture.staleCandidateLabel}"]`).locator('xpath=ancestor::li[1]');
     await expect(staleItem).toBeVisible();
     const staleDecision = staleItem.getByRole('combobox', { name: 'Решение', exact: true });
     await staleDecision.click();
