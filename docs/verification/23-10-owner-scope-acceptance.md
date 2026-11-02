@@ -14,7 +14,7 @@ history and is not re-audited by this pass.
 | Item | Current value |
 |---|---|
 | Starting PR SHA | `eb800e9b8fcbd4e59cae0f4c2965bf9aa52a9cdc` |
-| Final PR HEAD | `924294e0ebb3ac89908a9cbb39d3da40682b2ba6` |
+| Final PR HEAD | `18ceb530e77b71279e8a8c47b474f67f1fff152b` |
 | Starting application SHA | `ab4e3db9e396cc2f782bdf9cab8693c4be79d7a1` |
 | Final application SHA | `ec2c26798333616c3bda0f90b8894a84734c3326` |
 | Exact staging SHA | `ec2c26798333616c3bda0f90b8894a84734c3326` |
