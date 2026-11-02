@@ -3529,30 +3529,29 @@ test('analytics custom period rejects invalid dates without falling back to the 
     await analyze.click();
     await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
 
-    const navigateHistory = async (direction: 'back' | 'forward'): Promise<void> => {
+    const navigateHistory = async (direction: 'back' | 'forward', expectedUrl: RegExp): Promise<void> => {
         try {
             if (direction === 'back') {
-                await page.goBack();
+                await page.goBack({ waitUntil: 'domcontentloaded' });
             } else {
-                await page.goForward();
+                await page.goForward({ waitUntil: 'domcontentloaded' });
             }
         } catch (error) {
             if (!String(error).includes('ERR_ABORTED')) {
                 throw error;
             }
         }
+        await expect(page).toHaveURL(expectedUrl);
     };
 
     await page.goto('/admin');
-    await navigateHistory('back');
-    await expect(page).toHaveURL(/\/admin\/analytics-console$/);
+    await navigateHistory('back', /\/admin\/analytics-console$/);
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
     await expect(period).toHaveValue('custom');
     await expect(startDate).toHaveValue('2026-10-01');
     await expect(endDate).toHaveValue('2026-10-31');
-    await navigateHistory('forward');
-    await navigateHistory('back');
-    await expect(page).toHaveURL(/\/admin\/analytics-console$/);
+    await navigateHistory('forward', /\/admin$/);
+    await navigateHistory('back', /\/admin\/analytics-console$/);
     await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
     await expect(period).toHaveValue('custom');
     await expect(startDate).toHaveValue('2026-10-01');
