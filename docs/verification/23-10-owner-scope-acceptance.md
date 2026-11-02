@@ -14,9 +14,9 @@ Synthetic QA data proves configurable mechanisms; it is not production content.
 
 | Item | Value |
 |---|---|
-| Starting PR SHA | `2c4010fef38d13e37a3c03f91d33e8a216200b7e` |
-| Starting runtime SHA | `b743d67dc769e08ca8cc6b948803903fe95c70b7` |
-| PR HEAD before this final verification pass | `973cdc133a86198cb94bf1817dd30fdf7d786c7f` |
+| Starting PR SHA for this final verification pass | `973cdc133a86198cb94bf1817dd30fdf7d786c7f` |
+| Starting application SHA for this final verification pass | `d168eeaf93209585cb36644460949c307d671403` |
+| Historical reconciliation baseline | PR `2c4010fef38d13e37a3c03f91d33e8a216200b7e`, runtime `b743d67dc769e08ca8cc6b948803903fe95c70b7` |
 | Final PR SHA | Documentation-only closeout commits after the application SHA; exact final head is reported with the final handoff |
 | Final application SHA | `8c1e407505b19b9a1704d200b9df9ee43557ffc3` |
 | Exact staging SHA | `8c1e407505b19b9a1704d200b9df9ee43557ffc3` |
