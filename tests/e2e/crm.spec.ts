@@ -1271,6 +1271,12 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
     runErrorMessage: string | null;
     sourceExists: boolean;
     currentPains: Array<{ id: number; name: string }>;
+    aiRunStatus: string | null;
+    aiRunErrorCategory: string | null;
+    aiRunErrorMessage: string | null;
+    attemptStatus: string | null;
+    attemptErrorCategory: string | null;
+    attemptErrorMessage: string | null;
 } {
     const encodedLabel = Buffer.from(label).toString('base64');
     const php = `
@@ -1295,6 +1301,12 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
         $profile = $source?->profile;
         $currentPains = $profile === null ? [] : app(\\App\\Modules\\MedicalProfiles\\Application\\MedicalProfilePainReader::class)
             ->forProfile($profile);
+        $aiRun = $run?->ai_run_id === null
+            ? null
+            : \\App\\Modules\\AI\\Domain\\Models\\AiRun::query()->whereKey($run->ai_run_id)->first();
+        $attempt = $aiRun === null
+            ? null
+            : \\App\\Modules\\AI\\Domain\\Models\\AiRunAttempt::query()->where('ai_run_id', $aiRun->getKey())->latest('id')->first();
         echo json_encode([
             'runStatus' => $run?->status?->value,
             'candidateStatus' => $candidate?->status?->value,
@@ -1302,6 +1314,12 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
             'runErrorMessage' => $run?->error_message_sanitized,
             'sourceExists' => $source !== null,
             'currentPains' => array_map(static fn ($pain): array => ['id' => $pain->id, 'name' => $pain->name], $currentPains),
+            'aiRunStatus' => $aiRun?->status?->value,
+            'aiRunErrorCategory' => $aiRun?->error_category?->value,
+            'aiRunErrorMessage' => $aiRun?->error_message_sanitized,
+            'attemptStatus' => $attempt?->status,
+            'attemptErrorCategory' => $attempt?->error_category?->value,
+            'attemptErrorMessage' => $attempt?->error_message_sanitized,
             'activeTagCount' => \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('name', $label)
@@ -1336,6 +1354,12 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
         runErrorMessage: string | null;
         sourceExists: boolean;
         currentPains: Array<{ id: number; name: string }>;
+        aiRunStatus: string | null;
+        aiRunErrorCategory: string | null;
+        aiRunErrorMessage: string | null;
+        attemptStatus: string | null;
+        attemptErrorCategory: string | null;
+        attemptErrorMessage: string | null;
     };
 }
 
