@@ -3888,6 +3888,9 @@ test('staff can maintain saved client groups in CRM', async ({ page }) => {
     const invalidItem = reopenedItems.last();
     await invalidItem.getByRole('textbox', { name: /^Название/ }).fill(renamedGroupName);
     await invalidItem.getByRole('combobox', { name: /^Тип/ }).selectOption('manual');
+    await expect(invalidItem.getByRole('textbox', { name: /^Название/ })).toHaveValue(renamedGroupName);
+    await expect(invalidItem.getByRole('combobox', { name: /^Тип/ })).toHaveValue('manual');
+    await page.waitForTimeout(750);
     await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
     await expect(page.getByText('В этой организации уже есть группа с таким названием.', { exact: true })).toBeVisible();
     await expect(page.getByRole('textbox', { name: /^Название/ }).first()).toHaveValue(renamedGroupName);
