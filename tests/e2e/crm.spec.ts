@@ -3813,7 +3813,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
 
     const candidateItem = await candidateItemFor(fixture.candidateLabel);
     await expect(candidateItem).toBeVisible();
-    await expect(candidateItem).toContainText('Жалобы и проблемы');
+    await expect(candidateItem.getByRole('textbox', { name: 'Категория', exact: true })).toHaveValue('Жалобы и проблемы');
     const decision = candidateItem.getByRole('combobox', { name: 'Решение', exact: true });
     await decision.click();
     await page.getByRole('option', { name: 'Принять', exact: true }).last().click();
