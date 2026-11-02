@@ -3815,8 +3815,7 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     await expect(candidateItem).toBeVisible();
     await expect(candidateItem.getByRole('textbox', { name: 'Категория', exact: true })).toHaveValue('Жалобы и проблемы');
     const decision = candidateItem.getByRole('combobox', { name: 'Решение', exact: true });
-    await decision.click();
-    await page.getByRole('option', { name: 'Принять', exact: true }).last().click();
+    await decision.selectOption('accept');
     const reviewedLabel = candidateItem.getByLabel('Итоговое название', { exact: true });
     await expect(reviewedLabel).toBeVisible();
     await reviewedLabel.fill(`${fixture.candidateLabel} принято`);
@@ -3844,13 +3843,55 @@ test('staff can review synthetic analytics tag candidates in CRM', async ({ page
     const staleItem = await candidateItemFor(fixture.staleCandidateLabel);
     await expect(staleItem).toBeVisible();
     const staleDecision = staleItem.getByRole('combobox', { name: 'Решение', exact: true });
-    await staleDecision.click();
-    await page.getByRole('option', { name: 'Принять', exact: true }).last().click();
+    await staleDecision.selectOption('accept');
     await staleItem.getByLabel('Итоговое название', { exact: true }).fill(`${fixture.staleCandidateLabel} принято`);
     await page.getByRole('button', { name: 'Сохранить решения', exact: true }).click();
     await expect(page.getByText('Источник кандидата уже устарел. Запустите классификацию повторно.', { exact: true })).toBeVisible();
     await expect(staleItem.getByRole('textbox', { name: 'Предложение', exact: true })).toHaveValue(fixture.staleCandidateLabel);
     await page.setViewportSize({ width: 390, height: 900 });
+    await assertNoHorizontalOverflow(page);
+});
+
+test('staff can maintain saved client groups in CRM', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+    const groupName = `E2E сохранённая группа ${fixture.clientName.replace(/^CRM Клиент /, '')}`;
+    const renamedGroupName = `${groupName} обновлена`;
+
+    await login(page, fixture);
+    await page.goto('/admin/client-cohort-groups');
+    await expect(page.getByRole('heading', { name: 'Группы клиентов', exact: true })).toBeVisible();
+
+    const repeaterItems = page.locator('.fi-fo-repeater-item');
+    await page.getByRole('button', { name: 'Добавить группу', exact: true }).click();
+    const firstItem = repeaterItems.last();
+    await firstItem.getByRole('textbox', { name: 'Название', exact: true }).fill(groupName);
+    await firstItem.getByRole('combobox', { name: 'Тип', exact: true }).selectOption('manual');
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
+
+    await page.reload();
+    const reopenedItems = page.locator('.fi-fo-repeater-item');
+    const reopenedName = page.getByRole('textbox', { name: 'Название', exact: true });
+    await expect(reopenedName).toHaveValue(groupName);
+    await reopenedName.fill(renamedGroupName);
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByRole('textbox', { name: 'Название', exact: true })).toHaveValue(renamedGroupName);
+    await page.getByRole('button', { name: 'Добавить группу', exact: true }).click();
+    const invalidItem = reopenedItems.last();
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(invalidItem.locator('.fi-fo-field-wrp-error-message').first()).toBeVisible();
+
+    await invalidItem.getByRole('textbox', { name: 'Название', exact: true }).fill(`${renamedGroupName} 2`);
+    await invalidItem.getByRole('combobox', { name: 'Тип', exact: true }).selectOption('manual');
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('textbox', { name: 'Название', exact: true })).toHaveCount(2);
+    await expect(page.locator('html')).toBeVisible();
     await assertNoHorizontalOverflow(page);
 });
 
