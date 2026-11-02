@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 
 use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
+use App\Filament\Resources\Clients\Resources\Sessions\Pages\CreateMedicalSession;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
@@ -270,15 +271,17 @@ final class SessionForm
                         Textarea::make('result')
                             ->label(__('Результат после сеанса'))
                             ->rows(3)
+                            ->live(onBlur: true)
                             ->placeholder(__('Эффект после процедур/до следующего сеанса'))
                             ->hintAction(Action::make('fillResult')
                                 ->label(__('Заполнить'))
                                 ->icon('heroicon-o-sparkles')
-                                ->action(static function (): void {
-                                    Notification::make()
-                                        ->title(__('Сначала сохраните сеанс'))
-                                        ->info()
-                                        ->send();
+                                ->requiresConfirmation(fn (Get $get): bool => filled($get('result')))
+                                ->modalHeading(fn (Get $get): ?string => filled($get('result')) ? (string) __('Заменить текст результата?') : null)
+                                ->modalDescription(fn (Get $get): ?string => filled($get('result')) ? (string) __('Текущий текст будет заменён сводкой по данным сеанса.') : null)
+                                ->action(function (CreateMedicalSession $livewire, Set $set): void {
+                                    $set('result', $livewire->fillDraftResult());
+                                    Notification::make()->title(__('Результат заполнен'))->success()->send();
                                 })),
                     ])->columnSpanFull(),
                 Section::make(__('Фото до / после'))

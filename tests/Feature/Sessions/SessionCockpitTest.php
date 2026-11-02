@@ -1050,6 +1050,91 @@ final class SessionCockpitTest extends TestCase
         );
     }
 
+    public function test_filament_create_session_result_action_uses_unsaved_draft_and_persists_after_confirmation(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+        $test = MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'create_draft_result_test',
+            'name' => 'CREATE DRAFT TEST',
+            'section' => 'Synthetic',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $normal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'normal',
+            'label' => 'Normal',
+            'is_abnormal' => false,
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $abnormal = MedicalTestValue::query()->create([
+            'organization_id' => $organization->getKey(),
+            'medical_test_definition_id' => $test->getKey(),
+            'key' => 'abnormal',
+            'label' => 'Abnormal',
+            'is_abnormal' => true,
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+
+        $component = Livewire::actingAs($admin)
+            ->test(CreateMedicalSession::class, ['parentRecord' => $client])
+            ->fillForm([
+                'occurred_at' => '2026-08-16 10:00',
+                'specialist_id' => $specialist->getKey(),
+                'pains' => [[
+                    'name' => 'CREATE DRAFT PAIN',
+                    'before_score' => 9,
+                    'after_score' => 1,
+                ]],
+                'subjective_feelings' => 'CREATE DRAFT SUBJECTIVE',
+                'visual_posture_diagnostics' => 'CREATE DRAFT POSTURE',
+                'test_results' => [[
+                    'test_id' => $test->getKey(),
+                    'before_value_id' => $abnormal->getKey(),
+                    'after_value_id' => $normal->getKey(),
+                ]],
+            ])
+            ->assertFormComponentActionExists('result', 'fillResult')
+            ->callFormComponentAction('result', 'fillResult')
+            ->assertNotified('Результат заполнен')
+            ->assertSet('data.result', "Боли: CREATE DRAFT PAIN: было 9, стало 1 из 10\nСубъективные ощущения: CREATE DRAFT SUBJECTIVE\nВизуальная диагностика осанки: CREATE DRAFT POSTURE\nНарушения по тестам: было 1, стало 0.");
+
+        self::assertSame(0, MedicalSession::query()->where('client_id', $client->getKey())->count());
+
+        $component
+            ->fillForm(['result' => 'CREATE MANUAL RESULT'])
+            ->mountFormComponentAction('result', 'fillResult')
+            ->assertFormComponentActionMounted('result', 'fillResult')
+            ->unmountFormComponentAction()
+            ->assertSet('data.result', 'CREATE MANUAL RESULT');
+
+        $component
+            ->mountFormComponentAction('result', 'fillResult')
+            ->callMountedFormComponentAction()
+            ->assertNotified('Результат заполнен')
+            ->assertSet('data.result', "Боли: CREATE DRAFT PAIN: было 9, стало 1 из 10\nСубъективные ощущения: CREATE DRAFT SUBJECTIVE\nВизуальная диагностика осанки: CREATE DRAFT POSTURE\nНарушения по тестам: было 1, стало 0.")
+            ->call('create')
+            ->assertHasNoErrors();
+
+        $session = MedicalSession::query()->where('client_id', $client->getKey())->sole();
+        self::assertSame(
+            "Боли: CREATE DRAFT PAIN: было 9, стало 1 из 10\nСубъективные ощущения: CREATE DRAFT SUBJECTIVE\nВизуальная диагностика осанки: CREATE DRAFT POSTURE\nНарушения по тестам: было 1, стало 0.",
+            app(GetSession::class)->handle($admin, $session, $client)?->result,
+        );
+
+        $reloaded = Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()]);
+        self::assertSame(
+            "Боли: CREATE DRAFT PAIN: было 9, стало 1 из 10\nСубъективные ощущения: CREATE DRAFT SUBJECTIVE\nВизуальная диагностика осанки: CREATE DRAFT POSTURE\nНарушения по тестам: было 1, стало 0.",
+            $reloaded->get('data.result'),
+        );
+    }
+
     public function test_filament_edit_session_rejects_forged_same_organization_other_client_record(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

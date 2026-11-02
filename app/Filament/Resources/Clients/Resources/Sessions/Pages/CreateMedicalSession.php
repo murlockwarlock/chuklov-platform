@@ -12,6 +12,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Application\CreateSession;
 use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
+use App\Modules\Sessions\Application\GenerateSessionResult;
 use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Illuminate\Database\Eloquent\Model;
@@ -92,6 +93,19 @@ class CreateMedicalSession extends LocalizedCreateRecord
     protected function getCreatedNotificationTitle(): ?string
     {
         return __('Сеанс создан');
+    }
+
+    public function fillDraftResult(): string
+    {
+        $actor = $this->actor();
+        $client = $this->parentClient();
+        $draft = $this->form->getRawState();
+
+        return app(GenerateSessionResult::class)->handleCreateDraft(
+            $actor,
+            $client,
+            is_array($draft) ? $draft : $draft->toArray(),
+        );
     }
 
     private function actor(): User

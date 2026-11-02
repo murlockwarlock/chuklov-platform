@@ -42,7 +42,22 @@ final readonly class GenerateSessionResult
     /** @param array<string, mixed> $draft */
     public function handleDraft(User $actor, MedicalSession $session, Client $client, array $draft): string
     {
-        $this->authorization->authorizeManageSession($actor, $session, $client);
+        $organization = $this->authorization->authorizeManageSession($actor, $session, $client);
+
+        return $this->summaryFromDraft($draft, (int) $organization->getKey());
+    }
+
+    /** @param array<string, mixed> $draft */
+    public function handleCreateDraft(User $actor, Client $client, array $draft): string
+    {
+        $organization = $this->authorization->authorizeManage($actor, $client);
+
+        return $this->summaryFromDraft($draft, (int) $organization->getKey());
+    }
+
+    /** @param array<string, mixed> $draft */
+    private function summaryFromDraft(array $draft, int $organizationId): string
+    {
         $rawPains = is_array($draft['pains'] ?? null) ? $draft['pains'] : [];
         $pains = [];
         foreach ($rawPains as $rawPain) {
@@ -62,7 +77,7 @@ final readonly class GenerateSessionResult
             pains: $pains,
             subjectiveFeelings: self::optionalString($draft['subjective_feelings'] ?? null),
             posture: self::optionalString($draft['visual_posture_diagnostics'] ?? null),
-            testCounts: $rawTests === [] ? null : $this->clinicalCatalog->abnormalCounts((int) $client->organization_id, $rawTests),
+            testCounts: $rawTests === [] ? null : $this->clinicalCatalog->abnormalCounts($organizationId, $rawTests),
         );
     }
 

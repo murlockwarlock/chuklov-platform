@@ -17,6 +17,7 @@ on:
           - integration-foundation
           - integration-rag
           - integration-concurrency
+          - medical
           - privacy
           - docker
       test_filter:
@@ -351,6 +352,62 @@ jobs:
         run: make check-app-key
       - name: Run concurrency integration tests
         run: make test-integration-concurrency
+
+  medical-postgres:
+    if: ${{ inputs.scope == 'medical' }}
+    name: Medical PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg18-trixie
+        env:
+          POSTGRES_DB: chuklov_test
+          POSTGRES_USER: chuklov
+          POSTGRES_PASSWORD: chuklov_local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chuklov -d chuklov_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      APP_ENV: testing
+      APP_DEBUG: false
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: chuklov_test
+      DB_USERNAME: chuklov
+      DB_PASSWORD: chuklov_local
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      DEFAULT_ORGANIZATION_ID: 1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: intl, pcntl, pdo_pgsql, zip
+          coverage: none
+      - name: Install backend dependencies
+        run: composer install --no-interaction --prefer-dist
+      - name: Initialize application environment
+        run: cp .env.example .env && scripts/initialize-app-key.sh php artisan key:generate --no-interaction
+      - name: Migrate PostgreSQL schema
+        run: php artisan migrate --seed --force
+      - name: Confirm PostgreSQL connection
+        run: php artisan db:show --database=pgsql
+      - name: Run focused Medical PostgreSQL tests
+        run: >-
+          php artisan test
+          tests/Feature/MedicalPainFlowTest.php
+          tests/Feature/Sessions/MedicalSessionTest.php
+          tests/Feature/Sessions/SessionCockpitTest.php
+          tests/Feature/September26MedicalProfileTest.php
+          tests/Feature/Attachments/MedicalAttachmentTest.php
+          tests/Feature/Attachments/AudioRecordingsTest.php
+          tests/Integration/MedicalAttachmentLimitPostgresTest.php
 
   privacy:
     if: ${{ inputs.scope == 'full' || inputs.scope == 'privacy' }}
