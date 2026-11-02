@@ -1265,6 +1265,8 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
     activeTagCount: number;
     runErrorCode: string | null;
     runErrorMessage: string | null;
+    sourceExists: boolean;
+    currentPains: Array<{ id: number; name: string }>;
 } {
     const encodedLabel = Buffer.from(label).toString('base64');
     const php = `
@@ -1281,11 +1283,22 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
             ->where('classification_run_id', $run->getKey())
             ->latest('id')
             ->first();
+        $profile = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfile::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $run?->client_id)
+            ->first();
+        $currentPains = $profile === null ? [] : app(\\App\\Modules\\MedicalProfiles\\Application\\MedicalProfilePainReader::class)
+            ->forProfile($profile);
         echo json_encode([
             'runStatus' => $run?->status?->value,
             'candidateStatus' => $candidate?->status?->value,
             'runErrorCode' => $run?->error_code,
             'runErrorMessage' => $run?->error_message_sanitized,
+            'sourceExists' => \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereKey(${sourceId})
+                ->exists(),
+            'currentPains' => array_map(static fn ($pain): array => ['id' => $pain->id, 'name' => $pain->name], $currentPains),
             'activeTagCount' => \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('name', $label)
@@ -1316,6 +1329,8 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
         activeTagCount: number;
         runErrorCode: string | null;
         runErrorMessage: string | null;
+        sourceExists: boolean;
+        currentPains: Array<{ id: number; name: string }>;
     };
 }
 
