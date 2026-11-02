@@ -3562,7 +3562,9 @@ test('staff can maintain three independent session pains through save and reload
 
     const secondPain = page.getByLabel('Название или описание боли', { exact: true }).nth(1).locator('xpath=ancestor::li[1]');
     await secondPain.getByRole('combobox', { name: 'Частота', exact: true }).selectOption('count');
-    await secondPain.getByLabel('Количество', { exact: true }).fill('2');
+    const frequencyCount = secondPain.getByLabel('Количество', { exact: true });
+    await expect(frequencyCount).toBeVisible({ timeout: 10_000 });
+    await frequencyCount.fill('2');
     await secondPain.getByRole('combobox', { name: 'Период', exact: true }).selectOption('week');
     await secondPain.getByRole('checkbox', { name: 'Весь день', exact: true }).uncheck();
     await secondPain.getByRole('checkbox', { name: 'Утро', exact: true }).check();
