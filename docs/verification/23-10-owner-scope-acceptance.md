@@ -7,34 +7,37 @@ This ledger reconciles the two primary owner sources, read in full:
 
 ## Current final handoff (authoritative)
 
-This section supersedes the historical matrix retained below. It describes the
-consolidated F1–F9 fix pass and the exact candidate currently deployed to
-staging.
+This section supersedes the historical matrix retained below. It records the
+evidence-only pass on the unchanged application/runtime candidate and the
+test/documentation head that carries the strengthened regressions.
 
 | Item | Current value |
 |---|---|
-| Starting PR SHA | `bd163dec17eeeb03dfaf498701bdba22cba0a917` |
-| Starting application SHA | `b2b605ac0bd0038ae42088dded5d08e999d2acfa` |
+| Starting PR SHA | `d315adbdac632cd7b8704c7d91be1e6c561f61c9` |
+| Starting application SHA | `d3b3931f963ce3499c877d7d01c91de42f22272a` |
+| Evidence-test PR head before this handoff | `921904e14c823201adaeb8eeeebe904f5a09944b` |
+| Current PR HEAD | Documentation-only handoff commit on top of `921904e14c823201adaeb8eeeebe904f5a09944b` |
 | Application/runtime SHA | `d3b3931f963ce3499c877d7d01c91de42f22272a` |
 | Exact staging SHA | `d3b3931f963ce3499c877d7d01c91de42f22272a` |
 | Branch / PR | `codex/23-10-medical-analytics` / #61 |
 | PR state | `Draft / Open / DO NOT MERGE` |
 | Owner acceptance | `NOT RUN` |
 
-The current candidate closes F1–F9 and the corrected PostgreSQL NPS race
-evidence NV1. A10 remains closed: known-country total is derived from the same
-materialized buckets as the distribution; `Не указана` remains visible and in
-the percentage denominator but is not counted; empty and unknown-only cohorts
-return zero; filters, drill-down and tenant isolation use the same cohort.
+F3 and F4 are closed by the focused backend regressions and final hosted
+Chromium CRM run `41469799120` (desktop project, 2/2). F8 is closed for the
+technical trigger/after-commit/worker contract by the hosted PostgreSQL run
+`41464731519`; no browser run with a controlled AI provider was claimed because
+the hosted E2E workflow has no safe synthetic analytics-provider fixture. F9 is
+closed by the same PostgreSQL run's deterministic lease-fencing regression.
+A10 remains closed: known-country total is derived from the same materialized
+buckets as the distribution; `Не указана` remains visible and in the percentage
+denominator but is not counted; empty and unknown-only cohorts return zero;
+filters, drill-down and tenant isolation use the same cohort.
 
 ### Consolidated current capability matrix
 
-Every row below is `IMPLEMENTED / POSTGRESQL VERIFIED / BROWSER VERIFIED /
-STAGING VERIFIED / OWNER ACCEPTED = NOT RUN`. Browser evidence is the final
-hosted Chromium CRM run `41456681294` (four real journeys), Portal run
-`41456476224` (two real journeys), and hosted WebKit run `41453380561` (four
-real CRM journeys); unchanged source coverage is additionally inherited from
-the prior WebKit runs recorded in the historical section.
+Rows below retain the prior source reconciliation. The current evidence additions
+are called out explicitly; `OWNER ACCEPTED` remains `NOT RUN`.
 
 | ID | Current result | Closed finding / evidence |
 |---|---|---|
@@ -47,14 +50,14 @@ the prior WebKit runs recorded in the historical section.
 | M7 | PASS | Protocol `Заполнить` remains contextual and non-AI; existing medical evidence. |
 | M8 | PASS | Subjective feelings write/read/reload; current draft-result path. |
 | M9 | PASS | Posture write/read and no active legacy objective editor; existing medical evidence. |
-| M10 | PASS | Result Fill now uses validated current draft; cancel/confirm semantics and reload covered by Chromium. |
+| M10 | PASS | Result Fill now uses validated current draft; all four draft source categories, cancel/confirm semantics and reload covered by Chromium `41469799120`. |
 | M11 | PASS | Private before/after media and authorization; existing protected-media evidence. |
 | M12 | PASS | Portal structured pains and CRM path; existing Portal/CRM evidence. |
 | M13 | PASS | Portal injuries/operations repeaters; existing Portal/CRM evidence. |
 | M14 | PASS | Master-only anamnesis; existing authorization evidence. |
 | M15 | PASS | Private analyses/reports; existing protected-file evidence. |
 | M16 | PASS | Master-only private audio; existing protected-media evidence. |
-| A1 | PASS | Empty taxonomy, NeedsReview, accept/rename/merge/reject/stale and current-run fencing; current Chromium + PG. |
+| A1 | PASS | Empty taxonomy, NeedsReview, accept/rename/merge/reject/stale and current-run fencing; Chromium `41469799120` plus PostgreSQL `41464731519`. |
 | A2 | PASS | Average pain denominator and NULL/0 semantics; existing PG/XLSX evidence. |
 | A3 | PASS | Problem-specific 1/2/3 axis and duplicate-row semantics; existing PG/XLSX evidence. |
 | A4 | PASS | Satisfaction 0–10 including both boundaries; current feature regression. |
@@ -77,43 +80,47 @@ the prior WebKit runs recorded in the historical section.
 |---|---|
 | F1 profile pains resurrected after an empty prior session | CLOSED; focused PHPUnit regression PASS. |
 | F2 inactive historical period/tag rejected by real save path | CLOSED; focused PHPUnit regression PASS. |
-| F3 result Fill ignored unsaved draft | CLOSED; current Chromium medical journey PASS. |
-| F4 taxonomy mutation invalidated the run under review | CLOSED; focused lifecycle/Chromium regression PASS. |
+| F3 result Fill ignored unsaved draft | CLOSED; backend draft-input regression PASS and Chromium `41469799120` proves pain, subjective, posture and test draft values, cancel/confirm, save/reload. |
+| F4 taxonomy mutation invalidated the run under review | CLOSED; lifecycle regression and Chromium `41469799120` prove candidate accept/rename, authoritative source association and analytics cohort filtering. |
 | F5 stale saved-group form archived concurrent additions | CLOSED; transactional/version and Chromium regression PASS. |
 | F6 positive score discarded feedback text | CLOSED; Portal + CRM boundary regression and Portal Chromium PASS. |
 | F7 ordinary expenses disappeared with neutral cohort object | CLOSED; focused finance regression PASS. |
-| F8 automatic AI suggestion trigger missing | CLOSED; configurable safe-disabled job and synthetic-provider regression PASS. |
-| F9 abandoned Processing classification was unrecoverable | CLOSED; lease reclaim/fencing regression PASS. |
-| NV1 PostgreSQL NPS duplicate/concurrency evidence | CLOSED; hosted run `41450734917`, 109 tests / 670 assertions PASS. |
+| F8 automatic AI suggestion trigger missing | CLOSED for application contract; PostgreSQL `41464731519` proves real source mutation → after-commit dispatch → actual job → NeedsReview and safe-disabled behavior. Browser controlled-provider slice was not run. |
+| F9 abandoned Processing classification was unrecoverable | CLOSED; PostgreSQL `41464731519` proves expiry reclaim, active-lease fencing and stale worker A cannot overwrite worker B. |
+| NV1 PostgreSQL NPS duplicate/concurrency evidence | CLOSED; prior hosted run `41450734917` remains the NV1 evidence, 109 tests / 670 assertions PASS. |
 | A10 country total | CLOSED; exact current application SHA evidence above. |
 
 ### Current quality gates
 
-- Local focused PHPUnit: PASS — 130 tests / 748 assertions.
-- Targeted PHPStan for changed backend paths: PASS; Pint, frontend lint,
-  `vue-tsc`, build and `git diff --check`: PASS.
-- Hosted PostgreSQL concurrency: PASS — `41450734917`.
-- Hosted Chromium changed CRM journeys: PASS — `41456681294`, 4/4.
-- Hosted Portal feedback journeys: PASS — `41456476224`, 2/2. The earlier
-  attempts were corrected E2E fixture/selector failures; the final run
-  exercises the enabled feedback form and preserves text while changing 6 to
-  10.
-- Hosted WebKit changed CRM journeys: PASS — `41453380561`, 4/4.
-- Focused Quality run `41450740192` was executed before the final type-only
-  cleanup: feature/Pint/frontend/build/audit passed; repository-wide PHPStan
-  also reported the then-redundant draft-state guard plus unrelated baseline
-  diagnostics. Final targeted PHPStan for all changed backend paths is PASS.
-- Protected deploy and `scripts/staging-smoke.sh`: PASS at exact
-  `d3b3931f963ce3499c877d7d01c91de42f22272a`; public staging DNS was
-  unavailable, so the authorized SSH loopback health tunnel was used.
+- Local focused checks: PASS — F3 backend 1 test / 8 assertions; F4 backend 1
+  test / 6 assertions; existing F8/F9 feature checks 2 tests / 12 assertions;
+  changed PHP syntax and Pint, `vue-tsc`, and `git diff --check` passed.
+- Hosted PostgreSQL run `41464731519`, job `125342527970`: PASS — 111 tests /
+  688 assertions, including the new F8 after-commit and F9 competing-worker
+  tests.
+- Hosted Chromium run `41469799120`, job `125360074854`: PASS — 2/2 focused
+  desktop journeys (F3 medical draft Fill and F4 candidate-to-source-to-
+  analytics). Earlier failed attempts were test selector/dispatch corrections,
+  not runtime failures.
+- WebKit was not rerun in this pass: production/browser code did not change and
+  the missing contracts were backend/concurrency evidence gaps.
+- Protected deploy script verified exact staging SHA `d3b3931f963ce3499c877d7d01c91de42f22272a`
+  was already deployed; no redeploy was needed.
+- `scripts/staging-smoke.sh`: PASS at exact `d3b3931f963ce3499c877d7d01c91de42f22272a`.
+  Read-only `/opt/chuklov-staging/REVISION` matched; app, PostgreSQL, Redis,
+  Horizon, scheduler, private storage, CRM and Portal checks passed through the
+  authorized SSH loopback health tunnel because public staging DNS was
+  unavailable. No DNS or product configuration changed.
 
 ### Current conclusion
 
-`BLOCKING = 0`, `REAL BUG = 0`, and no material machine-verifiable source
-requirement remains unverified in the reviewed scope. Owner-authored clinical
-catalogs, feedback wording/themes, goal taxonomy, production AI provider and
-prompt, thresholds/mappings, audio policy, effectiveness formula, LTV
-percentage formula, and legal/medical copy remain legitimate owner content or
+`BLOCKING = 0`, `REAL BUG = 0`. F3, F4, F9 and exact staging evidence are
+verified. F8's trigger/worker contract is verified on PostgreSQL; the only
+unexecuted slice is the optional browser journey with a controlled synthetic AI
+provider, which is explicitly not claimed. Owner-authored clinical catalogs,
+feedback wording/themes, goal taxonomy, production AI provider and prompt,
+thresholds/mappings, audio policy, effectiveness formula, LTV percentage
+formula, and legal/medical copy remain legitimate owner content or
 configuration decisions; their configurable mechanisms and safe defaults are
 implemented. Owner acceptance remains `NOT RUN`.
 
