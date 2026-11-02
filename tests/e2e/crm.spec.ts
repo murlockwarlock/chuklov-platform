@@ -1151,16 +1151,19 @@ function configureAutomaticAnalyticsFixture(fixture: CrmFixture, providerPort: n
             'activated_at' => now(),
         ])->save();
         $prompt->forceFill(['active_version_id' => $version->getKey()])->save();
-        $sourcePain = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::query()
+        $sourcePains = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::query()
             ->where('organization_id', $organization->getKey())
             ->where('client_id', $client->getKey())
-            ->where('name', $sourcePainName)
-            ->firstOrFail();
-        $disabledSourcePain = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::query()
-            ->where('organization_id', $organization->getKey())
-            ->where('client_id', $client->getKey())
-            ->where('name', $disabledSourcePainName)
-            ->firstOrFail();
+            ->orderByDesc('id')
+            ->limit(2)
+            ->get()
+            ->sortBy('id')
+            ->values();
+        if ($sourcePains->count() !== 2) {
+            throw new \\RuntimeException('Automatic analytics fixture did not create exactly two source pains.');
+        }
+        $sourcePain = $sourcePains->get(0);
+        $disabledSourcePain = $sourcePains->get(1);
         echo json_encode([
             'sourcePainId' => $sourcePain->getKey(),
             'disabledSourcePainId' => $disabledSourcePain->getKey(),
