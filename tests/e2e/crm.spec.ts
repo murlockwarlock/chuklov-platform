@@ -3482,7 +3482,9 @@ test('staff can fill the current create medical result in the CRM client flow', 
     const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
     const afterPainScore = page.getByRole('slider', { name: 'После сеанса', exact: true });
     await setLivewireRangeValue(page, beforePainScore, 6);
-    await setLivewireRangeValue(page, afterPainScore, 0);
+    const painItem = page.getByLabel('Название или описание боли', { exact: true }).locator('xpath=ancestor::li[1]');
+    await painItem.getByRole('button', { name: 'Указать 0', exact: true }).last().click();
+    await expect(afterPainScore).toHaveAttribute('aria-valuenow', '0.0');
     await page.getByLabel('Особые жалобы', { exact: true }).fill(subjective);
     await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill(subjective);
     await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill(posture);
