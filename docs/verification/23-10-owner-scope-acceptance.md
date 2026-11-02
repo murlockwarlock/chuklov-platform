@@ -30,11 +30,11 @@ return zero; filters, drill-down and tenant isolation use the same cohort.
 ### Consolidated current capability matrix
 
 Every row below is `IMPLEMENTED / POSTGRESQL VERIFIED / BROWSER VERIFIED /
-STAGING VERIFIED / OWNER ACCEPTED = NOT RUN`. Browser evidence is the current
-hosted Chromium run `41452572559` (four real CRM journeys), Portal run
-`41452708448`, and the current hosted WebKit run `41453380561` when complete;
-unchanged source coverage is additionally inherited from the prior WebKit
-runs recorded in the historical section.
+STAGING VERIFIED / OWNER ACCEPTED = NOT RUN`. Browser evidence is the final
+hosted Chromium CRM run `41456681294` (four real journeys), Portal run
+`41456476224` (two real journeys), and hosted WebKit run `41453380561` (four
+real CRM journeys); unchanged source coverage is additionally inherited from
+the prior WebKit runs recorded in the historical section.
 
 | ID | Current result | Closed finding / evidence |
 |---|---|---|
@@ -93,14 +93,16 @@ runs recorded in the historical section.
 - Targeted PHPStan for changed backend paths: PASS; Pint, frontend lint,
   `vue-tsc`, build and `git diff --check`: PASS.
 - Hosted PostgreSQL concurrency: PASS — `41450734917`.
-- Hosted Chromium changed CRM journeys: PASS — `41452572559`, 4/4.
-- Hosted Portal feedback journeys: run `41452708448` (current status is
-  recorded after completion below).
-- Hosted WebKit changed CRM journeys: run `41453380561` (current status is
-  recorded after completion below).
-- Focused Quality run `41450740192`: feature/Pint/frontend/build/audit PASS;
-  repository-wide PHPStan failed only on pre-existing unrelated baseline
-  diagnostics. No changed-file PHPStan error was found.
+- Hosted Chromium changed CRM journeys: PASS — `41456681294`, 4/4.
+- Hosted Portal feedback journeys: PASS — `41456476224`, 2/2. The earlier
+  attempts were corrected E2E fixture/selector failures; the final run
+  exercises the enabled feedback form and preserves text while changing 6 to
+  10.
+- Hosted WebKit changed CRM journeys: PASS — `41453380561`, 4/4.
+- Focused Quality run `41450740192` was executed before the final type-only
+  cleanup: feature/Pint/frontend/build/audit passed; repository-wide PHPStan
+  also reported the then-redundant draft-state guard plus unrelated baseline
+  diagnostics. Final targeted PHPStan for all changed backend paths is PASS.
 - Protected deploy and `scripts/staging-smoke.sh`: PASS at exact
   `d3b3931f963ce3499c877d7d01c91de42f22272a`; public staging DNS was
   unavailable, so the authorized SSH loopback health tunnel was used.
