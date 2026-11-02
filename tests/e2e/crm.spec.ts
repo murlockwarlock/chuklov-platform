@@ -1263,6 +1263,8 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
     runStatus: string | null;
     candidateStatus: string | null;
     activeTagCount: number;
+    runErrorCode: string | null;
+    runErrorMessage: string | null;
 } {
     const encodedLabel = Buffer.from(label).toString('base64');
     const php = `
@@ -1282,6 +1284,8 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
         echo json_encode([
             'runStatus' => $run?->status?->value,
             'candidateStatus' => $candidate?->status?->value,
+            'runErrorCode' => $run?->error_code,
+            'runErrorMessage' => $run?->error_message_sanitized,
             'activeTagCount' => \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()
                 ->where('organization_id', $organization->getKey())
                 ->where('name', $label)
@@ -1310,6 +1314,8 @@ function readAutomaticAnalyticsState(sourceId: number, label: string): {
         runStatus: string | null;
         candidateStatus: string | null;
         activeTagCount: number;
+        runErrorCode: string | null;
+        runErrorMessage: string | null;
     };
 }
 
@@ -4433,6 +4439,10 @@ test('automatic analytics suggestions follow a real source save into NeedsReview
         runAnalyticsClassificationWorker();
 
         await page.goto('/admin/analytics-tag-candidates');
+        const enabledState = readAutomaticAnalyticsState(automaticFixture.sourcePainId, candidateLabelSuffix);
+        expect(enabledState.runStatus, JSON.stringify(enabledState)).toBe('needs_review');
+        expect(enabledState.candidateStatus).toBe('needs_review');
+        expect(enabledState.activeTagCount).toBe(0);
         await expect(page.getByRole('heading', { name: 'Кандидаты тегов', exact: true })).toBeVisible();
         await expect(page.getByText('Ожидают проверки', { exact: true })).toBeVisible();
         const pendingCandidate = await findPendingCandidate(candidateLabelSuffix);
@@ -4440,11 +4450,6 @@ test('automatic analytics suggestions follow a real source save into NeedsReview
         await expect(pendingCandidate.getByRole('textbox', { name: 'Категория', exact: true })).toHaveValue('Жалобы и проблемы');
         await expect(pendingCandidate).toContainText('medical_profile_pain');
         await expect(pendingCandidate).toContainText(`ID ${automaticFixture.sourcePainId}`);
-        const enabledState = readAutomaticAnalyticsState(automaticFixture.sourcePainId, candidateLabelSuffix);
-        expect(enabledState.runStatus).toBe('needs_review');
-        expect(enabledState.candidateStatus).toBe('needs_review');
-        expect(enabledState.activeTagCount).toBe(0);
-
         await page.reload();
         await expect(page.getByText('Ожидают проверки', { exact: true })).toBeVisible();
         await expect(await findPendingCandidate(candidateLabelSuffix)).toBeVisible();
