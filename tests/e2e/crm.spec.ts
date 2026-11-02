@@ -39,6 +39,8 @@ type CrmFixture = {
     aggregateProblemClientBackName: string | null;
     aggregateProblemClientBothName: string | null;
     aggregateMissingCountryClientName: string | null;
+    candidateLabel: string | null;
+    staleCandidateLabel: string | null;
 };
 
 function validPdfBuffer(): Buffer {
@@ -142,7 +144,7 @@ async function setLivewireRangeValue(page: Page, slider: Locator, value: number)
     await expect(slider).toHaveAttribute('aria-valuenow', `${value}.0`);
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean; aggregateDrilldownFlow?: boolean } = {}): CrmFixture {
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean; aggregateDrilldownFlow?: boolean; tagCandidateFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -153,6 +155,8 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         $telegramLinkFlow = getenv('PLAYWRIGHT_TELEGRAM_LINK_FLOW') === '1';
         $admin = \\App\\Models\\User::factory()->forOrganization($organization)->create(['email' => $email]);
         app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        $candidateLabel = null;
+        $staleCandidateLabel = null;
         \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::query()
             ->where('organization_id', $organization->getKey())
             ->update([
@@ -189,6 +193,48 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 'is_active' => true,
                 'sort_order' => 0,
             ]);
+        }
+        if (${options.tagCandidateFlow ? 'true' : 'false'}) {
+            $candidateLabel = 'E2E новый кандидат '.$suffix;
+            $staleCandidateLabel = 'E2E устаревший кандидат '.$suffix;
+            $setting = $organization->settings()->where('setting_key', \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled->value)->first()
+                ?? new \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationSetting;
+            $setting->forceFill([
+                'organization_id' => $organization->getKey(),
+                'setting_key' => \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled->value,
+                'value_type' => \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingType::Boolean,
+                'string_value' => null,
+                'integer_value' => null,
+                'boolean_value' => true,
+            ])->save();
+            foreach ([[$candidateLabel, 'needs_review'], [$staleCandidateLabel, 'succeeded']] as [$label, $runStatus]) {
+                $run = \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsClassificationRun::forceCreate([
+                    'organization_id' => $organization->getKey(),
+                    'client_id' => $client->getKey(),
+                    'taxonomy' => 'complaints',
+                    'source_type' => 'synthetic_e2e',
+                    'source_id' => $client->getKey(),
+                    'source_digest' => hash('sha256', $label),
+                    'status' => $runStatus === 'needs_review'
+                        ? \\App\\Modules\\Analytics\\Domain\\Enums\\ClassificationRunStatus::NeedsReview
+                        : \\App\\Modules\\Analytics\\Domain\\Enums\\ClassificationRunStatus::Succeeded,
+                    'attempt_count' => 1,
+                    'suggestions' => [['id' => null, 'label' => $label, 'candidate_type' => 'new']],
+                ]);
+                \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsTagCandidate::forceCreate([
+                    'organization_id' => $organization->getKey(),
+                    'classification_run_id' => $run->getKey(),
+                    'client_id' => $client->getKey(),
+                    'taxonomy' => 'complaints',
+                    'source_type' => 'synthetic_e2e',
+                    'source_id' => $client->getKey(),
+                    'candidate_type' => 'new',
+                    'suggested_existing_id' => null,
+                    'label' => $label,
+                    'status' => \\App\\Modules\\Analytics\\Domain\\Enums\\AnalyticsTagCandidateStatus::NeedsReview,
+                    'version' => 1,
+                ]);
+            }
         }
         if (${options.clinicalCatalogFlow ? 'true' : 'false'}) {
             $test = \\App\\Modules\\Sessions\\Domain\\Models\\MedicalTestDefinition::query()->create([
@@ -813,6 +859,8 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'aggregateProblemClientBackName' => $aggregateProblemClientBackName,
             'aggregateProblemClientBothName' => $aggregateProblemClientBothName,
             'aggregateMissingCountryClientName' => $aggregateMissingCountryClientName,
+            'candidateLabel' => $candidateLabel,
+            'staleCandidateLabel' => $staleCandidateLabel,
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -3737,6 +3785,52 @@ test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => 
     expect(reopenedGroupIndex).toBeGreaterThanOrEqual(0);
     await expect(reopenedProblemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(reopenedGroupIndex)).not.toBeChecked();
     await expect(page.locator('html')).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+});
+
+test('staff can review synthetic analytics tag candidates in CRM', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ tagCandidateFlow: true });
+
+    if (fixture.candidateLabel === null || fixture.staleCandidateLabel === null) {
+        throw new Error('Tag candidate fixture did not create the expected candidates.');
+    }
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-tag-candidates');
+    await expect(page.getByRole('heading', { name: 'Кандидаты тегов', exact: true })).toBeVisible();
+
+    const candidateItem = page.locator('.fi-fo-repeater-item').filter({ hasText: fixture.candidateLabel }).first();
+    await expect(candidateItem).toBeVisible();
+    await expect(candidateItem).toContainText('Жалобы и проблемы');
+    const decision = candidateItem.getByRole('combobox', { name: 'Решение', exact: true });
+    await decision.click();
+    await page.getByRole('option', { name: 'Принять', exact: true }).last().click();
+    const reviewedLabel = candidateItem.getByLabel('Итоговое название', { exact: true });
+    await expect(reviewedLabel).toBeVisible();
+    await reviewedLabel.fill(`${fixture.candidateLabel} принято`);
+    await page.getByRole('button', { name: 'Сохранить решения', exact: true }).click();
+    await expect(page.getByText('Решения по кандидатам сохранены', { exact: true })).toBeVisible();
+    await expect(page.getByText(fixture.candidateLabel, { exact: true })).toHaveCount(0);
+
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    const problemCategories = page.getByRole('combobox', { name: 'Категории проблем', exact: true });
+    await problemCategories.click();
+    await expect(page.getByRole('option', { name: `${fixture.candidateLabel} принято`, exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    await page.goto('/admin/analytics-tag-candidates');
+    const staleItem = page.locator('.fi-fo-repeater-item').filter({ hasText: fixture.staleCandidateLabel }).first();
+    await expect(staleItem).toBeVisible();
+    const staleDecision = staleItem.getByRole('combobox', { name: 'Решение', exact: true });
+    await staleDecision.click();
+    await page.getByRole('option', { name: 'Принять', exact: true }).last().click();
+    await staleItem.getByLabel('Итоговое название', { exact: true }).fill(`${fixture.staleCandidateLabel} принято`);
+    await page.getByRole('button', { name: 'Сохранить решения', exact: true }).click();
+    await expect(page.getByText('Источник кандидата уже устарел. Запустите классификацию повторно.', { exact: true })).toBeVisible();
+    await expect(page.getByText(fixture.staleCandidateLabel, { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 900 });
     await assertNoHorizontalOverflow(page);
 });
 
