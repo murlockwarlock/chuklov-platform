@@ -3558,15 +3558,12 @@ test('staff can maintain three independent session pains through save and reload
     const firstAfter = firstPain.getByRole('slider', { name: 'После сеанса', exact: true });
     await setLivewireRangeValue(page, firstBefore, 7);
     await setLivewireRangeValue(page, firstAfter, 3);
-    await firstPain.getByRole('combobox', { name: 'Частота', exact: true }).click();
-    await firstPain.getByRole('option', { name: 'Постоянно', exact: true }).click();
+    await firstPain.getByRole('combobox', { name: 'Частота', exact: true }).selectOption('permanent');
 
     const secondPain = page.getByLabel('Название или описание боли', { exact: true }).nth(1).locator('xpath=ancestor::li[1]');
-    await secondPain.getByRole('combobox', { name: 'Частота', exact: true }).click();
-    await secondPain.getByRole('option', { name: 'Количество раз за период', exact: true }).click();
+    await secondPain.getByRole('combobox', { name: 'Частота', exact: true }).selectOption('count');
     await secondPain.getByLabel('Количество', { exact: true }).fill('2');
-    await secondPain.getByRole('combobox', { name: 'Период', exact: true }).click();
-    await secondPain.getByRole('option', { name: 'неделя', exact: true }).click();
+    await secondPain.getByRole('combobox', { name: 'Период', exact: true }).selectOption('week');
     await secondPain.getByRole('checkbox', { name: 'Весь день', exact: true }).uncheck();
     await secondPain.getByRole('checkbox', { name: 'Утро', exact: true }).check();
     await secondPain.getByRole('checkbox', { name: 'Вечер', exact: true }).check();
