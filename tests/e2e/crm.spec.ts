@@ -3600,7 +3600,17 @@ test('staff can maintain three independent session pains through save and reload
     await setLivewireRangeValue(page, secondPainEdit.getByRole('slider', { name: 'До сеанса', exact: true }), 4);
     await secondPainEdit.getByRole('button', { name: 'Указать 0', exact: true }).last().click();
     await expect(secondPainEdit.getByText('0 / 10', { exact: true })).toBeVisible();
-    await secondPainEdit.getByRole('button', { name: 'Удалить', exact: true }).first().click();
+
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
+    await page.getByRole('row').filter({ hasText: '20.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).click({ force: true });
+    await expect(page.getByText('2 раза за неделя', { exact: true })).toBeVisible();
+    await expect(page.getByText('Утро, Вечер', { exact: true })).toBeVisible();
+    await expect(page.getByText('0/10', { exact: true })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
+    const secondPainAfterFrequency = page.getByLabel('Название или описание боли', { exact: true }).nth(1).locator('xpath=ancestor::li[1]');
+    await secondPainAfterFrequency.getByRole('button', { name: 'Удалить', exact: true }).first().click();
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
     await page.getByRole('row').filter({ hasText: '20.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).click({ force: true });
