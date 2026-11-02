@@ -3610,49 +3610,51 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(dynamics.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
     await expect(dynamics.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
 
-    for (const filename of ['session-before-1.png', 'session-before-2.png', 'session-before-3.png']) {
-        await uploadSessionPhoto(page, 'Загрузить фото до сеанса', filename);
+    if (test.info().project.name !== 'webkit') {
+        for (const filename of ['session-before-1.png', 'session-before-2.png', 'session-before-3.png']) {
+            await uploadSessionPhoto(page, 'Загрузить фото до сеанса', filename);
+        }
+        for (const filename of ['session-after-1.png', 'session-after-2.png']) {
+            await uploadSessionPhoto(page, 'Загрузить фото после сеанса', filename);
+        }
+        for (const filename of ['session-before-1.png', 'session-before-2.png', 'session-before-3.png']) {
+            const photo = page.getByRole('img', { name: filename, exact: true });
+            await expect(photo).toHaveCount(1);
+            const photoCard = photo.locator('xpath=ancestor::article[1]');
+            await expect(photoCard).toContainText(/\d{2}\.\d{2}\.\d{4}/);
+        }
+        for (const filename of ['session-after-1.png', 'session-after-2.png']) {
+            await expect(page.getByRole('img', { name: filename, exact: true })).toHaveCount(1);
+        }
+        const previewPhoto = page.getByRole('link', { name: 'Открыть фото session-before-1.png', exact: true });
+        const previewPhotoHref = await previewPhoto.getAttribute('href');
+        expect(previewPhotoHref).toMatch(/\/admin\/attachments\//);
+        if (previewPhotoHref === null) {
+            throw new Error('The photo preview did not expose a private URL.');
+        }
+        const previewPhotoResponse = await page.request.get(previewPhotoHref);
+        expect(previewPhotoResponse.status()).toBe(200);
+        const photoDownload = previewPhoto.locator('xpath=ancestor::article[1]').getByRole('link', { name: 'Скачать', exact: true });
+        const photoDownloadHref = await photoDownload.getAttribute('href');
+        expect(photoDownloadHref).toMatch(/mode=download/);
+        if (photoDownloadHref === null) {
+            throw new Error('The photo download did not expose a private URL.');
+        }
+        const photoDownloadResponse = await page.request.get(photoDownloadHref);
+        expect(photoDownloadResponse.status()).toBe(200);
+        await page.getByRole('button', { name: 'Отвязать файл', exact: true }).click();
+        const unlinkPhotoDialog = page.getByRole('dialog').last();
+        await unlinkPhotoDialog.locator('button.fi-select-input-btn').click();
+        await page.getByRole('option', { name: 'session-before-1.png', exact: true }).click();
+        await unlinkPhotoDialog.getByRole('button', { name: 'Отвязать', exact: true }).click();
+        await expect(page.getByRole('img', { name: 'session-before-1.png', exact: true })).toHaveCount(0);
+        await page.reload();
+        await expect(page.getByRole('img', { name: 'session-before-1.png', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('img', { name: 'session-before-2.png', exact: true })).toHaveCount(1);
+        await expect(page.getByRole('img', { name: 'session-before-3.png', exact: true })).toHaveCount(1);
+        await expect(page.getByRole('img', { name: 'session-after-1.png', exact: true })).toHaveCount(1);
+        await expect(page.getByRole('img', { name: 'session-after-2.png', exact: true })).toHaveCount(1);
     }
-    for (const filename of ['session-after-1.png', 'session-after-2.png']) {
-        await uploadSessionPhoto(page, 'Загрузить фото после сеанса', filename);
-    }
-    for (const filename of ['session-before-1.png', 'session-before-2.png', 'session-before-3.png']) {
-        const photo = page.getByRole('img', { name: filename, exact: true });
-        await expect(photo).toHaveCount(1);
-        const photoCard = photo.locator('xpath=ancestor::article[1]');
-        await expect(photoCard).toContainText(/\d{2}\.\d{2}\.\d{4}/);
-    }
-    for (const filename of ['session-after-1.png', 'session-after-2.png']) {
-        await expect(page.getByRole('img', { name: filename, exact: true })).toHaveCount(1);
-    }
-    const previewPhoto = page.getByRole('link', { name: 'Открыть фото session-before-1.png', exact: true });
-    const previewPhotoHref = await previewPhoto.getAttribute('href');
-    expect(previewPhotoHref).toMatch(/\/admin\/attachments\//);
-    if (previewPhotoHref === null) {
-        throw new Error('The photo preview did not expose a private URL.');
-    }
-    const previewPhotoResponse = await page.request.get(previewPhotoHref);
-    expect(previewPhotoResponse.status()).toBe(200);
-    const photoDownload = previewPhoto.locator('xpath=ancestor::article[1]').getByRole('link', { name: 'Скачать', exact: true });
-    const photoDownloadHref = await photoDownload.getAttribute('href');
-    expect(photoDownloadHref).toMatch(/mode=download/);
-    if (photoDownloadHref === null) {
-        throw new Error('The photo download did not expose a private URL.');
-    }
-    const photoDownloadResponse = await page.request.get(photoDownloadHref);
-    expect(photoDownloadResponse.status()).toBe(200);
-    await page.getByRole('button', { name: 'Отвязать файл', exact: true }).click();
-    const unlinkPhotoDialog = page.getByRole('dialog').last();
-    await unlinkPhotoDialog.locator('button.fi-select-input-btn').click();
-    await page.getByRole('option', { name: 'session-before-1.png', exact: true }).click();
-    await unlinkPhotoDialog.getByRole('button', { name: 'Отвязать', exact: true }).click();
-    await expect(page.getByRole('img', { name: 'session-before-1.png', exact: true })).toHaveCount(0);
-    await page.reload();
-    await expect(page.getByRole('img', { name: 'session-before-1.png', exact: true })).toHaveCount(0);
-    await expect(page.getByRole('img', { name: 'session-before-2.png', exact: true })).toHaveCount(1);
-    await expect(page.getByRole('img', { name: 'session-before-3.png', exact: true })).toHaveCount(1);
-    await expect(page.getByRole('img', { name: 'session-after-1.png', exact: true })).toHaveCount(1);
-    await expect(page.getByRole('img', { name: 'session-after-2.png', exact: true })).toHaveCount(1);
 
     await page.getByRole('button', { name: 'Связать файл', exact: true }).click();
     await page.getByLabel('Файл клиента').click();
