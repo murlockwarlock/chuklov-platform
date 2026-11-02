@@ -8,27 +8,32 @@ This ledger reconciles the two primary owner sources, read in full:
 ## Current final handoff (authoritative)
 
 This section supersedes the historical matrix retained below. It records the
-evidence-only pass on the unchanged application/runtime candidate and the
-test/documentation head that carries the strengthened regressions.
+evidence pass, the one minimal runtime fix required by the browser journey, and
+the test/documentation head that carries the strengthened regressions.
 
 | Item | Current value |
 |---|---|
-| Starting PR SHA | `d315adbdac632cd7b8704c7d91be1e6c561f61c9` |
+| Starting PR SHA | `23631d29bf89b7b9b15203863f3df62184fe07d8` |
 | Starting application SHA | `d3b3931f963ce3499c877d7d01c91de42f22272a` |
-| Evidence-test PR head before this handoff | `921904e14c823201adaeb8eeeebe904f5a09944b` |
-| Current PR HEAD | Documentation-only handoff commit on top of `921904e14c823201adaeb8eeeebe904f5a09944b` |
-| Application/runtime SHA | `d3b3931f963ce3499c877d7d01c91de42f22272a` |
-| Exact staging SHA | `d3b3931f963ce3499c877d7d01c91de42f22272a` |
+| Evidence-test PR head before this handoff | `e4d6a478ad21e4aa1840d2a30b2f8edd5250e2b1` |
+| Current PR HEAD | Documentation-only handoff commit on top of `e4d6a478ad21e4aa1840d2a30b2f8edd5250e2b1` |
+| Application/runtime SHA | `ab4e3db9e396cc2f782bdf9cab8693c4be79d7a1` |
+| Exact staging SHA | `ab4e3db9e396cc2f782bdf9cab8693c4be79d7a1` |
 | Branch / PR | `codex/23-10-medical-analytics` / #61 |
 | PR state | `Draft / Open / DO NOT MERGE` |
 | Owner acceptance | `NOT RUN` |
 
 F3 and F4 are closed by the focused backend regressions and final hosted
-Chromium CRM run `41469799120` (desktop project, 2/2). F8 is closed for the
-technical trigger/after-commit/worker contract by the hosted PostgreSQL run
-`41464731519`; no browser run with a controlled AI provider was claimed because
-the hosted E2E workflow has no safe synthetic analytics-provider fixture. F9 is
-closed by the same PostgreSQL run's deterministic lease-fencing regression.
+Chromium CRM run `41469799120` (desktop project, 2/2). F8 is now VERIFIED
+end-to-end: hosted PostgreSQL run `41480243617` proved the credentialless
+provider persistence contract, and hosted Chromium run `41483745051` (job
+`125408525760`, checkout `e4d6a478…`, desktop project, 1/1) proved a real CRM
+source save → after-commit dispatch → queue worker → controlled synthetic
+provider → NeedsReview candidate, with no manual AI action, plus the disabled-
+setting negative case and reload persistence. The runtime candidate for that
+browser evidence is `ab4e3db9…`; the E2E-only follow-up is `e4d6a478…`.
+F9 is closed by the same PostgreSQL run's deterministic lease-fencing
+regression.
 A10 remains closed: known-country total is derived from the same materialized
 buckets as the distribution; `Не указана` remains visible and in the percentage
 denominator but is not counted; empty and unknown-only cohorts return zero;
@@ -85,7 +90,7 @@ are called out explicitly; `OWNER ACCEPTED` remains `NOT RUN`.
 | F5 stale saved-group form archived concurrent additions | CLOSED; transactional/version and Chromium regression PASS. |
 | F6 positive score discarded feedback text | CLOSED; Portal + CRM boundary regression and Portal Chromium PASS. |
 | F7 ordinary expenses disappeared with neutral cohort object | CLOSED; focused finance regression PASS. |
-| F8 automatic AI suggestion trigger missing | CLOSED for application contract; PostgreSQL `41464731519` proves real source mutation → after-commit dispatch → actual job → NeedsReview and safe-disabled behavior. Browser controlled-provider slice was not run. |
+| F8 automatic AI suggestion trigger missing | CLOSED; PostgreSQL `41464731519`/`41480243617` prove source mutation → after-commit dispatch → actual job → NeedsReview and safe-disabled behavior; Chromium `41483745051` proves the same path from the real CRM save with a controlled provider, no manual AI action, NeedsReview visibility, reload persistence and disabled-setting negative. A credentialless-provider UUID/FK persistence bug found by this journey was fixed in application SHA `ab4e3db9…` and covered by the focused PostgreSQL regression. |
 | F9 abandoned Processing classification was unrecoverable | CLOSED; PostgreSQL `41464731519` proves expiry reclaim, active-lease fencing and stale worker A cannot overwrite worker B. |
 | NV1 PostgreSQL NPS duplicate/concurrency evidence | CLOSED; prior hosted run `41450734917` remains the NV1 evidence, 109 tests / 670 assertions PASS. |
 | A10 country total | CLOSED; exact current application SHA evidence above. |
@@ -94,30 +99,41 @@ are called out explicitly; `OWNER ACCEPTED` remains `NOT RUN`.
 
 - Local focused checks: PASS — F3 backend 1 test / 8 assertions; F4 backend 1
   test / 6 assertions; existing F8/F9 feature checks 2 tests / 12 assertions;
-  changed PHP syntax and Pint, `vue-tsc`, and `git diff --check` passed.
+  credentialless-provider regression 1 test / 6 assertions; changed PHP syntax,
+  Pint, changed-file PHPStan, TypeScript ESLint and `git diff --check` passed.
 - Hosted PostgreSQL run `41464731519`, job `125342527970`: PASS — 111 tests /
   688 assertions, including the new F8 after-commit and F9 competing-worker
-  tests.
+  tests. Focused hosted run `41480243617`, job `125396327372`: the targeted
+  PostgreSQL feature test passed (1 test / 6 assertions); the aggregate Quality
+  job was red only on pre-existing unrelated PHPStan baseline findings.
 - Hosted Chromium run `41469799120`, job `125360074854`: PASS — 2/2 focused
   desktop journeys (F3 medical draft Fill and F4 candidate-to-source-to-
-  analytics). Earlier failed attempts were test selector/dispatch corrections,
-  not runtime failures.
+  analytics). Final F8 Chromium run `41483745051`, job `125408525760`: PASS —
+  1/1 desktop journey on `e4d6a478…`; it exercised the real CRM source save,
+  automatic worker path, controlled provider, NeedsReview candidate, reload and
+  disabled-setting negative. The earlier timeout was the test harness blocking
+  its embedded provider with `execFileSync`, not a product failure.
 - WebKit was not rerun in this pass: production/browser code did not change and
   the missing contracts were backend/concurrency evidence gaps.
-- Protected deploy script verified exact staging SHA `d3b3931f963ce3499c877d7d01c91de42f22272a`
-  was already deployed; no redeploy was needed.
-- `scripts/staging-smoke.sh`: PASS at exact `d3b3931f963ce3499c877d7d01c91de42f22272a`.
-  Read-only `/opt/chuklov-staging/REVISION` matched; app, PostgreSQL, Redis,
-  Horizon, scheduler, private storage, CRM and Portal checks passed through the
-  authorized SSH loopback health tunnel because public staging DNS was
-  unavailable. No DNS or product configuration changed.
+- Protected deploy script deployed exact staging SHA `ab4e3db9e396cc2f782bdf9cab8693c4be79d7a1`;
+  two earlier attempts fail-closed on changing unrelated host listening-port
+  inventory and automatically restored `d3b3931f…`; the successful attempt
+  matched protected host services/routing and reported healthy app, PostgreSQL,
+  Redis, Horizon, scheduler and Telegram.
+- `scripts/staging-smoke.sh`: PASS at exact
+  `ab4e3db9e396cc2f782bdf9cab8693c4be79d7a1`; read-only
+  `/opt/chuklov-staging/REVISION` matched, and Nginx, health, queue identity,
+  CRM, Portal, private storage and reversible domain checks passed.
+  The app, PostgreSQL, Redis, Horizon, scheduler, private storage, CRM and
+  Portal checks passed through the authorized SSH loopback health tunnel because
+  public staging DNS was unavailable. No DNS or product configuration changed.
 
 ### Current conclusion
 
-`BLOCKING = 0`, `REAL BUG = 0`. F3, F4, F9 and exact staging evidence are
-verified. F8's trigger/worker contract is verified on PostgreSQL; the browser
-journey with a controlled synthetic AI provider was not executed and is
-explicitly not claimed. Owner-authored clinical catalogs,
+`BLOCKING = 0`, `REAL BUG = 0`. F3, F4, F8, F9 and exact staging evidence are
+verified. The F8 browser journey found and closed one credentialless-provider
+provenance persistence bug; the final runtime and hosted browser evidence are
+green. Owner-authored clinical catalogs,
 feedback wording/themes, goal taxonomy, production AI provider and prompt,
 thresholds/mappings, audio policy, effectiveness formula, LTV percentage
 formula, and legal/medical copy remain legitimate owner content or
