@@ -44,7 +44,7 @@ validation feedback. Owner acceptance remains deliberately `NOT RUN`.
 | M13. Repeatable injuries/operations with conditional UX | YES | PASS | VERIFIED — prior Portal 0/1/3/remove-middle/reload journey; final CRM modal showed exact remaining operation/injury rows | PASS | NOT RUN | Real injury/operation content |
 | M14. Anamnesis master-only and retained | YES | PASS | VERIFIED — final Portal has no anamnesis; direct Portal session redirects to admin login; CRM master field is visible/editable; prior save/reload evidence | PASS | NOT RUN | Owner anamnesis text |
 | M15. `Результаты анализов` uploads across Portal/CRM | YES | PASS | VERIFIED — final Portal shows block; final CRM `Файлы и МРТ` shows Portal files and master upload; authorized download was previously exercised | PASS | NOT RUN | None |
-| M16. Separate audio section, playback/download/delete/reload, client denial | YES | PASS | VERIFIED — full CRM upload/play/download/delete/reload journey on `01014d0`; final SHA relation tab and policy are present, with no code delta in this path | PASS | NOT RUN | Formats/max business size |
+| M16. Separate audio section, playback/download/delete/reload, client denial | YES | PASS | VERIFIED — full CRM upload/play/download/delete/reload journey on `01014d0`; exact final SHA staff download succeeded and Portal direct access redirected to admin login | PASS | NOT RUN | Formats/max business size |
 
 ## Analytics source matrix
 
