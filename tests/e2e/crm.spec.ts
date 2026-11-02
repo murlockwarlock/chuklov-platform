@@ -2954,7 +2954,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(rootCauseOption).toBeVisible();
     await rootCauseOption.click({ force: true });
     await page.getByLabel('Дополнительное описание', { exact: true }).fill('E2E описание первопричины');
-    await page.getByLabel('Гипотеза первопричины', { exact: true }).fill('E2E гипотеза');
+    await expect(page.getByLabel('Гипотеза первопричины', { exact: true })).toHaveCount(0);
     await page.getByLabel('Алгоритм / протокол сеанса', { exact: true }).fill('E2E протокол');
     await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill('E2E стало легче');
     await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill('E2E плечи ровнее');
