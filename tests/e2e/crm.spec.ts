@@ -3545,15 +3545,16 @@ test('staff can maintain three independent session pains through save and reload
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
 
-    for (const painName of painNames) {
+    for (let index = 0; index < painNames.length; index += 1) {
         await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
         await page.waitForLoadState('networkidle');
-        const painInput = page.getByLabel('Название или описание боли', { exact: true }).last();
-        await painInput.fill(painName);
-        await painInput.blur();
-        await page.waitForLoadState('networkidle');
-        const painItem = painInput.locator('xpath=ancestor::li[1]');
-        await expect(painItem).toBeVisible();
+        await expect(page.getByLabel('Название или описание боли', { exact: true })).toHaveCount(index + 1);
+    }
+    const painInputs = page.getByLabel('Название или описание боли', { exact: true });
+    for (let index = 0; index < painNames.length; index += 1) {
+        await painInputs.nth(index).fill(painNames[index]);
+        await painInputs.nth(index).blur();
+        await expect(painInputs.nth(index)).toHaveValue(painNames[index]);
     }
 
     const firstPain = page.getByLabel('Название или описание боли', { exact: true }).nth(0).locator('xpath=ancestor::li[1]');
@@ -3562,6 +3563,9 @@ test('staff can maintain three independent session pains through save and reload
     await setLivewireRangeValue(page, firstBefore, 7);
     await setLivewireRangeValue(page, firstAfter, 3);
     await firstPain.getByRole('combobox', { name: 'Частота', exact: true }).selectOption('permanent');
+    for (let index = 0; index < painNames.length; index += 1) {
+        await expect(page.getByLabel('Название или описание боли', { exact: true }).nth(index)).toHaveValue(painNames[index]);
+    }
 
     const thirdPain = page.getByLabel('Название или описание боли', { exact: true }).nth(2).locator('xpath=ancestor::li[1]');
     await expect(thirdPain.getByText('Без оценки', { exact: true }).first()).toBeVisible();
