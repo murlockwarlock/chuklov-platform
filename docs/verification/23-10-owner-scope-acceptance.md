@@ -14,18 +14,20 @@ Synthetic QA data proves configurable mechanisms; it is not production content.
 
 | Item | Value |
 |---|---|
-| Starting PR SHA for this final verification pass | `508d89dba1574a42bdeabe7bc30c8a3775dde9ca` |
+| Starting PR SHA for this final verification pass | `886af5af20a205dbb0f2c559f08d3bd136763e3c` |
 | Starting application SHA for this final verification pass | `8c1e407505b19b9a1704d200b9df9ee43557ffc3` |
 | Historical reconciliation baseline | PR `2c4010fef38d13e37a3c03f91d33e8a216200b7e`, runtime `b743d67dc769e08ca8cc6b948803903fe95c70b7` |
-| Final PR SHA | Documentation-only closeout commits after the application SHA; exact final head is reported with the final handoff |
-| Final application SHA | `8c1e407505b19b9a1704d200b9df9ee43557ffc3` |
-| Exact staging SHA | `8c1e407505b19b9a1704d200b9df9ee43557ffc3` |
+| Final PR SHA | Documentation-only closeout commit after the application SHA; exact final head is reported with the final handoff |
+| Final application SHA | `b2b605ac0bd0038ae42088dded5d08e999d2acfa` |
+| Exact staging SHA | `b2b605ac0bd0038ae42088dded5d08e999d2acfa` |
 | Branch / PR | `codex/23-10-medical-analytics` / #61 Draft, Open, DO NOT MERGE |
 | Owner acceptance | `NOT RUN` |
 
-The final application SHA contains three analytics candidate-review fixes. No
-medical runtime path changed after the previously deployed medical evidence;
-that inheritance is called out explicitly in the relevant rows.
+This pass extends the existing demographics result with `country_count`,
+derived from the same materialized country buckets that render the distribution.
+No separate country query or normalization authority was introduced. No medical
+runtime path changed after the previously deployed medical evidence; that
+inheritance is called out explicitly in the relevant rows.
 
 ## Medical source matrix
 
@@ -68,7 +70,7 @@ with synthetic labels and then safely deactivated.
 | A7. Client categories and saved/manual/dynamic groups; atomic CRUD/versioning/archive/concurrency | YES | PASS | VERIFIED — Chromium manual/dynamic create/reload, invalid later row with no partial write, explicit archive and stale-editor error; final analytics candidate-only code delta does not touch this path | PASS | NOT RUN | Segment thresholds/service mappings |
 | A8. Age filters/ranges/timezone and human configuration | YES; generated hidden keys and overlap validation | PASS | VERIFIED — Chromium owner UI overlap rejection, correction, archive/reload and console use; final analytics candidate-only code delta does not touch this path | PASS | NOT RUN | Real age labels/ranges |
 | A9. Sex/women/men/children, unknown-safe counts and exact drill-down | YES | PASS | VERIFIED — exact final SHA Chromium org-A fixture: female, male and missing-gender rows; unknown drill-down reason and exact client; same-looking org-B client excluded; base state preserved | PASS | NOT RUN | None |
-| A10. Country, unknown bucket, exact missing drill-down, tenant isolation | YES | PASS | VERIFIED — exact final SHA Chromium org-A KZ/RU/missing-country fixture; missing-country drill-down reason and exact client; org-B control excluded; base state preserved | PASS | NOT RUN | None |
+| A10. Country distribution, percentages, total known countries, unknown bucket, exact drill-down, tenant isolation | YES | PASS | VERIFIED — exact final SHA Chromium org-A fixture: KZ 2 (50%), RU 1 (25%), `Не указана` 1 (25%), `Стран представлено: 2`; KZ filter gives total 1; missing-only keeps the unknown bucket with total 0; exact missing-country drill-down and org-B exclusion remain covered | PASS | NOT RUN | None |
 | A11. Services/visits/specialists, semantics, drill-down and Excel | YES; existing Service UI remains authority | PASS | VERIFIED — Chromium populated service/specialist rows, completed/cancelled semantics, drill-down and Excel; final analytics candidate-only code delta does not touch this path | PASS | NOT RUN | Owner service categories |
 | A12. LTV percentage without invented formula | YES; monetary LTV remains, percentage disabled/configuration-required | PASS | VERIFIED — Chromium metric settings and console showed no active fake percentage; monetary metric remained available; final analytics candidate-only code delta does not touch this path | PASS | NOT RUN | Exact LTV% formula/activation |
 | A13. Finance income/expenses/cash/accounts, periods, authorization, Excel | YES | PASS | VERIFIED — Chromium isolated synthetic finance fixture and export; final analytics candidate-only code delta does not touch this path | PASS | NOT RUN | Currency/business policy |
@@ -101,9 +103,10 @@ with synthetic labels and then safely deactivated.
   application; it did not require the local Mac browser or local DNS/TLS path.
   No product or DNS configuration was changed. Responsive assertions covered
   the required desktop and 390px mobile layouts, including overflow checks.
-- The exact staging application SHA remains `8c1e407505b19b9a1704d200b9df9ee43557ffc3`;
-  the WebKit evidence is tied to the unchanged runtime plus test-only commits
-  after that application SHA.
+- The exact staging application SHA for this pass is
+  `b2b605ac0bd0038ae42088dded5d08e999d2acfa`. Existing WebKit evidence remains
+  valid for the unchanged representative paths; the new country-total
+  presentation is covered by the focused Chromium run below.
 
 ## Defects found and fixed during this pass
 
@@ -121,17 +124,24 @@ No new migration was required. No unrepaired source-scope `BLOCKING` or
 
 ## Checks and staging
 
-- Targeted PHPUnit: PASS (8 tests, 26 assertions).
+- Targeted PHPUnit: PASS (7 tests, 80 assertions) — demographics cohort and
+  real-workbook export regressions.
 - Changed-file PHPStan: PASS.
 - `vendor/bin/pint --dirty`: PASS.
 - `git diff --check`: PASS.
-- Hosted PostgreSQL gates for the affected owner scope: PASS; no DB-sensitive
-  production code changed after the existing gate, so no broad rerun was
-  triggered for this documentation-only closeout.
+- Hosted PostgreSQL focused regression: run `41439468968`; affected feature
+  step PASS (2 tests, 29 assertions). The workflow's overall Quality result
+  remained red only for unrelated existing PHPStan baseline errors.
 - Hosted WebKit final runs: PASS — `41431787618`, `41430185522`, `41431100891`.
+- Hosted Chromium country-total regression: run `41441752998`; 2 focused
+  desktop tests PASS (country total/export and existing missing-country
+  drill-down).
+- Repository-wide CI run `41437318166` retained unrelated baseline/infrastructure
+  failures (MilestoneElevenA concurrency, unrelated feature/PHPStan checks and
+  Horizon health); the affected country path is covered by the focused runs
+  above.
 - No local browser processes were started during this final verification pass.
-- Protected staging deploy of `8c1e407505b19b9a1704d200b9df9ee43557ffc3`:
-  PASS.
+- Protected staging deploy of `b2b605ac0bd0038ae42088dded5d08e999d2acfa`: PASS.
 - `scripts/staging-smoke.sh` at the exact SHA: PASS (health, migrations,
   PostgreSQL/pgvector, Redis, Horizon, scheduler, Mailpit, Telegram, private
   storage, CRM, Portal and companion checks).
@@ -145,13 +155,15 @@ No new migration was required. No unrepaired source-scope `BLOCKING` or
 ### REAL BUG
 
 `0` unresolved source-scope runtime bugs. The two browser defects above are
-fixed and regression-covered.
+fixed and regression-covered. The country-total source omission is fixed and
+covered by the focused cohort, export and browser regressions.
 
 ### NOT VERIFIED
 
-`0` machine-verifiable source requirements remain unverified. Hosted WebKit
-passed the required representative Portal, medical, upload/media, AI review,
-saved-group, analytics, responsive and navigation paths.
+`0` machine-verifiable source requirements remain unverified after the focused
+PostgreSQL and Chromium runs recorded above. Hosted WebKit passed the required
+representative Portal, medical, upload/media, AI review, saved-group,
+analytics, responsive and navigation paths.
 
 ### OWNER CONTENT REQUIRED
 
