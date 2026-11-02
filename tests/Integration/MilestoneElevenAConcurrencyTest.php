@@ -284,8 +284,6 @@ final class MilestoneElevenAConcurrencyTest extends TestCase
                 throw new RuntimeException('Not used in automatic analytics suggestion test.');
             }
         });
-        Queue::fake();
-
         try {
             DB::transaction(function () use ($admin, $client): void {
                 app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
@@ -297,8 +295,10 @@ final class MilestoneElevenAConcurrencyTest extends TestCase
         } catch (RuntimeException $exception) {
             self::assertSame('rollback source mutation', $exception->getMessage());
         }
-        Queue::assertNothingPushed();
+        self::assertSame(0, $calls);
+        self::assertSame(0, MedicalProfilePain::query()->where('organization_id', $organization->getKey())->count());
 
+        Queue::fake();
         app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
             pains: [['name' => 'Закреплённый источник', 'score' => 5]],
             painsProvided: true,
