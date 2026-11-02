@@ -93,10 +93,14 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
             ],
         ], ['organization_id', 'feature_key'], ['enabled', 'updated_at']);
         if ($feedbackEnabled) {
-            \\App\\Modules\\Feedback\\Domain\\Models\\FeedbackConfiguration::query()->updateOrCreate(
-                ['organization_id' => $organization->getKey()],
-                ['enabled' => true, 'positive_threshold' => 8, 'low_score_feedback_required' => true],
-            );
+            $feedbackConfiguration = \\App\\Modules\\Feedback\\Domain\\Models\\FeedbackConfiguration::query()
+                ->firstOrNew(['organization_id' => $organization->getKey()]);
+            $feedbackConfiguration->forceFill([
+                'organization_id' => $organization->getKey(),
+                'enabled' => true,
+                'positive_threshold' => 8,
+                'low_score_feedback_required' => true,
+            ])->save();
         }
         foreach ([
             'offer' => 'offer_consent',
