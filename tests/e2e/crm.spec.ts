@@ -3582,7 +3582,9 @@ test('staff can maintain three independent session pains through save and reload
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
     const secondPainEdit = page.getByLabel('Название или описание боли', { exact: true }).nth(1).locator('xpath=ancestor::li[1]');
     const secondFrequency = secondPainEdit.getByRole('combobox', { name: 'Частота', exact: true });
-    await secondFrequency.selectOption('count');
+    await secondFrequency.click();
+    await secondFrequency.press('End');
+    await secondFrequency.press('Enter');
     await expect(secondFrequency).toHaveValue('count');
     await secondFrequency.press('Tab');
     await page.waitForTimeout(1_000);
