@@ -2946,7 +2946,7 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Вернуться к причинам из тестов', exact: true }).click();
     await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeHidden();
-    await expect(page.getByRole('button', { name: 'Заполнить', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Заполнить', exact: true })).toHaveCount(2);
     await page.getByRole('button', { name: 'Добавить первопричину', exact: true }).click();
     const rootCauseSelect = page.getByRole('combobox', { name: 'Причина из сеанса', exact: true });
     await rootCauseSelect.click();
