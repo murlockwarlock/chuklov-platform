@@ -62,13 +62,21 @@ function refreshBaseDocumentTitle(): void {
 }
 
 function authoritativeUnreadCount(): number | null {
-    const authority = document.querySelector<HTMLElement>('[data-filament-unread-notifications-count]');
-    if (authority === null) {
+    const trigger = document.querySelector<HTMLElement>(
+        '.fi-topbar-database-notifications-btn, .fi-sidebar-database-notifications-btn',
+    );
+    if (trigger === null) {
         return null;
     }
 
-    const count = Number.parseInt(authority.dataset.filamentUnreadNotificationsCount ?? '', 10);
+    const badge = trigger.querySelector<HTMLElement>(
+        '.fi-icon-btn-badge-ctn .fi-badge, .fi-sidebar-database-notifications-btn-badge-ctn .fi-badge',
+    );
+    if (badge === null) {
+        return 0;
+    }
 
+    const count = Number.parseInt((badge.textContent ?? '').replace(/[^\d]/g, ''), 10);
     return Number.isInteger(count) && count >= 0 ? count : null;
 }
 
@@ -159,7 +167,7 @@ function initializeNotificationSound(): void {
     const observer = new MutationObserver(queueNotificationScan);
     observer.observe(document.body, {
         attributes: true,
-        attributeFilter: ['class', 'wire:key', 'data-filament-unread-notifications-count'],
+        attributeFilter: ['class', 'wire:key'],
         childList: true,
         subtree: true,
     });

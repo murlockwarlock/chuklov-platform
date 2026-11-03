@@ -394,10 +394,9 @@ final class CrmNotificationCenterTest extends TestCase
 
         self::assertSame(51, $bell->getUnreadNotificationsCount());
         self::assertSame(50, $bell->getNotifications()->count());
-        self::assertStringContainsString(
-            'data-filament-unread-notifications-count="51"',
-            $bell->getTrigger()->with(['unreadNotificationsCount' => 51])->render(),
-        );
+        $renderedTrigger = $bell->getTrigger()->with(['unreadNotificationsCount' => 51])->render();
+        self::assertStringContainsString('fi-icon-btn-badge-ctn', $renderedTrigger);
+        self::assertStringContainsString('51', $renderedTrigger);
 
         $firstNotification = $bell->getNotifications()->first();
         self::assertNotNull($firstNotification);
