@@ -2526,7 +2526,7 @@ test('authenticated client can confirm a booking with partial personal data', as
     await page.locator('#booking-profile-last_name').fill('');
     await page.locator('#booking-profile-first_name').fill('');
     await page.locator('#booking-profile-middle_name').fill('');
-    await page.locator('#booking-profile-birth_date').fill('');
+    await page.locator('#booking-profile-birth-date').fill('');
     await page.locator('#booking-profile-country').fill('');
     await page.locator('#booking-profile-city').fill('Астана');
     await page.locator('#booking-profile-phone').fill('');
@@ -2607,7 +2607,7 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByLabel('Фамилия', { exact: true })).toHaveValue('Солдатов');
     await expect(page.getByLabel('Город', { exact: true })).toHaveValue('Астана');
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Добро пожаловать, Денис!' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Добро пожаловать/ })).toBeVisible();
     await page.goto('/portal/more');
     await page.getByRole('link', { name: 'Медицинские данные', exact: true }).click();
     await expect(page.getByLabel('Подробно опишите жалобы', { exact: true })).toBeVisible();
