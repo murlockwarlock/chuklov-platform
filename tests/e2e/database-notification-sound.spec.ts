@@ -210,6 +210,19 @@ test('CRM title unread counter follows the authoritative total across pagination
             display: element === null ? null : window.getComputedStyle(element).display,
         };
     }));
+    await page.evaluate(() => {
+        const element = document.querySelector('#database-notifications') as (HTMLElement & { _x_dataStack?: Array<{ open?: () => void }> }) | null;
+        element?._x_dataStack?.[0]?.open?.();
+    });
+    await page.waitForTimeout(100);
+    console.log('notification modal state after direct open', await page.evaluate(() => {
+        const element = document.querySelector('#database-notifications') as (HTMLElement & { _x_dataStack?: Array<{ isOpen?: boolean }> }) | null;
+
+        return {
+            isOpen: element?._x_dataStack?.[0]?.isOpen ?? null,
+            display: element === null ? null : window.getComputedStyle(element).display,
+        };
+    }));
     const notificationCenter = page.locator('#database-notifications').last();
     await expect(notificationCenter).toBeVisible();
     const nextPage = notificationCenter.locator('.fi-pagination-next-btn');
