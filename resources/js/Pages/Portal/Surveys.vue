@@ -127,7 +127,7 @@ const startUrl = (id: number): string => props.urls.start.replace('__id__', Stri
           href="/"
           class="portal-button portal-button--secondary self-start"
         >
-          {{ t('common.home') }}
+          {{ t('surveys.backHome') }}
         </Link>
       </section>
     </section>
