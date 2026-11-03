@@ -197,7 +197,7 @@ test('CRM title unread counter follows the authoritative total across pagination
     await expect.poll(() => page.title()).toBe(titleWithUnread);
 
     notificationCenter = page.locator('#database-notifications').last();
-    await notificationCenter.getByRole('button', { name: 'Открыть', exact: true }).first().dispatchEvent('click');
+    await notificationCenter.getByRole('link', { name: 'Открыть', exact: true }).first().dispatchEvent('click');
     await expect.poll(() => page.title(), { timeout: 15_000 }).toBe(`(50) ${baseTitle}`);
 
     await page.locator('.fi-no-database .fi-modal-trigger .fi-topbar-database-notifications-btn:visible').last().click();
