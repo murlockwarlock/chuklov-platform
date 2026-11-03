@@ -2854,8 +2854,7 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await expect(portalPage.getByLabel('Контактное лицо', { exact: true })).toHaveCount(0);
 
     await page.getByRole('button', { name: 'Опубликовать для клиентов', exact: true }).click();
-    const publishDialog = page.locator('.fi-modal-window:visible').last();
-    await publishDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await page.getByRole('button', { name: 'Подтвердить', exact: true }).click();
     await expect(page.getByText('Поля заявки опубликованы', { exact: true })).toBeVisible();
 
     await portalPage.reload();
