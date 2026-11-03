@@ -166,7 +166,7 @@ function openDatabaseNotifications(event: MouseEvent): void {
 
 document.addEventListener('pointerdown', armAudio, { passive: true });
 document.addEventListener('keydown', armAudio, { passive: true });
-document.addEventListener('click', openDatabaseNotifications);
+document.addEventListener('click', openDatabaseNotifications, true);
 window.addEventListener('livewire:init', registerLivewireHook);
 window.addEventListener('livewire:navigated', resetNotificationBaseline);
 
