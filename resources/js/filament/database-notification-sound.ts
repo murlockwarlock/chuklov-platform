@@ -148,14 +148,6 @@ function initializeNotificationSound(): void {
         childList: true,
         subtree: true,
     });
-    const title = document.querySelector('title');
-    if (title !== null) {
-        new MutationObserver(queueNotificationScan).observe(title, {
-            childList: true,
-            characterData: true,
-            subtree: true,
-        });
-    }
     queueNotificationScan();
 }
 
