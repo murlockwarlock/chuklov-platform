@@ -2718,6 +2718,7 @@ test('staff sees business labels for client and content settings', async ({ page
 
 test('owner remediation configuration pages explain empty states and usage', async ({ page }) => {
     test.setTimeout(120_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
     const fixture = createCrmFixture({ financeFlow: true });
     const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
     const accountName = `Счёт для проверки ${suffix}`;
