@@ -4714,18 +4714,14 @@ test('owner can configure computed metrics and use them in analytics and Excel',
     await expect(page.getByText(metricName, { exact: true })).toHaveCount(0);
 
     await page.goto('/admin/analytics-metric-settings');
-    await page.locator('.fi-fo-repeater-item').last().getByRole('switch', { name: 'Активна', exact: true }).uncheck();
+    const renamedMetricItem = page.getByRole('heading', { name: renamedMetricName, exact: true }).locator('xpath=ancestor::li[contains(@class,"fi-fo-repeater-item")][1]');
+    await renamedMetricItem.getByRole('button', { name: 'Удалить', exact: true }).click();
     await saveMetricsAndWait();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: renamedMetricName, exact: true })).toHaveCount(0);
     await page.goto('/admin/analytics-console');
     await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toHaveCount(0);
-
-    await page.goto('/admin/analytics-metric-settings');
-    await page.locator('.fi-fo-repeater-item').last().getByRole('switch', { name: 'Активна', exact: true }).check();
-    await saveMetricsAndWait();
-    await page.goto('/admin/analytics-console');
-    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
-    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toBeVisible();
     await page.setViewportSize({ width: 320, height: 900 });
     await assertNoHorizontalOverflow(page);
     await page.setViewportSize({ width: 390, height: 900 });
