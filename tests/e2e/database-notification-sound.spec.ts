@@ -182,7 +182,9 @@ test('CRM title unread counter follows the authoritative total across pagination
     await expect.poll(() => page.title(), { timeout: 15_000 }).toBe(`(51) ${baseTitle}`);
     const titleWithUnread = await page.title();
 
-    await page.locator('.fi-topbar-database-notifications-btn').click();
+    const notificationTrigger = page.locator('.fi-topbar-database-notifications-btn:visible').last();
+    await expect(notificationTrigger).toBeVisible();
+    await notificationTrigger.click();
     const notificationCenter = page.locator('#database-notifications').last();
     await expect(notificationCenter).toBeVisible();
     const nextPage = notificationCenter.locator('.fi-pagination-next-btn');
@@ -195,7 +197,7 @@ test('CRM title unread counter follows the authoritative total across pagination
     await notificationCenter.getByRole('link', { name: 'Открыть', exact: true }).first().click();
     await expect.poll(() => page.title(), { timeout: 15_000 }).toBe(`(50) ${baseTitle}`);
 
-    await page.locator('.fi-topbar-database-notifications-btn').click();
+    await notificationTrigger.click();
     const reopenedCenter = page.locator('#database-notifications').last();
     await expect(reopenedCenter).toBeVisible();
     await reopenedCenter.getByRole('button', { name: /прочитан/i }).click();
