@@ -2542,6 +2542,16 @@ test('authenticated client can confirm a booking with partial personal data', as
 
 test('authenticated client can autosave partial profile fields independently', async ({ page }) => {
     const fixture = createBookingFixture();
+    page.on('request', (request) => {
+        if (request.method() === 'POST' && request.url().endsWith('/portal/profile')) {
+            console.log(`PROFILE REQUEST ${request.postData() ?? ''}`);
+        }
+    });
+    page.on('response', async (response) => {
+        if (response.request().method() === 'POST' && response.url().endsWith('/portal/profile')) {
+            console.log(`PROFILE RESPONSE ${response.status()}`);
+        }
+    });
     execFileSync('php', ['artisan', 'tinker', '--execute', `
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->findOrFail(${fixture.clientId});
         $client->forceFill([
