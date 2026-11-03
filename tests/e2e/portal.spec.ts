@@ -2572,17 +2572,17 @@ test('authenticated client can autosave partial profile fields independently', a
     await expect(page.locator('#profile-city')).toHaveValue('Астана');
     await expect(page.locator('#profile-first_name')).toHaveValue('Евгений');
 
-    await page.locator('#profile-last_name').fill('X'.repeat(101));
+    await page.locator('#profile-birth-date').fill('2999-01-01');
     await page.locator('#profile-first_name').click();
-    await expect(page.locator('#profile-last_name').locator('xpath=following-sibling::p')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('#profile-birth-date').locator('xpath=following-sibling::p')).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('#profile-city')).toHaveValue('Астана');
-    await page.locator('#profile-last_name').fill('Чуклов');
+    await page.locator('#profile-birth-date').fill('1990-01-01');
     await page.locator('#profile-first_name').click();
     await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
     await page.reload();
     await expect(page.locator('#profile-city')).toHaveValue('Астана');
     await expect(page.locator('#profile-first_name')).toHaveValue('Евгений');
-    await expect(page.locator('#profile-last_name')).toHaveValue('Чуклов');
+    await expect(page.locator('#profile-birth-date')).toHaveValue('1990-01-01');
 });
 
 test('September 26 confirmed profile persists and the medical editor saves then reopens', async ({ page }) => {
