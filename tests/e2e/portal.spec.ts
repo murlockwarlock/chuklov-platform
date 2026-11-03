@@ -2523,14 +2523,14 @@ test('authenticated client can confirm a booking with partial personal data', as
     await page.getByTestId('availability-slot').first().click();
     await page.getByRole('button', { name: 'Продолжить' }).click();
 
-    await page.getByLabel('Фамилия', { exact: true }).fill('');
-    await page.getByLabel('Имя', { exact: true }).fill('');
-    await page.getByLabel('Отчество', { exact: true }).fill('');
-    await page.getByLabel('Дата рождения', { exact: true }).fill('');
-    await page.getByLabel('Страна', { exact: true }).fill('');
-    await page.getByLabel('Город', { exact: true }).fill('Астана');
-    await page.getByLabel('Телефон', { exact: true }).fill('');
-    await page.getByLabel('E-mail', { exact: true }).fill('');
+    await page.locator('#booking-profile-last_name').fill('');
+    await page.locator('#booking-profile-first_name').fill('');
+    await page.locator('#booking-profile-middle_name').fill('');
+    await page.locator('#booking-profile-birth_date').fill('');
+    await page.locator('#booking-profile-country').fill('');
+    await page.locator('#booking-profile-city').fill('Астана');
+    await page.locator('#booking-profile-phone').fill('');
+    await page.locator('#booking-profile-email').fill('');
     await acceptRequiredConsents(page);
     await page.getByRole('button', { name: 'Подтвердить запись' }).click();
 
@@ -2593,18 +2593,16 @@ test('September 26 confirmed profile persists and the medical editor saves then 
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
         await page.getByLabel('Страна', { exact: true }).press('Escape');
     }
-    const profileForm = page.locator('form').filter({ has: page.getByLabel('Фамилия', { exact: true }) });
-    await profileForm.getByRole('button', { name: 'Сохранить', exact: true }).click();
-    await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
     await page.getByLabel('Город', { exact: true }).fill('Астана');
     profileResponses.failNextSave = true;
-    await profileForm.getByRole('button', { name: 'Сохранить', exact: true }).click();
-    await expect(profileForm.getByRole('alert')).toHaveText('Не удалось сохранить данные. Проверьте соединение и повторите попытку.');
+    await page.getByLabel('Имя', { exact: true }).click();
+    await expect(page.getByRole('alert')).toHaveText('Не удалось сохранить данные. Проверьте соединение и повторите попытку.');
     await page.reload();
     await expect(page.getByLabel('Город', { exact: true })).toHaveValue('Алматы');
     await page.getByLabel('Город', { exact: true }).fill('Астана');
-    await profileForm.getByRole('button', { name: 'Сохранить', exact: true }).click();
-    await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible();
+    await page.getByLabel('Имя', { exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
     await page.reload();
     await expect(page.getByLabel('Фамилия', { exact: true })).toHaveValue('Солдатов');
     await expect(page.getByLabel('Город', { exact: true })).toHaveValue('Астана');
