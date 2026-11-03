@@ -185,6 +185,13 @@ test('CRM title unread counter follows the authoritative total across pagination
     const notificationTrigger = page.locator('.fi-no-database .fi-modal-trigger .fi-topbar-database-notifications-btn:visible').last();
     await expect(notificationTrigger).toBeVisible();
     await expect(notificationTrigger).toBeEnabled();
+    console.log('notification trigger debug', await notificationTrigger.evaluate((element) => ({
+        button: element.outerHTML,
+        onclick: element.getAttribute('onclick'),
+        xOn: element.getAttribute('x-on:click'),
+        wireClick: element.getAttribute('wire:click'),
+        parent: element.parentElement?.outerHTML.slice(0, 2500),
+    })));
     await notificationTrigger.click();
     const notificationCenter = page.locator('#database-notifications').last();
     await expect(notificationCenter).toBeVisible();
