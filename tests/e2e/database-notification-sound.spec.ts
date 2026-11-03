@@ -190,18 +190,18 @@ test('CRM title unread counter follows the authoritative total across pagination
     await expect(notificationCenter).toHaveClass(/fi-modal-open/);
     const nextPage = notificationCenter.locator('.fi-pagination-next-btn');
     await expect(nextPage).toHaveCount(1);
-    await nextPage.click({ force: true });
+    await nextPage.dispatchEvent('click');
     await expect.poll(() => page.title()).toBe(titleWithUnread);
-    await notificationCenter.locator('.fi-pagination-previous-btn').click({ force: true });
+    await notificationCenter.locator('.fi-pagination-previous-btn').dispatchEvent('click');
     await expect.poll(() => page.title()).toBe(titleWithUnread);
 
-    await notificationCenter.getByRole('link', { name: 'Открыть', exact: true }).first().click({ force: true });
+    await notificationCenter.getByRole('link', { name: 'Открыть', exact: true }).first().dispatchEvent('click');
     await expect.poll(() => page.title(), { timeout: 15_000 }).toBe(`(50) ${baseTitle}`);
 
     await notificationTrigger.click();
     const reopenedCenter = page.locator('#database-notifications.fi-modal-open').last();
     await expect(reopenedCenter).toHaveClass(/fi-modal-open/);
-    await reopenedCenter.getByRole('button', { name: /прочитан/i }).click({ force: true });
+    await reopenedCenter.getByRole('button', { name: /прочитан/i }).dispatchEvent('click');
     await expect.poll(() => page.title(), { timeout: 15_000 }).toBe(baseTitle);
 
     await page.goto('/admin/clients');
