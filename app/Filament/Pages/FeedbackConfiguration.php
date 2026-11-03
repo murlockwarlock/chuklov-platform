@@ -73,12 +73,12 @@ final class FeedbackConfiguration extends LocalizedPage
             'review_url_ru' => $settings['reviewLinks']['ru'],
             'review_url_en' => $settings['reviewLinks']['en'],
             'review_destinations' => $settings['reviewDestinations'],
-            'feedback_themes' => array_map(static fn (array $theme): array => [
+            'feedback_themes' => array_values(array_map(static fn (array $theme): array => [
                 'name' => $theme['name'],
                 'group_name' => $theme['groupName'],
                 'is_active' => $theme['isActive'],
                 'sort_order' => $theme['sortOrder'],
-            ], $settings['feedbackThemes']),
+            ], array_filter($settings['feedbackThemes'], static fn (array $theme): bool => (bool) $theme['isActive']))),
         ]);
     }
 

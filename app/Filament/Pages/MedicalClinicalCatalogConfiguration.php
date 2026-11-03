@@ -74,7 +74,8 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
         $organizationId = app(OrganizationContext::class)->id();
         $tests = MedicalTestDefinition::query()
             ->where('organization_id', $organizationId)
-            ->with('values')
+            ->where('is_active', true)
+            ->with(['values' => fn ($query) => $query->where('is_active', true)])
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()
@@ -94,6 +95,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
             ])->all();
         $causes = MedicalCauseDefinition::query()
             ->where('organization_id', $organizationId)
+            ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()
@@ -105,6 +107,7 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
             ])->all();
         $problemTags = MedicalProblemTag::query()
             ->where('organization_id', $organizationId)
+            ->where('is_active', true)
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get()

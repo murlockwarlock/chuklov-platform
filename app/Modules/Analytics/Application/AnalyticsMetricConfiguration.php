@@ -57,9 +57,16 @@ final readonly class AnalyticsMetricConfiguration
     }
 
     /** @return array<int, array<string, mixed>> */
-    public function formValues(): array
+    public function formValues(bool $activeOnly = false): array
     {
-        return $this->metrics()->map(fn (AnalyticsMetric $metric): array => $this->formValue($metric))->values()->all();
+        return $this->metrics()
+            ->when($activeOnly, fn (Collection $metrics): Collection => $metrics->filter(
+                fn (AnalyticsMetric $metric): bool => (bool) $metric->active
+                    || in_array($metric->stable_key, ['pain_reduction_percent', 'ltv_change_percent'], true),
+            ))
+            ->map(fn (AnalyticsMetric $metric): array => $this->formValue($metric))
+            ->values()
+            ->all();
     }
 
     /** @return array<string, mixed> */

@@ -6,6 +6,7 @@ use App\Filament\Pages\AnalyticsMetricSettings;
 use App\Models\User;
 use App\Modules\Analytics\Application\AnalyticsMetricConfiguration;
 use App\Modules\Analytics\Application\ClientSessionAxisCatalog;
+use App\Modules\Analytics\Domain\Models\AnalyticsMetric;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\SetOrganizationSetting;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -87,6 +88,55 @@ final class AnalyticsMetricConfigurationTest extends TestCase
         $explicitData = $explicit->instance()->data;
         self::assertIsArray($explicitData);
         self::assertSame(ClientSessionAxisCatalog::Chronological, $explicitData['session_axis_semantics']);
+    }
+
+    public function test_metric_editor_does_not_present_inactive_historical_metrics(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+
+        $configuration = app(AnalyticsMetricConfiguration::class);
+        $metrics = $configuration->formValues();
+        $metrics[] = [
+            'name' => 'Архивный показатель',
+            'description' => null,
+            'active' => true,
+            'output_unit' => 'score',
+            'decimal_precision' => 2,
+            'source_a_key' => 'pain.average_before',
+            'source_b_key' => 'pain.average_after',
+            'aggregation' => 'average',
+            'calculation' => 'difference',
+            'comparison' => 'none',
+            'comparison_metric_id' => null,
+            'target_value' => null,
+            'null_policy' => 'do_not_calculate',
+            'zero_policy' => 'do_not_calculate',
+            'sort_order' => 100,
+        ];
+        $configuration->saveMetrics($admin, $metrics);
+
+        $created = AnalyticsMetric::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('name', 'Архивный показатель')
+            ->sole();
+        $submitted = $configuration->formValues();
+        $submitted = array_map(static function (array $metric) use ($created): array {
+            if ((int) ($metric['id'] ?? 0) === (int) $created->getKey()) {
+                $metric['active'] = false;
+            }
+
+            return $metric;
+        }, $submitted);
+        $configuration->saveMetrics($admin, $submitted);
+
+        $component = Livewire::actingAs($admin)
+            ->test(new AnalyticsMetricSettings)
+            ->assertSuccessful();
+        $data = $component->instance()->data;
+
+        self::assertIsArray($data);
+        self::assertFalse(collect($data['metrics'] ?? [])->contains('id', $created->getKey()));
     }
 
     public function test_ltv_percentage_cannot_be_activated_without_an_owner_definition(): void

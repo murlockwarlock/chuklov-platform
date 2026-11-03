@@ -84,7 +84,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
         $this->form->fill([
             'preview_period' => DashboardPeriod::LastThirtyDays,
             'session_axis_semantics' => app(ClientSessionAxisCatalog::class)->selected(app(OrganizationContext::class)->id())['key'],
-            'metrics' => app(AnalyticsMetricConfiguration::class)->formValues(),
+            'metrics' => app(AnalyticsMetricConfiguration::class)->formValues(true),
             'therapy_effectiveness_formula_reference' => app(AnalyticsMetricConfiguration::class)->values()['therapy_effectiveness']['formula_reference'],
             'ltv_percent_formula_reference' => app(AnalyticsMetricConfiguration::class)->values()['ltv_percent']['formula_reference'],
         ]);

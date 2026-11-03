@@ -124,6 +124,38 @@ final class MedicalClinicalCatalogConfigurationTest extends TestCase
         self::assertSame($testKey, $test->refresh()->key);
     }
 
+    public function test_editor_hides_inactive_catalog_rows_while_history_keeps_them(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        MedicalTestDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'archived_test',
+            'name' => 'Архивный тест',
+            'is_active' => false,
+            'sort_order' => 1,
+        ]);
+        MedicalCauseDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Архивная причина',
+            'is_active' => false,
+            'sort_order' => 1,
+        ]);
+        MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Архивная категория',
+            'is_active' => false,
+            'sort_order' => 1,
+        ]);
+
+        $component = Livewire::actingAs($admin)->test(MedicalClinicalCatalogConfiguration::class);
+        $data = $component->instance()->data;
+
+        self::assertIsArray($data);
+        self::assertFalse(collect($data['tests'] ?? [])->contains('name', 'Архивный тест'));
+        self::assertFalse(collect($data['causes'] ?? [])->contains('name', 'Архивная причина'));
+        self::assertFalse(collect($data['problem_tags'] ?? [])->contains('name', 'Архивная категория'));
+    }
+
     public function test_manager_can_import_the_same_catalog_contract_from_xlsx(): void
     {
         [$organization, $admin] = $this->fixture();
