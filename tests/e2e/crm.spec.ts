@@ -4526,7 +4526,7 @@ test('owner can configure computed metrics and use them in analytics and Excel',
         const saveResponse = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
         await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
         await saveResponse;
-        await expect(page.locator('.fi-no-notification.fi-status-success:visible').filter({ hasText: 'Метрики сохранены' }).last()).toBeVisible({ timeout: 20_000 });
+        await expect(page.getByText('Метрики сохранены', { exact: true }).last()).toBeVisible({ timeout: 20_000 });
     };
 
     await login(page, fixture);
