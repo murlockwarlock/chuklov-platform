@@ -46,7 +46,6 @@ function commitBirthDate(event: KeyboardEvent): void {
         :value="modelValue[field.key]"
         type="text"
         :autocomplete="field.autocomplete"
-        :required="field.key !== 'middle_name'"
         maxlength="100"
         class="portal-input"
         @input="update(field.key, ($event.target as HTMLInputElement).value)"
@@ -74,7 +73,6 @@ function commitBirthDate(event: KeyboardEvent): void {
             type="radio"
             :name="idPrefix + '-gender'"
             :value="gender"
-            required
             class="sr-only"
             @change="update('gender', gender)"
           >
@@ -97,7 +95,6 @@ function commitBirthDate(event: KeyboardEvent): void {
         :id="idPrefix + '-birth-date'"
         :value="modelValue.birth_date"
         type="date"
-        required
         class="portal-input"
         @input="update('birth_date', ($event.target as HTMLInputElement).value)"
         @change="update('birth_date', ($event.target as HTMLInputElement).value)"
@@ -120,7 +117,6 @@ function commitBirthDate(event: KeyboardEvent): void {
         :model-value="modelValue.country"
         :suggestions="countries"
         :empty-text="t('profile.countryNoMatch')"
-        required
         @update:model-value="update('country', $event)"
       />
       <p
@@ -140,7 +136,6 @@ function commitBirthDate(event: KeyboardEvent): void {
         :model-value="modelValue.city"
         :country="modelValue.country"
         :cities-url="citiesUrl"
-        required
         @lookup-loading="emit('city-lookup-loading', $event)"
         @update:model-value="update('city', $event)"
       />
@@ -160,7 +155,6 @@ function commitBirthDate(event: KeyboardEvent): void {
         :id="idPrefix + '-phone'"
         :value="modelValue.phone"
         type="tel"
-        required
         autocomplete="tel"
         maxlength="32"
         class="portal-input"

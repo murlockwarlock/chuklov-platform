@@ -1098,6 +1098,9 @@ function submitBooking(): void {
             @confirm="submitBooking"
           >
             <template #personal-data>
+              <p class="portal-copy portal-copy--small">
+                {{ t('booking.personalDataOptional') }}
+              </p>
               <PersonalDataFields
                 v-model="bookingForm.personal_data"
                 id-prefix="booking-profile"
