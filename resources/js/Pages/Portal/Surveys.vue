@@ -123,6 +123,12 @@ const startUrl = (id: number): string => props.urls.start.replace('__id__', Stri
         <p class="portal-copy">
           {{ t('surveys.noneAvailable') }}
         </p>
+        <Link
+          href="/"
+          class="portal-button portal-button--secondary self-start"
+        >
+          {{ t('common.home') }}
+        </Link>
       </section>
     </section>
   </AppShell>

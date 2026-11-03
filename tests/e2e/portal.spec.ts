@@ -1597,7 +1597,9 @@ test('authenticated Portal pages keep one navigation and page-header contract', 
         await expect(page.getByRole('heading', { name: new RegExp(route.heading) }).first()).toBeVisible();
         await expect(page.locator('.portal-bottom-nav')).toBeVisible();
         await expect(page.locator('.portal-bottom-nav__link--active')).toHaveCount(1);
-        await expect(page.locator('.portal-bottom-nav__link--active')).toHaveAttribute('href', route.active === 'home'
+        const activeHref = await page.locator('.portal-bottom-nav__link--active').getAttribute('href');
+        expect(activeHref).not.toBeNull();
+        expect(new URL(activeHref as string, page.url()).pathname).toBe(route.active === 'home'
             ? '/'
             : route.active === 'bookings'
                 ? '/portal/services'
