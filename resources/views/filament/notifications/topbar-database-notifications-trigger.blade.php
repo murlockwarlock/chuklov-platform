@@ -12,4 +12,5 @@
     class="fi-topbar-database-notifications-btn"
     x-data="{}"
     x-on:click="$dispatch('open-modal', { id: 'database-notifications' })"
+    wire:click="$dispatch('open-modal', { id: 'database-notifications' })"
 />

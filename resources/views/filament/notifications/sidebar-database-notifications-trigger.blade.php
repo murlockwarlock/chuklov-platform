@@ -13,6 +13,7 @@
     class="fi-sidebar-database-notifications-btn"
     x-data="{}"
     x-on:click="$dispatch('open-modal', { id: 'database-notifications' })"
+    wire:click="$dispatch('open-modal', { id: 'database-notifications' })"
 >
     {{ \Filament\Support\generate_icon_html(\Filament\Support\Icons\Heroicon::OutlinedBell, alias: \Filament\View\PanelsIconAlias::SIDEBAR_OPEN_DATABASE_NOTIFICATIONS_BUTTON, size: \Filament\Support\Enums\IconSize::Large) }}
 
