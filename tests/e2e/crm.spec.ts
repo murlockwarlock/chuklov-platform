@@ -4874,8 +4874,10 @@ test('automatic analytics suggestions follow a real source save into NeedsReview
             const items = page.locator('.fi-fo-repeater-item');
             for (let index = 0; index < await items.count(); index += 1) {
                 const item = items.nth(index);
+                const itemText = await item.innerText();
                 if (await item.getByRole('textbox', { name: 'Предложение', exact: true }).inputValue() === candidateLabelSuffix
-                    && (await item.innerText()).includes(`ID ${automaticFixture.disabledSourcePainId}`)) {
+                    && itemText.includes('medical_profile_pain')
+                    && itemText.includes(`ID ${automaticFixture.disabledSourcePainId}`)) {
                     return true;
                 }
             }
