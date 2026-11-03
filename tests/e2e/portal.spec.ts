@@ -1569,7 +1569,7 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
 });
 
 test('authenticated Portal pages keep one navigation and page-header contract', async ({ page }) => {
-    const fixture = createBookingFixture({ feedbackEnabled: true });
+    const fixture = createBookingFixture({ feedbackEnabled: true, withServiceCredit: true });
     await page.setViewportSize({ width: 390, height: 844 });
     await page.context().addCookies([{
         name: fixture.cookieName,
