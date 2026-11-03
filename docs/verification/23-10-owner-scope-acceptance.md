@@ -104,6 +104,119 @@ exact application SHA above. Owner acceptance remains `NOT RUN`.
 The older analytics-focused handoff and matrices below are retained as an
 audit trail and are not current Medical evidence.
 
+## Current Analytics final handoff (authoritative for this review)
+
+This is the one fresh consolidated Analytics evidence pack for the final
+implementation pass. It supersedes the older Analytics rows below; no old run
+is used to downgrade a requirement that is directly covered here.
+
+| Item | Current value |
+|---|---|
+| Starting PR SHA | `d83da17a4f3a508a5d5da1f087bf35a35b93edfd` |
+| Starting application SHA | `ec2c26798333616c3bda0f90b8894a84734c3326` |
+| PR HEAD at evidence execution | `3631a6f36976fc007572f1027bf3099b827cd49e` |
+| Final application SHA | `3631a6f36976fc007572f1027bf3099b827cd49e` |
+| Exact staging SHA | `3631a6f36976fc007572f1027bf3099b827cd49e` |
+| Branch / PR | `codex/23-10-medical-analytics` / #61 |
+| PR state | `Draft / Open / DO NOT MERGE` |
+| Owner acceptance | `NOT RUN` |
+| Medical status | `MEDICAL READY FOR OWNER ACCEPTANCE` (unchanged) |
+
+### Fresh A1–A16 matrix
+
+Every row below is `IMPLEMENTED / VERIFIED`. The hosted PostgreSQL job used
+the production-equivalent PostgreSQL/pgvector service and the hosted Chromium
+pack exercised the real CRM controls, reloads, exports and negative paths.
+
+| ID | IMPLEMENTED | PostgreSQL | Chromium | Staging | OWNER ACCEPTANCE |
+|---|---|---|---|---|---|
+| A1 | Yes — complaints/categories, multiple tags, tenant-scoped taxonomy and automatic candidate lifecycle | PASS — analytics feature/AI/lease/tenant suite | VERIFIED — taxonomy/candidate review and source-save → afterCommit → queue → provider → NeedsReview → review/association; safe-disabled path | PASS — exact SHA and smoke | NOT RUN |
+| A2 | Yes — average pain before/after with nullable exclusion and zero inclusion | PASS — PainAnalytics/Projection/XLSX tests | VERIFIED — non-trivial cohort, denominator and drill-down/export agree | PASS | NOT RUN |
+| A3 | Yes — problem-specific session 1/2/3 axis and configured metric seam | PASS — Goal/Pain/session-window tests | VERIFIED — dedicated problem-session journey, duplicate-row protection, screen/XLSX agreement | PASS | NOT RUN |
+| A4 | Yes — client-specific satisfaction 0–10 with idempotent/concurrent contract | PASS — NPS PostgreSQL concurrency | VERIFIED — 0 and 10, missing distinct, invalid values rejected | PASS | NOT RUN |
+| A5 | Yes — score plus text, Portal/CRM entry, themes and aggregation | PASS — feedback/theme analytics tests | VERIFIED — positive/zero text retained, theme aggregation and reload | PASS | NOT RUN |
+| A6 | Yes — goals/tasks, repeated categories, shared configurable taxonomy and period basis | PASS — GoalAnalytics plus cohort/drill-down regressions | VERIFIED — repeated task categories, filter/drill-down and current `starts_on` period semantics | PASS | NOT RUN |
+| A7 | Yes — built-in/manual groups, archive/delete, versions and atomic stale handling | PASS — saved-group transaction/version tests | VERIFIED — create/edit/reload/archive, stale conflict and concurrent addition survives | PASS | NOT RUN |
+| A8 | Yes — owner-managed human age ranges and overlap validation | PASS — age configuration/analytics tests | VERIFIED — invalid overlap → correction → save, boundaries and unknown DOB | PASS | NOT RUN |
+| A9 | Yes — sex/children counts, percentages, unknown and tenant-safe drill-down | PASS — demographic/cohort tests | VERIFIED — multiple values, unknown denominator and drill-down | PASS | NOT RUN |
+| A10 | Yes — country distribution, percentages and known-country count | PASS — country aggregate/predicate/XLSX tests | VERIFIED — KZ/RU/unknown, `Стран представлено: N`, unknown-only/empty zero, filtered KZ=1 and tenant isolation | PASS | NOT RUN |
+| A11 | Yes — services, visits and specialists with period/cohort semantics | PASS — aggregate/drill-down tests | VERIFIED — multiple service/specialist aggregates, percentages, drill-down and export | PASS | NOT RUN |
+| A12 | Yes — monetary LTV retained; percentage mode is safe-disabled/configurable without invented formula | PASS — finance/metric tests | VERIFIED — monetary metric available; no fabricated percentage calculation | PASS | NOT RUN |
+| A13 | Yes — income, ordinary expenses, movement/accounts and period | PASS — FinanceMovementAnalytics/PostgreSQL tests | VERIFIED — unrestricted ordinary expense `2500`, `-2500` movement, screen/XLSX and meaningful cohort behavior | PASS | NOT RUN |
+| A14 | Yes — owner-managed acquisition labels/aliases with hidden stable keys | PASS — attribution/source tests | VERIFIED — multiple sources/unknown, counts/percentages, drill-down and XLSX | PASS | NOT RUN |
+| A15 | Yes — owner-managed purchase mappings with duplicate validation | PASS — purchase-group tests | VERIFIED — invalid → correction → save, multiple categories, filter/statistics/export/reload | PASS | NOT RUN |
+| A16 | Yes — event-aware completed/rescheduled/cancelled booking status analytics | PASS — booking/event analytics tests | VERIFIED — repeated events, selected period, cohort, screen/XLSX and drill-down | PASS | NOT RUN |
+
+### Fresh consolidated evidence
+
+- Hosted PostgreSQL Analytics run `41575014914`, job `125716380208` —
+  PostgreSQL connection confirmed by `db:show`; `175 passed / 1,199
+  assertions` in the Analytics/feedback/M11C command and `3 passed / 21
+  assertions` in the filtered concurrency/NPS command: **178 tests / 1,220
+  assertions, PASS**.
+- Hosted Chromium Analytics run `41574527435`, job `125714854609` — the
+  consolidated desktop filter ran **12 tests, 12 passed**. It covered the
+  country total/XLSX path, problem-specific session numbering, service and
+  problem exact drill-down, typed unknown-country predicate, invalid/corrected
+  custom period, configurable metrics and Excel, taxonomy/candidate review,
+  automatic AI source lifecycle, saved groups and attribution defaults.
+  The focused automatic lifecycle rerun `41573804259` was also 1/1 PASS after
+  the final source-scoped regression; the consolidated run is the acceptance
+  evidence.
+- Protected staging deploy: `make deploy-staging` succeeded for exact
+  `3631a6f36976fc007572f1027bf3099b827cd49e`; read-only
+  `/opt/chuklov-staging/REVISION` matched exactly. Application, PostgreSQL,
+  pgvector, Redis, Horizon, scheduler, Telegram, private storage and protected
+  host routing were healthy. `scripts/staging-smoke.sh` returned
+  **STAGING SMOKE: PASS**.
+- WebKit: `NOT NEEDED` for this Analytics pass. No Analytics production browser
+  or UI code changed; the changes are backend period semantics, encrypted
+  source-change detection and hosted-test evidence harness. Existing relevant
+  WebKit evidence remains applicable, and Chromium is the fresh browser gate.
+
+### Non-numbered literal Analytics requirements
+
+All are `VERIFIED` in the same fresh pack: one global cohort under
+`Кого анализируем`; dimensions separately under `Что считаем`; AND across
+different groups; same-field OR; tags ANY/ALL/EXCLUDE; explicit period basis
+(`tasks.starts_on` for goals/tasks); NULL distinct from 0; checkboxes →
+`Анализировать` loading/success → cohort change → second analysis without a
+manual refresh; matching on-screen statistics/charts/drill-down/XLSX using the
+same cohort; typed/numeric workbook values; drill-down as base cohort AND exact
+aggregate predicate with back navigation preserving the original context;
+preview validation/application error with visible retry/error rather than a
+false `0 клиентов`; saved-group reload, archive and stale/concurrent conflict;
+automatic AI source-change lifecycle; and owner-managed configurable labels,
+taxonomies, ranges and mappings without developer/deploy changes.
+
+### Defects found and fixed in this pass
+
+- **A6 REAL BUG — fixed:** goals/tasks and the matching goal cohort/drill-down
+  used `tasks.created_at` for period filtering, which excluded tasks whose
+  `starts_on` was inside the selected period. Runtime fix and regression are in
+  `8fd5a9c1`; the final PG/Chromium pack proves `starts_on` semantics.
+- **A1 REAL BUG — fixed:** randomized medical encryption caused unchanged pain
+  rows to look like source changes, dispatching automatic AI jobs for unrelated
+  rows. Profile/session pain writers now preserve ciphertext when plaintext is
+  unchanged at the same key version; regression is in `c2c930ce` and the final
+  source-save journey proves only the changed source enters the lifecycle.
+- E2E-only queue/locator assertions were tightened during the pass; they did
+  not change product behavior and are not remaining findings.
+
+### Analytics completeness
+
+- Additional literal Analytics source gaps: **0 — No additional literal
+  Analytics source gap found.**
+- Analytics BLOCKING: `0`.
+- Analytics REAL BUG: `0`.
+- Analytics MATERIAL NOT VERIFIED: `0`.
+- Legitimate OWNER CONTENT REQUIRED: production tags/categories and thresholds;
+  feedback themes and wording; acquisition aliases; purchase mappings; goals
+  taxonomy; AI prompt/provider activation; and the owner-defined LTV percentage
+  and effectiveness formulas. Synthetic data verified the configurable seams;
+  no formula or business content was invented.
+- Owner acceptance remains `NOT RUN`; PR remains `Draft / Open / DO NOT MERGE`.
+
 ## Historical consolidated handoff (analytics ledger; retained for audit trail)
 
 This section supersedes the historical matrix retained below. It records the
