@@ -2750,7 +2750,7 @@ test('owner remediation configuration pages explain empty states and usage', asy
     const instagramSource = sourceItems.filter({ hasText: 'Instagram' }).first();
     await expect(instagramSource).toBeVisible();
     await instagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
-    const expandedInstagramSource = page.getByDisplayValue('Instagram').locator('xpath=ancestor::li[contains(@class,"fi-fo-repeater-item")][1]');
+    const expandedInstagramSource = page.locator('input[value="Instagram"]:visible').locator('xpath=ancestor::li[contains(@class,"fi-fo-repeater-item")][1]');
     await expect(expandedInstagramSource.getByRole('textbox', { name: /^Название в аналитике/ })).toHaveValue('Instagram');
     await expect(expandedInstagramSource.getByText('Другие варианты этого источника', { exact: true })).toBeVisible();
     await expandedInstagramSource.getByRole('button', { name: 'Добавить вариант', exact: true }).click();
@@ -2763,7 +2763,7 @@ test('owner remediation configuration pages explain empty states and usage', asy
     const reloadedSourceItems = reloadedSourceSection.locator('xpath=.//*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ") and not(ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ")])]');
     const reloadedInstagramSource = reloadedSourceItems.filter({ hasText: 'Instagram' }).first();
     await reloadedInstagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
-    const reloadedExpandedInstagramSource = page.getByDisplayValue('Instagram').locator('xpath=ancestor::li[contains(@class,"fi-fo-repeater-item")][1]');
+    const reloadedExpandedInstagramSource = page.locator('input[value="Instagram"]:visible').locator('xpath=ancestor::li[contains(@class,"fi-fo-repeater-item")][1]');
     await expect(reloadedExpandedInstagramSource.getByRole('textbox', { name: /^Вариант названия/ }).last()).toHaveValue(sourceAlias);
 
     await page.goto('/admin/analytics-metric-settings');
