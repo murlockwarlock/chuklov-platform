@@ -2740,7 +2740,8 @@ test('owner remediation configuration pages explain empty states and usage', asy
 
     await page.goto('/admin/finance-expense-entry');
     await expect(page.getByRole('heading', { name: 'Добавить расход', exact: true })).toBeVisible();
-    await expect(page.getByLabel('Счёт или касса', { exact: true })).toBeVisible();
+    const accountSelect = page.getByRole('combobox', { name: /^Счёт или касса/ });
+    await expect(accountSelect).toBeVisible();
     await expect(page.getByText('Выберите, откуда списаны деньги: банковский счёт или касса.', { exact: true })).toBeVisible();
     const addAccountLink = page.getByText('Добавить счёт или кассу', { exact: true }).last();
     await expect(addAccountLink).toBeVisible();
@@ -2764,9 +2765,9 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await page.waitForTimeout(500);
 
     await page.goto('/admin/finance-expense-entry');
-    await page.getByLabel('Счёт или касса', { exact: true }).selectOption({ label: `${accountName} (USD)` });
-    await page.getByLabel('Категория', { exact: true }).selectOption({ label: categoryName });
-    await page.getByLabel('Сумма', { exact: true }).fill('25');
+    await accountSelect.selectOption({ label: `${accountName} (USD)` });
+    await page.getByRole('combobox', { name: /^Категория/ }).selectOption({ label: categoryName });
+    await page.getByRole('spinbutton', { name: /^Сумма/ }).fill('25');
     await page.getByRole('button', { name: 'Записать расход', exact: true }).click();
     await expect(page.getByText('Расход записан', { exact: true })).toBeVisible({ timeout: 20_000 });
 
