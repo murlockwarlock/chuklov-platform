@@ -185,7 +185,20 @@ test('CRM title unread counter follows the authoritative total across pagination
     const notificationTrigger = page.locator('.fi-no-database .fi-modal-trigger .fi-topbar-database-notifications-btn:visible').last();
     await expect(notificationTrigger).toBeVisible();
     await expect(notificationTrigger).toBeEnabled();
+    await page.evaluate(() => {
+        const target = window as Window & { openModalDispatchCount?: number };
+        const originalDispatchEvent = window.dispatchEvent.bind(window);
+        target.openModalDispatchCount = 0;
+        window.dispatchEvent = (event: Event): boolean => {
+            if (event.type === 'open-modal') {
+                target.openModalDispatchCount = (target.openModalDispatchCount ?? 0) + 1;
+            }
+
+            return originalDispatchEvent(event);
+        };
+    });
     await notificationTrigger.click();
+    console.log('open modal dispatch count', await page.evaluate(() => (window as Window & { openModalDispatchCount?: number }).openModalDispatchCount));
     const notificationCenter = page.locator('#database-notifications').last();
     await expect(notificationCenter).toBeVisible();
     const nextPage = notificationCenter.locator('.fi-pagination-next-btn');
