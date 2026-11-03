@@ -161,7 +161,11 @@ function openDatabaseNotifications(event: MouseEvent): void {
         return;
     }
 
-    window.dispatchEvent(new CustomEvent('open-modal', { detail: { id: 'database-notifications' } }));
+    document.dispatchEvent(new CustomEvent('open-modal', {
+        bubbles: true,
+        composed: true,
+        detail: { id: 'database-notifications' },
+    }));
 }
 
 document.addEventListener('pointerdown', armAudio, { passive: true });
