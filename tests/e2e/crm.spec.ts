@@ -4871,9 +4871,11 @@ test('automatic analytics suggestions follow a real source save into NeedsReview
 
         await page.goto('/admin/analytics-tag-candidates');
         await expect.poll(async () => {
-            const inputs = page.getByRole('textbox', { name: 'Предложение', exact: true });
-            for (let index = 0; index < await inputs.count(); index += 1) {
-                if (await inputs.nth(index).inputValue() === candidateLabelSuffix) {
+            const items = page.locator('.fi-fo-repeater-item');
+            for (let index = 0; index < await items.count(); index += 1) {
+                const item = items.nth(index);
+                if (await item.getByRole('textbox', { name: 'Предложение', exact: true }).inputValue() === candidateLabelSuffix
+                    && (await item.innerText()).includes(`ID ${automaticFixture.disabledSourcePainId}`)) {
                     return true;
                 }
             }
