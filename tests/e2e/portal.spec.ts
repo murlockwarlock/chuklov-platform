@@ -2542,16 +2542,6 @@ test('authenticated client can confirm a booking with partial personal data', as
 
 test('authenticated client can autosave partial profile fields independently', async ({ page }) => {
     const fixture = createBookingFixture();
-    page.on('request', (request) => {
-        if (request.method() === 'POST' && request.url().endsWith('/portal/profile')) {
-            console.log(`PROFILE REQUEST ${request.postData() ?? ''}`);
-        }
-    });
-    page.on('response', async (response) => {
-        if (response.request().method() === 'POST' && response.url().endsWith('/portal/profile')) {
-            console.log(`PROFILE RESPONSE ${response.status()}`);
-        }
-    });
     execFileSync('php', ['artisan', 'tinker', '--execute', `
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->findOrFail(${fixture.clientId});
         $client->forceFill([
@@ -2583,11 +2573,11 @@ test('authenticated client can autosave partial profile fields independently', a
     await expect(page.locator('#profile-first_name')).toHaveValue('Евгений');
 
     await page.locator('#profile-birth-date').fill('2999-01-01');
-    await page.locator('#profile-birth-date').press('Tab');
+    await page.getByRole('heading', { name: 'Профиль', exact: true }).click();
     await expect(page.locator('#profile-birth-date').locator('xpath=following-sibling::p')).toBeVisible({ timeout: 20_000 });
     await expect(page.locator('#profile-city')).toHaveValue('Астана');
     await page.locator('#profile-birth-date').fill('1990-01-01');
-    await page.locator('#profile-birth-date').press('Tab');
+    await page.getByRole('heading', { name: 'Профиль', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
     await page.reload();
     await expect(page.locator('#profile-city')).toHaveValue('Астана');
