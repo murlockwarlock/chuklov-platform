@@ -16,6 +16,7 @@ use App\Modules\AI\Domain\Enums\ClinicalSynthesizerWorkflow;
 use App\Modules\AI\Domain\Enums\HumanReviewStatus;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\AI\Domain\Models\AiRunPayload;
+use App\Modules\Attachments\Application\DeleteMedicalAttachment;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
 use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
@@ -168,6 +169,25 @@ final class MessagesWorkspaceTest extends TestCase
             [$this->client->getKey()],
             array_column(app(ReadCompanionWorkspace::class)->dialogs($this->admin, '87052865589'), 'clientId'),
         );
+    }
+
+    public function test_workspace_omits_archived_client_conversations(): void
+    {
+        $archivedClient = Client::factory()->forOrganization($this->organization)->create([
+            'full_name' => 'Архивный клиент',
+        ]);
+        app(AcceptCompanionMessage::class)->handle(
+            client: $archivedClient,
+            channel: 'portal',
+            body: 'Архивное сообщение',
+            idempotencyKey: 'messages-workspace-archived-0001',
+            originExternalId: 'portal:messages-workspace-archived-0001',
+            locale: 'ru',
+        );
+        $archivedClient->forceFill(['archived_at' => now()])->save();
+
+        self::assertSame([], array_column(app(ReadCompanionWorkspace::class)->dialogs($this->admin), 'clientId'));
+        self::assertSame([], array_column(app(ReadCompanionWorkspace::class)->dialogs($this->admin, 'Архивный клиент'), 'clientId'));
     }
 
     public function test_workspace_does_not_search_or_open_a_foreign_client(): void
@@ -431,6 +451,50 @@ final class MessagesWorkspaceTest extends TestCase
         self::assertNull($link->turn_id);
         self::assertSame('first-message.txt', $attachment->original_filename);
         Storage::disk('private')->assertExists($attachment->storage_path);
+    }
+
+    public function test_deleting_a_medical_attachment_removes_companion_links_before_the_file(): void
+    {
+        Storage::fake('private');
+        $turn = app(AcceptCompanionMessage::class)->handle(
+            client: $this->client,
+            channel: 'portal',
+            body: 'Сообщение с файлом',
+            idempotencyKey: 'messages-workspace-delete-0001',
+            originExternalId: 'portal:messages-workspace-delete-0001',
+            locale: 'ru',
+        );
+        $message = ConversationMessage::query()
+            ->where('conversation_id', $turn->conversation_id)
+            ->firstOrFail();
+        $attachment = MedicalAttachment::create([
+            'uuid' => (string) str()->uuid(),
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'uploaded_by_user_id' => $this->admin->getKey(),
+            'attachment_type' => 'companion_document',
+            'disk' => 'private',
+            'storage_path' => 'medical/test-delete.txt',
+            'original_filename' => 'test-delete.txt',
+            'mime_type' => 'text/plain',
+            'size_bytes' => 1,
+            'sha256_checksum' => hash('sha256', 'x'),
+        ]);
+        Storage::disk('private')->put($attachment->storage_path, 'x');
+        CompanionMessageAttachment::create([
+            'organization_id' => $this->organization->getKey(),
+            'client_id' => $this->client->getKey(),
+            'conversation_id' => $turn->conversation_id,
+            'conversation_message_id' => $message->getKey(),
+            'medical_attachment_id' => $attachment->getKey(),
+            'source_ordinal' => 0,
+            'item_index' => 0,
+        ]);
+
+        self::assertTrue(app(DeleteMedicalAttachment::class)->handle($this->admin, $attachment));
+        $this->assertDatabaseMissing('medical_attachments', ['id' => $attachment->getKey()]);
+        $this->assertDatabaseMissing('companion_message_attachments', ['medical_attachment_id' => $attachment->getKey()]);
+        Storage::disk('private')->assertMissing('medical/test-delete.txt');
     }
 
     public function test_booking_client_name_links_to_the_scoped_client_resource(): void

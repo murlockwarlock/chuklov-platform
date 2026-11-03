@@ -5,6 +5,7 @@ namespace App\Modules\Attachments\Application;
 use App\Models\User;
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
+use App\Modules\ClientCompanion\Domain\Models\CompanionMessageAttachment;
 use App\Modules\Security\Application\RecordAuditEvent;
 use Illuminate\Support\Facades\DB;
 
@@ -33,6 +34,10 @@ final readonly class DeleteMedicalAttachment
             }
 
             $storagePath = filled($locked->storage_path) ? (string) $locked->storage_path : null;
+            CompanionMessageAttachment::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('medical_attachment_id', $locked->getKey())
+                ->delete();
             $locked->sessionLinks()->delete();
             $deleted = $locked->delete();
 

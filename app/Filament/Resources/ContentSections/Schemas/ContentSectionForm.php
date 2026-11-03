@@ -101,7 +101,7 @@ class ContentSectionForm
                         Placeholder::make('home_visibility_status')
                             ->label(__('Статус показа на главной'))
                             ->content(fn (?ContentSection $record, Get $get): string => self::homeVisibilityStatus($record, $get))
-                            ->visible(fn (Get $get): bool => self::isStoryKey($get('section_key')))
+                            ->visible(fn (Get $get): bool => self::isStoryKey((string) $get('section_key')))
                             ->columnSpanFull(),
                         TextInput::make('media.subtitles')
                             ->label(__('Ссылка на субтитры WebVTT'))
