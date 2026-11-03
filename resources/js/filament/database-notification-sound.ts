@@ -61,13 +61,28 @@ function refreshBaseDocumentTitle(): void {
     }
 }
 
-function updateDocumentTitle(notifications: HTMLElement[]): void {
+function authoritativeUnreadCount(): number | null {
+    const authority = document.querySelector<HTMLElement>('[data-filament-unread-notifications-count]');
+    if (authority === null) {
+        return null;
+    }
+
+    const count = Number.parseInt(authority.dataset.filamentUnreadNotificationsCount ?? '', 10);
+
+    return Number.isInteger(count) && count >= 0 ? count : null;
+}
+
+function updateDocumentTitle(): void {
     refreshBaseDocumentTitle();
     if (baseDocumentTitle === '') {
         return;
     }
 
-    const unreadCount = notifications.filter((notification) => notification.classList.contains('fi-no-notification-unread-ctn')).length;
+    const unreadCount = authoritativeUnreadCount();
+    if (unreadCount === null) {
+        return;
+    }
+
     document.title = unreadCount > 0 ? `(${unreadCount}) ${baseDocumentTitle}` : baseDocumentTitle;
 }
 
@@ -76,7 +91,7 @@ function scanNotifications(): void {
     const databaseNotifications = document.getElementById('database-notifications');
 
     const notifications = databaseNotifications === null ? [] : notificationEntries(databaseNotifications);
-    updateDocumentTitle(notifications);
+    updateDocumentTitle();
 
     if (databaseNotifications === null) {
         return;
@@ -144,7 +159,7 @@ function initializeNotificationSound(): void {
     const observer = new MutationObserver(queueNotificationScan);
     observer.observe(document.body, {
         attributes: true,
-        attributeFilter: ['class', 'wire:key'],
+        attributeFilter: ['class', 'wire:key', 'data-filament-unread-notifications-count'],
         childList: true,
         subtree: true,
     });

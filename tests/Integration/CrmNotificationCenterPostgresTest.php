@@ -6,6 +6,7 @@ use App\Filament\Livewire\DatabaseNotifications;
 use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationSeverity;
+use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Channels\Infrastructure\Database\DatabaseNotificationChannel;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -146,6 +147,52 @@ final class CrmNotificationCenterPostgresTest extends TestCase
         self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
         self::assertSame(1, $staff->fresh()->notifications()->count());
         self::assertSame(0, $foreignAdministrator->fresh()->notifications()->count());
+    }
+
+    public function test_postgresql_unread_total_remains_authoritative_across_paginated_pages_and_read_actions(): void
+    {
+        $this->requirePostgres();
+        [$organization, $administrator, , $foreignAdministrator] = $this->fixture();
+        $foreignOrganizationId = $foreignAdministrator->memberships()->value('organization_id');
+        $foreignOrganization = Organization::query()->findOrFail($foreignOrganizationId);
+        app(OrganizationContext::class)->set($organization);
+        $channel = app(DatabaseNotificationChannel::class);
+
+        for ($index = 0; $index < 51; $index++) {
+            $channel->send(new NotificationMessage(
+                recipientExternalId: (string) $administrator->getKey(),
+                body: 'PostgreSQL уведомление '.$index,
+                subject: 'PostgreSQL уведомление '.$index,
+                locale: 'ru',
+                idempotencyKey: 'postgres-page-count-'.$index,
+                organizationId: $organization->getKey(),
+                severity: NotificationSeverity::Action,
+            ));
+        }
+
+        $channel->send(new NotificationMessage(
+            recipientExternalId: (string) $administrator->getKey(),
+            body: 'Foreign PostgreSQL уведомление',
+            subject: 'Foreign PostgreSQL уведомление',
+            locale: 'ru',
+            idempotencyKey: 'postgres-page-count-foreign',
+            organizationId: $foreignOrganization->getKey(),
+            severity: NotificationSeverity::Action,
+        ));
+
+        $this->actingAs($administrator);
+        $bell = app(DatabaseNotifications::class);
+        self::assertSame(51, $bell->getUnreadNotificationsCount());
+        self::assertSame(50, $bell->getNotifications()->count());
+
+        $firstNotification = $bell->getNotifications()->first();
+        self::assertNotNull($firstNotification);
+        $bell->markNotificationAsRead((string) $firstNotification->getKey());
+        self::assertSame(50, $bell->getUnreadNotificationsCount());
+
+        $bell->markAllNotificationsAsRead();
+        self::assertSame(0, $bell->getUnreadNotificationsCount());
+        self::assertSame(1, $administrator->fresh()->notifications()->whereNull('read_at')->count());
     }
 
     /** @return array{Organization, User, User, User, Client, Specialist, Service} */
