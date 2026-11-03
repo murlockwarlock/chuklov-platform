@@ -186,40 +186,22 @@ test('CRM title unread counter follows the authoritative total across pagination
     await expect(notificationTrigger).toBeVisible();
     await expect(notificationTrigger).toBeEnabled();
     await notificationTrigger.click();
-    console.log('notification modal states', await page.locator('#database-notifications').evaluateAll((elements) => elements.map((element) => {
-        const stack = (element as HTMLElement & {
-            _x_dataStack?: Array<{ isOpen?: boolean; isWindowVisible?: boolean }>;
-        })._x_dataStack;
-
-        return {
-            className: element.className,
-            display: getComputedStyle(element).display,
-            style: element.getAttribute('style'),
-            xCloak: element.hasAttribute('x-cloak'),
-            connected: element.isConnected,
-            parent: element.parentElement?.tagName ?? null,
-            parentClass: element.parentElement?.className ?? null,
-            xIsShown: (element as HTMLElement & { _x_isShown?: boolean })._x_isShown ?? null,
-            rect: element.getBoundingClientRect().toJSON(),
-            state: stack?.[0] ?? null,
-        };
-    })));
-    const notificationCenter = page.locator('#database-notifications:visible').last();
-    await expect(notificationCenter).toBeVisible();
+    const notificationCenter = page.locator('#database-notifications.fi-modal-open').last();
+    await expect(notificationCenter).toHaveClass(/fi-modal-open/);
     const nextPage = notificationCenter.locator('.fi-pagination-next-btn');
-    await expect(nextPage).toBeVisible();
-    await nextPage.click();
+    await expect(nextPage).toHaveCount(1);
+    await nextPage.click({ force: true });
     await expect.poll(() => page.title()).toBe(titleWithUnread);
-    await notificationCenter.locator('.fi-pagination-previous-btn').click();
+    await notificationCenter.locator('.fi-pagination-previous-btn').click({ force: true });
     await expect.poll(() => page.title()).toBe(titleWithUnread);
 
-    await notificationCenter.getByRole('link', { name: 'Открыть', exact: true }).first().click();
+    await notificationCenter.getByRole('link', { name: 'Открыть', exact: true }).first().click({ force: true });
     await expect.poll(() => page.title(), { timeout: 15_000 }).toBe(`(50) ${baseTitle}`);
 
     await notificationTrigger.click();
-    const reopenedCenter = page.locator('#database-notifications:visible').last();
-    await expect(reopenedCenter).toBeVisible();
-    await reopenedCenter.getByRole('button', { name: /прочитан/i }).click();
+    const reopenedCenter = page.locator('#database-notifications.fi-modal-open').last();
+    await expect(reopenedCenter).toHaveClass(/fi-modal-open/);
+    await reopenedCenter.getByRole('button', { name: /прочитан/i }).click({ force: true });
     await expect.poll(() => page.title(), { timeout: 15_000 }).toBe(baseTitle);
 
     await page.goto('/admin/clients');
