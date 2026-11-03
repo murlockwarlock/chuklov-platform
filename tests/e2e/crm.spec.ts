@@ -2742,7 +2742,7 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await page.goto('/admin/attribution-source-settings');
     await expect(page.getByRole('heading', { name: 'Категории источников', exact: true })).toBeVisible();
     await expect(page.getByText('Объединяйте разные варианты одного источника под общим названием в аналитике.', { exact: false })).toBeVisible();
-    const sourcesSection = page.getByRole('heading', { name: 'Категории источников', exact: true }).locator('xpath=ancestor::section[1]');
+    const sourcesSection = page.locator('.fi-section').filter({ hasText: 'Категории источников' }).first();
     await expect(sourcesSection.locator('.fi-fo-repeater-item')).toHaveCount(12);
     await expect(sourcesSection.getByRole('textbox', { name: 'Название в аналитике', exact: true })).toHaveCount(0);
 
@@ -2779,14 +2779,14 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await expect(page.getByRole('heading', { name: 'Счета и кассы', exact: true })).toBeVisible();
     await expect(page.getByText('Эти варианты появляются в форме расхода и показывают, откуда списаны деньги.', { exact: false })).toBeVisible();
 
-    const accountSection = page.getByRole('heading', { name: 'Счета и кассы', exact: true }).locator('xpath=ancestor::section[1]');
+    const accountSection = page.locator('.fi-section').filter({ hasText: 'Счета и кассы' }).first();
     await accountSection.getByRole('button', { name: 'Добавить счёт или кассу', exact: true }).click();
     const accountItem = accountSection.locator('.fi-fo-repeater-item').last();
     await accountItem.getByRole('textbox', { name: /^Название/ }).fill(accountName);
     await accountItem.getByRole('combobox', { name: /^Тип/ }).selectOption('bank');
     await accountItem.getByRole('combobox', { name: /^Валюта/ }).selectOption('USD');
 
-    const categorySection = page.getByRole('heading', { name: 'Категории расходов', exact: true }).locator('xpath=ancestor::section[1]');
+    const categorySection = page.locator('.fi-section').filter({ hasText: 'Категории расходов' }).first();
     await categorySection.getByRole('button', { name: 'Добавить категорию', exact: true }).click();
     const categoryItem = categorySection.locator('.fi-fo-repeater-item').last();
     await categoryItem.getByRole('textbox', { name: /^Название/ }).fill(categoryName);
