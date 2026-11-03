@@ -48,6 +48,8 @@ final class B2bFormConfiguration extends LocalizedPage
     /** @var array<string, mixed>|null */
     public ?array $data = null;
 
+    public ?string $publicationStatus = null;
+
     protected string $view = 'filament.pages.b2b-form-configuration';
 
     public static function canAccess(): bool
@@ -75,6 +77,9 @@ final class B2bFormConfiguration extends LocalizedPage
             ->whereIn('status', [B2bFormConfigurationStatus::Draft->value, B2bFormConfigurationStatus::Published->value])
             ->latest('version')
             ->first();
+        $this->publicationStatus = $configuration?->status instanceof B2bFormConfigurationStatus
+            ? $configuration->status->value
+            : (is_string($configuration?->status) ? $configuration->status : null);
         $fields = $configuration === null ? [] : (array) $configuration->getAttribute('fields');
         $this->form->fill(['fields' => $fields]);
     }
@@ -88,7 +93,15 @@ final class B2bFormConfiguration extends LocalizedPage
                     ->schema([
                         Placeholder::make('client_form_help')
                             ->label(__('Как работает публикация'))
-                            ->content(__('«Сохранить черновик» сохраняет текущую версию только для команды. «Опубликовать для клиентов» делает её видимой в форме клиента. «Показывать клиенту» включает или скрывает вопрос, «Обязательное поле» требует ответ, а «Порядок» задаёт последовательность.'))
+                            ->content(__('«Сохранить черновик» сохраняет текущую версию только для команды. «Опубликовать для клиентов» делает её видимой в форме клиента. «Показывать клиенту» включает или скрывает вопрос, «Обязательное поле» требует ответ, а кнопки перемещения задают последовательность вопросов.'))
+                            ->columnSpanFull(),
+                        Placeholder::make('publication_status')
+                            ->label(__('Статус формы'))
+                            ->content(fn (): string => match ($this->publicationStatus) {
+                                B2bFormConfigurationStatus::Published->value => __('Опубликовано — опубликованные вопросы видны клиенту перед выбором времени.'),
+                                B2bFormConfigurationStatus::Retired->value => __('Отключено — форма больше не показывается клиенту. Сохраните новый черновик, чтобы подготовить следующую версию.'),
+                                default => __('Черновик — изменения видны только команде. Нажмите «Опубликовать для клиентов», когда форма готова.'),
+                            })
                             ->columnSpanFull(),
                         Placeholder::make('client_form_preview')
                             ->label(__('Пример формы клиента'))
@@ -98,8 +111,13 @@ final class B2bFormConfiguration extends LocalizedPage
                             ->label(__('Поля'))
                             ->schema([
                                 Hidden::make('key')->default(fn (): string => 'field_'.Str::lower(Str::random(12))),
-                                TextInput::make('label')->label(__('Название поля'))->required()->maxLength(160),
-                                Select::make('type')->label(__('Тип ответа'))->options([
+                                TextInput::make('label')
+                                    ->label(__('Название поля'))
+                                    ->helperText(__('Это название увидит клиент перед выбором времени.'))
+                                    ->placeholder(__('Например: Название компании'))
+                                    ->required()
+                                    ->maxLength(160),
+                                Select::make('type')->label(__('Тип ответа'))->helperText(__('Выберите, как клиент будет отвечать на вопрос.'))->options([
                                     'text' => __('Короткий текст'),
                                     'textarea' => __('Подробный текст'),
                                     'select' => __('Список вариантов'),
@@ -115,15 +133,25 @@ final class B2bFormConfiguration extends LocalizedPage
                                     ->defaultItems(0)
                                     ->addActionLabel(__('Добавить вариант'))
                                     ->visible(fn (Get $get): bool => $get('type') === 'select'),
-                                Toggle::make('required')->label(__('Обязательное поле'))->default(false),
-                                Toggle::make('active')->label(__('Показывать клиенту'))->default(true),
-                                TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                                Toggle::make('required')
+                                    ->label(__('Обязательное поле'))
+                                    ->helperText(__('Без ответа клиент не сможет перейти дальше.'))
+                                    ->default(false),
+                                Toggle::make('active')
+                                    ->label(__('Показывать клиенту'))
+                                    ->helperText(__('Выключите, если вопрос пока не нужно показывать. Черновик и его ответы сохраняются.'))
+                                    ->default(true),
+                                Hidden::make('sort_order')->dehydrated(true),
                             ])
                             ->columns(['default' => 1, 'md' => 2, 'lg' => 3])
                             ->defaultItems(0)
                             ->reorderable()
+                            ->reorderableWithButtons()
                             ->collapsible()
-                            ->itemLabel(fn (array $state): string => (string) ($state['label'] ?? __('Новое поле')))
+                            ->collapsed()
+                            ->itemLabel(fn (array $state): string => self::fieldItemLabel($state))
+                            ->expandAction(fn (Action $action): Action => $action->label(__('Настроить')))
+                            ->collapseAction(fn (Action $action): Action => $action->label(__('Свернуть')))
                             ->addActionLabel(__('Добавить поле'))
                             ->columnSpanFull(),
                     ])
@@ -155,7 +183,15 @@ final class B2bFormConfiguration extends LocalizedPage
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         $this->form->getState();
-        app(SaveB2bFormDraft::class)->handle($actor, is_array($this->data['fields'] ?? null) ? $this->data['fields'] : []);
+        $fields = array_values(is_array($this->data['fields'] ?? null) ? $this->data['fields'] : []);
+        foreach ($fields as $index => &$field) {
+            if (is_array($field)) {
+                $field['sort_order'] = $index;
+            }
+        }
+        unset($field);
+        app(SaveB2bFormDraft::class)->handle($actor, $fields);
+        $this->publicationStatus = B2bFormConfigurationStatus::Draft->value;
         Notification::make()->success()->title(__('Черновик полей сохранён'))->send();
     }
 
@@ -170,6 +206,7 @@ final class B2bFormConfiguration extends LocalizedPage
             ->latest('version')
             ->firstOrFail();
         app(PublishB2bFormConfiguration::class)->handle($actor, $draft);
+        $this->publicationStatus = B2bFormConfigurationStatus::Published->value;
         Notification::make()->success()->title(__('Поля заявки опубликованы'))->send();
     }
 
@@ -189,5 +226,14 @@ final class B2bFormConfiguration extends LocalizedPage
         return $labels->isEmpty()
             ? __('Опубликованных вопросов пока нет.')
             : __('Перед выбором времени клиент увидит: :fields.', ['fields' => $labels->implode(', ')]);
+    }
+
+    private static function fieldItemLabel(array $state): string
+    {
+        $label = trim((string) ($state['label'] ?? ''));
+        $status = ($state['active'] ?? true) ? __('Показывается клиенту') : __('Скрыто');
+        $required = ($state['required'] ?? false) ? __('обязательное') : __('необязательное');
+
+        return ($label !== '' ? $label : __('Новое поле')).' · '.$status.' · '.$required;
     }
 }

@@ -96,7 +96,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
 
         return $schema->components([
             Section::make(__('Вычисляемые метрики'))
-                ->description(__('Создавайте показатели из разрешённых источников и операций. Метрика меняется здесь и сразу используется в аналитике и Excel.'))
+                ->description(__('Создавайте показатели из разрешённых источников и операций. Метрика меняется здесь и сразу используется в аналитике и Excel. Если список пуст, добавьте первую метрику; без неё пользовательские показатели не появятся в отчётах.'))
                 ->schema([
                     Select::make('preview_period')
                         ->label(__('Период для примера'))
@@ -105,7 +105,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
                         ->live(),
                     Repeater::make('metrics')
                         ->label(__('Метрики'))
-                        ->helperText(__('Каждый показатель оформлен отдельной карточкой: заголовок и кнопка удаления относятся только к нему.'))
+                        ->helperText(__('Каждый показатель оформлен отдельной карточкой. Неактивный показатель сохраняется, но не участвует в новых расчётах.'))
                         ->schema([
                             Hidden::make('id')->dehydrated(true),
                             Hidden::make('stable_key')->dehydrated(true),
@@ -120,6 +120,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->maxLength(500),
                             Select::make('source_a_key')
                                 ->label(__('Что считаем'))
+                                ->helperText(__('Выберите исходный показатель, который система возьмёт из данных клиентов и сеансов.'))
                                 ->options(AnalyticsMetricSourceCatalog::options())
                                 ->searchable()
                                 ->preload()
@@ -133,11 +134,13 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 }),
                             Select::make('aggregation')
                                 ->label(__('Агрегация'))
+                                ->helperText(__('Укажите, как объединить несколько значений: например, взять среднее или сумму.'))
                                 ->options(fn (Get $get): array => AnalyticsMetricSourceCatalog::aggregationOptions((string) $get('source_a_key')))
                                 ->required()
                                 ->default(AnalyticsMetricAggregation::SourceValue->value),
                             Select::make('calculation')
                                 ->label(__('Операция'))
+                                ->helperText(__('Выберите действие над выбранными значениями. Для процента понадобится сравнение с другим значением или периодом.'))
                                 ->options(self::calculationOptions())
                                 ->required()
                                 ->default(AnalyticsMetricCalculation::Value->value)
@@ -160,6 +163,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->required(fn (Get $get): bool => $this->needsSourceB($get)),
                             Select::make('comparison')
                                 ->label(__('Основа сравнения'))
+                                ->helperText(__('Определяет, с чем сопоставлять показатель: с другим источником, метрикой или целевым значением.'))
                                 ->options(self::comparisonOptions())
                                 ->required()
                                 ->default(AnalyticsMetricComparison::None->value)
@@ -188,11 +192,13 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->numeric(),
                             Select::make('null_policy')
                                 ->label(__('Если данных нет'))
+                                ->helperText(__('Решает, что показывать, когда исходных данных недостаточно.'))
                                 ->options(self::nullPolicyOptions())
                                 ->required()
                                 ->default(AnalyticsMetricNullPolicy::DoNotCalculate->value),
                             Select::make('zero_policy')
                                 ->label(__('Если знаменатель равен 0'))
+                                ->helperText(__('Решает, как поступить с процентом, который нельзя корректно посчитать.'))
                                 ->options(self::zeroPolicyOptions())
                                 ->required()
                                 ->default(AnalyticsMetricZeroPolicy::DoNotCalculate->value),
@@ -206,13 +212,10 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->options([0 => '0 знаков', 1 => '1 знак', 2 => '2 знака', 3 => '3 знака'])
                                 ->required()
                                 ->default(2),
-                            TextInput::make('sort_order')
-                                ->label(__('Порядок'))
-                                ->numeric()
-                                ->minValue(0)
-                                ->default(100),
+                            Hidden::make('sort_order')->dehydrated(true),
                             Toggle::make('active')
                                 ->label(__('Активна'))
+                                ->helperText(__('Выключите показатель, если он больше не нужен. Сохранённые результаты и история не удаляются.'))
                                 ->default(true),
                             Placeholder::make('preview')
                                 ->label(__('Пример по выбранному периоду'))
@@ -220,11 +223,13 @@ final class AnalyticsMetricSettings extends LocalizedPage
                                 ->columnSpanFull(),
                         ])
                         ->columns(['default' => 1, 'sm' => 2, 'lg' => 3])
-                        ->itemLabel(fn (array $state): ?string => is_string($state['name'] ?? null) ? $state['name'] : null)
                         ->defaultItems(0)
                         ->addActionLabel(__('Добавить метрику'))
                         ->collapsible()
-                        ->reorderable(false)
+                        ->collapsed()
+                        ->reorderable()
+                        ->reorderableWithButtons()
+                        ->itemLabel(fn (array $state): ?string => self::metricItemLabel($state))
                         ->columnSpanFull(),
                 ])
                 ->columns(['default' => 1, 'sm' => 2])
@@ -239,18 +244,28 @@ final class AnalyticsMetricSettings extends LocalizedPage
                 ])
                 ->columnSpanFull(),
             Section::make(__('Определения процентных показателей'))
-                ->description(__('Текст фиксирует согласованные владельцем определения. Пока определение процента эффективности или LTV не заполнено, соответствующий показатель остаётся выключенным.'))
+                ->description(__('Здесь владелец описывает правило расчёта понятными словами. Система не включает процентную метрику без этого определения и не превращает пример ниже в формулу автоматически.'))
                 ->schema([
                     Textarea::make('therapy_effectiveness_formula_reference')
                         ->label(__('Определение процента эффективности терапии'))
-                        ->helperText(__('Сама формула не выдумывается системой и должна быть подтверждена владельцем.'))
+                        ->helperText(__('Укажите правило, по которому система должна считать процент эффективности терапии. Пока правило не задано, метрика выключена.'))
+                        ->placeholder(__('Например: сравнивать оценку боли до и после терапии.'))
                         ->rows(3)
                         ->maxLength(2000),
+                    Placeholder::make('therapy_effectiveness_formula_example')
+                        ->label(__('Пример'))
+                        ->content(__('До: 8 · после: 4 · снижение: 50 %. Это только иллюстрация. Используйте свою формулу, если в вашей методике эффективность рассчитывается иначе.'))
+                        ->columnSpanFull(),
                     Textarea::make('ltv_percent_formula_reference')
                         ->label(__('Определение процента LTV'))
-                        ->helperText(__('Обязательно перед включением метрики «Изменение LTV к предыдущему периоду, %».'))
+                        ->helperText(__('Сначала определите, что в вашей компании считается LTV клиента. После этого система сможет сравнивать значение с предыдущим периодом. Пока определение не задано, процентная метрика выключена.'))
+                        ->placeholder(__('Например: LTV — сумма фактически полученных денег от клиента за период.'))
                         ->rows(3)
                         ->maxLength(2000),
+                    Placeholder::make('ltv_percent_formula_example')
+                        ->label(__('Пример'))
+                        ->content(__('Предыдущий период: 100 000 · текущий: 120 000 · изменение: +20 %. Например, LTV можно определить как сумму фактически полученных денег от клиента. Это пример, а не установленное правило.'))
+                        ->columnSpanFull(),
                 ])
                 ->columns(['default' => 1, 'sm' => 2])
                 ->columnSpanFull(),
@@ -281,6 +296,13 @@ final class AnalyticsMetricSettings extends LocalizedPage
 
         try {
             $state = $this->form->getState();
+            $metrics = array_values((array) ($state['metrics'] ?? []));
+            foreach ($metrics as $index => $metric) {
+                if (is_array($metric)) {
+                    $metrics[$index]['sort_order'] = $index;
+                }
+            }
+            $state['metrics'] = $metrics;
             app(AnalyticsMetricConfiguration::class)->save($actor, $state);
             app(SetOrganizationSetting::class)->handle(
                 $actor,
@@ -331,6 +353,14 @@ final class AnalyticsMetricSettings extends LocalizedPage
         } catch (Throwable) {
             return __('Заполните обязательные поля');
         }
+    }
+
+    private static function metricItemLabel(array $state): string
+    {
+        $name = trim((string) ($state['name'] ?? ''));
+        $name = $name !== '' ? $name : __('Новая метрика');
+
+        return $name.' · '.(($state['active'] ?? true) ? __('Активна') : __('Выключена'));
     }
 
     private function needsSourceB(Get $get): bool

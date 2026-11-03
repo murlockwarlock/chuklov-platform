@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Analytics;
 
+use App\Filament\Pages\AttributionSourceSettings;
 use App\Models\User;
 use App\Modules\Analytics\Application\AcquisitionAnalytics;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
@@ -12,8 +13,10 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Carbon\CarbonImmutable;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Validation\ValidationException;
+use Livewire\Livewire;
 use Tests\TestCase;
 
 final class AttributionSourceCatalogTest extends TestCase
@@ -195,6 +198,46 @@ final class AttributionSourceCatalogTest extends TestCase
 
         self::assertSame('Instagram и Reels', $catalog->rows($organization->getKey())[0]['label']);
         self::assertCount(12, $catalog->rows($organization->getKey()));
+    }
+
+    public function test_source_settings_use_owner_facing_list_detail_without_losing_stable_values(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+        app(OrganizationContext::class)->set($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)
+            ->test(AttributionSourceSettings::class)
+            ->assertSuccessful()
+            ->assertSee('Объединяйте разные варианты одного источника под общим названием в аналитике.')
+            ->assertSee('Название в аналитике')
+            ->assertSee('Другие варианты этого источника')
+            ->assertDontSee('Вариант названия / ключ')
+            ->assertDontSee('Порядок');
+
+        $state = $component->instance()->data;
+        self::assertIsArray($state);
+        self::assertCount(12, $state['sources'] ?? []);
+        $instagramKey = collect($state['sources'])->search(static fn (array $source): bool => ($source['source_key'] ?? null) === 'instagram');
+        self::assertNotFalse($instagramKey);
+        $stableKey = $state['sources'][$instagramKey]['source_key'];
+        $existingAliases = array_column($state['sources'][$instagramKey]['aliases'], 'value');
+        $state['sources'][$instagramKey]['aliases'][] = ['value' => 'instagram-owner-example'];
+
+        $component->fillForm($state);
+        $component
+            ->call('save')
+            ->assertNotified('Источники сохранены');
+
+        $row = collect(app(AttributionSourceCatalog::class)->rows($organization->getKey()))
+            ->firstWhere('source_key', $stableKey);
+        self::assertIsArray($row);
+        self::assertSame($stableKey, $row['source_key']);
+        self::assertSame(
+            [...$existingAliases, 'instagram-owner-example'],
+            $row['aliases'],
+        );
+        self::assertSame(range(0, 11), array_column(app(AttributionSourceCatalog::class)->rows($organization->getKey()), 'sort_order'));
     }
 
     /** @return array{0: Organization, 1: User} */

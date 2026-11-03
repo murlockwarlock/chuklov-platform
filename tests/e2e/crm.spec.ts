@@ -2739,6 +2739,34 @@ test('owner remediation configuration pages explain empty states and usage', asy
 
     await login(page, fixture);
 
+    await page.goto('/admin/attribution-source-settings');
+    await expect(page.getByRole('heading', { name: 'Категории источников', exact: true })).toBeVisible();
+    await expect(page.getByText('Объединяйте разные варианты одного источника под общим названием в аналитике.', { exact: false })).toBeVisible();
+    const sourcesSection = page.getByRole('heading', { name: 'Категории источников', exact: true }).locator('xpath=ancestor::section[1]');
+    await expect(sourcesSection.locator('.fi-fo-repeater-item')).toHaveCount(12);
+    await expect(sourcesSection.getByRole('textbox', { name: 'Название в аналитике', exact: true })).toHaveCount(0);
+
+    const instagramSource = sourcesSection.locator('.fi-fo-repeater-item').filter({ hasText: /^Instagram/ }).first();
+    await expect(instagramSource).toBeVisible();
+    await instagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
+    await expect(instagramSource.getByRole('textbox', { name: 'Название в аналитике', exact: true })).toHaveValue('Instagram');
+    await expect(instagramSource.getByText('Другие варианты этого источника', { exact: true })).toBeVisible();
+    await instagramSource.getByRole('button', { name: 'Добавить вариант', exact: true }).click();
+    const sourceAlias = `owner-alias-${suffix}`;
+    await instagramSource.getByRole('textbox', { name: 'Вариант названия', exact: true }).last().fill(sourceAlias);
+    await page.getByRole('button', { name: 'Сохранить источники', exact: true }).click();
+    await expect(page.getByText('Источники сохранены', { exact: true })).toBeVisible();
+    await page.reload();
+    const reloadedInstagramSource = page.locator('.fi-fo-repeater-item').filter({ hasText: /^Instagram/ }).first();
+    await reloadedInstagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
+    await expect(reloadedInstagramSource.getByRole('textbox', { name: 'Вариант названия', exact: true }).last()).toHaveValue(sourceAlias);
+
+    await page.goto('/admin/analytics-metric-settings');
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true })).toBeVisible();
+    await expect(page.getByText('Создавайте показатели из разрешённых источников и операций.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Определения процентных показателей', exact: true })).toBeVisible();
+    await expect(page.getByText('Это только иллюстрация. Используйте свою формулу', { exact: false })).toBeVisible();
+
     await page.goto('/admin/finance-expense-entry');
     await expect(page.getByRole('heading', { name: 'Добавить расход', exact: true })).toBeVisible();
     const accountSelect = page.getByRole('combobox', { name: /^Счёт или касса/ });

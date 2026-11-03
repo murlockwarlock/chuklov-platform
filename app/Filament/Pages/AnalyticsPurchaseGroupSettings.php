@@ -13,6 +13,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -72,13 +73,23 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
     {
         return $schema->components([
             Section::make(__('Группы покупок'))
-                ->description(__('Одна группа может включать несколько исторических типов каталога. Изменение названия не меняет сохранённые покупки.'))
+                ->description(__('Группы покупок используются в фильтрах и отчётах аналитики. Объедините близкие типы каталога под понятным названием. Если список пуст, аналитика по группам покупок будет недоступна; старые покупки при изменении настройки не удаляются.'))
                 ->schema([
+                    Placeholder::make('groups_empty')
+                        ->label(__('Список пока пуст'))
+                        ->content(__('Добавьте первую группу и выберите типы покупок, которые должны в неё входить.'))
+                        ->visible(fn (Get $get): bool => ! is_array($get('groups')) || $get('groups') === [])
+                        ->columnSpanFull(),
                     Repeater::make('groups')
                         ->label(__('Группы'))
+                        ->helperText(__('Например: «Консультации» для разовых сеансов. Это только название группы — сами покупки и их история сохраняются отдельно.'))
                         ->schema([
                             Hidden::make('key')->default(fn (): string => 'purchase_'.Str::lower(Str::random(20)))->dehydrated(),
-                            TextInput::make('label')->label(__('Название'))->required()->maxLength(120),
+                            TextInput::make('label')
+                                ->label(__('Название'))
+                                ->placeholder(__('Например: Консультации'))
+                                ->required()
+                                ->maxLength(120),
                             Select::make('catalog_types')
                                 ->label(__('Типы каталога'))
                                 ->multiple()
@@ -86,12 +97,19 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
                                 ->options(fn (Get $get): array => $this->catalogTypeOptions($this->selectedCatalogTypes($get('catalog_types'))))
                                 ->required()
                                 ->helperText(__('Выберите понятные категории покупок. Старые исторические типы сохраняются автоматически.')),
-                            Toggle::make('active')->label(__('Активна'))->default(true),
-                            TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                            Toggle::make('active')
+                                ->label(__('Активна'))
+                                ->helperText(__('Отключённая группа исчезает из новых фильтров, но не меняет сохранённые покупки.'))
+                                ->default(true),
+                            Hidden::make('sort_order')->dehydrated(true),
                         ])
                         ->columns(['default' => 1, 'sm' => 3])
                         ->defaultItems(0)
                         ->reorderable()
+                        ->reorderableWithButtons()
+                        ->collapsible()
+                        ->collapsed()
+                        ->itemLabel(fn (array $state): ?string => self::groupItemLabel($state))
                         ->addActionLabel(__('Добавить группу'))
                         ->columnSpanFull(),
                 ])
@@ -119,7 +137,7 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
         $groups = [];
         $mappedActiveTypes = [];
         $keys = [];
-        foreach ((array) ($this->form->getState()['groups'] ?? []) as $group) {
+        foreach (array_values((array) ($this->form->getState()['groups'] ?? [])) as $index => $group) {
             if (! is_array($group)) {
                 continue;
             }
@@ -147,7 +165,7 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
                 'label' => trim((string) ($group['label'] ?? '')),
                 'catalog_types' => $types,
                 'active' => $active,
-                'sort_order' => max(0, (int) ($group['sort_order'] ?? 0)),
+                'sort_order' => $index,
             ];
         }
 
@@ -167,6 +185,14 @@ final class AnalyticsPurchaseGroupSettings extends LocalizedPage
             ->title(__('Не удалось сохранить группы покупок'))
             ->body($message)
             ->send();
+    }
+
+    private static function groupItemLabel(array $state): string
+    {
+        $label = trim((string) ($state['label'] ?? ''));
+        $label = $label !== '' ? $label : __('Новая группа');
+
+        return $label.' · '.(($state['active'] ?? true) ? __('Активна') : __('Отключена'));
     }
 
     /**

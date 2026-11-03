@@ -25,6 +25,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Tracker\Application\TrackerGoalTagCatalog;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
@@ -140,21 +141,36 @@ final class ClientCohortGroups extends LocalizedPage
     {
         return $schema->components([
             Section::make(__('Сохранённые группы клиентов'))
-                ->description(__('Ручные группы содержат выбранных клиентов. Динамические группы пересчитываются по typed-правилам при каждом анализе. История определений сохраняется версиями.'))
+                ->description(__('Ручная группа содержит выбранных клиентов. Динамическая группа каждый раз собирается по заданным условиям во время анализа. Группы используются в фильтрах и сравнениях аналитики, а история определений сохраняется версиями.'))
                 ->schema([
+                    Placeholder::make('groups_empty')
+                        ->label(__('Группы пока не настроены'))
+                        ->content(__('Добавьте группу, выберите тип и сохраните её. Для ручной группы укажите клиентов, для динамической — условия отбора.'))
+                        ->visible(fn (Get $get): bool => ! is_array($get('groups')) || $get('groups') === [])
+                        ->columnSpanFull(),
                     Repeater::make('groups')
                         ->label(__('Группы'))
+                        ->helperText(__('Пример названия: «Новые клиенты». Это только подпись для фильтров — состав группы определяется выбранным типом.'))
                         ->schema([
                             Hidden::make('id')->dehydrated(true),
-                            TextInput::make('name')->label(__('Название'))->required()->maxLength(160),
+                            TextInput::make('name')
+                                ->label(__('Название'))
+                                ->placeholder(__('Например: Новые клиенты'))
+                                ->required()
+                                ->maxLength(160),
                             Textarea::make('description')->label(__('Описание'))->maxLength(2000)->rows(2)->nullable(),
-                            Select::make('group_type')->label(__('Тип'))->options(['manual' => 'Ручная', 'dynamic' => 'Динамическая'])->required()->live(),
+                            Select::make('group_type')
+                                ->label(__('Тип'))
+                                ->options(['manual' => 'Ручная', 'dynamic' => 'Динамическая'])
+                                ->helperText(__('Ручная — список клиентов задаётся здесь. Динамическая — состав пересчитывается по условиям анализа.'))
+                                ->required()
+                                ->live(),
                             Toggle::make('is_active')
                                 ->label(__('Активна (снимите, чтобы архивировать)'))
                                 ->helperText(__('Архивирование сохраняет историю и прежние версии группы.'))
                                 ->default(true),
                             Hidden::make('version')->dehydrated(true),
-                            TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                            Hidden::make('sort_order')->dehydrated(true),
                             Select::make('client_ids')
                                 ->label(__('Клиенты группы'))
                                 ->multiple()
@@ -351,6 +367,12 @@ final class ClientCohortGroups extends LocalizedPage
                         ->defaultItems(0)
                         ->addActionLabel(__('Добавить группу'))
                         ->reorderable()
+                        ->reorderableWithButtons()
+                        ->collapsible()
+                        ->collapsed()
+                        ->itemLabel(fn (array $state): ?string => self::groupItemLabel($state))
+                        ->expandAction(fn (Action $action): Action => $action->label(__('Настроить')))
+                        ->collapseAction(fn (Action $action): Action => $action->label(__('Свернуть')))
                         ->deleteAction(fn (Action $action): Action => $action
                             ->label(__('Архивировать'))
                             ->requiresConfirmation()
@@ -384,7 +406,7 @@ final class ClientCohortGroups extends LocalizedPage
             $state = $this->form->getState();
             $entries = [];
             $submittedIds = [];
-            foreach ((array) ($state['groups'] ?? []) as $group) {
+            foreach (array_values((array) ($state['groups'] ?? [])) as $index => $group) {
                 if (! is_array($group)) {
                     continue;
                 }
@@ -392,6 +414,7 @@ final class ClientCohortGroups extends LocalizedPage
                 if ($id !== false) {
                     $submittedIds[] = (int) $id;
                 }
+                $group['sort_order'] = $index;
                 $entries[] = [
                     'data' => $this->groupData($group),
                     'client_ids' => array_values(array_map('intval', (array) ($group['client_ids'] ?? []))),
@@ -472,6 +495,15 @@ final class ClientCohortGroups extends LocalizedPage
                 'satisfaction_max' => $group['rule_satisfaction_max'] ?? null,
             ],
         ];
+    }
+
+    private static function groupItemLabel(array $state): string
+    {
+        $name = trim((string) ($state['name'] ?? ''));
+        $type = ($state['group_type'] ?? 'manual') === 'dynamic' ? __('Динамическая') : __('Ручная');
+        $status = ($state['is_active'] ?? true) ? __('Активна') : __('Архивирована');
+
+        return ($name !== '' ? $name : __('Новая группа')).' · '.$type.' · '.$status;
     }
 
     /** @return array<int|string, string> */

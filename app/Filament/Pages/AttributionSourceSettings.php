@@ -81,28 +81,48 @@ final class AttributionSourceSettings extends LocalizedPage
         return $schema
             ->components([
                 Section::make(__('Категории источников'))
-                    ->description(__('Названия и синонимы используются в отчёте по привлечению. Изменение справочника не требует выпуска новой версии программы.'))
+                    ->description(__('Объединяйте разные варианты одного источника под общим названием в аналитике. Например, instagram, ig и insta можно показывать как один источник — Instagram. Категория «Другое» объединяет только добавленные варианты вроде other и другое; неизвестные значения не подставляются в неё автоматически. Изменение справочника не требует выпуска новой версии программы.'))
                     ->schema([
                         Repeater::make('sources')
                             ->label(__('Источники'))
+                            ->helperText(__('Список показывает только краткое описание каждого источника. Нажмите «Настроить», чтобы изменить название или варианты источника. Перетаскивание и кнопки перемещения меняют порядок карточек.'))
                             ->schema([
                                 Hidden::make('source_key')->default(fn (): string => 'source_'.Str::lower(Str::random(12))),
-                                TextInput::make('label')->label(__('Название'))->required()->maxLength(160),
+                                TextInput::make('label')
+                                    ->label(__('Название в аналитике'))
+                                    ->helperText(__('Так источник будет называться в отчётах и фильтрах.'))
+                                    ->live(onBlur: true)
+                                    ->required()
+                                    ->maxLength(160),
                                 Repeater::make('aliases')
-                                    ->label(__('Какие значения считать этим источником'))
-                                    ->helperText(__('Например, для Instagram сюда можно добавить: instagram, ig, insta. Если такое значение придёт из UTM или другого источника привлечения, оно попадёт в эту категорию.'))
+                                    ->label(__('Другие варианты этого источника'))
+                                    ->helperText(__('Например: instagram, ig, insta. Добавьте значения из формы, UTM-метки или интеграции — все они будут объединены в один источник в аналитике.'))
                                     ->schema([
-                                        TextInput::make('value')->label(__('Вариант названия / ключ'))->required()->maxLength(120),
+                                        TextInput::make('value')
+                                            ->label(__('Вариант названия'))
+                                            ->placeholder(__('Например: ig'))
+                                            ->live(onBlur: true)
+                                            ->required()
+                                            ->maxLength(120),
                                     ])
                                     ->defaultItems(0)
-                                    ->addActionLabel(__('Добавить синоним'))
+                                    ->addActionLabel(__('Добавить вариант'))
                                     ->columnSpanFull(),
-                                Toggle::make('is_active')->label(__('Использовать в аналитике'))->default(true),
-                                TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                                Toggle::make('is_active')
+                                    ->label(__('Использовать в аналитике'))
+                                    ->helperText(__('Если выключить, источник останется в системе и старых данных, но не будет активной категорией в новых фильтрах аналитики.'))
+                                    ->default(true),
+                                Hidden::make('sort_order')->dehydrated(true),
                             ])
                             ->columns(['default' => 1, 'sm' => 2])
                             ->defaultItems(0)
                             ->reorderable()
+                            ->reorderableWithButtons()
+                            ->collapsible()
+                            ->collapsed()
+                            ->itemLabel(fn (array $state): ?string => self::sourceItemLabel($state))
+                            ->expandAction(fn (Action $action): Action => $action->label(__('Настроить')))
+                            ->collapseAction(fn (Action $action): Action => $action->label(__('Свернуть')))
                             ->addActionLabel(__('Добавить источник'))
                             ->columnSpanFull(),
                     ])
@@ -133,10 +153,43 @@ final class AttributionSourceSettings extends LocalizedPage
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         $state = $this->form->getState();
+        $sources = array_values(is_array($state['sources'] ?? null) ? $state['sources'] : []);
+        $sources = array_map(
+            static function (mixed $source, int $index): mixed {
+                if (is_array($source)) {
+                    $source['sort_order'] = $index;
+                }
+
+                return $source;
+            },
+            $sources,
+            array_keys($sources),
+        );
         app(AttributionSourceCatalog::class)->save(
             $actor,
-            is_array($state['sources'] ?? null) ? $state['sources'] : [],
+            $sources,
         );
         Notification::make()->success()->title(__('Источники сохранены'))->send();
+    }
+
+    private static function sourceItemLabel(array $state): ?string
+    {
+        $label = trim((string) ($state['label'] ?? ''));
+        $aliases = collect((array) ($state['aliases'] ?? []))
+            ->map(static fn (mixed $alias): string => is_array($alias) ? trim((string) ($alias['value'] ?? '')) : '')
+            ->filter()
+            ->take(4)
+            ->implode(', ');
+
+        if ($label === '' && $aliases === '') {
+            return __('Новый источник');
+        }
+
+        $summary = $label !== '' ? $label : __('Без названия');
+        if ($aliases !== '') {
+            $summary .= ' — '.__('объединяет').': '.$aliases;
+        }
+
+        return $summary.' · '.(($state['is_active'] ?? true) ? __('В аналитике') : __('Отключён'));
     }
 }

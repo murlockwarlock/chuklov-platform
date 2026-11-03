@@ -12,6 +12,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -21,6 +22,7 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
@@ -74,20 +76,33 @@ final class AnalyticsTaxonomyGroups extends LocalizedPage
         $sections = [];
         foreach (AnalyticsTaxonomy::cases() as $taxonomy) {
             $sections[] = Section::make(__($taxonomy->label()))
-                ->description(__('Группы можно переименовать или временно отключить, не удаляя историю аналитики.'))
+                ->description(__('Эти группы используются в фильтрах аналитики и сохраняются в истории записей. Переименуйте группу под терминологию команды или отключите её, если она больше не нужна.'))
                 ->schema([
+                    Placeholder::make($taxonomy->value.'_empty')
+                        ->label(__('Список пока пуст'))
+                        ->content(__('Добавьте первую группу кнопкой «Добавить группу», чтобы использовать этот фильтр в аналитике.'))
+                        ->visible(fn (Get $get): bool => ! is_array($get($taxonomy->value)) || $get($taxonomy->value) === [])
+                        ->columnSpanFull(),
                     Repeater::make($taxonomy->value)
                         ->label(__('Группы'))
+                        ->helperText(__('Пример: «Опорно-двигательная система». Это иллюстрация формата; используйте термины вашей команды.'))
                         ->schema([
                             Hidden::make('id')->dehydrated(true),
                             TextInput::make('name')->label(__('Название группы'))->required()->maxLength(255),
                             Hidden::make('original_name')->dehydrated(true),
-                            Toggle::make('is_active')->label(__('Активна'))->default(true),
-                            TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                            Toggle::make('is_active')
+                                ->label(__('Активна'))
+                                ->helperText(__('Отключённая группа не предлагается в новых фильтрах, но прежняя история остаётся читаемой.'))
+                                ->default(true),
+                            Hidden::make('sort_order')->dehydrated(true),
                         ])
                         ->columns(['default' => 1, 'sm' => 3])
                         ->defaultItems(0)
                         ->reorderable()
+                        ->reorderableWithButtons()
+                        ->collapsible()
+                        ->collapsed()
+                        ->itemLabel(fn (array $state): ?string => self::groupItemLabel($state))
                         ->addActionLabel(__('Добавить группу'))
                         ->columnSpanFull(),
                 ])
@@ -119,12 +134,30 @@ final class AnalyticsTaxonomyGroups extends LocalizedPage
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         try {
-            app(SaveAnalyticsTaxonomyGroups::class)->handle($actor, $this->form->getState());
+            $state = $this->form->getState();
+            foreach (AnalyticsTaxonomy::cases() as $taxonomy) {
+                $groups = array_values((array) ($state[$taxonomy->value] ?? []));
+                foreach ($groups as $index => $group) {
+                    if (is_array($group)) {
+                        $groups[$index]['sort_order'] = $index;
+                    }
+                }
+                $state[$taxonomy->value] = $groups;
+            }
+            app(SaveAnalyticsTaxonomyGroups::class)->handle($actor, $state);
             $this->mount();
             Notification::make()->success()->title(__('Группы аналитики сохранены'))->send();
         } catch (ValidationException $exception) {
             $message = collect($exception->errors())->flatten()->first();
             Notification::make()->danger()->title(is_string($message) ? $message : __('Проверьте группы аналитики.'))->send();
         }
+    }
+
+    private static function groupItemLabel(array $state): string
+    {
+        $name = trim((string) ($state['name'] ?? ''));
+        $name = $name !== '' ? $name : __('Новая группа');
+
+        return $name.' · '.(($state['is_active'] ?? true) ? __('Активна') : __('Отключена'));
     }
 }

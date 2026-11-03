@@ -133,22 +133,25 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                             ->visible(fn (Get $get): bool => ! is_array($get('tests')) || $get('tests') === [])
                             ->columnSpanFull(),
                         Repeater::make('tests')
+                            ->label(__('Тесты'))
+                            ->helperText(__('Нажмите «Настроить», чтобы открыть один тест. Перемещайте карточки кнопками или перетаскиванием; числовой порядок вводить не нужно.'))
                             ->schema([
                                 Hidden::make('key')->default(fn (): string => 'test_'.Str::lower(Str::random(12))),
-                                TextInput::make('name')->label(__('Название теста'))->required()->maxLength(255),
-                                TextInput::make('section')->label(__('Раздел'))->maxLength(255),
-                                Toggle::make('is_active')->label(__('Активен'))->default(true),
-                                TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                                TextInput::make('name')->label(__('Название теста'))->live(onBlur: true)->required()->maxLength(255),
+                                TextInput::make('section')->label(__('Раздел'))->helperText(__('Где этот тест будет виден специалисту в медицинском сеансе.'))->maxLength(255),
+                                Toggle::make('is_active')->label(__('Активен'))->helperText(__('Отключённый тест не предлагается в новых сеансах, но старые записи остаются читаемыми.'))->default(true),
+                                Hidden::make('sort_order')->dehydrated(true),
                                 Repeater::make('values')
                                     ->label(__('Допустимые значения'))
+                                    ->helperText(__('Добавьте варианты, которые специалист сможет выбрать для этого теста.'))
                                     ->schema([
                                         Hidden::make('key')->default(fn (): string => 'value_'.Str::lower(Str::random(12))),
-                                        TextInput::make('label')->label(__('Название значения'))->required()->maxLength(255),
+                                        TextInput::make('label')->label(__('Название значения'))->live(onBlur: true)->required()->maxLength(255),
                                         Toggle::make('is_abnormal')->label(__('Считать нарушением')),
-                                        Toggle::make('is_active')->label(__('Активно'))->default(true),
-                                        TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
-                                    ])->columns(2)->defaultItems(1)->reorderable()->addActionLabel(__('Добавить значение'))->columnSpanFull(),
-                            ])->columns(2)->defaultItems(0)->reorderable()->collapsible()->addActionLabel(__('Добавить тест'))->columnSpanFull(),
+                                        Toggle::make('is_active')->label(__('Активно'))->helperText(__('Отключённое значение остаётся в истории старых сеансов.'))->default(true),
+                                        Hidden::make('sort_order')->dehydrated(true),
+                                    ])->columns(2)->defaultItems(1)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['label'] ?? null, $state['is_active'] ?? true))->addActionLabel(__('Добавить значение'))->columnSpanFull(),
+                            ])->columns(2)->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['name'] ?? null, $state['is_active'] ?? true))->addActionLabel(__('Добавить тест'))->columnSpanFull(),
                     ])->columnSpanFull(),
                 Section::make(__('Причины нарушений'))
                     ->description(__('Причины из этого списка доступны специалисту для ручной корректировки в медицинском сеансе после выявленного нарушения. Отключённые причины нельзя выбирать заново, но они сохраняются в истории. Например: «Название причины».'))
@@ -159,12 +162,14 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                             ->visible(fn (Get $get): bool => ! is_array($get('causes')) || $get('causes') === [])
                             ->columnSpanFull(),
                         Repeater::make('causes')
+                            ->label(__('Причины нарушений'))
+                            ->helperText(__('Откройте карточку только той причины, которую нужно изменить.'))
                             ->schema([
-                                TextInput::make('name')->label(__('Название причины'))->required()->maxLength(255),
+                                TextInput::make('name')->label(__('Название причины'))->live(onBlur: true)->required()->maxLength(255),
                                 TextInput::make('group_name')->label(__('Группа'))->maxLength(255),
-                                Toggle::make('is_active')->label(__('Активна'))->default(true),
-                                TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
-                            ])->columns(2)->defaultItems(0)->reorderable()->addActionLabel(__('Добавить причину'))->columnSpanFull(),
+                                Toggle::make('is_active')->label(__('Активна'))->helperText(__('Отключённая причина не предлагается для новых корректировок, но история сохраняется.'))->default(true),
+                                Hidden::make('sort_order')->dehydrated(true),
+                            ])->columns(2)->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['name'] ?? null, $state['is_active'] ?? true))->addActionLabel(__('Добавить причину'))->columnSpanFull(),
                     ])->columnSpanFull(),
                 Section::make(__('Категории проблем'))
                     ->description(__('Категории из этого списка используются для классификации жалоб и статистики боли. Они не заменяют свободный текст жалобы. Отключённые категории остаются читаемыми в истории. Например: «Категория проблемы».'))
@@ -175,12 +180,14 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                             ->visible(fn (Get $get): bool => ! is_array($get('problem_tags')) || $get('problem_tags') === [])
                             ->columnSpanFull(),
                         Repeater::make('problem_tags')
+                            ->label(__('Категории проблем'))
+                            ->helperText(__('Эти категории появятся в профиле и медицинском сеансе; откройте карточку для редактирования.'))
                             ->schema([
-                                TextInput::make('name')->label(__('Название категории'))->required()->maxLength(255),
+                                TextInput::make('name')->label(__('Название категории'))->live(onBlur: true)->required()->maxLength(255),
                                 TextInput::make('group_name')->label(__('Группа'))->maxLength(255),
-                                Toggle::make('is_active')->label(__('Активна'))->default(true),
-                                TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
-                            ])->columns(2)->defaultItems(0)->reorderable()->addActionLabel(__('Добавить категорию'))->columnSpanFull(),
+                                Toggle::make('is_active')->label(__('Активна'))->helperText(__('Отключённая категория не выбирается в новых карточках, но остаётся видимой в старых данных.'))->default(true),
+                                Hidden::make('sort_order')->dehydrated(true),
+                            ])->columns(2)->defaultItems(0)->reorderable()->reorderableWithButtons()->collapsible()->collapsed()->itemLabel(fn (array $state): ?string => self::catalogItemLabel($state['name'] ?? null, $state['is_active'] ?? true))->addActionLabel(__('Добавить категорию'))->columnSpanFull(),
                     ])->columnSpanFull(),
             ])
             ->statePath('data');
@@ -256,10 +263,43 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
         $state = $this->form->getState();
         app(SaveMedicalClinicalCatalog::class)->handle(
             $actor,
-            is_array($state['tests'] ?? null) ? $state['tests'] : [],
-            is_array($state['causes'] ?? null) ? $state['causes'] : [],
-            is_array($state['problem_tags'] ?? null) ? $state['problem_tags'] : [],
+            self::withTestOrder(is_array($state['tests'] ?? null) ? $state['tests'] : []),
+            self::withOrder(is_array($state['causes'] ?? null) ? $state['causes'] : []),
+            self::withOrder(is_array($state['problem_tags'] ?? null) ? $state['problem_tags'] : []),
         );
         Notification::make()->success()->title(__('Каталог сохранён'))->send();
+    }
+
+    private static function catalogItemLabel(mixed $value, mixed $isActive): string
+    {
+        $label = trim((string) $value);
+        $label = $label !== '' ? $label : __('Новый элемент');
+
+        return $label.' · '.((bool) $isActive ? __('Активен') : __('Отключён'));
+    }
+
+    private static function withTestOrder(array $rows): array
+    {
+        return array_values(array_map(static function (mixed $row, int $index): mixed {
+            if (! is_array($row)) {
+                return $row;
+            }
+
+            $row['sort_order'] = $index;
+            $row['values'] = self::withOrder(is_array($row['values'] ?? null) ? $row['values'] : []);
+
+            return $row;
+        }, array_values($rows), array_keys(array_values($rows))));
+    }
+
+    private static function withOrder(array $rows): array
+    {
+        return array_values(array_map(static function (mixed $row, int $index): mixed {
+            if (is_array($row)) {
+                $row['sort_order'] = $index;
+            }
+
+            return $row;
+        }, array_values($rows), array_keys(array_values($rows))));
     }
 }

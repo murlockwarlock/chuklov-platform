@@ -12,6 +12,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -21,6 +22,7 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Support\Facades\Auth;
@@ -68,21 +70,33 @@ final class AnalyticsAgeRangeSettings extends LocalizedPage
     {
         return $schema->components([
             Section::make(__('Возрастные диапазоны'))
-                ->description(__('Эти названия используются в фильтрах аналитики и могут быть заменены владельцем без изменения кода.'))
+                ->description(__('Эти диапазоны используются в фильтрах аналитики. Владелец может изменить название и границы без выпуска новой версии программы. Если список пуст, аналитика по возрасту будет недоступна.'))
                 ->schema([
+                    Placeholder::make('ranges_empty')
+                        ->label(__('Диапазоны пока не настроены'))
+                        ->content(__('Добавьте первый диапазон, укажите границы возраста и сохраните список.'))
+                        ->visible(fn (Get $get): bool => ! is_array($get('ranges')) || $get('ranges') === [])
+                        ->columnSpanFull(),
                     Repeater::make('ranges')
                         ->label(__('Диапазоны'))
+                        ->helperText(__('Пример: «18–30 лет». Перемещайте карточки кнопками или перетаскиванием; числовой порядок вводить не нужно.'))
                         ->schema([
                             Hidden::make('key')->default(fn (): string => 'age_'.Str::lower(Str::random(20)))->dehydrated(),
-                            TextInput::make('label')->label(__('Название'))->required()->maxLength(80),
+                            TextInput::make('label')->label(__('Название диапазона'))->placeholder(__('Например: 18–30 лет'))->required()->maxLength(80),
                             TextInput::make('min')->label(__('От'))->integer()->minValue(0)->maxValue(150)->required(),
                             TextInput::make('max')->label(__('До'))->integer()->minValue(0)->maxValue(150)->nullable(),
-                            Toggle::make('active')->label(__('Активен'))->default(true),
-                            TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                            Toggle::make('active')->label(__('Использовать в аналитике'))->helperText(__('Отключённый диапазон не предлагается в новых фильтрах, но старые отчёты сохраняются.'))->default(true),
+                            Hidden::make('sort_order')->dehydrated(true),
                         ])
                         ->columns(['default' => 1, 'sm' => 4])
                         ->defaultItems(0)
                         ->reorderable()
+                        ->reorderableWithButtons()
+                        ->collapsible()
+                        ->collapsed()
+                        ->itemLabel(fn (array $state): ?string => self::rangeItemLabel($state))
+                        ->expandAction(fn (Action $action): Action => $action->label(__('Настроить')))
+                        ->collapseAction(fn (Action $action): Action => $action->label(__('Свернуть')))
                         ->addActionLabel(__('Добавить диапазон'))
                         ->columnSpanFull(),
                 ])->columnSpanFull(),
@@ -109,7 +123,7 @@ final class AnalyticsAgeRangeSettings extends LocalizedPage
         $rows = [];
         $labels = [];
         $keys = [];
-        foreach ((array) ($this->form->getState()['ranges'] ?? []) as $row) {
+        foreach (array_values((array) ($this->form->getState()['ranges'] ?? [])) as $index => $row) {
             if (! is_array($row)) {
                 continue;
             }
@@ -140,7 +154,7 @@ final class AnalyticsAgeRangeSettings extends LocalizedPage
                 'min' => $min,
                 'max' => $max,
                 'active' => (bool) ($row['active'] ?? true),
-                'sort_order' => max(0, (int) ($row['sort_order'] ?? 0)),
+                'sort_order' => $index,
             ];
         }
         $activeRows = array_values(array_filter($rows, static fn (array $row): bool => $row['active']));
@@ -166,5 +180,13 @@ final class AnalyticsAgeRangeSettings extends LocalizedPage
             ->title(__('Не удалось сохранить возрастные диапазоны'))
             ->body($message)
             ->send();
+    }
+
+    private static function rangeItemLabel(array $state): string
+    {
+        $label = trim((string) ($state['label'] ?? ''));
+        $label = $label !== '' ? $label : __('Новый диапазон');
+
+        return $label.' · '.(($state['active'] ?? true) ? __('Активен') : __('Отключён'));
     }
 }
