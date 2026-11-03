@@ -2742,11 +2742,12 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await page.goto('/admin/attribution-source-settings');
     await expect(page.getByRole('heading', { name: 'Категории источников', exact: true })).toBeVisible();
     await expect(page.getByText('Объединяйте разные варианты одного источника под общим названием в аналитике.', { exact: false })).toBeVisible();
-    const sourcesSection = page.getByRole('heading', { name: 'Категории источников', exact: true }).locator('xpath=ancestor::*[contains(@class,"fi-section")][1]');
-    await expect(sourcesSection.locator('.fi-fo-repeater-item')).toHaveCount(12);
+    const sourcesSection = page.getByRole('heading', { name: 'Категории источников', exact: true }).locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-section ")][1]');
+    const sourceItems = sourcesSection.locator('xpath=.//*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ") and not(ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ")])]');
+    await expect(sourceItems).toHaveCount(12);
     await expect(sourcesSection.getByRole('textbox', { name: 'Название в аналитике', exact: true })).toHaveCount(0);
 
-    const instagramSource = sourcesSection.locator('.fi-fo-repeater-item').filter({ hasText: /^Instagram/ }).first();
+    const instagramSource = sourceItems.filter({ hasText: /^Instagram/ }).first();
     await expect(instagramSource).toBeVisible();
     await instagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
     await expect(instagramSource.getByRole('textbox', { name: 'Название в аналитике', exact: true })).toHaveValue('Instagram');
@@ -2757,7 +2758,9 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await page.getByRole('button', { name: 'Сохранить источники', exact: true }).click();
     await expect(page.getByText('Источники сохранены', { exact: true })).toBeVisible();
     await page.reload();
-    const reloadedInstagramSource = page.locator('.fi-fo-repeater-item').filter({ hasText: /^Instagram/ }).first();
+    const reloadedSourceSection = page.getByRole('heading', { name: 'Категории источников', exact: true }).locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-section ")][1]');
+    const reloadedSourceItems = reloadedSourceSection.locator('xpath=.//*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ") and not(ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ")])]');
+    const reloadedInstagramSource = reloadedSourceItems.filter({ hasText: /^Instagram/ }).first();
     await reloadedInstagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
     await expect(reloadedInstagramSource.getByRole('textbox', { name: 'Вариант названия', exact: true }).last()).toHaveValue(sourceAlias);
 
@@ -2779,14 +2782,14 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await expect(page.getByRole('heading', { name: 'Счета и кассы', exact: true })).toBeVisible();
     await expect(page.getByText('Эти варианты появляются в форме расхода и показывают, откуда списаны деньги.', { exact: false })).toBeVisible();
 
-    const accountSection = page.getByRole('heading', { name: 'Счета и кассы', exact: true }).locator('xpath=ancestor::*[contains(@class,"fi-section")][1]');
+    const accountSection = page.getByRole('heading', { name: 'Счета и кассы', exact: true }).locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-section ")][1]');
     await accountSection.getByRole('button', { name: 'Добавить счёт или кассу', exact: true }).click();
     const accountItem = accountSection.locator('.fi-fo-repeater-item').last();
     await accountItem.getByRole('textbox', { name: /^Название/ }).fill(accountName);
     await accountItem.getByRole('combobox', { name: /^Тип/ }).selectOption('bank');
     await accountItem.getByRole('combobox', { name: /^Валюта/ }).selectOption('USD');
 
-    const categorySection = page.getByRole('heading', { name: 'Категории расходов', exact: true }).locator('xpath=ancestor::*[contains(@class,"fi-section")][1]');
+    const categorySection = page.getByRole('heading', { name: 'Категории расходов', exact: true }).locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-section ")][1]');
     await categorySection.getByRole('button', { name: 'Добавить категорию', exact: true }).click();
     const categoryItem = categorySection.locator('.fi-fo-repeater-item').last();
     await categoryItem.getByRole('textbox', { name: /^Название/ }).fill(categoryName);
