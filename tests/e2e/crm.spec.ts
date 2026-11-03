@@ -2723,18 +2723,16 @@ test('owner remediation configuration pages explain empty states and usage', asy
     const accountName = `Счёт для проверки ${suffix}`;
     const categoryName = `Категория для проверки ${suffix}`;
     const storyId = Number(execFileSync('php', ['artisan', 'tinker', '--execute', `
-        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->findOrFail(${fixture.clientId});
-        $story = \\App\\Modules\\Content\\Domain\\Models\\ContentSection::query()->create([
-            'organization_id' => $client->organization_id,
+        $story = \\App\\Modules\\Content\\Domain\\Models\\ContentSection::query()->findOrFail(${fixture.contentSectionId});
+        $story->forceFill([
             'section_key' => 'story_author',
-            'locale' => 'ru',
             'title' => 'История автора для проверки',
             'body' => '',
             'delivery_mode' => 'mini_app',
             'media' => [],
             'sort_order' => 0,
             'is_visible' => true,
-        ]);
+        ])->save();
         echo $story->getKey();
     `], { encoding: 'utf8', env: { ...process.env, APP_ENV: 'e2e' } }).trim().split('\n').at(-1));
 
