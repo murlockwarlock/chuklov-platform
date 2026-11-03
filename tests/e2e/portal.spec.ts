@@ -3572,6 +3572,7 @@ test('booking empty search renders one range-level empty state', async ({ page }
 
 test('booking keeps its state while reviewing grouped legal documents', async ({ page }) => {
     const fixture = createBookingFixture();
+    await page.setViewportSize({ width: 390, height: 844 });
 
     await page.context().addCookies([{
         name: fixture.cookieName,
