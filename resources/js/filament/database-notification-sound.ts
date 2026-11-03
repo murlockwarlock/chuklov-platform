@@ -154,8 +154,19 @@ function registerLivewireHook(): void {
     livewire?.hook?.('morph.updated', queueNotificationScan);
 }
 
+function openDatabaseNotifications(event: MouseEvent): void {
+    const target = event.target;
+
+    if (!(target instanceof Element) || target.closest('.fi-topbar-database-notifications-btn, .fi-sidebar-database-notifications-btn') === null) {
+        return;
+    }
+
+    window.dispatchEvent(new CustomEvent('open-modal', { detail: { id: 'database-notifications' } }));
+}
+
 document.addEventListener('pointerdown', armAudio, { passive: true });
 document.addEventListener('keydown', armAudio, { passive: true });
+document.addEventListener('click', openDatabaseNotifications);
 window.addEventListener('livewire:init', registerLivewireHook);
 window.addEventListener('livewire:navigated', resetNotificationBaseline);
 
