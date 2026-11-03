@@ -2540,6 +2540,51 @@ test('authenticated client can confirm a booking with partial personal data', as
     await expect(page.getByLabel('Имя', { exact: true })).toHaveValue('Playwright');
 });
 
+test('authenticated client can autosave partial profile fields independently', async ({ page }) => {
+    const fixture = createBookingFixture();
+    execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->findOrFail(${fixture.clientId});
+        $client->forceFill([
+            'first_name' => null,
+            'last_name' => null,
+            'middle_name' => null,
+            'gender' => null,
+            'birth_date' => null,
+            'country' => null,
+            'city' => null,
+            'phone' => null,
+        ])->save();
+    `], { encoding: 'utf8', env: { ...process.env, APP_ENV: 'e2e' } });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/portal/profile');
+
+    await page.locator('#profile-city').fill('Астана');
+    await page.locator('#profile-first_name').click();
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
+    await page.reload();
+    await expect(page.locator('#profile-city')).toHaveValue('Астана');
+    await expect(page.locator('#profile-first_name')).toHaveValue('');
+
+    await page.locator('#profile-first_name').fill('Евгений');
+    await page.locator('#profile-city').click();
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
+    await page.reload();
+    await expect(page.locator('#profile-city')).toHaveValue('Астана');
+    await expect(page.locator('#profile-first_name')).toHaveValue('Евгений');
+
+    await page.locator('#profile-last_name').fill('X'.repeat(101));
+    await page.locator('#profile-first_name').click();
+    await expect(page.locator('#profile-last_name').locator('xpath=following-sibling::p')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('#profile-city')).toHaveValue('Астана');
+    await page.locator('#profile-last_name').fill('Чуклов');
+    await page.locator('#profile-first_name').click();
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
+    await page.reload();
+    await expect(page.locator('#profile-city')).toHaveValue('Астана');
+    await expect(page.locator('#profile-first_name')).toHaveValue('Евгений');
+    await expect(page.locator('#profile-last_name')).toHaveValue('Чуклов');
+});
+
 test('September 26 confirmed profile persists and the medical editor saves then reopens', async ({ page }) => {
     test.setTimeout(60_000);
     const fixture = createBookingFixture();

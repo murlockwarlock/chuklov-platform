@@ -2716,6 +2716,87 @@ test('staff sees business labels for client and content settings', async ({ page
     await assertBusinessField(page, 'Название', fixture.contentSectionTitle);
 });
 
+test('owner remediation configuration pages explain empty states and usage', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture();
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const accountName = `Счёт для проверки ${suffix}`;
+    const categoryName = `Категория для проверки ${suffix}`;
+    const storyId = Number(execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->findOrFail(${fixture.clientId});
+        $story = \\App\\Modules\\Content\\Domain\\Models\\ContentSection::query()->create([
+            'organization_id' => $client->organization_id,
+            'section_key' => 'story_author',
+            'locale' => 'ru',
+            'title' => 'История автора для проверки',
+            'body' => '',
+            'delivery_mode' => 'mini_app',
+            'media' => [],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ]);
+        echo $story->getKey();
+    `], { encoding: 'utf8', env: { ...process.env, APP_ENV: 'e2e' } }).trim().split('\n').at(-1));
+
+    await login(page, fixture);
+
+    await page.goto('/admin/finance-expense-entry');
+    await expect(page.getByRole('heading', { name: 'Добавить расход', exact: true })).toBeVisible();
+    await expect(page.getByLabel('Счёт или касса', { exact: true })).toBeVisible();
+    await expect(page.getByText('Выберите, откуда списаны деньги: банковский счёт или касса.', { exact: true })).toBeVisible();
+    const addAccountLink = page.getByText('Добавить счёт или кассу', { exact: true }).last();
+    await expect(addAccountLink).toBeVisible();
+    await addAccountLink.click();
+    await expect(page).toHaveURL(/\/admin\/finance-movement-settings$/);
+    await expect(page.getByRole('heading', { name: 'Счета и кассы', exact: true })).toBeVisible();
+    await expect(page.getByText('Эти варианты появляются в форме расхода и показывают, откуда списаны деньги.', { exact: false })).toBeVisible();
+
+    const accountSection = page.getByRole('heading', { name: 'Счета и кассы', exact: true }).locator('xpath=ancestor::section[1]');
+    await accountSection.getByRole('button', { name: 'Добавить счёт или кассу', exact: true }).click();
+    const accountItem = accountSection.locator('.fi-fo-repeater-item').last();
+    await accountItem.getByRole('textbox', { name: 'Название', exact: true }).fill(accountName);
+    await accountItem.getByRole('combobox', { name: 'Тип', exact: true }).selectOption('bank');
+    await accountItem.getByRole('combobox', { name: 'Валюта', exact: true }).selectOption('USD');
+
+    const categorySection = page.getByRole('heading', { name: 'Категории расходов', exact: true }).locator('xpath=ancestor::section[1]');
+    await categorySection.getByRole('button', { name: 'Добавить категорию', exact: true }).click();
+    const categoryItem = categorySection.locator('.fi-fo-repeater-item').last();
+    await categoryItem.getByRole('textbox', { name: 'Название', exact: true }).fill(categoryName);
+    await page.getByRole('button', { name: 'Сохранить справочники', exact: true }).click();
+    await page.waitForTimeout(500);
+
+    await page.goto('/admin/finance-expense-entry');
+    await page.getByLabel('Счёт или касса', { exact: true }).selectOption({ label: `${accountName} (USD)` });
+    await page.getByLabel('Категория', { exact: true }).selectOption({ label: categoryName });
+    await page.getByLabel('Сумма', { exact: true }).fill('25');
+    await page.getByRole('button', { name: 'Записать расход', exact: true }).click();
+    await expect(page.getByText('Расход записан', { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    await page.goto('/admin/medical-clinical-catalog-configuration');
+    await expect(page.getByRole('heading', { name: 'Клинические справочники', exact: true })).toBeVisible();
+    await expect(page.getByText('Эти тесты появляются у специалиста в блоке «Кинезиологические/мануальные тесты» медицинского сеанса.', { exact: false })).toBeVisible();
+    await expect(page.getByText('Добавьте первый тест кнопкой «Добавить тест». После сохранения он станет доступен в новом медицинском сеансе.', { exact: true })).toBeVisible();
+
+    await page.goto('/admin/b2b-form-configuration');
+    await expect(page.getByRole('heading', { name: 'Поля заявки для бизнеса', exact: true })).toBeVisible();
+    await expect(page.getByText('Здесь вы настраиваете вопросы для бизнес-клиента. Клиент увидит опубликованные вопросы перед выбором времени разговора.', { exact: false })).toBeVisible();
+    await expect(page.getByText('«Сохранить черновик» сохраняет текущую версию только для команды. «Опубликовать для клиентов» делает её видимой в форме клиента.', { exact: false })).toBeVisible();
+    await expect(page.getByText('Пока нет вопросов. Добавьте поле, чтобы увидеть пример здесь.', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Добавить поле', exact: true }).click();
+    const b2bItem = page.locator('.fi-fo-repeater-item').last();
+    await b2bItem.getByRole('textbox', { name: 'Название поля', exact: false }).fill('Контактное лицо');
+    await b2bItem.getByRole('combobox', { name: 'Тип ответа', exact: false }).selectOption('text');
+    await page.getByRole('button', { name: 'Сохранить черновик', exact: true }).click();
+    await page.waitForTimeout(500);
+    await expect(page.getByText('Перед выбором времени клиент увидит: Контактное лицо.', { exact: true })).toBeVisible();
+
+    await page.goto(`/admin/content-sections/${storyId}/edit`);
+    await expect(page.getByRole('heading', { name: 'Редактировать раздел контента', exact: true })).toBeVisible();
+    await expect(page.getByText('Статус показа на главной', { exact: true })).toBeVisible();
+    await expect(page.getByText('Видео не загружено. Загрузите MP4 кнопкой «Загрузить видео».', { exact: true })).toBeVisible();
+    await expect(page.getByText('Видео не загружено. Загрузите MP4 после сохранения раздела, чтобы он мог показываться клиентам.', { exact: true })).toBeVisible();
+});
+
 test('staff sees the Telegram limit and preview while writing to a client', async ({ page }) => {
     const fixture = createCrmFixture();
 
