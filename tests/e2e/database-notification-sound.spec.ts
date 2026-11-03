@@ -186,6 +186,18 @@ test('CRM title unread counter follows the authoritative total across pagination
     await expect(notificationTrigger).toBeVisible();
     await expect(notificationTrigger).toBeEnabled();
     await notificationTrigger.click();
+    console.log('notification modal states', await page.locator('#database-notifications').evaluateAll((elements) => elements.map((element) => {
+        const stack = (element as HTMLElement & {
+            _x_dataStack?: Array<{ isOpen?: boolean; isWindowVisible?: boolean }>;
+        })._x_dataStack;
+
+        return {
+            className: element.className,
+            display: getComputedStyle(element).display,
+            rect: element.getBoundingClientRect().toJSON(),
+            state: stack?.[0] ?? null,
+        };
+    })));
     const notificationCenter = page.locator('#database-notifications:visible').last();
     await expect(notificationCenter).toBeVisible();
     const nextPage = notificationCenter.locator('.fi-pagination-next-btn');
