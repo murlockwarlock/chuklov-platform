@@ -4,6 +4,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -372,25 +373,15 @@ function rescheduleBooking(): void {
     active="bookings"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-masthead">
-        <div class="portal-masthead__copy portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            {{ props.booking.statusLabel }}
-          </p>
-          <h1 class="portal-heading portal-heading--page">
-            {{ props.booking.service.name }}
-          </h1>
-          <p
-            v-if="props.booking.patientName"
-            class="portal-copy"
-          >
-            {{ t('family.forWhom') }}: {{ props.booking.patientName }}
-          </p>
-          <p class="portal-lede">
-            {{ props.booking.specialist.displayName }} · {{ props.booking.formatLabel }}
-          </p>
-        </div>
-      </header>
+      <PortalPageHeader
+        :title="props.booking.service.name"
+        :eyebrow="props.booking.statusLabel"
+        :description="props.booking.patientName
+          ? `${t('family.forWhom')}: ${props.booking.patientName} · ${props.booking.specialist.displayName} · ${props.booking.formatLabel}`
+          : `${props.booking.specialist.displayName} · ${props.booking.formatLabel}`"
+        :back-href="props.urls.index"
+        :back-label="t('common.back')"
+      />
 
       <section
         class="portal-panel portal-stack portal-stack--tight"

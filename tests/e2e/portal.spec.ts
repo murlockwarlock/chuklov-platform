@@ -1568,6 +1568,48 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page.getByText('Manage your contact details and preferences when you need to.')).toHaveCount(0);
 });
 
+test('authenticated Portal pages keep one navigation and page-header contract', async ({ page }) => {
+    const fixture = createBookingFixture({ feedbackEnabled: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    const routes = [
+        { path: '/', heading: 'Добро пожаловать', active: 'home' },
+        { path: '/portal/services', heading: 'Записаться', active: 'bookings' },
+        { path: '/portal/bookings', heading: 'Мои записи', active: 'bookings' },
+        { path: '/portal/health', heading: 'Здоровье', active: 'health' },
+        { path: '/portal/medical-profile', heading: 'Медицинские данные', active: 'health' },
+        { path: '/portal/finance', heading: 'Оплата и задолженность', active: 'more' },
+        { path: '/portal/gift-certificates', heading: 'Подарочные сертификаты', active: 'more' },
+        { path: '/portal/feedback', heading: 'Обратная связь', active: 'more' },
+        { path: '/portal/family', heading: 'Члены семьи', active: 'more' },
+        { path: '/portal/profile', heading: 'Профиль', active: 'more' },
+        { path: '/portal/more', heading: 'Кабинет', active: 'more' },
+    ] as const;
+
+    for (const route of routes) {
+        const response = await page.goto(route.path);
+        expect(response?.status()).toBe(200);
+        await expect(page.getByRole('heading', { name: new RegExp(route.heading) }).first()).toBeVisible();
+        await expect(page.locator('.portal-bottom-nav')).toBeVisible();
+        await expect(page.locator('.portal-bottom-nav__link--active')).toHaveCount(1);
+        await expect(page.locator('.portal-bottom-nav__link--active')).toHaveAttribute('href', route.active === 'home'
+            ? '/'
+            : route.active === 'bookings'
+                ? '/portal/services'
+                : route.active === 'health'
+                    ? '/portal/health'
+                    : '/portal/more');
+        await expect(page.locator('.portal-page-header')).toHaveCount(1);
+        await expect(page.locator('main .portal-button').filter({ hasText: 'Главная' })).toHaveCount(0);
+        await assertNoHorizontalOverflow(page);
+    }
+});
+
 test('confirmed client greeting follows the saved locale after reload', async ({ page }) => {
     const fixture = createBookingFixture({ confirmedName: true });
 
@@ -3547,7 +3589,12 @@ test('booking keeps its state while reviewing grouped legal documents', async ({
     const dialog = page.getByRole('dialog');
 
     await expect(documentLinks).toHaveCount(3);
+    await expect(page.locator('.portal-legal-document-links > span')).toHaveCount(0);
     await expect(requiredCheckbox).not.toBeChecked();
+    const documentGroupBounds = await page.locator('.portal-legal-document-links').boundingBox();
+    const documentLinkLefts = await documentLinks.evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().left)));
+    expect(documentGroupBounds).not.toBeNull();
+    expect(documentLinkLefts.every((left) => left >= Math.round(documentGroupBounds?.x ?? 0))).toBe(true);
     const documentTitle = (await documentLinks.first().innerText()).trim();
     expect(documentTitle).not.toBe('');
     await documentLinks.first().click();

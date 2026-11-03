@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Link, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import type { PortalIconName, PortalShell } from '../../types/portal';
 
 type ReviewDestination = { label: string; url: string; icon: PortalIconName };
@@ -62,22 +63,12 @@ function submit(): void {
     active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('feedback.title') }}
-          </h1>
-          <p class="portal-copy">
-            {{ t('feedback.description') }}
-          </p>
-        </div>
-        <Link
-          :href="props.portal.urls.home"
-          class="portal-button portal-button--secondary"
-        >
-          {{ t('common.back') }}
-        </Link>
-      </header>
+      <PortalPageHeader
+        :title="t('feedback.title')"
+        :description="t('feedback.description')"
+        :back-href="props.portal.urls.more"
+        :back-label="t('common.back')"
+      />
 
       <section
         v-if="props.result"

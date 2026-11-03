@@ -3,6 +3,7 @@ import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -217,19 +218,11 @@ onBeforeUnmount(() => {
     active="more"
   >
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose portal-finance-page">
-      <header class="portal-page-heading min-w-0 w-full">
-        <div class="portal-stack portal-stack--tight min-w-0 w-full">
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('finance.title') }}
-          </h1>
-        </div>
-        <Link
-          :href="props.urls.bookings"
-          class="portal-link"
-        >
-          {{ t('finance.backBookings') }}
-        </Link>
-      </header>
+      <PortalPageHeader
+        :title="t('finance.title')"
+        :back-href="props.portal.urls.more"
+        :back-label="t('common.back')"
+      />
 
       <div
         v-if="paymentError"
@@ -293,14 +286,7 @@ onBeforeUnmount(() => {
         v-if="!props.obligations.length"
         :title="t('finance.empty')"
         :description="t('finance.emptyDescription')"
-      >
-        <Link
-          :href="props.urls.home"
-          class="portal-button portal-button--primary"
-        >
-          {{ t('common.back') }}
-        </Link>
-      </EmptyState>
+      />
 
       <section
         v-for="(obligation, obligationIndex) in props.obligations"

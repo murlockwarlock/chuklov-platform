@@ -4,6 +4,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import SafeRichText from '../../Components/Portal/SafeRichText.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
@@ -262,11 +263,10 @@ watch(messageSignature, async () => {
     active="companion"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose portal-companion-page">
-      <header class="portal-page-heading portal-companion-page__heading">
-        <h1 class="portal-heading portal-heading--section">
-          {{ t('companion.title') }}
-        </h1>
-      </header>
+      <PortalPageHeader
+        :title="t('companion.title')"
+        class="portal-companion-page__heading"
+      />
 
       <section
         class="portal-companion"

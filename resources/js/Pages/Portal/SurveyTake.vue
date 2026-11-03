@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Link, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -266,25 +267,13 @@ onBeforeUnmount(() => {
     active="health"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <Link
-        :href="props.urls.index"
-        class="portal-link"
+      <PortalPageHeader
+        :title="t('survey.progress')"
+        :eyebrow="t('surveys.title')"
+        :description="t('survey.sectionProgress', { current: activeSectionIndex + 1, total: sections.length })"
+        :back-href="props.urls.index"
+        :back-label="t('survey.back')"
       >
-        {{ t('survey.back') }}
-      </Link>
-
-      <header class="portal-page-heading portal-stack portal-stack--tight">
-        <div class="portal-stack portal-stack--tight min-w-0">
-          <p class="portal-eyebrow">
-            {{ t('surveys.title') }}
-          </p>
-          <h1 class="portal-heading portal-heading--section break-words">
-            {{ t('survey.progress') }}
-          </h1>
-          <p class="portal-copy portal-copy--small">
-            {{ t('survey.sectionProgress', { current: activeSectionIndex + 1, total: sections.length }) }}
-          </p>
-        </div>
         <div class="portal-stack portal-stack--tight">
           <div class="flex min-w-0 items-center justify-between gap-3 text-sm font-semibold text-[var(--portal-color-ink-soft)]">
             <span>{{ t('survey.sectionsCompleted', { completed: completedSections, total: sections.length }) }}</span>
@@ -303,7 +292,7 @@ onBeforeUnmount(() => {
             />
           </div>
         </div>
-      </header>
+      </PortalPageHeader>
 
       <form
         class="portal-stack portal-stack--loose"

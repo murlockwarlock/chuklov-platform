@@ -3,6 +3,7 @@ import { Link, router, useForm } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 import { formatPortalDate } from '../../utils/dateTime';
@@ -235,13 +236,7 @@ function requestTime(value: string, timezone: string): string {
     active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('b2b.title') }}
-          </h1>
-        </div>
-      </header>
+      <PortalPageHeader :title="t('b2b.title')" />
 
       <article
         v-for="item in props.content"

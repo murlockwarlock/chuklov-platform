@@ -3,6 +3,7 @@ import { Link, router, useForm } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import LegalConsentChecklist from '../../Components/Portal/LegalConsentChecklist.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import TextAutocomplete from '../../Components/Portal/TextAutocomplete.vue';
 import CityAutocomplete from '../../Components/Portal/CityAutocomplete.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
@@ -323,13 +324,7 @@ function saveB2bAnswer(): void {
     active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('profile.title') }}
-          </h1>
-        </div>
-      </header>
+      <PortalPageHeader :title="t('profile.title')" />
 
       <section
         v-if="props.currencyPreference.options.length"

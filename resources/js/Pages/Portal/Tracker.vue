@@ -3,6 +3,7 @@ import { Link, useForm, usePage } from '@inertiajs/vue3';
 import { computed, reactive, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -115,11 +116,7 @@ function purchaseIdempotencyKey(versionId: number): string {
     active="health"
   >
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
-      <header class="portal-stack portal-stack--tight">
-        <h1 class="portal-heading portal-heading--section">
-          {{ t('tracker.title') }}
-        </h1>
-      </header>
+      <PortalPageHeader :title="t('tracker.title')" />
 
       <div
         v-if="paymentError"

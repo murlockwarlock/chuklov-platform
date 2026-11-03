@@ -3,6 +3,7 @@ import { Link, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -37,11 +38,7 @@ function logout(): void {
     active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-stack portal-stack--tight">
-        <h1 class="portal-heading portal-heading--section">
-          {{ t('more.title') }}
-        </h1>
-      </header>
+      <PortalPageHeader :title="t('more.title')" />
 
       <nav
         class="portal-list"

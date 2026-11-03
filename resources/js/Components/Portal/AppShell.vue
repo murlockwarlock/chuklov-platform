@@ -25,6 +25,27 @@ const navigation = [
     { key: 'more', label: 'shell.more' },
 ] as const;
 const page = usePage();
+const resolvedActive = computed<Exclude<PortalNavKey, null> | null>(() => {
+    if (props.active !== null) {
+        return props.active;
+    }
+
+    const path = page.url.split('?')[0] ?? '/';
+    if (path === '/' || path === '') {
+        return 'home';
+    }
+    if (path === '/portal/companion') {
+        return 'companion';
+    }
+    if (path === '/portal/health' || path.startsWith('/portal/surveys') || path.startsWith('/portal/survey-') || path.startsWith('/portal/tracker')) {
+        return 'health';
+    }
+    if (path === '/portal/services' || path === '/portal/availability' || path.startsWith('/portal/bookings')) {
+        return 'bookings';
+    }
+
+    return 'more';
+});
 const successMessage = computed(() => {
     const message = page.flash.success;
 
@@ -82,7 +103,7 @@ const brandLogo = computed(() => props.portal.locale === 'en'
             :key="item.key"
             :href="navigationHref(item.key)"
             class="portal-header__link"
-            :class="{ 'portal-header__link--active': props.active === item.key }"
+            :class="{ 'portal-header__link--active': resolvedActive === item.key }"
           >
             {{ portalText(portal.locale, item.label) }}
           </Link>
@@ -171,9 +192,9 @@ const brandLogo = computed(() => props.portal.locale === 'en'
     </dialog>
 
     <MobileBottomNavigation
-      v-if="portal.authenticated && props.bottomNavigation && props.active"
+      v-if="portal.authenticated && props.bottomNavigation && resolvedActive"
       :portal="portal"
-      :active="props.active"
+      :active="resolvedActive"
     />
   </div>
 </template>

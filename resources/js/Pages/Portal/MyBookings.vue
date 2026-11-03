@@ -3,6 +3,7 @@ import { Link } from '@inertiajs/vue3';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -34,19 +35,16 @@ const { locale, t } = usePortalLocale();
     active="bookings"
   >
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('bookings.title') }}
-          </h1>
-        </div>
-        <Link
-          :href="props.urls.create"
-          class="portal-button portal-button--primary"
-        >
-          {{ t('bookings.new') }}
-        </Link>
-      </header>
+      <PortalPageHeader :title="t('bookings.title')">
+        <template #actions>
+          <Link
+            :href="props.urls.create"
+            class="portal-button portal-button--primary"
+          >
+            {{ t('bookings.new') }}
+          </Link>
+        </template>
+      </PortalPageHeader>
 
       <section class="portal-stack">
         <h2 class="portal-heading portal-heading--section">

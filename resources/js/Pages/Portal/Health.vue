@@ -3,6 +3,7 @@ import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -114,17 +115,11 @@ const profileFields = computed(() => [
     active="health"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-stack portal-stack--tight">
-        <p class="portal-eyebrow">
-          {{ t('health.eyebrow') }}
-        </p>
-        <h1 class="portal-heading portal-heading--section">
-          {{ t('health.title') }}
-        </h1>
-        <p class="portal-copy">
-          {{ t('health.description') }}
-        </p>
-      </header>
+      <PortalPageHeader
+        :title="t('health.title')"
+        :eyebrow="t('health.eyebrow')"
+        :description="t('health.description')"
+      />
 
       <nav
         class="portal-list"

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
 import PortalDateTime from '../../Components/PortalDateTime.vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -47,19 +47,13 @@ function formatDate(date: string): string {
     active="bookings"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-masthead">
-        <div class="portal-masthead__copy portal-stack portal-stack--tight">
-          <p class="portal-eyebrow">
-            {{ t('booking.' + props.query.format) }}
-          </p>
-          <h1 class="portal-heading portal-heading--page">
-            {{ t('booking.chooseTime') }}
-          </h1>
-          <p class="portal-lede">
-            {{ formatDate(props.query.dateFrom) }} — {{ formatDate(props.query.dateTo) }}
-          </p>
-        </div>
-      </header>
+      <PortalPageHeader
+        :title="t('booking.chooseTime')"
+        :eyebrow="t('booking.' + props.query.format)"
+        :description="formatDate(props.query.dateFrom) + ' — ' + formatDate(props.query.dateTo)"
+        :back-href="props.portal.urls.services"
+        :back-label="t('common.back')"
+      />
 
       <p
         v-if="props.availability.slots.length === 0"
@@ -96,13 +90,6 @@ function formatDate(date: string): string {
           </p>
         </article>
       </div>
-
-      <Link
-        :href="props.portal.urls.home"
-        class="portal-button portal-button--secondary self-start"
-      >
-        {{ t('shell.home') }}
-      </Link>
     </section>
   </AppShell>
 </template>

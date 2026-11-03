@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import PatientIdentityFields from '../../Components/Portal/PatientIdentityFields.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import { shareTelegramLink } from '../../runtime/clientRuntime';
 import { emptyPatientIdentity, type PatientSummary } from '../../types/patients';
@@ -175,30 +176,28 @@ function revoke(): void {
   <AppShell
     :title="t('family.title')"
     :portal="props.portal"
+    active="more"
   >
-    <main class="portal-container portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('family.title') }}
-          </h1>
-        </div>
-        <div class="portal-family-header__actions">
-          <Link
-            :href="props.urls.profile"
-            class="portal-button portal-button--secondary portal-family-header__profile"
-          >
-            {{ t('profile.title') }}
-          </Link>
-          <button
-            type="button"
-            class="portal-button portal-button--primary portal-family-header__add"
-            @click="openPatient()"
-          >
-            {{ t('family.add') }}
-          </button>
-        </div>
-      </header>
+    <section class="portal-container portal-stack portal-stack--loose">
+      <PortalPageHeader :title="t('family.title')">
+        <template #actions>
+          <div class="portal-family-header__actions">
+            <Link
+              :href="props.urls.profile"
+              class="portal-button portal-button--secondary portal-family-header__profile"
+            >
+              {{ t('profile.title') }}
+            </Link>
+            <button
+              type="button"
+              class="portal-button portal-button--primary portal-family-header__add"
+              @click="openPatient()"
+            >
+              {{ t('family.add') }}
+            </button>
+          </div>
+        </template>
+      </PortalPageHeader>
       <p class="portal-copy">
         {{ t('family.medicalPrivacy') }}
       </p>
@@ -439,7 +438,7 @@ function revoke(): void {
           </div>
         </form>
       </dialog>
-    </main>
+    </section>
   </AppShell>
 </template>
 

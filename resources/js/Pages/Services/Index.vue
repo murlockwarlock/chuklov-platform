@@ -3,6 +3,7 @@ import { usePage } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import ServiceCard from '../../Components/Portal/ServiceCard.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
@@ -49,11 +50,10 @@ const bookingUrl = props.portal.authenticated ? props.urls.booking : props.urls.
     active="bookings"
   >
     <section class="portal-container portal-container--wide portal-stack portal-stack--tight">
-      <header class="portal-stack portal-stack--tight">
-        <h1 class="portal-heading portal-heading--section">
-          {{ t('services.title') }}
-        </h1>
-      </header>
+      <PortalPageHeader
+        :title="t('services.title')"
+        :description="t('services.description')"
+      />
 
       <div
         v-if="paymentError"

@@ -2,6 +2,7 @@
 import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -56,29 +57,13 @@ const changeLabel = (change: number): string => change > 0 ? `+${change}` : Stri
     active="health"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <Link
-        :href="props.urls.index"
-        class="portal-link"
-      >
-        {{ t('survey.back') }}
-      </Link>
-
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight min-w-0">
-          <p class="portal-eyebrow">
-            {{ t('survey.reportTitle') }}
-          </p>
-          <h1 class="portal-heading portal-heading--section break-words">
-            {{ props.report.title }}
-          </h1>
-          <p
-            v-if="props.report.summary?.short"
-            class="portal-copy"
-          >
-            {{ props.report.summary.short }}
-          </p>
-        </div>
-      </header>
+      <PortalPageHeader
+        :title="props.report.title"
+        :eyebrow="t('survey.reportTitle')"
+        :description="props.report.summary?.short ?? null"
+        :back-href="props.urls.index"
+        :back-label="t('survey.back')"
+      />
 
       <section
         class="portal-panel portal-stack portal-stack--tight"

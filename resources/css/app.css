@@ -1112,10 +1112,20 @@ select.portal-input[aria-invalid='true'] {
 }
 
 .portal-legal-consent-group .portal-legal-document-links {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 1rem;
     border: 1px solid var(--portal-color-border);
     border-radius: var(--portal-radius-md);
     background: var(--portal-color-surface-warm);
     padding: 0.65rem 0.85rem;
+}
+
+.portal-legal-consent-group .portal-legal-document-links .portal-link--button {
+    min-height: 2rem;
+    padding-block: 0.25rem;
+    text-align: left;
 }
 
 .portal-legal-consent-group .portal-confirm {
@@ -2051,6 +2061,68 @@ select.portal-input[aria-invalid='true'] {
         gap: var(--portal-space-5);
     }
 
+.portal-page-header {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--portal-space-4);
+}
+
+.portal-page-header__main,
+.portal-page-header__copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+}
+
+.portal-page-header__main {
+    width: 100%;
+    gap: var(--portal-space-3);
+}
+
+.portal-page-header__copy {
+    gap: var(--portal-space-2);
+}
+
+.portal-page-header__copy > .portal-heading {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.portal-page-header__description {
+    max-width: 52rem;
+}
+
+.portal-page-header__actions {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: var(--portal-space-3);
+}
+
+.portal-context-back {
+    display: inline-flex;
+    width: max-content;
+    max-width: 100%;
+    min-height: 2.25rem;
+    align-items: center;
+    gap: 0.45rem;
+    color: var(--portal-color-ink-soft);
+    font-size: 0.86rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.portal-context-back:hover {
+    color: var(--portal-color-ink);
+}
+
+.portal-context-back__icon {
+    flex: 0 0 1.15rem;
+    transform: rotate(180deg);
+}
+
     .portal-section-heading {
         min-width: 0;
         justify-content: space-between;
@@ -2801,6 +2873,16 @@ select.portal-input[aria-invalid='true'] {
     }
 
     @media (min-width: 64rem) {
+        .portal-page-header {
+            flex-direction: row;
+            align-items: flex-end;
+            justify-content: space-between;
+        }
+
+        .portal-page-header__main {
+            width: auto;
+        }
+
         .portal-masthead {
             flex-direction: row;
             align-items: flex-end;

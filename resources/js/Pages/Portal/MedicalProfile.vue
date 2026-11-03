@@ -3,6 +3,7 @@ import { Link, useForm } from '@inertiajs/vue3';
 import { ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import MedicalAttachmentsUploader from '../../Components/Portal/MedicalAttachmentsUploader.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -219,12 +220,10 @@ function save(): void {
   <AppShell
     :title="t('medical.title')"
     :portal="portal"
-    active="more"
+    active="health"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <h1 class="portal-heading portal-heading--section">
-        {{ t('medical.title') }}
-      </h1>
+      <PortalPageHeader :title="t('medical.title')" />
       <p
         v-if="profile.readFailed"
         class="portal-error"

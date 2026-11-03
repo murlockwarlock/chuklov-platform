@@ -2,6 +2,7 @@
 import { Head, router, usePage } from '@inertiajs/vue3';
 import { onMounted, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -80,10 +81,12 @@ onMounted(() => {
     active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
+      <PortalPageHeader
+        :title="t('giftCertificates.claimTitle')"
+        :back-href="props.portal.urls.more"
+        :back-label="t('common.back')"
+      />
       <div class="portal-card portal-stack portal-stack--tight">
-        <h1 class="portal-heading portal-heading--section">
-          {{ t('giftCertificates.claimTitle') }}
-        </h1>
         <p
           v-if="loading"
           class="portal-text"

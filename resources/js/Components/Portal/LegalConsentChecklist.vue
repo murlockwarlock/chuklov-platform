@@ -65,12 +65,12 @@ function closeDocument(): void {
       :aria-label="t('profile.legal')"
     >
       <template v-if="props.groupRequiredAcceptance && requiredDocuments.length > 0">
-        <p
+        <div
           class="portal-legal-document-links"
           role="listitem"
         >
           <template
-            v-for="(document, index) in requiredDocuments"
+            v-for="document in requiredDocuments"
             :key="document.id"
           >
             <button
@@ -79,9 +79,9 @@ function closeDocument(): void {
               @click.prevent.stop="openDocumentLink(document)"
             >
               {{ document.title }}
-            </button><span v-if="index < requiredDocuments.length - 1"> · </span>
+            </button>
           </template>
-        </p>
+        </div>
         <label
           class="portal-confirm"
           role="listitem"
