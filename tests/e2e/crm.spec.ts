@@ -2759,7 +2759,7 @@ test('owner remediation configuration pages explain empty states and usage', asy
     const sourceAlias = `owner-alias-${suffix}`;
     await expandedInstagramSource.getByRole('textbox', { name: /^Вариант названия/ }).last().fill(sourceAlias);
     await page.getByRole('button', { name: 'Сохранить источники', exact: true }).click();
-    await expect(page.getByText('Источники сохранены', { exact: true })).toBeVisible();
+    await expect(page.locator('.fi-no-notification.fi-status-success').last()).toBeVisible();
     await page.reload();
     const reloadedSourceSection = page.getByRole('heading', { name: 'Категории источников', exact: true }).locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-section ")][1]');
     const reloadedSourceItems = reloadedSourceSection.locator('xpath=.//*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ") and not(ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ")])]');
