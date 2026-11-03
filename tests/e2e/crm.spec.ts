@@ -2750,11 +2750,11 @@ test('owner remediation configuration pages explain empty states and usage', asy
     const instagramSource = sourceItems.filter({ hasText: 'Instagram' }).first();
     await expect(instagramSource).toBeVisible();
     await instagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
-    await expect(instagramSource.getByRole('textbox', { name: 'Название в аналитике', exact: true })).toHaveValue('Instagram');
-    await expect(instagramSource.getByText('Другие варианты этого источника', { exact: true })).toBeVisible();
-    await instagramSource.getByRole('button', { name: 'Добавить вариант', exact: true }).click();
+    await expect(page.getByRole('textbox', { name: 'Название в аналитике', exact: true })).toHaveValue('Instagram');
+    await expect(page.getByText('Другие варианты этого источника', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Добавить вариант', exact: true }).click();
     const sourceAlias = `owner-alias-${suffix}`;
-    await instagramSource.getByRole('textbox', { name: 'Вариант названия', exact: true }).last().fill(sourceAlias);
+    await page.getByRole('textbox', { name: 'Вариант названия', exact: true }).last().fill(sourceAlias);
     await page.getByRole('button', { name: 'Сохранить источники', exact: true }).click();
     await expect(page.getByText('Источники сохранены', { exact: true })).toBeVisible();
     await page.reload();
@@ -2762,7 +2762,7 @@ test('owner remediation configuration pages explain empty states and usage', asy
     const reloadedSourceItems = reloadedSourceSection.locator('xpath=.//*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ") and not(ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ")])]');
     const reloadedInstagramSource = reloadedSourceItems.filter({ hasText: 'Instagram' }).first();
     await reloadedInstagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
-    await expect(reloadedInstagramSource.getByRole('textbox', { name: 'Вариант названия', exact: true }).last()).toHaveValue(sourceAlias);
+    await expect(page.getByRole('textbox', { name: 'Вариант названия', exact: true }).last()).toHaveValue(sourceAlias);
 
     await page.goto('/admin/analytics-metric-settings');
     await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true })).toBeVisible();
