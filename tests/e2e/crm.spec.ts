@@ -2756,6 +2756,7 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await expect(expandedInstagramSource.getByRole('textbox', { name: /^Название в аналитике/ })).toHaveValue('Instagram');
     await expect(expandedInstagramSource.getByText('Другие варианты этого источника', { exact: true })).toBeVisible();
     await expandedInstagramSource.getByRole('button', { name: 'Добавить вариант', exact: true }).click();
+    await expect(expandedInstagramSource.getByRole('textbox', { name: /^Вариант названия/ })).toHaveCount(4);
     const sourceAlias = `owner-alias-${suffix}`;
     await expandedInstagramSource.getByRole('textbox', { name: /^Вариант названия/ }).last().fill(sourceAlias);
     await page.getByRole('button', { name: 'Сохранить источники', exact: true }).click();

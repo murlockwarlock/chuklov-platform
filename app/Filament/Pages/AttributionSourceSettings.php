@@ -91,6 +91,7 @@ final class AttributionSourceSettings extends LocalizedPage
                                 TextInput::make('label')
                                     ->label(__('Название в аналитике'))
                                     ->helperText(__('Так источник будет называться в отчётах и фильтрах.'))
+                                    ->live(onBlur: true)
                                     ->required()
                                     ->maxLength(160),
                                 Repeater::make('aliases')
@@ -100,6 +101,7 @@ final class AttributionSourceSettings extends LocalizedPage
                                         TextInput::make('value')
                                             ->label(__('Вариант названия'))
                                             ->placeholder(__('Например: ig'))
+                                            ->live(onBlur: true)
                                             ->required()
                                             ->maxLength(120),
                                     ])
