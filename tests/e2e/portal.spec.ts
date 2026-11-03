@@ -2586,6 +2586,24 @@ test('authenticated client can autosave partial profile fields independently', a
     await expect(page.locator('#profile-birth-date')).toHaveValue('1990-01-01');
 });
 
+test('authenticated client autosaves the preferred currency without a separate save action', async ({ page }) => {
+    const fixture = createBookingFixture({ withPartnerRewards: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/portal/profile');
+
+    const currency = page.getByLabel('Основная валюта', { exact: true });
+    await expect(currency).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Сохранить', exact: true })).toHaveCount(0);
+    const currencyValue = await currency.locator('option:not([value=""])').first().getAttribute('value');
+    expect(currencyValue).not.toBeNull();
+    await currency.selectOption(currencyValue as string);
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
+    await page.reload();
+    await expect(currency).toHaveValue(currencyValue as string);
+    await assertNoHorizontalOverflow(page);
+});
+
 test('September 26 confirmed profile persists and the medical editor saves then reopens', async ({ page }) => {
     test.setTimeout(60_000);
     const fixture = createBookingFixture();

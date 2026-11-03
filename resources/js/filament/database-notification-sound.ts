@@ -2,6 +2,7 @@ const seenNotificationIds = new Set<string>();
 let notificationListInitialized = false;
 let scanQueued = false;
 let audioContext: AudioContext | null = null;
+let baseDocumentTitle = '';
 
 const notificationIdPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
@@ -32,8 +33,8 @@ function playNotificationSound(): void {
         oscillator.type = 'sine';
         oscillator.frequency.setValueAtTime(880, now);
         oscillator.frequency.exponentialRampToValueAtTime(660, now + 0.12);
-        gain.gain.setValueAtTime(0.035, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
         oscillator.connect(gain);
         gain.connect(audioContext.destination);
         oscillator.start(now);
@@ -53,15 +54,33 @@ function notificationEntries(root: HTMLElement): HTMLElement[] {
         .filter((entry) => entry.hasAttribute('wire:key'));
 }
 
+function refreshBaseDocumentTitle(): void {
+    const title = document.title.replace(/^\(\d+\)\s+/, '').trim();
+    if (title !== '') {
+        baseDocumentTitle = title;
+    }
+}
+
+function updateDocumentTitle(notifications: HTMLElement[]): void {
+    refreshBaseDocumentTitle();
+    if (baseDocumentTitle === '') {
+        return;
+    }
+
+    const unreadCount = notifications.filter((notification) => notification.classList.contains('fi-no-notification-unread-ctn')).length;
+    document.title = unreadCount > 0 ? `(${unreadCount}) ${baseDocumentTitle}` : baseDocumentTitle;
+}
+
 function scanNotifications(): void {
     scanQueued = false;
     const databaseNotifications = document.getElementById('database-notifications');
 
+    const notifications = databaseNotifications === null ? [] : notificationEntries(databaseNotifications);
+    updateDocumentTitle(notifications);
+
     if (databaseNotifications === null) {
         return;
     }
-
-    const notifications = notificationEntries(databaseNotifications);
 
     if (!notificationListInitialized) {
         notifications.forEach((notification) => {
@@ -129,6 +148,14 @@ function initializeNotificationSound(): void {
         childList: true,
         subtree: true,
     });
+    const title = document.querySelector('title');
+    if (title !== null) {
+        new MutationObserver(queueNotificationScan).observe(title, {
+            childList: true,
+            characterData: true,
+            subtree: true,
+        });
+    }
     queueNotificationScan();
 }
 

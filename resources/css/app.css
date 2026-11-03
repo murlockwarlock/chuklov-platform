@@ -1111,9 +1111,18 @@ select.portal-input[aria-invalid='true'] {
     background: transparent;
 }
 
+.portal-legal-consent-group .portal-legal-document-links {
+    border: 1px solid var(--portal-color-border);
+    border-radius: var(--portal-radius-md);
+    background: var(--portal-color-surface-warm);
+    padding: 0.65rem 0.85rem;
+}
+
 .portal-legal-consent-group .portal-confirm {
-    border-top: 1px solid var(--portal-color-border);
-    padding-top: var(--portal-space-4);
+    border: 1px solid var(--portal-color-border);
+    border-radius: var(--portal-radius-md);
+    background: var(--portal-color-surface);
+    padding: 0.75rem 0.85rem;
 }
 
 @media (max-width: 22.5rem) {
@@ -2170,9 +2179,9 @@ select.portal-input[aria-invalid='true'] {
     .portal-legal-marketing {
         display: flex;
         flex-direction: column;
-        gap: var(--portal-space-3);
+        gap: var(--portal-space-2);
         border-top: 1px solid var(--portal-color-border);
-        padding-top: var(--portal-space-4);
+        padding-top: var(--portal-space-3);
     }
 
     .portal-legal-modal {
@@ -2832,6 +2841,23 @@ select.portal-input[aria-invalid='true'] {
     }
 }
 
+.portal-currency-settings__status {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--portal-space-3);
+    border-top: 1px solid var(--portal-color-border);
+    padding-top: var(--portal-space-4);
+}
+
+.portal-currency-settings__status .portal-notice {
+    margin: 0;
+    border: 0;
+    padding: 0;
+    color: var(--portal-color-ink-soft);
+}
+
 @media (min-width: 48rem) {
     .portal-header__navigation {
         display: flex;
@@ -3350,12 +3376,40 @@ select.portal-input[aria-invalid='true'] {
 
 .portal-booking-flow__cta {
     width: 100%;
-    min-height: 3rem;
+    min-height: 2.75rem;
     border-radius: 0.75rem;
+    padding: 0.65rem 1rem;
+}
+
+.portal-booking-session-selection {
+    gap: 0.9rem;
+    padding-top: 0.25rem;
+}
+
+.portal-booking-session-selection__add {
+    min-height: 2.65rem;
+    padding: 0.6rem 1rem;
 }
 
 .portal-booking-confirmation {
     gap: 1.25rem;
+}
+
+.portal-booking-confirmation__legal {
+    gap: 0.75rem;
+    border-top: 1px solid var(--portal-color-border);
+    padding-top: 1rem;
+}
+
+.portal-booking-confirmation__actions {
+    gap: 0.65rem;
+    border-top: 1px solid var(--portal-color-border);
+    padding-top: 1rem;
+}
+
+.portal-booking-confirmation__actions > .portal-button {
+    min-height: 2.65rem;
+    padding: 0.6rem 1rem;
 }
 
 .portal-booking-flow > .portal-booking-confirmation {
@@ -3486,6 +3540,10 @@ select.portal-input[aria-invalid='true'] {
         text-align: left;
     }
 
+    .portal-booking-confirmation__actions > .portal-button {
+        width: 100%;
+    }
+
     .portal-booking-calendar__layout {
         grid-template-columns: minmax(0, 1fr);
     }
@@ -3509,6 +3567,13 @@ select.portal-input[aria-invalid='true'] {
     .portal-booking-success__actions > * {
         width: 100%;
         flex-basis: 100%;
+    }
+}
+
+@media (min-width: 48rem) {
+    .portal-booking-flow__cta {
+        align-self: flex-start;
+        max-width: 20rem;
     }
 }
 

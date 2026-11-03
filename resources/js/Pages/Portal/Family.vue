@@ -186,13 +186,13 @@ function revoke(): void {
         <div class="portal-family-header__actions">
           <Link
             :href="props.urls.profile"
-            class="portal-link"
+            class="portal-button portal-button--secondary portal-family-header__profile"
           >
             {{ t('profile.title') }}
           </Link>
           <button
             type="button"
-            class="portal-button portal-button--primary"
+            class="portal-button portal-button--primary portal-family-header__add"
             @click="openPatient()"
           >
             {{ t('family.add') }}
@@ -453,6 +453,18 @@ function revoke(): void {
     gap: var(--portal-space-3);
 }
 
+.portal-family-header__actions > * {
+    flex: 1 1 10rem;
+    min-width: 0;
+    min-height: 2.65rem;
+    padding: 0.6rem 1rem;
+    text-align: center;
+}
+
+.portal-family-header__profile {
+    justify-content: center;
+}
+
 .portal-family-card {
     display: grid;
     min-width: 0;
@@ -493,14 +505,26 @@ function revoke(): void {
     max-width: 100%;
 }
 
+.portal-family-card__actions > .portal-link:not(.portal-link--danger) {
+    display: inline-flex;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--portal-color-border-strong);
+    border-radius: var(--portal-radius-pill);
+    padding: 0.55rem 1rem;
+    background: var(--portal-color-surface);
+    text-decoration: none;
+}
+
 @media (max-width: 40rem) {
     .portal-family-header__actions {
         width: 100%;
         justify-content: space-between;
     }
 
-    .portal-family-header__actions > .portal-button {
-        flex: 1 1 auto;
+    .portal-family-header__actions > * {
+        flex: 1 1 9rem;
     }
 
     .portal-family-card__actions > .portal-button,
@@ -508,6 +532,12 @@ function revoke(): void {
         flex: 1 1 100%;
         justify-content: center;
         text-align: center;
+    }
+}
+
+@media (max-width: 22.5rem) {
+    .portal-family-header__actions > * {
+        flex-basis: 100%;
     }
 }
 </style>

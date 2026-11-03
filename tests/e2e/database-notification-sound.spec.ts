@@ -17,7 +17,7 @@ test('CRM notification sound follows the Filament database notification DOM cont
     const infoNotificationId = '33333333-3333-4333-8333-333333333333';
 
     await page.addInitScript(() => {
-        type SoundWindow = Window & { notificationSoundCount: number };
+        type SoundWindow = Window & { notificationSoundCount: number; notificationPeakGain: number };
 
         class FakeAudioContext {
             public currentTime = 0;
@@ -51,12 +51,16 @@ test('CRM notification sound follows the Filament database notification DOM cont
             }
 
             public createGain(): {
-                gain: { setValueAtTime: () => void; exponentialRampToValueAtTime: () => void };
+                gain: { setValueAtTime: (value: number) => void; exponentialRampToValueAtTime: () => void };
                 connect: () => void;
             } {
+                const target = window as SoundWindow;
+
                 return {
                     gain: {
-                        setValueAtTime: () => undefined,
+                        setValueAtTime: (value: number) => {
+                            target.notificationPeakGain = value;
+                        },
                         exponentialRampToValueAtTime: () => undefined,
                     },
                     connect: () => undefined,
@@ -65,6 +69,7 @@ test('CRM notification sound follows the Filament database notification DOM cont
         }
 
         (window as SoundWindow).notificationSoundCount = 0;
+        (window as SoundWindow).notificationPeakGain = 0;
         Object.defineProperty(window, 'AudioContext', {
             configurable: true,
             value: FakeAudioContext,
@@ -72,6 +77,7 @@ test('CRM notification sound follows the Filament database notification DOM cont
     });
 
     await page.setContent(`
+        <title>CRM</title>
         <div class="fi-no-database"></div>
         <div id="database-notifications">
             ${notificationMarkup(initialNotificationId, 'fi-status-danger')}
@@ -81,10 +87,13 @@ test('CRM notification sound follows the Filament database notification DOM cont
     await page.waitForTimeout(50);
 
     await expect.poll(() => page.evaluate(() => (window as Window & { notificationSoundCount: number }).notificationSoundCount)).toBe(0);
+    await expect(page).toHaveTitle('(1) CRM');
 
     await page.locator('body').dispatchEvent('pointerdown');
     await page.locator('#database-notifications').evaluate((root, markup) => root.insertAdjacentHTML('beforeend', markup), notificationMarkup(newNotificationId, 'fi-status-warning'));
     await expect.poll(() => page.evaluate(() => (window as Window & { notificationSoundCount: number }).notificationSoundCount)).toBe(1);
+    await expect.poll(() => page.evaluate(() => (window as Window & { notificationPeakGain: number }).notificationPeakGain)).toBeGreaterThan(0.05);
+    await expect(page).toHaveTitle('(2) CRM');
 
     await page.locator('#database-notifications').evaluate((root) => {
         const entries = root.querySelectorAll<HTMLElement>('.fi-no-notification-unread-ctn');
@@ -93,14 +102,18 @@ test('CRM notification sound follows the Filament database notification DOM cont
     });
     await page.waitForTimeout(50);
     await expect.poll(() => page.evaluate(() => (window as Window & { notificationSoundCount: number }).notificationSoundCount)).toBe(1);
+    await expect(page).toHaveTitle('(2) CRM');
 
     await page.locator('#database-notifications').evaluate((root, markup) => root.insertAdjacentHTML('beforeend', markup), notificationMarkup(infoNotificationId, 'fi-status-success'));
     await page.waitForTimeout(50);
     await expect.poll(() => page.evaluate(() => (window as Window & { notificationSoundCount: number }).notificationSoundCount)).toBe(1);
+    await expect(page).toHaveTitle('(3) CRM');
 
     await page.evaluate(() => window.dispatchEvent(new Event('livewire:navigated')));
     await page.waitForTimeout(50);
     await page.locator('#database-notifications').evaluate((root) => root.setAttribute('class', root.className));
     await page.waitForTimeout(50);
     await expect.poll(() => page.evaluate(() => (window as Window & { notificationSoundCount: number }).notificationSoundCount)).toBe(1);
+    await page.locator('#database-notifications').evaluate((root) => root.querySelectorAll('.fi-no-notification-unread-ctn').forEach((entry) => entry.remove()));
+    await expect(page).toHaveTitle('CRM');
 });

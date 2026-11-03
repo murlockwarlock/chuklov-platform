@@ -65,6 +65,9 @@ const profileSaveError = ref<string | null>(null);
 const profileSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>(props.saved ? 'saved' : 'idle');
 const profileFieldErrors = ref<Record<string, string>>({});
 const currencyForm = useForm({ preferred_currency: props.currencyPreference.selected ?? '' });
+const currencySaveState = ref<'idle' | 'saving' | 'saved' | 'error'>(props.currencySaved ? 'saved' : 'idle');
+const currencySaveError = ref<string | null>(null);
+const lastSavedCurrency = ref(currencyForm.preferred_currency);
 const profileForm = useForm<{
     first_name: string;
     last_name: string;
@@ -240,6 +243,39 @@ function retryProfileSave(): void {
     scheduleProfileSave();
 }
 
+function saveCurrency(): void {
+    if (currencyForm.processing || currencyForm.preferred_currency === lastSavedCurrency.value) {
+        return;
+    }
+
+    currencySaveState.value = 'saving';
+    currencySaveError.value = null;
+    currencyForm.clearErrors();
+    currencyForm.post(props.urls.currency, {
+        preserveScroll: true,
+        onSuccess: () => {
+            lastSavedCurrency.value = currencyForm.preferred_currency;
+            currencySaveState.value = 'saved';
+        },
+        onError: (errors) => {
+            currencySaveState.value = 'error';
+            currencySaveError.value = errors.preferred_currency ?? t('profile.saveRetry');
+        },
+        onHttpException: (response) => {
+            currencySaveState.value = 'error';
+            currencySaveError.value = transportErrorMessage(response.status);
+
+            return false;
+        },
+        onNetworkError: () => {
+            currencySaveState.value = 'error';
+            currencySaveError.value = t('profile.saveRetry');
+
+            return false;
+        },
+    });
+}
+
 onBeforeUnmount(() => {
     if (profileSaveTimer) {
         clearTimeout(profileSaveTimer);
@@ -295,10 +331,9 @@ function saveB2bAnswer(): void {
         </div>
       </header>
 
-      <form
+      <section
         v-if="props.currencyPreference.options.length"
-        class="portal-content-section portal-stack"
-        @submit.prevent="currencyForm.post(props.urls.currency, { preserveScroll: true })"
+        class="portal-content-section portal-stack portal-currency-settings"
       >
         <div class="portal-field">
           <label
@@ -309,6 +344,8 @@ function saveB2bAnswer(): void {
             id="profile-currency"
             v-model="currencyForm.preferred_currency"
             class="portal-input"
+            :disabled="currencyForm.processing"
+            @change="saveCurrency"
           >
             <option value="">
               {{ t('profile.currencyDefault') }} ({{ props.currencyPreference.base }})
@@ -328,22 +365,41 @@ function saveB2bAnswer(): void {
             {{ currencyForm.errors.preferred_currency }}
           </p>
         </div>
-        <div class="portal-form-actions">
-          <button
-            type="submit"
-            class="portal-button portal-button--primary"
-            :disabled="currencyForm.processing"
-          >
-            {{ t('profile.save') }}
-          </button>
+        <div
+          class="portal-currency-settings__status"
+          aria-live="polite"
+        >
           <p
-            v-if="currencySaved"
-            class="portal-copy"
+            v-if="currencySaveState === 'saving'"
+            class="portal-notice"
+            role="status"
+          >
+            {{ t('profile.saving') }}
+          </p>
+          <p
+            v-else-if="currencySaveState === 'saved'"
+            class="portal-notice"
+            role="status"
           >
             {{ t('profile.saved') }}
           </p>
+          <p
+            v-if="currencySaveError"
+            class="portal-error"
+            role="alert"
+          >
+            {{ currencySaveError }}
+          </p>
+          <button
+            v-if="currencySaveState === 'error'"
+            type="button"
+            class="portal-button portal-button--secondary self-start"
+            @click="saveCurrency"
+          >
+            {{ t('profile.retry') }}
+          </button>
         </div>
-      </form>
+      </section>
 
       <Link
         v-if="props.urls.family"
