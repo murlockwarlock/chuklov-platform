@@ -200,7 +200,8 @@ test('CRM title unread counter follows the authoritative total across pagination
     await notificationCenter.locator('[x-on\\:click="markAsRead()"]:not(.fi-no-notification-close-btn)').first().dispatchEvent('click');
     await expect.poll(() => page.title(), { timeout: 15_000 }).toBe(`(50) ${baseTitle}`);
 
-    await page.locator('.fi-no-database .fi-modal-trigger .fi-topbar-database-notifications-btn:visible').last().click();
+    await notificationCenter.locator('.fi-modal-close-btn').dispatchEvent('click');
+    await page.locator('.fi-no-database .fi-modal-trigger .fi-topbar-database-notifications-btn:visible').last().dispatchEvent('click');
     const reopenedCenter = page.locator('#database-notifications').last();
     await expect(reopenedCenter).toHaveCount(1);
     await reopenedCenter.locator('[wire\\:click="markAllNotificationsAsRead"]').dispatchEvent('click');
