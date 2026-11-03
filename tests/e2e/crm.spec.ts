@@ -4811,7 +4811,7 @@ test('automatic analytics suggestions follow a real source save into NeedsReview
         for (let attempt = 0; attempt < 60; attempt += 1) {
             for (let index = 0; index < await inputs.count(); index += 1) {
                 if (await inputs.nth(index).inputValue() === label) {
-                    return inputs.nth(index).locator('xpath=ancestor::li[1]');
+                    return page.locator('.fi-fo-repeater-item').filter({ has: inputs.nth(index) }).first();
                 }
             }
 
