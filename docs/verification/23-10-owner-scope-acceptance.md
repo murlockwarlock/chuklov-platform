@@ -16,7 +16,7 @@ HEAD without changing the application/runtime SHA or staging runtime.
 |---|---|
 | Current PR HEAD (pre-documentation handoff) | `8cbbcfae98b8c6fda15ad435029b116ff228c4c0` |
 | Current application/runtime SHA | `26583987f72bc38cc578fe38e27cf8dc2bb92f4f` |
-| Exact staging SHA | `26583987f72bc38cc578fe38e27cf8dc2bb92f4f` |
+| Exact staging SHA | `c7c268ccce29fcff1d08f828da0adba2aed8b33d` |
 | Branch / PR | `codex/23-10-medical-analytics` / #61 |
 | PR state | `Draft / Open / DO NOT MERGE` |
 | Owner acceptance | `IN PROGRESS` |
@@ -31,8 +31,9 @@ HEAD without changing the application/runtime SHA or staging runtime.
 | Focused Chromium | `41677520746` — 1/1 PASS on desktop |
 | WebKit | `NOT NEEDED` — CRM-only title/Livewire path |
 
-The next PR HEAD is documentation-only handoff metadata; historical evidence
-below remains valid and is not presented as the current runtime.
+The exact staging snapshot is `c7c268cc…`; later ledger-only metadata commits
+do not change the deployed application/runtime SHA. Historical evidence below
+remains valid and is not presented as the current runtime.
 
 ## Historical acceptance evidence — Medical final handoff (superseded runtime metadata; evidence retained)
 
