@@ -14,10 +14,10 @@ final class DatabaseNotifications extends FilamentDatabaseNotifications
     public function getTrigger(): ?View
     {
         $triggerView = (($this->position ?? filament()->getDatabaseNotificationsPosition()) === DatabaseNotificationsPosition::Topbar)
-            ? 'filament-panels::components.topbar.database-notifications-trigger'
-            : 'filament-panels::components.sidebar.database-notifications-trigger';
+            ? 'filament.notifications.topbar-database-notifications-trigger'
+            : 'filament.notifications.sidebar-database-notifications-trigger';
 
-        return view('filament.notifications.database-notifications-trigger', compact('triggerView'));
+        return view($triggerView);
     }
 
     public function getNotificationsQuery(): Builder|Relation

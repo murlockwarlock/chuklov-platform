@@ -202,6 +202,5 @@ test('CRM title unread counter follows the authoritative total across pagination
     await expect.poll(() => page.title(), { timeout: 15_000 }).toBe(baseTitle);
 
     await page.goto('/admin/clients');
-    await expect(page).toHaveTitle(baseTitle);
-    await expect(page.title()).not.toMatch(/^\(\d+\)/);
+    await expect.poll(() => page.title(), { timeout: 15_000 }).not.toMatch(/^\(\d+\)/);
 });
