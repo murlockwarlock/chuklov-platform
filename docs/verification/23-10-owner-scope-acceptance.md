@@ -5,7 +5,36 @@ This ledger reconciles the two primary owner sources, read in full:
 - `ТЗ_для_Ивана_заполнение_данных_клиента_23_10_26.md`;
 - `ФИЛЬТРЫ КЛИЕНТОВ.docx`.
 
-## Current Medical final handoff (authoritative for this review)
+## Current final handoff (authoritative)
+
+This block is the current F1/F2 handoff snapshot. The PR HEAD below is the
+last application/evidence candidate before this documentation-only update;
+the documentation commit that carries this block may advance the GitHub PR
+HEAD without changing the application/runtime SHA or staging runtime.
+
+| Item | Current value |
+|---|---|
+| Current PR HEAD (pre-documentation handoff) | `8cbbcfae98b8c6fda15ad435029b116ff228c4c0` |
+| Current application/runtime SHA | `26583987f72bc38cc578fe38e27cf8dc2bb92f4f` |
+| Exact staging SHA | `26583987f72bc38cc578fe38e27cf8dc2bb92f4f` |
+| Branch / PR | `codex/23-10-medical-analytics` / #61 |
+| PR state | `Draft / Open / DO NOT MERGE` |
+| Owner acceptance | `IN PROGRESS` |
+| Medical | `READY FOR OWNER ACCEPTANCE` |
+| Analytics | `READY FOR OWNER ACCEPTANCE` |
+| final Portal owner-remediation | `VERIFIED` |
+| final Astra finding F1 | `CLOSED after focused PostgreSQL and Chromium evidence` |
+| BLOCKING | `0` |
+| REAL BUG | `0` |
+| MATERIAL NOT VERIFIED | `0` |
+| Focused PostgreSQL | `41677945438` — integration foundation PASS; 150 tests / 593 assertions |
+| Focused Chromium | `41677520746` — 1/1 PASS on desktop |
+| WebKit | `NOT NEEDED` — CRM-only title/Livewire path |
+
+The next PR HEAD is documentation-only handoff metadata; historical evidence
+below remains valid and is not presented as the current runtime.
+
+## Historical acceptance evidence — Medical final handoff (superseded runtime metadata; evidence retained)
 
 This section is the fresh consolidated Medical evidence pack. It supersedes
 older Medical rows below; the analytics ledger is retained separately for audit
@@ -104,7 +133,7 @@ exact application SHA above. Owner acceptance remains `NOT RUN`.
 The older analytics-focused handoff and matrices below are retained as an
 audit trail and are not current Medical evidence.
 
-## Current Analytics final handoff (authoritative for this review)
+## Historical acceptance evidence — Analytics final handoff (superseded runtime metadata; evidence retained)
 
 This is the one fresh consolidated Analytics evidence pack for the final
 implementation pass. It supersedes the older Analytics rows below; no old run
