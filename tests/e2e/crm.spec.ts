@@ -2753,14 +2753,14 @@ test('owner remediation configuration pages explain empty states and usage', asy
     const accountSection = page.getByRole('heading', { name: 'Счета и кассы', exact: true }).locator('xpath=ancestor::section[1]');
     await accountSection.getByRole('button', { name: 'Добавить счёт или кассу', exact: true }).click();
     const accountItem = accountSection.locator('.fi-fo-repeater-item').last();
-    await accountItem.getByRole('textbox', { name: 'Название', exact: true }).fill(accountName);
-    await accountItem.getByRole('combobox', { name: 'Тип', exact: true }).selectOption('bank');
-    await accountItem.getByRole('combobox', { name: 'Валюта', exact: true }).selectOption('USD');
+    await accountItem.getByRole('textbox', { name: /^Название/ }).fill(accountName);
+    await accountItem.getByRole('combobox', { name: /^Тип/ }).selectOption('bank');
+    await accountItem.getByRole('combobox', { name: /^Валюта/ }).selectOption('USD');
 
     const categorySection = page.getByRole('heading', { name: 'Категории расходов', exact: true }).locator('xpath=ancestor::section[1]');
     await categorySection.getByRole('button', { name: 'Добавить категорию', exact: true }).click();
     const categoryItem = categorySection.locator('.fi-fo-repeater-item').last();
-    await categoryItem.getByRole('textbox', { name: 'Название', exact: true }).fill(categoryName);
+    await categoryItem.getByRole('textbox', { name: /^Название/ }).fill(categoryName);
     await page.getByRole('button', { name: 'Сохранить справочники', exact: true }).click();
     await page.waitForTimeout(500);
 
