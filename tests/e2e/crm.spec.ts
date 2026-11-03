@@ -2791,6 +2791,78 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await page.waitForTimeout(500);
     await expect(page.getByText('Перед выбором времени клиент увидит: Контактное лицо.', { exact: true })).toBeVisible();
 
+    const portalFixture = JSON.parse(execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+            'full_name' => 'B2B QA Client '.\\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(8)),
+            'first_name' => 'B2B',
+            'last_name' => 'QA Client',
+            'language' => 'ru',
+            'timezone' => 'UTC',
+        ]);
+        $sessionId = \\Illuminate\\Support\\Str::random(40);
+        $sessionData = json_encode([
+            '_token' => \\Illuminate\\Support\\Str::random(40),
+            'client_portal' => ['client_id' => $client->getKey()],
+        ], JSON_THROW_ON_ERROR);
+        $sessionPayload = config('session.encrypt') ? app('encrypter')->encrypt($sessionData) : $sessionData;
+        \\Illuminate\\Support\\Facades\\DB::table('sessions')->insert([
+            'id' => $sessionId,
+            'user_id' => null,
+            'ip_address' => '127.0.0.1',
+            'user_agent' => 'Playwright B2B QA',
+            'payload' => base64_encode($sessionPayload),
+            'last_activity' => time(),
+        ]);
+        $cookieName = (string) config('session.cookie');
+        $cookieValue = app('encrypter')->encrypt(
+            \\Illuminate\\Cookie\\CookieValuePrefix::create($cookieName, app('encrypter')->getKey()).$sessionId,
+            false,
+        );
+        echo json_encode(['cookieName' => $cookieName, 'cookieValue' => $cookieValue]);
+    `], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            APP_ENV: 'e2e',
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+            MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
+            XDG_CONFIG_HOME: `/tmp/chuklov-b2b-portal-${process.pid}`,
+        },
+    }).trim().split('\n').at(-1) ?? '{}') as { cookieName: string; cookieValue: string };
+    const browser = page.context().browser();
+    if (browser === null) {
+        throw new Error('The hosted browser is unavailable for the B2B client check.');
+    }
+    const portalContext = await browser.newContext();
+    const portalPage = await portalContext.newPage();
+    await portalPage.context().addCookies([{
+        name: portalFixture.cookieName,
+        value: portalFixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+    await portalPage.goto('/portal/b2b');
+    await portalPage.getByRole('radio', { name: 'Да', exact: true }).check();
+    await portalPage.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(portalPage.getByRole('heading', { name: 'Запросить разговор о бизнесе', exact: true })).toBeVisible();
+    await expect(portalPage.getByLabel('Контактное лицо', { exact: true })).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Опубликовать для клиентов', exact: true }).click();
+    const publishDialog = page.locator('.fi-modal-window:visible').last();
+    await publishDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await expect(page.getByText('Поля заявки опубликованы', { exact: true })).toBeVisible();
+
+    await portalPage.reload();
+    await expect(portalPage.getByLabel('Контактное лицо', { exact: true })).toBeVisible();
+    await expect(portalPage.getByLabel('Контактное лицо', { exact: true })).not.toBeRequired();
+    await portalContext.close();
+
     await page.goto(`/admin/content-sections/${storyId}/edit`);
     await expect(page.getByRole('heading', { name: 'Редактировать раздел контента', exact: true })).toBeVisible();
     await expect(page.getByText('Статус показа на главной', { exact: true })).toBeVisible();
