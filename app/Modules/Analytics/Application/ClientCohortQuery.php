@@ -167,7 +167,11 @@ final readonly class ClientCohortQuery
                     ->whereColumn('tasks.client_id', 'clients.id')
                     ->where('tasks.organization_id', $organizationId)
                     ->whereIn('links.tracker_goal_tag_id', $filters->goalTagIds);
-                $this->applyPeriod($subquery, 'tasks.created_at', $period);
+                if ($period !== null) {
+                    $subquery
+                        ->where('tasks.starts_on', '>=', $period->startDate)
+                        ->where('tasks.starts_on', '<=', $period->endDate);
+                }
             });
         }
         if ($filters->serviceIds !== [] || $filters->serviceCategories !== [] || $filters->specialistIds !== [] || $filters->bookingStatuses !== []) {
@@ -335,7 +339,11 @@ final readonly class ClientCohortQuery
                         ->whereColumn('aggregate_tasks.client_id', 'clients.id')
                         ->where('aggregate_tasks.organization_id', $organizationId)
                         ->where('aggregate_links.tracker_goal_tag_id', $value);
-                    $this->applyPeriod($subquery, 'aggregate_tasks.created_at', $period);
+                    if ($period !== null) {
+                        $subquery
+                            ->where('aggregate_tasks.starts_on', '>=', $period->startDate)
+                            ->where('aggregate_tasks.starts_on', '<=', $period->endDate);
+                    }
                 });
 
                 return;

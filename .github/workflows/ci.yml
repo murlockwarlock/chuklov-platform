@@ -17,6 +17,7 @@ on:
           - integration-foundation
           - integration-rag
           - integration-concurrency
+          - analytics-postgres
           - medical
           - privacy
           - docker
@@ -234,6 +235,67 @@ jobs:
         run: make check-app-key
       - name: Run foundation integration tests
         run: make test-integration-foundation
+
+  analytics-postgres:
+    if: ${{ inputs.scope == 'analytics-postgres' }}
+    name: Analytics PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:0.8.2-pg18-trixie
+        env:
+          POSTGRES_DB: chuklov_test
+          POSTGRES_USER: chuklov
+          POSTGRES_PASSWORD: chuklov_local
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chuklov -d chuklov_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      APP_ENV: testing
+      APP_DEBUG: false
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: chuklov_test
+      DB_USERNAME: chuklov
+      DB_PASSWORD: chuklov_local
+      CACHE_STORE: array
+      QUEUE_CONNECTION: sync
+      DEFAULT_ORGANIZATION_ID: 1
+    steps:
+      - uses: actions/checkout@v5
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: intl, pcntl, pdo_pgsql, zip
+          coverage: none
+      - name: Resolve Composer cache directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-dir)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: composer-${{ runner.os }}-php-8.5-${{ hashFiles('composer.lock') }}
+          restore-keys: |
+            composer-${{ runner.os }}-php-8.5-
+      - name: Validate Composer metadata
+        run: composer validate --strict
+      - name: Install backend dependencies
+        run: composer install --no-interaction --prefer-dist
+      - name: Initialize application environment
+        run: cp .env.example .env && scripts/initialize-app-key.sh php artisan key:generate --no-interaction
+      - name: Migrate PostgreSQL schema
+        run: php artisan migrate --seed --force
+      - name: Confirm PostgreSQL connection
+        run: php artisan db:show --database=pgsql
+      - name: Run focused Analytics PostgreSQL tests
+        run: |
+          php artisan test tests/Feature/Analytics tests/Feature/FeedbackThemesAnalyticsTest.php tests/Feature/M11AAttributionFeedbackTest.php tests/Integration/MilestoneElevenCAnalyticsPostgresTest.php
+          php artisan test tests/Integration/MilestoneElevenAConcurrencyTest.php --filter 'analytics|nps'
 
   integration-rag:
     if: ${{ inputs.scope == 'full' || inputs.scope == 'integration' || inputs.scope == 'integration-rag' }}

@@ -41,6 +41,8 @@ final class GoalAnalyticsTest extends TestCase
             'active' => true,
             'display_order' => 1,
             'created_by_user_id' => $admin->getKey(),
+            'created_at' => '2026-11-01 10:00:00',
+            'updated_at' => '2026-11-01 10:00:00',
         ]);
         $task->goalTags()->syncWithPivotValues([$tag->getKey()], [
             'organization_id' => $organization->getKey(),
@@ -84,6 +86,8 @@ final class GoalAnalyticsTest extends TestCase
             'active' => true,
             'display_order' => 1,
             'created_by_user_id' => $admin->getKey(),
+            'created_at' => '2026-11-01 10:00:00',
+            'updated_at' => '2026-11-01 10:00:00',
         ]);
         $task->goalTags()->syncWithPivotValues([$sleep->getKey()], [
             'organization_id' => $organization->getKey(),
@@ -99,6 +103,8 @@ final class GoalAnalyticsTest extends TestCase
             'active' => true,
             'display_order' => 2,
             'created_by_user_id' => $admin->getKey(),
+            'created_at' => '2026-11-01 10:00:00',
+            'updated_at' => '2026-11-01 10:00:00',
         ]);
         $secondTask->goalTags()->syncWithPivotValues([$movement->getKey()], [
             'organization_id' => $organization->getKey(),

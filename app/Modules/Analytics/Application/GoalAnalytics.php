@@ -52,8 +52,8 @@ final readonly class GoalAnalytics
                     ->on('tags.id', '=', 'links.tracker_goal_tag_id');
             })
             ->where('links.organization_id', $organizationId)
-            ->where('tasks.created_at', '>=', $period->startUtc)
-            ->where('tasks.created_at', '<', $period->endUtc)
+            ->where('tasks.starts_on', '>=', $period->startDate)
+            ->where('tasks.starts_on', '<=', $period->endDate)
             ->when($clientId !== null, fn ($query) => $query->where('tasks.client_id', $clientId))
             ->when($goalTagId !== null, fn ($query) => $query->where('links.tracker_goal_tag_id', $goalTagId))
             ->when($cohortFilters !== null, function ($query) use ($cohortFilters, $period): void {
