@@ -2747,7 +2747,7 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await expect(sourceItems).toHaveCount(12);
     await expect(sourcesSection.getByRole('textbox', { name: 'Название в аналитике', exact: true })).toHaveCount(0);
 
-    const instagramSource = sourceItems.filter({ hasText: /^Instagram/ }).first();
+    const instagramSource = sourceItems.filter({ hasText: 'Instagram' }).first();
     await expect(instagramSource).toBeVisible();
     await instagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
     await expect(instagramSource.getByRole('textbox', { name: 'Название в аналитике', exact: true })).toHaveValue('Instagram');
@@ -2760,7 +2760,7 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await page.reload();
     const reloadedSourceSection = page.getByRole('heading', { name: 'Категории источников', exact: true }).locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-section ")][1]');
     const reloadedSourceItems = reloadedSourceSection.locator('xpath=.//*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ") and not(ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ")])]');
-    const reloadedInstagramSource = reloadedSourceItems.filter({ hasText: /^Instagram/ }).first();
+    const reloadedInstagramSource = reloadedSourceItems.filter({ hasText: 'Instagram' }).first();
     await reloadedInstagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
     await expect(reloadedInstagramSource.getByRole('textbox', { name: 'Вариант названия', exact: true }).last()).toHaveValue(sourceAlias);
 
