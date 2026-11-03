@@ -1292,7 +1292,7 @@ function runAnalyticsClassificationWorker(): Promise<void> {
             'queue:work',
             'redis',
             '--queue=analytics-classification',
-            '--once',
+            '--stop-when-empty',
             '--tries=1',
             '--timeout=45',
         ], {
