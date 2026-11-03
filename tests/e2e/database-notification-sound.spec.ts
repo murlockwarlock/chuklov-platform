@@ -196,6 +196,10 @@ test('CRM title unread counter follows the authoritative total across pagination
             display: getComputedStyle(element).display,
             style: element.getAttribute('style'),
             xCloak: element.hasAttribute('x-cloak'),
+            connected: element.isConnected,
+            parent: element.parentElement?.tagName ?? null,
+            parentClass: element.parentElement?.className ?? null,
+            xIsShown: (element as HTMLElement & { _x_isShown?: boolean })._x_isShown ?? null,
             rect: element.getBoundingClientRect().toJSON(),
             state: stack?.[0] ?? null,
         };
