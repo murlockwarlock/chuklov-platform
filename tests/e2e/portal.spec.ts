@@ -2510,6 +2510,36 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await expect(page.getByText(/Playwright Service/)).toHaveCount(1);
 });
 
+test('authenticated client can confirm a booking with partial personal data', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Продолжить' }).click();
+
+    await page.getByLabel('Фамилия', { exact: true }).fill('');
+    await page.getByLabel('Имя', { exact: true }).fill('');
+    await page.getByLabel('Отчество', { exact: true }).fill('');
+    await page.getByLabel('Дата рождения', { exact: true }).fill('');
+    await page.getByLabel('Страна', { exact: true }).fill('');
+    await page.getByLabel('Город', { exact: true }).fill('Астана');
+    await page.getByLabel('Телефон', { exact: true }).fill('');
+    await page.getByLabel('E-mail', { exact: true }).fill('');
+    await acceptRequiredConsents(page);
+    await page.getByRole('button', { name: 'Подтвердить запись' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Запись создана.' })).toBeVisible();
+    await page.goto('/portal/profile');
+    await expect(page.getByLabel('Город', { exact: true })).toHaveValue('Астана');
+    await expect(page.getByLabel('Имя', { exact: true })).toHaveValue('Playwright');
+});
+
 test('September 26 confirmed profile persists and the medical editor saves then reopens', async ({ page }) => {
     test.setTimeout(60_000);
     const fixture = createBookingFixture();
