@@ -10,7 +10,5 @@
         : __('filament-panels::layout.actions.open_database_notifications.label')
     "
     class="fi-topbar-database-notifications-btn"
-    x-data="{}"
-    x-on:click="$dispatch('open-modal', { id: 'database-notifications' })"
-    wire:click="$dispatch('open-modal', { id: 'database-notifications' })"
+    onclick="window.dispatchEvent(new CustomEvent('open-modal', { detail: { id: 'database-notifications' } }))"
 />
