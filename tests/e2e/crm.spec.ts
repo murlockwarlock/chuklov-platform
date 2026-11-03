@@ -2765,8 +2765,9 @@ test('owner remediation configuration pages explain empty states and usage', asy
     await page.waitForTimeout(500);
 
     await page.goto('/admin/finance-expense-entry');
-    await accountSelect.selectOption({ label: `${accountName} (USD)` });
-    await page.getByRole('combobox', { name: /^Категория/ }).selectOption({ label: categoryName });
+    await selectAnalyticsOption(page, accountSelect, `${accountName} (USD)`);
+    const categorySelect = page.getByRole('combobox', { name: /^Категория/ });
+    await selectAnalyticsOption(page, categorySelect, categoryName);
     await page.getByRole('spinbutton', { name: /^Сумма/ }).fill('25');
     await page.getByRole('button', { name: 'Записать расход', exact: true }).click();
     await expect(page.getByText('Расход записан', { exact: true })).toBeVisible({ timeout: 20_000 });
