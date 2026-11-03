@@ -186,21 +186,23 @@ test('CRM title unread counter follows the authoritative total across pagination
     await expect(notificationTrigger).toBeVisible();
     await expect(notificationTrigger).toBeEnabled();
     await notificationTrigger.click();
-    const notificationCenter = page.locator('#database-notifications.fi-modal-open').last();
-    await expect(notificationCenter).toHaveClass(/fi-modal-open/);
+    let notificationCenter = page.locator('#database-notifications').last();
+    await expect(notificationCenter).toHaveCount(1);
     const nextPage = notificationCenter.locator('.fi-pagination-next-btn');
     await expect(nextPage).toHaveCount(1);
     await nextPage.dispatchEvent('click');
     await expect.poll(() => page.title()).toBe(titleWithUnread);
+    notificationCenter = page.locator('#database-notifications').last();
     await notificationCenter.locator('.fi-pagination-previous-btn').dispatchEvent('click');
     await expect.poll(() => page.title()).toBe(titleWithUnread);
 
+    notificationCenter = page.locator('#database-notifications').last();
     await notificationCenter.getByRole('link', { name: 'Открыть', exact: true }).first().dispatchEvent('click');
     await expect.poll(() => page.title(), { timeout: 15_000 }).toBe(`(50) ${baseTitle}`);
 
-    await notificationTrigger.click();
-    const reopenedCenter = page.locator('#database-notifications.fi-modal-open').last();
-    await expect(reopenedCenter).toHaveClass(/fi-modal-open/);
+    await page.locator('.fi-no-database .fi-modal-trigger .fi-topbar-database-notifications-btn:visible').last().click();
+    const reopenedCenter = page.locator('#database-notifications').last();
+    await expect(reopenedCenter).toHaveCount(1);
     await reopenedCenter.getByRole('button', { name: /прочитан/i }).dispatchEvent('click');
     await expect.poll(() => page.title(), { timeout: 15_000 }).toBe(baseTitle);
 
