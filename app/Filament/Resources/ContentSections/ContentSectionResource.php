@@ -104,6 +104,11 @@ class ContentSectionResource extends LocalizedResource
             'partner' => __('Партнёрам'),
             'communities' => __('Сообщества'),
             'hidden' => __('Скрытый раздел'),
+            'story_author' => __('Кто такой Евгений Чуклов (видео)'),
+            'story_history' => __('История мастера (видео)'),
+            'story_method' => __('Авторский метод (видео)'),
+            'story_details' => __('Подробно о методике (видео)'),
+            'telegram_welcome' => __('Приветствие Telegram'),
             default => __('Раздел'),
         };
     }

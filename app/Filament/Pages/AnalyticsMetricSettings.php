@@ -105,6 +105,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
                         ->live(),
                     Repeater::make('metrics')
                         ->label(__('Метрики'))
+                        ->helperText(__('Каждый показатель оформлен отдельной карточкой: заголовок и кнопка удаления относятся только к нему.'))
                         ->schema([
                             Hidden::make('id')->dehydrated(true),
                             Hidden::make('stable_key')->dehydrated(true),
@@ -222,6 +223,7 @@ final class AnalyticsMetricSettings extends LocalizedPage
                         ->itemLabel(fn (array $state): ?string => is_string($state['name'] ?? null) ? $state['name'] : null)
                         ->defaultItems(0)
                         ->addActionLabel(__('Добавить метрику'))
+                        ->collapsible()
                         ->reorderable(false)
                         ->columnSpanFull(),
                 ])

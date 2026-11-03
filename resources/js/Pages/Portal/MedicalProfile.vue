@@ -553,11 +553,11 @@ function save(): void {
           </button>
         </form>
         <template v-else>
-          <section class="portal-panel portal-panel--compact portal-stack medical-profile__assessment">
-            <div
-              v-if="profile.answers.symptoms?.length"
-              class="medical-profile__symptoms"
-            >
+          <section
+            v-if="profile.answers.symptoms?.length"
+            class="portal-panel portal-panel--compact portal-stack medical-profile__assessment"
+          >
+            <div class="medical-profile__symptoms">
               <span
                 v-for="symptom in profile.answers.symptoms"
                 :key="symptom"

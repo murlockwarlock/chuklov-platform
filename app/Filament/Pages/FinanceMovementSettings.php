@@ -67,7 +67,7 @@ final class FinanceMovementSettings extends LocalizedPage
 
         return $schema->components([
             Section::make(__('Счета и кассы'))
-                ->description(__('Названия и активность можно менять без изменения истории операций.'))
+                ->description(__('Эти варианты появляются в форме расхода и показывают, откуда списаны деньги. Названия и активность можно менять без изменения истории операций.'))
                 ->schema([
                     Repeater::make('accounts')
                         ->label(__('Счета и кассы'))
@@ -86,6 +86,7 @@ final class FinanceMovementSettings extends LocalizedPage
                 ])
                 ->columnSpanFull(),
             Section::make(__('Категории расходов'))
+                ->description(__('Категории помогают группировать расходы в финансовом отчёте и появляются в форме добавления расхода.'))
                 ->schema([
                     Repeater::make('categories')
                         ->label(__('Категории расходов'))

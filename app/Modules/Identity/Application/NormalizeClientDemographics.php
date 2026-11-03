@@ -53,16 +53,16 @@ final class NormalizeClientDemographics
             $lastName = array_key_exists('last_name', $normalized) ? $normalized['last_name'] : $client?->last_name;
             $middleName = array_key_exists('middle_name', $normalized) ? $normalized['middle_name'] : $client?->middle_name;
             if ($firstName !== null || $lastName !== null || $middleName !== null) {
-                if ($firstName === null || $lastName === null) {
-                    throw ValidationException::withMessages(['first_name' => 'Укажите имя и фамилию.']);
-                }
                 $fullName = implode(' ', array_filter([$lastName, $firstName, $middleName], static fn (?string $part): bool => $part !== null));
                 if (mb_strlen($fullName) > 160) {
                     throw ValidationException::withMessages(['first_name' => 'ФИО должно содержать не более 160 символов.']);
                 }
                 $normalized['full_name'] = $fullName;
-                $normalized['name_confirmed_at'] = ($client === null ? null : $client->name_confirmed_at) ?? CarbonImmutable::now('UTC');
+                $normalized['name_confirmed_at'] = $firstName !== null && $lastName !== null
+                    ? (($client === null ? null : $client->name_confirmed_at) ?? CarbonImmutable::now('UTC'))
+                    : null;
             } else {
+                $normalized['full_name'] = null;
                 $normalized['name_confirmed_at'] = null;
             }
         } elseif (array_key_exists('full_name', $attributes) && $attributes['full_name'] !== $client?->full_name) {

@@ -16,6 +16,7 @@ use App\Modules\Sessions\Domain\Models\MedicalTestValue;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -26,6 +27,7 @@ use Filament\Schemas\Components\Component;
 use Filament\Schemas\Components\EmbeddedSchema;
 use Filament\Schemas\Components\Form;
 use Filament\Schemas\Components\Section;
+use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Illuminate\Http\UploadedFile;
@@ -120,8 +122,13 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
         return $schema
             ->components([
                 Section::make(__('Тесты'))
-                    ->description(__('Создавайте и меняйте каталог тестов и значения до/после без изменения программы.'))
+                    ->description(__('Эти тесты появляются у специалиста в блоке «Кинезиологические/мануальные тесты» медицинского сеанса. Отключённые значения нельзя выбрать заново, но они остаются читаемыми в истории. Например: «Название теста» и его допустимые значения.'))
                     ->schema([
+                        Placeholder::make('tests_empty')
+                            ->label(__('Каталог пока пуст'))
+                            ->content(__('Добавьте первый тест кнопкой «Добавить тест». После сохранения он станет доступен в новом медицинском сеансе.'))
+                            ->visible(fn (Get $get): bool => ! is_array($get('tests')) || $get('tests') === [])
+                            ->columnSpanFull(),
                         Repeater::make('tests')
                             ->schema([
                                 Hidden::make('key')->default(fn (): string => 'test_'.Str::lower(Str::random(12))),
@@ -141,8 +148,13 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                             ])->columns(2)->defaultItems(0)->reorderable()->collapsible()->addActionLabel(__('Добавить тест'))->columnSpanFull(),
                     ])->columnSpanFull(),
                 Section::make(__('Причины нарушений'))
-                    ->description(__('Справочник причин используется для ручного выбора по каждому тесту с выявленным нарушением.'))
+                    ->description(__('Причины из этого списка доступны специалисту для ручной корректировки в медицинском сеансе после выявленного нарушения. Отключённые причины нельзя выбирать заново, но они сохраняются в истории. Например: «Название причины».'))
                     ->schema([
+                        Placeholder::make('causes_empty')
+                            ->label(__('Справочник пока пуст'))
+                            ->content(__('Добавьте первую причину кнопкой «Добавить причину».'))
+                            ->visible(fn (Get $get): bool => ! is_array($get('causes')) || $get('causes') === [])
+                            ->columnSpanFull(),
                         Repeater::make('causes')
                             ->schema([
                                 TextInput::make('name')->label(__('Название причины'))->required()->maxLength(255),
@@ -152,8 +164,13 @@ final class MedicalClinicalCatalogConfiguration extends LocalizedPage
                             ])->columns(2)->defaultItems(0)->reorderable()->addActionLabel(__('Добавить причину'))->columnSpanFull(),
                     ])->columnSpanFull(),
                 Section::make(__('Категории проблем'))
-                    ->description(__('Нормализованные категории используются для статистики боли и не заменяют защищённый текст жалобы.'))
+                    ->description(__('Категории из этого списка используются для классификации жалоб и статистики боли. Они не заменяют свободный текст жалобы. Отключённые категории остаются читаемыми в истории. Например: «Категория проблемы».'))
                     ->schema([
+                        Placeholder::make('problem_tags_empty')
+                            ->label(__('Категории пока не настроены'))
+                            ->content(__('Добавьте первую категорию кнопкой «Добавить категорию», чтобы использовать её в профиле и медицинском сеансе.'))
+                            ->visible(fn (Get $get): bool => ! is_array($get('problem_tags')) || $get('problem_tags') === [])
+                            ->columnSpanFull(),
                         Repeater::make('problem_tags')
                             ->schema([
                                 TextInput::make('name')->label(__('Название категории'))->required()->maxLength(255),

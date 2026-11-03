@@ -13,6 +13,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
@@ -83,8 +84,16 @@ final class B2bFormConfiguration extends LocalizedPage
         return $schema
             ->components([
                 Section::make(__('Поля заявки'))
-                    ->description(__('Добавьте поля, которые клиент заполнит перед выбором времени разговора. Ключи создаются автоматически и не показываются клиенту.'))
+                    ->description(__('Здесь вы настраиваете вопросы для бизнес-клиента. Клиент увидит опубликованные вопросы перед выбором времени разговора. Например: «Название компании», «Чем можем помочь?», «Количество сотрудников».'))
                     ->schema([
+                        Placeholder::make('client_form_help')
+                            ->label(__('Как работает публикация'))
+                            ->content(__('«Сохранить черновик» сохраняет текущую версию только для команды. «Опубликовать для клиентов» делает её видимой в форме клиента. «Показывать клиенту» включает или скрывает вопрос, «Обязательное поле» требует ответ, а «Порядок» задаёт последовательность.'))
+                            ->columnSpanFull(),
+                        Placeholder::make('client_form_preview')
+                            ->label(__('Пример формы клиента'))
+                            ->content(fn (Get $get): string => self::previewText($get('fields')))
+                            ->columnSpanFull(),
                         Repeater::make('fields')
                             ->label(__('Поля'))
                             ->schema([
@@ -162,5 +171,23 @@ final class B2bFormConfiguration extends LocalizedPage
             ->firstOrFail();
         app(PublishB2bFormConfiguration::class)->handle($actor, $draft);
         Notification::make()->success()->title(__('Поля заявки опубликованы'))->send();
+    }
+
+    private static function previewText(mixed $fields): string
+    {
+        if (! is_array($fields) || $fields === []) {
+            return __('Пока нет вопросов. Добавьте поле, чтобы увидеть пример здесь.');
+        }
+
+        $labels = collect($fields)
+            ->filter(static fn (mixed $field): bool => is_array($field) && ($field['active'] ?? true) === true)
+            ->map(static fn (array $field): string => trim((string) ($field['label'] ?? '')))
+            ->filter()
+            ->take(3)
+            ->values();
+
+        return $labels->isEmpty()
+            ? __('Опубликованных вопросов пока нет.')
+            : __('Перед выбором времени клиент увидит: :fields.', ['fields' => $labels->implode(', ')]);
     }
 }

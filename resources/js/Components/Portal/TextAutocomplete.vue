@@ -7,6 +7,7 @@ const props = withDefaults(defineProps<{ id: string; modelValue: string; suggest
 const emit = defineEmits<{
     'update:modelValue': [value: string];
     focus: [];
+    blur: [];
 }>();
 const root = ref<HTMLElement | null>(null);
 const input = ref<HTMLInputElement | null>(null);
@@ -69,6 +70,7 @@ function focusout(event: FocusEvent): void {
     if (!(event.relatedTarget instanceof Node) || !root.value?.contains(event.relatedTarget)) {
         open.value = false;
         active.value = -1;
+        emit('blur');
     }
 }
 

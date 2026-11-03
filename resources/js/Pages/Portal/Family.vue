@@ -177,10 +177,12 @@ function revoke(): void {
     :portal="props.portal"
   >
     <main class="portal-container portal-stack portal-stack--loose">
-      <header class="portal-family-header">
-        <h1 class="portal-heading">
-          {{ t('family.title') }}
-        </h1>
+      <header class="portal-page-heading">
+        <div class="portal-stack portal-stack--tight">
+          <h1 class="portal-heading portal-heading--section">
+            {{ t('family.title') }}
+          </h1>
+        </div>
         <div class="portal-family-header__actions">
           <Link
             :href="props.urls.profile"
@@ -226,14 +228,6 @@ function revoke(): void {
             {{ t('family.unlinked') }}
           </p>
           <div class="portal-family-card__actions">
-            <button
-              v-if="patient.canEdit"
-              type="button"
-              class="portal-link"
-              @click="openPatient(patient)"
-            >
-              {{ t('medical.edit') }}
-            </button>
             <Link
               v-if="patient.canBook"
               :href="patient.bookingUrl"
@@ -242,6 +236,14 @@ function revoke(): void {
             >
               {{ t('family.book') }}
             </Link>
+            <button
+              v-if="patient.canEdit"
+              type="button"
+              class="portal-button portal-button--secondary"
+              @click="openPatient(patient)"
+            >
+              {{ t('medical.edit') }}
+            </button>
             <Link
               v-if="patient.medicalUrl"
               :href="patient.medicalUrl"
@@ -262,7 +264,7 @@ function revoke(): void {
               v-if="patient.canRevoke"
               type="button"
               :disabled="revokeProcessing"
-              class="portal-link"
+              class="portal-link portal-link--danger"
               @click="askRevoke(patient)"
             >
               {{ t('family.unlink') }}
@@ -442,15 +444,6 @@ function revoke(): void {
 </template>
 
 <style scoped>
-.portal-family-header {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: var(--portal-space-4);
-}
-
 .portal-family-header__actions {
     display: flex;
     min-width: 0;
@@ -486,9 +479,18 @@ function revoke(): void {
 .portal-family-card__actions {
     display: flex;
     min-width: 0;
-    align-items: center;
+    align-items: stretch;
     flex-wrap: wrap;
     gap: var(--portal-space-2) var(--portal-space-3);
+}
+
+.portal-family-card__actions .portal-link--danger {
+    color: var(--portal-color-danger, #b42318);
+}
+
+.portal-family-card__actions > .portal-button,
+.portal-family-card__actions > .portal-link {
+    max-width: 100%;
 }
 
 @media (max-width: 40rem) {
@@ -499,6 +501,13 @@ function revoke(): void {
 
     .portal-family-header__actions > .portal-button {
         flex: 1 1 auto;
+    }
+
+    .portal-family-card__actions > .portal-button,
+    .portal-family-card__actions > .portal-link {
+        flex: 1 1 100%;
+        justify-content: center;
+        text-align: center;
     }
 }
 </style>

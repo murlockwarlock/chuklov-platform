@@ -96,8 +96,13 @@ class ContentSectionForm
                     ])
                     ->columnSpanFull(),
                 Section::make(__('Видео'))
-                    ->description(__('Сохраните раздел, затем загрузите MP4 через кнопку «Загрузить видео». Для приветствия — до 60 секунд.'))
+                    ->description(__('Для видео на главной выберите один из разделов «Видео», сохраните запись, включите показ и загрузите MP4 через кнопку «Загрузить видео». Пока видео нет, раздел не появится клиенту.'))
                     ->schema([
+                        Placeholder::make('home_visibility_status')
+                            ->label(__('Статус показа на главной'))
+                            ->content(fn (?ContentSection $record, Get $get): string => self::homeVisibilityStatus($record, $get))
+                            ->visible(fn (Get $get): bool => self::isStoryKey($get('section_key')))
+                            ->columnSpanFull(),
                         TextInput::make('media.subtitles')
                             ->label(__('Ссылка на субтитры WebVTT'))
                             ->helperText(__('Или загрузите файл кнопкой «Загрузить субтитры» после сохранения раздела.'))
@@ -134,7 +139,9 @@ class ContentSectionForm
                                 }
                                 $url = app(ContentVideoUrlResolver::class)->resolve($record);
 
-                                return $url === null ? (string) __('Видео не загружено') : new HtmlString('<video controls preload="metadata" style="max-width:100%;max-height:320px" src="'.e($url).'"></video>');
+                                return $url === null
+                                    ? (string) __('Видео не загружено. Загрузите MP4 после сохранения раздела, чтобы он мог показываться клиентам.')
+                                    : new HtmlString('<video controls preload="metadata" style="max-width:100%;max-height:320px" src="'.e($url).'"></video>');
                             }),
                     ])->columnSpanFull(),
                 Section::make(__('Официальные сообщества'))
@@ -313,6 +320,32 @@ class ContentSectionForm
             : __('Внешняя ссылка');
 
         return __(':kind. Новая загрузка или ссылка заменит текущее изображение после сохранения.', ['kind' => $kind]);
+    }
+
+    private static function homeVisibilityStatus(?ContentSection $record, Get $get): string
+    {
+        if (! self::isStoryKey((string) $get('section_key'))) {
+            return __('Этот раздел не используется в блоке видео на главной.');
+        }
+        if (! $record instanceof ContentSection) {
+            return __('Сначала сохраните раздел, затем загрузите видео и включите показ.');
+        }
+        if (! $record->is_visible) {
+            return __('Не опубликовано. Включите «Показывать» в разделе «Показ и порядок».');
+        }
+        if (! in_array($record->delivery_mode, [ContentDeliveryMode::MiniApp, ContentDeliveryMode::Both], true)) {
+            return __('Не показывается на главной. Выберите показ в Portal.');
+        }
+        if (app(ContentVideoUrlResolver::class)->resolve($record) === null) {
+            return __('Видео не загружено. Загрузите MP4 кнопкой «Загрузить видео».');
+        }
+
+        return __('Показывается на главной после обновления страницы.');
+    }
+
+    private static function isStoryKey(string $key): bool
+    {
+        return in_array($key, ['story_author', 'story_history', 'story_method', 'story_details'], true);
     }
 
     private static function previewMessage(Get $get, ?Model $record): NotificationMessage

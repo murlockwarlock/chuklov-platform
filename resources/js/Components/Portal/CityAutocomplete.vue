@@ -8,6 +8,7 @@ const props = defineProps<{ id: string; modelValue: string; country: string; cit
 const emit = defineEmits<{
     'update:modelValue': [value: string];
     'lookup-loading': [loading: boolean];
+    blur: [];
 }>();
 const { locale, t } = usePortalLocale();
 const cities = ref<string[]>([]);
@@ -78,5 +79,6 @@ onBeforeUnmount(() => { ++generation; if (timer) clearTimeout(timer); lookup.can
     :empty-text="t(loading ? 'profile.cityLoading' : failed ? 'profile.cityUnavailable' : 'profile.cityNoMatch')"
     @focus="activate"
     @update:model-value="emit('update:modelValue', $event)"
+    @blur="emit('blur')"
   />
 </template>
