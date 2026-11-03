@@ -1593,7 +1593,7 @@ test('authenticated Portal pages keep one navigation and page-header contract', 
 
     for (const route of routes) {
         const response = await page.goto(route.path);
-        expect(response?.status()).toBe(200);
+        expect(response?.status(), route.path).toBe(200);
         await expect(page.getByRole('heading', { name: new RegExp(route.heading) }).first()).toBeVisible();
         await expect(page.locator('.portal-bottom-nav')).toBeVisible();
         await expect(page.locator('.portal-bottom-nav__link--active')).toHaveCount(1);
