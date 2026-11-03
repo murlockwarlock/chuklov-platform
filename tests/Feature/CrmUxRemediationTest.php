@@ -182,6 +182,29 @@ final class CrmUxRemediationTest extends TestCase
         self::assertSame('14rem', $broadcastResult->getWidth());
     }
 
+    public function test_booking_workspace_excludes_archived_clients(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture(includePeople: true);
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Cancelled->value,
+                'visit_format' => VisitFormat::Office->value,
+                'starts_at' => CarbonImmutable::now()->addDay(),
+                'ends_at' => CarbonImmutable::now()->addDay()->addHour(),
+                'blocking_ends_at' => CarbonImmutable::now()->addDay()->addHour(),
+            ]);
+        $client->forceFill(['archived_at' => CarbonImmutable::now()])->save();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ListBookings::class)->assertSuccessful();
+
+        self::assertNotContains($booking->getKey(), $component->instance()->getTableRecords()->pluck('id')->all());
+    }
+
     public function test_broadcast_client_selector_preloads_clients_and_keeps_search_available(): void
     {
         [$organization, $admin, $client] = $this->fixture(includePeople: true);
