@@ -4800,10 +4800,16 @@ test('automatic analytics suggestions follow a real source save into NeedsReview
     const providerStub = await startAnalyticsProviderStub(candidateLabelSuffix);
     let fixture: CrmFixture | null = null;
 
-    const findPainInput = async (dialog: Locator, index: number): Promise<Locator> => {
+    const findPainInput = async (dialog: Locator, currentValue: string): Promise<Locator> => {
         const inputs = dialog.getByLabel('Название или описание боли', { exact: true });
         await expect(inputs).toHaveCount(2);
-        return inputs.nth(index);
+        for (let index = 0; index < await inputs.count(); index += 1) {
+            if (await inputs.nth(index).inputValue() === currentValue) {
+                return inputs.nth(index);
+            }
+        }
+
+        throw new Error(`Medical profile pain ${currentValue} was not rendered.`);
     };
 
     const findPendingCandidate = async (label: string): Promise<Locator> => {
@@ -4831,7 +4837,7 @@ test('automatic analytics suggestions follow a real source save into NeedsReview
         await page.goto(`/admin/clients/${fixture.clientId}`);
         await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
         const profileDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
-        await (await findPainInput(profileDialog, 0)).fill(automaticSourceValue);
+        await (await findPainInput(profileDialog, automaticFixture.sourcePainName)).fill(automaticSourceValue);
         await profileDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
         await expect(profileDialog).toBeHidden({ timeout: 15_000 });
 
@@ -4857,7 +4863,7 @@ test('automatic analytics suggestions follow a real source save into NeedsReview
         await page.goto(`/admin/clients/${fixture.clientId}`);
         await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
         const disabledProfileDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
-        await (await findPainInput(disabledProfileDialog, 1)).fill(disabledSourceValue);
+        await (await findPainInput(disabledProfileDialog, automaticFixture.disabledSourcePainName)).fill(disabledSourceValue);
         await disabledProfileDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
         await expect(disabledProfileDialog).toBeHidden({ timeout: 15_000 });
 
