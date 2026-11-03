@@ -199,6 +199,17 @@ test('CRM title unread counter follows the authoritative total across pagination
     });
     await notificationTrigger.click();
     console.log('open modal dispatch count', await page.evaluate(() => (window as Window & { openModalDispatchCount?: number }).openModalDispatchCount));
+    console.log('notification modal state', await page.evaluate(() => {
+        const element = document.querySelector('#database-notifications') as (HTMLElement & { _x_dataStack?: Array<{ isOpen?: boolean; open?: () => void }> }) | null;
+        const data = element?._x_dataStack?.[0];
+
+        return {
+            stackLength: element?._x_dataStack?.length ?? 0,
+            isOpen: data?.isOpen ?? null,
+            hasOpen: typeof data?.open === 'function',
+            display: element === null ? null : window.getComputedStyle(element).display,
+        };
+    }));
     const notificationCenter = page.locator('#database-notifications').last();
     await expect(notificationCenter).toBeVisible();
     const nextPage = notificationCenter.locator('.fi-pagination-next-btn');
