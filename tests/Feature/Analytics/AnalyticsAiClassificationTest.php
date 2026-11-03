@@ -40,6 +40,7 @@ use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
 use App\Modules\Tracker\Domain\Models\TrackerTask;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Tests\TestCase;
 
@@ -701,6 +702,49 @@ final class AnalyticsAiClassificationTest extends TestCase
         $task->forceFill(['title' => 'Практика дыхания'])->save();
 
         self::assertSame(ClassificationRunStatus::Stale, $taskRun->refresh()->status);
+    }
+
+    public function test_profile_pain_save_dispatches_automatic_classification_only_for_changed_plaintext(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        MedicalProfilePain::withoutEvents(function () use ($admin, $client): void {
+            app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+                pains: [
+                    ['name' => 'Неизменённая боль', 'score' => 4],
+                    ['name' => 'Изменяемая боль', 'score' => 6],
+                ],
+                painsProvided: true,
+            ));
+        });
+        $pains = MedicalProfilePain::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->orderBy('sort_order')
+            ->get();
+        $unchanged = $pains->firstOrFail();
+        $changed = $pains->last();
+
+        Queue::fake();
+        app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            pains: [
+                [
+                    'lineage_key' => $unchanged->lineage_key,
+                    'name' => 'Неизменённая боль',
+                    'score' => 4,
+                ],
+                [
+                    'lineage_key' => $changed->lineage_key,
+                    'name' => 'Изменяемая боль обновлена',
+                    'score' => 6,
+                ],
+            ],
+            painsProvided: true,
+        ));
+
+        Queue::assertPushed(AutoSuggestAnalyticsTags::class, 1);
+        Queue::assertPushed(AutoSuggestAnalyticsTags::class, static fn (AutoSuggestAnalyticsTags $job): bool => $job->sourceType === 'medical_profile_pain'
+            && $job->sourceId === $changed->getKey());
     }
 
     public function test_session_pain_source_changes_invalidate_its_classification(): void

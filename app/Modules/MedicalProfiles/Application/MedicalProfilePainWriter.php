@@ -63,13 +63,14 @@ final readonly class MedicalProfilePainWriter
             /** @var MedicalProfilePain|null $pain */
             $pain = $existing->get($lineage);
             $pain ??= new MedicalProfilePain;
+            $encryptedName = $this->encryptedName($pain, $input->name, (int) $profile->organization_id, $keyVersion);
             $pain->forceFill([
                 'organization_id' => $profile->organization_id,
                 'client_id' => $profile->client_id,
                 'medical_profile_id' => $profile->getKey(),
                 'patient_profile_id' => $profile->patient_profile_id,
                 'lineage_key' => $lineage,
-                'name' => $this->encryptor->encryptField((int) $profile->organization_id, $input->name, $keyVersion),
+                'name' => $encryptedName,
                 'frequency_mode' => $input->frequencyMode,
                 'frequency_count' => $input->frequencyCount,
                 'frequency_period_unit' => $input->frequencyPeriodUnit,
@@ -98,5 +99,16 @@ final readonly class MedicalProfilePainWriter
         }
 
         return $result;
+    }
+
+    private function encryptedName(MedicalProfilePain $pain, string $name, int $organizationId, int $keyVersion): string
+    {
+        if ($pain->exists
+            && (int) $pain->encryption_key_version === $keyVersion
+            && $this->encryptor->decryptField($organizationId, $pain->getRawOriginal('name'), $keyVersion) === $name) {
+            return (string) $pain->getRawOriginal('name');
+        }
+
+        return (string) $this->encryptor->encryptField($organizationId, $name, $keyVersion);
     }
 }

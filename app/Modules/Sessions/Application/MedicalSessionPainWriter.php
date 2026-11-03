@@ -69,13 +69,14 @@ final readonly class MedicalSessionPainWriter
 
         foreach ($inputs as $sortOrder => [$input, $lineage, $tagIds]) {
             $pain = $existing->get($lineage) ?? new MedicalSessionPain;
+            $encryptedName = $this->encryptedName($pain, $input->name, (int) $session->organization_id, $keyVersion);
             $pain->forceFill([
                 'organization_id' => $session->organization_id,
                 'client_id' => $session->client_id,
                 'medical_session_id' => $session->getKey(),
                 'patient_profile_id' => $session->patient_profile_id,
                 'lineage_key' => $lineage,
-                'name' => $this->encryptor->encryptField((int) $session->organization_id, $input->name, $keyVersion),
+                'name' => $encryptedName,
                 'frequency_mode' => $input->frequencyMode,
                 'frequency_count' => $input->frequencyCount,
                 'frequency_period_unit' => $input->frequencyPeriodUnit,
@@ -91,5 +92,16 @@ final readonly class MedicalSessionPainWriter
                 'client_id' => $session->client_id,
             ]);
         }
+    }
+
+    private function encryptedName(MedicalSessionPain $pain, string $name, int $organizationId, int $keyVersion): string
+    {
+        if ($pain->exists
+            && (int) $pain->encryption_key_version === $keyVersion
+            && $this->encryptor->decryptField($organizationId, $pain->getRawOriginal('name'), $keyVersion) === $name) {
+            return (string) $pain->getRawOriginal('name');
+        }
+
+        return (string) $this->encryptor->encryptField($organizationId, $name, $keyVersion);
     }
 }
