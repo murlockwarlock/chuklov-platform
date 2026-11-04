@@ -4,9 +4,14 @@ set -Eeuo pipefail
 script_directory="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repository_root="$(cd "$script_directory/.." && pwd)"
 trusted_normalizer="$script_directory/normalize-fail2ban-elements.awk"
+release_retention_script="$script_directory/staging-release-retention.sh"
 
 if [[ ! -f "$trusted_normalizer" || ! -r "$trusted_normalizer" ]]; then
     echo "Missing trusted fail2ban normalizer: $trusted_normalizer" >&2
+    exit 1
+fi
+if [[ ! -f "$release_retention_script" || ! -r "$release_retention_script" ]]; then
+    echo "Missing staging release retention helper: $release_retention_script" >&2
     exit 1
 fi
 
@@ -28,6 +33,22 @@ set +a
 : "${STAGING_PROJECT:?Missing STAGING_PROJECT}"
 : "${STAGING_HEALTH_URL:?Missing STAGING_HEALTH_URL}"
 : "${STAGING_EXPECTED_HOST_PORT:?Missing STAGING_EXPECTED_HOST_PORT}"
+
+staging_release_retention="${STAGING_RELEASE_RETENTION:-5}"
+failed_release_grace_hours="${STAGING_FAILED_RELEASE_GRACE_HOURS:-48}"
+if [[ ! "$staging_release_retention" =~ ^[0-9]+$ ]]; then
+    echo "STAGING_RELEASE_RETENTION must be a non-negative integer." >&2
+    exit 1
+fi
+if [[ ! "$failed_release_grace_hours" =~ ^[0-9]+$ ]]; then
+    echo "STAGING_FAILED_RELEASE_GRACE_HOURS must be a non-negative integer." >&2
+    exit 1
+fi
+
+if [[ "$STAGING_ROOT" != "/opt/chuklov-staging" ]]; then
+    echo "STAGING_ROOT must be /opt/chuklov-staging." >&2
+    exit 1
+fi
 
 revision="${1:-}"
 expected_revision="${2:-}"
@@ -72,6 +93,8 @@ trap 'rm -rf "$temporary_directory"' EXIT
 git archive --format=tar --output="$archive" "$revision"
 normalizer="$temporary_directory/normalize-fail2ban-elements.awk"
 cp -- "$trusted_normalizer" "$normalizer"
+retention_script="$temporary_directory/staging-release-retention.sh"
+cp -- "$release_retention_script" "$retention_script"
 
 ssh_options=(
     -o BatchMode=yes
@@ -82,9 +105,11 @@ ssh_options=(
 remote="${STAGING_USER}@${STAGING_HOST}"
 remote_archive="/tmp/chuklov-$revision.tar"
 remote_normalizer="$STAGING_ROOT/shared/.chuklov-$revision-normalize-fail2ban-elements.awk"
+remote_retention_script="/tmp/chuklov-$revision-staging-release-retention.sh"
 
 scp "${ssh_options[@]}" "$archive" "$remote:$remote_archive"
 scp "${ssh_options[@]}" "$normalizer" "$remote:$remote_normalizer"
+scp "${ssh_options[@]}" "$retention_script" "$remote:$remote_retention_script"
 
 ssh "${ssh_options[@]}" "$remote" bash -s -- \
     "$revision" \
@@ -94,12 +119,67 @@ ssh "${ssh_options[@]}" "$remote" bash -s -- \
     "$STAGING_HEALTH_URL" \
     "$STAGING_EXPECTED_HOST_PORT" \
     "$remote_archive" \
-    "$remote_normalizer" <<'REMOTE'
+    "$remote_normalizer" \
+    "$remote_retention_script" \
+    "$staging_release_retention" \
+    "$failed_release_grace_hours" <<'REMOTE'
 set -Eeuo pipefail
+
+mark_failed_release() {
+    local candidate="${release:-}"
+    local deploy_root="${root:-}"
+    local candidate_name
+    local root_real
+    local release_root
+    local candidate_real
+    local active_target
+    local failed_target
+    local link
+    local target
+
+    if [[ -z "$candidate" || -z "$deploy_root" || ! -d "$candidate" || -L "$candidate" ]]; then
+        return 0
+    fi
+    root_real="$(realpath "$deploy_root" 2>/dev/null || true)"
+    release_root="$root_real/releases"
+    if [[ -z "$root_real" || ! -d "$release_root" ]]; then
+        return 0
+    fi
+    candidate_name="${candidate##*/}"
+    if [[ ! "$candidate_name" =~ ^[0-9a-f]{40}$ || "$candidate" != "$release_root/$candidate_name" ]]; then
+        return 0
+    fi
+    candidate_real="$(realpath "$candidate" 2>/dev/null || true)"
+    if [[ "$candidate_real" != "$release_root/$candidate_name" ]]; then
+        return 0
+    fi
+    active_target="$(realpath "$root_real/current" 2>/dev/null || true)"
+    if [[ "$active_target" == "$candidate_real" ]]; then
+        return 0
+    fi
+    while IFS= read -r -d '' link; do
+        target="$(realpath "$link" 2>/dev/null || true)"
+        if [[ "$target" == "$candidate_real" ]]; then
+            return 0
+        fi
+    done < <(find "$root_real" -mindepth 1 -maxdepth 1 -type l -print0)
+
+    failed_target="$release_root/$candidate_name.failed"
+    if [[ -e "$failed_target" || -L "$failed_target" ]]; then
+        failed_target="$release_root/$candidate_name.failed-retry"
+    fi
+    if [[ -e "$failed_target" || -L "$failed_target" ]]; then
+        echo "Failed release retained without rename because both failed markers already exist: $candidate" >&2
+        return 0
+    fi
+    mv -- "$candidate" "$failed_target" || true
+}
 
 report_preflight_failure() {
     local status="$?"
+    mark_failed_release || true
     rm -f -- "${remote_normalizer:-}" || true
+    rm -f -- "${remote_retention_script:-}" || true
     echo "Staging deployment failed during preflight at remote script line $1 (exit $status)." >&2
     exit "$status"
 }
@@ -128,6 +208,9 @@ redis_volume_override=''
 current_redis_volume=''
 current_redis_volume_key=''
 candidate_redis_volume_key=''
+remote_retention_script="$9"
+staging_release_retention="${10:-}"
+failed_release_grace_hours="${11:-}"
 current_compose_base=()
 current_compose=()
 candidate_compose_base=()
@@ -139,6 +222,7 @@ cleanup_remote_transfer_artifacts() {
         return
     fi
     rm -f -- "$archive" "$remote_normalizer" || true
+    rm -f -- "$remote_retention_script" || true
     rm -f -- "$queue_probe_script" || true
     rm -f -- "$current_probe_environment" "$candidate_probe_environment" || true
     rm -f -- "$redis_volume_override" || true
@@ -496,9 +580,18 @@ if [[ ! -d "$root/shared/bootstrap-cache" ]]; then
     exit 1
 fi
 
+for protected_link in "$root/current" "$root/previous" "$root/rollback"; do
+    if [[ "$(realpath "$protected_link" 2>/dev/null || true)" == "$release" ]]; then
+        echo "Release is protected by a staging symlink and cannot be replaced: $release" >&2
+        exit 1
+    fi
+done
+
 if [[ -e "$release" ]]; then
     if [[ "$release" == "$root/releases/$revision"
+        && ! -L "$release"
         && "$previous_target" != "$release"
+        && "$(realpath "$release" 2>/dev/null || true)" == "$root/releases/$revision"
         && "$(cat "$release/REVISION" 2>/dev/null || true)" == "$revision" ]]; then
         rm -rf -- "$release"
     else
@@ -774,7 +867,9 @@ rollback() {
         "${candidate_mailpit_compose[@]}" rm --stop --force mailpit < /dev/null || true
     fi
     "${rollback_compose[@]}" up -d --no-deps --force-recreate "${rollback_services[@]}" < /dev/null || true
+    mark_failed_release || true
     rm -f -- "$remote_normalizer" || true
+    rm -f -- "$remote_retention_script" || true
 }
 trap 'rollback "$LINENO" "$?"' ERR
 
@@ -880,9 +975,14 @@ fi
 echo "Protected host services and routing match the pre-deploy baseline."
 
 printf '%s\n' "$revision" > "$root/REVISION"
+printf '%s\n' "$revision" > "$release/.staging-deploy-success"
 chmod -R a-w "$release"
+if ! bash "$remote_retention_script" --cleanup "$root" "$staging_release_retention" "$failed_release_grace_hours"; then
+    echo "Staging release retention cleanup failed; deployment remains active." >&2
+fi
 rm -f "$archive"
 rm -f -- "$remote_normalizer"
+rm -f -- "$remote_retention_script"
 trap - ERR
 
 echo
