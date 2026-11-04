@@ -181,6 +181,9 @@ task open regardless of green internal tests.
 
 ## Local, hosted, and staging workflow
 
+For direct staging browser/SSH acceptance, follow `docs/operations/staging-qa.md`
+and reuse the existing thin-control-plane access before proposing infrastructure.
+
 The repository CI and E2E workflows are manually dispatched (`workflow_dispatch`)
 with scheduled E2E; a push does not by itself imply a blocking CI run.
 
