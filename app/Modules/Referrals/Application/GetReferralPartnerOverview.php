@@ -45,10 +45,11 @@ final class GetReferralPartnerOverview
             ->with(['campaignLinks' => fn ($query) => $query->orderBy('created_at')->orderBy('id')])
             ->first();
 
-        if (! $profile instanceof ReferralPartnerProfile || ! $profile->isActive()) {
+        if (! $profile instanceof ReferralPartnerProfile) {
             return $this->ordinaryOverview($client, $identity, $locale);
         }
 
+        $isActivePartner = $profile->isActive();
         $links = $profile->campaignLinks;
         $linkIds = $links->pluck('id')->map(static fn (mixed $id): int => (int) $id)->values()->all();
         $relationshipQuery = ReferralRelationship::query()
@@ -100,15 +101,13 @@ final class GetReferralPartnerOverview
             : (clone $relationshipQuery)->whereIn('referral_campaign_link_id', $linkIds)->count();
 
         return [
-            'isPartner' => $profile?->isActive() === true,
-            'status' => $profile === null
-                ? null
-                : ReferralPartnerStatus::tryFrom((string) $profile->getRawOriginal('status'))?->value,
-            'activatedAt' => $profile === null || $profile->getRawOriginal('activated_at') === null
+            'isPartner' => true,
+            'status' => ReferralPartnerStatus::tryFrom((string) $profile->getRawOriginal('status'))?->value,
+            'activatedAt' => $profile->getRawOriginal('activated_at') === null
                 ? null
                 : CarbonImmutable::parse((string) $profile->getRawOriginal('activated_at'))->toIso8601String(),
             'link' => $this->telegramUrl->handle($identity->public_code),
-            'createLinkUrl' => route('portal.referrals.links.store'),
+            'createLinkUrl' => $isActivePartner ? route('portal.referrals.links.store') : null,
             'referredClientsCount' => $registrationCount,
             'stats' => [
                 'visits' => $visitCount,

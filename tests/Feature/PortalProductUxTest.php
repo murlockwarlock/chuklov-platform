@@ -10,6 +10,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Referrals\Application\ActivateReferralPartner;
 use App\Modules\Referrals\Application\CreditManualReferralBonus;
+use App\Modules\Referrals\Application\DeactivateReferralPartner;
 use App\Modules\Referrals\Application\EnsureReferralIdentity;
 use App\Modules\Referrals\Application\RequestReferralPayout;
 use App\Modules\Referrals\Application\TransitionReferralPayoutRequest;
@@ -296,6 +297,70 @@ class PortalProductUxTest extends TestCase
             ->assertRedirect('https://t.me/chuklov_test_bot?start=ref_'.$links[1]->public_token);
 
         self::assertDatabaseMissing('referral_link_visits', ['campaign_link_id' => $links[1]->getKey()]);
+    }
+
+    public function test_deactivated_partner_keeps_reward_and_payout_access_but_cannot_start_new_partner_activity(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create(['language' => 'ru']);
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(OrganizationContext::class)->set($organization);
+        $partner = app(ActivateReferralPartner::class)->handle($client, 'crm', $admin);
+        app(CreditManualReferralBonus::class)->handle(
+            actor: $admin,
+            partner: $partner,
+            amount: '10.00',
+            currency: 'USD',
+            reason: 'Проверка сохранения выплаты',
+            comment: null,
+            idempotencyKey: 'inactive-partner-payout-access',
+        );
+        app(DeactivateReferralPartner::class)->handle($client, $admin);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.referrals'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Referrals')
+                ->where('referrals.isPartner', true)
+                ->where('referrals.status', 'inactive')
+                ->where('referrals.createLinkUrl', null)
+                ->where('referrals.rewards.requestUrl', route('portal.referrals.payouts.store'))
+                ->where('referrals.rewards.balances.0.availableMinor', 1000)
+                ->has('referrals.rewards.history', 1));
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.referrals.links.store'), [
+                'name' => 'После отключения',
+                'channel' => ReferralCampaignChannel::Other->value,
+            ])
+            ->assertInvalid('partner');
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->from(route('portal.referrals'))
+            ->post(route('portal.referrals.payouts.store'), [
+                'amount' => '4.00',
+                'currency' => 'USD',
+                'idempotency_key' => 'inactive-partner-payout-request',
+            ])
+            ->assertRedirect(route('portal.referrals'))
+            ->assertSessionHas('payout_feedback');
+
+        self::assertDatabaseHas('referral_payout_requests', [
+            'organization_id' => $organization->getKey(),
+            'beneficiary_client_id' => $client->getKey(),
+            'amount_minor' => 400,
+            'currency' => 'USD',
+            'status' => ReferralPayoutRequestStatus::Requested->value,
+        ]);
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->get(route('portal.referrals'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('referrals.status', 'inactive')
+                ->where('referrals.rewards.balances.0.availableMinor', 600)
+                ->has('referrals.rewards.history', 1)
+                ->has('referrals.rewards.payouts', 1));
     }
 
     public function test_direct_payout_post_from_a_non_partner_is_rejected_at_the_backend_boundary(): void
