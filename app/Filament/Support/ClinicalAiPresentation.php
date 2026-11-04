@@ -524,6 +524,10 @@ final class ClinicalAiPresentation
         if (is_string($value)) {
             $value = trim($value);
 
+            if (strtolower($value) === 'unknown') {
+                return __('Не указано');
+            }
+
             return $value === '' ? null : $value;
         }
 
