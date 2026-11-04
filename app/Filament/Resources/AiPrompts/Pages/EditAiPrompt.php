@@ -31,6 +31,7 @@ use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use Livewire\Attributes\On;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
@@ -113,7 +114,7 @@ class EditAiPrompt extends LocalizedEditRecord
             ->icon(Heroicon::OutlinedPlay)
             ->color('info')
             ->schema([
-                Textarea::make('test_input')->label(__('Пример запроса'))->rows(5)->default('{"query": "Тестовый запрос"}')->required(),
+                Textarea::make('test_input')->label(__('Пример запроса'))->rows(5)->required(),
                 Select::make('model_release_id')
                     ->label(__('Модель для проверки'))
                     ->options(fn (): array => AiPromptResource::modelReleaseOptions($this->prompt()))
@@ -234,7 +235,8 @@ class EditAiPrompt extends LocalizedEditRecord
             ->first();
     }
 
-    private function refreshPrompt(): void
+    #[On('ai-prompt-version-changed')]
+    public function refreshPrompt(): void
     {
         $this->record = $this->prompt()->fresh(['activeVersion']);
     }

@@ -163,7 +163,10 @@ class PromptVersionsRelationManager extends LocalizedRelationManager
                         /** @var AiPrompt $prompt */
                         $prompt = $this->getOwnerRecord();
 
-                        return $createAction->handle($user, $prompt->id, $data);
+                        $version = $createAction->handle($user, $prompt->id, $data);
+                        $this->dispatch('ai-prompt-version-changed');
+
+                        return $version;
                     }),
             ])
             ->recordActions([
@@ -176,6 +179,7 @@ class PromptVersionsRelationManager extends LocalizedRelationManager
                         $user = Auth::user();
                         if ($user) {
                             $activateAction->handle($user, $record->id);
+                            $this->dispatch('ai-prompt-version-changed');
                             Notification::make()->title(__('Версия промпта активирована'))->success()->send();
                         }
                     }),
@@ -188,6 +192,7 @@ class PromptVersionsRelationManager extends LocalizedRelationManager
                         $user = Auth::user();
                         if ($user) {
                             $retireAction->handle($user, $record->id);
+                            $this->dispatch('ai-prompt-version-changed');
                             Notification::make()->title(__('Версия отправлена в архив'))->success()->send();
                         }
                     }),

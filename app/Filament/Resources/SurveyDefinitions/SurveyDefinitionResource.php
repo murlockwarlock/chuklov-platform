@@ -7,10 +7,17 @@ use App\Filament\Resources\SurveyDefinitions\Pages\EditSurveyDefinition;
 use App\Filament\Resources\SurveyDefinitions\Pages\ListSurveyDefinitions;
 use App\Filament\Resources\SurveyDefinitions\Schemas\SurveyDefinitionForm;
 use App\Filament\Support\LocalizedResource;
+use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Surveys\Application\UpdateSurveyPresentation;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use Filament\Forms\Components\Hidden;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
@@ -54,6 +61,26 @@ final class SurveyDefinitionResource extends LocalizedResource
             ->emptyStateHeading(__('Опросников пока нет'))
             ->emptyStateDescription(__('Создайте психологический опросник или тест для оценки динамики состояния клиентов.'))
             ->recordActions([
+                Action::make('presentation')
+                    ->label(__('Название и доступ'))
+                    ->modalDescription(__('Изменяет название в CRM и доступность опросника. Вопросы, подсчёт результатов и история версий сохраняются. Включение не публикует черновик.'))
+                    ->authorize(fn (SurveyDefinition $record): bool => self::canEdit($record))
+                    ->fillForm(fn (SurveyDefinition $record): array => [
+                        'title' => $record->title,
+                        'is_available' => $record->is_available,
+                        'expected_snapshot' => app(UpdateSurveyPresentation::class)->snapshot($record),
+                    ])
+                    ->schema([
+                        TextInput::make('title')->label(__('Название в CRM'))->required()->maxLength(200),
+                        Toggle::make('is_available')->label(__('Доступен клиентам после публикации')),
+                        Hidden::make('expected_snapshot')->required(),
+                    ])
+                    ->action(function (SurveyDefinition $record, array $data): void {
+                        $actor = auth()->user();
+                        abort_unless($actor instanceof User, 403);
+                        app(UpdateSurveyPresentation::class)->handle($actor, $record, $data['title'], (bool) $data['is_available'], $data['expected_snapshot']);
+                        Notification::make()->title(__('Название и доступ сохранены'))->success()->send();
+                    }),
                 EditAction::make(),
             ])->defaultSort('title');
     }
