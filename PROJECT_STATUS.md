@@ -8,15 +8,16 @@ old candidate metadata are in
 
 | Item | Current value |
 | --- | --- |
-| Last product-code base before governance cleanup | `origin/main` at `8b85efb65ee5d7cf80940cbec29c26a004871f56` |
+| Latest owner-accepted product runtime | `552c7cc27619ff99c6b0908025ecd68d98a6d3bd` |
+| Latest product merge | PR #61 merged to `main` as `fdb8b5a17dccb56bcc8c65ad71823bafb0bde60e` |
+| Latest exact staging runtime | `552c7cc27619ff99c6b0908025ecd68d98a6d3bd` |
 | Product phase | Phase 1 |
 | Active milestone stream | M11 `IN_PROGRESS`; M15 `IN_PROGRESS` |
 | M8 authored content | Mechanism/configuration ready; OQ-015 tracks approved-content replacement/activation |
 | M12 | Core `OWNER ACCEPTED / MERGED`; recurring billing remains deferred |
 | M13 | `BLOCKED` pending payment-provider selection |
-| Last documented staging runtime | `9e4f78c61731a9714dddbb35beea7d1e13643df8` in historical acceptance evidence; this cleanup does not redeploy or reverify it |
-| Owner acceptance | Required for active product candidates; this governance branch has no product acceptance claim |
-| Production | Not deployed by this cleanup |
+| Owner acceptance | PR #61 owner acceptance completed and merged; future product candidates require separate acceptance |
+| Production | No production deployment claim from this governance cleanup |
 
 ## Current working rules
 
@@ -31,8 +32,8 @@ status for acceptance decisions.
 
 ## Active blockers and decisions
 
-- Owner acceptance and the explicit owner command remain required before a
-  product candidate is marked Ready or merged.
+- Future product candidates require owner acceptance and an explicit owner
+  command before they are marked Ready or merged.
 - M13 needs an owner-selected payment provider.
 - OQ-015 needs approved authored content before activation; implementation of
   the configurable mechanism is not blocked.
