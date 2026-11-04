@@ -185,7 +185,8 @@ class StagingReleaseRetentionTest extends TestCase
             self::assertStringContainsString($oldIncomplete, $dryRun->getOutput());
             self::assertStringNotContainsString($recentFailed, $dryRun->getOutput());
             self::assertStringNotContainsString($recentIncomplete, $dryRun->getOutput());
-            self::assertStringNotContainsString($protectedFailed, $dryRun->getOutput());
+            self::assertStringContainsString($protectedFailed, $dryRun->getOutput());
+            self::assertStringNotContainsString('candidates='.$protectedFailed, $dryRun->getOutput());
 
             $cleanup = $this->runRetention('--cleanup', $fixture, 5, 48);
 

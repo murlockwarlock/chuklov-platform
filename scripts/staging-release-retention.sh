@@ -156,6 +156,7 @@ is_successful_release() {
 }
 
 refresh_protected
+retained_names+=("$active_name")
 
 while IFS= read -r -d '' path; do
     [[ -n "$path" ]] || continue
@@ -188,7 +189,6 @@ retained_count=0
 while IFS= read -r name; do
     [[ -n "$name" ]] || continue
     if [[ "$name" == "$active_name" ]]; then
-        retained_names+=( "$name" )
         continue
     fi
     if (( retained_count < retention )); then
@@ -272,6 +272,7 @@ printf 'incomplete_candidate_count=%s\n' "${#incomplete_candidate_names[@]}"
 printf 'failed_candidate_count=%s\n' "${#failed_candidate_names[@]}"
 printf 'candidate_bytes=%s\n' "$candidate_bytes"
 printf 'candidate_regular_files=%s\n' "$candidate_files"
+printf 'protected=%s\n' "$(printf '%s ' "${protected_names[@]}" | sed 's/[[:space:]]*$//')"
 printf 'retained=%s\n' "$(printf '%s ' "${retained_names[@]}" | sed 's/[[:space:]]*$//')"
 if (("${#unsafe_entries[@]}" > 0)); then
     printf 'unsafe_entries=%s\n' "$(printf '%s; ' "${unsafe_entries[@]}" | sed 's/[[:space:]]*$//')"
