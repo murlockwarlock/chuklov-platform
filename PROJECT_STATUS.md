@@ -8,7 +8,7 @@ old candidate metadata are in
 
 | Item | Current value |
 | --- | --- |
-| Product base | `origin/main` at `8b85efb65ee5d7cf80940cbec29c26a004871f56` |
+| Last product-code base before governance cleanup | `origin/main` at `8b85efb65ee5d7cf80940cbec29c26a004871f56` |
 | Product phase | Phase 1 |
 | Active milestone stream | M11 `IN_PROGRESS`; M15 `IN_PROGRESS` |
 | M8 authored content | Mechanism/configuration ready; OQ-015 tracks approved-content replacement/activation |
@@ -39,10 +39,3 @@ status for acceptance decisions.
 - Product-specific acceptance or runtime blockers must be recorded in the
   current requirements/evidence documents, not by expanding this snapshot for
   every bounded fix.
-
-## Governance cleanup
-
-This instruction cleanup is isolated on
-`codex/governance-instruction-cleanup` from `origin/main`. It changes
-instructions, skills, and evidence labeling only; it does not claim product,
-staging, browser, PostgreSQL, or CI verification.

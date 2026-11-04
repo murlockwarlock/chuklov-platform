@@ -1,6 +1,6 @@
 ---
 name: infer-conventions
- description: "Use only for an explicit request to infer, document, or standardize project conventions, or to resolve a real mixed-pattern question. Do not trigger for ordinary fixes or a targeted instruction cleanup where the canonical rule is already known."
+description: "Use only for an explicit request to infer, document, or standardize project conventions, or to resolve a real mixed-pattern question. Do not trigger for ordinary fixes or a targeted instruction cleanup where the canonical rule is already known."
 license: MIT
 metadata:
   author: laravel

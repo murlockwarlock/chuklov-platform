@@ -64,8 +64,8 @@ not a competing priority system.
 `FAST_PATH` is the default for bounded product work:
 
 `reproduce exact owner scenario → inspect affected code → implement → focused
-checks → authorized staging evidence when needed → batch fixes → final
-candidate → owner acceptance → one final hosted gate where required`.
+checks → authorized staging iteration and batch fixes when needed → final
+candidate → required hosted/staging evidence → owner acceptance`.
 
 Do not make full CI, full PHPUnit, full Playwright, broad static analysis,
 frontend matrices, documentation cleanup, repeated reviews, or unrelated
@@ -187,12 +187,13 @@ with scheduled E2E; a push does not by itself imply a blocking CI run.
 For normal code changes:
 
 1. inspect the affected path and run focused local checks;
-2. push one coherent candidate when remote evidence is needed;
-3. deploy the authorized exact SHA to staging when staging is the right
-   acceptance boundary;
-4. verify the exact owner-visible scenario and batch related fixes;
-5. finish the final candidate and manually dispatch the required hosted gate
-   once when code changed;
+2. push one coherent candidate when remote iteration or evidence is needed;
+3. use authorized staging for focused iteration and batch related fixes when
+   staging is the right acceptance boundary;
+4. finish and push the final candidate at its exact SHA;
+5. collect the required hosted/staging evidence for that final candidate,
+   manually dispatching hosted CI once when code changed and the risk requires
+   it;
 6. inspect the exact-SHA result, classify failures as caused by the change,
    baseline, or infrastructure, and request owner acceptance.
 
