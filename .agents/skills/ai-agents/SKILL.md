@@ -1,18 +1,31 @@
 ---
 name: ai-agents
-description: Build Chuklov AI agents and workflows through the Laravel AI SDK boundary. Use for prompts, tools, routing, structured output, provider configuration, or AI evaluation work.
+description: Build Chuklov AI agents and Laravel AI SDK workflows through the Application boundary. Use for prompts, tools, structured output, provider configuration, evaluation, or Chuklov AI features.
 ---
 
-# AI Agents
+# Chuklov AI
 
-1. Confirm the milestone permits the feature, then read affected AI `REQ-*`, `docs/architecture/ai.md`, and `docs/architecture/ai-data-flow.md`.
-2. Consult Laravel Boost for installed Laravel AI SDK APIs.
-3. Keep deterministic business rules outside prompts and provider responses.
-4. Bound tool permissions, validate structured output, and preserve organization context server-side.
-5. Classify data before sending it to a provider; do not include unnecessary sensitive or health data.
-6. Fake all AI calls in normal tests and CI. Paid calls require an explicit, separate evaluation path.
-7. Add deterministic regression coverage for the specific changed AI behavior, plus relevant cases under `evals/`; record model or prompt behavior changes without storing sensitive transcripts.
-8. Do not rerun complete eval packs for every prompt or runtime adjustment. Use a small representative real-provider or staging subset by default; full eval packs are for benchmark or release-quality evaluation.
-9. Owner-visible real staging conversation is higher-value than dozens of mocked green tests. If a real user scenario fails, the AI task remains FAIL regardless of eval count.
-
-If `Привет, ты кто?` incorrectly triggers handoff: fix that exact path → focused regression test → real staging conversation → stop. Do not run all 44 provider cases unless the owner explicitly requests a full benchmark, prompt architecture changed materially across all agents, or a representative subset fails and broader diagnosis is needed.
+1. Confirm the milestone permits the change, then read the affected
+   `REQ-AI-*` or `REQ-RAG-*` rows and linked AI architecture/ADR.
+2. Confirm the installed `laravel/ai` version from Composer or Boost. Use
+   Boost documentation search for the exact capability and its testing/faking
+   API before relying on version-sensitive SDK behavior.
+3. Keep deterministic business rules, organization ownership, authorization,
+   provider/model configuration, prompt versions, data classification, and
+   permitted scopes in the Application boundary. Delivery adapters do not own
+   AI behavior.
+4. Bound tool permissions, validate structured outputs, distinguish AI
+   suggestions from specialist-confirmed facts, and keep queue payloads to safe
+   identifiers rather than sensitive medical text.
+5. Use first-party SDK contracts and fakes. Normal tests and CI must prevent
+   stray provider calls and require no paid credential; real-provider checks
+   are an explicit evaluation or staging slice.
+6. Verify provider capability and failover semantics from current documentation.
+   Add deterministic regression coverage for the changed behavior and record
+   prompt/model changes without sensitive transcripts.
+7. Use a small representative real-provider or staging subset by default. Full
+   evaluation packs are for benchmark/release evaluation, a material
+   architecture-wide prompt change, or a representative failure.
+8. An owner-visible real scenario outranks a large mocked green suite. If the
+   exact scenario fails, keep the task open and fix that path before expanding
+   evaluation scope.

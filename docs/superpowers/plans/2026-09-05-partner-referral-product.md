@@ -1,6 +1,9 @@
+> HISTORICAL / EVIDENCE ONLY / NOT CURRENT INSTRUCTIONS
+
 # Partner Referral Product Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Historical plan text below may contain old workflow language. It is not a
+> current skill trigger or implementation requirement.
 
 **Goal:** Complete the Phase 1 partner/referral product around the existing referral identity, first-touch attribution, Finance evidence, reward ledger, Portal, and Telegram Mini App authorities.
 

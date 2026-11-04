@@ -1,51 +1,77 @@
 # Product UI
 
-Ordinary product UI is written for clients, Chuklov/organization owners, and ordinary staff. It expresses business intent and current business state, not the implementation architecture.
+This is the canonical product-UI rule for client, owner, staff, CRM, Portal,
+Vue, Blade, and Telegram Mini App surfaces. It applies to ordinary users, not
+only to the developer who built the screen.
 
-## Audience first
+## First-time usability release gate
 
-Developer, architecture, infrastructure, milestone, QA, implementation, queue, persistence, provider, runtime, internal security, and Domain terminology must not appear in ordinary Portal, Vue, Blade, or CRM UI merely because those concepts exist internally. Technical terminology belongs only on an explicitly technical diagnostics, observability, trace, or engineering screen for an authorized audience.
+A new or substantially changed surface is not production-ready until an
+ordinary user without code, database, or ТЗ knowledge can use it independently.
+Within 5–10 seconds the user must understand:
 
-## Complexity stays behind the UI
+- what the screen is and why it exists;
+- what is already configured or happening;
+- what can be done now;
+- what will change after the action.
 
-Keep idempotency keys, event and revision versions, immutable technical keys, organization IDs, internal record IDs, raw enum values, retry/fallback and queue state, scheduler state, internal timestamps and timezone representations, provider details, correlation IDs, and template IDs generated, derived, translated, or hidden whenever ordinary users do not need to control them. Preserve the trusted Application/Domain boundary and existing security, tenant, idempotency, concurrency, audit, immutable revision, and durable workflow guarantees.
+This is a `REAL BUG`, not a preference, when ordinary work requires a
+developer, database knowledge, or separate documentation; when a screen is a
+giant repeater or backend-shaped form; or when it exposes raw keys, enum
+values, IDs, or numeric sort order instead of a human reorder interaction.
 
-The preferred flow is simple business UI → trusted Application action → server-derived technical values → existing Domain guarantees. The frontend or Filament form must not become the source of truth for trusted values.
+The gate must work for 0, 1, and many records and remain understandable with
+10–30 objects. Prefer:
 
-## Owner-managed business configuration
+- list/table/cards → detail/edit;
+- progressive disclosure and a clear primary action;
+- human status plus the next action;
+- an empty state with a useful CTA;
+- safe illustrative examples where they reduce ambiguity;
+- consistent navigation and CTA semantics.
 
-Business configuration must be editable through ordinary human CRM controls. Do not require owners or staff to edit JSON, SQL, enum keys, config files, internal IDs, or source code. A configurable business feature is incomplete if authorized staff cannot create, edit, archive, reorder, activate, deactivate, preview, publish, and correct its business values through the product where those lifecycle operations apply.
+Examples are scaffolding, not business rules. They must never silently become
+medical doctrine, a legal statement, a formula, or authored product content.
 
-## User copy
+Existing or design-frozen UI is not automatically accepted UX. Preserve only
+UX explicitly accepted by the owner. New, changed, or merely unverified UI
+must pass this gate.
 
-Visible copy exists to help a user act, provide required information, understand a current state, understand an actionable error, or know the next step. Keep it concise and natural. Do not add generic AI/SaaS marketing filler. Translate expected business failures into a useful action; keep exception names, provider errors, SQL details, queue states, stack traces, and diagnostic codes in logs/observability.
+## Business language and safe boundaries
 
-## Russian-facing UI
+Write for the user’s business task and current state, not for the internal
+architecture. Hide or derive organization IDs, internal IDs, raw enum values,
+revision keys, queue/provider state, correlation IDs, retry details, and
+implementation timestamps unless an explicitly technical screen needs them.
 
-Client and CRM surfaces are Russian-facing unless configured content explicitly says otherwise. Do not show English developer/demo copy or locale metadata as decorative UI. Proper names and genuine user content may remain in their original language. Translate raw technical enum values into business labels.
+Business configuration must be editable through authorized human CRM controls
+where its lifecycle requires it: create, edit, archive, reorder, activate,
+deactivate, preview, publish, and correct. Do not require JSON, SQL, config
+files, enum keys, internal IDs, source code, or a deploy for normal owner work.
 
-## Architecture separation must not leak
+Visible copy should help a user act, provide required input, understand state,
+recover from an actionable error, or know the next step. Use Russian-facing
+business labels by default; translate technical statuses and keep provider,
+SQL, queue, exception, and diagnostic details out of ordinary UI.
 
-Different internal flows that represent one user concept must share one simple product action. For example, browser Telegram authentication and Mini App authentication are both “Войти через тг” in the UI. Scenario revisions, typed conditions, pinned template versions, durable scheduling, retries, fallbacks, and recipient revalidation remain internal; Chuklov configures when, after how long, whom, what message, any understandable condition, and whether the rule is active.
+Keep one simple product action for one user concept. The trusted Application
+and Domain layers remain authoritative for tenant scope, authorization,
+idempotency, concurrency, audit, revisions, scheduling, and durable workflows.
+The frontend or Filament form must not become the source of trusted values.
 
-## Product UX definition of done
+## Portal and responsive behavior
 
-A user-facing feature is incomplete until it has understandable business terminology, sensible defaults, safely derived values where possible, minimal required steps, a clear primary action, human-readable statuses and errors, sensible empty states, and no unnecessary internal architecture. Before finishing a UI change, inspect every visible heading, label, helper, button, status, notice, error, empty state, field, and technical value as the intended user would see it. Ask whether the user needs it, whether it expresses business intent/state, whether the system can derive it, whether a normal user understands why it exists, whether the language is natural, and whether architecture leaked only because the backend model exposed it.
+Do not turn internal workflow states into a visible wizard unless the client
+must make a real decision or provide information for the current action.
+Collect optional profile information in Profile or just in time. Availability
+is a focused selection problem, not an unbounded data dump.
 
-## Client Portal information architecture
+After authentication, the shell leads with useful product destinations rather
+than login/provider/onboarding implementation state. Preserve the configured
+RU/EN localization mechanism and do not machine-translate organization content
+or proper names.
 
-An internal workflow, state machine, milestone, completeness state, or progressive-profile stage does not imply a visible wizard. A visible step exists only when the client makes a real decision or provides information required for the action currently being performed. A screen whose only purpose is advancing backend state is not product navigation.
-
-Collect information just in time. Optional profile fields belong in Profile and missing action-specific data is requested at the action that needs it; incomplete optional profile data must not block unrelated authenticated Portal use. Keep legal acceptance at the business action or direct account destination where an existing requirement needs it, without inventing a global gate.
-
-Availability is a selection problem, not a data dump. When a client chooses a date and time from server availability, expose a focused calendar or date selector, show options only for the selected date and current context, and keep internal query windows and availability ranges out of ordinary client controls. Month or date navigation may request a new authoritative availability projection as needed; the default UI must not render every date and slot in one long list.
-
-Authentication is an entry mechanism and disappears after success. The authenticated shell leads with CHUKLOV branding and useful destinations; it does not display login sections, provider implementation state, raw profile completeness, onboarding state, or generic persistent Continue links. The same shell uses a compact bottom navigation in Mini App/mobile contexts and a stable desktop navigation in wider layouts.
-
-The client-facing Portal supports a visible RU/EN switcher backed by one maintainable localization mechanism. The selected locale persists in the trusted client preference when authenticated and in session before authentication; organization-owned content and proper names are not machine-translated and fall back safely.
-
-## Visual direction
-
-Use committed CHUKLOV brand assets in a calm light shell with restrained warm accents, high-contrast text, generous spacing, subtle borders, and minimal shadow. Do not introduce generic SaaS hero treatments, glassmorphism, random gradients, fake business data, or fabricated service imagery.
-
-An approved visual reference is a material product constraint, not a loose mood board. Reproduce its information hierarchy, card relationships, selection states, density, and responsive behavior before wiring real data; do not ship a backend-shaped form with a superficial color treatment. On mobile and Telegram Mini App widths, clipped labels, horizontal overflow, collapsed calendars, concatenated weekday labels, or unreadable option walls are blocking UI defects.
+Reuse the committed visual language and components. Do not introduce fake
+business data, generic SaaS marketing treatments, or technical placeholders.
+Responsive layouts must keep controls usable and content readable without
+horizontal overflow or clipped states.
