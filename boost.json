@@ -3,16 +3,13 @@
         "codex"
     ],
     "cloud": false,
-    "guidelines": true,
+    "guidelines": false,
     "mcp": true,
     "nightwatch": false,
     "sail": false,
     "skills": [
         "infer-conventions",
-        "ai-sdk-development",
-        "laravel-best-practices",
-        "configuring-horizon",
-        "inertia-vue-development",
-        "tailwindcss-development"
+        "ai-agents",
+        "configuring-horizon"
     ]
 }

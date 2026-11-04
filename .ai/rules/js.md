@@ -3,10 +3,13 @@ paths:
   - 'resources/js/**'
 ---
 
-# Js
+# JavaScript-specific constraints
 
-## User-facing copy only
-Write Portal UI for clients and task completion only. Never expose developer, architecture, runtime, tenant, milestone, implementation, channel-internals, demo, or generic AI/SaaS marketing copy. Russian-facing screens must not contain English developer/demo text; omit explanatory text unless it enables an action, state, required input, or actionable next step.
+The canonical UI, copy, first-time usability, and responsive rules are in
+`.ai/rules/product-ui.md`. Do not duplicate them here.
 
-## Authenticated client shell and progressive profiling
-After authentication, render the useful CHUKLOV product shell immediately; do not show login copy, provider status, onboarding progress, or generic Continue entry points. Internal onboarding state remains an Application concern. Collect optional profile data in Profile or just in time for the action that requires it. Keep RU/EN selection visible in the shell and persist the selected locale.
+After authentication, render the useful CHUKLOV shell immediately. Keep login
+copy, provider status, onboarding progress, and generic Continue entry points
+out of the authenticated shell. Collect optional profile data in Profile or
+just in time for the action that needs it. Keep RU/EN selection visible and
+persist the selected locale through the existing trusted mechanism.

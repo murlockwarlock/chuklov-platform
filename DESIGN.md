@@ -6,6 +6,11 @@
 > - Desktop Reference: `958dc4b3f4244f3cbfc981352b344ed2` (*Client CRM - Final Refined Architecture*)
 > - Mobile Reference: `899e180315ed4d13aa0851d35bcfd51d` (*Client CRM View - Mobile Responsive*)
 
+> **Authority note:** This file is a visual/design baseline only. A design
+> freeze or existing implementation is not automatically owner-accepted
+> product UX. New or unverified UI must still pass the first-time usability
+> gate in `.ai/rules/product-ui.md` and the current owner/task acceptance.
+
 ---
 
 ## 1. Product Character & Aesthetic Philosophy

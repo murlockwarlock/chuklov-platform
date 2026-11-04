@@ -13,6 +13,10 @@ description: Prepare or execute Chuklov deployment, rollback, backup, restore, a
 6. Record operational results in the appropriate release/status record without exposing credentials when a release record is required.
 7. The repository deployment and rollback targets remain guarded until Milestone 16 supplies an approved environment.
 
+When present, `.codex/staging-deploy.md` is an ignored local environment note
+for staging connection and host mechanics only. It is not a product
+requirements source and its secrets must never be committed or reported.
+
 ## Staging Iteration — FAST_PATH
 
 For an authorized FAST_PATH staging iteration, focused checks are enough before deploy. Verify the exact user-visible scenario after deploy. No broad release ceremony is required, and staging must not be used for destructive changes or full automated suites. If browser tooling is unavailable, do not block a bounded staging recheck.

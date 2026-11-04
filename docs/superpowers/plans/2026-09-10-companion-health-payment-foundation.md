@@ -1,6 +1,9 @@
+> HISTORICAL / EVIDENCE ONLY / NOT CURRENT INSTRUCTIONS
+
 # Companion, Health Experience, and Payment Foundation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
+> Historical plan text below may contain old workflow language. It is not a
+> current skill trigger or implementation requirement.
 
 **Goal:** Make the existing CHUKLOV Portal demonstrable end to end through useful Companion v4, platform-default health surveys and Road Map dynamics, a provider-neutral Fake payment lifecycle, and Cabinet navigation.
 

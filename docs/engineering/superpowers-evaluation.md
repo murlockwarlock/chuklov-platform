@@ -1,3 +1,9 @@
+> HISTORICAL / EVIDENCE ONLY / NOT CURRENT INSTRUCTIONS
+>
+> This is an optional process experiment retained for outcome history. It does
+> not require per-task reporting unless the current owner/task explicitly
+> reactivates it.
+
 # Superpowers evaluation
 
 ## Purpose and window

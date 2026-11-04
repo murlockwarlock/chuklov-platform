@@ -1,3 +1,5 @@
+> EVIDENCE ONLY — NOT CURRENT INSTRUCTIONS
+
 # 26.09.2026 — requirements and staging acceptance
 
 Starting main SHA: `c201b41a14d91c57c1890e62737f9e2001a231f1`.

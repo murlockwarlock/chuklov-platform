@@ -1,6 +1,9 @@
+> HISTORICAL / EVIDENCE ONLY / NOT CURRENT INSTRUCTIONS
+
 # Survey Builder Admin UX Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> Historical plan text below may contain old workflow language. It is not a
+> current skill trigger or implementation requirement.
 
 **Goal:** Make the existing Survey Definition editor human-manageable, fully editable for current platform scoring, fail-closed for unknown scoring, and add a derived human explanation to the existing referral configuration page.
 

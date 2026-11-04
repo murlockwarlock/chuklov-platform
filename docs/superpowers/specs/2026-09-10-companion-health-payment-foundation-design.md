@@ -1,3 +1,5 @@
+> HISTORICAL / EVIDENCE ONLY / NOT CURRENT INSTRUCTIONS
+
 # Companion, Health Experience, and Payment Foundation
 
 ## Status
