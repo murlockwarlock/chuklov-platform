@@ -56,7 +56,7 @@ final class SurveyDefinitionBuilderTest extends TestCase
             'approval_status' => 'draft',
         ]);
         $definition->forceFill(['active_version_id' => $version->getKey()])->save();
-        $originalVersion = $version->getRawOriginal();
+        $originalVersion = $version->refresh()->getRawOriginal();
         $action = app(UpdateSurveyPresentation::class);
         $snapshot = $action->snapshot($definition);
         $action->handle($admin, $definition, 'Пример опросника', false, $snapshot);
