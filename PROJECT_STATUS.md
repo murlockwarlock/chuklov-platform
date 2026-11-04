@@ -12,13 +12,13 @@ old candidate metadata are in
 | Latest product merge | PR #61 merged to `main` as `fdb8b5a17dccb56bcc8c65ad71823bafb0bde60e` |
 | Latest exact staging runtime | `552c7cc27619ff99c6b0908025ecd68d98a6d3bd` |
 | Product phase | Phase 1 |
-| Active milestone stream | M11 `OWNER ACCEPTED / DONE`; M15 `IN_PROGRESS` |
-| M11 partner/reward closeout | CRM-only partner assignment/cabinet and reward/manual payout lifecycle are `OWNER ACCEPTED / DONE`; deactivation disables new partner activity while preserving accrued rewards and payout eligibility |
+| Active milestone stream | M11 `VERIFIED / OWNER ACCEPTANCE PENDING`; M15 `IN_PROGRESS` |
+| M11 partner/reward closeout | CRM-only partner assignment/cabinet and reward/manual payout lifecycle are `VERIFIED` on deployed SHA `de3252eb682d55d668e01852537d911ccdea364c`; deactivation disables new partner activity while preserving accrued rewards and payout eligibility |
 | Communities | Configurable delivery mechanism verified; owner-managed links, text and media remain `CONTENT REQUIRED`, not a development blocker |
 | M8 authored content | Mechanism/configuration ready; OQ-015 tracks approved-content replacement/activation |
 | M12 | Core `OWNER ACCEPTED / MERGED`; recurring billing remains deferred |
 | M13 | `BLOCKED` pending payment-provider selection |
-| Owner acceptance | PR #61 owner acceptance completed and merged; M11 partner assignment/cabinet and reward/manual payout are accepted on current main; future product candidates require separate acceptance |
+| Owner acceptance | PR #61 owner acceptance completed and merged; M11 partner assignment/cabinet and reward/manual payout await owner confirmation on deployed closeout SHA; future product candidates require separate acceptance |
 | Production | No production deployment claim from this governance cleanup |
 
 ## Current working rules
@@ -34,18 +34,21 @@ status for acceptance decisions.
 
 ## M11 closeout
 
-- Partner assignment/cabinet: `OWNER ACCEPTED / DONE`. CRM assigns an existing
-  Client as Partner; the Partner cabinet exposes campaign links and statistics,
-  with tenant authorization and reload-safe state. Deactivation removes new
-  partner activity but keeps earned rewards and payout requests available.
-- Reward/manual payout: `OWNER ACCEPTED / DONE`. Settlement-to-reward,
+- Partner assignment/cabinet: `VERIFIED / OWNER ACCEPTANCE PENDING`. CRM assigns
+  an existing Client as Partner; the Partner cabinet exposes campaign links and
+  statistics, with tenant authorization and reload-safe state. Deactivation
+  removes new partner activity but keeps earned rewards and payout requests
+  available.
+- Reward/manual payout: `VERIFIED / OWNER ACCEPTANCE PENDING`. Settlement-to-reward,
   reservation, cancel/reject, approve, externally-paid, balance/history,
   currency and idempotency behavior are covered by the existing focused
   evidence and current regression suite.
 - Communities: the configurable delivery mechanism is closed. Missing links,
   copy and media are owner-configurable content only.
-- The deactivated-partner payout regression is focused on this closeout
-  candidate. No staging deploy or new browser/PostgreSQL run was performed.
+- The deactivated-partner path is deployed at exact SHA
+  `de3252eb682d55d668e01852537d911ccdea364c`; staging smoke passed. The
+  focused browser scenario still requires owner/browser confirmation before
+  M11 can be marked `DONE`.
 
 ## Active blockers and decisions
 
