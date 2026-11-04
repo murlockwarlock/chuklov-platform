@@ -1,0 +1,41 @@
+name: Staging acceptance
+on:
+  workflow_dispatch:
+  push:
+    branches: [staging-acceptance]
+    paths: ['.github/staging-acceptance-trigger']
+permissions:
+  contents: read
+concurrency:
+  group: staging-acceptance
+  cancel-in-progress: false
+jobs:
+  access-preflight:
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 5
+    steps:
+      - name: Check existing private access bridge
+        env:
+          STAGING_URL: ${{ secrets.STAGING_URL || vars.STAGING_URL }}
+          STAGING_QA_EMAIL: ${{ secrets.STAGING_QA_EMAIL }}
+          STAGING_QA_PASSWORD: ${{ secrets.STAGING_QA_PASSWORD }}
+          STAGING_QA_TOTP_SECRET: ${{ secrets.STAGING_QA_TOTP_SECRET }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+          names = ("STAGING_URL", "STAGING_QA_EMAIL", "STAGING_QA_PASSWORD", "STAGING_QA_TOTP_SECRET")
+          missing = []
+          for name in names:
+              present = bool(os.environ.get(name))
+              print(f"{name}: {'configured' if present else 'not configured in GitHub Actions environment'}")
+              if not present:
+                  missing.append(name)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("## Staging access preflight\n")
+              for name in names:
+                  summary.write(f"- {name}: {'configured' if name not in missing else 'missing'}\n")
+              summary.write("\nPreflight only. No browser acceptance or AI execution has run.\n")
+          sys.exit(1 if missing else 0)
+          PY
