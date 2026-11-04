@@ -71,7 +71,6 @@ final readonly class GetSessionDynamics
 
         return Carbon::parse((string) $session->booking->getAttribute('starts_at'), 'UTC')
             ->setTimezone($timezone)
-            ->format('d.m.Y H:i')
-            .' (#'.$session->booking->getKey().')';
+            ->format('d.m.Y H:i');
     }
 }

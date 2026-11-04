@@ -3,8 +3,22 @@
 namespace Tests\Integration;
 
 use App\Models\User;
+use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Application\Data\AiRunResult;
+use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
+use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiRunStatus;
+use App\Modules\AI\Domain\Models\AiPrompt;
+use App\Modules\AI\Domain\Models\AiPromptVersion;
+use App\Modules\AI\Domain\Models\AiRun;
+use App\Modules\Analytics\Application\SuggestAnalyticsTags;
+use App\Modules\Analytics\Domain\Enums\AnalyticsTagCandidateStatus;
+use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
+use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
+use App\Modules\Analytics\Infrastructure\Jobs\AutoSuggestAnalyticsTags;
 use App\Modules\Attribution\Application\CapturePreAuthAttribution;
 use App\Modules\Feedback\Application\RecordNpsSubmission;
+use App\Modules\Feedback\Application\SaveFeedbackConfiguration;
 use App\Modules\Finance\Application\RecordFinancialSettlementEvent;
 use App\Modules\Finance\Domain\Models\FinancialLedgerEntry;
 use App\Modules\Finance\Domain\Models\FinancialObligation;
@@ -12,7 +26,14 @@ use App\Modules\Identity\Application\RegisterClientAcquisition;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Integration\Domain\Enums\IntegrationEventStatus;
 use App\Modules\Integration\Domain\Models\IntegrationEvent;
+use App\Modules\MedicalProfiles\Application\DTOs\UpdateMedicalProfileCommand;
+use App\Modules\MedicalProfiles\Application\UpdateMedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Application\SetOrganizationSetting;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Application\ConsumeFinanceSettlementEvent;
 use App\Modules\Referrals\Application\EnsureReferralIdentity;
@@ -27,6 +48,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\Concurrency;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Mockery;
 use ReflectionMethod;
@@ -213,16 +235,253 @@ final class MilestoneElevenAConcurrencyTest extends TestCase
             ->count());
     }
 
+    public function test_postgresql_automatic_analytics_suggestion_uses_committed_source_change_and_worker(): void
+    {
+        $this->requirePostgres();
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        $client = Client::factory()->forOrganization($organization)->create();
+        app(OrganizationContext::class)->set($organization);
+        $this->activeAnalyticsPrompt($organization);
+        app(SetOrganizationSetting::class)->handle($admin, OrganizationSettingKey::AnalyticsAiAutomaticTagSuggestionsEnabled, true);
+        $tag = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Автоматическая категория',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $calls = 0;
+        $this->app->instance(AiWorkflowEngine::class, new class($calls, $tag) implements AiWorkflowEngine
+        {
+            public function __construct(private int &$calls, private MedicalProblemTag $tag) {}
+
+            public function run(int $organizationId, AiRunRequest $request): AiRunResult
+            {
+                $this->calls++;
+                $aiRun = new AiRun;
+                $aiRun->forceFill([
+                    'organization_id' => $organizationId,
+                    'capability' => $request->capability,
+                    'workflow_key' => $request->workflowKey,
+                    'origin' => $request->origin,
+                    'initiated_by_user_id' => $request->initiatedByUserId,
+                    'client_id' => $request->clientId,
+                    'status' => AiRunStatus::Succeeded,
+                    'execution_mode' => $request->executionMode,
+                    'prompt_version_id' => $request->promptVersionId,
+                    'idempotency_key' => $request->idempotencyKey,
+                ])->save();
+
+                return new AiRunResult(
+                    runId: (int) $aiRun->getKey(),
+                    status: AiRunStatus::Succeeded,
+                    outputPayload: ['tags' => [$this->tag->name]],
+                );
+            }
+
+            public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+            {
+                throw new RuntimeException('Not used in automatic analytics suggestion test.');
+            }
+        });
+        try {
+            DB::transaction(function () use ($admin, $client): void {
+                app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+                    pains: [['name' => 'Откатить источник', 'score' => 5]],
+                    painsProvided: true,
+                ));
+                throw new RuntimeException('rollback source mutation');
+            });
+        } catch (RuntimeException $exception) {
+            self::assertSame('rollback source mutation', $exception->getMessage());
+        }
+        self::assertSame(0, $calls);
+        self::assertSame(0, MedicalProfilePain::query()->where('organization_id', $organization->getKey())->count());
+
+        Queue::fake();
+        app(UpdateMedicalProfile::class)->handle($admin, $client, new UpdateMedicalProfileCommand(
+            pains: [['name' => 'Закреплённый источник', 'score' => 5]],
+            painsProvided: true,
+        ));
+        $pain = MedicalProfilePain::query()->where('organization_id', $organization->getKey())->sole();
+        Queue::assertPushed(AutoSuggestAnalyticsTags::class, static fn (AutoSuggestAnalyticsTags $job): bool => $job->organizationId === $organization->getKey()
+            && $job->sourceType === 'medical_profile_pain'
+            && $job->sourceId === $pain->getKey());
+        $job = Queue::pushedJobs()[AutoSuggestAnalyticsTags::class][0]['job'];
+        app()->call([$job, 'handle']);
+
+        $run = AnalyticsClassificationRun::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('source_type', 'medical_profile_pain')
+            ->where('source_id', $pain->getKey())
+            ->sole();
+        self::assertSame(ClassificationRunStatus::NeedsReview, $run->status);
+        self::assertDatabaseHas('analytics_tag_candidates', [
+            'organization_id' => $organization->getKey(),
+            'classification_run_id' => $run->getKey(),
+            'status' => AnalyticsTagCandidateStatus::NeedsReview->value,
+            'label' => $tag->name,
+        ]);
+
+        Queue::fake();
+        app(SetOrganizationSetting::class)->handle($admin, OrganizationSettingKey::AnalyticsAiAutomaticTagSuggestionsEnabled, false);
+        $pain->forceFill(['name' => 'Изменённый источник при выключенном AI'])->save();
+        $disabledPain = $pain->refresh();
+        $disabledJob = Queue::pushedJobs()[AutoSuggestAnalyticsTags::class][0]['job'];
+        app()->call([$disabledJob, 'handle']);
+        self::assertSame(ClassificationRunStatus::Stale, $run->refresh()->status);
+        self::assertSame(1, AnalyticsClassificationRun::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('source_id', $disabledPain->getKey())
+            ->count());
+        self::assertSame(1, $calls);
+    }
+
+    public function test_postgresql_analytics_classification_fences_a_stale_worker_after_reclaim(): void
+    {
+        $this->requirePostgres();
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        app(OrganizationContext::class)->set($organization);
+        $this->activeAnalyticsPrompt($organization);
+        $tagA = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Результат старого worker',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $tagB = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Результат нового worker',
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+        $calls = 0;
+        $reentered = false;
+        $this->app->instance(AiWorkflowEngine::class, new class($calls, $reentered, $organization, $admin, $tagA, $tagB) implements AiWorkflowEngine
+        {
+            public function __construct(
+                private int &$calls,
+                private bool &$reentered,
+                private Organization $organization,
+                private User $admin,
+                private MedicalProblemTag $tagA,
+                private MedicalProblemTag $tagB,
+            ) {}
+
+            public function run(int $organizationId, AiRunRequest $request): AiRunResult
+            {
+                $this->calls++;
+                if ($this->calls === 1 && ! $this->reentered) {
+                    $this->reentered = true;
+                    AnalyticsClassificationRun::query()
+                        ->where('organization_id', $organizationId)
+                        ->where('source_type', 'synthetic_stale_worker')
+                        ->where('source_id', 901)
+                        ->update(['processing_lease_expires_at' => now()->subSecond()]);
+                    app(SuggestAnalyticsTags::class)->handle(
+                        actor: $this->admin,
+                        taxonomy: 'complaints',
+                        sourceType: 'synthetic_stale_worker',
+                        sourceId: 901,
+                        clientId: null,
+                        sourceText: 'Стабильный источник',
+                        availableTags: [
+                            ['id' => $this->tagA->getKey(), 'label' => $this->tagA->name],
+                            ['id' => $this->tagB->getKey(), 'label' => $this->tagB->name],
+                        ],
+                        force: true,
+                    );
+                }
+                $aiRun = new AiRun;
+                $aiRun->forceFill([
+                    'organization_id' => $organizationId,
+                    'capability' => $request->capability,
+                    'workflow_key' => $request->workflowKey,
+                    'origin' => $request->origin,
+                    'initiated_by_user_id' => $request->initiatedByUserId,
+                    'client_id' => $request->clientId,
+                    'status' => AiRunStatus::Succeeded,
+                    'execution_mode' => $request->executionMode,
+                    'prompt_version_id' => $request->promptVersionId,
+                    'idempotency_key' => $request->idempotencyKey,
+                ])->save();
+
+                return new AiRunResult(
+                    runId: (int) $aiRun->getKey(),
+                    status: AiRunStatus::Succeeded,
+                    outputPayload: ['tags' => [$this->calls === 1 ? $this->tagA->name : $this->tagB->name]],
+                );
+            }
+
+            public function executeRun(int $organizationId, int $runId, string $workerLeaseToken): AiRunResult
+            {
+                throw new RuntimeException('Not used in stale worker fencing test.');
+            }
+        });
+        $arguments = [
+            'actor' => $admin,
+            'taxonomy' => 'complaints',
+            'sourceType' => 'synthetic_stale_worker',
+            'sourceId' => 901,
+            'clientId' => null,
+            'sourceText' => 'Стабильный источник',
+            'availableTags' => [
+                ['id' => $tagA->getKey(), 'label' => $tagA->name],
+                ['id' => $tagB->getKey(), 'label' => $tagB->name],
+            ],
+        ];
+        $result = app(SuggestAnalyticsTags::class)->handle(...$arguments);
+        $run = AnalyticsClassificationRun::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('source_type', 'synthetic_stale_worker')
+            ->where('source_id', 901)
+            ->sole();
+
+        self::assertSame(ClassificationRunStatus::NeedsReview, $result->status);
+        self::assertSame([['id' => $tagB->getKey(), 'label' => $tagB->name]], $run->suggestions);
+        self::assertSame(2, $run->attempt_count);
+        self::assertSame(2, $calls);
+        self::assertDatabaseHas('analytics_tag_candidates', [
+            'classification_run_id' => $run->getKey(),
+            'label' => $tagB->name,
+            'status' => AnalyticsTagCandidateStatus::NeedsReview->value,
+        ]);
+        self::assertDatabaseMissing('analytics_tag_candidates', [
+            'classification_run_id' => $run->getKey(),
+            'label' => $tagA->name,
+        ]);
+
+        $run->forceFill([
+            'status' => ClassificationRunStatus::Processing,
+            'processing_lease_token' => 'active-token',
+            'processing_lease_expires_at' => now()->addMinutes(5),
+        ])->save();
+        $blocked = app(SuggestAnalyticsTags::class)->handle(...$arguments + ['force' => true]);
+        self::assertSame(ClassificationRunStatus::Processing, $blocked->status);
+        self::assertSame(2, $calls);
+        self::assertSame(2, $run->refresh()->attempt_count);
+    }
+
     public function test_postgresql_same_nps_key_race_creates_one_submission(): void
     {
         $this->requirePostgres();
         [$organization, , $client] = $this->referralFixture();
+        $actor = User::factory()->forOrganization($organization)->create();
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $actor,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: false,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+        );
         $results = Concurrency::driver('process')->run([
             static fn (): string => self::submitNpsInProcess($organization->getKey(), $client->getKey()),
             static fn (): string => self::submitNpsInProcess($organization->getKey(), $client->getKey()),
         ]);
 
-        self::assertNotContains('error', $results);
+        self::assertSame([], array_filter($results, static fn (string $result): bool => str_starts_with($result, 'error:')));
         self::assertSame(1, DB::table('feedback_submissions')
             ->where('organization_id', $organization->getKey())
             ->where('client_id', $client->getKey())
@@ -458,5 +717,26 @@ final class MilestoneElevenAConcurrencyTest extends TestCase
         if (DB::getDriverName() !== 'pgsql') {
             $this->markTestSkipped('M11A concurrency tests require PostgreSQL row locks and unique indexes.');
         }
+    }
+
+    private function activeAnalyticsPrompt(Organization $organization): void
+    {
+        $prompt = AiPrompt::query()->create([
+            'organization_id' => $organization->getKey(),
+            'key' => 'analytics_classification',
+            'name' => 'Классификация аналитики',
+            'capability' => AiCapability::GeneralAssistant,
+        ]);
+        $version = AiPromptVersion::query()->create([
+            'organization_id' => $organization->getKey(),
+            'prompt_id' => $prompt->getKey(),
+            'version' => 1,
+            'status' => 'active',
+            'system_prompt' => 'Return JSON tags from the configured taxonomy.',
+            'user_prompt_template' => '{{source_text}} {{allowed_tags}}',
+            'output_schema' => ['type' => 'object', 'properties' => ['tags' => ['type' => 'array']]],
+            'activated_at' => now(),
+        ]);
+        $prompt->forceFill(['active_version_id' => $version->getKey()])->save();
     }
 }

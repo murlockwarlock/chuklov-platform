@@ -1,0 +1,612 @@
+<?php
+
+namespace App\Modules\Analytics\Application;
+
+use App\Models\User;
+use App\Modules\Analytics\Domain\Enums\PainScoreBasis;
+use App\Modules\Finance\Application\FinancialReconciliationContract;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+
+final readonly class AnalyticsReportExport
+{
+    public function __construct(
+        private OrganizationContext $context,
+        private OrganizationAuthorizer $authorizer,
+        private FinancialReconciliationContract $money,
+    ) {}
+
+    /**
+     * @param  array<string, mixed>  $results
+     * @param  array<string, mixed>  $metadata
+     */
+    public function download(
+        User $actor,
+        array $results,
+        string $filename = 'analytics-report.xlsx',
+        array $metadata = [],
+    ): StreamedResponse {
+        $organization = $this->context->organization();
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
+
+        $spreadsheet = new Spreadsheet;
+        $summary = $spreadsheet->getActiveSheet();
+        $summary->setTitle('Сводка');
+        $this->writeSummary($summary, $metadata, $results);
+
+        if (array_key_exists('cohort_clients', $metadata) || array_key_exists('cohort_filters', $metadata)) {
+            $this->writeClients($this->newSheet($spreadsheet, 'Клиенты'), (array) ($metadata['cohort_clients'] ?? []));
+            $this->writeFilters($this->newSheet($spreadsheet, 'Фильтры'), $metadata);
+        }
+
+        if (isset($results['acquisition']) && is_array($results['acquisition'])) {
+            $this->writeSources($this->newSheet($spreadsheet, 'Источники'), $results['acquisition']);
+        }
+        if (isset($results['demographics']) && is_array($results['demographics'])) {
+            $this->writeDemographics($this->newSheet($spreadsheet, 'Демография'), $results['demographics']);
+        }
+        if (isset($results['pain']) && is_array($results['pain'])) {
+            $this->writePain($this->newSheet($spreadsheet, 'Боли'), $results['pain']);
+        }
+        if (isset($results['services']) && is_array($results['services'])) {
+            $this->writeServices($this->newSheet($spreadsheet, 'Услуги'), $results['services']);
+            $this->writeSpecialists($this->newSheet($spreadsheet, 'Специалисты'), $results['services']);
+        }
+        if (isset($results['purchases']) && is_array($results['purchases'])) {
+            $this->writePurchases($this->newSheet($spreadsheet, 'Покупки'), $results['purchases']);
+        }
+        if (isset($results['booking_statuses']) && is_array($results['booking_statuses'])) {
+            $this->writeBookings($this->newSheet($spreadsheet, 'Записи'), $results['booking_statuses']);
+        }
+        if (isset($results['segments']) && is_array($results['segments'])) {
+            $this->writeSegments($this->newSheet($spreadsheet, 'Категории клиентов'), $results['segments']);
+        }
+        if (isset($results['feedback']) && is_array($results['feedback'])) {
+            $this->writeFeedback($this->newSheet($spreadsheet, 'Обратная связь'), $results['feedback']);
+        }
+        if (isset($results['goals']) && is_array($results['goals'])) {
+            $this->writeGoals($this->newSheet($spreadsheet, 'Цели и задачи'), $results['goals']);
+        }
+        if (isset($results['finance']) && is_array($results['finance'])) {
+            $this->writeFinance($this->newSheet($spreadsheet, 'Финансы'), $results['finance']);
+        }
+
+        foreach ($spreadsheet->getAllSheets() as $sheet) {
+            $this->autosize($sheet);
+            $sheet->freezePane('A2');
+        }
+
+        return response()->streamDownload(
+            static function () use ($spreadsheet): void {
+                (new Xlsx($spreadsheet))->save('php://output');
+            },
+            $filename,
+            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+        );
+    }
+
+    /** @param array<string, mixed> $metadata
+     * @param  array<string, mixed>  $results
+     */
+    private function writeSummary(Worksheet $sheet, array $metadata, array $results): void
+    {
+        $rows = [];
+        foreach ([
+            'period' => 'Период',
+            'client' => 'Клиент',
+            'filters' => 'Фильтры',
+            'timezone' => 'Часовой пояс',
+            'currency' => 'Валюта',
+            'date_basis' => 'Основание даты',
+            'cohort_count' => 'Найдено клиентов',
+            'generated_at' => 'Сформировано',
+        ] as $key => $label) {
+            $value = $metadata[$key] ?? null;
+            if ($value !== null && $value !== '') {
+                $rows[] = [$label, is_array($value) ? implode(', ', $value) : $value];
+            }
+        }
+
+        $rows[] = ['', '', null];
+
+        if (isset($results['acquisition']['new_clients'])) {
+            $rows[] = ['Новые клиенты', $results['acquisition']['new_clients'], null];
+        }
+        if (isset($results['scheduling']) && is_array($results['scheduling'])) {
+            foreach ([
+                'bookings' => 'Записи',
+                'visits' => 'Визиты',
+                'cancellations' => 'Отмены',
+                'reschedules' => 'Переносы',
+                'no_shows' => 'Неявки',
+            ] as $key => $label) {
+                if (array_key_exists($key, $results['scheduling'])) {
+                    $rows[] = [$label, $results['scheduling'][$key], null];
+                }
+            }
+        }
+        if (isset($results['pain']) && is_array($results['pain'])) {
+            foreach ([
+                'client_count' => 'Клиенты с проблемами',
+                'session_count' => 'Сеансы с оценкой боли',
+                'before_score_count' => 'Оценки боли до сеанса',
+                'after_score_count' => 'Оценки боли после сеанса',
+            ] as $key => $label) {
+                if (array_key_exists($key, $results['pain'])) {
+                    $rows[] = [$label, $results['pain'][$key], null];
+                }
+            }
+            if (($results['pain']['effectiveness_available'] ?? true) === false) {
+                $rows[] = ['Процент эффективности терапии', 'Не настроено владельцем', null];
+            }
+        }
+        if (isset($results['demographics']['client_count'])) {
+            $rows[] = ['Клиенты в демографии', $results['demographics']['client_count'], null];
+        }
+        if (isset($results['demographics']['country_count'])) {
+            $rows[] = ['Стран представлено', $results['demographics']['country_count'], null];
+        }
+        if (isset($results['services']['visit_count'])) {
+            $rows[] = ['Визиты по услугам', $results['services']['visit_count'], null];
+            $rows[] = ['Специалисты в отчёте', count((array) ($results['services']['specialists'] ?? [])), null];
+        }
+        if (isset($results['feedback']) && is_array($results['feedback'])) {
+            foreach ([
+                'submission_count' => 'Получено оценок',
+                'average_score' => 'Средняя оценка',
+            ] as $key => $label) {
+                if (array_key_exists($key, $results['feedback'])) {
+                    $rows[] = [$label, $results['feedback'][$key], null];
+                }
+            }
+        }
+        if (isset($results['goals']['goals']) && is_array($results['goals']['goals'])) {
+            $rows[] = ['Категории целей', count($results['goals']['goals']), null];
+        }
+        if (isset($results['segments']['client_count'])) {
+            $rows[] = ['Клиенты в сегментах', $results['segments']['client_count'], null];
+        }
+        if (isset($results['finance']) && is_array($results['finance']) && ($results['finance']['available'] ?? false)) {
+            $currency = $results['finance']['currency'] ?? null;
+            foreach ([
+                'revenue_display' => 'Выручка',
+                'average_receipt_display' => 'Средний чек',
+                'realized_ltv_display' => 'LTV новых клиентов',
+                'debt_display' => 'Долг',
+                'expenses_display' => 'Расходы',
+                'cash_movement_display' => 'Денежный поток',
+            ] as $key => $label) {
+                if (array_key_exists($key, $results['finance']) && $results['finance'][$key] !== null) {
+                    $rows[] = [$label, $results['finance'][$key], $currency];
+                }
+            }
+        }
+        if (isset($results['custom_metrics']['metrics']) && is_array($results['custom_metrics']['metrics'])) {
+            foreach ($results['custom_metrics']['metrics'] as $metric) {
+                if (! is_array($metric)) {
+                    continue;
+                }
+
+                $unit = (string) ($metric['unit'] ?? '');
+                if (($metric['currency'] ?? null) !== null && $metric['currency'] !== '') {
+                    $unit .= ' '.(string) $metric['currency'];
+                }
+                $rows[] = [
+                    (string) ($metric['name'] ?? 'Показатель'),
+                    ($metric['available'] ?? false) ? ($metric['value'] ?? null) : ($metric['display'] ?? null),
+                    $unit,
+                ];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Показатель', 'Значение', 'Единица']);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writeSources(Worksheet $sheet, array $data): void
+    {
+        $total = max(0, (int) ($data['new_clients'] ?? 0));
+        $rows = [];
+        foreach ((array) ($data['sources'] ?? []) as $source) {
+            if (! is_array($source)) {
+                continue;
+            }
+            $count = (int) ($source['count'] ?? 0);
+            $rows[] = [(string) ($source['label'] ?? '—'), $count, $total === 0 ? null : round($count / $total * 100, 2)];
+        }
+
+        $this->writeRows($sheet, $rows, ['Источник', 'Новые клиенты', 'Доля, %']);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writeDemographics(Worksheet $sheet, array $data): void
+    {
+        $rows = [];
+        if (array_key_exists('country_count', $data)) {
+            $rows[] = ['Страны', 'Всего представлено', (int) $data['country_count'], null];
+        }
+        foreach (['age' => 'Возраст', 'sex' => 'Пол', 'children' => 'Дети и взрослые', 'country' => 'Страна'] as $key => $label) {
+            foreach ((array) ($data[$key] ?? []) as $item) {
+                if (is_array($item)) {
+                    $rows[] = [$label, (string) ($item['label'] ?? '—'), (int) ($item['count'] ?? 0), $item['percent'] ?? null];
+                }
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Параметр', 'Значение', 'Количество', 'Доля, %']);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writePain(Worksheet $sheet, array $data): void
+    {
+        $rows = [];
+        $effectivenessAvailable = ($data['effectiveness_available'] ?? true) === true;
+        foreach ((array) ($data['problems'] ?? []) as $problem) {
+            if (is_array($problem)) {
+                $row = [
+                    (string) ($problem['name'] ?? '—'),
+                    $problem['group'] ?? null,
+                    (int) ($problem['client_count'] ?? 0),
+                    $problem['before_score_count'] ?? null,
+                    $problem['after_score_count'] ?? null,
+                    $problem['average_before'] ?? null,
+                    $problem['average_after'] ?? null,
+                    $problem['average_reduction'] ?? null,
+                    $problem['session_1_after'] ?? null,
+                    $problem['session_2_after'] ?? null,
+                    $problem['session_3_after'] ?? null,
+                ];
+                if ($effectivenessAvailable) {
+                    array_splice($row, 8, 0, [$problem['average_reduction_percent'] ?? null]);
+                }
+                $rows[] = $row;
+            }
+        }
+
+        $headers = ['Проблема', 'Группа', 'Клиентов', 'Оценок до', 'Оценок после', 'Среднее до', 'Среднее после', 'Снижение'];
+        if ($effectivenessAvailable) {
+            $headers[] = 'Снижение, %';
+        }
+        $headers = [...$headers, 'Сеанс 1 после', 'Сеанс 2 после', 'Сеанс 3 после'];
+        $this->writeRows($sheet, $rows, $headers);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writeServices(Worksheet $sheet, array $data): void
+    {
+        $rows = [];
+        foreach ((array) ($data['services'] ?? []) as $service) {
+            if (is_array($service)) {
+                $rows[] = [(string) ($service['name'] ?? '—'), (int) ($service['client_count'] ?? 0), (int) ($service['visit_count'] ?? 0)];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Услуга', 'Клиентов', 'Визитов']);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writeSpecialists(Worksheet $sheet, array $data): void
+    {
+        $rows = [];
+        foreach ((array) ($data['specialists'] ?? []) as $specialist) {
+            if (is_array($specialist)) {
+                $rows[] = [(string) ($specialist['name'] ?? '—'), (int) ($specialist['client_count'] ?? 0), (int) ($specialist['visit_count'] ?? 0)];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Специалист', 'Клиентов', 'Визитов']);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writePurchases(Worksheet $sheet, array $data): void
+    {
+        $rows = [];
+        foreach ((array) ($data['types'] ?? []) as $type) {
+            if (is_array($type)) {
+                $rows[] = [(string) ($type['label'] ?? '—'), (int) ($type['client_count'] ?? 0), (int) ($type['count'] ?? 0)];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Тип покупки', 'Клиентов', 'Количество']);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writeBookings(Worksheet $sheet, array $data): void
+    {
+        $rows = [];
+        foreach ((array) ($data['statuses'] ?? []) as $status) {
+            if (is_array($status)) {
+                $rows[] = [(string) ($status['label'] ?? '—'), (int) ($status['count'] ?? 0)];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Статус', 'Количество']);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writeSegments(Worksheet $sheet, array $data): void
+    {
+        $rows = [];
+        foreach ((array) ($data['segments'] ?? []) as $segment) {
+            if (is_array($segment)) {
+                $rows[] = [(string) ($segment['label'] ?? '—'), (int) ($segment['count'] ?? 0), $segment['percent'] ?? null];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Категория', 'Клиентов', 'Доля, %']);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writeFeedback(Worksheet $sheet, array $data): void
+    {
+        $rows = [
+            ['Количество оценок', $data['submission_count'] ?? 0, null, null, null],
+            ['Средняя оценка', $data['average_score'] ?? null, null, null, null],
+        ];
+        foreach ((array) ($data['themes'] ?? []) as $theme) {
+            if (is_array($theme)) {
+                $rows[] = ['Тема', null, (string) ($theme['name'] ?? '—'), (int) ($theme['client_count'] ?? 0), $theme['average_score'] ?? null];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Показатель', 'Значение', 'Тема', 'Клиентов', 'Средняя оценка']);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writeGoals(Worksheet $sheet, array $data): void
+    {
+        $rows = [];
+        foreach ((array) ($data['goals'] ?? []) as $goal) {
+            if (is_array($goal)) {
+                $rows[] = [(string) ($goal['name'] ?? '—'), $goal['group'] ?? null, (int) ($goal['client_count'] ?? 0), (int) ($goal['task_count'] ?? 0)];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Цель или задача', 'Группа', 'Клиентов', 'Задач']);
+    }
+
+    /** @param array<string, mixed> $data */
+    private function writeFinance(Worksheet $sheet, array $data): void
+    {
+        $currency = $data['currency'] ?? null;
+        $rows = [];
+        foreach ([
+            'revenue_display' => 'Выручка',
+            'average_receipt_display' => 'Средний чек',
+            'realized_ltv_display' => 'LTV новых клиентов',
+            'debt_display' => 'Долг',
+            'expenses_display' => 'Расходы',
+            'cash_movement_display' => 'Денежный поток',
+        ] as $key => $label) {
+            if (array_key_exists($key, $data) && $data[$key] !== null) {
+                $rows[] = [$label, $data[$key], $currency];
+            }
+        }
+        $this->writeRows($sheet, $rows, ['Показатель', 'Значение', 'Валюта']);
+
+        $accounts = [];
+        foreach ((array) ($data['accounts'] ?? []) as $account) {
+            if (is_array($account)) {
+                $accounts[] = [
+                    (string) ($account['label'] ?? '—'),
+                    self::humanAccountType((string) ($account['account_type'] ?? '')),
+                    (string) ($account['currency'] ?? '—'),
+                    $account['movement_display'] ?? $this->formatMoney($account['movement_minor'] ?? null, $account['movement_currency'] ?? $account['currency'] ?? null),
+                    $currency,
+                ];
+            }
+        }
+        if ($accounts !== []) {
+            $start = count($rows) + 3;
+            $this->writeRows($sheet, $accounts, ['Счёт', 'Тип', 'Валюта счёта', 'Движение за период', 'Базовая валюта'], $start);
+        }
+    }
+
+    /** @param array<int, mixed> $clients */
+    private function writeClients(Worksheet $sheet, array $clients): void
+    {
+        $rows = [];
+        foreach ($clients as $client) {
+            if (! is_array($client)) {
+                continue;
+            }
+            $rows[] = [
+                $client['name'] ?? '—',
+                $client['gender'] ?? 'Не указано',
+                $client['birth_date'] ?? null,
+                $client['country'] ?? 'Не указана',
+                $client['source'] ?? 'Не указан',
+                $client['reason'] ?? 'Соответствует выбранным фильтрам',
+            ];
+        }
+
+        $this->writeRows($sheet, $rows, ['Клиент', 'Пол', 'Дата рождения', 'Страна', 'Источник', 'Причина попадания']);
+    }
+
+    /** @param array<string, mixed> $metadata */
+    private function writeFilters(Worksheet $sheet, array $metadata): void
+    {
+        $rows = [
+            ['Логика фильтров', 'AND между группами; OR внутри группы'],
+            ['Период', $metadata['period'] ?? null],
+            ['Основание даты', $metadata['date_basis'] ?? null],
+            ['Часовой пояс', $metadata['timezone'] ?? null],
+            ['Состояние сегментов', $metadata['segment_state'] ?? 'Текущее состояние сегментов на момент анализа'],
+            ['Ось сеансов', $metadata['session_axis'] ?? null],
+            ['Версия правила', $metadata['session_axis_version'] ?? null],
+        ];
+        $cohortFilters = (array) ($metadata['cohort_filters'] ?? []);
+        if (array_key_exists('pain_score_basis', $cohortFilters)) {
+            $rows[] = ['Источник оценки боли', PainScoreBasis::fromInput($cohortFilters['pain_score_basis'])->label()];
+        }
+        foreach ((array) ($metadata['filters'] ?? []) as $filter) {
+            $rows[] = ['Выбранный фильтр', is_scalar($filter) ? (string) $filter : json_encode($filter, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR)];
+        }
+        if (array_key_exists('cohort_count', $metadata)) {
+            $rows[] = ['Размер когорты', (int) $metadata['cohort_count']];
+        }
+        foreach ((array) ($metadata['rule_versions'] ?? []) as $key => $version) {
+            $rows[] = ['Версия правила: '.self::humanFilterKey((string) $key), (string) $version];
+        }
+        foreach ((array) ($metadata['formula_definitions'] ?? []) as $key => $definition) {
+            $label = match ((string) $key) {
+                'therapy_effectiveness' => 'Определение процента эффективности терапии',
+                'ltv_percent' => 'Определение процента LTV',
+                default => 'Определение метрики',
+            };
+            $rows[] = [$label, is_string($definition) && trim($definition) !== '' ? $definition : 'Не настроено владельцем'];
+        }
+        if (isset($metadata['generated_at'])) {
+            $rows[] = ['Сформировано', $metadata['generated_at']];
+        }
+        foreach ((array) ($metadata['cohort_filter_labels'] ?? []) as $filter) {
+            if (is_scalar($filter) && (string) $filter !== '') {
+                $rows[] = ['Клиентская когорта', (string) $filter];
+            }
+        }
+
+        $this->writeRows($sheet, $rows, ['Параметр', 'Значение']);
+    }
+
+    private static function humanFilterKey(string $key): string
+    {
+        return [
+            'client_ids' => 'Клиенты',
+            'clientIds' => 'Клиенты',
+            'exclude_client_ids' => 'Исключить клиентов',
+            'excludeClientIds' => 'Исключить клиентов',
+            'saved_group_ids' => 'Сохранённые группы клиентов',
+            'savedGroupIds' => 'Сохранённые группы клиентов',
+            'segments' => 'Категории клиентов',
+            'archived' => 'Архивированность',
+            'blacklist' => 'Чёрный список',
+            'genders' => 'Пол',
+            'countries' => 'Страны',
+            'sourceKeys' => 'Источники привлечения',
+            'problem_tag_ids' => 'Категории проблем',
+            'problemTagIds' => 'Категории проблем',
+            'problem_tag_mode' => 'Режим категорий проблем',
+            'problemTagMode' => 'Режим категорий проблем',
+            'exclude_problem_tag_ids' => 'Исключить категории проблем',
+            'excludeProblemTagIds' => 'Исключить категории проблем',
+            'pain_score_basis' => 'Источник оценки боли',
+            'painScoreBasis' => 'Источник оценки боли',
+            'feedback_theme_ids' => 'Темы обратной связи',
+            'feedbackThemeIds' => 'Темы обратной связи',
+            'goal_tag_ids' => 'Категории целей',
+            'goalTagIds' => 'Категории целей',
+            'age_min' => 'Возраст от',
+            'ageMin' => 'Возраст от',
+            'age_max' => 'Возраст до',
+            'ageMax' => 'Возраст до',
+            'children' => 'Дети',
+            'service_ids' => 'Услуги',
+            'serviceIds' => 'Услуги',
+            'service_categories' => 'Группы услуг',
+            'serviceCategories' => 'Группы услуг',
+            'specialist_ids' => 'Специалисты',
+            'specialistIds' => 'Специалисты',
+            'booking_statuses' => 'Статусы записей',
+            'bookingStatuses' => 'Статусы записей',
+            'booking_event_types' => 'Статусы истории записей',
+            'bookingEventTypes' => 'Статусы истории записей',
+            'completed_visits_min' => 'Завершённых визитов от',
+            'completed_visits_max' => 'Завершённых визитов до',
+            'last_visit_from' => 'Последний визит от',
+            'last_visit_to' => 'Последний визит до',
+            'purchase_types' => 'Типы покупок',
+            'purchaseTypes' => 'Типы покупок',
+            'purchase_statuses' => 'Статусы покупок',
+            'purchaseStatuses' => 'Статусы покупок',
+            'has_pain_score' => 'Наличие оценки боли',
+            'hasPainScore' => 'Наличие оценки боли',
+            'pain_score_min' => 'Оценка боли от',
+            'pain_score_max' => 'Оценка боли до',
+            'satisfaction_min' => 'Удовлетворённость от',
+            'satisfactionMin' => 'Удовлетворённость от',
+            'satisfaction_max' => 'Удовлетворённость до',
+            'satisfactionMax' => 'Удовлетворённость до',
+            'client_cohort' => 'Клиентская когорта',
+        ][$key] ?? $key;
+    }
+
+    private function newSheet(Spreadsheet $spreadsheet, string $title): Worksheet
+    {
+        $sheet = $spreadsheet->createSheet();
+        $sheet->setTitle($title);
+
+        return $sheet;
+    }
+
+    /**
+     * @param  list<array<int, mixed>>  $rows
+     * @param  list<string>  $headers
+     */
+    private function writeRows(Worksheet $sheet, array $rows, array $headers, int $startRow = 1): void
+    {
+        $this->writeRow($sheet, $headers, $startRow);
+        foreach ($rows as $index => $row) {
+            $this->writeRow($sheet, $row, $startRow + $index + 1);
+        }
+    }
+
+    /** @param array<int, mixed> $values */
+    private function writeRow(Worksheet $sheet, array $values, int $row): void
+    {
+        foreach (array_values($values) as $index => $value) {
+            $coordinate = Coordinate::stringFromColumnIndex($index + 1).$row;
+            $type = match (true) {
+                $value === null => DataType::TYPE_NULL,
+                is_bool($value) => DataType::TYPE_BOOL,
+                is_int($value), is_float($value) => DataType::TYPE_NUMERIC,
+                default => DataType::TYPE_STRING,
+            };
+            if (! is_string($value) && ! is_int($value) && ! is_float($value) && ! is_bool($value) && $value !== null) {
+                $value = (string) $value;
+            }
+            $sheet->setCellValueExplicit($coordinate, $value, $type);
+        }
+    }
+
+    private function autosize(Worksheet $sheet): void
+    {
+        $highestColumn = $sheet->getHighestColumn();
+        foreach (range(1, Coordinate::columnIndexFromString($highestColumn)) as $index) {
+            $sheet->getColumnDimensionByColumn($index)->setAutoSize(true);
+        }
+        $sheet->getStyle('A1:'.$highestColumn.'1')->getFont()->setBold(true);
+    }
+
+    private function formatMoney(mixed $minor, mixed $currency): ?string
+    {
+        if ($minor === null || $currency === null || $currency === '') {
+            return null;
+        }
+
+        try {
+            $code = $this->money->currency($currency);
+
+            return $this->money->money($minor, $code, 'A persisted financial amount is invalid.')
+                ->toDecimalString().' '.$code->value;
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private static function humanAccountType(string $type): string
+    {
+        return match ($type) {
+            'cash' => 'Касса',
+            'bank' => 'Банковский счёт',
+            'other' => 'Другое',
+            default => 'Счёт',
+        };
+    }
+}

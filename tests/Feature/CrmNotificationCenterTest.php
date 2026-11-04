@@ -356,6 +356,58 @@ final class CrmNotificationCenterTest extends TestCase
         self::assertSame(1, $user->fresh()->notifications()->whereNull('read_at')->count());
     }
 
+    public function test_database_bell_exposes_the_authoritative_unread_total_across_pages_and_read_actions(): void
+    {
+        $organization = Organization::factory()->create();
+        $foreignOrganization = Organization::factory()->create();
+        $user = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        OrganizationMembership::factory()->forOrganization($foreignOrganization)->forUser($user)->create([
+            'role' => OrganizationRole::Administrator->value,
+        ]);
+        app(OrganizationContext::class)->set($organization);
+        $channel = app(DatabaseNotificationChannel::class);
+
+        for ($index = 0; $index < 51; $index++) {
+            $channel->send(new NotificationMessage(
+                recipientExternalId: (string) $user->getKey(),
+                body: 'Оперативное уведомление '.$index,
+                subject: 'Уведомление '.$index,
+                locale: 'ru',
+                idempotencyKey: 'page-count-'.$index,
+                organizationId: $organization->getKey(),
+                severity: NotificationSeverity::Action,
+            ));
+        }
+
+        $channel->send(new NotificationMessage(
+            recipientExternalId: (string) $user->getKey(),
+            body: 'Чужое уведомление',
+            subject: 'Чужое уведомление',
+            locale: 'ru',
+            idempotencyKey: 'page-count-foreign',
+            organizationId: $foreignOrganization->getKey(),
+            severity: NotificationSeverity::Action,
+        ));
+
+        $this->actingAs($user);
+        $bell = app(DatabaseNotifications::class);
+
+        self::assertSame(51, $bell->getUnreadNotificationsCount());
+        self::assertSame(50, $bell->getNotifications()->count());
+        $renderedTrigger = $bell->getTrigger()->with(['unreadNotificationsCount' => 51])->render();
+        self::assertStringContainsString('fi-icon-btn-badge-ctn', $renderedTrigger);
+        self::assertStringContainsString('51', $renderedTrigger);
+
+        $firstNotification = $bell->getNotifications()->first();
+        self::assertNotNull($firstNotification);
+        $bell->markNotificationAsRead((string) $firstNotification->getKey());
+        self::assertSame(50, $bell->getUnreadNotificationsCount());
+
+        $bell->markAllNotificationsAsRead();
+        self::assertSame(0, $bell->getUnreadNotificationsCount());
+        self::assertSame(1, $user->fresh()->notifications()->whereNull('read_at')->count());
+    }
+
     public function test_database_projection_is_idempotent_per_recipient(): void
     {
         $organization = Organization::factory()->create();

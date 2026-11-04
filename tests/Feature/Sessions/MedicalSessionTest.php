@@ -18,6 +18,7 @@ use App\Modules\Sessions\Application\DTOs\MedicalSessionData;
 use App\Modules\Sessions\Application\DTOs\UpdateSessionCommand;
 use App\Modules\Sessions\Application\GetSession;
 use App\Modules\Sessions\Application\GetSessionDynamics;
+use App\Modules\Sessions\Application\LinkMedicalSessionBooking;
 use App\Modules\Sessions\Application\MedicalSessionSnapshotHasher;
 use App\Modules\Sessions\Application\UpdateSession;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
@@ -232,6 +233,68 @@ final class MedicalSessionTest extends TestCase
         $result = app(CreateSession::class)->handle($admin, $client, $command);
 
         self::assertSame((int) $booking->getKey(), $result->bookingId);
+    }
+
+    public function test_standalone_session_can_be_linked_relinked_and_unlinked_with_audit(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+        $service = Service::factory()->forOrganization($organization)->create();
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create();
+        $replacement = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'starts_at' => now()->addDays(3)->setTime(12, 0),
+                'ends_at' => now()->addDays(3)->setTime(13, 0),
+                'blocking_ends_at' => now()->addDays(3)->setTime(13, 0),
+            ]);
+        $session = MedicalSession::findOrFail(app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::now('UTC'),
+        ))->id);
+
+        app(LinkMedicalSessionBooking::class)->handle($admin, $session, $client, (int) $booking->getKey());
+        self::assertSame((int) $booking->getKey(), (int) $session->fresh()->booking_id);
+
+        app(LinkMedicalSessionBooking::class)->handle($admin, $session->fresh(), $client, (int) $replacement->getKey());
+        self::assertSame((int) $replacement->getKey(), (int) $session->fresh()->booking_id);
+
+        app(LinkMedicalSessionBooking::class)->handle($admin, $session->fresh(), $client, null);
+        self::assertNull($session->fresh()->booking_id);
+        self::assertSame(3, AuditEvent::query()->where('action', 'medical.session.booking_link.updated')->count());
+        self::assertSame((int) $replacement->getKey(), AuditEvent::query()
+            ->where('action', 'medical.session.booking_link.updated')
+            ->latest('id')
+            ->firstOrFail()
+            ->metadata['previous_booking_id']);
+    }
+
+    public function test_session_booking_link_rejects_other_client_or_specialist(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+        $otherClient = Client::factory()->forOrganization($organization)->create();
+        $otherSpecialist = Specialist::factory()->forOrganization($organization)->create();
+        $service = Service::factory()->forOrganization($organization)->create();
+        $session = MedicalSession::findOrFail(app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::now('UTC'),
+        ))->id);
+        $alienBooking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($otherClient)
+            ->forSpecialist($otherSpecialist)
+            ->forService($service)
+            ->create();
+
+        $this->expectException(ValidationException::class);
+        app(LinkMedicalSessionBooking::class)->handle($admin, $session, $client, (int) $alienBooking->getKey());
     }
 
     public function test_create_rejects_same_org_booking_belonging_to_other_client(): void
@@ -486,6 +549,38 @@ final class MedicalSessionTest extends TestCase
             occurredAt: Carbon::now('UTC'),
             pain: $tooLong,
         ));
+    }
+
+    public function test_root_cause_free_text_accepts_10000_unicode_characters_and_rejects_10001_atomically(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->setupOrganizationWithClientAndSpecialist();
+        $accepted = str_repeat('Ж', 10000);
+        $created = app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: Carbon::now('UTC'),
+            rootCauses: [['free_text' => $accepted]],
+        ));
+
+        self::assertSame($accepted, $created->rootCauses[0]->freeText);
+        $rootCauseCount = MedicalSession::query()->findOrFail($created->id)->rootCauses()->count();
+
+        try {
+            app(UpdateSession::class)->handle($admin, MedicalSession::query()->findOrFail($created->id), new UpdateSessionCommand(
+                pain: null,
+                tests: null,
+                observations: null,
+                rootCauseHypothesis: null,
+                protocol: null,
+                result: null,
+                rootCauses: [['free_text' => str_repeat('Ж', 10001)]],
+                rootCausesProvided: true,
+            ));
+            self::fail('A root-cause description longer than 10000 Unicode characters must be rejected.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('root_causes', $exception->errors());
+        }
+
+        self::assertSame($rootCauseCount, MedicalSession::query()->findOrFail($created->id)->rootCauses()->count());
     }
 
     public function test_session_allows_inactive_specialist_for_retroactive_recording(): void

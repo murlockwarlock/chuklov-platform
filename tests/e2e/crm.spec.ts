@@ -1,6 +1,7 @@
-import { execFileSync } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { createServer, type Server } from 'node:http';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 type CrmFixture = {
     email: string;
@@ -10,6 +11,8 @@ type CrmFixture = {
     serviceId: number;
     specialistId: number;
     clientName: string;
+    painCountry: string | null;
+    problemTagName: string | null;
     partnerName: string;
     serviceName: string;
     specialistName: string;
@@ -26,7 +29,76 @@ type CrmFixture = {
     referralStatsCampaignName: string | null;
     telegramUsername: string | null;
     giftProductName: string | null;
+    aggregateServiceAName: string | null;
+    aggregateServiceBName: string | null;
+    aggregateServiceClientAName: string | null;
+    aggregateServiceClientBName: string | null;
+    aggregateServiceClientBothName: string | null;
+    aggregateProblemTagName: string | null;
+    aggregateBackTagName: string | null;
+    aggregateProblemClientNeckName: string | null;
+    aggregateProblemClientBackName: string | null;
+    aggregateProblemClientBothName: string | null;
+    aggregateMissingCountryClientName: string | null;
+    countryCountClientNames: {
+        kzA: string;
+        kzB: string;
+        ru: string;
+        unknown: string;
+    } | null;
+    candidateLabel: string | null;
+    staleCandidateLabel: string | null;
+    tagCandidatePainName: string | null;
+    tagCandidateUnrelatedClientName: string | null;
+    medicalHistoryPainName: string | null;
 };
+
+async function startAnalyticsProviderStub(label: string): Promise<Server> {
+    const server = createServer((request, response) => {
+        if (request.method !== 'POST' || request.url !== '/api/chat') {
+            response.writeHead(404).end();
+
+            return;
+        }
+
+        request.resume();
+        request.on('end', () => {
+            response.writeHead(200, { 'content-type': 'application/json' }).end(JSON.stringify({
+                model: 'e2e-analytics-stub',
+                message: {
+                    role: 'assistant',
+                    content: JSON.stringify({ tags: [label] }),
+                },
+                done: true,
+                done_reason: 'stop',
+                prompt_eval_count: 1,
+                eval_count: 1,
+            }));
+        });
+    });
+
+    await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(0, '127.0.0.1', () => resolve());
+    });
+
+    return server;
+}
+
+function analyticsProviderStubPort(server: Server): number {
+    const address = server.address();
+    if (address === null || typeof address === 'string') {
+        throw new Error('Analytics provider stub did not expose a TCP port.');
+    }
+
+    return address.port;
+}
+
+async function closeAnalyticsProviderStub(server: Server): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+        server.close((error) => error === undefined ? resolve() : reject(error));
+    });
+}
 
 function validPdfBuffer(): Buffer {
     return Buffer.from([
@@ -43,6 +115,54 @@ function validPdfBuffer(): Buffer {
         '150',
         '%%EOF',
     ].join('\n'));
+}
+
+function validWavBuffer(): Buffer {
+    const data = Buffer.alloc(1600);
+    const header = Buffer.alloc(44);
+    header.write('RIFF', 0, 'ascii');
+    header.writeUInt32LE(36 + data.length, 4);
+    header.write('WAVE', 8, 'ascii');
+    header.write('fmt ', 12, 'ascii');
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(1, 22);
+    header.writeUInt32LE(8000, 24);
+    header.writeUInt32LE(16000, 28);
+    header.writeUInt16LE(2, 32);
+    header.writeUInt16LE(16, 34);
+    header.write('data', 36, 'ascii');
+    header.writeUInt32LE(data.length, 40);
+
+    return Buffer.concat([header, data]);
+}
+
+function validPngBuffer(): Buffer {
+    return Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64');
+}
+
+async function uploadSessionPhoto(page: Page, label: string, filename: string): Promise<void> {
+    await page.getByRole('button', { name: label, exact: true }).click();
+    const dialog = page.getByRole('dialog').last();
+    const uploadControl = dialog
+        .getByRole('group', { name: 'Фото*', exact: true })
+        .locator('label')
+        .filter({ hasText: 'Перетащите файлы или выберите', visible: true });
+    const [fileChooser] = await Promise.all([
+        page.waitForEvent('filechooser'),
+        uploadControl.click(),
+    ]);
+    await fileChooser.setFiles({
+        name: filename,
+        mimeType: 'image/png',
+        buffer: validPngBuffer(),
+    });
+    const selectedPhoto = dialog.getByRole('group', { name: filename, exact: true });
+    await expect(selectedPhoto).toBeVisible({ timeout: 15_000 });
+    await expect(selectedPhoto.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
+    await dialog.getByRole('button', { name: 'Загрузить', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect(page.getByText('Фото загружено в галерею', { exact: true })).toBeVisible();
 }
 
 async function uploadCrmMedicalReport(page: Page, filename: string, expectedOutcome: 'uploaded' | 'limit_rejected' = 'uploaded'): Promise<void> {
@@ -78,7 +198,38 @@ async function uploadCrmMedicalReport(page: Page, filename: string, expectedOutc
     await expect(page.getByText('Файл загружен', { exact: true })).toBeVisible();
 }
 
-function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean } = {}): CrmFixture {
+async function removeEmptyRepeaterItems(page: Page, label: string): Promise<void> {
+    const inputs = page.getByLabel(label, { exact: true });
+
+    for (let index = (await inputs.count()) - 1; index >= 0; index -= 1) {
+        const input = inputs.nth(index);
+        if ((await input.inputValue()).trim() !== '') {
+            continue;
+        }
+
+        await input.locator('xpath=ancestor::li[1]').getByRole('button', { name: 'Удалить', exact: true }).first().click();
+        await page.waitForLoadState('networkidle');
+    }
+}
+
+async function setLivewireRangeValue(page: Page, slider: Locator, value: number): Promise<void> {
+    await slider.press('Home');
+    await expect.poll(() => slider.getAttribute('aria-valuenow'), { timeout: 5_000 }).toBe('0.0');
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+        const currentValue = Number(await slider.getAttribute('aria-valuenow'));
+        if (currentValue === value) {
+            break;
+        }
+
+        await slider.press(currentValue < value ? 'ArrowRight' : 'ArrowLeft');
+        await page.waitForTimeout(350);
+    }
+
+    await expect(slider).toHaveAttribute('aria-valuenow', `${value}.0`);
+}
+
+function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean; referralStatsFlow?: boolean; telegramLinkFlow?: boolean; messagesFlow?: boolean; giftSaleFlow?: boolean; includeMedicalAttachment?: boolean; taxonomyFlow?: boolean; clinicalCatalogFlow?: boolean; painScoreFlow?: boolean; problemAxisFlow?: boolean; aggregateDrilldownFlow?: boolean; countryCountFlow?: boolean; tagCandidateFlow?: boolean; savedGroupFlow?: boolean; medicalHistoryFlow?: boolean } = {}): CrmFixture {
     const php = `
         $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
         $suffix = \\Illuminate\\Support\\Str::lower(\\Illuminate\\Support\\Str::random(12));
@@ -89,6 +240,10 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         $telegramLinkFlow = getenv('PLAYWRIGHT_TELEGRAM_LINK_FLOW') === '1';
         $admin = \\App\\Models\\User::factory()->forOrganization($organization)->create(['email' => $email]);
         app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        $candidateLabel = null;
+        $staleCandidateLabel = null;
+        $tagCandidatePainName = null;
+        $tagCandidateUnrelatedClientName = null;
         \\App\\Modules\\Specialists\\Domain\\Models\\Specialist::query()
             ->where('organization_id', $organization->getKey())
             ->update([
@@ -114,6 +269,134 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
         $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
             'full_name' => 'CRM Клиент '.$suffix,
         ]);
+        if (${options.savedGroupFlow ? 'true' : 'false'}) {
+            $seededGroupName = 'E2E persisted group '.$suffix;
+            $group = \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsClientGroup::forceCreate([
+                'organization_id' => $organization->getKey(),
+                'name' => $seededGroupName,
+                'description' => null,
+                'group_type' => 'manual',
+                'is_active' => true,
+                'sort_order' => 0,
+                'version' => 1,
+                'rule_definition' => null,
+                'created_by_user_id' => $admin->getKey(),
+                'updated_by_user_id' => $admin->getKey(),
+                'archived_at' => null,
+            ]);
+            \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsClientGroupVersion::forceCreate([
+                'organization_id' => $organization->getKey(),
+                'analytics_client_group_id' => $group->getKey(),
+                'version' => 1,
+                'name' => $seededGroupName,
+                'description' => null,
+                'group_type' => 'manual',
+                'is_active' => true,
+                'sort_order' => 0,
+                'rule_definition' => null,
+                'client_ids' => [],
+                'created_by_user_id' => $admin->getKey(),
+            ]);
+        }
+        if (${options.painScoreFlow ? 'true' : 'false'}) {
+            $client->update(['country' => 'E2E-PAIN-'.$suffix]);
+        }
+        if (${options.taxonomyFlow ? 'true' : 'false'}) {
+            \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => 'E2E проблема '.$suffix,
+                'group_name' => 'E2E группа '.$suffix,
+                'is_active' => true,
+                'sort_order' => 0,
+            ]);
+        }
+        if (${options.tagCandidateFlow ? 'true' : 'false'}) {
+            $candidateLabel = 'E2E новый кандидат '.$suffix;
+            $staleCandidateLabel = 'E2E устаревший кандидат '.$suffix;
+            $tagCandidatePainName = 'E2E источник боли '.$suffix;
+            $tagCandidateUnrelatedClientName = 'E2E unrelated analytics client '.$suffix;
+            app(\\App\\Modules\\MedicalProfiles\\Application\\UpdateMedicalProfile::class)->handle(
+                $admin,
+                $client,
+                new \\App\\Modules\\MedicalProfiles\\Application\\DTOs\\UpdateMedicalProfileCommand(
+                    pains: [['name' => $tagCandidatePainName, 'score' => 7]],
+                    painsProvided: true,
+                ),
+            );
+            $sourcePain = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('client_id', $client->getKey())
+                ->sole();
+            \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+                'full_name' => $tagCandidateUnrelatedClientName,
+            ]);
+            $setting = $organization->settings()->where('setting_key', \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled->value)->first()
+                ?? new \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationSetting;
+            $setting->forceFill([
+                'organization_id' => $organization->getKey(),
+                'setting_key' => \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled->value,
+                'value_type' => \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingType::Boolean,
+                'string_value' => null,
+                'integer_value' => null,
+                'boolean_value' => true,
+            ])->save();
+            foreach ([[$candidateLabel, 'complaints', 'needs_review'], [$staleCandidateLabel, 'feedback', 'succeeded']] as [$label, $taxonomy, $runStatus]) {
+                $run = \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsClassificationRun::forceCreate([
+                    'organization_id' => $organization->getKey(),
+                    'client_id' => $client->getKey(),
+                    'taxonomy' => $taxonomy,
+                    'source_type' => $taxonomy === 'complaints' ? 'medical_profile_pain' : 'synthetic_e2e',
+                    'source_id' => $taxonomy === 'complaints' ? $sourcePain->getKey() : $client->getKey(),
+                    'source_digest' => hash('sha256', $label),
+                    'status' => $runStatus === 'needs_review'
+                        ? \\App\\Modules\\Analytics\\Domain\\Enums\\ClassificationRunStatus::NeedsReview
+                        : \\App\\Modules\\Analytics\\Domain\\Enums\\ClassificationRunStatus::Succeeded,
+                    'attempt_count' => 1,
+                    'suggestions' => [['id' => null, 'label' => $label, 'candidate_type' => 'new']],
+                ]);
+                \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsTagCandidate::forceCreate([
+                    'organization_id' => $organization->getKey(),
+                    'classification_run_id' => $run->getKey(),
+                    'client_id' => $client->getKey(),
+                    'taxonomy' => $taxonomy,
+                    'source_type' => $taxonomy === 'complaints' ? 'medical_profile_pain' : 'synthetic_e2e',
+                    'source_id' => $taxonomy === 'complaints' ? $sourcePain->getKey() : $client->getKey(),
+                    'candidate_type' => 'new',
+                    'suggested_existing_id' => null,
+                    'label' => $label,
+                    'status' => \\App\\Modules\\Analytics\\Domain\\Enums\\AnalyticsTagCandidateStatus::NeedsReview,
+                    'version' => 1,
+                ]);
+            }
+        }
+        if (${options.clinicalCatalogFlow ? 'true' : 'false'}) {
+            $test = \\App\\Modules\\Sessions\\Domain\\Models\\MedicalTestDefinition::query()->create([
+                'organization_id' => $organization->getKey(),
+                'key' => 'e2e_test_'.$suffix,
+                'name' => 'E2E тест '.$suffix,
+                'section' => 'E2E раздел',
+                'is_active' => true,
+                'sort_order' => 0,
+            ]);
+            foreach ([['normal', 'Норма', false], ['abnormal', 'Отклонение', true]] as [$key, $label, $isAbnormal]) {
+                \\App\\Modules\\Sessions\\Domain\\Models\\MedicalTestValue::query()->create([
+                    'organization_id' => $organization->getKey(),
+                    'medical_test_definition_id' => $test->getKey(),
+                    'key' => $key,
+                    'label' => $label,
+                    'is_abnormal' => $isAbnormal,
+                    'is_active' => true,
+                    'sort_order' => $isAbnormal ? 1 : 0,
+                ]);
+            }
+            \\App\\Modules\\Sessions\\Domain\\Models\\MedicalCauseDefinition::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => 'E2E причина '.$suffix,
+                'group_name' => 'E2E причины',
+                'is_active' => true,
+                'sort_order' => 0,
+            ]);
+        }
         $telegramUsername = null;
         if ($telegramLinkFlow) {
             $telegramUsername = 'crm_'.$suffix;
@@ -141,6 +424,119 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'price_minor' => getenv('PLAYWRIGHT_FINANCE_FLOW') === '1' || $payoutFlow ? 10000 : null,
             'price_currency' => getenv('PLAYWRIGHT_FINANCE_FLOW') === '1' || $payoutFlow ? 'USD' : null,
         ]);
+        $aggregateServiceAName = null;
+        $aggregateServiceBName = null;
+        $aggregateServiceClientAName = null;
+        $aggregateServiceClientBName = null;
+        $aggregateServiceClientBothName = null;
+        $aggregateProblemTagName = null;
+        $aggregateBackTagName = null;
+        $aggregateProblemClientNeckName = null;
+        $aggregateProblemClientBackName = null;
+        $aggregateProblemClientBothName = null;
+        $aggregateMissingCountryClientName = null;
+        $countryCountClientNames = null;
+        if (${options.aggregateDrilldownFlow ? 'true' : 'false'}) {
+            $client->forceFill([
+                'country' => 'E2E known country '.$suffix,
+                'gender' => 'FEMALE',
+                'birth_date' => '1985-06-10',
+            ])->save();
+            $partner->forceFill([
+                'country' => 'E2E known partner country '.$suffix,
+                'gender' => 'MALE',
+                'birth_date' => '1985-06-10',
+            ])->save();
+            $aggregateServiceAName = 'E2E аналитика услуга A '.$suffix;
+            $aggregateServiceBName = 'E2E аналитика услуга B '.$suffix;
+            $aggregateServiceA = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create(['name' => $aggregateServiceAName]);
+            $aggregateServiceB = \\App\\Modules\\Services\\Domain\\Models\\Service::factory()->forOrganization($organization)->create(['name' => $aggregateServiceBName]);
+            $aggregateServiceClientAName = 'E2E клиент услуга A '.$suffix;
+            $aggregateServiceClientBName = 'E2E клиент услуга B '.$suffix;
+            $aggregateServiceClientBothName = 'E2E клиент услуги A B '.$suffix;
+            $aggregateServiceClientA = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateServiceClientAName, 'country' => 'E2E service country '.$suffix]);
+            $aggregateServiceClientB = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateServiceClientBName, 'country' => 'E2E service country '.$suffix]);
+            $aggregateServiceClientBoth = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateServiceClientBothName, 'country' => 'E2E service country '.$suffix]);
+            $aggregateBookingAttributes = [
+                'status' => 'completed',
+                'starts_at' => '2026-10-10 12:00:00',
+                'ends_at' => '2026-10-10 13:00:00',
+                'blocking_ends_at' => '2026-10-10 13:00:00',
+            ];
+            \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()->forClient($aggregateServiceClientA)->forSpecialist($specialist)->forService($aggregateServiceA)->create($aggregateBookingAttributes);
+            \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()->forClient($aggregateServiceClientB)->forSpecialist($specialist)->forService($aggregateServiceB)->create($aggregateBookingAttributes);
+            \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()->forClient($aggregateServiceClientBoth)->forSpecialist($specialist)->forService($aggregateServiceA)->create($aggregateBookingAttributes);
+            \\App\\Modules\\Scheduling\\Domain\\Models\\Booking::factory()->forClient($aggregateServiceClientBoth)->forSpecialist($specialist)->forService($aggregateServiceB)->create($aggregateBookingAttributes);
+            $aggregateProblemTagName = 'E2E аналитика шея '.$suffix;
+            $aggregateBackTagName = 'E2E аналитика спина '.$suffix;
+            $aggregateProblemTag = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => $aggregateProblemTagName,
+                'is_active' => true,
+                'sort_order' => 20,
+            ]);
+            $aggregateBackTag = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => $aggregateBackTagName,
+                'is_active' => true,
+                'sort_order' => 21,
+            ]);
+            $aggregateProblemClientNeckName = 'E2E клиент только шея '.$suffix;
+            $aggregateProblemClientBackName = 'E2E клиент только спина '.$suffix;
+            $aggregateProblemClientBothName = 'E2E клиент шея и спина '.$suffix;
+            $aggregateProblemClientNeck = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateProblemClientNeckName, 'country' => 'E2E problem country '.$suffix]);
+            $aggregateProblemClientBack = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateProblemClientBackName, 'country' => 'E2E problem country '.$suffix]);
+            $aggregateProblemClientBoth = \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create(['full_name' => $aggregateProblemClientBothName, 'country' => 'E2E problem country '.$suffix]);
+            $createAggregateSession = static function ($aggregateClient, array $pains) use ($admin, $specialist): void {
+                app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
+                    $admin,
+                    $aggregateClient,
+                    new \\App\\Modules\\Sessions\\Application\\DTOs\\CreateSessionCommand(
+                        specialistId: $specialist->getKey(),
+                        occurredAt: \\Illuminate\\Support\\Carbon::parse('2026-10-10 14:00:00', 'UTC'),
+                        pains: $pains,
+                    ),
+                );
+            };
+            $createAggregateSession($aggregateProblemClientNeck, [[
+                'name' => 'E2E шея', 'tag_ids' => [$aggregateProblemTag->getKey()], 'before_score' => 8, 'after_score' => 4,
+            ]]);
+            $createAggregateSession($aggregateProblemClientBack, [[
+                'name' => 'E2E спина', 'tag_ids' => [$aggregateBackTag->getKey()], 'before_score' => 8, 'after_score' => 4,
+            ]]);
+            $createAggregateSession($aggregateProblemClientBoth, [
+                ['name' => 'E2E шея', 'tag_ids' => [$aggregateProblemTag->getKey()], 'before_score' => 8, 'after_score' => 4],
+                ['name' => 'E2E спина', 'tag_ids' => [$aggregateBackTag->getKey()], 'before_score' => 8, 'after_score' => 4],
+            ]);
+            $aggregateMissingCountryClientName = 'E2E клиент без страны '.$suffix;
+            \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+                'full_name' => $aggregateMissingCountryClientName,
+                'country' => null,
+                'gender' => null,
+                'birth_date' => '1985-06-10',
+            ]);
+        }
+        if (${options.countryCountFlow ? 'true' : 'false'}) {
+            $countryCountClientNames = [
+                'kzA' => 'E2E страна Kazakhstan Alpha '.$suffix,
+                'kzB' => 'E2E страна Kazakhstan Beta '.$suffix,
+                'ru' => 'E2E страна Russia Client '.$suffix,
+                'unknown' => 'E2E страна без Country '.$suffix,
+            ];
+            foreach ([
+                [$countryCountClientNames['kzA'], 'KZ'],
+                [$countryCountClientNames['kzB'], 'KZ'],
+                [$countryCountClientNames['ru'], 'RU'],
+                [$countryCountClientNames['unknown'], null],
+            ] as [$name, $country]) {
+                \\App\\Modules\\Identity\\Domain\\Models\\Client::factory()->forOrganization($organization)->create([
+                    'full_name' => $name,
+                    'country' => $country,
+                    'created_at' => '2026-10-10 10:00:00',
+                    'updated_at' => '2026-10-10 10:00:00',
+                ]);
+            }
+        }
         $giftSaleFlow = getenv('PLAYWRIGHT_GIFT_SALE_FLOW') === '1';
         $giftProductName = null;
         if ($giftSaleFlow) {
@@ -413,6 +809,87 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 result: 'Предыдущий подтверждённый результат',
             ),
         );
+        $medicalHistoryPainName = null;
+        if (${options.medicalHistoryFlow ? 'true' : 'false'}) {
+            $medicalHistoryPainName = 'HISTORY PAIN '.$suffix;
+            foreach ([['2026-07-01 09:00:00', 6, 0], ['2026-07-02 09:00:00', 5, 4]] as [$occurredAt, $beforeScore, $afterScore]) {
+                app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
+                    $admin,
+                    $client,
+                    new \\App\\Modules\\Sessions\\Application\\DTOs\\CreateSessionCommand(
+                        specialistId: $specialist->getKey(),
+                        occurredAt: \\Illuminate\\Support\\Carbon::parse($occurredAt, 'UTC'),
+                        pains: [[
+                            'name' => $medicalHistoryPainName,
+                            'before_score' => $beforeScore,
+                            'after_score' => $afterScore,
+                        ]],
+                    ),
+                );
+            }
+        }
+        if (${options.painScoreFlow ? 'true' : 'false'}) {
+            app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
+                $admin,
+                $client,
+                new \\App\\Modules\\Sessions\\Application\\DTOs\\CreateSessionCommand(
+                    specialistId: $specialist->getKey(),
+                    occurredAt: \\Illuminate\\Support\\Carbon::parse('2026-10-10 09:00:00', 'UTC'),
+                    pains: [[
+                        'name' => 'E2E боль после сеанса',
+                        'before_score' => null,
+                        'after_score' => 2,
+                    ]],
+                ),
+            );
+        }
+        $problemTagName = null;
+        if (${options.problemAxisFlow ? 'true' : 'false'}) {
+            app(\\App\\Modules\\Organizations\\Application\\SetOrganizationSetting::class)->handle(
+                $admin,
+                \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsSessionAxisSemantics,
+                \\App\\Modules\\Analytics\\Application\\ClientSessionAxisCatalog::ProblemChronological,
+            );
+            $problemTagName = 'E2E шея '.$suffix;
+            $problemTag = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()->create([
+                'organization_id' => $organization->getKey(),
+                'name' => $problemTagName,
+                'group_name' => 'E2E ось сеансов',
+                'is_active' => true,
+                'sort_order' => 0,
+            ]);
+            foreach (['2026-09-01 09:00:00', '2026-09-02 09:00:00', '2026-09-03 09:00:00'] as $occurredAt) {
+                app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
+                    $admin,
+                    $client,
+                    new \\App\\Modules\\Sessions\\Application\\DTOs\\CreateSessionCommand(
+                        specialistId: $specialist->getKey(),
+                        occurredAt: \\Illuminate\\Support\\Carbon::parse($occurredAt, 'UTC'),
+                        pains: [],
+                    ),
+                );
+            }
+            foreach ([
+                ['2026-10-01 09:00:00', 8],
+                ['2026-10-02 09:00:00', 4],
+                ['2026-10-03 09:00:00', 1],
+            ] as [$occurredAt, $afterScore]) {
+                app(\\App\\Modules\\Sessions\\Application\\CreateSession::class)->handle(
+                    $admin,
+                    $client,
+                    new \\App\\Modules\\Sessions\\Application\\DTOs\\CreateSessionCommand(
+                        specialistId: $specialist->getKey(),
+                        occurredAt: \\Illuminate\\Support\\Carbon::parse($occurredAt, 'UTC'),
+                        pains: [[
+                            'name' => 'E2E боль шеи',
+                            'tag_ids' => [$problemTag->getKey()],
+                            'before_score' => 10,
+                            'after_score' => $afterScore,
+                        ]],
+                    ),
+                );
+            }
+        }
         if (getenv('CLINICAL_AI_E2E_ENABLED') === '1') {
             $providerName = getenv('CLINICAL_AI_PROVIDER') ?: 'openai';
             $modelName = getenv('CLINICAL_AI_MODEL') ?: '';
@@ -527,6 +1004,8 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'serviceId' => $service->getKey(),
             'specialistId' => $specialist->getKey(),
             'clientName' => $client->full_name,
+            'painCountry' => ${options.painScoreFlow ? '$client->country' : 'null'},
+            'problemTagName' => $problemTagName,
             'partnerName' => $partner->full_name,
             'serviceName' => $service->name,
             'specialistName' => $specialist->display_name,
@@ -543,6 +1022,23 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
             'referralStatsCampaignName' => $referralStatsCampaignName,
             'telegramUsername' => $telegramUsername,
             'giftProductName' => $giftProductName,
+            'aggregateServiceAName' => $aggregateServiceAName,
+            'aggregateServiceBName' => $aggregateServiceBName,
+            'aggregateServiceClientAName' => $aggregateServiceClientAName,
+            'aggregateServiceClientBName' => $aggregateServiceClientBName,
+            'aggregateServiceClientBothName' => $aggregateServiceClientBothName,
+            'aggregateProblemTagName' => $aggregateProblemTagName,
+            'aggregateBackTagName' => $aggregateBackTagName,
+            'aggregateProblemClientNeckName' => $aggregateProblemClientNeckName,
+            'aggregateProblemClientBackName' => $aggregateProblemClientBackName,
+            'aggregateProblemClientBothName' => $aggregateProblemClientBothName,
+            'aggregateMissingCountryClientName' => $aggregateMissingCountryClientName,
+            'countryCountClientNames' => $countryCountClientNames,
+            'candidateLabel' => $candidateLabel,
+            'staleCandidateLabel' => $staleCandidateLabel,
+            'tagCandidatePainName' => $tagCandidatePainName,
+            'tagCandidateUnrelatedClientName' => $tagCandidateUnrelatedClientName,
+            'medicalHistoryPainName' => $medicalHistoryPainName,
         ], JSON_THROW_ON_ERROR);
     `;
     const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-${process.pid}`;
@@ -561,12 +1057,15 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
                 DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
                 DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
                 DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+                MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                    ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
                 PLAYWRIGHT_FINANCE_FLOW: options.financeFlow ? '1' : '0',
                 PLAYWRIGHT_PAYOUT_FLOW: options.payoutFlow ? '1' : '0',
                 PLAYWRIGHT_REFERRAL_STATS_FLOW: options.referralStatsFlow ? '1' : '0',
                 PLAYWRIGHT_TELEGRAM_LINK_FLOW: options.telegramLinkFlow ? '1' : '0',
                 PLAYWRIGHT_MESSAGES_FLOW: options.messagesFlow ? '1' : '0',
                 PLAYWRIGHT_GIFT_SALE_FLOW: options.giftSaleFlow ? '1' : '0',
+                PLAYWRIGHT_TAXONOMY_FLOW: options.taxonomyFlow ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
         });
@@ -576,6 +1075,356 @@ function createCrmFixture(options: { financeFlow?: boolean; payoutFlow?: boolean
     }
 
     return JSON.parse(output.trim().split('\n').at(-1) ?? '') as CrmFixture;
+}
+
+function configureAutomaticAnalyticsFixture(fixture: CrmFixture, providerPort: number, candidateLabel: string): {
+    sourcePainName: string;
+    disabledSourcePainName: string;
+    candidateLabel: string;
+    sourcePainId: number;
+    disabledSourcePainId: number;
+} {
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const sourcePainName = `E2E Auto Source ${suffix}`;
+    const disabledSourcePainName = `E2E Auto Disabled Source ${suffix}`;
+    const encodedEmail = Buffer.from(fixture.email).toString('base64');
+    const encodedSourcePainName = Buffer.from(sourcePainName).toString('base64');
+    const encodedDisabledSourcePainName = Buffer.from(disabledSourcePainName).toString('base64');
+
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $adminEmail = base64_decode('${encodedEmail}', true);
+        $sourcePainName = base64_decode('${encodedSourcePainName}', true);
+        $disabledSourcePainName = base64_decode('${encodedDisabledSourcePainName}', true);
+        $admin = \\App\\Models\\User::query()->where('email', $adminEmail)->firstOrFail();
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey(${fixture.clientId})
+            ->firstOrFail();
+        app(\\App\\Modules\\Organizations\\Application\\OrganizationContext::class)->set($organization);
+        \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::withoutEvents(function () use ($admin, $client, $sourcePainName, $disabledSourcePainName): void {
+            app(\\App\\Modules\\MedicalProfiles\\Application\\UpdateMedicalProfile::class)->handle(
+                $admin,
+                $client,
+                new \\App\\Modules\\MedicalProfiles\\Application\\DTOs\\UpdateMedicalProfileCommand(
+                    pains: [
+                        ['name' => $sourcePainName, 'score' => 4],
+                        ['name' => $disabledSourcePainName, 'score' => 5],
+                    ],
+                    painsProvided: true,
+                ),
+            );
+        });
+        $setBoolean = static function (string $key, bool $value) use ($organization): void {
+            $setting = $organization->settings()->where('setting_key', $key)->first()
+                ?? new \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationSetting;
+            $setting->forceFill([
+                'organization_id' => $organization->getKey(),
+                'setting_key' => $key,
+                'value_type' => \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingType::Boolean,
+                'string_value' => null,
+                'integer_value' => null,
+                'boolean_value' => $value,
+            ])->save();
+        };
+        $setBoolean(\\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiAutomaticTagSuggestionsEnabled->value, true);
+        $setBoolean(\\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled->value, true);
+        $providerOptions = ['base_url' => 'http://127.0.0.1:${providerPort}'];
+        $provider = \\App\\Modules\\AI\\Domain\\Models\\AiProviderConfiguration::query()->updateOrCreate(
+            ['organization_id' => $organization->getKey(), 'provider_name' => 'ollama'],
+            [
+                'display_name' => 'E2E analytics provider',
+                'is_enabled' => true,
+                'health_status' => 'healthy',
+                'credential_id' => null,
+                'options' => $providerOptions,
+                'tested_credential_revision' => null,
+                'tested_configuration_digest' => \\App\\Modules\\AI\\Infrastructure\\Providers\\AiProviderExecutionConfiguration::digest('ollama', $providerOptions),
+            ],
+        );
+        $pricing = (new \\App\\Modules\\AI\\Domain\\ValueObjects\\AiPricingSnapshot('USD', 15, 60))->toArray();
+        $capabilities = [\\App\\Modules\\AI\\Domain\\Enums\\AiCapability::GeneralAssistant->value];
+        $model = \\App\\Modules\\AI\\Domain\\Models\\AiModelConfiguration::query()->firstOrNew([
+            'organization_id' => $organization->getKey(),
+            'provider_config_id' => $provider->getKey(),
+            'model_name' => 'e2e-analytics-stub',
+        ]);
+        $model->forceFill([
+            'display_name' => 'E2E analytics provider',
+            'is_enabled' => true,
+            'lifecycle_status' => 'active',
+            'capabilities' => $capabilities,
+            'pricing_snapshot' => $pricing,
+            'failover_priority' => 1,
+        ])->save();
+        $release = \\App\\Modules\\AI\\Domain\\Models\\AiModelRelease::query()->firstOrNew([
+            'organization_id' => $organization->getKey(),
+            'model_config_id' => $model->getKey(),
+            'release_number' => 1,
+        ]);
+        $release->forceFill([
+            'status' => 'active',
+            'provider_name' => 'ollama',
+            'model_name' => 'e2e-analytics-stub',
+            'capabilities' => $capabilities,
+            'pricing_snapshot' => $pricing,
+            'activated_at' => now(),
+        ])->save();
+        $model->forceFill(['active_release_id' => $release->getKey()])->save();
+        $prompt = \\App\\Modules\\AI\\Domain\\Models\\AiPrompt::query()->firstOrNew([
+            'organization_id' => $organization->getKey(),
+            'key' => 'analytics_classification',
+        ]);
+        $prompt->forceFill([
+            'name' => 'E2E analytics classification',
+            'capability' => \\App\\Modules\\AI\\Domain\\Enums\\AiCapability::GeneralAssistant,
+        ])->save();
+        $version = \\App\\Modules\\AI\\Domain\\Models\\AiPromptVersion::query()->firstOrNew([
+            'organization_id' => $organization->getKey(),
+            'prompt_id' => $prompt->getKey(),
+            'version' => 1,
+        ]);
+        $version->forceFill([
+            'status' => 'active',
+            'system_prompt' => 'Return only JSON with the tags array.',
+            'user_prompt_template' => '{{source_text}} {{allowed_tags}}',
+            'variables_schema' => [],
+            'parameter_config' => [],
+            'context_policy' => [],
+            'output_schema' => [
+                'type' => 'object',
+                'properties' => ['tags' => ['type' => 'array', 'items' => ['type' => 'string']]],
+                'required' => ['tags'],
+            ],
+            'allowed_tools' => [],
+            'activated_at' => now(),
+        ])->save();
+        $prompt->forceFill(['active_version_id' => $version->getKey()])->save();
+        $sourcePains = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('client_id', $client->getKey())
+            ->orderByDesc('id')
+            ->limit(2)
+            ->get()
+            ->sortBy('id')
+            ->values();
+        if ($sourcePains->count() !== 2) {
+            throw new \\RuntimeException('Automatic analytics fixture did not create exactly two source pains.');
+        }
+        $sourcePain = $sourcePains->get(0);
+        $disabledSourcePain = $sourcePains->get(1);
+        echo json_encode([
+            'sourcePainId' => $sourcePain->getKey(),
+            'disabledSourcePainId' => $disabledSourcePain->getKey(),
+        ], JSON_THROW_ON_ERROR);
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-auto-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    let output: string;
+    try {
+        output = execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                XDG_CONFIG_HOME: psyshConfigDirectory,
+                DB_CONNECTION: 'pgsql',
+                DB_HOST: '127.0.0.1',
+                DB_PORT: '5432',
+                DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+                DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+                DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+                MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                    ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        });
+    } catch (error) {
+        const details = error as { stderr?: Buffer; stdout?: Buffer };
+        throw new Error(`${details.stderr?.toString() ?? ''}${details.stdout?.toString() ?? ''}`);
+    }
+
+    const state = JSON.parse(output.trim().split('\n').at(-1) ?? '') as {
+        sourcePainId: number;
+        disabledSourcePainId: number;
+    };
+
+    return { sourcePainName, disabledSourcePainName, candidateLabel, ...state };
+}
+
+function setAutomaticAnalyticsSuggestions(enabled: boolean): void {
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $setting = $organization->settings()->where('setting_key', \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiAutomaticTagSuggestionsEnabled->value)->first()
+            ?? new \\App\\Modules\\Organizations\\Domain\\Models\\OrganizationSetting;
+        $setting->forceFill([
+            'organization_id' => $organization->getKey(),
+            'setting_key' => \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingKey::AnalyticsAiAutomaticTagSuggestionsEnabled->value,
+            'value_type' => \\App\\Modules\\Organizations\\Domain\\Enums\\OrganizationSettingType::Boolean,
+            'string_value' => null,
+            'integer_value' => null,
+            'boolean_value' => ${enabled ? 'true' : 'false'},
+        ])->save();
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-auto-setting-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            XDG_CONFIG_HOME: psyshConfigDirectory,
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+            MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+}
+
+function runAnalyticsClassificationWorker(): Promise<void> {
+    return new Promise((resolve, reject) => {
+        execFile('php', [
+            'artisan',
+            'queue:work',
+            'redis',
+            '--queue=analytics-classification',
+            '--stop-when-empty',
+            '--tries=1',
+            '--timeout=45',
+        ], {
+            encoding: 'utf8',
+            env: {
+                ...process.env,
+                APP_ENV: 'e2e',
+                DB_CONNECTION: 'pgsql',
+                DB_HOST: '127.0.0.1',
+                DB_PORT: '5432',
+                DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+                DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+                DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+                MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                    ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
+            },
+            stdio: ['ignore', 'pipe', 'pipe'],
+        }, (error, stdout, stderr) => {
+            if (error !== null) {
+                reject(new Error(`${stderr}${stdout}`));
+
+                return;
+            }
+
+            resolve();
+        });
+    });
+}
+
+function readAutomaticAnalyticsState(sourceId: number, label: string): {
+    runStatus: string | null;
+    candidateStatus: string | null;
+    activeTagCount: number;
+    runErrorCode: string | null;
+    runErrorMessage: string | null;
+    sourceExists: boolean;
+    currentPains: Array<{ id: number; name: string }>;
+    aiRunStatus: string | null;
+    aiRunErrorCategory: string | null;
+    aiRunErrorMessage: string | null;
+    attemptStatus: string | null;
+    attemptErrorCategory: string | null;
+    attemptErrorMessage: string | null;
+} {
+    const encodedLabel = Buffer.from(label).toString('base64');
+    const php = `
+        $organization = \\App\\Modules\\Organizations\\Domain\\Models\\Organization::query()->where('slug', 'chuklov')->firstOrFail();
+        $label = base64_decode('${encodedLabel}', true);
+        $run = \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsClassificationRun::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('source_type', 'medical_profile_pain')
+            ->where('source_id', ${sourceId})
+            ->latest('id')
+            ->first();
+        $candidate = $run === null ? null : \\App\\Modules\\Analytics\\Domain\\Models\\AnalyticsTagCandidate::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('classification_run_id', $run->getKey())
+            ->latest('id')
+            ->first();
+        $source = \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProfilePain::query()
+            ->where('organization_id', $organization->getKey())
+            ->whereKey(${sourceId})
+            ->with('profile')
+            ->first();
+        $profile = $source?->profile;
+        $currentPains = $profile === null ? [] : app(\\App\\Modules\\MedicalProfiles\\Application\\MedicalProfilePainReader::class)
+            ->forProfile($profile);
+        $aiRun = $source?->client_id === null
+            ? null
+            : \\App\\Modules\\AI\\Domain\\Models\\AiRun::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('client_id', $source->client_id)
+                ->where('workflow_key', 'analytics_classification')
+                ->latest('id')
+                ->first();
+        $attempt = $aiRun === null
+            ? null
+            : \\App\\Modules\\AI\\Domain\\Models\\AiRunAttempt::query()->where('ai_run_id', $aiRun->getKey())->latest('id')->first();
+        echo json_encode([
+            'runStatus' => $run?->status?->value,
+            'candidateStatus' => $candidate?->status?->value,
+            'runErrorCode' => $run?->error_code,
+            'runErrorMessage' => $run?->error_message_sanitized,
+            'sourceExists' => $source !== null,
+            'currentPains' => array_map(static fn ($pain): array => ['id' => $pain->id, 'name' => $pain->name], $currentPains),
+            'aiRunStatus' => $aiRun?->status?->value,
+            'aiRunErrorCategory' => $aiRun?->error_category?->value,
+            'aiRunErrorMessage' => $aiRun?->error_message_sanitized,
+            'attemptStatus' => $attempt?->status,
+            'attemptErrorCategory' => $attempt?->error_category?->value,
+            'attemptErrorMessage' => $attempt?->error_message_sanitized,
+            'activeTagCount' => \\App\\Modules\\MedicalProfiles\\Domain\\Models\\MedicalProblemTag::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('name', $label)
+                ->where('is_active', true)
+                ->count(),
+        ], JSON_THROW_ON_ERROR);
+    `;
+    const psyshConfigDirectory = `/tmp/chuklov-playwright-crm-auto-state-${process.pid}`;
+    mkdirSync(psyshConfigDirectory, { recursive: true });
+    const output = execFileSync('php', ['artisan', 'tinker', '--execute', php], {
+        encoding: 'utf8',
+        env: {
+            ...process.env,
+            XDG_CONFIG_HOME: psyshConfigDirectory,
+            DB_CONNECTION: 'pgsql',
+            DB_HOST: '127.0.0.1',
+            DB_PORT: '5432',
+            DB_DATABASE: process.env.DB_DATABASE ?? 'chuklov',
+            DB_USERNAME: process.env.DB_USERNAME ?? 'chuklov',
+            DB_PASSWORD: process.env.DB_PASSWORD ?? 'chuklov_local',
+            MEDICAL_ENCRYPTION_KEY_V1: process.env.MEDICAL_ENCRYPTION_KEY_V1
+                ?? 'base64:MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=',
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+    });
+
+    return JSON.parse(output.trim().split('\n').at(-1) ?? '') as {
+        runStatus: string | null;
+        candidateStatus: string | null;
+        activeTagCount: number;
+        runErrorCode: string | null;
+        runErrorMessage: string | null;
+        sourceExists: boolean;
+        currentPains: Array<{ id: number; name: string }>;
+        aiRunStatus: string | null;
+        aiRunErrorCategory: string | null;
+        aiRunErrorMessage: string | null;
+        attemptStatus: string | null;
+        attemptErrorCategory: string | null;
+        attemptErrorMessage: string | null;
+    };
 }
 
 function readCrmBookingSnapshot(bookingId: number): { startsAtUtc: string; scheduleTimezone: string } {
@@ -801,6 +1650,27 @@ async function login(page: Page, fixture: CrmFixture): Promise<void> {
     await page.locator('input[type="password"]').fill(fixture.password);
     await page.locator('button[type="submit"]').click();
     await expect(page).toHaveURL(/\/admin(?:\/)?$/);
+}
+
+async function selectAnalyticsOption(page: Page, combobox: Locator, optionName: string): Promise<void> {
+    await expect(combobox).toBeVisible({ timeout: 15_000 });
+    let dropdown = page.locator('.fi-dropdown-panel:visible').last();
+    if (await dropdown.count() === 0) {
+        await combobox.click();
+        dropdown = page.locator('.fi-dropdown-panel:visible').last();
+    }
+    await expect(dropdown).toBeVisible({ timeout: 15_000 });
+
+    const search = dropdown.locator('input[type="text"]:visible');
+    if (await search.count() > 0) {
+        await search.fill(optionName);
+    }
+
+    const option = dropdown.getByRole('option').filter({ hasText: optionName }).first();
+    await expect(option).toBeVisible({ timeout: 15_000 });
+    await option.click();
+    await page.waitForLoadState('networkidle');
+    await expect(combobox).toContainText(optionName, { timeout: 15_000 });
 }
 
 test('multi-specialist Journal keeps the accepted layout and slot ownership', async ({ page }) => {
@@ -1171,6 +2041,8 @@ async function searchTableFor(page: Page, query: string): Promise<void> {
     await expect(searchInput).toBeVisible();
     await searchInput.fill(query);
     await expect(page.getByRole('row').filter({ hasText: query }).first()).toBeVisible();
+    await expect.poll(() => new URL(page.url()).searchParams.get('search'), { timeout: 15_000 }).toBe(query);
+    await page.waitForLoadState('networkidle');
 }
 
 async function assertBusinessField(page: Page, label: string, value: string): Promise<void> {
@@ -1844,6 +2716,126 @@ test('staff sees business labels for client and content settings', async ({ page
     await assertBusinessField(page, 'Название', fixture.contentSectionTitle);
 });
 
+test('owner remediation configuration pages explain empty states and usage', async ({ page }) => {
+    test.setTimeout(120_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const fixture = createCrmFixture({ financeFlow: true });
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const accountName = `Счёт для проверки ${suffix}`;
+    const categoryName = `Категория для проверки ${suffix}`;
+    const storyId = Number(execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $story = \\App\\Modules\\Content\\Domain\\Models\\ContentSection::query()->findOrFail(${fixture.contentSectionId});
+        $story->forceFill([
+            'section_key' => 'story_author',
+            'title' => 'История автора для проверки',
+            'body' => '',
+            'delivery_mode' => 'mini_app',
+            'media' => [],
+            'sort_order' => 0,
+            'is_visible' => true,
+        ])->save();
+        echo $story->getKey();
+    `], { encoding: 'utf8', env: { ...process.env, APP_ENV: 'e2e' } }).trim().split('\n').at(-1));
+
+    await login(page, fixture);
+
+    await page.goto('/admin/attribution-source-settings');
+    await expect(page.getByRole('heading', { name: 'Категории источников', exact: true })).toBeVisible();
+    await expect(page.getByText('Объединяйте разные варианты одного источника под общим названием в аналитике.', { exact: false })).toBeVisible();
+    const sourcesSection = page.getByRole('heading', { name: 'Категории источников', exact: true }).locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-section ")][1]');
+    const sourceItems = sourcesSection.locator('xpath=.//*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ") and not(ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ")])]');
+    await expect(sourceItems).toHaveCount(12);
+    await expect(sourcesSection.getByRole('textbox', { name: 'Название в аналитике', exact: true })).toHaveCount(0);
+
+    const instagramSourceIndex = await sourceItems.evaluateAll((items) => items.findIndex((item) => item.textContent?.includes('Instagram')));
+    expect(instagramSourceIndex).toBeGreaterThanOrEqual(0);
+    const instagramSource = sourceItems.nth(instagramSourceIndex);
+    await expect(instagramSource).toBeVisible();
+    await instagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
+    const expandedInstagramSource = sourceItems.nth(instagramSourceIndex);
+    await expect(expandedInstagramSource.getByRole('textbox', { name: /^Название в аналитике/ })).toHaveValue('Instagram');
+    await expect(expandedInstagramSource.getByText('Другие варианты этого источника', { exact: true })).toBeVisible();
+    await expandedInstagramSource.getByRole('button', { name: 'Добавить вариант', exact: true }).click();
+    await expect(expandedInstagramSource.getByRole('textbox', { name: /^Вариант названия/ })).toHaveCount(4);
+    const sourceAlias = `owner-alias-${suffix}`;
+    await expandedInstagramSource.getByRole('textbox', { name: /^Вариант названия/ }).last().fill(sourceAlias);
+    await page.getByRole('button', { name: 'Сохранить источники', exact: true }).click();
+    await page.waitForTimeout(500);
+    await page.reload();
+    const reloadedSourceSection = page.getByRole('heading', { name: 'Категории источников', exact: true }).locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-section ")][1]');
+    const reloadedSourceItems = reloadedSourceSection.locator('xpath=.//*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ") and not(ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-fo-repeater-item ")])]');
+    const reloadedInstagramSourceIndex = await reloadedSourceItems.evaluateAll((items) => items.findIndex((item) => item.textContent?.includes('Instagram')));
+    expect(reloadedInstagramSourceIndex).toBeGreaterThanOrEqual(0);
+    const reloadedInstagramSource = reloadedSourceItems.nth(reloadedInstagramSourceIndex);
+    await reloadedInstagramSource.getByRole('button', { name: 'Настроить', exact: true }).click();
+    const reloadedExpandedInstagramSource = reloadedSourceItems.nth(reloadedInstagramSourceIndex);
+    await expect(reloadedExpandedInstagramSource.getByRole('textbox', { name: /^Вариант названия/ }).last()).toHaveValue(sourceAlias);
+
+    await page.goto('/admin/analytics-metric-settings');
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true })).toBeVisible();
+    await expect(page.getByText('Создавайте показатели из разрешённых источников и операций.', { exact: false })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Определения процентных показателей', exact: true })).toBeVisible();
+    await expect(page.getByText('Это только иллюстрация. Используйте свою формулу', { exact: false })).toBeVisible();
+
+    await page.goto('/admin/finance-expense-entry');
+    await expect(page.getByRole('heading', { name: 'Добавить расход', exact: true })).toBeVisible();
+    const accountSelect = page.getByRole('combobox', { name: /^Счёт или касса/ });
+    await expect(accountSelect).toBeVisible();
+    await expect(page.getByText('Выберите, откуда списаны деньги: банковский счёт или касса.', { exact: true })).toBeVisible();
+    const addAccountLink = page.getByText('Добавить счёт или кассу', { exact: true }).last();
+    await expect(addAccountLink).toBeVisible();
+    await addAccountLink.click();
+    await expect(page).toHaveURL(/\/admin\/finance-movement-settings$/);
+    await expect(page.getByRole('heading', { name: 'Счета и кассы', exact: true })).toBeVisible();
+    await expect(page.getByText('Эти варианты появляются в форме расхода и показывают, откуда списаны деньги.', { exact: false })).toBeVisible();
+
+    const accountSection = page.getByRole('heading', { name: 'Счета и кассы', exact: true }).locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-section ")][1]');
+    await accountSection.getByRole('button', { name: 'Добавить счёт или кассу', exact: true }).click();
+    const accountItem = accountSection.locator('.fi-fo-repeater-item').last();
+    await accountItem.getByRole('textbox', { name: /^Название/ }).fill(accountName);
+    await accountItem.getByRole('combobox', { name: /^Тип/ }).selectOption('bank');
+    await accountItem.getByRole('combobox', { name: /^Валюта/ }).selectOption('USD');
+
+    const categorySection = page.getByRole('heading', { name: 'Категории расходов', exact: true }).locator('xpath=ancestor::*[contains(concat(" ",normalize-space(@class)," ")," fi-section ")][1]');
+    await categorySection.getByRole('button', { name: 'Добавить категорию', exact: true }).click();
+    const categoryItem = categorySection.locator('.fi-fo-repeater-item').last();
+    await categoryItem.getByRole('textbox', { name: /^Название/ }).fill(categoryName);
+    await page.getByRole('button', { name: 'Сохранить справочники', exact: true }).click();
+    await page.waitForTimeout(500);
+
+    await page.goto('/admin/finance-expense-entry');
+    await selectAnalyticsOption(page, accountSelect, `${accountName} (USD)`);
+    const categorySelect = page.getByRole('combobox', { name: /^Категория/ });
+    await selectAnalyticsOption(page, categorySelect, categoryName);
+    await page.getByRole('spinbutton', { name: /^Сумма/ }).fill('25');
+    await page.getByRole('button', { name: 'Записать расход', exact: true }).click();
+    await expect(page.getByText('Расход записан', { exact: true })).toBeVisible({ timeout: 20_000 });
+
+    await page.goto('/admin/medical-clinical-catalog-configuration');
+    await expect(page.getByRole('heading', { name: 'Клинические справочники', exact: true })).toBeVisible();
+    await expect(page.getByText('Эти тесты появляются у специалиста в блоке «Кинезиологические/мануальные тесты» медицинского сеанса.', { exact: false })).toBeVisible();
+    await expect(page.getByText('Добавьте первый тест кнопкой «Добавить тест». После сохранения он станет доступен в новом медицинском сеансе.', { exact: true })).toBeVisible();
+
+    await page.goto('/admin/b2b-form-configuration');
+    await expect(page.getByRole('heading', { name: 'Поля заявки для бизнеса', exact: true })).toBeVisible();
+    await expect(page.getByText('Здесь вы настраиваете вопросы для бизнес-клиента. Клиент увидит опубликованные вопросы перед выбором времени разговора.', { exact: false })).toBeVisible();
+    await expect(page.getByText('«Сохранить черновик» сохраняет текущую версию только для команды. «Опубликовать для клиентов» делает её видимой в форме клиента.', { exact: false })).toBeVisible();
+    await expect(page.getByText('Пока нет вопросов. Добавьте поле, чтобы увидеть пример здесь.', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Добавить поле', exact: true }).click();
+    const b2bItem = page.locator('.fi-fo-repeater-item').last();
+    await b2bItem.getByRole('textbox', { name: 'Название поля', exact: false }).fill('Контактное лицо');
+    await b2bItem.getByRole('combobox', { name: 'Тип ответа', exact: false }).selectOption('text');
+    await page.getByRole('button', { name: 'Сохранить черновик', exact: true }).click();
+    await page.waitForTimeout(500);
+    await expect(page.getByText('Перед выбором времени клиент увидит: Контактное лицо.', { exact: true })).toBeVisible();
+
+    await page.goto(`/admin/content-sections/${storyId}/edit`);
+    await expect(page.getByRole('heading', { name: 'Редактировать раздел контента', exact: true })).toBeVisible();
+    await expect(page.getByText('Статус показа на главной', { exact: true })).toBeVisible();
+    await expect(page.getByText('Видео не загружено. Загрузите MP4 кнопкой «Загрузить видео».', { exact: true })).toBeVisible();
+    await expect(page.getByText('Видео не загружено. Загрузите MP4 после сохранения раздела, чтобы он мог показываться клиентам.', { exact: true })).toBeVisible();
+});
+
 test('staff sees the Telegram limit and preview while writing to a client', async ({ page }) => {
     const fixture = createCrmFixture();
 
@@ -2062,6 +3054,12 @@ test('staff can complete a visit and record a manual payment through the normal 
     await page.goto(`/admin/bookings/${fixture.financeBookingId}`);
     await expect(page.getByRole('heading', { name: 'Запись на приём', exact: true })).toBeVisible();
 
+    await page.getByRole('link', { name: 'Создать медицинский сеанс', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create\\?booking_id=${fixture.financeBookingId}$`));
+    await expect(page.getByRole('heading', { name: 'Новый сеанс', exact: true })).toBeVisible();
+    await page.goto(`/admin/bookings/${fixture.financeBookingId}`);
+    await expect(page.getByRole('heading', { name: 'Запись на приём', exact: true })).toBeVisible();
+
     await page.getByRole('button', { name: 'Подтвердить запись', exact: true }).click();
     const confirmationDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Подтвердить запись' }).last();
     await expect(confirmationDialog).toBeVisible();
@@ -2227,9 +3225,56 @@ test('staff can use the client cockpit for medical profile and private files', a
     const medicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
     const anamnesis = medicalDialog.getByRole('textbox', { name: 'Анамнез', exact: true });
     await expect(anamnesis).toBeVisible();
+
+    await medicalDialog.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    const profilePainName = medicalDialog.getByLabel('Название или описание боли', { exact: true }).last();
+    await profilePainName.fill('Боль для проверки шкалы');
+    const profilePainScore = medicalDialog.getByRole('slider', { name: 'Оценка боли', exact: true }).last();
+    await profilePainScore.press('Home');
+    await expect(medicalDialog.getByText('0 / 10', { exact: true })).toBeVisible();
+    for (let index = 0; index < 5; index += 1) {
+        await profilePainScore.press('ArrowRight');
+    }
+    await expect(medicalDialog.getByText('5 / 10', { exact: true })).toBeVisible();
+    await medicalDialog.getByRole('button', { name: 'Без оценки', exact: true }).last().click();
+    await expect(medicalDialog.getByText('Без оценки', { exact: true }).last()).toBeVisible();
+
+    await medicalDialog.getByLabel('Были операции', { exact: true }).check();
+    await medicalDialog.getByRole('button', { name: 'Добавить операцию', exact: true }).click();
+    const operationItem = medicalDialog.getByRole('textbox', { name: 'Описание*', exact: true }).last().locator('xpath=ancestor::li[1]');
+    await operationItem.getByLabel('Год*', { exact: true }).fill('2026');
+    await operationItem.getByLabel('Описание*', { exact: true }).fill('Удаление грыжи');
+    await operationItem.getByLabel('Описание*', { exact: true }).press('Tab');
+    await expect(medicalDialog.getByText('2026 — Удаление грыжи', { exact: true })).toBeVisible();
+
+    await medicalDialog.getByLabel('Были травмы', { exact: true }).check();
+    await expect(medicalDialog.getByRole('button', { name: 'Добавить травму', exact: true })).toBeVisible();
+    await medicalDialog.getByRole('button', { name: 'Добавить травму', exact: true }).click();
+    await expect(medicalDialog.getByText('Новая травма', { exact: true }).last()).toBeVisible();
+    const injuryHeader = medicalDialog.getByText('Новая травма', { exact: true }).last();
+    const injuryFields = medicalDialog.getByRole('textbox', { name: 'Описание*', exact: true }).last();
+    if (await injuryHeader.isVisible() && !await injuryFields.isVisible()) {
+        await injuryHeader.click();
+    }
+    const injuryItem = injuryFields.locator('xpath=ancestor::li[1]');
+    await injuryItem.getByLabel('Год*', { exact: true }).fill('2021');
+    await injuryItem.getByLabel('Описание*', { exact: true }).fill('Перелом ключицы');
+    await injuryItem.getByLabel('Описание*', { exact: true }).press('Tab');
+    await expect(medicalDialog.getByText('2021 — Перелом ключицы', { exact: true })).toBeVisible();
+
     await anamnesis.fill('Запись из клиентского рабочего места');
+    await anamnesis.blur();
     await medicalDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
-    await expect(page.getByText('Запись из клиентского рабочего места', { exact: true })).toBeVisible();
+    await expect(medicalDialog).toBeHidden({ timeout: 15_000 });
+    await page.reload();
+    await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
+    const reopenedMedicalDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
+    await expect(reopenedMedicalDialog.getByRole('textbox', { name: 'Анамнез', exact: true })).toHaveValue('Запись из клиентского рабочего места');
+    await expect(reopenedMedicalDialog.getByText('2026 — Удаление грыжи', { exact: true })).toBeVisible();
+    await expect(reopenedMedicalDialog.getByText('2021 — Перелом ключицы', { exact: true })).toBeVisible();
+    await expect(reopenedMedicalDialog.getByText('Без оценки', { exact: true }).last()).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(reopenedMedicalDialog).toBeHidden();
 
     await page.getByRole('tab', { name: 'Файлы и МРТ', exact: true }).click();
     await page.getByRole('button', { name: 'Загрузить файл', exact: true }).click();
@@ -2329,6 +3374,111 @@ test('staff can use the client cockpit for medical profile and private files', a
     await expect(attachmentsTable.getByRole('row').filter({ hasText: /ux-[a-e]-report\.pdf/ })).toHaveCount(5);
 });
 
+test('staff can manage private client audio recordings', async ({ page, request }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
+    const audioPanel = page.getByRole('tabpanel', { name: /Аудиозаписи/ });
+    const audioTable = page.getByRole('table', { name: 'Аудиозаписи' });
+    await expect(audioPanel.getByRole('heading', { name: 'Аудиозаписи', exact: true })).toBeVisible();
+    await expect(audioPanel.getByRole('heading', { name: 'Аудиозаписей пока нет', exact: true })).toBeVisible();
+
+    for (const index of [1, 2, 3]) {
+        await page.getByRole('button', { name: 'Загрузить аудиозапись', exact: true }).click();
+        const audioDialog = page.getByRole('dialog').last();
+        const title = `Сеанс QA ${index}`;
+        const filename = `qa-session-${index}.wav`;
+        await audioDialog.getByLabel('Название записи*', { exact: true }).fill(title);
+        const audioUploadControl = audioDialog
+            .getByRole('group', { name: 'Аудиофайл*', exact: true })
+            .locator('label')
+            .filter({ hasText: 'Перетащите файлы или выберите', visible: true });
+        const [fileChooser] = await Promise.all([
+            page.waitForEvent('filechooser'),
+            audioUploadControl.click(),
+        ]);
+        await fileChooser.setFiles({
+            name: filename,
+            mimeType: 'audio/x-wav',
+            buffer: validWavBuffer(),
+        });
+        const selectedAudio = audioDialog.getByRole('group', { name: filename, exact: true });
+        await expect(selectedAudio).toBeVisible({ timeout: 15_000 });
+        await expect(selectedAudio.getByText('Загрузка завершена', { exact: true })).toBeVisible({ timeout: 15_000 });
+        await audioDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+        await expect(audioDialog).toBeHidden();
+        await expect(page.getByText('Аудиозапись загружена', { exact: true })).toBeVisible();
+        await expect(audioTable.getByRole('row').filter({ hasText: title })).toHaveCount(1);
+    }
+
+    const audioRow = audioTable.getByRole('row').filter({ hasText: 'Сеанс QA 1' });
+    await expect(audioTable.getByRole('row').filter({ hasText: /Сеанс QA [123]/ })).toHaveCount(3);
+    await expect(audioRow).toBeVisible();
+    await audioRow.getByRole('button', { name: 'Воспроизвести', exact: true }).click();
+    const playbackDialog = page.locator('.fi-modal-window:visible').last();
+    await expect(playbackDialog.locator('audio')).toBeVisible();
+    const playbackSource = await playbackDialog.locator('audio').getAttribute('src');
+    expect(playbackSource).toMatch(/\/admin\/attachments\//);
+    await playbackDialog.getByRole('button', { name: 'Закрыть', exact: true }).last().click();
+
+    if (playbackSource === null) {
+        throw new Error('The authorized audio preview did not expose a private URL.');
+    }
+
+    const unauthorizedResponse = await request.get(playbackSource, { maxRedirects: 0, timeout: 10_000 });
+    expect([302, 401, 403]).toContain(unauthorizedResponse.status());
+
+    const downloadResponseMatcher = (response: { status(): number; url(): string }): boolean => {
+        const url = new URL(response.url());
+
+        return response.status() === 200
+            && url.pathname.startsWith('/admin/attachments/')
+            && url.searchParams.get('mode') === 'download';
+    };
+    if (test.info().project.name === 'desktop') {
+        const [download, downloadResponse] = await Promise.all([
+            page.waitForEvent('download'),
+            page.waitForResponse(downloadResponseMatcher),
+            audioRow.getByRole('button', { name: 'Скачать', exact: true }).click(),
+        ]);
+        expect(download.suggestedFilename()).toBe('qa-session-1.wav');
+        expect(downloadResponse.headers()['content-type']).toContain('audio');
+        const downloadPath = await download.path();
+        expect(downloadPath).not.toBeNull();
+        if (downloadPath === null) {
+            throw new Error('The authorized audio download did not produce a file.');
+        }
+        expect(readFileSync(downloadPath)).toEqual(validWavBuffer());
+    } else {
+        const downloadResponse = page.waitForResponse(downloadResponseMatcher);
+        await audioRow.getByRole('button', { name: 'Скачать', exact: true }).click();
+        const response = await downloadResponse;
+        expect(response.headers()['content-type']).toContain('audio');
+        expect(Number(response.headers()['content-length'])).toBeGreaterThan(0);
+        await expect(page).toHaveURL(/\/admin\/attachments\/.+mode=download/, { timeout: 10_000 });
+        await page.goto(`/admin/clients/${fixture.clientId}`);
+        await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
+    }
+
+    const deletedAudioRow = audioTable.getByRole('row').filter({ hasText: 'Сеанс QA 2' });
+    await deletedAudioRow.getByRole('button', { name: 'Удалить', exact: true }).click();
+    const deleteConfirmation = page
+        .getByRole('alertdialog', { name: 'Удалить', exact: true })
+        .getByRole('button', { name: 'Подтвердить', exact: true });
+    await expect(deleteConfirmation).toBeVisible();
+    await deleteConfirmation.click();
+    await expect(deletedAudioRow).toHaveCount(0, { timeout: 15_000 });
+    await page.reload();
+    await page.getByRole('tab', { name: 'Аудиозаписи', exact: true }).click();
+    await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA 1' })).toHaveCount(1);
+    await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA 2' })).toHaveCount(0);
+    await expect(page.getByRole('row').filter({ hasText: 'Сеанс QA 3' })).toHaveCount(1);
+
+});
+
 test('staff can complete the clinical AI workflow from the client cockpit', async ({ page }) => {
     test.skip(
         process.env.CLINICAL_AI_E2E_ENABLED !== '1'
@@ -2424,8 +3574,185 @@ test('staff can complete the clinical AI workflow from the client cockpit', asyn
     await expect.poll(async () => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });
 
-test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
+test('staff can fill the current create medical result in the CRM client flow', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ clinicalCatalogFlow: true });
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const testName = `E2E тест ${suffix}`;
+    const painName = `CREATE WEBKIT PAIN ${suffix}`;
+    const subjective = `CREATE WEBKIT SUBJECTIVE ${suffix}`;
+    const posture = `CREATE WEBKIT POSTURE ${suffix}`;
+    const manualResult = `CREATE WEBKIT MANUAL ${suffix}`;
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('tab', { name: 'Записи на приём', exact: true }).click();
+    await page.getByRole('link', { name: 'Новый сеанс', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create$`));
+
+    await page.getByLabel('Дата и время сеанса').fill('2026-08-19T09:00');
+    await page.getByLabel('Специалист').click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
+    await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
+
+    const protocolItem = page.locator('.fi-fo-repeater-item').filter({ hasText: testName }).last();
+    await expect(protocolItem).toBeVisible();
+    await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    await page.getByLabel('Название или описание боли', { exact: true }).fill(painName);
+    const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
+    const afterPainScore = page.getByRole('slider', { name: 'После сеанса', exact: true });
+    await setLivewireRangeValue(page, beforePainScore, 6);
+    const painItem = page.getByLabel('Название или описание боли', { exact: true }).locator('xpath=ancestor::li[1]');
+    await painItem.getByRole('button', { name: 'Указать 0', exact: true }).last().click();
+    await expect(afterPainScore).toHaveAttribute('aria-valuenow', '0.0');
+    await page.getByLabel('Особые жалобы', { exact: true }).fill(subjective);
+    await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill(subjective);
+    await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill(posture);
+
+    const beforeTestValue = protocolItem.getByRole('combobox', { name: 'До сеанса', exact: true });
+    await beforeTestValue.click();
+    await page.getByRole('option', { name: 'Отклонение · нарушение', exact: true }).click();
+    const afterTestValue = protocolItem.getByRole('combobox', { name: 'После сеанса', exact: true });
+    await afterTestValue.click();
+    await page.getByRole('option', { name: 'Норма', exact: true }).click();
+
+    const resultField = page.getByLabel('Результат после сеанса', { exact: true });
+    await resultField.fill(manualResult);
+    await resultField.blur();
+    const fillResultButton = page.getByRole('button', { name: 'Заполнить', exact: true }).last();
+    await fillResultButton.click();
+    const cancelDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
+    await expect(cancelDialog).toBeVisible();
+    await cancelDialog.getByRole('button', { name: 'Отменить', exact: true }).click();
+    await expect(resultField).toHaveValue(manualResult);
+    await fillResultButton.click();
+    const confirmDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
+    await expect(confirmDialog).toBeVisible();
+    await confirmDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await expect(resultField).toHaveValue(new RegExp(`${painName}: было 6, стало 0 из 10`));
+    await expect(resultField).toHaveValue(new RegExp(`Субъективные ощущения: ${subjective}`));
+    await expect(resultField).toHaveValue(new RegExp(`Визуальная диагностика осанки: ${posture}`));
+    await expect(resultField).not.toHaveValue(manualResult);
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
+    const sessionRow = page.getByRole('row').filter({ hasText: '19.08.2026' });
+    await expect(sessionRow).toBeVisible();
+    await sessionRow.getByRole('link', { name: 'Открыть', exact: true }).click({ force: true });
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
+    await expect(page.getByText(new RegExp(`${painName}: было 6, стало 0 из 10`), { exact: false }).first()).toBeVisible();
+    await expect(page.getByText(subjective, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(posture, { exact: true }).first()).toBeVisible();
+});
+
+test('staff can maintain three independent session pains through save and reload', async ({ page }) => {
+    test.setTimeout(90_000);
     const fixture = createCrmFixture();
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const painNames = [
+        `THREE PAIN ONE ${suffix}`,
+        `THREE PAIN TWO ${suffix}`,
+        `THREE PAIN THREE ${suffix}`,
+    ];
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('tab', { name: 'Записи на приём', exact: true }).click();
+    await page.getByRole('link', { name: 'Новый сеанс', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create$`));
+    await page.getByLabel('Дата и время сеанса').fill('2026-08-20T09:00');
+    await page.getByLabel('Специалист').click();
+    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
+    await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
+
+    for (let index = 0; index < painNames.length; index += 1) {
+        await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+        await page.waitForLoadState('networkidle');
+        await expect(page.getByLabel('Название или описание боли', { exact: true })).toHaveCount(index + 1);
+    }
+    const painInputs = page.getByLabel('Название или описание боли', { exact: true });
+    for (let index = 0; index < painNames.length; index += 1) {
+        await painInputs.nth(index).fill(painNames[index]);
+        await painInputs.nth(index).blur();
+        await expect(painInputs.nth(index)).toHaveValue(painNames[index]);
+    }
+
+    const firstPain = page.getByLabel('Название или описание боли', { exact: true }).nth(0).locator('xpath=ancestor::li[1]');
+    const firstBefore = firstPain.getByRole('slider', { name: 'До сеанса', exact: true });
+    const firstAfter = firstPain.getByRole('slider', { name: 'После сеанса', exact: true });
+    await setLivewireRangeValue(page, firstBefore, 7);
+    await setLivewireRangeValue(page, firstAfter, 3);
+    await firstPain.getByRole('combobox', { name: 'Частота', exact: true }).selectOption('permanent');
+    for (let index = 0; index < painNames.length; index += 1) {
+        await expect(page.getByLabel('Название или описание боли', { exact: true }).nth(index)).toHaveValue(painNames[index]);
+    }
+
+    const thirdPain = page.getByLabel('Название или описание боли', { exact: true }).nth(2).locator('xpath=ancestor::li[1]');
+    await expect(thirdPain.getByText('Без оценки', { exact: true }).first()).toBeVisible();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
+    const sessionRow = page.getByRole('row').filter({ hasText: '20.08.2026' });
+    await expect(sessionRow).toBeVisible();
+    await sessionRow.getByRole('link', { name: 'Открыть', exact: true }).click({ force: true });
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
+    for (const painName of painNames) {
+        await expect(page.getByText(painName, { exact: true })).toBeVisible();
+    }
+
+    await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
+    const secondPainEdit = page.getByLabel('Название или описание боли', { exact: true }).nth(1).locator('xpath=ancestor::li[1]');
+    const secondFrequency = secondPainEdit.getByRole('combobox', { name: 'Частота', exact: true });
+    await secondFrequency.click();
+    await secondFrequency.press('End');
+    await secondFrequency.press('Enter');
+    await expect(secondFrequency).toHaveValue('count');
+    await secondFrequency.press('Tab');
+    await page.waitForTimeout(1_000);
+    await expect(secondFrequency).toHaveValue('count');
+    const frequencyCount = secondPainEdit.getByRole('spinbutton', { name: /Количество/ });
+    await expect(frequencyCount).toBeVisible({ timeout: 10_000 });
+    await frequencyCount.fill('2');
+    await secondPainEdit.getByRole('combobox', { name: /Период/ }).click();
+    await page.getByRole('option', { name: 'неделя', exact: true }).last().click();
+    await secondPainEdit.getByRole('checkbox', { name: 'Весь день', exact: true }).uncheck();
+    await secondPainEdit.getByRole('checkbox', { name: 'Утро', exact: true }).check();
+    await secondPainEdit.getByRole('checkbox', { name: 'Вечер', exact: true }).check();
+    await setLivewireRangeValue(page, secondPainEdit.getByRole('slider', { name: 'До сеанса', exact: true }), 4);
+    await secondPainEdit.getByRole('button', { name: 'Указать 0', exact: true }).last().click();
+    await expect(secondPainEdit.getByText('0 / 10', { exact: true })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
+    await page.getByRole('row').filter({ hasText: '20.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).click({ force: true });
+    await expect(page.getByText('2 раз за неделя', { exact: true })).toBeVisible();
+    await expect(page.getByText('Утро, Вечер', { exact: true })).toBeVisible();
+    await expect(page.getByText('0/10', { exact: true })).toBeVisible();
+
+    await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
+    const secondPainAfterFrequency = page.getByLabel('Название или описание боли', { exact: true }).nth(1).locator('xpath=ancestor::li[1]');
+    await secondPainAfterFrequency.getByRole('button', { name: 'Удалить', exact: true }).first().click();
+    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
+    await page.getByRole('row').filter({ hasText: '20.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).click({ force: true });
+    await expect(page.getByText(painNames[0], { exact: true })).toBeVisible();
+    await expect(page.getByText(painNames[1], { exact: true })).toHaveCount(0);
+    await expect(page.getByText(painNames[2], { exact: true })).toBeVisible();
+});
+
+test('staff can create, view, and edit a client session from the CRM client flow', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ clinicalCatalogFlow: true });
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const testName = `E2E тест ${suffix}`;
+    const causeName = `E2E причина ${suffix}`;
+    const causeOptionName = `E2E причины: ${causeName}`;
+    const oldPainName = `OLD PAIN ${suffix}`;
+    const draftPainName = `DRAFT PAIN UNIQUE ${suffix}`;
+    const oldSubjective = `OLD SUBJECTIVE ${suffix}`;
+    const draftSubjective = `DRAFT SUBJECTIVE UNIQUE ${suffix}`;
+    const oldPosture = `OLD POSTURE ${suffix}`;
+    const draftPosture = `DRAFT POSTURE UNIQUE ${suffix}`;
+    const oldManualResult = `OLD MANUAL RESULT ${suffix}`;
 
     await login(page, fixture);
 
@@ -2438,45 +3765,1336 @@ test('staff can create, view, and edit a client session from the CRM client flow
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}$`));
 
     await page.goto(`/admin/clients/${fixture.clientId}/sessions`);
-    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
     await expect(page.getByRole('heading', { name: 'Сеансы клиента' })).toBeVisible();
+
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await page.getByRole('tab', { name: 'Записи на приём', exact: true }).click();
+    await expect(page.getByText('У клиента пока нет записей на приём.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Создать запись', exact: true })).toBeVisible();
 
     await page.getByRole('link', { name: 'Новый сеанс', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create$`));
+
+    const assertSessionBlockOrder = async (): Promise<void> => {
+        const labels = [
+            'Боли',
+            'Клинические тесты',
+            'Причины по результатам тестов',
+            'Первопричина нарушений',
+            'Алгоритм сеанса (пошаговый протокол сеанса)',
+            'Субъективные ощущения клиента после сеанса',
+            'Визуальная диагностика осанки',
+            'Результат после сеанса',
+            'Фото до / после',
+        ];
+        const positions: number[] = [];
+        for (const label of labels) {
+            const box = await page.getByText(label, { exact: true }).last().boundingBox();
+            if (box === null) {
+                throw new Error(`Medical session block is not positioned: ${label}`);
+            }
+            positions.push(box.y);
+        }
+        expect(positions).toEqual([...positions].sort((left, right) => left - right));
+        await expect(page.getByLabel('Гипотеза первопричины', { exact: true })).toHaveCount(0);
+        await expect(page.getByLabel('Шкала интенсивности боли (ВАШ):', { exact: true })).toHaveCount(0);
+    };
+    await assertSessionBlockOrder();
 
     await page.getByLabel('Дата и время сеанса').fill('2026-08-18T09:00');
     await page.getByLabel('Специалист').click();
     await page.getByRole('textbox', { name: 'Search' }).fill(fixture.specialistName);
     await page.getByText(`${fixture.specialistName} (активен)`, { exact: true }).click();
-    await page.getByRole('textbox', { name: 'Описание боли', exact: true }).fill('Первичная запись о боли');
+    const protocolItem = page.locator('.fi-fo-repeater-item').filter({ hasText: testName }).last();
+    await expect(protocolItem).toBeVisible();
+    const protocolTestLabel = protocolItem.locator('input[type="hidden"][wire\\:model*="test_results"][wire\\:model*="test_label"]').first();
+    await expect(protocolTestLabel).toHaveValue(/E2E/);
+    await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    await page.getByLabel('Название или описание боли', { exact: true }).fill(oldPainName);
+    const beforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
+    await beforePainScore.press('Home');
+    for (let index = 0; index < 7; index += 1) {
+        await beforePainScore.press('ArrowRight');
+    }
+    const afterPainScore = page.getByRole('slider', { name: 'После сеанса', exact: true });
+    await afterPainScore.press('Home');
+    for (let index = 0; index < 3; index += 1) {
+        await afterPainScore.press('ArrowRight');
+    }
+    await expect(page.getByText('7 / 10', { exact: true })).toBeVisible();
+    await expect(page.getByText('3 / 10', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Без оценки', exact: true }).first().click();
+    await expect(page.getByText('Без оценки', { exact: true }).first()).toBeVisible();
+    await setLivewireRangeValue(page, beforePainScore, 7);
+    await expect(page.getByText('7 / 10', { exact: true })).toBeVisible();
+    await page.getByLabel('Особые жалобы', { exact: true }).fill(oldSubjective);
+    const beforeTestValue = protocolItem.getByRole('combobox', { name: 'До сеанса', exact: true });
+    await expect(beforeTestValue).toBeVisible();
+    await beforeTestValue.click();
+    await page.getByRole('option', { name: 'Норма', exact: true }).click();
+    const afterTestValue = protocolItem.getByRole('combobox', { name: 'После сеанса', exact: true });
+    await afterTestValue.click();
+    await page.getByRole('option', { name: 'Отклонение · нарушение', exact: true }).click();
+    const testCauseSelect = protocolItem.getByRole('combobox', { name: 'Причины нарушений', exact: true });
+    await testCauseSelect.click();
+    await page.getByRole('option', { name: causeOptionName, exact: true }).click();
+    await expect(page.getByText('Причины по результатам тестов', { exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.getByRole('option', { name: causeOptionName, exact: true }).last()).toBeHidden();
+    const manualCauseButton = page.getByRole('button', { name: 'Изменить список вручную', exact: true });
+    await manualCauseButton.evaluate((element) => element.scrollIntoView({ block: 'center', inline: 'nearest' }));
+    await manualCauseButton.click();
+    await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Вернуться к причинам из тестов', exact: true }).click();
+    await expect(page.getByRole('combobox', { name: 'Причины сеанса', exact: true })).toBeHidden();
+    await expect(page.getByRole('button', { name: 'Заполнить', exact: true })).toHaveCount(2);
+    await page.getByRole('button', { name: 'Добавить первопричину', exact: true }).click();
+    const rootCauseSelect = page.getByRole('combobox', { name: 'Причина из сеанса', exact: true });
+    await rootCauseSelect.click();
+    const rootCauseOption = page.getByRole('option', { name: causeOptionName, exact: true }).last();
+    await expect(rootCauseOption).toBeVisible();
+    await rootCauseOption.click({ force: true });
+    await page.getByLabel('Дополнительное описание', { exact: true }).fill('E2E описание первопричины');
+    await expect(page.getByLabel('Гипотеза первопричины', { exact: true })).toHaveCount(0);
+    await page.getByLabel('Алгоритм сеанса (пошаговый протокол сеанса)', { exact: true }).fill('E2E протокол');
+    await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill(oldSubjective);
+    await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill(oldPosture);
+    await page.getByLabel('Результат после сеанса', { exact: true }).fill(oldManualResult);
+    const createResultField = page.getByLabel('Результат после сеанса', { exact: true });
+    const createFillResultButton = page.getByRole('button', { name: 'Заполнить', exact: true }).last();
+    await createFillResultButton.click();
+    const createReplaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
+    await expect(createReplaceResultDialog).toBeVisible();
+    await createReplaceResultDialog.getByRole('button', { name: 'Отменить', exact: true }).click();
+    await expect(createReplaceResultDialog).toBeHidden();
+    await expect(createResultField).toHaveValue(oldManualResult);
+    await createFillResultButton.click();
+    const createConfirmResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
+    await expect(createConfirmResultDialog).toBeVisible();
+    await createConfirmResultDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await expect(createResultField).toHaveValue(new RegExp(`${oldPainName}: было 7, стало 3 из 10`));
+    await expect(createResultField).toHaveValue(new RegExp(`Субъективные ощущения: ${oldSubjective}`));
+    await expect(createResultField).toHaveValue(new RegExp(`Визуальная диагностика осанки: ${oldPosture}`));
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
     const sessionRow = page.getByRole('row').filter({ hasText: '18.08.2026' });
     await expect(sessionRow).toBeVisible();
-    await sessionRow.getByRole('link', { name: 'Открыть', exact: true }).click();
-    await expect(page.getByText('Первичная запись о боли', { exact: true })).toBeVisible();
-    await expect(page.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
-    await expect(page.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
+    const sessionViewLink = sessionRow.getByRole('link', { name: 'Открыть', exact: true });
+    await sessionViewLink.click({ force: true });
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 15_000 });
+    await expect(page.getByText(oldPainName, { exact: true })).toBeVisible({ timeout: 15_000 });
+    const testNameText = page.getByText(new RegExp(testName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).last();
+    await expect(testNameText).toBeVisible();
+    await expect(page.getByText(causeName, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('E2E описание первопричины', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Протокол и результат сеанса').getByText('E2E протокол', { exact: true })).toBeVisible();
+    await expect(page.getByText(new RegExp(`${oldPainName}: было 7, стало 3 из 10`), { exact: false }).first()).toBeVisible();
+    const dynamics = page.getByLabel('Динамика подтверждённых фактов');
+    await expect(dynamics.getByText('Предыдущая запись о боли', { exact: true })).toBeVisible();
+    await expect(dynamics.getByText('Предыдущий подтверждённый результат', { exact: true })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Связать файл', exact: true }).click();
-    await page.getByLabel('Файл клиента').click();
-    await page.getByRole('textbox', { name: 'Search' }).fill(fixture.attachmentFilename);
-    await page.getByText(new RegExp(fixture.attachmentFilename), { exact: false }).click();
-    await page.getByRole('button', { name: 'Связать', exact: true }).click();
-    await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
+    if (test.info().project.name !== 'webkit') {
+        for (const filename of ['session-before-1.png', 'session-before-2.png', 'session-before-3.png']) {
+            await uploadSessionPhoto(page, 'Загрузить фото до сеанса', filename);
+        }
+        for (const filename of ['session-after-1.png', 'session-after-2.png']) {
+            await uploadSessionPhoto(page, 'Загрузить фото после сеанса', filename);
+        }
+        for (const filename of ['session-before-1.png', 'session-before-2.png', 'session-before-3.png']) {
+            const photo = page.getByRole('img', { name: filename, exact: true });
+            await expect(photo).toHaveCount(1);
+            const photoCard = photo.locator('xpath=ancestor::article[1]');
+            await expect(photoCard).toContainText(/\d{2}\.\d{2}\.\d{4}/);
+        }
+        for (const filename of ['session-after-1.png', 'session-after-2.png']) {
+            await expect(page.getByRole('img', { name: filename, exact: true })).toHaveCount(1);
+        }
+        const previewPhoto = page.getByRole('link', { name: 'Открыть фото session-before-1.png', exact: true });
+        const previewPhotoHref = await previewPhoto.getAttribute('href');
+        expect(previewPhotoHref).toMatch(/\/admin\/attachments\//);
+        if (previewPhotoHref === null) {
+            throw new Error('The photo preview did not expose a private URL.');
+        }
+        const previewPhotoResponse = await page.request.get(previewPhotoHref);
+        expect(previewPhotoResponse.status()).toBe(200);
+        const photoDownload = previewPhoto.locator('xpath=ancestor::article[1]').getByRole('link', { name: 'Скачать', exact: true });
+        const photoDownloadHref = await photoDownload.getAttribute('href');
+        expect(photoDownloadHref).toMatch(/mode=download/);
+        if (photoDownloadHref === null) {
+            throw new Error('The photo download did not expose a private URL.');
+        }
+        const photoDownloadResponse = await page.request.get(photoDownloadHref);
+        expect(photoDownloadResponse.status()).toBe(200);
+        await page.getByRole('button', { name: 'Отвязать файл', exact: true }).click();
+        const unlinkPhotoDialog = page.getByRole('dialog').last();
+        await unlinkPhotoDialog.locator('button.fi-select-input-btn').click();
+        await page.getByRole('option', { name: 'session-before-1.png', exact: true }).click();
+        await unlinkPhotoDialog.getByRole('button', { name: 'Отвязать', exact: true }).click();
+        await expect(page.getByRole('img', { name: 'session-before-1.png', exact: true })).toHaveCount(0);
+        await page.reload();
+        await expect(page.getByRole('img', { name: 'session-before-1.png', exact: true })).toHaveCount(0);
+        await expect(page.getByRole('img', { name: 'session-before-2.png', exact: true })).toHaveCount(1);
+        await expect(page.getByRole('img', { name: 'session-before-3.png', exact: true })).toHaveCount(1);
+        await expect(page.getByRole('img', { name: 'session-after-1.png', exact: true })).toHaveCount(1);
+        await expect(page.getByRole('img', { name: 'session-after-2.png', exact: true })).toHaveCount(1);
+    }
+
+    if (test.info().project.name !== 'webkit') {
+        await page.getByRole('button', { name: 'Связать файл', exact: true }).click();
+        await page.getByLabel('Файл клиента').click();
+        await page.getByRole('textbox', { name: 'Search' }).fill(fixture.attachmentFilename);
+        await page.getByText(new RegExp(fixture.attachmentFilename), { exact: false }).click();
+        await page.getByRole('button', { name: 'Связать', exact: true }).click();
+        await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
+    }
 
     await page.getByRole('link', { name: 'Редактировать', exact: true }).click();
-    await page.getByRole('textbox', { name: 'Описание боли', exact: true }).fill('Обновлённая запись о боли');
-    await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
+    await assertSessionBlockOrder();
+    await expect(page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true })).toHaveValue(oldSubjective);
+    await expect(page.getByLabel('Визуальная диагностика осанки', { exact: true })).toHaveValue(oldPosture);
+    await expect(page.getByLabel('Результат после сеанса', { exact: true })).toHaveValue(new RegExp(`${oldPainName}: было 7, стало 3 из 10`));
+    await page.getByLabel('Название или описание боли', { exact: true }).fill(draftPainName);
+    const draftBeforePainScore = page.getByRole('slider', { name: 'До сеанса', exact: true });
+    const draftAfterPainScore = page.getByRole('slider', { name: 'После сеанса', exact: true });
+    await setLivewireRangeValue(page, draftBeforePainScore, 2);
+    await setLivewireRangeValue(page, draftAfterPainScore, 8);
+    const editedProtocolItem = page.locator('.fi-fo-repeater-item').filter({ hasText: testName }).last();
+    await expect(editedProtocolItem.getByRole('combobox', { name: 'До сеанса', exact: true })).toContainText('Норма');
+    await expect(editedProtocolItem.getByRole('combobox', { name: 'После сеанса', exact: true })).toContainText('Отклонение · нарушение');
+    await editedProtocolItem.getByRole('combobox', { name: 'До сеанса', exact: true }).click();
+    await page.getByRole('option', { name: 'Отклонение · нарушение', exact: true }).click();
+    await editedProtocolItem.getByRole('combobox', { name: 'После сеанса', exact: true }).click();
+    await page.getByRole('option', { name: 'Норма', exact: true }).click();
+    await page.getByLabel('Субъективные ощущения клиента после сеанса', { exact: true }).fill(draftSubjective);
+    await page.getByLabel('Визуальная диагностика осанки', { exact: true }).fill(draftPosture);
+    const resultField = page.getByLabel('Результат после сеанса', { exact: true });
+    await resultField.fill(oldManualResult);
+    await resultField.blur();
+    await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
+    const replaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
+    await expect(replaceResultDialog).toBeVisible();
+    await expect(replaceResultDialog).toContainText('Текущий текст будет заменён сводкой по данным сеанса.');
+    await replaceResultDialog.getByRole('button', { name: 'Отменить', exact: true }).click();
+    await expect(replaceResultDialog).toBeHidden();
+    await expect(resultField).toHaveValue(oldManualResult);
+    await page.getByRole('button', { name: 'Заполнить результат', exact: true }).click();
+    const confirmedReplaceResultDialog = page.locator('.fi-modal-window:visible').filter({ hasText: 'Заменить текст результата?' }).last();
+    await expect(confirmedReplaceResultDialog).toBeVisible();
+    const replaceResultResponse = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
+    await confirmedReplaceResultDialog.getByRole('button', { name: 'Подтвердить', exact: true }).click();
+    await replaceResultResponse;
+    await expect(resultField).toHaveValue(new RegExp(`${draftPainName}: было 2, стало 8 из 10`));
+    await expect(resultField).toHaveValue(new RegExp(`Субъективные ощущения: ${draftSubjective}`));
+    await expect(resultField).toHaveValue(new RegExp(`Визуальная диагностика осанки: ${draftPosture}`));
+    await expect(resultField).toHaveValue(/Нарушения по тестам: было 1, стало 0\./);
+    await expect(resultField).not.toHaveValue(new RegExp(oldPainName));
+    await expect(resultField).not.toHaveValue(new RegExp(oldSubjective));
+    await expect(resultField).not.toHaveValue(new RegExp(oldPosture));
+    const saveSessionButton = page.getByRole('button', { name: 'Сохранить', exact: true });
+    await expect(saveSessionButton).toBeEnabled({ timeout: 30_000 });
+    await saveSessionButton.click();
 
-    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
-    await page.getByRole('row').filter({ hasText: '18.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).click();
-    await expect(page.getByText('Обновлённая запись о боли', { exact: true })).toBeVisible();
-    await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`), { timeout: 15_000 });
+    const updatedSessionLink = page.getByRole('row').filter({ hasText: '18.08.2026' }).getByRole('link', { name: 'Открыть', exact: true }).last();
+    await expect(updatedSessionLink).toBeVisible();
+    await expect(updatedSessionLink).toHaveAttribute('href', /\/medical-sessions\/\d+$/);
+    await updatedSessionLink.click({ force: true });
+    await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/\\d+$`), { timeout: 30_000 });
+    await expect(page.getByText(draftPainName, { exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByText(new RegExp(`${draftPainName}: было 2, стало 8 из 10`), { exact: false }).first()).toBeVisible();
+    await expect(page.getByLabel('Особые жалобы').getByText(oldSubjective, { exact: true })).toBeVisible();
+    await expect(page.getByText(draftSubjective, { exact: true })).toBeVisible();
+    await expect(page.getByText(draftPosture, { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Протокол и результат сеанса').getByText(/Нарушения по тестам: было 1, стало 0\./, { exact: false }).first()).toBeVisible();
+    if (test.info().project.name !== 'webkit') {
+        await expect(page.getByText(fixture.attachmentFilename, { exact: true })).toBeVisible();
+    }
 
     await page.getByRole('link', { name: 'К истории сеансов', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/admin/clients/${fixture.clientId}/sessions$`));
+});
+
+test('staff can read per-pain history with a persisted zero after score', async ({ page }) => {
+    test.setTimeout(60_000);
+    const fixture = createCrmFixture({ medicalHistoryFlow: true });
+    const historyPainName = fixture.medicalHistoryPainName;
+    if (historyPainName === null) {
+        throw new Error('Medical history fixture did not return a pain name.');
+    }
+
+    await login(page, fixture);
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    const historyLabel = page.getByText('История боли', { exact: true });
+    await expect(historyLabel).toBeVisible();
+    const historySection = historyLabel.locator('xpath=ancestor::section[1]');
+    await expect(historySection).toContainText(historyPainName);
+    await expect(historySection.getByText(historyPainName, { exact: true })).toHaveCount(2);
+    await expect(historySection).toContainText('6');
+    await expect(historySection).toContainText('0');
+    await expect(historySection).toContainText('5');
+    await expect(historySection).toContainText('4');
+    await page.reload();
+    await expect(page.getByText(historyPainName, { exact: true })).toHaveCount(2);
+});
+
+test('staff can maintain the clinical test catalog and use it in a new session', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+    const suffix = fixture.clientName.replace(/^CRM Клиент /, '');
+    const testName = `E2E настроенный тест ${suffix}`;
+    const causeName = `E2E настроенная причина ${suffix}`;
+
+    await login(page, fixture);
+    await page.goto('/admin/medical-clinical-catalog-configuration');
+    await expect(page.getByRole('heading', { name: 'Клинические справочники', exact: true })).toBeVisible();
+
+    const testNameInputs = page.getByLabel('Название теста*', { exact: true });
+    const existingTestCount = await testNameInputs.count();
+    await page.getByRole('button', { name: 'Добавить тест', exact: true }).click();
+    await expect.poll(async () => testNameInputs.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(existingTestCount + 1);
+    const testNameInput = page.getByLabel('Название теста*', { exact: true }).last();
+    await expect(testNameInput).toBeVisible();
+    await testNameInput.fill(testName);
+    await testNameInput.press('Tab');
+    const configuredTestItem = testNameInput.locator('xpath=ancestor::li[1]');
+    const sectionInput = configuredTestItem.getByLabel('Раздел', { exact: true });
+    await sectionInput.fill('E2E раздел');
+    await sectionInput.press('Tab');
+    await page.waitForLoadState('networkidle');
+    const addValueButton = configuredTestItem.getByRole('button', { name: 'Добавить значение', exact: true });
+    await expect(addValueButton).toBeVisible();
+    const valueLabels = configuredTestItem.getByLabel('Название значения*', { exact: true });
+    for (let attempt = 0; attempt < 3 && (await valueLabels.count()) < 2; attempt += 1) {
+        await addValueButton.click();
+        try {
+            await expect.poll(async () => valueLabels.count(), { timeout: 5_000 }).toBeGreaterThanOrEqual(2);
+        } catch (error) {
+            if (attempt === 2) {
+                throw error;
+            }
+        }
+    }
+    await expect.poll(async () => valueLabels.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+    await valueLabels.nth(0).fill('Норма');
+    await valueLabels.nth(0).press('Tab');
+    await valueLabels.nth(1).fill('Отклонение');
+    await valueLabels.nth(1).press('Tab');
+    await configuredTestItem.getByLabel('Считать нарушением', { exact: true }).nth(1).check();
+    const activeTestToggle = configuredTestItem.getByLabel('Активен', { exact: true });
+    if (! await activeTestToggle.isChecked()) {
+        await activeTestToggle.check();
+    }
+    const activeValueToggles = configuredTestItem.getByLabel('Активно', { exact: true });
+    await expect(activeValueToggles).toHaveCount(2);
+    for (const toggle of await activeValueToggles.all()) {
+        if (! await toggle.isChecked()) {
+            await toggle.check();
+        }
+    }
+    await removeEmptyRepeaterItems(page, 'Название значения*');
+
+    const causeNameInputs = page.getByLabel('Название причины*', { exact: true });
+    const existingCauseCount = await causeNameInputs.count();
+    await page.getByRole('button', { name: 'Добавить причину', exact: true }).click();
+    await expect.poll(async () => causeNameInputs.count(), { timeout: 15_000 }).toBeGreaterThanOrEqual(existingCauseCount + 1);
+    const causeNameInput = page.getByLabel('Название причины*', { exact: true }).last();
+    await causeNameInput.fill(causeName);
+    await causeNameInput.press('Tab');
+    const configuredCauseItem = causeNameInput.locator('xpath=ancestor::li[1]');
+    await configuredCauseItem.getByLabel('Группа', { exact: true }).fill('E2E причины');
+    await configuredCauseItem.getByLabel('Группа', { exact: true }).press('Tab');
+    const activeCauseToggle = configuredCauseItem.getByLabel('Активна', { exact: true });
+    if (! await activeCauseToggle.isChecked()) {
+        await activeCauseToggle.check();
+    }
+    await removeEmptyRepeaterItems(page, 'Название теста*');
+    await removeEmptyRepeaterItems(page, 'Название причины*');
+    await page.waitForLoadState('networkidle');
+    await page.getByRole('button', { name: 'Сохранить каталог', exact: true }).click();
+    await expect(page.getByRole('status')).toContainText('Каталог сохранён', { timeout: 15_000 });
+
+    await page.reload();
+    await expect(page.getByLabel('Название теста*', { exact: true }).last()).toHaveValue(testName);
+    await expect(page.getByLabel('Название причины*', { exact: true }).last()).toHaveValue(causeName);
+
+    await page.goto(`/admin/clients/${fixture.clientId}/sessions/medical-sessions/create`);
+    await expect(page.getByRole('heading', { name: 'Новый сеанс', exact: true })).toBeVisible();
+    const beforeTestValue = page.getByRole('combobox', { name: 'До сеанса', exact: true }).last();
+    await expect(beforeTestValue).toBeVisible();
+    await beforeTestValue.click();
+    const abnormalValueOption = page.getByRole('option').filter({ hasText: 'Отклонение' }).last();
+    await expect(abnormalValueOption).toBeVisible();
+    await abnormalValueOption.click();
+});
+
+test('staff can analyze several dimensions and download a filtered Excel report', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ financeFlow: true, painScoreFlow: true });
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+
+    await page.locator('#form\\.period').selectOption('custom');
+    await page.locator('#form\\.start_date').fill('2026-10-01');
+    await page.locator('#form\\.end_date').fill('2026-10-31');
+    const painBasis = page.locator('#form\\.cohort_pain_score_basis');
+    await expect(painBasis).toBeVisible();
+    await painBasis.selectOption('session_after');
+    await page.locator('#form\\.cohort_has_pain_score').selectOption('1');
+    await page.getByRole('combobox', { name: 'Страны', exact: true }).click();
+    await page.getByRole('option', { name: fixture.painCountry as string, exact: true }).click();
+    await expect(page.getByText('Источник оценки боли', { exact: true })).toBeVisible();
+
+    const dimensions = [
+        'Проблемы и динамика боли',
+        'Источники клиентов',
+        'Записи и визиты',
+        'Финансы',
+        'Удовлетворённость и обратная связь',
+        'Цели и задачи',
+        'Демография клиентов',
+        'Услуги и визиты',
+        'Типы покупок',
+        'Статусы записей',
+        'Категории клиентов',
+    ];
+    for (const dimension of dimensions) {
+        const checkbox = page.getByRole('checkbox', { name: dimension, exact: true });
+        await expect(checkbox).toBeVisible();
+        if (! await checkbox.isChecked()) {
+            await checkbox.check();
+        }
+    }
+
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    for (const dimension of dimensions) {
+        await expect(page.getByRole('heading', { name: dimension, exact: true })).toBeVisible();
+    }
+    const cohortSummary = page.getByText(/Найдено клиентов: \d+ ·/).first();
+    await expect(cohortSummary).toBeVisible();
+    const cohortCount = Number((await cohortSummary.textContent())?.match(/Найдено клиентов: (\d+)/)?.[1]);
+    expect(cohortCount).toBe(1);
+    const demographicsSection = page
+        .getByRole('heading', { name: 'Демография клиентов', exact: true })
+        .locator('xpath=ancestor::section[1]');
+    const demographicsSummary = demographicsSection.locator('p').filter({ hasText: /^Клиентов: \d+$/ }).first();
+    await expect(demographicsSummary).toBeVisible();
+    const demographicsCount = Number((await demographicsSummary.textContent())?.match(/Клиентов: (\d+)/)?.[1]);
+    expect(demographicsCount).toBe(cohortCount);
+
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
+    ]);
+    expect(download.suggestedFilename()).toMatch(/\.xlsx$/);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('Analytics export did not produce a file.');
+    }
+    const workbookBytes = readFileSync(downloadPath);
+    expect(workbookBytes.subarray(0, 2).toString()).toBe('PK');
+    const workbookXml = execFileSync('unzip', ['-p', downloadPath, 'xl/sharedStrings.xml'], { encoding: 'utf8' });
+    expect(workbookXml).toContain('Показатель');
+    expect(workbookXml).toContain('Финансы');
+    expect(workbookXml).toContain('Источник оценки боли');
+    expect(workbookXml).toContain('После сеанса');
+    expect(workbookXml).not.toContain('session_after');
+
+    await page.reload();
+    await expect(page.locator('#form\\.cohort_pain_score_basis')).toHaveValue('session_after');
+    await page.goto('/admin/analytics-console?pain-basis=history');
+    await page.goBack();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await page.locator('#form\\.cohort_pain_score_basis').selectOption('session_before');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByText(/Найдено клиентов: 0 ·/).first()).toBeVisible();
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Финансы', exact: true })).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+    await expect(page.getByRole('button', { name: 'Анализировать', exact: true })).toBeVisible();
+});
+
+test('analytics demographics show the known country total in the screen and Excel', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture({ countryCountFlow: true });
+    if (fixture.countryCountClientNames === null) {
+        throw new Error('Country-count fixture did not create the expected clients.');
+    }
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await page.locator('#form\\.period').selectOption('custom');
+    await page.locator('#form\\.start_date').fill('2026-10-01');
+    await page.locator('#form\\.end_date').fill('2026-10-31');
+    const clientSelect = page.getByRole('combobox', { name: 'Конкретные клиенты', exact: true });
+    for (const clientName of Object.values(fixture.countryCountClientNames)) {
+        await selectAnalyticsOption(page, clientSelect, clientName);
+    }
+    const demographicsDimension = page.getByRole('checkbox', { name: 'Демография клиентов', exact: true });
+    if (! await demographicsDimension.isChecked()) {
+        await demographicsDimension.check();
+    }
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+
+    const demographicsSection = page
+        .getByRole('heading', { name: 'Демография клиентов', exact: true })
+        .locator('xpath=ancestor::section[1]');
+    await expect(demographicsSection.locator('p').filter({ hasText: 'Клиентов: 4' })).toBeVisible();
+    await expect(demographicsSection.locator('p').filter({ hasText: 'Стран представлено: 2' })).toBeVisible();
+    await expect(demographicsSection.locator('li').filter({ hasText: 'KZ' }).first()).toContainText('2 · 50%');
+    await expect(demographicsSection.locator('li').filter({ hasText: 'RU' }).first()).toContainText('1 · 25%');
+    await expect(demographicsSection.locator('li').filter({ hasText: 'Не указана' }).first()).toContainText('1 · 25%');
+
+    const countries = page.getByRole('combobox', { name: 'Страны', exact: true });
+    await selectAnalyticsOption(page, countries, 'KZ');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(demographicsSection.locator('p').filter({ hasText: 'Клиентов: 2' })).toBeVisible();
+    await expect(demographicsSection).toContainText('Стран представлено: 1');
+
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
+    ]);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('Country-count analytics export did not produce a file.');
+    }
+    const workbookXml = execFileSync('unzip', ['-p', downloadPath, 'xl/sharedStrings.xml'], { encoding: 'utf8' });
+    expect(workbookXml).toContain('Всего представлено');
+    expect(workbookXml).toContain('Стран представлено');
+
+    await page.reload();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(demographicsSection).toContainText('Стран представлено: 1');
+    await page.goto('/admin/analytics-console?country-count=1');
+    await page.goBack();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Демография клиентов', exact: true }).locator('xpath=ancestor::section[1]')).toContainText('Стран представлено: 1');
+});
+
+test('analytics problem session axis keeps problem numbering separate from global numbering', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture({ problemAxisFlow: true });
+
+    if (fixture.problemTagName === null) {
+        throw new Error('Problem-axis fixture did not create a problem tag.');
+    }
+
+    const problemTagOptionName = `E2E ось сеансов: ${fixture.problemTagName}`;
+
+    const selectReportState = async (): Promise<void> => {
+        await page.locator('#form\\.period').selectOption('custom');
+        await page.locator('#form\\.start_date').fill('2026-10-01');
+        await page.locator('#form\\.end_date').fill('2026-10-31');
+        const problemCategory = page.getByRole('combobox', { name: 'Категория проблемы', exact: true });
+        await problemCategory.click();
+        await page.getByRole('textbox', { name: 'Search' }).fill(problemTagOptionName);
+        const problemOption = page.getByRole('option', { name: problemTagOptionName, exact: true });
+        await expect(problemOption).toBeVisible({ timeout: 15_000 });
+        await problemOption.click();
+    };
+
+    const painSection = page
+        .getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })
+        .locator('xpath=ancestor::section[1]');
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await selectReportState();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(painSection).toContainText('Сеанс 1 / 2 / 3 после');
+    await expect(painSection.getByRole('row').filter({ hasText: fixture.problemTagName })).toContainText('8 / 4 / 1');
+
+    await page.goto('/admin/analytics-metric-settings');
+    const sessionAxis = page.locator('#form\\.session_axis_semantics');
+    await expect(sessionAxis).toHaveValue('problem_chronological');
+    await sessionAxis.selectOption('client_chronological');
+    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
+    await expect(page.getByText('Метрики сохранены', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(sessionAxis).toHaveValue('client_chronological');
+
+    await page.goto('/admin/analytics-console');
+    await selectReportState();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(painSection).toContainText('Сеанс 1 / 2 / 3 после');
+    await expect(painSection.getByRole('row').filter({ hasText: fixture.problemTagName })).toContainText('— / — / —');
+
+    await page.goto('/admin/analytics-metric-settings');
+    await sessionAxis.selectOption('problem_chronological');
+    await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
+    await expect(page.getByText('Метрики сохранены', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(sessionAxis).toHaveValue('problem_chronological');
+
+    await page.goto('/admin/analytics-console');
+    await selectReportState();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(painSection).toContainText('Сеанс 1 / 2 / 3 после');
+    await expect(painSection.getByRole('row').filter({ hasText: fixture.problemTagName })).toContainText('8 / 4 / 1');
+
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
+    ]);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('Problem-axis analytics export did not produce a file.');
+    }
+    const sharedStringsXml = execFileSync('unzip', ['-p', downloadPath, 'xl/sharedStrings.xml'], { encoding: 'utf8' });
+    expect(sharedStringsXml).toContain('Порядок сеансов конкретной категории проблемы');
+    expect(sharedStringsXml).toContain('problem-chronological-v1');
+    const painSheetXml = execFileSync('unzip', ['-p', downloadPath, 'xl/worksheets/sheet4.xml'], { encoding: 'utf8' });
+    expect(painSheetXml).toMatch(/<v>8(?:\.0)?<\/v>/);
+    expect(painSheetXml).toMatch(/<v>4(?:\.0)?<\/v>/);
+    expect(painSheetXml).toMatch(/<v>1(?:\.0)?<\/v>/);
+
+    await page.setViewportSize({ width: 390, height: 900 });
+    await assertNoHorizontalOverflow(page);
+});
+
+test('analytics service aggregate drilldown intersects the selected service cohort', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture({ aggregateDrilldownFlow: true });
+
+    if (
+        fixture.aggregateServiceAName === null
+        || fixture.aggregateServiceBName === null
+        || fixture.aggregateServiceClientAName === null
+        || fixture.aggregateServiceClientBName === null
+        || fixture.aggregateServiceClientBothName === null
+    ) {
+        throw new Error('Aggregate service fixture did not create the expected records.');
+    }
+
+    const selectServices = async (): Promise<void> => {
+        const services = page.locator('[id="form.cohort_service_ids"]');
+        for (const serviceName of [fixture.aggregateServiceAName, fixture.aggregateServiceBName]) {
+            await selectAnalyticsOption(page, services, serviceName);
+        }
+    };
+
+    const selectReport = async (): Promise<void> => {
+        await page.locator('#form\\.period').selectOption('custom');
+        await page.waitForLoadState('networkidle');
+        await page.locator('#form\\.start_date').fill('2026-10-01');
+        await page.locator('#form\\.end_date').fill('2026-10-31');
+        await selectServices();
+        const servicesDimension = page.getByRole('checkbox', { name: 'Услуги и визиты', exact: true });
+        if (! await servicesDimension.isChecked()) {
+            await servicesDimension.check();
+        }
+        await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    };
+
+    const servicesSection = page
+        .getByRole('heading', { name: 'Услуги и визиты', exact: true })
+        .locator('xpath=ancestor::section[1]');
+    const cohortSection = page.getByRole('region', { name: 'Клиенты когорты', exact: true });
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await selectReport();
+
+    const serviceARow = servicesSection.locator('li').filter({ hasText: fixture.aggregateServiceAName }).first();
+    await serviceARow.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    await expect(cohortSection).toContainText(`Строка отчёта: услуга «${fixture.aggregateServiceAName}».`);
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientAName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientBothName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientBName, exact: true })).toHaveCount(0);
+
+    await cohortSection.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    const serviceBRow = servicesSection.locator('li').filter({ hasText: fixture.aggregateServiceBName }).first();
+    await serviceBRow.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    await expect(cohortSection).toContainText(`Строка отчёта: услуга «${fixture.aggregateServiceBName}».`);
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientBName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientBothName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateServiceClientAName, exact: true })).toHaveCount(0);
+
+    await page.reload();
+    await expect(page.getByRole('combobox', { name: 'Услуги', exact: true })).toContainText(fixture.aggregateServiceAName);
+    await expect(page.getByRole('combobox', { name: 'Услуги', exact: true })).toContainText(fixture.aggregateServiceBName);
+    await page.goto('/admin/analytics-console?aggregate-state=service');
+    await page.goBack();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+});
+
+test('analytics problem aggregate drilldown preserves any mode and intersects selected tags', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture({ aggregateDrilldownFlow: true });
+
+    if (
+        fixture.aggregateProblemTagName === null
+        || fixture.aggregateBackTagName === null
+        || fixture.aggregateProblemClientNeckName === null
+        || fixture.aggregateProblemClientBackName === null
+        || fixture.aggregateProblemClientBothName === null
+    ) {
+        throw new Error('Aggregate problem fixture did not create the expected records.');
+    }
+
+    const problemCategory = page.locator('[id="form.cohort_problem_tag_ids"]');
+    const selectProblems = async (): Promise<void> => {
+        for (const problemName of [fixture.aggregateProblemTagName, fixture.aggregateBackTagName]) {
+            await selectAnalyticsOption(page, problemCategory, problemName);
+        }
+    };
+
+    const selectReport = async (): Promise<void> => {
+        await page.locator('#form\\.period').selectOption('custom');
+        await page.waitForLoadState('networkidle');
+        await page.locator('#form\\.start_date').fill('2026-10-01');
+        await page.locator('#form\\.end_date').fill('2026-10-31');
+        await selectProblems();
+        await page.locator('#form\\.cohort_problem_tag_mode').selectOption('any');
+        await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    };
+
+    const painSection = page
+        .getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })
+        .locator('xpath=ancestor::section[1]');
+    const cohortSection = page.getByRole('region', { name: 'Клиенты когорты', exact: true });
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await selectReport();
+
+    const neckRow = painSection.getByRole('row').filter({ hasText: fixture.aggregateProblemTagName }).first();
+    await neckRow.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    await expect(cohortSection).toContainText(`Строка отчёта: Категория проблемы «${fixture.aggregateProblemTagName}».`);
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientNeckName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientBothName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientBackName, exact: true })).toHaveCount(0);
+    await expect(page.locator('#form\\.cohort_problem_tag_mode')).toHaveValue('any');
+    await expect(problemCategory).toContainText(fixture.aggregateProblemTagName);
+    await expect(problemCategory).toContainText(fixture.aggregateBackTagName);
+
+    await cohortSection.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    const backRow = painSection.getByRole('row').filter({ hasText: fixture.aggregateBackTagName }).first();
+    await backRow.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    await expect(cohortSection).toContainText(`Строка отчёта: Категория проблемы «${fixture.aggregateBackTagName}».`);
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientBackName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientBothName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateProblemClientNeckName, exact: true })).toHaveCount(0);
+    await expect(page.locator('#form\\.cohort_problem_tag_mode')).toHaveValue('any');
+
+    await page.reload();
+    await expect(page.locator('#form\\.cohort_problem_tag_mode')).toHaveValue('any');
+    await page.goto('/admin/analytics-console?aggregate-state=problem');
+    await page.goBack();
+    await page.goForward();
+    await expect(page.locator('#form\\.cohort_problem_tag_mode')).toHaveValue('any');
+});
+
+test('analytics demographic missing country aggregate drilldown uses a typed unknown predicate', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture({ aggregateDrilldownFlow: true });
+
+    if (fixture.aggregateMissingCountryClientName === null) {
+        throw new Error('Aggregate missing-country fixture did not create the expected client.');
+    }
+
+    const selectTargetClient = async (): Promise<void> => {
+        const clientSelect = page.getByRole('combobox', { name: 'Конкретные клиенты', exact: true });
+        await selectAnalyticsOption(page, clientSelect, fixture.aggregateMissingCountryClientName as string);
+    };
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await page.waitForLoadState('networkidle');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await selectTargetClient();
+    const demographicsDimension = page.getByRole('checkbox', { name: 'Демография клиентов', exact: true });
+    if (! await demographicsDimension.isChecked()) {
+        await demographicsDimension.check();
+    }
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+
+    const demographicsSection = page
+        .getByRole('heading', { name: 'Демография клиентов', exact: true })
+        .locator('xpath=ancestor::section[1]');
+    await expect(demographicsSection.locator('p').filter({ hasText: 'Стран представлено: 0' })).toBeVisible();
+    const countryItem = demographicsSection.locator('li').filter({ hasText: 'Не указана' }).first();
+    await expect(countryItem).toBeVisible();
+    await countryItem.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+
+    const cohortSection = page.getByRole('region', { name: 'Клиенты когорты', exact: true });
+    await expect(cohortSection).toContainText('Строка отчёта: страна «Не указана».');
+    await expect(cohortSection.getByRole('link', { name: fixture.aggregateMissingCountryClientName, exact: true })).toBeVisible();
+    await expect(cohortSection).not.toContainText('__unknown__');
+
+    await page.reload();
+    await expect(page.getByRole('button', { name: 'Анализировать', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(demographicsSection).toBeVisible();
+    await page.setViewportSize({ width: 390, height: 900 });
+    await assertNoHorizontalOverflow(page);
+    await page.goto('/admin/analytics-console?aggregate-state=demographics');
+    await page.goBack();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+});
+
+test('analytics custom period rejects invalid dates without falling back to the default', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+
+    const period = page.locator('#form\\.period');
+    const startDate = page.locator('#form\\.start_date');
+    const endDate = page.locator('#form\\.end_date');
+    const analyze = page.getByRole('button', { name: 'Анализировать', exact: true });
+    const fieldError = (message: string) => page.locator('.fi-fo-field-wrp-error-message:visible').filter({ hasText: message });
+
+    await period.selectOption('custom');
+    await startDate.fill('2026-10-01');
+    await endDate.fill('');
+    await analyze.click();
+    await expect(fieldError('Укажите дату окончания произвольного периода.')).toBeVisible();
+    await expect(page.getByText('validation.required_if', { exact: false })).toHaveCount(0);
+    await expect(period).toHaveValue('custom');
+    await expect(endDate).toHaveValue('');
+
+    await startDate.fill('2026-10-10');
+    await endDate.fill('2026-10-01');
+    await analyze.click();
+    await expect(fieldError('Дата окончания не может быть раньше даты начала.')).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2026-10-10');
+    await expect(endDate).toHaveValue('2026-10-01');
+
+    await startDate.fill('2024-01-01');
+    await endDate.fill('2025-01-02');
+    await analyze.click();
+    await expect(fieldError('Выберите период не более 366 дней.')).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2024-01-01');
+    await expect(endDate).toHaveValue('2025-01-02');
+
+    await startDate.fill('2026-10-01');
+    await endDate.fill('2026-10-31');
+    await analyze.click();
+    await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2026-10-01');
+    await expect(endDate).toHaveValue('2026-10-31');
+
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2026-10-01');
+    await expect(endDate).toHaveValue('2026-10-31');
+    await analyze.click();
+    await expect(page.getByRole('heading', { name: 'Проблемы и динамика боли', exact: true })).toBeVisible();
+
+    const navigateHistory = async (direction: 'back' | 'forward', expectedUrl: RegExp): Promise<void> => {
+        try {
+            if (direction === 'back') {
+                await page.goBack({ waitUntil: 'domcontentloaded' });
+            } else {
+                await page.goForward({ waitUntil: 'domcontentloaded' });
+            }
+        } catch (error) {
+            if (!String(error).includes('ERR_ABORTED')) {
+                throw error;
+            }
+        }
+        await expect(page).toHaveURL(expectedUrl);
+    };
+
+    await page.goto('/admin');
+    await navigateHistory('back', /\/admin\/analytics-console$/);
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2026-10-01');
+    await expect(endDate).toHaveValue('2026-10-31');
+    await navigateHistory('forward', /\/admin$/);
+    await navigateHistory('back', /\/admin\/analytics-console$/);
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await expect(period).toHaveValue('custom');
+    await expect(startDate).toHaveValue('2026-10-01');
+    await expect(endDate).toHaveValue('2026-10-31');
+    await assertNoHorizontalOverflow(page);
+});
+
+test('owner can configure computed metrics and use them in analytics and Excel', async ({ page }) => {
+    test.setTimeout(120_000);
+    const fixture = createCrmFixture();
+    const metricName = `Новые клиенты E2E ${fixture.clientName.slice(-8)}`;
+    const renamedMetricName = `${metricName} обновлено`;
+    const saveMetricsAndWait = async (): Promise<void> => {
+        const saveResponse = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
+        await page.getByRole('button', { name: 'Сохранить метрики', exact: true }).click();
+        await saveResponse;
+        await page.waitForTimeout(500);
+    };
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-metric-settings');
+    await expect(page.getByRole('heading', { name: 'Метрики аналитики', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Снижение боли, %', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Изменение LTV к предыдущему периоду, %', exact: true })).toBeVisible();
+    await expect(page.getByText('Описание формулы владельца', { exact: true })).toHaveCount(0);
+    await expect(page.getByText('база сравнения не определена', { exact: false })).toHaveCount(0);
+
+    for (const width of [320, 390, 768, 1440]) {
+        await page.setViewportSize({ width, height: 900 });
+        await assertNoHorizontalOverflow(page);
+        await expect(page.getByRole('button', { name: 'Сохранить метрики', exact: true })).toBeVisible();
+    }
+
+    const items = page.locator('.fi-fo-repeater-item');
+    const initialItemCount = await items.count();
+    await page.getByRole('button', { name: 'Добавить метрику', exact: true }).click();
+    await expect.poll(async () => items.count()).toBe(initialItemCount + 1);
+    await page.waitForTimeout(1500);
+    const customItem = items.last();
+
+    const choose = async (label: RegExp, option: string): Promise<void> => {
+        const control = customItem.getByRole('combobox', { name: label }).first();
+        if (await control.evaluate((element) => element.tagName === 'SELECT')) {
+            await expect.poll(
+                async () => (await control.locator('option').allTextContents()).map((text) => text.trim()),
+                { timeout: 20_000 },
+            ).toContain(option);
+            await control.selectOption({ label: option });
+            await page.waitForTimeout(750);
+            return;
+        }
+
+        await control.click();
+        const optionLocator = page.getByRole('option', { name: option, exact: true }).last();
+        await expect(optionLocator).toBeVisible({ timeout: 20_000 });
+        await optionLocator.click();
+        await page.waitForTimeout(750);
+    };
+
+    await customItem.getByRole('textbox', { name: /^Название/ }).fill(metricName);
+    await choose(/^Что считаем/, 'Новые клиенты');
+    await choose(/^Агрегация/, 'Количество');
+    await choose(/^Операция/, 'A − B');
+    await choose(/^Основа сравнения/, 'Фиксированное целевое значение');
+    const targetValue = customItem.locator('input[id$=".target_value"]');
+    await expect(targetValue).toBeVisible();
+    await targetValue.fill('1');
+    await targetValue.press('Tab');
+    await choose(/^Если данных нет/, 'Не рассчитывать');
+    await choose(/^Если знаменатель равен 0/, 'Не рассчитывать');
+    await choose(/^Единица/, 'Число');
+    await choose(/^Округление/, '0 знаков');
+    await expect(targetValue).toHaveValue('1');
+    await customItem.getByRole('switch', { name: 'Активна', exact: true }).check();
+    await saveMetricsAndWait();
+
+    await page.reload();
+    const persistedMetricHeading = page.getByRole('heading', { name: metricName, exact: true });
+    await expect(persistedMetricHeading).toBeVisible();
+    const persistedItem = persistedMetricHeading.locator('xpath=ancestor::li[contains(@class,"fi-fo-repeater-item")][1]');
+    await expect(persistedItem.locator('input[id$=".target_value"]')).toHaveValue('1');
+
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    await page.waitForLoadState('networkidle');
+    const customMetricsDimension = page.getByRole('checkbox', { name: 'Вычисляемые метрики', exact: true });
+    if (! await customMetricsDimension.isChecked()) {
+        const dimensionsUpdate = page.waitForResponse((response) => response.request().method() === 'POST' && /\/livewire[^/]*\/update$/.test(new URL(response.url()).pathname) && response.ok());
+        await customMetricsDimension.check();
+        await dimensionsUpdate;
+    }
+    await expect(customMetricsDimension).toBeChecked();
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    const customMetricsSection = page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]');
+    await expect(customMetricsSection.getByText(metricName, { exact: true })).toBeVisible();
+    await expect(customMetricsSection).toContainText('Число');
+
+    const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.getByRole('button', { name: 'Скачать Excel', exact: true }).click(),
+    ]);
+    const downloadPath = await download.path();
+    expect(downloadPath).not.toBeNull();
+    if (downloadPath === null) {
+        throw new Error('Computed metrics export did not produce a file.');
+    }
+    const workbookXml = execFileSync('unzip', ['-p', downloadPath, 'xl/sharedStrings.xml'], { encoding: 'utf8' });
+    expect(workbookXml).toContain(metricName);
+    expect(workbookXml).toContain('Число');
+
+    await page.goto('/admin/analytics-metric-settings');
+    const reopenedItem = page.locator('.fi-fo-repeater-item').last();
+    await reopenedItem.getByRole('textbox', { name: /^Название/ }).fill(renamedMetricName);
+    await saveMetricsAndWait();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: renamedMetricName, exact: true })).toBeVisible();
+
+    await page.goto('/admin/analytics-console');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toBeVisible();
+    await expect(page.getByText(metricName, { exact: true })).toHaveCount(0);
+
+    await page.goto('/admin/analytics-metric-settings');
+    const renamedMetricItem = page.getByRole('heading', { name: renamedMetricName, exact: true }).locator('xpath=ancestor::li[contains(@class,"fi-fo-repeater-item")][1]');
+    await renamedMetricItem.getByRole('button', { name: 'Удалить', exact: true }).click();
+    await saveMetricsAndWait();
+    await page.reload();
+    await expect(page.getByRole('heading', { name: renamedMetricName, exact: true })).toHaveCount(0);
+    await page.goto('/admin/analytics-console');
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Вычисляемые метрики', exact: true }).locator('xpath=ancestor::section[1]').getByText(renamedMetricName, { exact: true })).toHaveCount(0);
+    await page.setViewportSize({ width: 320, height: 900 });
+    await assertNoHorizontalOverflow(page);
+    await page.setViewportSize({ width: 390, height: 900 });
+    await assertNoHorizontalOverflow(page);
+    await page.setViewportSize({ width: 768, height: 900 });
+    await assertNoHorizontalOverflow(page);
+    await page.setViewportSize({ width: 1440, height: 900 });
+});
+
+test('staff can maintain analytics taxonomy groups in CRM', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ taxonomyFlow: true });
+    const groupName = `E2E группа ${fixture.clientName.replace(/^CRM Клиент /, '')}`;
+    const renamedGroupName = `${groupName} обновлена`;
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-taxonomy-groups');
+    await expect(page.getByRole('heading', { name: 'Группы аналитики', exact: true })).toBeVisible();
+
+    const problemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
+    const groupNameInputs = problemSection.getByRole('textbox', { name: 'Название группы*', exact: true });
+    let groupIndex = -1;
+    for (let index = 0; index < await groupNameInputs.count(); index += 1) {
+        if ((await groupNameInputs.nth(index).inputValue()) === groupName) {
+            groupIndex = index;
+            break;
+        }
+    }
+    expect(groupIndex).toBeGreaterThanOrEqual(0);
+    await groupNameInputs.nth(groupIndex).fill(renamedGroupName);
+    const activeToggle = problemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(groupIndex);
+    if (await activeToggle.isChecked()) {
+        await activeToggle.uncheck();
+    }
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('Группы аналитики сохранены', { exact: true })).toBeVisible();
+
+    await page.reload();
+    const reopenedProblemSection = page.locator('.fi-section').filter({ hasText: 'Проблемы и боли' }).first();
+    const reopenedNameInputs = reopenedProblemSection.getByRole('textbox', { name: 'Название группы*', exact: true });
+    let reopenedGroupIndex = -1;
+    for (let index = 0; index < await reopenedNameInputs.count(); index += 1) {
+        if ((await reopenedNameInputs.nth(index).inputValue()) === renamedGroupName) {
+            reopenedGroupIndex = index;
+            break;
+        }
+    }
+    expect(reopenedGroupIndex).toBeGreaterThanOrEqual(0);
+    await expect(reopenedProblemSection.getByRole('switch', { name: 'Активна', exact: true }).nth(reopenedGroupIndex)).not.toBeChecked();
+    await expect(page.locator('html')).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+});
+
+test('staff can review synthetic analytics tag candidates in CRM', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ tagCandidateFlow: true });
+
+    if (
+        fixture.candidateLabel === null
+        || fixture.staleCandidateLabel === null
+        || fixture.tagCandidatePainName === null
+        || fixture.tagCandidateUnrelatedClientName === null
+    ) {
+        throw new Error('Tag candidate fixture did not create the expected candidates.');
+    }
+
+    await login(page, fixture);
+    await page.goto('/admin/analytics-tag-candidates');
+    await expect(page.getByRole('heading', { name: 'Кандидаты тегов', exact: true })).toBeVisible();
+
+    const candidateItemFor = async (label: string): Promise<Locator> => {
+        const inputs = page.getByRole('textbox', { name: 'Предложение', exact: true });
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+            for (let index = 0; index < await inputs.count(); index += 1) {
+                if (await inputs.nth(index).inputValue() === label) {
+                    return inputs.nth(index).locator('xpath=ancestor::li[1]');
+                }
+            }
+
+            await page.waitForTimeout(250);
+        }
+
+        throw new Error(`Candidate ${label} was not rendered.`);
+    };
+
+    const candidateItem = await candidateItemFor(fixture.candidateLabel);
+    await expect(candidateItem).toBeVisible();
+    await expect(candidateItem.getByRole('textbox', { name: 'Категория', exact: true })).toHaveValue('Жалобы и проблемы');
+    const decision = candidateItem.getByRole('combobox', { name: 'Решение', exact: true });
+    await decision.selectOption('accept');
+    const reviewedLabel = candidateItem.getByLabel('Итоговое название', { exact: true });
+    await expect(reviewedLabel).toBeVisible();
+    await reviewedLabel.fill(`${fixture.candidateLabel} принято`);
+    await page.getByRole('button', { name: 'Сохранить решения', exact: true }).click();
+    await expect(page.getByText('Решения по кандидатам сохранены', { exact: true })).toBeVisible();
+    await expect.poll(async () => {
+        const inputs = page.getByRole('textbox', { name: 'Предложение', exact: true });
+        for (let index = 0; index < await inputs.count(); index += 1) {
+            if (await inputs.nth(index).inputValue() === fixture.candidateLabel) {
+                return true;
+            }
+        }
+
+        return false;
+    }).toBe(false);
+
+    await page.goto(`/admin/clients/${fixture.clientId}`);
+    await expect(page.getByRole('heading', { name: fixture.clientName, exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Доступ к трекеру', exact: true }).click();
+    await page.getByText('Принять категории боли', { exact: true }).click();
+    const acceptPainDialog = page.locator('.fi-modal-window:visible').last();
+    await expect(acceptPainDialog).toBeVisible();
+    await acceptPainDialog.getByRole('combobox', { name: /^Боль клиента/ }).click();
+    await page.getByRole('option', { name: fixture.tagCandidatePainName, exact: true }).click();
+    await expect(acceptPainDialog.getByRole('combobox', { name: 'Категории проблемы', exact: true })).toContainText(`${fixture.candidateLabel} принято`);
+    await acceptPainDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+    await expect(page.getByText('Категории боли сохранены', { exact: true })).toBeVisible();
+    await page.reload();
+
+    await page.goto('/admin/analytics-console');
+    await expect(page.getByRole('heading', { name: 'Консоль аналитики', exact: true })).toBeVisible();
+    const problemCategories = page.getByRole('combobox', { name: 'Категории проблем', exact: true });
+    await problemCategories.click();
+    await expect(page.getByRole('option', { name: `${fixture.candidateLabel} принято`, exact: true })).toBeVisible();
+    await page.getByRole('option', { name: `${fixture.candidateLabel} принято`, exact: true }).click();
+    const problemDimension = page.getByRole('checkbox', { name: 'Проблемы и динамика боли', exact: true });
+    if (! await problemDimension.isChecked()) {
+        await problemDimension.check();
+    }
+    await page.getByRole('button', { name: 'Анализировать', exact: true }).click();
+    const cohortSection = page.getByRole('region', { name: 'Клиенты когорты', exact: true });
+    await expect(cohortSection).toContainText('Найдено клиентов: 1');
+    await cohortSection.getByRole('button', { name: 'Показать клиентов', exact: true }).click();
+    await expect(cohortSection.getByRole('link', { name: fixture.clientName, exact: true })).toBeVisible();
+    await expect(cohortSection.getByRole('link', { name: fixture.tagCandidateUnrelatedClientName, exact: true })).toHaveCount(0);
+
+    await page.goto('/admin/analytics-tag-candidates');
+    const staleItem = await candidateItemFor(fixture.staleCandidateLabel);
+    await expect(staleItem).toBeVisible();
+    const staleDecision = staleItem.getByRole('combobox', { name: 'Решение', exact: true });
+    await staleDecision.selectOption('accept');
+    await staleItem.getByLabel('Итоговое название', { exact: true }).fill(`${fixture.staleCandidateLabel} принято`);
+    await page.getByRole('button', { name: 'Сохранить решения', exact: true }).click();
+    await expect(page.getByText('Источник кандидата уже устарел. Запустите классификацию повторно.', { exact: true })).toBeVisible();
+    await expect(staleItem.getByRole('textbox', { name: 'Предложение', exact: true })).toHaveValue(fixture.staleCandidateLabel);
+    await page.setViewportSize({ width: 390, height: 900 });
+    await assertNoHorizontalOverflow(page);
+});
+
+test('automatic analytics suggestions follow a real source save into NeedsReview', async ({ page }) => {
+    test.setTimeout(120_000);
+    const candidateLabelSuffix = `E2E Auto Suggest ${Date.now()}`;
+    const providerStub = await startAnalyticsProviderStub(candidateLabelSuffix);
+    let fixture: CrmFixture | null = null;
+
+    const findPainInput = async (dialog: Locator, currentValue: string): Promise<Locator> => {
+        const inputs = dialog.getByLabel('Название или описание боли', { exact: true });
+        await expect(inputs).toHaveCount(2);
+        for (let index = 0; index < await inputs.count(); index += 1) {
+            if (await inputs.nth(index).inputValue() === currentValue) {
+                return inputs.nth(index);
+            }
+        }
+
+        throw new Error(`Medical profile pain ${currentValue} was not rendered.`);
+    };
+
+    const findPendingCandidate = async (label: string): Promise<Locator> => {
+        const inputs = page.getByRole('textbox', { name: 'Предложение', exact: true });
+        for (let attempt = 0; attempt < 60; attempt += 1) {
+            for (let index = 0; index < await inputs.count(); index += 1) {
+                if (await inputs.nth(index).inputValue() === label) {
+                    return page.locator('.fi-fo-repeater-item').filter({ has: inputs.nth(index) }).first();
+                }
+            }
+
+            await page.waitForTimeout(250);
+        }
+
+        throw new Error(`Automatic candidate ${label} was not rendered.`);
+    };
+
+    try {
+        fixture = createCrmFixture();
+        const automaticFixture = configureAutomaticAnalyticsFixture(fixture, analyticsProviderStubPort(providerStub), candidateLabelSuffix);
+        const automaticSourceValue = `${automaticFixture.sourcePainName} changed through CRM`;
+        const disabledSourceValue = `${automaticFixture.disabledSourcePainName} changed through CRM`;
+
+        await login(page, fixture);
+        await page.goto(`/admin/clients/${fixture.clientId}`);
+        await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
+        const profileDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
+        await (await findPainInput(profileDialog, automaticFixture.sourcePainName)).fill(automaticSourceValue);
+        await profileDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+        await expect(profileDialog).toBeHidden({ timeout: 15_000 });
+
+        await runAnalyticsClassificationWorker();
+
+        await page.goto('/admin/analytics-tag-candidates');
+        const enabledState = readAutomaticAnalyticsState(automaticFixture.sourcePainId, candidateLabelSuffix);
+        expect(enabledState.runStatus, JSON.stringify(enabledState)).toBe('needs_review');
+        expect(enabledState.candidateStatus).toBe('needs_review');
+        expect(enabledState.activeTagCount).toBe(0);
+        await expect(page.getByRole('heading', { name: 'Кандидаты тегов', exact: true })).toBeVisible();
+        await expect(page.getByText('Ожидают проверки', { exact: true })).toBeVisible();
+        const pendingCandidate = await findPendingCandidate(candidateLabelSuffix);
+        await expect(pendingCandidate).toBeVisible();
+        await expect(pendingCandidate.getByRole('textbox', { name: 'Категория', exact: true })).toHaveValue('Жалобы и проблемы');
+        await expect(pendingCandidate).toContainText('medical_profile_pain');
+        await expect(pendingCandidate).toContainText(`ID ${automaticFixture.sourcePainId}`);
+        await page.reload();
+        await expect(page.getByText('Ожидают проверки', { exact: true })).toBeVisible();
+        await expect(await findPendingCandidate(candidateLabelSuffix)).toBeVisible();
+
+        setAutomaticAnalyticsSuggestions(false);
+        await page.goto(`/admin/clients/${fixture.clientId}`);
+        await page.getByRole('button', { name: 'Изменить медицинский профиль', exact: true }).click();
+        const disabledProfileDialog = page.getByRole('dialog', { name: 'Изменить медицинский профиль' });
+        await (await findPainInput(disabledProfileDialog, automaticFixture.disabledSourcePainName)).fill(disabledSourceValue);
+        await disabledProfileDialog.getByRole('button', { name: 'Отправить', exact: true }).click();
+        await expect(disabledProfileDialog).toBeHidden({ timeout: 15_000 });
+
+        await runAnalyticsClassificationWorker();
+
+        await page.goto('/admin/analytics-tag-candidates');
+        await expect.poll(async () => {
+            const items = page.locator('.fi-fo-repeater-item');
+            for (let index = 0; index < await items.count(); index += 1) {
+                const item = items.nth(index);
+                const itemText = await item.innerText();
+                if (await item.getByRole('textbox', { name: 'Предложение', exact: true }).inputValue() === candidateLabelSuffix
+                    && itemText.includes('medical_profile_pain')
+                    && itemText.includes(`ID ${automaticFixture.disabledSourcePainId}`)) {
+                    return true;
+                }
+            }
+
+            return false;
+        }).toBe(false);
+        const disabledState = readAutomaticAnalyticsState(automaticFixture.disabledSourcePainId, candidateLabelSuffix);
+        expect(disabledState.runStatus).toBeNull();
+        expect(disabledState.candidateStatus).toBeNull();
+        expect(disabledState.activeTagCount).toBe(0);
+    } finally {
+        if (fixture !== null) {
+            setAutomaticAnalyticsSuggestions(false);
+        }
+        await closeAnalyticsProviderStub(providerStub);
+    }
+});
+
+test('staff can maintain saved client groups in CRM', async ({ page }) => {
+    test.setTimeout(90_000);
+    const fixture = createCrmFixture({ savedGroupFlow: true });
+    const seededGroupName = `E2E persisted group ${fixture.clientName.replace(/^CRM Клиент /, '')}`;
+    const groupName = `E2E сохранённая группа ${fixture.clientName.replace(/^CRM Клиент /, '')}`;
+    const renamedGroupName = `${groupName} обновлена`;
+
+    await login(page, fixture);
+    await page.goto('/admin/client-cohort-groups');
+    await expect(page.getByRole('heading', { name: 'Группы клиентов', exact: true })).toBeVisible();
+
+    const repeaterItems = page.locator('.fi-fo-repeater-item');
+    await page.getByRole('button', { name: 'Добавить группу', exact: true }).click();
+    await expect(repeaterItems).toHaveCount(2);
+    const firstItem = repeaterItems.last();
+    await firstItem.getByRole('combobox', { name: /^Тип/ }).selectOption('manual');
+    await page.waitForTimeout(500);
+    await firstItem.getByRole('textbox', { name: /^Название/ }).fill(groupName);
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
+
+    await page.reload();
+    const groupItems = page.locator('.fi-fo-repeater-item');
+    const groupItemFor = async (name: string): Promise<Locator> => {
+        const names = page.getByRole('textbox', { name: /^Название/ });
+        for (let index = 0; index < await names.count(); index += 1) {
+            if (await names.nth(index).inputValue() === name) {
+                return groupItems.nth(index);
+            }
+        }
+
+        throw new Error(`Saved group ${name} was not rendered.`);
+    };
+
+    const createdItem = await groupItemFor(groupName);
+    await createdItem.getByRole('textbox', { name: /^Название/ }).fill(renamedGroupName);
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
+
+    await page.reload();
+    await expect(await groupItemFor(renamedGroupName)).toBeVisible();
+    const seededItem = await groupItemFor(seededGroupName);
+    await seededItem.getByRole('textbox', { name: /^Название/ }).fill(renamedGroupName);
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('В этой организации уже есть группа с таким названием.', { exact: true })).toBeVisible();
+    await expect(await groupItemFor(renamedGroupName)).toBeVisible();
+
+    await seededItem.getByRole('textbox', { name: /^Название/ }).fill(`${seededGroupName} исправлена`);
+    await page.getByRole('button', { name: 'Сохранить группы', exact: true }).click();
+    await expect(page.getByText('Группы клиентов сохранены', { exact: true })).toBeVisible();
+    await page.reload();
+    await expect(page.getByRole('textbox', { name: /^Название/ })).toHaveCount(2);
+    await expect(page.locator('html')).toBeVisible();
+    await assertNoHorizontalOverflow(page);
+});
+
+test('staff can review human attribution defaults and aliases in CRM', async ({ page }) => {
+    const fixture = createCrmFixture();
+
+    await login(page, fixture);
+    await page.goto('/admin/attribution-source-settings');
+    await expect(page.getByRole('heading', { name: 'Источники клиентов', exact: true })).toBeVisible();
+    await expect(page.getByText('Какие значения считать этим источником', { exact: true }).first()).toBeVisible();
+    await expect(page.getByText('Например, для Instagram сюда можно добавить: instagram, ig, insta.', { exact: false }).first()).toBeVisible();
+
+    const sourceInputs = page.getByRole('textbox', { name: 'Название*', exact: true });
+    let instagramIndex = -1;
+    for (let index = 0; index < await sourceInputs.count(); index += 1) {
+        if ((await sourceInputs.nth(index).inputValue()) === 'Instagram') {
+            instagramIndex = index;
+            break;
+        }
+    }
+    expect(instagramIndex).toBeGreaterThanOrEqual(0);
+    const instagramItem = sourceInputs.nth(instagramIndex).locator('xpath=ancestor::li[1]');
+    const aliasInputs = instagramItem.getByRole('textbox', { name: 'Вариант названия / ключ*', exact: true });
+    await expect(aliasInputs).toHaveCount(3);
+    await expect(aliasInputs.nth(0)).toHaveValue('instagram');
+    await expect(aliasInputs.nth(1)).toHaveValue('ig');
+    await expect(aliasInputs.nth(2)).toHaveValue('insta');
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Источники клиентов', exact: true })).toBeVisible();
+    await assertNoHorizontalOverflow(page);
 });
 
 test('crm sidebar navigation operates via SPA mode without full page reloads', async ({ page }) => {

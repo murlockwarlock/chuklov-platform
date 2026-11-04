@@ -36,16 +36,23 @@ final readonly class SaveBookingPersonalData
         $current = $client->only(self::FIELDS);
         $current['birth_date'] = $client->birth_date?->toDateString();
         $data = array_intersect_key($data ?? [], array_flip(self::FIELDS));
-        $personal = [...$current, ...$data];
+        $personal = $current;
+        foreach ($data as $field => $value) {
+            $value = is_string($value) ? trim($value) : $value;
+            if (($value === null || $value === '') && filled($current[$field] ?? null)) {
+                continue;
+            }
+            $personal[$field] = $value;
+        }
         $validated = Validator::make(['personal_data' => $personal], [
-            'personal_data.first_name' => ['required', 'string', 'max:100'],
-            'personal_data.last_name' => ['required', 'string', 'max:100'],
+            'personal_data.first_name' => ['nullable', 'string', 'max:100'],
+            'personal_data.last_name' => ['nullable', 'string', 'max:100'],
             'personal_data.middle_name' => ['nullable', 'string', 'max:100'],
-            'personal_data.gender' => ['required', 'in:MALE,FEMALE'],
-            'personal_data.birth_date' => ['required', 'date_format:Y-m-d', 'before_or_equal:today'],
-            'personal_data.country' => ['required', 'string', 'max:100'],
-            'personal_data.city' => ['required', 'string', 'max:100'],
-            'personal_data.phone' => ['required', 'string', 'max:32'],
+            'personal_data.gender' => ['nullable', 'in:MALE,FEMALE'],
+            'personal_data.birth_date' => ['nullable', 'date_format:Y-m-d', 'before_or_equal:today'],
+            'personal_data.country' => ['nullable', 'string', 'max:100'],
+            'personal_data.city' => ['nullable', 'string', 'max:100'],
+            'personal_data.phone' => ['nullable', 'string', 'max:32'],
             'personal_data.email' => ['nullable', 'email', 'max:320'],
         ], [
             'required' => __('Заполните поле «:attribute».'),
@@ -62,7 +69,9 @@ final readonly class SaveBookingPersonalData
             'personal_data.city' => __('Город'), 'personal_data.phone' => __('Номер телефона'), 'personal_data.email' => __('E-mail'),
         ])->validate()['personal_data'];
         try {
-            $validated['phone'] = $this->reference->phone($validated['phone'], $validated['country']);
+            if (filled($validated['phone'] ?? null)) {
+                $validated['phone'] = $this->reference->phone($validated['phone'], $validated['country']);
+            }
             $this->profiles->handleForBooking($client, $validated, self::FIELDS);
         } catch (ValidationException $exception) {
             $errors = [];

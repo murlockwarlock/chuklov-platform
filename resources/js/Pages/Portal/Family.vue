@@ -4,6 +4,7 @@ import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
 import PatientIdentityFields from '../../Components/Portal/PatientIdentityFields.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import { shareTelegramLink } from '../../runtime/clientRuntime';
 import { emptyPatientIdentity, type PatientSummary } from '../../types/patients';
@@ -175,28 +176,28 @@ function revoke(): void {
   <AppShell
     :title="t('family.title')"
     :portal="props.portal"
+    active="more"
   >
-    <main class="portal-container portal-stack portal-stack--loose">
-      <header class="portal-family-header">
-        <h1 class="portal-heading">
-          {{ t('family.title') }}
-        </h1>
-        <div class="portal-family-header__actions">
-          <Link
-            :href="props.urls.profile"
-            class="portal-link"
-          >
-            {{ t('profile.title') }}
-          </Link>
-          <button
-            type="button"
-            class="portal-button portal-button--primary"
-            @click="openPatient()"
-          >
-            {{ t('family.add') }}
-          </button>
-        </div>
-      </header>
+    <section class="portal-container portal-stack portal-stack--loose">
+      <PortalPageHeader :title="t('family.title')">
+        <template #actions>
+          <div class="portal-family-header__actions">
+            <Link
+              :href="props.urls.profile"
+              class="portal-button portal-button--secondary portal-family-header__profile"
+            >
+              {{ t('profile.title') }}
+            </Link>
+            <button
+              type="button"
+              class="portal-button portal-button--primary portal-family-header__add"
+              @click="openPatient()"
+            >
+              {{ t('family.add') }}
+            </button>
+          </div>
+        </template>
+      </PortalPageHeader>
       <p class="portal-copy">
         {{ t('family.medicalPrivacy') }}
       </p>
@@ -226,14 +227,6 @@ function revoke(): void {
             {{ t('family.unlinked') }}
           </p>
           <div class="portal-family-card__actions">
-            <button
-              v-if="patient.canEdit"
-              type="button"
-              class="portal-link"
-              @click="openPatient(patient)"
-            >
-              {{ t('medical.edit') }}
-            </button>
             <Link
               v-if="patient.canBook"
               :href="patient.bookingUrl"
@@ -242,6 +235,14 @@ function revoke(): void {
             >
               {{ t('family.book') }}
             </Link>
+            <button
+              v-if="patient.canEdit"
+              type="button"
+              class="portal-button portal-button--secondary"
+              @click="openPatient(patient)"
+            >
+              {{ t('medical.edit') }}
+            </button>
             <Link
               v-if="patient.medicalUrl"
               :href="patient.medicalUrl"
@@ -262,7 +263,7 @@ function revoke(): void {
               v-if="patient.canRevoke"
               type="button"
               :disabled="revokeProcessing"
-              class="portal-link"
+              class="portal-link portal-link--danger"
               @click="askRevoke(patient)"
             >
               {{ t('family.unlink') }}
@@ -437,20 +438,11 @@ function revoke(): void {
           </div>
         </form>
       </dialog>
-    </main>
+    </section>
   </AppShell>
 </template>
 
 <style scoped>
-.portal-family-header {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: var(--portal-space-4);
-}
-
 .portal-family-header__actions {
     display: flex;
     min-width: 0;
@@ -458,6 +450,18 @@ function revoke(): void {
     justify-content: flex-end;
     flex-wrap: wrap;
     gap: var(--portal-space-3);
+}
+
+.portal-family-header__actions > * {
+    flex: 1 1 10rem;
+    min-width: 0;
+    min-height: 2.65rem;
+    padding: 0.6rem 1rem;
+    text-align: center;
+}
+
+.portal-family-header__profile {
+    justify-content: center;
 }
 
 .portal-family-card {
@@ -486,9 +490,30 @@ function revoke(): void {
 .portal-family-card__actions {
     display: flex;
     min-width: 0;
-    align-items: center;
+    align-items: stretch;
     flex-wrap: wrap;
     gap: var(--portal-space-2) var(--portal-space-3);
+}
+
+.portal-family-card__actions .portal-link--danger {
+    color: var(--portal-color-danger, #b42318);
+}
+
+.portal-family-card__actions > .portal-button,
+.portal-family-card__actions > .portal-link {
+    max-width: 100%;
+}
+
+.portal-family-card__actions > .portal-link:not(.portal-link--danger) {
+    display: inline-flex;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--portal-color-border-strong);
+    border-radius: var(--portal-radius-pill);
+    padding: 0.55rem 1rem;
+    background: var(--portal-color-surface);
+    text-decoration: none;
 }
 
 @media (max-width: 40rem) {
@@ -497,8 +522,21 @@ function revoke(): void {
         justify-content: space-between;
     }
 
-    .portal-family-header__actions > .portal-button {
-        flex: 1 1 auto;
+    .portal-family-header__actions > * {
+        flex: 1 1 9rem;
+    }
+
+    .portal-family-card__actions > .portal-button,
+    .portal-family-card__actions > .portal-link {
+        flex: 1 1 100%;
+        justify-content: center;
+        text-align: center;
+    }
+}
+
+@media (max-width: 22.5rem) {
+    .portal-family-header__actions > * {
+        flex-basis: 100%;
     }
 }
 </style>

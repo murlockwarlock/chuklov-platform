@@ -1,0 +1,290 @@
+<?php
+
+namespace App\Modules\Analytics\Application;
+
+use App\Models\User;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
+use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Analytics\Application\Data\PainAnalyticsData;
+use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use Illuminate\Support\Facades\DB;
+
+final readonly class PainAnalytics
+{
+    public function __construct(
+        private OrganizationContext $context,
+        private OrganizationAuthorizer $authorizer,
+        private ClientCohortQuery $cohorts,
+        private ClientSessionAxisCatalog $sessionAxisCatalog,
+    ) {}
+
+    public function handle(
+        User $actor,
+        DashboardPeriod $period,
+        ?Client $client = null,
+        ?int $problemTagId = null,
+        ?ClientCohortFilters $cohortFilters = null,
+    ): PainAnalyticsData {
+        $organization = $this->context->organization();
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ViewClients);
+        $organizationId = (int) $organization->getKey();
+
+        if ($client instanceof Client && (int) $client->organization_id !== $organizationId) {
+            abort(404);
+        }
+        if ($problemTagId !== null && ! MedicalProblemTag::query()
+            ->where('organization_id', $organizationId)
+            ->whereKey($problemTagId)
+            ->exists()) {
+            abort(404);
+        }
+        $clientId = $client?->getKey();
+        $sessionAxis = $this->sessionAxisCatalog->selected($organizationId);
+        $isProblemSpecificAxis = $sessionAxis['key'] === ClientSessionAxisCatalog::ProblemChronological;
+        $rankedSessionPeriod = '';
+        $problemTagRankFilter = '';
+        $rankedPainTagFilter = '';
+        $rankedPainTagJoin = '';
+
+        $cohortSql = '';
+        $bindings = [];
+        if ($cohortFilters !== null) {
+            $cohort = $this->cohorts->query($cohortFilters, $period)->select('clients.id')->toBase();
+            $cohortSql = 'cohort_clients AS ('.$cohort->toSql().'), ';
+            $bindings = $cohort->getBindings();
+        }
+        $sessionClientFilter = $clientId !== null ? ' AND sessions.client_id = ?' : '';
+        if ($cohortFilters !== null) {
+            $sessionClientFilter .= ' AND EXISTS (SELECT 1 FROM cohort_clients WHERE cohort_clients.id = sessions.client_id)';
+        }
+        $bindings[] = $organizationId;
+        if ($clientId !== null) {
+            $bindings[] = (int) $clientId;
+        }
+        if ($sessionAxis['key'] === ClientSessionAxisCatalog::SelectedPeriod) {
+            $rankedSessionPeriod = ' AND sessions.occurred_at >= ? AND sessions.occurred_at < ?';
+            $bindings[] = $period->startUtc;
+            $bindings[] = $period->endUtc;
+        }
+        if ($isProblemSpecificAxis && $problemTagId !== null) {
+            $problemTagRankFilter = ' AND pain_tags.medical_problem_tag_id = ?';
+            $bindings[] = $problemTagId;
+        } elseif ($problemTagId !== null) {
+            $rankedPainTagFilter = ' AND pain_tags.medical_problem_tag_id = ?';
+            $bindings[] = $problemTagId;
+        }
+        $bindings[] = $period->startUtc;
+        $bindings[] = $period->endUtc;
+
+        if ($isProblemSpecificAxis) {
+            $rankedSessions = <<<SQL
+            ranked_problem_sessions AS (
+                SELECT DISTINCT
+                    sessions.organization_id,
+                    sessions.client_id,
+                    sessions.id,
+                    sessions.occurred_at,
+                    pain_tags.medical_problem_tag_id AS tag_id
+                FROM medical_sessions AS sessions
+                INNER JOIN medical_session_pains AS pains
+                    ON pains.organization_id = sessions.organization_id
+                    AND pains.client_id = sessions.client_id
+                    AND pains.medical_session_id = sessions.id
+                INNER JOIN medical_session_pain_tags AS pain_tags
+                    ON pain_tags.organization_id = pains.organization_id
+                    AND pain_tags.client_id = pains.client_id
+                    AND pain_tags.medical_session_pain_id = pains.id
+                WHERE sessions.organization_id = ?
+                    {$sessionClientFilter}
+                    {$problemTagRankFilter}
+            ), ranked_sessions AS (
+                SELECT
+                    ranked_problem_sessions.organization_id,
+                    ranked_problem_sessions.client_id,
+                    ranked_problem_sessions.id,
+                    ranked_problem_sessions.occurred_at,
+                    ranked_problem_sessions.tag_id,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY ranked_problem_sessions.client_id, ranked_problem_sessions.tag_id
+                        ORDER BY ranked_problem_sessions.occurred_at ASC, ranked_problem_sessions.id ASC
+                    ) AS session_number
+                FROM ranked_problem_sessions
+            )
+            SQL;
+            $rankedPainTagJoin = ' AND pain_tags.medical_problem_tag_id = ranked_sessions.tag_id';
+        } else {
+            $rankedSessions = <<<SQL
+            ranked_sessions AS (
+                SELECT
+                    sessions.organization_id,
+                    sessions.client_id,
+                    sessions.id,
+                    sessions.occurred_at,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY sessions.client_id
+                        ORDER BY sessions.occurred_at ASC, sessions.id ASC
+                    ) AS session_number
+                FROM medical_sessions AS sessions
+                WHERE sessions.organization_id = ?
+                    {$sessionClientFilter}
+                    {$rankedSessionPeriod}
+            )
+            SQL;
+        }
+
+        $rows = DB::select(
+            <<<SQL
+            WITH {$cohortSql}{$rankedSessions}, ranked_pains AS (
+                SELECT
+                    pains.client_id,
+                    pains.before_score,
+                    pains.after_score,
+                    tags.id AS tag_id,
+                    tags.name AS tag_name,
+                    tags.group_name AS tag_group,
+                    ranked_sessions.session_number
+                FROM medical_session_pains AS pains
+                INNER JOIN ranked_sessions
+                    ON ranked_sessions.organization_id = pains.organization_id
+                    AND ranked_sessions.client_id = pains.client_id
+                    AND ranked_sessions.id = pains.medical_session_id
+                INNER JOIN medical_session_pain_tags AS pain_tags
+                    ON pain_tags.organization_id = pains.organization_id
+                    AND pain_tags.client_id = pains.client_id
+                    AND pain_tags.medical_session_pain_id = pains.id
+                    {$rankedPainTagFilter}
+                    {$rankedPainTagJoin}
+                INNER JOIN medical_problem_tags AS tags
+                    ON tags.organization_id = pain_tags.organization_id
+                    AND tags.id = pain_tags.medical_problem_tag_id
+                WHERE ranked_sessions.occurred_at >= ?
+                    AND ranked_sessions.occurred_at < ?
+            )
+            SELECT
+                tag_id,
+                tag_name,
+                tag_group,
+                COUNT(DISTINCT client_id) AS client_count,
+                COUNT(*) AS pain_count,
+                COUNT(before_score) AS before_score_count,
+                COUNT(after_score) AS after_score_count,
+                AVG(before_score) AS average_before,
+                AVG(after_score) AS average_after,
+                AVG(CASE WHEN before_score IS NOT NULL AND after_score IS NOT NULL THEN before_score - after_score END) AS average_reduction,
+                AVG(CASE WHEN before_score > 0 AND after_score IS NOT NULL THEN ((before_score - after_score) * 100.0 / before_score) END) AS average_reduction_percent,
+                AVG(CASE WHEN session_number = 1 THEN before_score END) AS session_one_before,
+                AVG(CASE WHEN session_number = 1 THEN after_score END) AS session_one_after,
+                AVG(CASE WHEN session_number = 2 THEN before_score END) AS session_two_before,
+                AVG(CASE WHEN session_number = 2 THEN after_score END) AS session_two_after,
+                AVG(CASE WHEN session_number = 3 THEN before_score END) AS session_three_before,
+                AVG(CASE WHEN session_number = 3 THEN after_score END) AS session_three_after
+            FROM ranked_pains
+            GROUP BY tag_id, tag_name, tag_group
+            ORDER BY client_count DESC, tag_name ASC
+            SQL,
+            $bindings,
+        );
+
+        $sessionQuery = DB::table('medical_sessions')
+            ->where('organization_id', $organizationId)
+            ->where('occurred_at', '>=', $period->startUtc)
+            ->where('occurred_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('client_id', $clientId))
+            ->when($problemTagId !== null, function ($query) use ($organizationId, $problemTagId): void {
+                $query->whereExists(function ($subquery) use ($organizationId, $problemTagId): void {
+                    $subquery
+                        ->selectRaw('1')
+                        ->from('medical_session_pains as filtered_pains')
+                        ->join('medical_session_pain_tags as filtered_tags', function ($join) use ($organizationId, $problemTagId): void {
+                            $join->on('filtered_tags.medical_session_pain_id', '=', 'filtered_pains.id')
+                                ->where('filtered_tags.organization_id', $organizationId)
+                                ->where('filtered_tags.medical_problem_tag_id', $problemTagId);
+                        })
+                        ->whereColumn('filtered_pains.medical_session_id', 'medical_sessions.id')
+                        ->where('filtered_pains.organization_id', $organizationId)
+                        ->whereColumn('filtered_pains.client_id', 'medical_sessions.client_id');
+                });
+            });
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($sessionQuery, 'medical_sessions.client_id', $cohortFilters, $period);
+        }
+        $sessionCount = (clone $sessionQuery)->count();
+        $clientCount = (clone $sessionQuery)->distinct('client_id')->count('client_id');
+        $summaryQuery = DB::table('medical_session_pains as pains')
+            ->join('medical_sessions as sessions', function ($join): void {
+                $join
+                    ->on('sessions.organization_id', '=', 'pains.organization_id')
+                    ->on('sessions.id', '=', 'pains.medical_session_id')
+                    ->on('sessions.client_id', '=', 'pains.client_id');
+            })
+            ->where('pains.organization_id', $organizationId)
+            ->where('sessions.occurred_at', '>=', $period->startUtc)
+            ->where('sessions.occurred_at', '<', $period->endUtc)
+            ->when($clientId !== null, fn ($query) => $query->where('pains.client_id', $clientId))
+            ->when($problemTagId !== null, function ($query) use ($organizationId, $problemTagId): void {
+                $query->whereExists(function ($subquery) use ($organizationId, $problemTagId): void {
+                    $subquery
+                        ->selectRaw('1')
+                        ->from('medical_session_pain_tags as selected_tags')
+                        ->whereColumn('selected_tags.medical_session_pain_id', 'pains.id')
+                        ->where('selected_tags.organization_id', $organizationId)
+                        ->where('selected_tags.medical_problem_tag_id', $problemTagId);
+                });
+            })
+            ->selectRaw('AVG(pains.before_score) as average_before')
+            ->selectRaw('AVG(pains.after_score) as average_after')
+            ->selectRaw('COUNT(pains.before_score) as before_score_count')
+            ->selectRaw('COUNT(pains.after_score) as after_score_count')
+            ->selectRaw('AVG(CASE WHEN pains.before_score IS NOT NULL AND pains.after_score IS NOT NULL THEN pains.before_score - pains.after_score END) as average_reduction')
+            ->selectRaw('AVG(CASE WHEN pains.before_score > 0 AND pains.after_score IS NOT NULL THEN ((pains.before_score - pains.after_score) * 100.0 / pains.before_score) END) as average_reduction_percent');
+        if ($cohortFilters !== null) {
+            $this->cohorts->constrain($summaryQuery, 'pains.client_id', $cohortFilters, $period);
+        }
+        $summary = $summaryQuery->first();
+
+        return new PainAnalyticsData(
+            clientCount: $clientCount,
+            sessionCount: $sessionCount,
+            problems: array_values(array_map(static function (object $row): array {
+                $values = get_object_vars($row);
+
+                return [
+                    'tag_id' => (int) ($values['tag_id'] ?? 0),
+                    'name' => (string) ($values['tag_name'] ?? ''),
+                    'group' => isset($values['tag_group']) ? (string) $values['tag_group'] : null,
+                    'client_count' => (int) ($values['client_count'] ?? 0),
+                    'pain_count' => (int) ($values['pain_count'] ?? 0),
+                    'before_score_count' => (int) ($values['before_score_count'] ?? 0),
+                    'after_score_count' => (int) ($values['after_score_count'] ?? 0),
+                    'average_before' => self::nullableFloat($values['average_before'] ?? null),
+                    'average_after' => self::nullableFloat($values['average_after'] ?? null),
+                    'average_reduction' => self::nullableFloat($values['average_reduction'] ?? null),
+                    'average_reduction_percent' => self::nullableFloat($values['average_reduction_percent'] ?? null),
+                    'session_1_before' => self::nullableFloat($values['session_one_before'] ?? null),
+                    'session_1_after' => self::nullableFloat($values['session_one_after'] ?? null),
+                    'session_2_before' => self::nullableFloat($values['session_two_before'] ?? null),
+                    'session_2_after' => self::nullableFloat($values['session_two_after'] ?? null),
+                    'session_3_before' => self::nullableFloat($values['session_three_before'] ?? null),
+                    'session_3_after' => self::nullableFloat($values['session_three_after'] ?? null),
+                ];
+            }, $rows)),
+            beforeScoreCount: (int) ($summary->before_score_count ?? 0),
+            afterScoreCount: (int) ($summary->after_score_count ?? 0),
+            averageBefore: self::nullableFloat($summary->average_before ?? null),
+            averageAfter: self::nullableFloat($summary->average_after ?? null),
+            averageReduction: self::nullableFloat($summary->average_reduction ?? null),
+            averageReductionPercent: self::nullableFloat($summary->average_reduction_percent ?? null),
+            sessionAxisLabel: $sessionAxis['label'],
+            sessionAxisVersion: $sessionAxis['version'],
+        );
+    }
+
+    private static function nullableFloat(mixed $value): ?float
+    {
+        return $value === null ? null : round((float) $value, 2);
+    }
+}

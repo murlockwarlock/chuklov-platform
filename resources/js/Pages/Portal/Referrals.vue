@@ -2,6 +2,7 @@
 import { router, useForm, usePage } from '@inertiajs/vue3';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -351,19 +352,10 @@ function cancelPayout(payout: Payout): void {
     active="more"
   >
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <h1 class="portal-heading portal-heading--section">
-            {{ props.referrals.isPartner ? t('referrals.partnerTitle') : t('referrals.title') }}
-          </h1>
-          <p
-            v-if="!props.referrals.isPartner"
-            class="portal-copy"
-          >
-            {{ t('referrals.ordinaryDescription') }}
-          </p>
-        </div>
-      </header>
+      <PortalPageHeader
+        :title="props.referrals.isPartner ? t('referrals.partnerTitle') : t('referrals.title')"
+        :description="props.referrals.isPartner ? null : t('referrals.ordinaryDescription')"
+      />
 
       <template v-if="!props.referrals.isPartner">
         <section

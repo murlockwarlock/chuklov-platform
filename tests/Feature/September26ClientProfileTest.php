@@ -62,7 +62,7 @@ class September26ClientProfileTest extends TestCase
     {
         $client = $this->client();
         $this->withSession(['client_portal.client_id' => $client->id]);
-        foreach ([['gender' => 'OTHER'], ['birth_date' => '1990-02-30'], ['birth_date' => '2990-01-01'], ['first_name' => '']] as $invalid) {
+        foreach ([['gender' => 'OTHER'], ['birth_date' => '1990-02-30'], ['birth_date' => '2990-01-01'], ['first_name' => str_repeat('x', 101)]] as $invalid) {
             $this->post(route('portal.profile.update'), [...$this->demographics(), ...$invalid])->assertSessionHasErrors(array_keys($invalid));
             self::assertNull($client->refresh()->first_name);
             self::assertNull($client->name_confirmed_at);
@@ -79,13 +79,24 @@ class September26ClientProfileTest extends TestCase
         app(UpdateClientProfileFromCrm::class)->handle($actor, $client, ['city' => 'Астана', 'expected_snapshot' => $snapshot]);
     }
 
-    public function test_structured_profile_requires_all_mandatory_fields_and_rejects_invalid_timezone(): void
+    public function test_profile_fields_save_independently_and_reject_invalid_timezone(): void
     {
         $client = $this->client();
         $this->withSession(['client_portal.client_id' => $client->id]);
         $this->post(route('portal.profile.update'), ['first_name' => 'Денис'])
-            ->assertSessionHasErrors(['last_name', 'gender', 'birth_date', 'country', 'city', 'phone']);
-        self::assertNull($client->refresh()->first_name);
+            ->assertSessionHasNoErrors()->assertRedirect();
+        self::assertSame('Денис', $client->refresh()->first_name);
+        self::assertSame('Денис', $client->full_name);
+
+        $this->post(route('portal.profile.update'), ['city' => 'Алматы'])
+            ->assertSessionHasNoErrors()->assertRedirect();
+        self::assertSame('Алматы', $client->refresh()->city);
+        self::assertSame('Денис', $client->first_name);
+
+        $this->post(route('portal.profile.update'), ['birth_date' => '1990-02-30'])
+            ->assertSessionHasErrors('birth_date');
+        self::assertSame('Алматы', $client->refresh()->city);
+
         foreach ([null, 'Not/A_Timezone'] as $timezone) {
             $this->post(route('portal.profile.update'), ['timezone' => $timezone])->assertSessionHasErrors('timezone');
             self::assertNotNull($client->refresh()->timezone);

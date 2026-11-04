@@ -26,10 +26,32 @@ final class AppendFinancialLedgerEntry
             throw (new ModelNotFoundException)->setModel(FinancialObligation::class, [$obligationId]);
         }
 
+        return $this->persist(
+            organizationId: $organizationId,
+            obligationId: $obligationId,
+            data: $data,
+        );
+    }
+
+    public function handleGeneral(Organization|int $organization, FinancialLedgerEntryData $data): FinancialLedgerEntry
+    {
+        $organizationId = $organization instanceof Organization ? (int) $organization->getKey() : $organization;
+
+        return $this->persist(
+            organizationId: $organizationId,
+            obligationId: null,
+            data: $data,
+        );
+    }
+
+    private function persist(int $organizationId, ?int $obligationId, FinancialLedgerEntryData $data): FinancialLedgerEntry
+    {
         $entry = new FinancialLedgerEntry;
         $entry->forceFill([
             'organization_id' => $organizationId,
             'obligation_id' => $obligationId,
+            'account_id' => $data->accountId,
+            'expense_category_id' => $data->expenseCategoryId,
             'entry_type' => $data->entryType->value,
             'source' => $data->source->value,
             'amount_minor' => $data->amountMinor,

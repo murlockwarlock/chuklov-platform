@@ -7,5 +7,7 @@ final readonly class SourceBucket
     public function __construct(
         public string $label,
         public int $count,
+        public ?string $key = null,
+        public string $kind = 'known',
     ) {}
 }

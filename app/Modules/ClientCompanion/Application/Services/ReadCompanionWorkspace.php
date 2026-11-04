@@ -52,6 +52,7 @@ final readonly class ReadCompanionWorkspace
             ? collect()
             : $this->clientSearch
                 ->query($actor, $search)
+                ->whereNull('archived_at')
                 ->select(['id', 'organization_id', 'full_name', 'email', 'phone', 'language', 'timezone'])
                 ->orderBy('full_name')
                 ->orderBy('id')
@@ -78,6 +79,7 @@ final readonly class ReadCompanionWorkspace
             ? null
             : Client::query()
                 ->where('organization_id', $organizationId)
+                ->whereNull('archived_at')
                 ->whereKey($selectedClientId)
                 ->first();
 
@@ -362,6 +364,7 @@ final readonly class ReadCompanionWorkspace
         return Conversation::query()
             ->where('organization_id', $organizationId)
             ->where('conversation_type', ConversationType::ClientCompanion)
+            ->whereHas('client', fn (Builder $query): Builder => $query->whereNull('archived_at'))
             ->with([
                 'client:id,organization_id,full_name,email,phone,language,timezone',
                 'latestMessage.authorUser:id,name',

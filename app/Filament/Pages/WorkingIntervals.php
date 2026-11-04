@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Support\LocalizedPage;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Filament\Support\TimezoneOptions;
@@ -102,6 +103,11 @@ final class WorkingIntervals extends LocalizedPage
             Select::make('specialist_id')
                 ->label(__('Специалист'))
                 ->options(fn (): array => $this->specialists())
+                ->helperText(__('Выберите специалиста, для которого настраивается расписание.'))
+                ->hintAction(Action::make('createSpecialist')
+                    ->label(__('Добавить специалиста'))
+                    ->url(SpecialistResource::getUrl('create'))
+                    ->visible(fn (): bool => $this->specialists() === []))
                 ->required()
                 ->searchable()
                 ->live()

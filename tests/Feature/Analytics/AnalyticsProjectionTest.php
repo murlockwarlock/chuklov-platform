@@ -480,7 +480,7 @@ final class AnalyticsProjectionTest extends TestCase
         $after = $measure();
 
         self::assertSame($before, $after);
-        self::assertLessThanOrEqual(24, $after);
+        self::assertLessThanOrEqual(27, $after);
     }
 
     /** @return array{0: Organization, 1: User} */

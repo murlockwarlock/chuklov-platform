@@ -6,6 +6,7 @@ enum AttachmentType: string
 {
     case MedicalReport = 'medical_report';
     case PosturePhoto = 'posture_photo';
+    case AudioRecording = 'audio_recording';
     case CompanionImage = 'companion_image';
     case CompanionDocument = 'companion_document';
 
@@ -14,6 +15,7 @@ enum AttachmentType: string
         return match ($this) {
             self::MedicalReport => 'Медицинское заключение',
             self::PosturePhoto => 'Фото осанки',
+            self::AudioRecording => 'Аудиозапись',
             self::CompanionImage => 'Изображение для AI-компаньона',
             self::CompanionDocument => 'Документ для AI-компаньона',
         };

@@ -1,0 +1,498 @@
+<?php
+
+namespace Tests\Feature\Analytics;
+
+use App\Models\User;
+use App\Modules\Analytics\Application\AnalyticsReportExport;
+use App\Modules\Analytics\Application\ClientCohortQuery;
+use App\Modules\Analytics\Application\Data\ClientCohortFilters;
+use App\Modules\Analytics\Application\Data\DashboardPeriod;
+use App\Modules\Analytics\Application\DemographicsAnalytics;
+use App\Modules\Analytics\Application\PainAnalytics;
+use App\Modules\Identity\Domain\Models\Client;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProblemTag;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationRole;
+use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Sessions\Application\CreateSession;
+use App\Modules\Sessions\Application\DTOs\CreateSessionCommand;
+use App\Modules\Specialists\Domain\Models\Specialist;
+use Carbon\CarbonImmutable;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use Symfony\Component\HttpFoundation\StreamedResponse;
+use Tests\TestCase;
+
+final class AnalyticsReportExportTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_empty_report_remains_a_valid_summary_workbook_with_human_headers(): void
+    {
+        [, $admin] = $this->fixture();
+
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, []));
+
+        self::assertSame(['Сводка'], $workbook->getSheetNames());
+        self::assertSame(['Показатель', 'Значение', 'Единица'], $workbook->getActiveSheet()->toArray()[0]);
+        self::assertStringNotContainsString('TRUE', implode('|', $workbook->getActiveSheet()->toArray()[0]));
+    }
+
+    public function test_business_dimensions_use_semantic_sheets_and_preserve_unicode(): void
+    {
+        [, $admin] = $this->fixture();
+
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, [
+            'pain' => [
+                'client_count' => 2,
+                'session_count' => 3,
+                'problems' => [[
+                    'name' => 'Шея и плечевой пояс',
+                    'group' => 'Опорно-двигательная система',
+                    'client_count' => 2,
+                    'before_score_count' => 2,
+                    'after_score_count' => 2,
+                    'average_before' => 7.5,
+                    'average_after' => 3.25,
+                    'average_reduction' => 4.25,
+                    'average_reduction_percent' => 56.67,
+                    'session_1_after' => 4.0,
+                    'session_2_after' => 3.0,
+                    'session_3_after' => 2.0,
+                ]],
+            ],
+            'demographics' => [
+                'client_count' => 2,
+                'age' => [['label' => '30–44', 'count' => 2, 'percent' => 100]],
+            ],
+            'services' => [
+                'visit_count' => 4,
+                'services' => [['name' => 'Массаж', 'client_count' => 2, 'visit_count' => 4]],
+                'specialists' => [['name' => 'Специалист А', 'client_count' => 2, 'visit_count' => 4]],
+            ],
+            'scheduling' => [
+                'bookings' => 4,
+                'visits' => 3,
+                'cancellations' => 1,
+                'reschedules' => 0,
+                'no_shows' => 0,
+            ],
+            'finance' => [
+                'available' => true,
+                'currency' => 'USD',
+                'revenue_display' => '100.00 USD',
+                'average_receipt_display' => '50.00 USD',
+                'realized_ltv_display' => '100.00 USD',
+                'debt_display' => '0.00 USD',
+                'expenses_display' => '25.00 USD',
+                'cash_movement_display' => '75.00 USD',
+            ],
+        ], metadata: [
+            'period' => '01.10.2026 — 31.10.2026',
+            'client' => 'Все клиенты',
+            'filters' => ['Показатели: Боли', 'Категория проблемы: Шея'],
+            'timezone' => 'Asia/Almaty',
+            'currency' => 'USD',
+        ]));
+
+        self::assertSame(['Сводка', 'Демография', 'Боли', 'Услуги', 'Специалисты', 'Финансы'], $workbook->getSheetNames());
+        $painSheet = $workbook->getSheetByName('Боли');
+        $demographicsSheet = $workbook->getSheetByName('Демография');
+        $servicesSheet = $workbook->getSheetByName('Услуги');
+        $specialistsSheet = $workbook->getSheetByName('Специалисты');
+        $financeSheet = $workbook->getSheetByName('Финансы');
+        self::assertNotNull($painSheet);
+        self::assertNotNull($demographicsSheet);
+        self::assertNotNull($servicesSheet);
+        self::assertNotNull($specialistsSheet);
+        self::assertNotNull($financeSheet);
+
+        self::assertSame(
+            ['Проблема', 'Группа', 'Клиентов', 'Оценок до', 'Оценок после', 'Среднее до', 'Среднее после', 'Снижение', 'Снижение, %', 'Сеанс 1 после', 'Сеанс 2 после', 'Сеанс 3 после'],
+            $painSheet->toArray()[0],
+        );
+        self::assertContains(
+            ['Шея и плечевой пояс', 'Опорно-двигательная система', '2', '2', '2', '7.5', '3.25', '4.25', '56.67', '4', '3', '2'],
+            $painSheet->toArray(),
+        );
+        self::assertSame(['Параметр', 'Значение', 'Количество', 'Доля, %'], $demographicsSheet->toArray()[0]);
+        self::assertSame(['Услуга', 'Клиентов', 'Визитов'], $servicesSheet->toArray()[0]);
+        self::assertSame(['Специалист', 'Клиентов', 'Визитов'], $specialistsSheet->toArray()[0]);
+        self::assertContains(['Специалист А', '2', '4'], $specialistsSheet->toArray());
+        self::assertSame(['Показатель', 'Значение', 'Валюта'], $financeSheet->toArray()[0]);
+        self::assertContains(['Средний чек', '50.00 USD', 'USD'], $financeSheet->toArray());
+        $summarySheet = $workbook->getSheetByName('Сводка');
+        self::assertNotNull($summarySheet);
+        self::assertContains(['Средний чек', '50.00 USD', 'USD'], $summarySheet->toArray());
+        self::assertNotContains('После', $demographicsSheet->toArray()[0]);
+        self::assertNotContains('До', $servicesSheet->toArray()[0]);
+        self::assertStringNotContainsString('TRUE', $this->workbookText($workbook));
+    }
+
+    public function test_demographics_export_keeps_the_full_cohort_denominator(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Client::factory()->forOrganization($organization)->create([
+            'birth_date' => '1985-10-31',
+            'gender' => 'FEMALE',
+            'country' => 'RU',
+            'created_at' => '2025-01-15 10:00:00',
+            'updated_at' => '2025-01-15 10:00:00',
+        ]);
+        Client::factory()->forOrganization($organization)->create([
+            'birth_date' => '1985-11-01',
+            'gender' => 'MALE',
+            'country' => 'KZ',
+            'created_at' => '2026-10-15 10:00:00',
+            'updated_at' => '2026-10-15 10:00:00',
+        ]);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+        $filters = new ClientCohortFilters(countries: ['KZ', 'RU']);
+        $cohortCount = app(ClientCohortQuery::class)->previewCount($admin, $filters, $period);
+        $demographics = app(DemographicsAnalytics::class)->handle($admin, $period, cohortFilters: $filters);
+
+        self::assertSame(2, $cohortCount);
+        self::assertSame($cohortCount, $demographics->clientCount);
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download(
+            $admin,
+            ['demographics' => $demographics->toArray()],
+            metadata: ['cohort_count' => $cohortCount],
+        ));
+
+        $summary = $workbook->getSheetByName('Сводка');
+        $demographicsSheet = $workbook->getSheetByName('Демография');
+        self::assertNotNull($summary);
+        self::assertNotNull($demographicsSheet);
+        $cohortSummary = collect($summary->toArray())->first(
+            static fn (array $row): bool => ($row[0] ?? null) === 'Найдено клиентов',
+        );
+        self::assertIsArray($cohortSummary);
+        self::assertSame(2, (int) $cohortSummary[1]);
+        $demographicsSummary = collect($summary->toArray())->first(
+            static fn (array $row): bool => ($row[0] ?? null) === 'Клиенты в демографии',
+        );
+        self::assertIsArray($demographicsSummary);
+        self::assertSame(2, (int) $demographicsSummary[1]);
+        self::assertContains(['Страна', 'RU', '1', '50'], $demographicsSheet->toArray());
+    }
+
+    public function test_demographics_export_includes_the_known_country_total(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        Client::factory()->forOrganization($organization)->create(['country' => 'KZ', 'created_at' => '2026-10-10 10:00:00']);
+        Client::factory()->forOrganization($organization)->create(['country' => 'KZ', 'created_at' => '2026-10-11 10:00:00']);
+        Client::factory()->forOrganization($organization)->create(['country' => 'RU', 'created_at' => '2026-10-12 10:00:00']);
+        Client::factory()->forOrganization($organization)->create(['country' => null, 'created_at' => '2026-10-13 10:00:00']);
+        $foreignOrganization = Organization::factory()->create();
+        Client::factory()->forOrganization($foreignOrganization)->create(['country' => 'US', 'created_at' => '2026-10-10 10:00:00']);
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-10-01', 'end_date' => '2026-10-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-11-01 12:00:00', 'UTC'),
+        );
+        $demographics = app(DemographicsAnalytics::class)->handle($admin, $period);
+
+        self::assertSame(4, $demographics->clientCount);
+        self::assertSame(2, $demographics->countryCount);
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download(
+            $admin,
+            ['demographics' => $demographics->toArray()],
+        ));
+
+        $demographicsSheet = $workbook->getSheetByName('Демография');
+        self::assertNotNull($demographicsSheet);
+        self::assertSame(['Страны', 'Всего представлено', '2', null], $demographicsSheet->toArray()[1]);
+        self::assertSame(DataType::TYPE_NUMERIC, $demographicsSheet->getCell('C2')->getDataType());
+        self::assertContains(['Страна', 'KZ', '2', '50'], $demographicsSheet->toArray());
+        self::assertContains(['Страна', 'RU', '1', '25'], $demographicsSheet->toArray());
+        self::assertContains(['Страна', 'Не указана', '1', '25'], $demographicsSheet->toArray());
+
+        $kazakhstan = app(DemographicsAnalytics::class)->handle(
+            $admin,
+            $period,
+            cohortFilters: new ClientCohortFilters(countries: ['KZ']),
+        );
+        $filteredWorkbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download(
+            $admin,
+            ['demographics' => $kazakhstan->toArray()],
+        ));
+        $filteredDemographics = $filteredWorkbook->getSheetByName('Демография');
+        self::assertNotNull($filteredDemographics);
+        self::assertSame(['Страны', 'Всего представлено', '1', null], $filteredDemographics->toArray()[1]);
+    }
+
+    public function test_pain_export_matches_problem_axis_values_and_human_metadata(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $specialist = Specialist::factory()->forOrganization($organization)->create();
+        $shoulder = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Плечо',
+            'is_active' => true,
+            'sort_order' => 1,
+        ]);
+        $neck = MedicalProblemTag::query()->create([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Шея',
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
+
+        foreach ([
+            ['2026-01-01 09:00:00', [['name' => 'Плечо', 'tag_ids' => [$shoulder->getKey()], 'before_score' => 8, 'after_score' => 7]]],
+            ['2026-01-02 09:00:00', [['name' => 'Плечо', 'tag_ids' => [$shoulder->getKey()], 'before_score' => 7, 'after_score' => 6]]],
+            ['2026-01-03 09:00:00', []],
+            ['2026-01-04 09:00:00', [['name' => 'Плечо', 'tag_ids' => [$shoulder->getKey()], 'before_score' => 6, 'after_score' => 5]]],
+            ['2026-01-05 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 10, 'after_score' => 8]]],
+            ['2026-01-06 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 8, 'after_score' => 4]]],
+            ['2026-01-07 09:00:00', [['name' => 'Шея', 'tag_ids' => [$neck->getKey()], 'before_score' => 3, 'after_score' => 1]]],
+        ] as [$occurredAt, $pains]) {
+            $this->createSession($admin, $client, $specialist, $occurredAt, $pains);
+        }
+
+        $period = DashboardPeriod::fromFilters(
+            ['period' => DashboardPeriod::Custom, 'start_date' => '2026-01-01', 'end_date' => '2026-01-31'],
+            'UTC',
+            CarbonImmutable::parse('2026-02-01 12:00:00', 'UTC'),
+        );
+        $pain = app(PainAnalytics::class)->handle($admin, $period, problemTagId: (int) $neck->getKey())->toArray();
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, ['pain' => $pain], metadata: [
+            'session_axis' => $pain['session_axis_label'],
+            'session_axis_version' => $pain['session_axis_version'],
+            'cohort_clients' => [],
+            'cohort_filters' => [],
+        ]));
+
+        $painSheet = $workbook->getSheetByName('Боли');
+        $filters = $workbook->getSheetByName('Фильтры');
+        self::assertNotNull($painSheet);
+        self::assertNotNull($filters);
+        $neckRow = collect($painSheet->toArray())->first(static fn (array $row): bool => ($row[0] ?? null) === 'Шея');
+        self::assertIsArray($neckRow);
+        self::assertSame('8', (string) $neckRow[9]);
+        self::assertSame('4', (string) $neckRow[10]);
+        self::assertSame('1', (string) $neckRow[11]);
+        self::assertContains(['Ось сеансов', 'Порядок сеансов конкретной категории проблемы'], $filters->toArray());
+        self::assertContains(['Версия правила', 'problem-chronological-v1'], $filters->toArray());
+    }
+
+    public function test_formula_like_labels_remain_exact_explicit_strings_and_numbers_remain_numeric(): void
+    {
+        [, $admin] = $this->fixture();
+
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, [
+            'acquisition' => [
+                'new_clients' => 2,
+                'sources' => [['label' => '-source', 'count' => 1]],
+            ],
+            'pain' => [
+                'problems' => [[
+                    'name' => '=CLIENT()',
+                    'group' => '+source',
+                    'client_count' => 2,
+                    'average_before' => 4,
+                ]],
+            ],
+            'services' => [
+                'specialists' => [['name' => '@specialist', 'client_count' => 1, 'visit_count' => 2]],
+            ],
+        ], metadata: [
+            'period' => '=period',
+            'client' => '@client',
+            'filters' => ['-filter', '+filter'],
+            'timezone' => true,
+        ]));
+
+        $summary = $workbook->getSheetByName('Сводка');
+        $pain = $workbook->getSheetByName('Боли');
+        $sources = $workbook->getSheetByName('Источники');
+        $specialists = $workbook->getSheetByName('Специалисты');
+        self::assertNotNull($summary);
+        self::assertNotNull($pain);
+        self::assertNotNull($sources);
+        self::assertNotNull($specialists);
+
+        foreach ([
+            [$summary, 'B2', '=period'],
+            [$summary, 'B3', '@client'],
+            [$summary, 'B4', '-filter, +filter'],
+            [$pain, 'A2', '=CLIENT()'],
+            [$pain, 'B2', '+source'],
+            [$sources, 'A2', '-source'],
+            [$specialists, 'A2', '@specialist'],
+        ] as [$sheet, $coordinate, $value]) {
+            self::assertSame($value, $sheet->getCell($coordinate)->getValue());
+            self::assertSame(DataType::TYPE_STRING, $sheet->getCell($coordinate)->getDataType());
+            self::assertFalse($sheet->getCell($coordinate)->isFormula());
+        }
+
+        self::assertSame(DataType::TYPE_BOOL, $summary->getCell('B5')->getDataType());
+        self::assertTrue($summary->getCell('B5')->getValue());
+        self::assertSame(DataType::TYPE_NUMERIC, $pain->getCell('C2')->getDataType());
+        self::assertSame(2, $pain->getCell('C2')->getValue());
+        self::assertNull($pain->getCell('E2')->getValue());
+    }
+
+    public function test_cohort_and_filter_sheets_preserve_safe_types_and_human_metadata(): void
+    {
+        [, $admin] = $this->fixture();
+
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, [], metadata: [
+            'period' => '01.10.2026 — 31.10.2026',
+            'date_basis' => 'Дата события',
+            'timezone' => 'Asia/Almaty',
+            'filters' => ['Пол: Женщины', '=UNTRUSTED'],
+            'cohort_count' => 2,
+            'cohort_clients' => [
+                ['name' => '=CLIENT()', 'gender' => 'FEMALE', 'birth_date' => '1985-06-10', 'country' => '+KZ', 'source' => '@instagram'],
+                ['name' => 'Обычный клиент', 'gender' => null, 'birth_date' => null, 'country' => null, 'source' => null],
+            ],
+            'cohort_filters' => [
+                'genders' => ['FEMALE'],
+                'ageMin' => 30,
+                'ageMax' => 44,
+                'pain_score_basis' => 'session_after',
+            ],
+            'rule_versions' => ['client_cohort' => '1'],
+            'generated_at' => '2026-10-31T12:00:00+00:00',
+        ]));
+
+        self::assertSame(['Сводка', 'Клиенты', 'Фильтры'], $workbook->getSheetNames());
+        $clients = $workbook->getSheetByName('Клиенты');
+        $filters = $workbook->getSheetByName('Фильтры');
+        self::assertNotNull($clients);
+        self::assertNotNull($filters);
+        self::assertSame(['Клиент', 'Пол', 'Дата рождения', 'Страна', 'Источник', 'Причина попадания'], $clients->toArray()[0]);
+        self::assertSame('=CLIENT()', $clients->getCell('A2')->getValue());
+        self::assertSame(DataType::TYPE_STRING, $clients->getCell('A2')->getDataType());
+        self::assertFalse($clients->getCell('A2')->isFormula());
+        self::assertSame('+KZ', $clients->getCell('D2')->getValue());
+        self::assertSame(DataType::TYPE_STRING, $clients->getCell('D2')->getDataType());
+        self::assertSame(['Параметр', 'Значение'], $filters->toArray()[0]);
+        self::assertStringContainsString('Источник оценки боли', $this->workbookText($workbook));
+        self::assertStringContainsString('После сеанса', $this->workbookText($workbook));
+        self::assertStringNotContainsString('session_after', $this->workbookText($workbook));
+        self::assertStringContainsString('AND', $this->workbookText($workbook));
+    }
+
+    public function test_sources_and_finance_accounts_have_human_columns(): void
+    {
+        [, $admin] = $this->fixture();
+
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, [
+            'acquisition' => [
+                'new_clients' => 4,
+                'sources' => [['label' => 'Instagram', 'count' => 2]],
+            ],
+            'finance' => [
+                'available' => true,
+                'currency' => 'USD',
+                'revenue_display' => '100.00 USD',
+                'accounts' => [[
+                    'label' => 'Основная касса',
+                    'account_type' => 'cash',
+                    'currency' => 'USD',
+                    'movement_display' => '-25.00 USD',
+                ]],
+            ],
+        ]));
+
+        $sourcesSheet = $workbook->getSheetByName('Источники');
+        $financeSheet = $workbook->getSheetByName('Финансы');
+        self::assertNotNull($sourcesSheet);
+        self::assertNotNull($financeSheet);
+
+        self::assertSame(['Источник', 'Новые клиенты', 'Доля, %'], $sourcesSheet->toArray()[0]);
+        self::assertContains(['Instagram', '2', '50'], $sourcesSheet->toArray());
+        self::assertContains(['Счёт', 'Тип', 'Валюта счёта', 'Движение за период', 'Базовая валюта'], $financeSheet->toArray());
+        self::assertContains(['Основная касса', 'Касса', 'USD', '-25.00 USD', 'USD'], $financeSheet->toArray());
+    }
+
+    public function test_active_custom_metrics_are_exported_to_the_summary_without_definition_details(): void
+    {
+        [, $admin] = $this->fixture();
+
+        $workbook = $this->readWorkbook(app(AnalyticsReportExport::class)->download($admin, [
+            'custom_metrics' => [
+                'metrics' => [[
+                    'name' => 'Снижение боли, %',
+                    'value' => 37.5,
+                    'display' => '37,50 %',
+                    'unit' => '%',
+                    'currency' => null,
+                    'available' => true,
+                ]],
+            ],
+        ]));
+
+        $summarySheet = $workbook->getSheetByName('Сводка');
+        self::assertNotNull($summarySheet);
+
+        self::assertContains(
+            ['Снижение боли, %', '37.5', '%'],
+            $summarySheet->toArray(),
+        );
+        self::assertStringNotContainsString('source_a_key', $this->workbookText($workbook));
+        self::assertStringNotContainsString('calculation', $this->workbookText($workbook));
+    }
+
+    private function readWorkbook(StreamedResponse $response): Spreadsheet
+    {
+        ob_start();
+        $response->sendContent();
+        $content = ob_get_clean();
+        self::assertIsString($content);
+
+        $path = tempnam(sys_get_temp_dir(), 'analytics-export-');
+        self::assertIsString($path);
+
+        try {
+            file_put_contents($path, $content);
+
+            return IOFactory::load($path);
+        } finally {
+            unlink($path);
+        }
+    }
+
+    private function workbookText(Spreadsheet $workbook): string
+    {
+        $values = [];
+        foreach ($workbook->getAllSheets() as $sheet) {
+            foreach ($sheet->toArray() as $row) {
+                foreach ($row as $value) {
+                    $values[] = (string) $value;
+                }
+            }
+        }
+
+        return implode('|', $values);
+    }
+
+    /** @param array<int, array<string, mixed>> $pains */
+    private function createSession(User $admin, Client $client, Specialist $specialist, string $occurredAt, array $pains): void
+    {
+        app(CreateSession::class)->handle($admin, $client, new CreateSessionCommand(
+            specialistId: (int) $specialist->getKey(),
+            occurredAt: CarbonImmutable::parse($occurredAt, 'UTC'),
+            pains: $pains,
+        ));
+    }
+
+    /** @return array{0: Organization, 1: User} */
+    private function fixture(): array
+    {
+        $organization = Organization::factory()->create(['timezone' => 'UTC']);
+        $admin = User::factory()->forOrganization($organization, OrganizationRole::Administrator)->create();
+        app(OrganizationContext::class)->set($organization);
+
+        return [$organization, $admin];
+    }
+}

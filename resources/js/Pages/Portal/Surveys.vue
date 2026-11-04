@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -25,17 +26,11 @@ const startUrl = (id: number): string => props.urls.start.replace('__id__', Stri
     active="health"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-stack portal-stack--tight">
-        <p class="portal-eyebrow">
-          {{ t('health.title') }}
-        </p>
-        <h1 class="portal-heading portal-heading--section">
-          {{ t('surveys.title') }}
-        </h1>
-        <p class="portal-copy">
-          {{ t('surveys.description') }}
-        </p>
-      </header>
+      <PortalPageHeader
+        :title="t('surveys.title')"
+        :eyebrow="t('health.title')"
+        :description="t('surveys.description')"
+      />
 
       <p
         v-if="props.notices.startUnavailable"
@@ -129,7 +124,7 @@ const startUrl = (id: number): string => props.urls.start.replace('__id__', Stri
           {{ t('surveys.noneAvailable') }}
         </p>
         <Link
-          :href="props.portal.urls.home"
+          href="/"
           class="portal-button portal-button--secondary self-start"
         >
           {{ t('surveys.backHome') }}

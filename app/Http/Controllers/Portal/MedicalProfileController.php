@@ -45,7 +45,7 @@ final class MedicalProfileController extends Controller
         $request->validate(['return_to' => ['sometimes', 'string', 'in:bookings'], 'patient_profile_id' => ['sometimes', 'nullable', 'integer', 'min:1'], 'booking_id' => ['sometimes', 'nullable', 'integer', 'min:1']]);
         $bookingId = $request->integer('booking_id') ?: null;
         $patientId = $patients->handle($request->integer('patient_profile_id') ?: null, $bookingId);
-        $update->handle($request->only(['expected_snapshot', 'complaints', 'goals', 'chronic_conditions', 'operations', 'injuries', 'medicines', 'supplements', 'answers']), $patientId);
+        $update->handle($request->only(['expected_snapshot', 'complaints', 'goals', 'chronic_conditions', 'medicines', 'supplements', 'answers', 'pains', 'history_entries']), $patientId);
         if ($bookingId !== null) {
             return redirect($this->returnUrl($request, $bookingId))->with('success', __('Медицинские данные подтверждены'));
         }

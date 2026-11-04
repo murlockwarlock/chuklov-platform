@@ -4,6 +4,7 @@ import { ref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCard from '../../Components/Portal/BookingCard.vue';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import Stories from '../../Components/Portal/Stories.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
@@ -191,13 +192,11 @@ function completeTask(event: Event): void {
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
       <Stories :stories="props.stories" />
-      <header class="portal-stack portal-stack--tight">
-        <h1 class="portal-heading portal-heading--section min-w-0 [overflow-wrap:anywhere]">
-          {{ props.portal.confirmedFirstName
-            ? t('home.greetingWithName', { name: props.portal.confirmedFirstName })
-            : t('home.greeting') }}
-        </h1>
-      </header>
+      <PortalPageHeader
+        :title="props.portal.confirmedFirstName
+          ? t('home.greetingWithName', { name: props.portal.confirmedFirstName })
+          : t('home.greeting')"
+      />
 
       <BookingCard
         v-if="props.upcomingBooking"

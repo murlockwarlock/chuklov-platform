@@ -13,6 +13,7 @@ use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Organizations\Domain\ValueObjects\IanaTimezone;
 use App\Modules\Security\Application\RecordAuditEvent;
+use Carbon\CarbonImmutable;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -28,6 +29,7 @@ class UpdateClientProfileFromCrm
         'language',
         'timezone',
         ...NormalizeClientDemographics::FIELDS,
+        'archived',
     ];
 
     public function __construct(
@@ -92,6 +94,13 @@ class UpdateClientProfileFromCrm
             $changedFields = [];
 
             foreach ($normalized as $field => $value) {
+                if ($field === 'archived') {
+                    if (($lockedClient->archived_at !== null) !== (bool) $value) {
+                        $changedFields[] = $field;
+                    }
+
+                    continue;
+                }
                 if ($lockedClient->getAttribute($field) !== $value) {
                     $changedFields[] = $field;
                 }
@@ -99,6 +108,12 @@ class UpdateClientProfileFromCrm
 
             if ($changedFields !== []) {
                 $attributesToSave = $normalized;
+                if (array_key_exists('archived', $attributesToSave)) {
+                    $attributesToSave['archived_at'] = $attributesToSave['archived']
+                        ? ($lockedClient->archived_at ?? CarbonImmutable::now('UTC'))
+                        : null;
+                    unset($attributesToSave['archived']);
+                }
                 if (in_array('timezone', $changedFields, true)) {
                     $attributesToSave['timezone_source'] = 'manual';
                 }
@@ -124,7 +139,7 @@ class UpdateClientProfileFromCrm
 
     /**
      * @param  array<string, mixed>  $attributes
-     * @return array<string, string|null>
+     * @return array<string, mixed>
      */
     private function normalize(array $attributes): array
     {
@@ -137,6 +152,14 @@ class UpdateClientProfileFromCrm
         $normalized = [];
 
         foreach ($attributes as $field => $value) {
+            if ($field === 'archived') {
+                if (! is_bool($value)) {
+                    throw new InvalidArgumentException('The client archive state is invalid.');
+                }
+                $normalized[$field] = $value;
+
+                continue;
+            }
             if ($value !== null && ! is_string($value)) {
                 throw new InvalidArgumentException('The client profile value is invalid.');
             }

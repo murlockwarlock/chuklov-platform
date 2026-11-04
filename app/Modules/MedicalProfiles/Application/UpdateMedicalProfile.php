@@ -28,6 +28,10 @@ final readonly class UpdateMedicalProfile
         private GetMedicalProfile $getProfile,
         private MedicalProfileSnapshotHasher $snapshotHasher,
         private ClinicalQuestionnaire $questionnaire,
+        private MedicalProfilePainWriter $painWriter,
+        private MedicalProfilePainReader $painReader,
+        private MedicalProfileHistoryWriter $historyWriter,
+        private MedicalProfileHistoryReader $historyReader,
     ) {}
 
     public function handle(User|Client $actor, Client $client, UpdateMedicalProfileCommand $command): MedicalProfileData
@@ -43,7 +47,7 @@ final readonly class UpdateMedicalProfile
             throw ValidationException::withMessages(['medical_profile' => 'Откройте медицинскую анкету и подтвердите актуальные данные.']);
         }
 
-        $this->validateCommand($command);
+        $this->validateCommand($command, $actor instanceof Client && ! $command->historyEntriesProvided);
         $keyVersion = $this->keyResolver->getCurrentKeyVersion($orgId);
 
         $result = DB::transaction(function () use ($actor, $organization, $client, $command, $keyVersion, $orgId): MedicalProfileData {
@@ -76,6 +80,12 @@ final readonly class UpdateMedicalProfile
                     medicines: null,
                     supplements: null,
                 );
+            $previousHistoryEntries = $existing instanceof MedicalProfile
+                ? $this->historyReader->forProfile($existing)
+                : [];
+            $historyEntriesForValidation = $command->historyEntriesProvided
+                ? array_values($command->historyEntries ?? [])
+                : array_map(static fn ($entry): array => $entry->toArray(), $previousHistoryEntries);
 
             $plainData = new MedicalProfileData(
                 anamnesis: $command->shouldUpdateAnamnesis() ? $command->anamnesis : $previous->anamnesis,
@@ -92,7 +102,7 @@ final readonly class UpdateMedicalProfile
                 clinicalAnswers: $command->clinicalAnswersProvided ? $command->clinicalAnswers : $previous->clinicalAnswers,
             );
             if ($command->confirmCurrentData) {
-                $this->questionnaire->validateCompletedProfile($plainData);
+                $this->questionnaire->validateCompletedProfile($plainData, $historyEntriesForValidation);
             }
             $encrypted = $this->encryptor->encryptProfile($orgId, $plainData, $keyVersion);
 
@@ -119,13 +129,20 @@ final readonly class UpdateMedicalProfile
                 $profile->client_confirmed_at = CarbonImmutable::now('UTC');
             }
             try {
-                $this->questionnaire->validateCompletedProfile($plainData);
+                $this->questionnaire->validateCompletedProfile($plainData, $historyEntriesForValidation);
                 $profile->completed_at ??= CarbonImmutable::now('UTC');
             } catch (ValidationException) {
                 $profile->completed_at = null;
                 $profile->client_confirmed_at = null;
             }
             $profile->save();
+
+            $pains = $command->painsProvided
+                ? $this->painWriter->replace($profile, array_values($command->pains ?? []), $keyVersion)
+                : ($existing instanceof MedicalProfile ? $this->painReader->forProfile($profile) : []);
+            $historyEntries = $command->historyEntriesProvided
+                ? $this->historyWriter->replace($profile, $command->historyEntries ?? [], $keyVersion)
+                : ($existing instanceof MedicalProfile ? $previousHistoryEntries : []);
 
             $this->audit->handle(
                 organization: $organization,
@@ -154,6 +171,8 @@ final readonly class UpdateMedicalProfile
                 injuries: $plainData->injuries,
                 chronicConditions: $plainData->chronicConditions,
                 clinicalAnswers: $plainData->clinicalAnswers,
+                pains: $pains,
+                historyEntries: $historyEntries,
             );
         });
 
@@ -184,7 +203,7 @@ final readonly class UpdateMedicalProfile
         );
     }
 
-    private function validateCommand(UpdateMedicalProfileCommand $command): void
+    private function validateCommand(UpdateMedicalProfileCommand $command, bool $requireLegacyYears): void
     {
         if ($command->clinicalAnswersProvided && $command->clinicalAnswers !== null) {
             try {
@@ -195,7 +214,7 @@ final readonly class UpdateMedicalProfile
             if (! is_array($answers)) {
                 throw ValidationException::withMessages(['clinical_answers' => 'Проверьте ответы медицинской анкеты.']);
             }
-            $this->questionnaire->validate($answers);
+            $this->questionnaire->validate($answers, $requireLegacyYears);
         }
         $fields = [
             'anamnesis' => $command->anamnesis,

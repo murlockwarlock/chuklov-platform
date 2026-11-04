@@ -5,5 +5,6 @@ return [
         'new_days' => 30,
         'regular_completed_visits' => 3,
         'dormant_days' => 90,
+        'sleeping_days' => 365,
     ],
 ];

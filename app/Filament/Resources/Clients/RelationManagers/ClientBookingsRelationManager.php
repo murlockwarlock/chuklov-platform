@@ -8,6 +8,7 @@ use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Scheduling\Application\ListClientBookingsForCrm;
+use Filament\Actions\Action;
 use Filament\Schemas\Schema;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
@@ -31,12 +32,46 @@ final class ClientBookingsRelationManager extends LocalizedRelationManager
         abort_unless($actor instanceof User, 403);
         abort_unless($client instanceof Client, 404);
 
-        return BookingsTable::configure($table, includeAttention: false, includeClient: false)
+        $query = app(ListClientBookingsForCrm::class)->query($actor, $client);
+        $hasBookings = (clone $query)->exists();
+
+        return BookingsTable::configure($table, includeAttention: false, includeClient: false, includeControls: $hasBookings)
             ->heading(__('Записи на приём'))
             ->stackedOnMobile()
             ->query(fn (): Builder => app(ListClientBookingsForCrm::class)->query($actor, $client))
             ->paginated([10, 25])
-            ->emptyStateHeading(__('Записей на приём пока нет'))
-            ->emptyStateDescription(__('Записи этого клиента появятся здесь.'));
+            ->emptyStateHeading(fn (): string => $this->hasActiveTableFilters()
+                ? __('По выбранным фильтрам ничего не найдено')
+                : __('У клиента пока нет записей на приём.'))
+            ->emptyStateDescription(fn (): string => $this->hasActiveTableFilters()
+                ? __('Измените параметры поиска или сбросьте фильтры.')
+                : __('Создайте первую запись, чтобы видеть её в карточке клиента.'))
+            ->emptyStateActions([
+                Action::make('createBooking')
+                    ->label(__('Создать запись'))
+                    ->icon('heroicon-o-plus')
+                    ->url(fn (): string => BookingResource::getUrl('create').'?client_id='.$client->getKey())
+                    ->visible(fn (): bool => ! $this->hasActiveTableFilters() && BookingResource::canCreate()),
+                Action::make('resetBookingFilters')
+                    ->label(__('Сбросить фильтры'))
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('gray')
+                    ->action(function (): void {
+                        $this->resetTableFiltersForm();
+                        $this->resetTableSearch();
+                    })
+                    ->visible(fn (): bool => $this->hasActiveTableFilters()),
+            ]);
+    }
+
+    private function hasActiveTableFilters(): bool
+    {
+        if (filled($this->tableSearch ?? null)) {
+            return true;
+        }
+
+        return collect($this->tableFilters ?? [])
+            ->flatten()
+            ->contains(static fn (mixed $value): bool => filled($value));
     }
 }

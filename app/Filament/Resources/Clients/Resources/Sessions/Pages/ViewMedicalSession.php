@@ -6,15 +6,21 @@ use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
+use App\Modules\Attachments\Application\AttachmentAuthorization;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Sessions\Application\LinkSessionAttachment;
 use App\Modules\Sessions\Application\ListSessionAttachments;
 use App\Modules\Sessions\Application\SearchClientAttachments;
 use App\Modules\Sessions\Application\UnlinkSessionAttachment;
+use App\Modules\Sessions\Application\UploadSessionPhoto;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Actions\Action;
+use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
+use Illuminate\Http\UploadedFile;
 
 class ViewMedicalSession extends LocalizedViewRecord
 {
@@ -32,6 +38,10 @@ class ViewMedicalSession extends LocalizedViewRecord
                 ->icon('heroicon-o-arrow-left')
                 ->color('gray')
                 ->url(fn (): string => ClientResource::getUrl('sessions', ['record' => $this->getParentRecord()])),
+            $this->linkPhotoAction(MedicalSessionAttachmentGallery::Before),
+            $this->linkPhotoAction(MedicalSessionAttachmentGallery::After),
+            $this->uploadPhotoAction(MedicalSessionAttachmentGallery::Before),
+            $this->uploadPhotoAction(MedicalSessionAttachmentGallery::After),
             Action::make('linkAttachment')
                 ->label(__('Связать файл'))
                 ->icon('heroicon-o-paper-clip')
@@ -50,6 +60,13 @@ class ViewMedicalSession extends LocalizedViewRecord
                         ->getOptionLabelUsing(fn (mixed $value): ?string => is_numeric($value)
                             ? app(SearchClientAttachments::class)->label($this->actor(), $this->client(), (int) $value)
                             : null),
+                    Select::make('gallery')
+                        ->label(__('Раздел галереи'))
+                        ->options(collect(MedicalSessionAttachmentGallery::cases())->mapWithKeys(
+                            static fn (MedicalSessionAttachmentGallery $gallery): array => [$gallery->value => $gallery->label()],
+                        )->all())
+                        ->default(MedicalSessionAttachmentGallery::General->value)
+                        ->required(),
                 ])
                 ->modalSubmitActionLabel(__('Связать'))
                 ->action(function (array $data): void {
@@ -58,6 +75,7 @@ class ViewMedicalSession extends LocalizedViewRecord
                         $this->session(),
                         $this->client(),
                         (int) $data['attachment_id'],
+                        MedicalSessionAttachmentGallery::from((string) $data['gallery']),
                     );
 
                     Notification::make()->success()->title(__('Файл связан с сеансом'))->send();
@@ -126,5 +144,77 @@ class ViewMedicalSession extends LocalizedViewRecord
         abort_unless($session instanceof MedicalSession, 404);
 
         return $session;
+    }
+
+    private function linkPhotoAction(MedicalSessionAttachmentGallery $gallery): Action
+    {
+        $label = $gallery === MedicalSessionAttachmentGallery::Before
+            ? __('Добавить фото до сеанса')
+            : __('Добавить фото после сеанса');
+
+        return Action::make('link'.ucfirst($gallery->value).'Photo')
+            ->label($label)
+            ->icon('heroicon-o-photo')
+            ->schema([
+                Select::make('attachment_id')
+                    ->label(__('Фото клиента'))
+                    ->required()
+                    ->searchable()
+                    ->native(false)
+                    ->preload()
+                    ->options(fn (): array => app(SearchClientAttachments::class)->handle($this->actor(), $this->client(), '', 50, AttachmentType::PosturePhoto))
+                    ->getSearchResultsUsing(fn (string $search): array => app(SearchClientAttachments::class)->handle($this->actor(), $this->client(), $search, 50, AttachmentType::PosturePhoto))
+                    ->getOptionLabelUsing(fn (mixed $value): ?string => is_numeric($value)
+                        ? app(SearchClientAttachments::class)->label($this->actor(), $this->client(), (int) $value)
+                        : null),
+            ])
+            ->modalSubmitActionLabel(__('Добавить'))
+            ->action(function (array $data) use ($gallery): void {
+                app(LinkSessionAttachment::class)->handle(
+                    $this->actor(),
+                    $this->session(),
+                    $this->client(),
+                    (int) $data['attachment_id'],
+                    $gallery,
+                );
+
+                Notification::make()->success()->title(__('Фото добавлено в галерею'))->send();
+            })
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()));
+    }
+
+    private function uploadPhotoAction(MedicalSessionAttachmentGallery $gallery): Action
+    {
+        $label = $gallery === MedicalSessionAttachmentGallery::Before
+            ? __('Загрузить фото до сеанса')
+            : __('Загрузить фото после сеанса');
+
+        return Action::make('upload'.ucfirst($gallery->value).'Photo')
+            ->label($label)
+            ->icon('heroicon-o-arrow-up-tray')
+            ->schema([
+                FileUpload::make('file')
+                    ->label(__('Фото'))
+                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                    ->maxSize((int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024))
+                    ->storeFiles(false)
+                    ->required(),
+            ])
+            ->modalSubmitActionLabel(__('Загрузить'))
+            ->action(function (array $data) use ($gallery): void {
+                $file = $data['file'] ?? null;
+                abort_unless($file instanceof UploadedFile, 422);
+                app(UploadSessionPhoto::class)->handle(
+                    $this->actor(),
+                    $this->session(),
+                    $this->client(),
+                    $file,
+                    $gallery,
+                );
+
+                Notification::make()->success()->title(__('Фото загружено в галерею'))->send();
+            })
+            ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord())
+                && app(AttachmentAuthorization::class)->allowsUpload($this->actor(), $this->client()));
     }
 }

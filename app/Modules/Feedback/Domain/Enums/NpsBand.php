@@ -11,7 +11,7 @@ enum NpsBand: string
 
     public static function fromScore(int $score, int $positiveThreshold): self
     {
-        if ($score < 1 || $score > 10 || $positiveThreshold < 1 || $positiveThreshold > 10) {
+        if ($score < 0 || $score > 10 || $positiveThreshold < 1 || $positiveThreshold > 10) {
             throw new InvalidArgumentException('The NPS score or threshold is invalid.');
         }
 

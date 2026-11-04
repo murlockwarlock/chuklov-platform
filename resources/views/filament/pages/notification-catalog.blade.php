@@ -1,7 +1,7 @@
 <x-filament-panels::page>
     <div class="space-y-6">
         <p class="text-sm text-gray-600 dark:text-gray-400">
-            {{ __('Здесь настраивается, какие операционные события создают уведомления, кому и куда они отправляются.') }}
+            {{ __('Здесь настраивается, какие операционные события создают уведомления, кому и куда они отправляются. Эти правила относятся к сервисным и транзакционным сообщениям; рекламные рассылки настраиваются отдельно.') }}
         </p>
 
         <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -9,8 +9,8 @@
                 <article class="min-w-0 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-gray-900">
                     <div class="flex items-start justify-between gap-3">
                         <h2 class="min-w-0 text-base font-semibold text-gray-950 dark:text-white">{{ __($row['label']) }}</h2>
-                        <span class="shrink-0 rounded-full px-2 py-1 text-xs font-medium {{ $row['enabled'] ? 'bg-success-50 text-success-700 dark:bg-success-500/10 dark:text-success-400' : 'bg-gray-100 text-gray-600 dark:bg-white/5 dark:text-gray-400' }}">
-                            {{ $row['enabled'] ? __('Включено') : __('Выключено') }}
+                        <span class="shrink-0 rounded-full px-2 py-1 text-xs font-medium {{ ! $row['configured'] ? 'bg-warning-50 text-warning-700 dark:bg-warning-500/10 dark:text-warning-400' : ($row['enabled'] ? 'bg-success-50 text-success-700 dark:bg-success-500/10 dark:text-success-400' : 'bg-gray-100 text-gray-600 dark:bg-white/5 dark:text-gray-400') }}">
+                            {{ ! $row['configured'] ? __('Требуется настройка') : ($row['enabled'] ? __('Включено') : __('Выключено')) }}
                         </span>
                     </div>
                     <dl class="mt-4 space-y-3 text-sm">
@@ -49,7 +49,7 @@
                                 </button>
                             </div>
                         @empty
-                            <p class="text-sm text-gray-500 dark:text-gray-400">{{ __('Правило не настроено.') }}</p>
+                            <p class="text-sm text-gray-500 dark:text-gray-400">{{ __('Сначала создайте авто-сообщение и выберите опубликованный шаблон. Пока правило не создано, это событие ничего не отправляет.') }}</p>
                         @endforelse
                     </div>
                     <div class="mt-5 flex flex-wrap gap-3 text-sm">

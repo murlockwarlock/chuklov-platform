@@ -10,7 +10,7 @@ const { t } = usePortalLocale();
 </script>
 
 <template>
-  <div class="portal-stack">
+  <div class="portal-booking-session-selection portal-stack">
     <ol
       v-if="starts.length"
       class="portal-stack portal-stack--tight"
@@ -38,7 +38,7 @@ const { t } = usePortalLocale();
     </ol>
     <button
       type="button"
-      class="portal-button portal-button--secondary"
+      class="portal-button portal-button--secondary portal-booking-session-selection__add"
       :disabled="!canAdd"
       data-testid="booking-add-session"
       @click="$emit('add')"

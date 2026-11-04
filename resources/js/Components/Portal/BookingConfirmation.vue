@@ -244,7 +244,7 @@ const location = computed({
 
     <section
       v-if="props.legalDocuments.length > 0"
-      class="portal-panel portal-stack portal-stack--tight"
+      class="portal-booking-confirmation__legal portal-stack portal-stack--tight"
       aria-labelledby="booking-legal-heading"
     >
       <div class="portal-stack portal-stack--tight">
@@ -279,7 +279,7 @@ const location = computed({
       {{ props.error }}
     </p>
 
-    <div class="portal-action-row">
+    <div class="portal-booking-confirmation__actions portal-action-row">
       <p
         v-if="props.waitingForCityLookup"
         class="portal-copy portal-copy--small"

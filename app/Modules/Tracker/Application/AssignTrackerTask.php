@@ -26,8 +26,10 @@ final class AssignTrackerTask
         private readonly EnsureOperationalNotificationDefaults $defaults,
         private readonly RecordScenarioEvent $events,
         private readonly TrackerTaskSchedule $schedule,
+        private readonly TrackerGoalTagCatalog $goalTags,
     ) {}
 
+    /** @param list<int> $goalTagIds */
     public function handle(
         User $actor,
         Client $client,
@@ -38,6 +40,7 @@ final class AssignTrackerTask
         ?CarbonImmutable $endsOn = null,
         ?int $weekDay = null,
         int $displayOrder = 0,
+        array $goalTagIds = [],
     ): TrackerTask {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
@@ -61,10 +64,11 @@ final class AssignTrackerTask
         if ($displayOrder < 0) {
             throw ValidationException::withMessages(['display_order' => 'Порядок не может быть отрицательным.']);
         }
+        $goalTagIds = $this->goalTags->assertKnown((int) $organization->getKey(), $goalTagIds);
 
         $this->defaults->handle($organization);
 
-        $result = DB::transaction(function () use ($actor, $client, $title, $type, $frequency, $startsOn, $endsOn, $weekDay, $displayOrder, $organization): array {
+        $result = DB::transaction(function () use ($actor, $client, $title, $type, $frequency, $startsOn, $endsOn, $weekDay, $displayOrder, $goalTagIds, $organization): array {
             $scopedClient = Client::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($client->getKey())
@@ -84,6 +88,10 @@ final class AssignTrackerTask
                 'display_order' => $displayOrder,
                 'created_by_user_id' => $actor->getKey(),
             ])->save();
+            $task->goalTags()->syncWithPivotValues($goalTagIds, [
+                'organization_id' => $organization->getKey(),
+                'client_id' => $scopedClient->getKey(),
+            ]);
             $event = $this->events->trackerTaskAssigned($task, $this->schedule->firstOccurrenceAt($task, $scopedClient));
 
             return [

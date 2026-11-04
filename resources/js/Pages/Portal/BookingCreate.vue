@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Link, router, useForm, useRemember } from '@inertiajs/vue3';
+import { router, useForm, useRemember } from '@inertiajs/vue3';
 import { computed, ref, unref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
@@ -9,6 +9,7 @@ import BookingSuccess from '../../Components/Portal/BookingSuccess.vue';
 import BookingSessionSelection from '../../Components/Portal/BookingSessionSelection.vue';
 import PersonalDataFields from '../../Components/Portal/PersonalDataFields.vue';
 import BookingPatientSelector from '../../Components/Portal/BookingPatientSelector.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import type { PatientSummary } from '../../types/patients';
 import { useBookingSessions } from '../../composables/useBookingSessions';
 import { usePortalLocale } from '../../composables/usePortalLocale';
@@ -685,26 +686,14 @@ function submitBooking(): void {
       class="portal-container portal-container--booking portal-stack portal-stack--loose"
       :style="{ '--portal-step-count': progressSteps.length }"
     >
-      <Link
-        :href="props.urls.services"
-        class="portal-booking-back"
-      >
-        <span aria-hidden="true">←</span>
-        <span>{{ t('services.title') }}</span>
-      </Link>
+      <PortalPageHeader
+        v-if="!bookingCompleted"
+        :title="t('booking.title')"
+        :back-href="props.urls.services"
+        :back-label="t('services.title')"
+      />
 
       <section class="portal-booking-flow portal-panel">
-        <header
-          v-if="!bookingCompleted"
-          class="portal-booking-flow__header"
-        >
-          <div class="portal-booking-flow__title-wrap">
-            <h1 class="portal-heading portal-booking-flow__title">
-              {{ t('booking.title') }}
-            </h1>
-          </div>
-        </header>
-
         <BookingPatientSelector
           v-if="!bookingCompleted && props.patients.enabled"
           v-model="bookingForm.patient_profile_id"
@@ -1098,6 +1087,9 @@ function submitBooking(): void {
             @confirm="submitBooking"
           >
             <template #personal-data>
+              <p class="portal-copy portal-copy--small">
+                {{ t('booking.personalDataOptional') }}
+              </p>
               <PersonalDataFields
                 v-model="bookingForm.personal_data"
                 id-prefix="booking-profile"

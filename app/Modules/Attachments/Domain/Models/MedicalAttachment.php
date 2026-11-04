@@ -8,6 +8,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Sessions\Domain\Models\MedicalSessionAttachment;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -24,6 +25,7 @@ use Illuminate\Support\Carbon;
  * @property string $disk
  * @property string $storage_path
  * @property string $original_filename
+ * @property string|null $display_name
  * @property string $mime_type
  * @property int $size_bytes
  * @property string $sha256_checksum
@@ -45,6 +47,7 @@ use Illuminate\Support\Carbon;
     'disk',
     'storage_path',
     'original_filename',
+    'display_name',
     'mime_type',
     'size_bytes',
     'sha256_checksum',
@@ -53,6 +56,12 @@ use Illuminate\Support\Carbon;
 ])]
 class MedicalAttachment extends Model
 {
+    /** @return Attribute<string, never> */
+    protected function presentationName(): Attribute
+    {
+        return Attribute::get(fn (): string => $this->display_name ?: $this->original_filename);
+    }
+
     /** @return BelongsTo<Organization, $this> */
     public function organization(): BelongsTo
     {

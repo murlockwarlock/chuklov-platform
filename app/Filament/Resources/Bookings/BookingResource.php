@@ -75,6 +75,7 @@ class BookingResource extends LocalizedResource
     {
         return Booking::query()
             ->where('organization_id', app(OrganizationContext::class)->id())
+            ->whereHas('client', fn (Builder $query): Builder => $query->whereNull('archived_at'))
             ->with(['client', 'specialist', 'service', 'patientProfile.clinicalClient']);
     }
 

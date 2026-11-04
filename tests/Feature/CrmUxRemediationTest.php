@@ -14,6 +14,7 @@ use App\Filament\Resources\ScenarioActions\Pages\ListScenarioActions;
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule;
 use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
+use App\Modules\Feedback\Domain\Models\FeedbackTheme;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Identity\Domain\Models\ClientChannelIdentity;
@@ -181,6 +182,29 @@ final class CrmUxRemediationTest extends TestCase
         self::assertSame('14rem', $broadcastResult->getWidth());
     }
 
+    public function test_booking_workspace_excludes_archived_clients(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture(includePeople: true);
+        $booking = Booking::factory()
+            ->forOrganization($organization)
+            ->forClient($client)
+            ->forSpecialist($specialist)
+            ->forService($service)
+            ->create([
+                'status' => BookingStatus::Cancelled->value,
+                'visit_format' => VisitFormat::Office->value,
+                'starts_at' => CarbonImmutable::now()->addDay(),
+                'ends_at' => CarbonImmutable::now()->addDay()->addHour(),
+                'blocking_ends_at' => CarbonImmutable::now()->addDay()->addHour(),
+            ]);
+        $client->forceFill(['archived_at' => CarbonImmutable::now()])->save();
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($admin)->test(ListBookings::class)->assertSuccessful();
+
+        self::assertNotContains($booking->getKey(), $component->instance()->getTableRecords()->pluck('id')->all());
+    }
+
     public function test_broadcast_client_selector_preloads_clients_and_keeps_search_available(): void
     {
         [$organization, $admin, $client] = $this->fixture(includePeople: true);
@@ -261,6 +285,27 @@ final class CrmUxRemediationTest extends TestCase
 
         self::assertSame('full', $component->instance()->getSchemaComponent('form.positive_threshold')->getColumnSpan('default'));
         self::assertSame('full', $component->instance()->getSchemaComponent('form.low_score_feedback_required')->getColumnSpan('default'));
+    }
+
+    public function test_feedback_editor_does_not_present_inactive_historical_themes(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $theme = new FeedbackTheme;
+        $theme->forceFill([
+            'organization_id' => $organization->getKey(),
+            'name' => 'Архивная тема',
+            'is_active' => false,
+            'sort_order' => 1,
+        ])->save();
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $component = Livewire::actingAs($admin)
+            ->test(FeedbackConfiguration::class)
+            ->assertSuccessful();
+        $data = $component->instance()->data;
+
+        self::assertIsArray($data);
+        self::assertFalse(collect($data['feedback_themes'] ?? [])->contains('name', 'Архивная тема'));
     }
 
     public function test_history_table_uses_human_columns_and_hides_technical_rule_keys(): void

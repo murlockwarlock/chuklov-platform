@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import SafeRichText from '../../Components/Portal/SafeRichText.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
@@ -43,22 +43,18 @@ const pageTitle = computed(() => props.title);
     active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
+      <PortalPageHeader
+        :title="pageTitle"
+        :back-href="props.portal.urls.more"
+        :back-label="t('common.back')"
+      />
       <article
         v-for="(item, index) in props.content"
         :key="`${item.locale}-${item.sortOrder}-${index}`"
         class="portal-panel portal-stack portal-stack--tight"
       >
         <div class="portal-stack portal-stack--tight">
-          <h1
-            v-if="index === 0"
-            class="portal-heading portal-heading--page"
-          >
-            {{ item.title }}
-          </h1>
-          <h2
-            v-else
-            class="portal-heading portal-heading--section"
-          >
+          <h2 class="portal-heading portal-heading--section">
             {{ item.title }}
           </h2>
         </div>
@@ -100,12 +96,6 @@ const pageTitle = computed(() => props.title);
         :title="t('section.emptyTitle')"
         :description="t('section.emptyDescription')"
       />
-      <Link
-        :href="props.portal.urls.home"
-        class="portal-button portal-button--secondary self-start"
-      >
-        {{ t('shell.home') }}
-      </Link>
     </section>
   </AppShell>
 </template>

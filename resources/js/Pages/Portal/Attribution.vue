@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Link, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -34,19 +35,12 @@ function submit(): void {
     active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('attribution.title') }}
-          </h1>
-        </div>
-        <Link
-          :href="props.portal.urls.home"
-          class="portal-button portal-button--secondary"
-        >
-          {{ t('common.back') }}
-        </Link>
-      </header>
+      <PortalPageHeader
+        :title="t('attribution.title')"
+        :description="t('attribution.description')"
+        :back-href="props.portal.urls.more"
+        :back-label="t('common.back')"
+      />
 
       <section
         v-if="props.needsManualSource"

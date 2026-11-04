@@ -190,6 +190,32 @@ final class MilestoneElevenADatabaseTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        foreach ([0, 10] as $score) {
+            $scoreFingerprint = app(FeedbackRequestFingerprint::class)->handle([
+                'client_id' => $client->getKey(),
+                'score' => $score,
+                'internal_feedback' => null,
+                'source' => 'portal',
+            ]);
+            DB::table('feedback_submissions')->insert([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $client->getKey(),
+                'score' => $score,
+                'source' => 'portal',
+                'idempotency_key' => 'database-test-feedback-'.$score,
+                'request_hash' => $scoreFingerprint,
+                'submitted_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+        self::assertSame([0, 10], DB::table('feedback_submissions')
+            ->where('organization_id', $organization->getKey())
+            ->whereIn('idempotency_key', ['database-test-feedback-0', 'database-test-feedback-10'])
+            ->orderBy('score')
+            ->pluck('score')
+            ->map(static fn (mixed $score): int => (int) $score)
+            ->all());
 
         try {
             DB::table('feedback_submissions')->insert([
@@ -204,6 +230,23 @@ final class MilestoneElevenADatabaseTest extends TestCase
                 'updated_at' => now(),
             ]);
             self::fail('The idempotency key must be unique per client and organization.');
+        } catch (QueryException) {
+            self::assertTrue(true);
+        }
+
+        try {
+            DB::table('feedback_submissions')->insert([
+                'organization_id' => $organization->getKey(),
+                'client_id' => $client->getKey(),
+                'score' => -1,
+                'source' => 'portal',
+                'idempotency_key' => 'database-test-invalid-score-negative',
+                'request_hash' => $fingerprint,
+                'submitted_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+            self::fail('The database must reject a score below zero.');
         } catch (QueryException) {
             self::assertTrue(true);
         }

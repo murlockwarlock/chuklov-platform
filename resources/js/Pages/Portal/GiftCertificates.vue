@@ -3,6 +3,7 @@ import { Head, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import EmptyState from '../../Components/Portal/EmptyState.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 
@@ -152,16 +153,12 @@ async function copyTransferUrl(): Promise<void> {
     active="more"
   >
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
-      <header class="portal-page-heading min-w-0 w-full">
-        <div class="portal-stack portal-stack--tight min-w-0">
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('giftCertificates.title') }}
-          </h1>
-          <p class="portal-text">
-            {{ t('giftCertificates.description') }}
-          </p>
-        </div>
-      </header>
+      <PortalPageHeader
+        :title="t('giftCertificates.title')"
+        :description="t('giftCertificates.description')"
+        :back-href="props.portal.urls.more"
+        :back-label="t('common.back')"
+      />
 
       <div
         v-if="errorMessage"

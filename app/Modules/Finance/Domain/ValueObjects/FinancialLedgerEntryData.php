@@ -32,5 +32,7 @@ final readonly class FinancialLedgerEntryData
         public ?string $providerReference,
         public string $idempotencyKey,
         public ?int $correctsLedgerEntryId = null,
+        public ?int $accountId = null,
+        public ?int $expenseCategoryId = null,
     ) {}
 }

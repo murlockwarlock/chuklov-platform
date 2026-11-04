@@ -288,6 +288,17 @@ final class ScenarioRuleForm
                                         && self::conditionValues($get('type')) === [])
                                     ->live()
                                     ->nestedRecursiveRules(['string', 'max:120']),
+                                TextInput::make('value')
+                                    ->label(__('Количество завершённых визитов'))
+                                    ->integer()
+                                    ->minValue(1)
+                                    ->maxValue(1000)
+                                    ->visible(fn (Get $get): bool => $get('type') === 'client.completed_visits'
+                                        && $get('operator') !== ScenarioConditionOperator::In->value
+                                        && $get('operator') !== ScenarioConditionOperator::Exists->value)
+                                    ->required(fn (Get $get): bool => $get('type') === 'client.completed_visits'
+                                        && $get('operator') !== ScenarioConditionOperator::In->value
+                                        && $get('operator') !== ScenarioConditionOperator::Exists->value),
                             ])
                             ->columns(3)
                             ->defaultItems(0)
@@ -358,6 +369,7 @@ final class ScenarioRuleForm
             'booking.needs_medical_profile' => __('Нужно заполнить карту здоровья'),
             'booking.has_qualifying_next_booking' => __('Есть следующая запись'),
             'client.language' => __('Язык клиента'),
+            'client.completed_visits' => __('Количество завершённых визитов клиента'),
             'client.marketing_consent' => __('Согласие на сообщения'),
             'onboarding.completed' => __('Оформление завершено'),
             'onboarding.stage' => __('Этап оформления'),
@@ -390,6 +402,7 @@ final class ScenarioRuleForm
                 'ru' => __('Русский'),
                 'en' => __('Английский'),
             ],
+            'client.completed_visits' => [],
             'booking.has_qualifying_next_booking',
             'booking.needs_medical_profile',
             'onboarding.completed',
@@ -430,6 +443,7 @@ final class ScenarioRuleForm
             'booking.source' => __('Источник записи'),
             'booking.status' => __('Статус записи'),
             'client.language' => __('Язык'),
+            'client.completed_visits' => __('Количество завершённых визитов'),
             'booking.has_qualifying_next_booking',
             'booking.needs_medical_profile',
             'onboarding.completed',

@@ -42,6 +42,7 @@ type BookingFixtureOptions = {
     longServiceTitle?: boolean;
     homeVisit?: boolean;
     withServiceImage?: boolean;
+    feedbackEnabled?: boolean;
     tracker?: 'empty' | 'task' | 'checkins';
     duplicateOfficeLocation?: boolean;
 };
@@ -66,6 +67,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
         $longServiceTitle = getenv('PLAYWRIGHT_LONG_SERVICE_TITLE') === '1';
         $homeVisit = getenv('PLAYWRIGHT_HOME_VISIT') === '1';
         $withServiceImage = getenv('PLAYWRIGHT_WITH_SERVICE_IMAGE') === '1';
+        $feedbackEnabled = getenv('PLAYWRIGHT_FEEDBACK_ENABLED') === '1';
         $withCompanionMessages = getenv('PLAYWRIGHT_WITH_COMPANION_MESSAGES') === '1';
         $withPartnerRewards = getenv('PLAYWRIGHT_WITH_PARTNER_REWARDS') === '1';
         $withServiceCredit = getenv('PLAYWRIGHT_WITH_SERVICE_CREDIT') === '1';
@@ -90,6 +92,17 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 'updated_at' => now(),
             ],
         ], ['organization_id', 'feature_key'], ['enabled', 'updated_at']);
+        if ($feedbackEnabled) {
+            $feedbackConfiguration = \\App\\Modules\\Feedback\\Domain\\Models\\FeedbackConfiguration::query()
+                ->where('organization_id', $organization->getKey())
+                ->first() ?? new \\App\\Modules\\Feedback\\Domain\\Models\\FeedbackConfiguration;
+            $feedbackConfiguration->forceFill([
+                'organization_id' => $organization->getKey(),
+                'enabled' => true,
+                'positive_threshold' => 8,
+                'low_score_feedback_required' => true,
+            ])->save();
+        }
         foreach ([
             'offer' => 'offer_consent',
             'privacy' => 'privacy_consent',
@@ -762,6 +775,7 @@ function createBookingFixture(options: BookingFixtureOptions | boolean = false):
                 PLAYWRIGHT_LONG_SERVICE_TITLE: normalizedOptions.longServiceTitle ? '1' : '0',
                 PLAYWRIGHT_HOME_VISIT: normalizedOptions.homeVisit ? '1' : '0',
                 PLAYWRIGHT_WITH_SERVICE_IMAGE: normalizedOptions.withServiceImage ? '1' : '0',
+                PLAYWRIGHT_FEEDBACK_ENABLED: normalizedOptions.feedbackEnabled ? '1' : '0',
                 PLAYWRIGHT_DUPLICATE_OFFICE_LOCATION: normalizedOptions.duplicateOfficeLocation ? '1' : '0',
             },
             stdio: ['ignore', 'pipe', 'pipe'],
@@ -1554,6 +1568,50 @@ test('authenticated client gets the CHUKLOV navigation and can persist RU/EN', a
     await expect(page.getByText('Manage your contact details and preferences when you need to.')).toHaveCount(0);
 });
 
+test('authenticated Portal pages keep one navigation and page-header contract', async ({ page }) => {
+    const fixture = createBookingFixture({ feedbackEnabled: true, withServiceCredit: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    const routes = [
+        { path: '/', heading: 'Добро пожаловать', active: 'home' },
+        { path: '/portal/services', heading: 'Записаться', active: 'bookings' },
+        { path: '/portal/bookings', heading: 'Мои записи', active: 'bookings' },
+        { path: '/portal/health', heading: 'Здоровье', active: 'health' },
+        { path: '/portal/medical-profile', heading: 'Медицинские данные', active: 'health' },
+        { path: '/portal/finance', heading: 'Оплата и задолженность', active: 'more' },
+        { path: '/portal/gift-certificates', heading: 'Сертификаты', active: 'more' },
+        { path: '/portal/feedback', heading: 'Обратная связь', active: 'more' },
+        { path: '/portal/family', heading: 'Члены семьи', active: 'more' },
+        { path: '/portal/profile', heading: 'Профиль', active: 'more' },
+        { path: '/portal/more', heading: 'Кабинет', active: 'more' },
+    ] as const;
+
+    for (const route of routes) {
+        const response = await page.goto(route.path);
+        expect(response?.status(), route.path).toBe(200);
+        await expect(page.getByRole('heading', { name: new RegExp(route.heading) }).first()).toBeVisible();
+        await expect(page.locator('.portal-bottom-nav')).toBeVisible();
+        await expect(page.locator('.portal-bottom-nav__link--active')).toHaveCount(1);
+        const activeHref = await page.locator('.portal-bottom-nav__link--active').getAttribute('href');
+        expect(activeHref).not.toBeNull();
+        expect(new URL(activeHref as string, page.url()).pathname).toBe(route.active === 'home'
+            ? '/'
+            : route.active === 'bookings'
+                ? '/portal/services'
+                : route.active === 'health'
+                    ? '/portal/health'
+                    : '/portal/more');
+        await expect(page.locator('.portal-page-header')).toHaveCount(1);
+        await expect(page.locator('main .portal-button').filter({ hasText: 'Главная' })).toHaveCount(0);
+        await assertNoHorizontalOverflow(page);
+    }
+});
+
 test('confirmed client greeting follows the saved locale after reload', async ({ page }) => {
     const fixture = createBookingFixture({ confirmedName: true });
 
@@ -1574,7 +1632,7 @@ test('confirmed client greeting follows the saved locale after reload', async ({
 });
 
 test('feedback keeps the selected score visible and the portal within mobile bounds', async ({ page }) => {
-    const fixture = createBookingFixture();
+    const fixture = createBookingFixture({ feedbackEnabled: true });
 
     await page.context().addCookies([{
         name: fixture.cookieName,
@@ -1587,9 +1645,15 @@ test('feedback keeps the selected score visible and the portal within mobile bou
         await page.goto('/portal/feedback');
         const selectedScore = page.getByRole('radio', { name: '6', exact: true });
         await selectedScore.click();
-        await expect(selectedScore).toHaveAttribute('aria-checked', 'true');
-        await expect(selectedScore).toHaveAttribute('aria-pressed', 'true');
-        await expect(selectedScore).toHaveClass(/portal-score-option--selected/);
+        const internalFeedback = page.locator('textarea').first();
+        await expect(internalFeedback).toBeVisible();
+        await internalFeedback.fill('Синтетический текст сохраняется при смене оценки.');
+        await page.getByRole('radio', { name: '10', exact: true }).click();
+        await expect(internalFeedback).toHaveValue('Синтетический текст сохраняется при смене оценки.');
+        const positiveScore = page.getByRole('radio', { name: '10', exact: true });
+        await expect(positiveScore).toHaveAttribute('aria-checked', 'true');
+        await expect(positiveScore).toHaveAttribute('aria-pressed', 'true');
+        await expect(positiveScore).toHaveClass(/portal-score-option--selected/);
         await expect(page.getByRole('radio', { name: '5', exact: true })).not.toHaveClass(/portal-score-option--selected/);
         await assertNoHorizontalOverflow(page);
     }
@@ -2490,6 +2554,100 @@ test('authenticated client can complete the booking journey', async ({ page }) =
     await expect(page.getByText(/Playwright Service/)).toHaveCount(1);
 });
 
+test('authenticated client can confirm a booking with partial personal data', async ({ page }) => {
+    const fixture = createBookingFixture();
+
+    await page.context().addCookies([{
+        name: fixture.cookieName,
+        value: fixture.cookieValue,
+        url: 'http://127.0.0.1:8000',
+    }]);
+
+    await page.goto(`/portal/bookings/create?service_id=${fixture.serviceId}&date_from=${fixture.date}&date_to=${fixture.date}&format=office`);
+    await page.getByTestId('availability-slot').first().click();
+    await page.getByRole('button', { name: 'Продолжить' }).click();
+
+    await page.locator('#booking-profile-last_name').fill('');
+    await page.locator('#booking-profile-first_name').fill('');
+    await page.locator('#booking-profile-middle_name').fill('');
+    await page.locator('#booking-profile-birth-date').fill('');
+    await page.locator('#booking-profile-country').fill('');
+    await page.locator('#booking-profile-city').fill('Астана');
+    await page.locator('#booking-profile-phone').fill('');
+    await page.locator('#booking-profile-email').fill('');
+    await acceptRequiredConsents(page);
+    await page.getByRole('button', { name: 'Подтвердить запись' }).click();
+
+    await expect(page.getByRole('heading', { name: 'Запись создана.' })).toBeVisible();
+    await page.goto('/portal/profile');
+    await expect(page.getByLabel('Город', { exact: true })).toHaveValue('Астана');
+    await expect(page.getByLabel('Имя', { exact: true })).toHaveValue('Playwright');
+});
+
+test('authenticated client can autosave partial profile fields independently', async ({ page }) => {
+    const fixture = createBookingFixture();
+    await page.setViewportSize({ width: 390, height: 844 });
+    execFileSync('php', ['artisan', 'tinker', '--execute', `
+        $client = \\App\\Modules\\Identity\\Domain\\Models\\Client::query()->findOrFail(${fixture.clientId});
+        $client->forceFill([
+            'first_name' => null,
+            'last_name' => null,
+            'middle_name' => null,
+            'gender' => null,
+            'birth_date' => null,
+            'country' => null,
+            'city' => null,
+            'phone' => null,
+        ])->save();
+    `], { encoding: 'utf8', env: { ...process.env, APP_ENV: 'e2e' } });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/portal/profile');
+
+    await page.locator('#profile-city').fill('Астана');
+    await page.locator('#profile-first_name').click();
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
+    await page.reload();
+    await expect(page.locator('#profile-city')).toHaveValue('Астана');
+    await expect(page.locator('#profile-first_name')).toHaveValue('');
+
+    await page.locator('#profile-first_name').fill('Евгений');
+    await page.locator('#profile-city').click();
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
+    await page.reload();
+    await expect(page.locator('#profile-city')).toHaveValue('Астана');
+    await expect(page.locator('#profile-first_name')).toHaveValue('Евгений');
+
+    await page.locator('#profile-birth-date').fill('2999-01-01');
+    await page.getByRole('heading', { name: 'Профиль', exact: true }).click();
+    await expect(page.locator('#profile-birth-date').locator('xpath=following-sibling::p')).toBeVisible({ timeout: 20_000 });
+    await expect(page.locator('#profile-city')).toHaveValue('Астана');
+    await page.locator('#profile-birth-date').fill('1990-01-01');
+    await page.getByRole('heading', { name: 'Профиль', exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
+    await page.reload();
+    await expect(page.locator('#profile-city')).toHaveValue('Астана');
+    await expect(page.locator('#profile-first_name')).toHaveValue('Евгений');
+    await expect(page.locator('#profile-birth-date')).toHaveValue('1990-01-01');
+});
+
+test('authenticated client autosaves the preferred currency without a separate save action', async ({ page }) => {
+    const fixture = createBookingFixture({ withPartnerRewards: true });
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.context().addCookies([{ name: fixture.cookieName, value: fixture.cookieValue, url: 'http://127.0.0.1:8000' }]);
+    await page.goto('/portal/profile');
+
+    const currency = page.getByLabel('Основная валюта', { exact: true });
+    await expect(currency).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Сохранить', exact: true })).toHaveCount(0);
+    const currencyValue = await currency.locator('option:not([value=""])').first().getAttribute('value');
+    expect(currencyValue).not.toBeNull();
+    await currency.selectOption(currencyValue as string);
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
+    await page.reload();
+    await expect(currency).toHaveValue(currencyValue as string);
+    await assertNoHorizontalOverflow(page);
+});
+
 test('September 26 confirmed profile persists and the medical editor saves then reopens', async ({ page }) => {
     test.setTimeout(60_000);
     const fixture = createBookingFixture();
@@ -2543,23 +2701,21 @@ test('September 26 confirmed profile persists and the medical editor saves then 
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
         await page.getByLabel('Страна', { exact: true }).press('Escape');
     }
-    const profileForm = page.locator('form').filter({ has: page.getByLabel('Фамилия', { exact: true }) });
-    await profileForm.getByRole('button', { name: 'Сохранить', exact: true }).click();
-    await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible();
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
     await page.getByLabel('Город', { exact: true }).fill('Астана');
     profileResponses.failNextSave = true;
-    await profileForm.getByRole('button', { name: 'Сохранить', exact: true }).click();
-    await expect(profileForm.getByRole('alert')).toHaveText('Не удалось сохранить данные. Проверьте соединение и повторите попытку.');
+    await page.getByLabel('Имя', { exact: true }).click();
+    await expect(page.getByRole('alert')).toHaveText('Не удалось сохранить данные. Проверьте соединение и повторите попытку.');
     await page.reload();
     await expect(page.getByLabel('Город', { exact: true })).toHaveValue('Алматы');
     await page.getByLabel('Город', { exact: true }).fill('Астана');
-    await profileForm.getByRole('button', { name: 'Сохранить', exact: true }).click();
-    await expect(page.getByText('Изменения сохранены.', { exact: true })).toBeVisible();
+    await page.getByLabel('Имя', { exact: true }).click();
+    await expect(page.getByRole('status').filter({ hasText: 'Изменения сохранены.' })).toBeVisible({ timeout: 20_000 });
     await page.reload();
     await expect(page.getByLabel('Фамилия', { exact: true })).toHaveValue('Солдатов');
     await expect(page.getByLabel('Город', { exact: true })).toHaveValue('Астана');
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Добро пожаловать, Денис!' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /Добро пожаловать/ })).toBeVisible();
     await page.goto('/portal/more');
     await page.getByRole('link', { name: 'Медицинские данные', exact: true }).click();
     await expect(page.getByLabel('Подробно опишите жалобы', { exact: true })).toBeVisible();
@@ -2568,9 +2724,17 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     const complaintsChoices = await complaintsGroup.locator('.medical-profile__choice-grid').boundingBox();
     if (!complaintsLegend || !complaintsChoices) throw new Error('Medical complaint choices are not positioned');
     expect(complaintsChoices.y - (complaintsLegend.y + complaintsLegend.height)).toBeGreaterThanOrEqual(8);
-    await expect(page.getByLabel('Шкала интенсивности боли (ВАШ):', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('Шкала интенсивности боли (ВАШ):', { exact: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    await page.locator('#medical-pain-0').fill('Боль в шее');
+    await page.locator('#medical-pain-score-0').fill('8');
+    await page.getByRole('button', { name: 'Добавить боль', exact: true }).click();
+    await page.locator('#medical-pain-1').fill('Боль в пояснице');
+    await page.locator('#medical-pain-score-1').fill('0');
+    await expect(page.locator('#medical-pain-score-0')).toHaveValue('8');
+    await expect(page.locator('#medical-pain-score-1')).toHaveValue('0');
     await expect(page.getByLabel('Задачи по здоровью', { exact: true })).toHaveAttribute('placeholder', 'Опишите конкретные результаты и задачи, которые вы хотите решить с Евгением (например: 1. Убрать тянущую боль в пояснице при наклонах. 2. Избавиться от утренней скованности и отеков)');
-    await expect(page.getByLabel('Год операции', { exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-medical-history="operation"]')).toHaveCount(0);
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
     await expect(page.getByText('Опишите, каких результатов вы хотите достичь.', { exact: true })).toBeVisible();
     await expect(page.getByText('Выберите хотя бы один симптом или опишите жалобу.', { exact: true })).toBeVisible();
@@ -2596,47 +2760,75 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByLabel('Хронические заболевания', { exact: true })).toBeVisible();
     await page.getByLabel('Хронических заболеваний нет', { exact: true }).check();
     await page.locator('input[name="operations"][value="true"]').check();
-    await expect(page.getByLabel('Год операции', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('Описание операции или рубца (где находится шрам)', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Добавить операцию', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Добавить операцию', exact: true }).click();
+    await page.locator('#medical-operations-year-0').fill('2020');
+    await page.locator('#medical-operations-description-0').fill('Synthetic first operation');
+    await page.getByRole('button', { name: 'Добавить операцию', exact: true }).click();
+    await page.locator('#medical-operations-year-1').fill('2021');
+    await page.locator('#medical-operations-description-1').fill('Synthetic middle operation');
+    await page.getByRole('button', { name: 'Добавить операцию', exact: true }).click();
+    await page.locator('#medical-operations-year-2').fill('2022');
+    await page.locator('#medical-operations-description-2').fill('Synthetic last operation');
+    await page.locator('[data-medical-history="operation"] > div').nth(1).getByRole('button', { name: 'Удалить строку', exact: true }).click();
+    await expect(page.locator('#medical-operations-year-0')).toHaveValue('2020');
+    await expect(page.locator('#medical-operations-year-1')).toHaveValue('2022');
     await page.locator('input[name="operations"][value="false"]').check();
-    await expect(page.getByLabel('Год операции', { exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-medical-history="operation"]')).toHaveCount(0);
     await page.locator('input[name="operations"][value="true"]').check();
-    await page.getByLabel('Год операции', { exact: true }).fill('1899');
-    await page.getByLabel('Описание операции или рубца (где находится шрам)', { exact: true }).fill('Synthetic scar location');
+    await page.getByRole('button', { name: 'Добавить операцию', exact: true }).click();
+    await page.locator('#medical-operations-year-0').fill('1899');
+    await page.locator('#medical-operations-description-0').fill('Synthetic scar location');
     await page.locator('input[name="injuries"][value="true"]').check();
-    await expect(page.getByLabel('Год травмы', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('type', 'text');
-    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('inputmode', 'numeric');
-    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('placeholder', 'Например, 2020');
+    await expect(page.getByRole('button', { name: 'Добавить травму', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Добавить травму', exact: true }).click();
+    await page.locator('#medical-injuries-year-0').fill('2020');
+    await page.locator('#medical-injuries-description-0').fill('Synthetic first injury');
+    await page.getByRole('button', { name: 'Добавить травму', exact: true }).click();
+    await page.locator('#medical-injuries-year-1').fill('2021');
+    await page.locator('#medical-injuries-description-1').fill('Synthetic second injury');
+    await page.getByRole('button', { name: 'Добавить травму', exact: true }).click();
+    await page.locator('#medical-injuries-year-2').fill('2022');
+    await page.locator('#medical-injuries-description-2').fill('Synthetic third injury');
+    await page.locator('[data-medical-history="injury"] > div').nth(1).getByRole('button', { name: 'Удалить строку', exact: true }).click();
+    await expect(page.locator('#medical-injuries-year-0')).toHaveValue('2020');
+    await expect(page.locator('#medical-injuries-year-1')).toHaveValue('2022');
+    await expect(page.locator('#medical-injuries-year-0')).toHaveAttribute('type', 'text');
+    await expect(page.locator('#medical-injuries-year-0')).toHaveAttribute('inputmode', 'numeric');
+    await expect(page.locator('#medical-injuries-year-0')).toHaveAttribute('placeholder', 'Например, 2020');
     await page.locator('input[name="injuries"][value="false"]').check();
-    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveCount(0);
+    await expect(page.locator('[data-medical-history="injury"]')).toHaveCount(0);
     await page.locator('input[name="injuries"][value="true"]').check();
-    await page.getByLabel('Характер травмы', { exact: true }).fill('Synthetic injury description');
-    await page.getByLabel('Год операции', { exact: true }).fill('');
-    await page.getByLabel('Год травмы', { exact: true }).fill('');
+    await page.locator('#medical-operations-year-0').fill('');
+    await page.locator('#medical-operations-description-0').fill('Synthetic scar location');
+    await page.getByRole('button', { name: 'Добавить травму', exact: true }).click();
+    await page.locator('#medical-injuries-year-0').fill('');
+    await page.locator('#medical-injuries-description-0').fill('Synthetic injury description');
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
-    await expect(page.locator('#medical-operations-year-error')).toHaveText('Укажите год.');
-    await expect(page.locator('#medical-injuries-year-error')).toHaveText('Укажите год.');
-    await expect(page.getByLabel('Год операции', { exact: true })).toHaveAttribute('aria-describedby', 'medical-operations-year-error');
-    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('aria-describedby', 'medical-injuries-year-error');
-    await expect(page.getByLabel('Год операции', { exact: true })).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('aria-invalid', 'true');
-    await page.getByLabel('Год операции', { exact: true }).fill('1899');
-    await page.getByLabel('Год травмы', { exact: true }).fill('2027');
+    await expect(page.locator('#medical-operations-error')).toHaveText(/^(Укажите год|Добавьте краткое описание)/);
+    await expect(page.locator('#medical-injuries-error')).toHaveText(/^(Укажите год|Добавьте краткое описание)/);
+    await expect(page.locator('#medical-operations-year-0')).toHaveAttribute('aria-describedby', 'medical-operations-error');
+    await expect(page.locator('#medical-injuries-year-0')).toHaveAttribute('aria-describedby', 'medical-injuries-error');
+    await expect(page.locator('#medical-operations-year-0')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator('#medical-injuries-year-0')).toHaveAttribute('aria-invalid', 'true');
+    await page.locator('#medical-operations-year-0').fill('1899');
+    await page.locator('#medical-injuries-year-0').fill('2027');
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
-    await expect(page.locator('#medical-operations-year-error')).toHaveText(`Укажите год с 1900 по ${new Date().getFullYear()}.`);
-    await expect(page.locator('#medical-injuries-year-error')).toHaveText(`Укажите год с 1900 по ${new Date().getFullYear()}.`);
-    await expect(page.getByLabel('Год операции', { exact: true })).toHaveAttribute('aria-describedby', 'medical-operations-year-error');
-    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('aria-describedby', 'medical-injuries-year-error');
-    await expect(page.getByLabel('Год операции', { exact: true })).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.getByLabel('Год травмы', { exact: true })).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.getByLabel('Год операции', { exact: true })).toHaveValue('1899');
-    await expect(page.getByLabel('Описание операции или рубца (где находится шрам)', { exact: true })).toHaveValue('Synthetic scar location');
-    await page.getByLabel('Год операции', { exact: true }).fill(String(new Date().getFullYear()));
-    await page.getByLabel('Год травмы', { exact: true }).fill('2021');
-    await expect(page.locator('#medical-operations-year-error')).toHaveCount(0);
-    await expect(page.locator('#medical-injuries-year-error')).toHaveCount(0);
-    const painSlider = page.locator('#medical-pain');
+    await expect(page.locator('#medical-operations-error')).toHaveText(`Укажите год с 1900 по ${new Date().getFullYear()}.`);
+    await expect(page.locator('#medical-injuries-error')).toHaveText(`Укажите год с 1900 по ${new Date().getFullYear()}.`);
+    await expect(page.locator('#medical-operations-year-0')).toHaveAttribute('aria-describedby', 'medical-operations-error');
+    await expect(page.locator('#medical-injuries-year-0')).toHaveAttribute('aria-describedby', 'medical-injuries-error');
+    await expect(page.locator('#medical-operations-year-0')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator('#medical-injuries-year-0')).toHaveAttribute('aria-invalid', 'true');
+    await expect(page.locator('#medical-operations-year-0')).toHaveValue('1899');
+    await expect(page.locator('#medical-operations-description-0')).toHaveValue('Synthetic scar location');
+    await page.locator('#medical-operations-year-0').fill(String(new Date().getFullYear()));
+    await page.locator('#medical-injuries-year-0').fill('2021');
+    await expect(page.locator('#medical-operations-error')).toHaveCount(0);
+    await expect(page.locator('#medical-injuries-error')).toHaveCount(0);
+    const painSlider = page.locator('#medical-pain-score-0');
+    const secondPainSlider = page.locator('#medical-pain-score-1');
+    await expect(page.locator('input[type="range"][id^="medical-pain-score-"]')).toHaveCount(2);
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         await painSlider.scrollIntoViewIfNeeded();
@@ -2657,14 +2849,10 @@ test('September 26 confirmed profile persists and the medical editor saves then 
         await expect(page.getByText('10 / 10', { exact: true })).toBeVisible();
     }
     await painSlider.focus();
-    await painSlider.press('Home');
-    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
-    for (let step = 0; step < 8; step++) {
-        await painSlider.press('ArrowRight');
-    }
-    await expect(painSlider).toHaveValue('8');
-    await expect(page.getByText('8 / 10', { exact: true })).toBeVisible();
     await painSlider.press('End');
+    await expect(painSlider).toHaveValue('10');
+    await expect(secondPainSlider).toHaveValue('0');
+    await expect(page.getByText('10 / 10', { exact: true })).toBeVisible();
     let failFirstSave = true;
     await page.route('**/portal/medical-profile*', async (route) => {
         if (route.request().method() === 'POST') {
@@ -2687,6 +2875,7 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await expect(page.getByText('Данные сохранены', { exact: true })).toBeVisible();
     await page.unroute('**/portal/medical-profile*');
     await expect(page.getByText('10 / 10', { exact: true })).toBeVisible();
+    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
     await page.reload();
     await expect(page.getByText('Synthetic symptoms', { exact: true })).toBeVisible();
     await expect(page.getByText('Synthetic scar location', { exact: true })).toBeVisible();
@@ -2695,16 +2884,18 @@ test('September 26 confirmed profile persists and the medical editor saves then 
     await page.getByRole('button', { name: 'Редактировать данные', exact: true }).click();
     await expect(page.getByLabel('Подробно опишите жалобы', { exact: true })).toHaveValue('Synthetic symptoms');
     await expect(page.getByLabel('Хронических заболеваний нет', { exact: true })).toBeChecked();
-    await expect(page.getByLabel('Год операции', { exact: true })).toHaveValue(String(new Date().getFullYear()));
-    await expect(page.getByLabel('Характер травмы', { exact: true })).toHaveValue('Synthetic injury description');
-    await page.locator('#medical-pain').focus();
-    await page.locator('#medical-pain').press('Home');
+    await expect(page.locator('#medical-operations-year-0')).toHaveValue(String(new Date().getFullYear()));
+    await expect(page.locator('#medical-injuries-description-0')).toHaveValue('Synthetic injury description');
+    await expect(page.locator('#medical-pain-score-0')).toHaveValue('10');
+    await expect(page.locator('#medical-pain-score-1')).toHaveValue('0');
+    await page.locator('#medical-pain-score-0').focus();
+    await page.locator('#medical-pain-score-0').press('Home');
     for (const width of [320, 360, 390, 768, 1024, 1440]) {
         await page.setViewportSize({ width, height: 900 });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), `Medical editor at ${width}px`).toBe(true);
     }
     await page.getByRole('button', { name: 'Подтвердить данные', exact: true }).click();
-    await expect(page.getByText('0 / 10', { exact: true })).toBeVisible();
+    await expect(page.getByText('0 / 10', { exact: true }).first()).toBeVisible();
     await expect(page.getByRole('button', { name: 'Редактировать данные', exact: true })).toBeVisible();
     const fileChooserEvent = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'Выбрать файлы', exact: true }).click();
@@ -3381,6 +3572,7 @@ test('booking empty search renders one range-level empty state', async ({ page }
 
 test('booking keeps its state while reviewing grouped legal documents', async ({ page }) => {
     const fixture = createBookingFixture();
+    await page.setViewportSize({ width: 390, height: 844 });
 
     await page.context().addCookies([{
         name: fixture.cookieName,
@@ -3400,7 +3592,12 @@ test('booking keeps its state while reviewing grouped legal documents', async ({
     const dialog = page.getByRole('dialog');
 
     await expect(documentLinks).toHaveCount(3);
+    await expect(page.locator('.portal-legal-document-links > span')).toHaveCount(0);
     await expect(requiredCheckbox).not.toBeChecked();
+    const documentGroupBounds = await page.locator('.portal-legal-document-links').boundingBox();
+    const documentLinkLefts = await documentLinks.evaluateAll((elements) => elements.map((element) => Math.round(element.getBoundingClientRect().left)));
+    expect(documentGroupBounds).not.toBeNull();
+    expect(documentLinkLefts.every((left) => left >= Math.round(documentGroupBounds?.x ?? 0))).toBe(true);
     const documentTitle = (await documentLinks.first().innerText()).trim();
     expect(documentTitle).not.toBe('');
     await documentLinks.first().click();

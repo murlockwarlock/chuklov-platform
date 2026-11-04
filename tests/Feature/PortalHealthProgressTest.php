@@ -134,12 +134,13 @@ final class PortalHealthProgressTest extends TestCase
         $overview = app(ListClientHealthOverview::class)->handle();
 
         self::assertTrue($overview['profile']['available']);
-        self::assertSame('Safe anamnesis', $overview['profile']['anamnesis']);
+        self::assertNull($overview['profile']['anamnesis']);
         self::assertSame('Safe goals', $overview['profile']['complaintsGoals']);
         self::assertSame('Safe operations', $overview['profile']['operationsInjuries']);
         self::assertArrayNotHasKey('rootCause', $overview['profile']);
         self::assertCount(1, $overview['materials']);
         self::assertStringNotContainsString($attachment->storage_path, $overview['materials'][0]['downloadUrl']);
+        self::assertStringNotContainsString('Safe anamnesis', json_encode($overview, JSON_THROW_ON_ERROR));
 
         $response = $this->withSession(['client_portal.client_id' => $client->getKey()])
             ->get($overview['materials'][0]['downloadUrl'])

@@ -5,16 +5,20 @@ namespace App\Modules\Identity\Domain\Models;
 use App\Modules\AI\Domain\Models\AiRun;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Attribution\Domain\Models\ClientAttribution;
+use App\Modules\Broadcasts\Domain\Models\BroadcastClientTag;
+use App\Modules\Commerce\Domain\Models\Purchase;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Identity\Domain\Enums\ClientRestrictionType;
 use App\Modules\Identity\Domain\ValueObjects\ClientPhoneSearchKey;
 use App\Modules\MedicalProfiles\Domain\Models\MedicalProfile;
+use App\Modules\MedicalProfiles\Domain\Models\MedicalProfilePain;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Referrals\Domain\Models\ClientReferralIdentity;
 use App\Modules\Referrals\Domain\Models\ReferralPartnerProfile;
 use App\Modules\Referrals\Domain\Models\ReferralRelationship;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
+use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
 use App\Modules\Surveys\Domain\Models\SurveyAttempt;
 use App\Modules\Tracker\Domain\Models\TrackerCheckIn;
 use App\Modules\Tracker\Domain\Models\TrackerEntitlement;
@@ -38,6 +42,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property int $organization_id
  * @property CarbonImmutable|null $birth_date
  * @property CarbonImmutable|null $name_confirmed_at
+ * @property CarbonImmutable|null $archived_at
  */
 #[Fillable(['full_name', 'first_name', 'last_name', 'middle_name', 'gender', 'birth_date', 'country', 'city', 'email', 'phone', 'language', 'timezone', 'timezone_source', 'lead_source', 'referral_code'])]
 class Client extends Model
@@ -52,6 +57,7 @@ class Client extends Model
         return [
             'birth_date' => 'immutable_date',
             'name_confirmed_at' => 'immutable_datetime',
+            'archived_at' => 'immutable_datetime',
         ];
     }
 
@@ -130,6 +136,12 @@ class Client extends Model
         return $this->hasMany(ClientBookingRestriction::class);
     }
 
+    /** @return HasMany<BroadcastClientTag, $this> */
+    public function broadcastTags(): HasMany
+    {
+        return $this->hasMany(BroadcastClientTag::class);
+    }
+
     /** @return HasOne<ClientBookingRestriction, $this> */
     public function activeBookingRestriction(): HasOne
     {
@@ -158,6 +170,12 @@ class Client extends Model
         return $this->hasMany(Booking::class);
     }
 
+    /** @return HasMany<Purchase, $this> */
+    public function purchases(): HasMany
+    {
+        return $this->hasMany(Purchase::class);
+    }
+
     /** @return HasOne<MedicalProfile, $this> */
     public function medicalProfile(): HasOne
     {
@@ -180,6 +198,18 @@ class Client extends Model
     public function sessions(): HasMany
     {
         return $this->hasMany(MedicalSession::class);
+    }
+
+    /** @return HasMany<MedicalProfilePain, $this> */
+    public function medicalProfilePains(): HasMany
+    {
+        return $this->hasMany(MedicalProfilePain::class);
+    }
+
+    /** @return HasMany<MedicalSessionPain, $this> */
+    public function medicalSessionPains(): HasMany
+    {
+        return $this->hasMany(MedicalSessionPain::class);
     }
 
     /** @return HasMany<SurveyAttempt, $this> */

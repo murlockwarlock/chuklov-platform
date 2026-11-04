@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Bookings\Pages;
 use App\Filament\Pages\Messages;
 use App\Filament\Resources\Bookings\Actions\BookingLifecycleActions;
 use App\Filament\Resources\Bookings\BookingResource;
+use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Support\FinancePaymentActions;
 use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
@@ -66,6 +67,11 @@ class ViewBooking extends LocalizedViewRecord
                 ->url(fn (): ?string => $this->clientTelegramUrl())
                 ->openUrlInNewTab()
                 ->visible(fn (): bool => $this->clientTelegramUrl() !== null),
+            Action::make('createMedicalSession')
+                ->label(__('Создать медицинский сеанс'))
+                ->icon('heroicon-o-plus')
+                ->url(fn (): ?string => $this->medicalSessionCreateUrl())
+                ->visible(fn (): bool => MedicalSessionResource::canCreate() && $this->medicalSessionCreateUrl() !== null),
             ...BookingLifecycleActions::primary(),
             ActionGroup::make([
                 ...BookingLifecycleActions::all(false),
@@ -92,7 +98,7 @@ class ViewBooking extends LocalizedViewRecord
             $parameters['specialist_id'] = $this->journalSpecialistId;
         }
 
-        return ListBookings::getUrl().($parameters === [] ? '' : '?'.http_build_query($parameters));
+        return ListBookings::getUrl().'?'.http_build_query($parameters);
     }
 
     private function validSpecialistId(mixed $value): ?int
@@ -144,5 +150,16 @@ class ViewBooking extends LocalizedViewRecord
         return is_array($telegram) && is_string($telegram['telegramUrl'] ?? null)
             ? $telegram['telegramUrl']
             : null;
+    }
+
+    private function medicalSessionCreateUrl(): ?string
+    {
+        $record = $this->getRecord();
+        if (! $record instanceof Booking) {
+            return null;
+        }
+
+        return MedicalSessionResource::getUrl('create', ['client' => $record->clinicalClientId()])
+            .'?'.http_build_query(['booking_id' => (int) $record->getKey()]);
     }
 }

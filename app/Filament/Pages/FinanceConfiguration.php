@@ -189,9 +189,11 @@ final class FinanceConfiguration extends LocalizedPage
         return $schema
             ->components([
                 Section::make(__('Основные настройки'))
+                    ->description(__('Здесь задаётся валюта, в которой хранится финансовый учёт и показываются суммы клиенту. Для обычной практики достаточно одной валюты; без основной валюты новые цены и платежи нельзя настроить корректно.'))
                     ->schema([
                         Select::make('base_currency')
                             ->label(__('Валюта практики'))
+                            ->helperText(__('Основная валюта финансового учёта, цен и отчётов. Выберите валюту, в которой обычно принимаете оплату.'))
                             ->options(fn (): array => app(CurrencyCatalog::class)->options())
                             ->live()
                             ->afterStateUpdated(function (Get $get, Set $set, mixed $state): void {
@@ -249,6 +251,7 @@ final class FinanceConfiguration extends LocalizedPage
                             }),
                         Select::make('allowed_currencies')
                             ->label(__('Валюты, доступные для оплаты'))
+                            ->helperText(__('Показывается только в режиме нескольких валют. Если список пуст, клиент не сможет выбрать валюту для оплаты.'))
                             ->options(fn (): array => app(CurrencyCatalog::class)->options())
                             ->multiple()
                             ->searchable()

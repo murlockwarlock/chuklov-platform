@@ -2,6 +2,7 @@
 import { Link, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PatientSummary } from '../../types/patients';
 import type { PortalShell } from '../../types/portal';
@@ -43,11 +44,14 @@ function accept(): void {
   <AppShell
     :title="t('family.invitationTitle')"
     :portal="props.portal"
+    active="more"
   >
-    <main class="portal-container portal-stack portal-stack--loose">
-      <h1 class="portal-heading">
-        {{ t('family.invitationTitle') }}
-      </h1>
+    <section class="portal-container portal-stack portal-stack--loose">
+      <PortalPageHeader
+        :title="t('family.invitationTitle')"
+        :back-href="props.urls.family"
+        :back-label="t('common.back')"
+      />
       <h2 class="portal-heading portal-heading--section break-words">
         {{ props.patient.name }}
       </h2>
@@ -127,6 +131,6 @@ function accept(): void {
           {{ t('profile.title') }}
         </Link>
       </form>
-    </main>
+    </section>
   </AppShell>
 </template>

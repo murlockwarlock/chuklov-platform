@@ -31,7 +31,7 @@ use Illuminate\Database\Eloquent\Builder;
 
 class BookingsTable
 {
-    public static function configure(Table $table, bool $includeAttention = true, bool $includeClient = true): Table
+    public static function configure(Table $table, bool $includeAttention = true, bool $includeClient = true, bool $includeControls = true): Table
     {
         $canViewClients = $includeClient && ClientResource::canViewAny();
         $canViewSpecialists = SpecialistResource::canViewAny();
@@ -44,7 +44,7 @@ class BookingsTable
                 ->url(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists))
                 ->color(fn (Booking $record): ?string => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null ? null : 'primary')
                 ->disabledClick(fn (Booking $record): bool => CrmEntityLinks::specialistUrl($record->specialist, $canViewSpecialists) === null)
-                ->toggleable(),
+                ->toggleable($includeControls),
             TextColumn::make('service.name')->label(__('Услуга'))->sortable()->wrap(),
             TextColumn::make('patientProfile.clinicalClient.full_name')->label(__('Пациент'))->wrap()
                 ->state(function (Booking $record): ?string {
@@ -69,7 +69,7 @@ class BookingsTable
                 ->label(__('Место'))
                 ->state(fn (Booking $record): string => self::locationLabel($record))
                 ->wrap()
-                ->toggleable(isToggledHiddenByDefault: true),
+                ->toggleable($includeControls, isToggledHiddenByDefault: true),
             TextColumn::make('status')
                 ->label(__('Статус'))
                 ->badge()
@@ -95,7 +95,7 @@ class BookingsTable
                 ->badge()
                 ->state(fn (Booking $record): string => app(BookingNeedsAttention::class)->handle($record) ? __('Требует внимания') : __('В порядке'))
                 ->color(fn (string $state): string => $state === __('Требует внимания') ? 'danger' : 'success')
-                ->toggleable(isToggledHiddenByDefault: true);
+                ->toggleable($includeControls, isToggledHiddenByDefault: true);
         }
 
         $filters = [
@@ -167,7 +167,7 @@ class BookingsTable
                 ->orderByDesc('created_at')
                 ->orderByDesc('id'))
             ->columns($columns)
-            ->filters($filters)
+            ->filters($includeControls ? $filters : [])
             ->recordActions([
                 ViewAction::make()
                     ->label(__('Открыть'))

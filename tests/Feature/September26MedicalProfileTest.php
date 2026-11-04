@@ -18,6 +18,7 @@ use App\Modules\Security\Domain\Models\AuditEvent;
 use App\Modules\Security\Infrastructure\Logging\RedactSensitiveLogData;
 use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
 use Livewire\Livewire;
@@ -73,38 +74,38 @@ final class September26MedicalProfileTest extends TestCase
         }
     }
 
-    public function test_crm_medical_form_shows_server_validation_and_allows_correction_for_required_years(): void
+    public function test_crm_medical_form_uses_repeatable_history_without_legacy_year_requirements(): void
     {
         [$client, $staff] = $this->fixture();
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $data = $this->answers('');
         $data['answers']['had_operations'] = true;
         $data['answers']['had_injuries'] = true;
-        $data['operations'] = 'Synthetic operation details';
-        $data['injuries'] = 'Synthetic injury details';
+        unset($data['operations'], $data['injuries']);
+        $data['operation_history'] = [
+            ['type' => 'operation', 'year' => 2020, 'description' => 'Synthetic operation row'],
+        ];
+        $data['injury_history'] = [
+            ['type' => 'injury', 'year' => 2021, 'description' => 'Synthetic injury row'],
+        ];
 
         $component = Livewire::actingAs($staff)->test(ViewClient::class, ['record' => $client->getKey()])
             ->assertActionVisible('editMedicalProfile');
         $component->callAction('editMedicalProfile', $data)
-            ->assertHasFormErrors(['answers.operation_year', 'answers.injury_year']);
-        self::assertContains('Укажите год операции.', $component->instance()->getErrorBag()->all());
-        self::assertContains('Укажите год травмы.', $component->instance()->getErrorBag()->all());
-
-        self::assertFalse(MedicalProfile::query()->where('client_id', $client->getKey())->exists());
-        self::assertFalse(AuditEvent::query()->where('target_type', MedicalProfile::class)->exists());
-
-        $data['answers']['operation_year'] = 2020;
-        $data['answers']['injury_year'] = 2021;
-
-        Livewire::actingAs($staff)->test(ViewClient::class, ['record' => $client->getKey()])
-            ->callAction('editMedicalProfile', $data)
             ->assertHasNoActionErrors()
             ->assertNotified('Медицинский профиль сохранён');
 
         $profile = app(GetMedicalProfile::class)->handle($staff, $client);
+        self::assertNotNull(MedicalProfile::query()->where('client_id', $client->getKey())->sole()->completed_at);
         $answers = json_decode((string) $profile?->clinicalAnswers, true, flags: JSON_THROW_ON_ERROR);
-        self::assertSame(2020, $answers['operation_year']);
-        self::assertSame(2021, $answers['injury_year']);
+        self::assertNull($answers['operation_year']);
+        self::assertNull($answers['injury_year']);
+        $historyDescriptions = array_map(
+            static fn ($entry): string => $entry->description,
+            $profile?->historyEntries ?? [],
+        );
+        sort($historyDescriptions);
+        self::assertSame(['Synthetic injury row', 'Synthetic operation row'], $historyDescriptions);
         self::assertSame(1, AuditEvent::query()->where('target_type', MedicalProfile::class)->count());
     }
 
@@ -130,6 +131,49 @@ final class September26MedicalProfileTest extends TestCase
         $audit = AuditEvent::query()->where('target_type', MedicalProfile::class)->get()->toJson();
         self::assertStringNotContainsString('Synthetic chronic', $audit);
         self::assertStringNotContainsString('Synthetic corrected', $audit);
+    }
+
+    public function test_client_can_save_repeatable_operations_and_injuries_without_losing_rows_on_reload(): void
+    {
+        [$client, $staff] = $this->fixture();
+        $response = $this->get(route('portal.medical-profile'));
+        $data = $this->answers($response->viewData('page')['props']['profile']['expectedSnapshot']);
+        $data['answers']['had_operations'] = true;
+        $data['answers']['had_injuries'] = true;
+        $data['history_entries'] = [
+            ['lineage_key' => '11111111-1111-4111-8111-111111111111', 'type' => 'operation', 'year' => 2020, 'description' => 'Synthetic first operation'],
+            ['lineage_key' => '22222222-2222-4222-8222-222222222222', 'type' => 'operation', 'year' => 2021, 'description' => 'Synthetic middle operation'],
+            ['lineage_key' => '33333333-3333-4333-8333-333333333333', 'type' => 'operation', 'year' => 2022, 'description' => 'Synthetic last operation'],
+            ['lineage_key' => '44444444-4444-4444-8444-444444444444', 'type' => 'injury', 'year' => 2019, 'description' => 'Synthetic first injury'],
+            ['lineage_key' => '55555555-5555-4555-8555-555555555555', 'type' => 'injury', 'year' => 2023, 'description' => 'Synthetic second injury'],
+        ];
+
+        $this->post(route('portal.medical-profile.update'), $data)->assertSessionHasNoErrors()->assertRedirect();
+        $response = $this->get(route('portal.medical-profile'));
+        $history = $response->viewData('page')['props']['profile']['historyEntries'];
+        self::assertCount(5, $history);
+        self::assertSame(
+            [
+                'Synthetic first injury',
+                'Synthetic second injury',
+                'Synthetic first operation',
+                'Synthetic middle operation',
+                'Synthetic last operation',
+            ],
+            array_map(static fn (array $entry): string => $entry['description'], $history),
+        );
+
+        $data['expected_snapshot'] = $response->viewData('page')['props']['profile']['expectedSnapshot'];
+        $data['history_entries'] = [$data['history_entries'][0], $data['history_entries'][2], $data['history_entries'][3], $data['history_entries'][4]];
+        $this->post(route('portal.medical-profile.update'), $data)->assertSessionHasNoErrors()->assertRedirect();
+
+        $profile = app(GetMedicalProfile::class)->handle($staff, $client);
+        self::assertSame(
+            ['Synthetic first injury', 'Synthetic second injury', 'Synthetic first operation', 'Synthetic last operation'],
+            array_map(static fn ($entry): string => $entry->description, $profile?->historyEntries ?? []),
+        );
+        self::assertSame(4, DB::table('medical_profile_history_entries')->where('client_id', $client->getKey())->count());
+        self::assertDatabaseMissing('medical_profile_history_entries', ['lineage_key' => '22222222-2222-4222-8222-222222222222']);
     }
 
     public function test_invalid_and_stale_forms_do_not_replace_saved_medical_data(): void

@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { Link, useForm } from '@inertiajs/vue3';
+import { useForm } from '@inertiajs/vue3';
 import { computed } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import PortalIcon from '../../Components/Portal/PortalIcon.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import type { PortalIconName, PortalShell } from '../../types/portal';
 
 type ReviewDestination = { label: string; url: string; icon: PortalIconName };
@@ -32,7 +33,6 @@ const form = useForm<{
     idempotency_key: `portal-feedback-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`,
 });
 
-const lowScore = computed(() => form.score !== null && form.score < props.feedback.positiveThreshold);
 const resultDestinations = computed(() => {
     if (props.result === null) {
         return [];
@@ -45,11 +45,10 @@ const resultDestinations = computed(() => {
     }));
 });
 
+const scoreOptions = Array.from({ length: 11 }, (_, score) => score);
+
 function selectScore(score: number): void {
     form.score = score;
-    if (!lowScore.value) {
-        form.internal_feedback = '';
-    }
 }
 
 function submit(): void {
@@ -64,22 +63,12 @@ function submit(): void {
     active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('feedback.title') }}
-          </h1>
-          <p class="portal-copy">
-            {{ t('feedback.description') }}
-          </p>
-        </div>
-        <Link
-          :href="props.portal.urls.home"
-          class="portal-button portal-button--secondary"
-        >
-          {{ t('common.back') }}
-        </Link>
-      </header>
+      <PortalPageHeader
+        :title="t('feedback.title')"
+        :description="t('feedback.description')"
+        :back-href="props.portal.urls.more"
+        :back-label="t('common.back')"
+      />
 
       <section
         v-if="props.result"
@@ -120,12 +109,12 @@ function submit(): void {
       >
         <span class="portal-label">{{ t('feedback.score') }}</span>
         <div
-          class="grid grid-cols-5 gap-2 sm:grid-cols-10"
+          class="grid grid-cols-6 gap-2 sm:grid-cols-11"
           role="radiogroup"
           :aria-label="t('feedback.score')"
         >
           <button
-            v-for="score in 10"
+            v-for="score in scoreOptions"
             :key="score"
             type="button"
             class="portal-button portal-button--secondary portal-score-option min-w-0 px-2"
@@ -145,14 +134,13 @@ function submit(): void {
           {{ form.errors.score }}
         </p>
         <label
-          v-if="lowScore"
           class="portal-field"
         >
           <span class="portal-label">{{ t('feedback.internalFeedback') }}</span>
           <textarea
             v-model="form.internal_feedback"
             class="portal-input min-h-32"
-            :required="props.feedback.lowScoreFeedbackRequired"
+            :required="props.feedback.lowScoreFeedbackRequired && form.score !== null && form.score < props.feedback.positiveThreshold"
             maxlength="4000"
           />
           <span class="portal-copy portal-copy--small">{{ t('feedback.internalHint') }}</span>

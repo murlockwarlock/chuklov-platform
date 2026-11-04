@@ -221,6 +221,45 @@ class PortalBookingRemediationTest extends TestCase
             ->where('profile.lastName', 'Клиент')->where('profile.middleName', 'Тестовый'));
     }
 
+    public function test_booking_accepts_partial_personal_data_without_erasing_existing_values(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $client->forceFill([
+            'first_name' => 'Сохранённое имя', 'last_name' => null, 'gender' => null,
+            'birth_date' => null, 'country' => null, 'city' => null, 'phone' => null,
+        ])->save();
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+                'personal_data' => ['city' => 'Алматы'],
+                'consents' => $this->acceptedConsents($organization),
+            ]))->assertSessionHasNoErrors()->assertRedirect();
+
+        self::assertSame('Сохранённое имя', $client->refresh()->first_name);
+        self::assertSame('Алматы', $client->city);
+        self::assertNull($client->last_name);
+        self::assertSame(1, Booking::query()->where('client_id', $client->getKey())->count());
+    }
+
+    public function test_booking_does_not_require_personal_data_when_the_profile_is_empty(): void
+    {
+        [$organization, $client, $specialist, $service] = $this->portalFixture();
+        $client->forceFill([
+            'full_name' => null, 'first_name' => null, 'last_name' => null, 'middle_name' => null,
+            'gender' => null, 'birth_date' => null, 'country' => null, 'city' => null,
+            'phone' => null, 'email' => null,
+        ])->save();
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()])
+            ->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
+                'consents' => $this->acceptedConsents($organization),
+            ]))->assertSessionHasNoErrors()->assertRedirect();
+
+        self::assertSame(1, Booking::query()->where('client_id', $client->getKey())->count());
+        self::assertNull($client->refresh()->first_name);
+        self::assertNull($client->email);
+    }
+
     /** @return array<string, array{array<string, list<string>>, int}> */
     public static function personalDataBookingModes(): array
     {
@@ -256,8 +295,8 @@ class PortalBookingRemediationTest extends TestCase
     public function test_missing_or_invalid_booking_personal_data_cannot_create_a_booking_or_mutate_identity(): void
     {
         [$organization, $client, $specialist, $service] = $this->portalFixture();
-        $original = $client->only(['first_name', 'last_name', 'city', 'phone']);
-        foreach ([['first_name' => ''], ['birth_date' => '2999-01-01'], ['phone' => '+7 garbage'], ['gender' => 'OTHER']] as $invalid) {
+        $original = $client->only(['first_name', 'last_name', 'city', 'phone', 'email']);
+        foreach ([['first_name' => str_repeat('x', 101)], ['birth_date' => '2999-01-01'], ['phone' => '+7 garbage'], ['gender' => 'OTHER'], ['email' => 'not-an-email']] as $invalid) {
             $this->withSession(['client_portal.client_id' => $client->getKey()])->post(route('portal.bookings.store'), $this->bookingPayload($service, $specialist, [
                 'personal_data' => [...$invalid, 'city' => 'Must not be saved'], 'consents' => $this->acceptedConsents($organization),
             ]))->assertSessionHasErrors('personal_data.'.array_key_first($invalid));

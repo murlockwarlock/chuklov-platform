@@ -4,9 +4,11 @@ namespace App\Modules\Sessions\Application;
 
 use App\Models\User;
 use App\Modules\Attachments\Application\AttachmentAuthorization;
+use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Security\Application\RecordAuditEvent;
+use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionAttachment;
 use Illuminate\Support\Facades\DB;
@@ -20,8 +22,13 @@ final readonly class LinkSessionAttachment
         private RecordAuditEvent $audit,
     ) {}
 
-    public function handle(User $actor, MedicalSession $session, Client $client, int $attachmentId): MedicalSessionAttachment
-    {
+    public function handle(
+        User $actor,
+        MedicalSession $session,
+        Client $client,
+        int $attachmentId,
+        MedicalSessionAttachmentGallery $gallery = MedicalSessionAttachmentGallery::General,
+    ): MedicalSessionAttachment {
         $organization = $this->sessionAuthorization->authorizeManageSession($actor, $session, $client);
         $this->attachmentAuthorization->authorizeManage($actor, $client);
 
@@ -37,22 +44,46 @@ final readonly class LinkSessionAttachment
             ]);
         }
 
-        return DB::transaction(function () use ($actor, $organization, $client, $session, $attachment): MedicalSessionAttachment {
-            $link = MedicalSessionAttachment::query()->firstOrCreate([
+        if ($gallery !== MedicalSessionAttachmentGallery::General && (
+            $attachment->attachment_type !== AttachmentType::PosturePhoto
+            || ! in_array(strtolower((string) $attachment->mime_type), ['image/jpeg', 'image/png', 'image/webp'], true)
+        )) {
+            throw ValidationException::withMessages([
+                'gallery' => 'В галереи «До» и «После» можно добавить только фото осанки.',
+            ]);
+        }
+
+        return DB::transaction(function () use ($actor, $organization, $client, $session, $attachment, $gallery): MedicalSessionAttachment {
+            $link = MedicalSessionAttachment::query()
+                ->where('organization_id', $organization->getKey())
+                ->where('client_id', $client->getKey())
+                ->where('medical_session_id', $session->getKey())
+                ->where('medical_attachment_id', $attachment->getKey())
+                ->lockForUpdate()
+                ->first();
+            $created = $link === null;
+            $link ??= new MedicalSessionAttachment;
+            $link->forceFill([
                 'organization_id' => $organization->getKey(),
                 'client_id' => $client->getKey(),
                 'medical_session_id' => $session->getKey(),
                 'medical_attachment_id' => $attachment->getKey(),
+                'gallery' => $gallery,
             ]);
+            $changed = $created || $link->isDirty('gallery');
+            $link->save();
 
-            if ($link->wasRecentlyCreated) {
+            if ($changed) {
                 $this->audit->handle(
                     organization: $organization,
                     actor: $actor,
                     action: 'medical.session.attachment.linked',
                     targetType: MedicalSession::class,
                     targetId: (string) $session->getKey(),
-                    metadata: ['attachment_id' => $attachment->getKey()],
+                    metadata: [
+                        'attachment_id' => $attachment->getKey(),
+                        'gallery' => $gallery->value,
+                    ],
                 );
             }
 

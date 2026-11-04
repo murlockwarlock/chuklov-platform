@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Link, useForm } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { Link, router, useForm } from '@inertiajs/vue3';
+import { computed, onBeforeUnmount, ref } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import LegalConsentChecklist from '../../Components/Portal/LegalConsentChecklist.vue';
+import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import TextAutocomplete from '../../Components/Portal/TextAutocomplete.vue';
 import CityAutocomplete from '../../Components/Portal/CityAutocomplete.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
@@ -61,9 +62,13 @@ const props = defineProps<{
 }>();
 
 const { locale, t } = usePortalLocale();
-const profileSaved = ref(props.saved);
 const profileSaveError = ref<string | null>(null);
+const profileSaveState = ref<'idle' | 'saving' | 'saved' | 'error'>(props.saved ? 'saved' : 'idle');
+const profileFieldErrors = ref<Record<string, string>>({});
 const currencyForm = useForm({ preferred_currency: props.currencyPreference.selected ?? '' });
+const currencySaveState = ref<'idle' | 'saving' | 'saved' | 'error'>(props.currencySaved ? 'saved' : 'idle');
+const currencySaveError = ref<string | null>(null);
+const lastSavedCurrency = ref(currencyForm.preferred_currency);
 const profileForm = useForm<{
     first_name: string;
     last_name: string;
@@ -105,44 +110,178 @@ const b2bAnswerForm = useForm<{ b2b_specialist_answer: 'yes' | 'no' | null }>({
 });
 const editingB2bAnswer = ref(false);
 const personalFields = [
-    { key: 'last_name', label: 'profile.lastName', autocomplete: 'family-name', required: true },
-    { key: 'first_name', label: 'profile.firstName', autocomplete: 'given-name', required: true },
-    { key: 'middle_name', label: 'profile.middleName', autocomplete: 'additional-name', required: false },
-    { key: 'country', label: 'profile.country', autocomplete: 'country-name', required: true },
-    { key: 'city', label: 'profile.city', autocomplete: 'address-level2', required: true },
+    { key: 'last_name', label: 'profile.lastName', autocomplete: 'family-name' },
+    { key: 'first_name', label: 'profile.firstName', autocomplete: 'given-name' },
+    { key: 'middle_name', label: 'profile.middleName', autocomplete: 'additional-name' },
+    { key: 'country', label: 'profile.country', autocomplete: 'country-name' },
+    { key: 'city', label: 'profile.city', autocomplete: 'address-level2' },
 ] as const;
+type PersonalField = typeof personalFields[number]['key'] | 'gender' | 'birth_date' | 'phone' | 'email' | 'timezone';
+const failedProfileFields = ref<PersonalField[]>([]);
+const pendingProfileFields = new Set<PersonalField>();
+let profileSaveTimer: ReturnType<typeof setTimeout> | null = null;
+let profileSaveInFlight = false;
+let lastProfileFields: PersonalField[] = [];
 const countries = computed(() => countryNames(locale.value));
 const hasRequiredConsentError = computed(() =>
     Object.keys(consentForm.errors).some((key) => key.startsWith('consents')),
 );
 
-function saveProfile(): void {
-    profileForm.post(props.urls.update, {
+function profileValue(field: PersonalField): string | null {
+    const value = profileForm[field];
+
+    return value === '' ? null : value;
+}
+
+function scheduleProfileSave(): void {
+    if (profileSaveTimer) {
+        clearTimeout(profileSaveTimer);
+    }
+
+    profileSaveTimer = setTimeout(() => {
+        profileSaveTimer = null;
+        flushProfileSave();
+    }, 450);
+}
+
+function queueProfileField(field: PersonalField): void {
+    pendingProfileFields.add(field);
+    profileFieldErrors.value[field] = '';
+    profileSaveError.value = null;
+    failedProfileFields.value = [];
+    profileSaveState.value = 'idle';
+    scheduleProfileSave();
+}
+
+function normalizeProfileErrors(errors: Record<string, string | string[]>): Record<string, string> {
+    return Object.fromEntries(Object.entries(errors).map(([field, message]) => [
+        field,
+        Array.isArray(message) ? (message[0] ?? '') : message,
+    ]));
+}
+
+function transportErrorMessage(status?: number): string {
+    return status === 401 || status === 419
+        ? t('profile.saveSessionExpired')
+        : status === 403
+            ? t('profile.saveAccessDenied')
+            : t('profile.saveRetry');
+}
+
+function flushProfileSave(): void {
+    if (profileSaveInFlight || pendingProfileFields.size === 0) {
+        return;
+    }
+
+    const field = pendingProfileFields.values().next().value as PersonalField | undefined;
+    if (!field) {
+        return;
+    }
+
+    const fields = [field];
+    pendingProfileFields.delete(field);
+    lastProfileFields = fields;
+    profileSaveInFlight = true;
+    profileSaveState.value = 'saving';
+    profileSaveError.value = null;
+
+    const payload = Object.fromEntries(fields.map((field) => [field, profileValue(field)]));
+    router.post(props.urls.update, payload, {
         preserveScroll: true,
         preserveState: true,
-        onStart: () => {
-            profileSaved.value = false;
-            profileSaveError.value = null;
-        },
         onSuccess: () => {
-            profileSaved.value = true;
+            profileSaveError.value = null;
+            failedProfileFields.value = failedProfileFields.value.filter((failedField) => failedField !== field);
+            profileSaveState.value = failedProfileFields.value.length ? 'error' : 'saved';
+        },
+        onError: (errors) => {
+            const normalized = normalizeProfileErrors(errors);
+            profileFieldErrors.value = { ...profileFieldErrors.value, ...normalized };
+            failedProfileFields.value = Array.from(new Set([
+                ...failedProfileFields.value,
+                ...fields.filter((field) => Boolean(normalized[field])),
+            ]));
+            profileSaveState.value = 'error';
+            profileSaveError.value = Object.keys(normalized).length ? null : t('profile.saveRetry');
         },
         onHttpException: (response) => {
-            profileSaveError.value = response.status === 401 || response.status === 419
-                ? t('profile.saveSessionExpired')
-                : response.status === 403
-                    ? t('profile.saveAccessDenied')
-                    : t('profile.saveRetry');
+            profileSaveState.value = 'error';
+            profileSaveError.value = transportErrorMessage(response.status);
+            failedProfileFields.value = Array.from(new Set([
+                ...failedProfileFields.value,
+                ...fields,
+                ...pendingProfileFields,
+            ]));
+            pendingProfileFields.clear();
 
             return false;
         },
         onNetworkError: () => {
+            profileSaveState.value = 'error';
             profileSaveError.value = t('profile.saveRetry');
+            failedProfileFields.value = Array.from(new Set([
+                ...failedProfileFields.value,
+                ...fields,
+                ...pendingProfileFields,
+            ]));
+            pendingProfileFields.clear();
+
+            return false;
+        },
+        onFinish: () => {
+            profileSaveInFlight = false;
+            if (pendingProfileFields.size > 0) {
+                scheduleProfileSave();
+            }
+        },
+    });
+}
+
+function retryProfileSave(): void {
+    const fields = failedProfileFields.value.length ? failedProfileFields.value : lastProfileFields;
+    fields.forEach((field) => pendingProfileFields.add(field));
+    profileSaveError.value = null;
+    scheduleProfileSave();
+}
+
+function saveCurrency(): void {
+    if (currencyForm.processing || currencyForm.preferred_currency === lastSavedCurrency.value) {
+        return;
+    }
+
+    currencySaveState.value = 'saving';
+    currencySaveError.value = null;
+    currencyForm.clearErrors();
+    currencyForm.post(props.urls.currency, {
+        preserveScroll: true,
+        onSuccess: () => {
+            lastSavedCurrency.value = currencyForm.preferred_currency;
+            currencySaveState.value = 'saved';
+        },
+        onError: (errors) => {
+            currencySaveState.value = 'error';
+            currencySaveError.value = errors.preferred_currency ?? t('profile.saveRetry');
+        },
+        onHttpException: (response) => {
+            currencySaveState.value = 'error';
+            currencySaveError.value = transportErrorMessage(response.status);
+
+            return false;
+        },
+        onNetworkError: () => {
+            currencySaveState.value = 'error';
+            currencySaveError.value = t('profile.saveRetry');
 
             return false;
         },
     });
 }
+
+onBeforeUnmount(() => {
+    if (profileSaveTimer) {
+        clearTimeout(profileSaveTimer);
+    }
+});
 
 function saveConsents(): void {
     consentForm.post(props.urls.consents, {
@@ -185,18 +324,11 @@ function saveB2bAnswer(): void {
     active="more"
   >
     <section class="portal-container portal-container--narrow portal-stack portal-stack--loose">
-      <header class="portal-page-heading">
-        <div class="portal-stack portal-stack--tight">
-          <h1 class="portal-heading portal-heading--section">
-            {{ t('profile.title') }}
-          </h1>
-        </div>
-      </header>
+      <PortalPageHeader :title="t('profile.title')" />
 
-      <form
+      <section
         v-if="props.currencyPreference.options.length"
-        class="portal-content-section portal-stack"
-        @submit.prevent="currencyForm.post(props.urls.currency, { preserveScroll: true })"
+        class="portal-content-section portal-stack portal-currency-settings"
       >
         <div class="portal-field">
           <label
@@ -207,6 +339,8 @@ function saveB2bAnswer(): void {
             id="profile-currency"
             v-model="currencyForm.preferred_currency"
             class="portal-input"
+            :disabled="currencyForm.processing"
+            @change="saveCurrency"
           >
             <option value="">
               {{ t('profile.currencyDefault') }} ({{ props.currencyPreference.base }})
@@ -226,22 +360,41 @@ function saveB2bAnswer(): void {
             {{ currencyForm.errors.preferred_currency }}
           </p>
         </div>
-        <div class="portal-form-actions">
-          <button
-            type="submit"
-            class="portal-button portal-button--primary"
-            :disabled="currencyForm.processing"
-          >
-            {{ t('profile.save') }}
-          </button>
+        <div
+          class="portal-currency-settings__status"
+          aria-live="polite"
+        >
           <p
-            v-if="currencySaved"
-            class="portal-copy"
+            v-if="currencySaveState === 'saving'"
+            class="portal-notice"
+            role="status"
+          >
+            {{ t('profile.saving') }}
+          </p>
+          <p
+            v-else-if="currencySaveState === 'saved'"
+            class="portal-notice"
+            role="status"
           >
             {{ t('profile.saved') }}
           </p>
+          <p
+            v-if="currencySaveError"
+            class="portal-error"
+            role="alert"
+          >
+            {{ currencySaveError }}
+          </p>
+          <button
+            v-if="currencySaveState === 'error'"
+            type="button"
+            class="portal-button portal-button--secondary self-start"
+            @click="saveCurrency"
+          >
+            {{ t('profile.retry') }}
+          </button>
         </div>
-      </form>
+      </section>
 
       <Link
         v-if="props.urls.family"
@@ -257,9 +410,11 @@ function saveB2bAnswer(): void {
             {{ locale === 'ru' ? t('profile.russian') : t('profile.english') }}
           </span>
         </div>
-        <form
+        <p class="portal-copy portal-copy--small">
+          {{ t('profile.personalHelp') }}
+        </p>
+        <div
           class="portal-stack"
-          @submit.prevent="saveProfile"
         >
           <div class="portal-grid portal-grid--two">
             <div
@@ -277,7 +432,7 @@ function saveB2bAnswer(): void {
                 v-model="profileForm.country"
                 :suggestions="countries"
                 :empty-text="t('profile.countryNoMatch')"
-                required
+                @blur="queueProfileField(field.key)"
               />
               <input
                 v-else-if="field.key !== 'city'"
@@ -285,9 +440,9 @@ function saveB2bAnswer(): void {
                 v-model="profileForm[field.key]"
                 type="text"
                 :autocomplete="field.autocomplete"
-                :required="field.required"
                 maxlength="100"
                 class="portal-input"
+                @blur="queueProfileField(field.key)"
               >
               <CityAutocomplete
                 v-else
@@ -295,13 +450,13 @@ function saveB2bAnswer(): void {
                 v-model="profileForm.city"
                 :country="profileForm.country"
                 :cities-url="props.urls.cities"
-                required
+                @blur="queueProfileField(field.key)"
               />
               <p
-                v-if="profileForm.errors[field.key]"
+                v-if="profileFieldErrors[field.key]"
                 class="portal-error"
               >
-                {{ profileForm.errors[field.key] }}
+                {{ profileFieldErrors[field.key] }}
               </p>
             </div>
 
@@ -321,17 +476,17 @@ function saveB2bAnswer(): void {
                     type="radio"
                     name="gender"
                     :value="gender"
-                    required
                     class="sr-only"
+                    @change="queueProfileField('gender')"
                   >
                   {{ t(gender === 'MALE' ? 'profile.male' : 'profile.female') }}
                 </label>
               </div>
               <p
-                v-if="profileForm.errors.gender"
+                v-if="profileFieldErrors.gender"
                 class="portal-error"
               >
-                {{ profileForm.errors.gender }}
+                {{ profileFieldErrors.gender }}
               </p>
             </fieldset>
             <div class="portal-field">
@@ -343,14 +498,14 @@ function saveB2bAnswer(): void {
                 id="profile-birth-date"
                 v-model="profileForm.birth_date"
                 type="date"
-                required
                 class="portal-input"
+                @blur="queueProfileField('birth_date')"
               >
               <p
-                v-if="profileForm.errors.birth_date"
+                v-if="profileFieldErrors.birth_date"
                 class="portal-error"
               >
-                {{ profileForm.errors.birth_date }}
+                {{ profileFieldErrors.birth_date }}
               </p>
             </div>
 
@@ -363,19 +518,18 @@ function saveB2bAnswer(): void {
                 id="profile-phone"
                 v-model="profileForm.phone"
                 type="tel"
-                required
                 autocomplete="tel"
                 class="portal-input"
                 :placeholder="phoneExample(profileForm.country)"
                 maxlength="32"
                 @input="profileForm.phone = formatPhoneInput(profileForm.phone, profileForm.country)"
-                @blur="profileForm.phone = formatPhone(profileForm.phone, profileForm.country)"
+                @blur="profileForm.phone = formatPhone(profileForm.phone, profileForm.country); queueProfileField('phone')"
               >
               <p
-                v-if="profileForm.errors.phone"
+                v-if="profileFieldErrors.phone"
                 class="portal-error"
               >
-                {{ profileForm.errors.phone }}
+                {{ profileFieldErrors.phone }}
               </p>
             </div>
 
@@ -392,6 +546,7 @@ function saveB2bAnswer(): void {
                 class="portal-input"
                 :disabled="!props.profile.emailEditable"
                 :placeholder="t('profile.notSpecified')"
+                @blur="queueProfileField('email')"
               >
               <p class="portal-copy portal-copy--small">
                 {{ t('profile.emailPurpose') }}
@@ -403,10 +558,10 @@ function saveB2bAnswer(): void {
                 {{ t('profile.emailManaged') }}
               </p>
               <p
-                v-if="profileForm.errors.email"
+                v-if="profileFieldErrors.email"
                 class="portal-error"
               >
-                {{ profileForm.errors.email }}
+                {{ profileFieldErrors.email }}
               </p>
             </div>
             <div class="portal-field portal-field--wide">
@@ -418,6 +573,7 @@ function saveB2bAnswer(): void {
                 id="profile-timezone"
                 v-model="profileForm.timezone"
                 class="portal-input"
+                @change="queueProfileField('timezone')"
               >
                 <option
                   v-for="option in props.timezoneOptions"
@@ -430,15 +586,15 @@ function saveB2bAnswer(): void {
             </div>
           </div>
           <div class="portal-form-actions">
-            <button
-              type="submit"
-              class="portal-button portal-button--primary"
-              :disabled="profileForm.processing"
-            >
-              {{ profileForm.processing ? t('profile.saving') : t('profile.save') }}
-            </button>
             <p
-              v-if="profileSaved"
+              v-if="profileSaveState === 'saving'"
+              class="portal-notice"
+              role="status"
+            >
+              {{ t('profile.saving') }}
+            </p>
+            <p
+              v-else-if="profileSaveState === 'saved'"
               class="portal-notice"
               role="status"
             >
@@ -451,8 +607,16 @@ function saveB2bAnswer(): void {
             >
               {{ profileSaveError }}
             </p>
+            <button
+              v-if="profileSaveState === 'error'"
+              type="button"
+              class="portal-button portal-button--secondary"
+              @click="retryProfileSave"
+            >
+              {{ t('profile.retry') }}
+            </button>
           </div>
-        </form>
+        </div>
       </section>
 
       <section class="portal-content-section portal-stack">

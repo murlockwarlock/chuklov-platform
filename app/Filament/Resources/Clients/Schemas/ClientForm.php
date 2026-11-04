@@ -10,6 +10,7 @@ use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TagsInput;
 use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
 use Filament\Forms\Components\ToggleButtons;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -45,6 +46,10 @@ class ClientForm
                 TextInput::make('phone')
                     ->label(__('Телефон'))
                     ->maxLength(32),
+                Toggle::make('archived')
+                    ->label(__('Архивный клиент'))
+                    ->helperText(__('Архивирование сохраняет историю и добавляет клиента в категорию «Удалённые / архивные».'))
+                    ->visibleOn('edit'),
                 Select::make('language')
                     ->options([
                         'en' => __('Английский'),

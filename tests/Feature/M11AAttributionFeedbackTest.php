@@ -229,6 +229,15 @@ final class M11AAttributionFeedbackTest extends TestCase
     {
         $organization = $this->organizationWithClientRecords();
         $client = Client::factory()->forOrganization($organization)->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: true,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+        );
         $fingerprint = app(FeedbackRequestFingerprint::class)->handle([
             'client_id' => $client->getKey(),
             'score' => 4,
@@ -252,6 +261,23 @@ final class M11AAttributionFeedbackTest extends TestCase
             'score' => 8,
             'idempotency_key' => 'm11a-hmac-conflict',
         ])->assertInvalid('idempotency_key');
+    }
+
+    public function test_feedback_is_disabled_until_an_owner_configuration_exists(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->get(route('portal.feedback'))
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->component('Portal/Feedback')
+                ->where('feedback.enabled', false));
+
+        $this->post(route('portal.feedback.store'), [
+            'score' => 10,
+            'idempotency_key' => 'feedback-disabled-default',
+        ])->assertInvalid('score');
     }
 
     public function test_referral_link_registration_is_same_organization_first_wins_and_idempotent(): void
@@ -381,6 +407,39 @@ final class M11AAttributionFeedbackTest extends TestCase
         self::assertSame(2, FeedbackSubmission::query()->where('client_id', $client->id)->count());
     }
 
+    public function test_feedback_text_is_preserved_at_score_boundaries_for_portal_and_crm(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        app(SaveFeedbackConfiguration::class)->handle(
+            actor: $admin,
+            enabled: true,
+            positiveThreshold: 8,
+            lowScoreFeedbackRequired: true,
+            reviewUrlRu: null,
+            reviewUrlEn: null,
+        );
+
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+        $this->post(route('portal.feedback.store'), [
+            'score' => 10,
+            'internal_feedback' => 'Портал: не хватило времени на вопросы.',
+            'idempotency_key' => 'feedback-boundary-10',
+        ])->assertRedirect(route('portal.feedback'));
+
+        $crm = app(RecordNpsSubmission::class)->handleForStaff(
+            actor: $admin,
+            client: $client,
+            score: 0,
+            internalFeedback: 'CRM: нужна более подробная обратная связь.',
+            idempotencyKey: 'feedback-boundary-0',
+        );
+
+        self::assertSame('Портал: не хватило времени на вопросы.', FeedbackSubmission::query()->where('idempotency_key', 'feedback-boundary-10')->sole()->internal_feedback);
+        self::assertSame('CRM: нужна более подробная обратная связь.', $crm->internal_feedback);
+    }
+
     public function test_low_feedback_creates_internal_scenario_escalation_without_public_review_delivery(): void
     {
         $organization = $this->organizationWithClientRecords();
@@ -493,9 +552,10 @@ final class M11AAttributionFeedbackTest extends TestCase
         $positive = app(RecordNpsSubmission::class)->handle(
             client: $client,
             score: 8,
-            internalFeedback: 'Этот текст не должен сохраниться для positive band.',
+            internalFeedback: 'Комментарий сохраняется независимо от positive band.',
             idempotencyKey: 'threshold-eight',
         );
+        self::assertSame('Комментарий сохраняется независимо от positive band.', $positive->internal_feedback);
         $positiveEvent = ScenarioEvent::query()->where('aggregate_id', (string) $positive->getKey())->sole();
 
         self::assertSame('positive', $positiveEvent->payload['band']);

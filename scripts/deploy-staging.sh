@@ -81,7 +81,7 @@ ssh_options=(
 )
 remote="${STAGING_USER}@${STAGING_HOST}"
 remote_archive="/tmp/chuklov-$revision.tar"
-remote_normalizer="/tmp/chuklov-$revision-normalize-fail2ban-elements.awk"
+remote_normalizer="$STAGING_ROOT/shared/.chuklov-$revision-normalize-fail2ban-elements.awk"
 
 scp "${ssh_options[@]}" "$archive" "$remote:$remote_archive"
 scp "${ssh_options[@]}" "$normalizer" "$remote:$remote_normalizer"
@@ -135,6 +135,9 @@ candidate_compose=()
 runtime_compose=()
 
 cleanup_remote_transfer_artifacts() {
+    if [[ "${BASH_SUBSHELL:-0}" -ne 0 ]]; then
+        return
+    fi
     rm -f -- "$archive" "$remote_normalizer" || true
     rm -f -- "$queue_probe_script" || true
     rm -f -- "$current_probe_environment" "$candidate_probe_environment" || true

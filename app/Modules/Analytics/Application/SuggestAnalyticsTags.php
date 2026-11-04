@@ -1,0 +1,363 @@
+<?php
+
+namespace App\Modules\Analytics\Application;
+
+use App\Models\User;
+use App\Modules\AI\Application\Data\AiRunRequest;
+use App\Modules\AI\Domain\Contracts\AiWorkflowEngine;
+use App\Modules\AI\Domain\Enums\AiCapability;
+use App\Modules\AI\Domain\Enums\AiExecutionMode;
+use App\Modules\AI\Domain\Enums\AiRunOrigin;
+use App\Modules\AI\Domain\Models\AiPrompt;
+use App\Modules\AI\Domain\Services\AiRuntimeLimits;
+use App\Modules\Analytics\Application\Data\ClassificationResultData;
+use App\Modules\Analytics\Domain\Enums\AnalyticsTagCandidateStatus;
+use App\Modules\Analytics\Domain\Enums\ClassificationRunStatus;
+use App\Modules\Analytics\Domain\Models\AnalyticsClassificationRun;
+use App\Modules\Analytics\Domain\Models\AnalyticsTagCandidate;
+use App\Modules\Organizations\Application\OrganizationAuthorizer;
+use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Organizations\Domain\Enums\OrganizationSettingKey;
+use App\Modules\Organizations\Domain\Models\OrganizationSetting;
+use App\Modules\Security\Application\RecordAuditEvent;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Throwable;
+
+final readonly class SuggestAnalyticsTags
+{
+    public function __construct(
+        private OrganizationContext $context,
+        private OrganizationAuthorizer $authorizer,
+        private AiWorkflowEngine $workflowEngine,
+        private RecordAuditEvent $audit,
+        private SyncAnalyticsClassificationCandidates $candidates,
+    ) {}
+
+    /** @param list<array<string, mixed>> $availableTags */
+    public function handle(
+        User $actor,
+        string $taxonomy,
+        string $sourceType,
+        int $sourceId,
+        ?int $clientId,
+        string $sourceText,
+        array $availableTags,
+        bool $force = false,
+    ): ClassificationResultData {
+        $organization = $this->context->organization();
+        $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageClients);
+        $taxonomy = trim($taxonomy);
+        $sourceType = trim($sourceType);
+        $sourceText = trim($sourceText);
+        if ($taxonomy === '' || $sourceType === '' || $sourceId < 1 || $sourceText === '') {
+            return $this->failedResult(0, 'empty_source');
+        }
+
+        $availableTags = $this->normalizeTags($availableTags);
+        $allowNewCandidates = $this->newTagCandidatesEnabled((int) $organization->getKey());
+        if ($availableTags === [] && ! $allowNewCandidates) {
+            return $this->failedResult(0, 'taxonomy_not_configured');
+        }
+        $organizationId = (int) $organization->getKey();
+        $digest = hash('sha256', json_encode([
+            'taxonomy' => $taxonomy,
+            'source_type' => $sourceType,
+            'source_id' => $sourceId,
+            'source_text' => mb_substr($sourceText, 0, 4000),
+            'tags' => $availableTags,
+            'allow_new_candidates' => $allowNewCandidates,
+        ], JSON_THROW_ON_ERROR));
+        [$run, $shouldExecute, $leaseToken] = $this->claim($organizationId, $taxonomy, $sourceType, $sourceId, $clientId, $digest, $force);
+        if (! $shouldExecute) {
+            return $this->result($run);
+        }
+
+        try {
+            $prompt = AiPrompt::query()
+                ->where('organization_id', $organizationId)
+                ->where('key', 'analytics_classification')
+                ->where('capability', AiCapability::GeneralAssistant)
+                ->whereNotNull('active_version_id')
+                ->first();
+            if ($prompt === null || $prompt->active_version_id === null) {
+                return $this->fail($run, $leaseToken, 'configuration_required', 'Классификатор аналитики не настроен.');
+            }
+
+            $result = $this->workflowEngine->run($organizationId, new AiRunRequest(
+                capability: AiCapability::GeneralAssistant,
+                workflowKey: 'analytics_classification',
+                origin: AiRunOrigin::User,
+                executionMode: AiExecutionMode::Sync,
+                initiatedByUserId: $actor->getKey(),
+                clientId: $clientId,
+                promptVersionId: $prompt->active_version_id,
+                inputVariables: [
+                    'classification_taxonomy' => $taxonomy,
+                    'source_text' => mb_substr($sourceText, 0, 4000),
+                    'allowed_tags' => array_map(static fn (array $tag): string => $tag['label'], $availableTags),
+                ],
+                idempotencyKey: $this->aiIdempotencyKey(
+                    organizationId: $organizationId,
+                    taxonomy: $taxonomy,
+                    sourceType: $sourceType,
+                    sourceId: $sourceId,
+                    digest: $digest,
+                    attempt: $run->attempt_count,
+                ),
+                actor: $actor,
+            ));
+            $suggestions = $this->validateOutput(
+                $result->outputPayload,
+                $availableTags,
+                $allowNewCandidates,
+            );
+            if (! $result->isSuccess() || $suggestions === null) {
+                return $this->fail($run, $leaseToken, $result->isSuccess() ? 'invalid_output' : 'ai_failed', $result->errorMessageSanitized);
+            }
+
+            $updated = AnalyticsClassificationRun::query()
+                ->whereKey($run->getKey())
+                ->where('status', ClassificationRunStatus::Processing->value)
+                ->where('source_digest', $run->source_digest)
+                ->where('processing_lease_token', $leaseToken)
+                ->update([
+                    'status' => ClassificationRunStatus::NeedsReview->value,
+                    'ai_run_id' => $result->runId,
+                    'suggestions' => $suggestions,
+                    'error_code' => null,
+                    'error_message_sanitized' => null,
+                    'processing_lease_token' => null,
+                    'processing_lease_expires_at' => null,
+                    'updated_at' => now(),
+                ]);
+            if ($updated === 0) {
+                return $this->result($run->refresh());
+            }
+            $this->candidates->handle($run->refresh());
+            $this->audit->handle($organization, $actor, 'analytics.classification.suggested', $run::class, (string) $run->getKey(), [
+                'taxonomy' => $taxonomy,
+                'source_type' => $sourceType,
+                'tag_count' => count($suggestions),
+            ]);
+
+            return $this->result($run->refresh());
+        } catch (Throwable $exception) {
+            return $this->fail($run, $leaseToken, 'ai_failed', 'Классификация не выполнена.');
+        }
+    }
+
+    /** @return array{0: AnalyticsClassificationRun, 1: bool, 2: string|null} */
+    private function claim(int $organizationId, string $taxonomy, string $sourceType, int $sourceId, ?int $clientId, string $digest, bool $force): array
+    {
+        try {
+            return DB::transaction(function () use ($organizationId, $taxonomy, $sourceType, $sourceId, $clientId, $digest, $force): array {
+                AnalyticsClassificationRun::query()
+                    ->where('organization_id', $organizationId)
+                    ->where('taxonomy', $taxonomy)
+                    ->where('source_type', $sourceType)
+                    ->where('source_id', $sourceId)
+                    ->where('source_digest', '!=', $digest)
+                    ->where('status', '!=', ClassificationRunStatus::Stale->value)
+                    ->lockForUpdate()
+                    ->get()
+                    ->each(function (AnalyticsClassificationRun $stale): void {
+                        $stale->forceFill([
+                            'status' => ClassificationRunStatus::Stale,
+                            'error_code' => 'source_changed',
+                            'error_message_sanitized' => 'Источник классификации изменился.',
+                            'processing_lease_token' => null,
+                            'processing_lease_expires_at' => null,
+                            'updated_at' => now(),
+                        ])->save();
+                        AnalyticsTagCandidate::query()
+                            ->where('organization_id', $stale->organization_id)
+                            ->where('classification_run_id', $stale->getKey())
+                            ->where('status', AnalyticsTagCandidateStatus::NeedsReview->value)
+                            ->update([
+                                'status' => AnalyticsTagCandidateStatus::Stale->value,
+                                'review_note' => 'Источник классификации изменился.',
+                                'updated_at' => now(),
+                            ]);
+                    });
+                $run = AnalyticsClassificationRun::query()
+                    ->where('organization_id', $organizationId)
+                    ->where('taxonomy', $taxonomy)
+                    ->where('source_type', $sourceType)
+                    ->where('source_id', $sourceId)
+                    ->where('source_digest', $digest)
+                    ->lockForUpdate()
+                    ->first();
+                if ($run instanceof AnalyticsClassificationRun) {
+                    $now = now();
+                    $leaseActive = $run->processing_lease_expires_at !== null
+                        && CarbonImmutable::parse((string) $run->processing_lease_expires_at)->isFuture();
+                    if (($run->status === ClassificationRunStatus::Processing && $leaseActive)
+                        || ($run->status !== ClassificationRunStatus::Processing
+                            && ! $force
+                            && ! in_array($run->status, [ClassificationRunStatus::Failed, ClassificationRunStatus::Stale], true))) {
+                        return [$run, false, null];
+                    }
+                    $leaseToken = (string) Str::uuid();
+                    $run->forceFill([
+                        'status' => ClassificationRunStatus::Processing,
+                        'attempt_count' => $run->attempt_count + 1,
+                        'suggestions' => null,
+                        'error_code' => null,
+                        'error_message_sanitized' => null,
+                        'processing_lease_token' => $leaseToken,
+                        'processing_lease_expires_at' => $now->copy()->addSeconds(AiRuntimeLimits::companionProcessingLeaseSeconds()),
+                        'updated_at' => now(),
+                    ])->save();
+
+                    return [$run, true, $leaseToken];
+                }
+
+                $leaseToken = (string) Str::uuid();
+                $run = new AnalyticsClassificationRun;
+                $run->forceFill([
+                    'organization_id' => $organizationId,
+                    'client_id' => $clientId,
+                    'taxonomy' => $taxonomy,
+                    'source_type' => $sourceType,
+                    'source_id' => $sourceId,
+                    'source_digest' => $digest,
+                    'status' => ClassificationRunStatus::Processing,
+                    'attempt_count' => 1,
+                    'processing_lease_token' => $leaseToken,
+                    'processing_lease_expires_at' => now()->addSeconds(AiRuntimeLimits::companionProcessingLeaseSeconds()),
+                ])->save();
+
+                return [$run, true, $leaseToken];
+            });
+        } catch (UniqueConstraintViolationException) {
+            $run = AnalyticsClassificationRun::query()
+                ->where('organization_id', $organizationId)
+                ->where('taxonomy', $taxonomy)
+                ->where('source_type', $sourceType)
+                ->where('source_id', $sourceId)
+                ->where('source_digest', $digest)
+                ->firstOrFail();
+
+            return [$run, false, null];
+        }
+    }
+
+    /** @param array<string, mixed>|null $payload
+     * @param  list<array{id: int, label: string}>  $availableTags
+     * @return list<array{id: int|null, label: string, candidate_type?: string}>
+     */
+    private function validateOutput(?array $payload, array $availableTags, bool $allowNewCandidates = false): ?array
+    {
+        $values = $payload['tags'] ?? null;
+        if (! is_array($values) || count($values) > 20) {
+            return null;
+        }
+        $known = collect($availableTags)->mapWithKeys(static fn (array $tag): array => [mb_strtolower($tag['label']) => $tag])->all();
+        $result = [];
+        foreach ($values as $value) {
+            $label = is_string($value) ? trim($value) : (is_array($value) && is_string($value['label'] ?? null) ? trim($value['label']) : '');
+            if ($label === '') {
+                return null;
+            }
+            $key = mb_strtolower($label);
+            if (! isset($known[$key])) {
+                if (! $allowNewCandidates || isset($result['new:'.$key])) {
+                    return null;
+                }
+                $result['new:'.$key] = ['id' => null, 'label' => $label, 'candidate_type' => 'new'];
+
+                continue;
+            }
+            if (isset($result[$known[$key]['id']])) {
+                return null;
+            }
+            $result[$known[$key]['id']] = $known[$key];
+        }
+
+        return array_values($result);
+    }
+
+    private function newTagCandidatesEnabled(int $organizationId): bool
+    {
+        return OrganizationSetting::query()
+            ->where('organization_id', $organizationId)
+            ->where('setting_key', OrganizationSettingKey::AnalyticsAiNewTagCandidatesEnabled->value)
+            ->value('boolean_value') === true;
+    }
+
+    /** @param list<array<string, mixed>> $availableTags
+     * @return list<array{id: int, label: string}>
+     */
+    private function normalizeTags(array $availableTags): array
+    {
+        return array_values(array_filter(array_map(static function (array $tag): ?array {
+            $id = (int) ($tag['id'] ?? 0);
+            $label = is_string($tag['label'] ?? null) ? trim($tag['label']) : '';
+
+            return $id > 0 && $label !== '' ? ['id' => $id, 'label' => mb_substr($label, 0, 255)] : null;
+        }, $availableTags)));
+    }
+
+    private function fail(AnalyticsClassificationRun $run, ?string $leaseToken, string $code, ?string $message): ClassificationResultData
+    {
+        if ($leaseToken === null) {
+            return $this->result($run->refresh());
+        }
+
+        $updated = AnalyticsClassificationRun::query()
+            ->whereKey($run->getKey())
+            ->where('status', ClassificationRunStatus::Processing->value)
+            ->where('source_digest', $run->source_digest)
+            ->where('processing_lease_token', $leaseToken)
+            ->update([
+                'status' => ClassificationRunStatus::Failed->value,
+                'error_code' => $code,
+                'error_message_sanitized' => $message !== null ? mb_substr($message, 0, 500) : null,
+                'processing_lease_token' => null,
+                'processing_lease_expires_at' => null,
+                'updated_at' => now(),
+            ]);
+        if ($updated === 0) {
+            return $this->result($run->refresh());
+        }
+
+        return $this->result($run->refresh());
+    }
+
+    private function failedResult(int $runId, string $errorCode): ClassificationResultData
+    {
+        return new ClassificationResultData($runId, ClassificationRunStatus::Failed, [], $errorCode);
+    }
+
+    private function aiIdempotencyKey(
+        int $organizationId,
+        string $taxonomy,
+        string $sourceType,
+        int $sourceId,
+        string $digest,
+        int $attempt,
+    ): string {
+        return 'analytics-classification:'.hash('sha256', implode('|', [
+            $organizationId,
+            $taxonomy,
+            $sourceType,
+            $sourceId,
+            $digest,
+            $attempt,
+        ]));
+    }
+
+    private function result(AnalyticsClassificationRun $run): ClassificationResultData
+    {
+        return new ClassificationResultData(
+            runId: (int) $run->getKey(),
+            status: $run->status,
+            suggestions: is_array($run->suggestions) ? $run->suggestions : [],
+            errorCode: $run->error_code,
+        );
+    }
+}

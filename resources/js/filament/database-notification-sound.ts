@@ -2,6 +2,7 @@ const seenNotificationIds = new Set<string>();
 let notificationListInitialized = false;
 let scanQueued = false;
 let audioContext: AudioContext | null = null;
+let baseDocumentTitle = '';
 
 const notificationIdPattern = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
 
@@ -32,8 +33,8 @@ function playNotificationSound(): void {
         oscillator.type = 'sine';
         oscillator.frequency.setValueAtTime(880, now);
         oscillator.frequency.exponentialRampToValueAtTime(660, now + 0.12);
-        gain.gain.setValueAtTime(0.035, now);
-        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
         oscillator.connect(gain);
         gain.connect(audioContext.destination);
         oscillator.start(now);
@@ -53,15 +54,56 @@ function notificationEntries(root: HTMLElement): HTMLElement[] {
         .filter((entry) => entry.hasAttribute('wire:key'));
 }
 
+function refreshBaseDocumentTitle(): void {
+    const title = document.title.replace(/^\(\d+\)\s+/, '').trim();
+    if (title !== '') {
+        baseDocumentTitle = title;
+    }
+}
+
+function authoritativeUnreadCount(): number | null {
+    const trigger = document.querySelector<HTMLElement>(
+        '.fi-topbar-database-notifications-btn, .fi-sidebar-database-notifications-btn',
+    );
+    if (trigger === null) {
+        return null;
+    }
+
+    const badge = trigger.querySelector<HTMLElement>(
+        '.fi-icon-btn-badge-ctn .fi-badge, .fi-sidebar-database-notifications-btn-badge-ctn .fi-badge',
+    );
+    if (badge === null) {
+        return 0;
+    }
+
+    const count = Number.parseInt((badge.textContent ?? '').replace(/[^\d]/g, ''), 10);
+    return Number.isInteger(count) && count >= 0 ? count : null;
+}
+
+function updateDocumentTitle(): void {
+    refreshBaseDocumentTitle();
+    if (baseDocumentTitle === '') {
+        return;
+    }
+
+    const unreadCount = authoritativeUnreadCount();
+    if (unreadCount === null) {
+        return;
+    }
+
+    document.title = unreadCount > 0 ? `(${unreadCount}) ${baseDocumentTitle}` : baseDocumentTitle;
+}
+
 function scanNotifications(): void {
     scanQueued = false;
     const databaseNotifications = document.getElementById('database-notifications');
 
+    const notifications = databaseNotifications === null ? [] : notificationEntries(databaseNotifications);
+    updateDocumentTitle();
+
     if (databaseNotifications === null) {
         return;
     }
-
-    const notifications = notificationEntries(databaseNotifications);
 
     if (!notificationListInitialized) {
         notifications.forEach((notification) => {

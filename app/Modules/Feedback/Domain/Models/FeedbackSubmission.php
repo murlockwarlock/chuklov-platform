@@ -7,6 +7,7 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 #[Fillable([])]
 class FeedbackSubmission extends Model
@@ -23,6 +24,17 @@ class FeedbackSubmission extends Model
     public function client(): BelongsTo
     {
         return $this->belongsTo(Client::class);
+    }
+
+    /** @return BelongsToMany<FeedbackTheme, $this> */
+    public function themes(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            FeedbackTheme::class,
+            'feedback_submission_themes',
+            'feedback_submission_id',
+            'feedback_theme_id',
+        )->withPivot(['organization_id', 'client_id']);
     }
 
     protected function casts(): array
