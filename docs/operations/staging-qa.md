@@ -23,12 +23,13 @@ staging deployment flow only when a runtime update is needed and authorized.
 ## Existing identities and browser access
 
 Use the `chuklov-staging-qa` skill and the private profile under
-`/Users/ivankorakin/.codex/private/chuklov-staging-qa/`. Read only allowlisted
+`$HOME/.codex/private/chuklov-staging-qa/`. Read only allowlisted
 non-secret profile fields. Load referenced credentials and browser states inside
-automation, never into tool output. CRM QA uses existing staff user 2. Try its
-genuine saved browser state first; when expired, use the ordinary login form,
-saved QA password, and fresh enrolled TOTP. Preserve reusable browser state after
-successful login. Never use the owner account, create another staff account,
+automation, never into tool output. CRM QA uses the existing QA staff identity
+referenced by the private QA profile. Try its genuine saved browser state first;
+when expired, use the ordinary login form, saved QA password, and fresh enrolled
+TOTP. Preserve reusable browser state after successful login. Never use the owner
+account, create another staff account,
 rotate credentials, disable MFA, or inject server-side sessions as browser proof.
 
 For passwordless Portal acceptance, use a separate synthetic Client and the
