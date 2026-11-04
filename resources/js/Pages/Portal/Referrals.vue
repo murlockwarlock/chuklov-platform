@@ -132,6 +132,7 @@ const payoutForm = useForm<{ amount: string; currency: string; idempotency_key: 
 });
 
 const requestableBalances = computed(() => props.referrals.rewards.balances.filter((balance) => balance.availableMinor > 0));
+const canManagePartner = computed(() => props.referrals.status === 'active');
 const payoutError = computed(() => {
     const errors = payoutForm.errors as Record<string, string | undefined>;
 
@@ -165,7 +166,7 @@ let pollingMounted = false;
 
 function scheduleRefresh(): void {
     if (!pollingMounted
-        || !props.referrals.isPartner
+        || !canManagePartner.value
         || pollingTimer !== null
         || Date.now() - pollingStartedAt >= 120000) {
         return;
@@ -179,7 +180,7 @@ function scheduleRefresh(): void {
 
 function refreshReferralData(): void {
     if (!pollingMounted
-        || !props.referrals.isPartner
+        || !canManagePartner.value
         || pollingInFlight
         || Date.now() - pollingStartedAt >= 120000) {
         return;
@@ -354,7 +355,9 @@ function cancelPayout(payout: Payout): void {
     <section class="portal-container portal-container--wide portal-stack portal-stack--loose">
       <PortalPageHeader
         :title="props.referrals.isPartner ? t('referrals.partnerTitle') : t('referrals.title')"
-        :description="props.referrals.isPartner ? null : t('referrals.ordinaryDescription')"
+        :description="props.referrals.isPartner
+          ? (canManagePartner ? null : t('referrals.partnerInactiveDescription'))
+          : t('referrals.ordinaryDescription')"
       />
 
       <template v-if="!props.referrals.isPartner">
@@ -476,6 +479,13 @@ function cancelPayout(payout: Payout): void {
       </template>
 
       <template v-else>
+        <p
+          v-if="!canManagePartner"
+          class="portal-panel portal-copy"
+          data-testid="partner-inactive"
+        >
+          {{ t('referrals.partnerInactiveDescription') }}
+        </p>
         <section
           class="portal-panel portal-stack portal-stack--tight"
           data-testid="partner-summary"
@@ -566,6 +576,7 @@ function cancelPayout(payout: Payout): void {
           data-testid="partner-links"
         >
           <form
+            v-if="canManagePartner"
             class="portal-panel portal-grid portal-grid--form"
             data-testid="partner-create-link-form"
             @submit.prevent="createLink"
@@ -655,7 +666,10 @@ function cancelPayout(payout: Payout): void {
                   <span>{{ t('referrals.earned') }}</span>
                 </div>
               </div>
-              <div class="flex min-w-0 flex-wrap gap-2">
+              <div
+                v-if="canManagePartner"
+                class="flex min-w-0 flex-wrap gap-2"
+              >
                 <button
                   type="button"
                   class="portal-button portal-button--secondary"
