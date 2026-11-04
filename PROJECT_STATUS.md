@@ -8,8 +8,8 @@ old candidate metadata are in
 
 | Item | Current value |
 | --- | --- |
-| Latest owner-accepted product runtime | `552c7cc27619ff99c6b0908025ecd68d98a6d3bd` |
-| Latest product merge | PR #61 merged to `main` as `fdb8b5a17dccb56bcc8c65ad71823bafb0bde60e` |
+| Latest owner-accepted product runtime | `de3252eb682d55d668e01852537d911ccdea364c` |
+| Latest product merge | PR #69 merged to `main` as `e038fd8d3bc321ae0ce468333d1bbb1d26d943ee` |
 | Latest exact staging runtime | `de3252eb682d55d668e01852537d911ccdea364c` |
 | Product phase | Phase 1 |
 | Active milestone stream | M11 `DONE`; M15 `IN_PROGRESS` |
