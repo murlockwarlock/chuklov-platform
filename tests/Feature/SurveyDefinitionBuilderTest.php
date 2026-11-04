@@ -15,14 +15,17 @@ use App\Modules\Surveys\Application\PlatformSurveyCatalog;
 use App\Modules\Surveys\Application\PublishSurveyVersion;
 use App\Modules\Surveys\Application\StartSurveyAttempt;
 use App\Modules\Surveys\Application\UpdateSurveyDefinitionDraft;
+use App\Modules\Surveys\Application\UpdateSurveyPresentation;
 use App\Modules\Surveys\Domain\Models\SurveyDefinition;
 use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Tabs;
+use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
 use LogicException;
 use Tests\TestCase;
@@ -30,6 +33,58 @@ use Tests\TestCase;
 final class SurveyDefinitionBuilderTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_presentation_changes_preserve_published_content_and_reject_stale_changes(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $definition = SurveyDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'definition_key' => 'legacy-presentation',
+            'title' => 'Старый опросник',
+            'is_available' => true,
+        ]);
+        $version = SurveyVersion::query()->create([
+            'organization_id' => $organization->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'version' => 1,
+            'status' => 'published',
+            'title' => 'Историческая версия',
+            'definition' => ['sections' => []],
+            'scoring' => ['schema' => 'historical-v2'],
+            'metric_schema_key' => 'legacy-scale',
+            'source' => 'platform_default',
+            'approval_status' => 'draft',
+        ]);
+        $definition->forceFill(['active_version_id' => $version->getKey()])->save();
+        $originalVersion = $version->getRawOriginal();
+        $action = app(UpdateSurveyPresentation::class);
+        $snapshot = $action->snapshot($definition);
+        $action->handle($admin, $definition, 'Пример опросника', false, $snapshot);
+
+        self::assertSame('Пример опросника', $definition->fresh()->title);
+        self::assertFalse($definition->fresh()->is_available);
+        self::assertSame($version->getKey(), $definition->fresh()->active_version_id);
+        self::assertSame($originalVersion, $version->fresh()->getRawOriginal());
+        self::assertSame(1, $definition->versions()->count());
+
+        $this->expectException(ValidationException::class);
+        $action->handle($admin, $definition, 'Устаревшая правка', true, $snapshot);
+    }
+
+    public function test_presentation_changes_reject_a_foreign_organization(): void
+    {
+        [, $admin] = $this->fixture();
+        $foreign = SurveyDefinition::query()->create([
+            'organization_id' => Organization::factory()->create()->getKey(),
+            'definition_key' => 'foreign-presentation',
+            'title' => 'Чужой опросник',
+            'is_available' => true,
+        ]);
+        $action = app(UpdateSurveyPresentation::class);
+
+        $this->expectException(AuthorizationException::class);
+        $action->handle($admin, $foreign, 'Изменение', false, $action->snapshot($foreign));
+    }
 
     public function test_editor_uses_human_tabs_and_collapsible_repeater_summaries(): void
     {

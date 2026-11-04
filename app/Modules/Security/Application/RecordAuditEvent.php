@@ -34,6 +34,7 @@ class RecordAuditEvent
         'ai.evaluation_case.created' => ['eval_suite_id', 'is_synthetic'],
         'ai.evaluation_case.updated' => ['eval_suite_id', 'is_active'],
         'ai.evaluation_run.completed' => ['eval_suite_id', 'total_cases', 'passed_cases', 'failed_cases'],
+        'survey.presentation.updated' => ['is_available'],
         'client.created' => ['source'],
         'patient.created' => ['owner_client_id'],
         'patient.updated' => ['owner_client_id'],
