@@ -31,6 +31,7 @@ use Filament\Support\Icons\Heroicon;
 use Illuminate\Contracts\Support\Htmlable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
+use Livewire\Attributes\On;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
@@ -234,7 +235,8 @@ class EditAiPrompt extends LocalizedEditRecord
             ->first();
     }
 
-    private function refreshPrompt(): void
+    #[On('ai-prompt-version-changed')]
+    public function refreshPrompt(): void
     {
         $this->record = $this->prompt()->fresh(['activeVersion']);
     }

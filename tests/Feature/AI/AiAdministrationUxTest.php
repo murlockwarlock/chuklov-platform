@@ -11,6 +11,7 @@ use App\Filament\Resources\AiProviders\Pages\CreateAiProvider;
 use App\Filament\Resources\AiProviders\Pages\EditAiProvider;
 use App\Filament\Resources\AiProviders\RelationManagers\ModelsRelationManager;
 use App\Models\User;
+use App\Modules\AI\Application\Actions\ActivatePromptVersion;
 use App\Modules\AI\Application\Actions\CreateAiEvaluationSuite;
 use App\Modules\AI\Application\Actions\CreateAiPrompt;
 use App\Modules\AI\Application\Actions\CreateAiProviderConfiguration;
@@ -55,6 +56,39 @@ use Tests\TestCase;
 final class AiAdministrationUxTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_history_activation_refreshes_the_prompt_workspace(): void
+    {
+        [$organization, $admin] = $this->organizationFixture();
+        $prompt = app(CreateAiPrompt::class)->handle($admin, [
+            'key' => 'workspace_refresh',
+            'name' => 'AI-помощник клиента',
+            'capability' => AiCapability::ClientCompanion->value,
+        ]);
+        $drafts = app(CreatePromptDraft::class);
+        $first = $drafts->handle($admin, $prompt->getKey(), [
+            'system_prompt' => 'Первая инструкция', 'user_prompt_template' => '{{current_message}}',
+        ]);
+        $second = $drafts->handle($admin, $prompt->getKey(), [
+            'system_prompt' => 'Вторая инструкция', 'user_prompt_template' => '{{current_message}}',
+        ]);
+        app(ActivatePromptVersion::class)->handle($admin, $first->getKey());
+        $this->resolveFilamentContext($organization, $admin);
+        $workspace = Livewire::actingAs($admin)
+            ->test(EditAiPrompt::class, ['record' => $prompt->getRouteKey()])
+            ->assertSee('Активная версия: v1');
+
+        Livewire::actingAs($admin)
+            ->test(PromptVersionsRelationManager::class, [
+                'ownerRecord' => $prompt->fresh(), 'pageClass' => EditAiPrompt::class,
+            ])
+            ->callTableAction('activate', $second)
+            ->assertDispatched('ai-prompt-version-changed');
+
+        $workspace->dispatch('ai-prompt-version-changed')
+            ->assertSee('Активная версия: v2')
+            ->assertSee('Вторая инструкция');
+    }
 
     public function test_provider_catalog_and_credential_select_are_human_bounded_and_secret_safe(): void
     {
