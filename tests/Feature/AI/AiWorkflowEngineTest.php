@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Modules\AI\Application\Actions\ActivatePromptVersion;
 use App\Modules\AI\Application\Actions\DispatchAsyncAiRun;
 use App\Modules\AI\Application\Actions\ExecuteAiRun;
+use App\Modules\AI\Application\Actions\ExecutePlaygroundRun;
 use App\Modules\AI\Application\Actions\ReclaimExpiredAiRuns;
 use App\Modules\AI\Application\Actions\ReconcileExpiredAiRun;
 use App\Modules\AI\Application\Actions\ResolveAiExecutionCandidates;
@@ -1961,6 +1962,33 @@ class AiWorkflowEngineTest extends TestCase
 
         $run = AiRun::query()->where('organization_id', $this->organization->id)->sole();
         $this->assertSame(AiRunStatus::Failed, $run->status);
+    }
+
+    public function test_plain_companion_playground_request_reaches_the_rendered_prompt(): void
+    {
+        $this->setupConfiguredModel(AiCapability::ClientCompanion);
+        DynamicWorkflowAgent::fake(['Ответ на запрос.']);
+        $prompt = AiPrompt::query()->where('capability', AiCapability::ClientCompanion->value)->sole();
+        $version = $prompt->activeVersion()->sole();
+        $version->update(['user_prompt_template' => '{{current_message}}']);
+        $release = AiModelRelease::query()->where('organization_id', $this->organization->getKey())->sole();
+
+        $result = app(ExecutePlaygroundRun::class)->handle(
+            actor: $this->user,
+            capability: AiCapability::ClientCompanion,
+            promptVersionId: $version->getKey(),
+            modelReleaseId: $release->getKey(),
+            inputVariables: ['query' => 'Как открыть мои записи?'],
+        );
+
+        self::assertTrue($result->isSuccess());
+        $payload = AiRunPayload::query()->where('ai_run_id', $result->runId)->sole();
+        $rendered = app(MedicalEncryptorInterface::class)->decryptField(
+            $this->organization->getKey(),
+            $payload->encrypted_user_prompt,
+            $payload->encryption_key_version,
+        );
+        self::assertStringContainsString('Как открыть мои записи?', (string) $rendered);
     }
 
     public function test_companion_prompt_keeps_the_current_message_when_old_history_exceeds_the_prompt_budget(): void

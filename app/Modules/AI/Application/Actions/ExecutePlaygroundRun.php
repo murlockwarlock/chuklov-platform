@@ -34,6 +34,12 @@ class ExecutePlaygroundRun
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::UseAiPlayground);
 
+        if ($capability === AiCapability::ClientCompanion
+            && ! array_key_exists('current_message', $inputVariables)
+            && is_string($inputVariables['query'] ?? null)) {
+            $inputVariables['current_message'] = $inputVariables['query'];
+        }
+
         $request = new AiRunRequest(
             capability: $capability,
             workflowKey: 'playground_test',

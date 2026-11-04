@@ -114,7 +114,7 @@ class EditAiPrompt extends LocalizedEditRecord
             ->icon(Heroicon::OutlinedPlay)
             ->color('info')
             ->schema([
-                Textarea::make('test_input')->label(__('Пример запроса'))->rows(5)->default('{"query": "Тестовый запрос"}')->required(),
+                Textarea::make('test_input')->label(__('Пример запроса'))->rows(5)->required(),
                 Select::make('model_release_id')
                     ->label(__('Модель для проверки'))
                     ->options(fn (): array => AiPromptResource::modelReleaseOptions($this->prompt()))
