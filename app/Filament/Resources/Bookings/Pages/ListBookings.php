@@ -485,8 +485,12 @@ class ListBookings extends LocalizedListRecords
         $columnCount = max(1, (int) ($booking['overlap_column_count'] ?? 1));
         $columnWidth = 100 / $columnCount;
         $left = $column * $columnWidth;
+        $horizontalInset = match ($this->normalizeCalendarDensity($this->calendarDensity)) {
+            'compact' => 18,
+            default => 4,
+        };
 
-        return 'top: '.$top.'px; height: '.$height.'px; left: calc('.$left.'% + 2px); width: calc('.$columnWidth.'% - 4px);';
+        return 'top: '.$top.'px; height: '.$height.'px; left: calc('.$left.'% + 2px); width: calc('.$columnWidth.'% - '.$horizontalInset.'px);';
     }
 
     public function calendarWorkspaceStyle(): string

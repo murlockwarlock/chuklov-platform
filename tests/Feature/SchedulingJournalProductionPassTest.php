@@ -1288,6 +1288,19 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertStringContainsString('--journal-day-min-width: 136px;', $journal->html());
         self::assertStringNotContainsString('--journal-day-min-width: 112px;', $journal->html());
 
+        $overlapStyle = [
+            'start_minutes' => 10 * 60,
+            'end_minutes' => 11 * 60,
+            'overlap_column' => 0,
+            'overlap_column_count' => 3,
+        ];
+        $normalCardStyle = $journal->instance()->bookingStyle($overlapStyle);
+        $journal->call('setCalendarDensity', 'compact')->assertSet('calendarDensity', 'compact');
+        $compactCardStyle = $journal->instance()->bookingStyle($overlapStyle);
+        self::assertNotSame($normalCardStyle, $compactCardStyle);
+        self::assertStringContainsString('- 4px', $normalCardStyle);
+        self::assertStringContainsString('- 18px', $compactCardStyle);
+
         $journal->call('setCalendarDensity', 'wide')->assertSet('calendarDensity', 'wide');
         self::assertStringContainsString('--journal-day-min-width: 216px;', $journal->html());
         self::assertStringContainsString('min-width: 1584px;', $journal->html());
