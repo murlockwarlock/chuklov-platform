@@ -12,6 +12,8 @@ use App\Modules\ClientCompanion\Domain\Models\CompanionTurnAttempt;
 use App\Modules\ClientPortal\Domain\Models\ClientOnboarding;
 use App\Modules\Commerce\Domain\Models\FulfillmentEvent;
 use App\Modules\Commerce\Domain\Models\PurchaseFulfillment;
+use App\Modules\Conversations\Domain\Models\Conversation;
+use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Feedback\Domain\Enums\NpsBand;
 use App\Modules\Feedback\Domain\Models\FeedbackSubmission;
 use App\Modules\Finance\Application\PaymentGatewayReconciliationReason;
@@ -111,6 +113,30 @@ final class RecordScenarioEvent
         );
 
         return $this->record((int) $escalation->organization_id, $data);
+    }
+
+    public function companionMessageRequiresSpecialistAttention(
+        ConversationMessage $message,
+        Conversation $conversation,
+        CarbonImmutable $occurredAt,
+    ): ScenarioEvent {
+        $data = new ScenarioEventData(
+            eventType: ScenarioEventType::CompanionSpecialistAttention,
+            aggregateType: ConversationMessage::class,
+            aggregateId: (string) $message->getKey(),
+            occurredAt: $occurredAt->utc(),
+            payload: [
+                'message_id' => (int) $message->getKey(),
+                'client_id' => (int) $message->client_id,
+                'conversation_id' => (int) $conversation->getKey(),
+                'reason' => 'human_handoff_message',
+            ],
+            idempotencyKey: 'companion.specialist_attention.message:'.$message->organization_id.':'.$message->getKey(),
+            correlationId: 'companion:conversation:'.$conversation->getKey(),
+            causationId: null,
+        );
+
+        return $this->record((int) $message->organization_id, $data);
     }
 
     public function companionFallbackFailed(CompanionTurn $turn, CompanionTurnAttempt $attempt, CompanionFailureCode $failureCode, CarbonImmutable $occurredAt): ScenarioEvent

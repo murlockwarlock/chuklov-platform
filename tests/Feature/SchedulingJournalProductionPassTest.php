@@ -1201,6 +1201,87 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertStringContainsString('specialist_id='.$second->getKey(), $html);
     }
 
+    public function test_journal_uses_one_grid_and_real_overlap_tracks_with_density_control(): void
+    {
+        [$organization, $admin, $first, $service] = $this->fixture();
+        $second = Specialist::factory()->forOrganization($organization)->create([
+            'timezone' => 'UTC',
+            'display_name' => 'Второй специалист',
+        ]);
+        $third = Specialist::factory()->forOrganization($organization)->create([
+            'timezone' => 'UTC',
+            'display_name' => 'Третий специалист',
+        ]);
+        foreach ([$first, $second, $third] as $specialist) {
+            app(SetSpecialistWorkingHours::class)->handle($admin, $specialist, [[
+                'weekday' => 1,
+                'start_time' => '09:00',
+                'end_time' => '13:00',
+            ]]);
+        }
+        $client = Client::factory()->forOrganization($organization)->create();
+        $booking = function (Specialist $specialist, string $startsAt, string $endsAt) use ($organization, $client, $service): Booking {
+            return Booking::factory()
+                ->forOrganization($organization)
+                ->forClient($client)
+                ->forSpecialist($specialist)
+                ->forService($service)
+                ->create([
+                    'starts_at' => $startsAt,
+                    'ends_at' => $endsAt,
+                    'blocking_ends_at' => $endsAt,
+                ]);
+        };
+
+        $sequential = $booking($first, '2026-10-05 09:00:00', '2026-10-05 10:00:00');
+        $firstOverlap = $booking($first, '2026-10-05 10:00:00', '2026-10-05 11:00:00');
+        $secondOverlap = $booking($second, '2026-10-05 10:30:00', '2026-10-05 12:00:00');
+        $thirdOverlap = $booking($third, '2026-10-05 10:45:00', '2026-10-05 11:15:00');
+        $following = $booking($second, '2026-10-05 12:00:00', '2026-10-05 13:00:00');
+
+        $this->resolveFilamentContext($admin, $organization);
+        $journal = Livewire::withQueryParams([
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class);
+        $day = collect($journal->instance()->getJournalDaysProperty()['2026-10-05']['bookings'])->keyBy('id');
+
+        self::assertSame(1, $day[$sequential->getKey()]['overlap_column_count']);
+        self::assertSame(1, $day[$following->getKey()]['overlap_column_count']);
+        self::assertSame(3, $day[$firstOverlap->getKey()]['overlap_column_count']);
+        self::assertSame(3, $day[$secondOverlap->getKey()]['overlap_column_count']);
+        self::assertSame(3, $day[$thirdOverlap->getKey()]['overlap_column_count']);
+        self::assertCount(3, collect([
+            $day[$firstOverlap->getKey()]['overlap_column'],
+            $day[$secondOverlap->getKey()]['overlap_column'],
+            $day[$thirdOverlap->getKey()]['overlap_column'],
+        ])->unique());
+        self::assertSame(60, $day[$firstOverlap->getKey()]['end_minutes'] - $day[$firstOverlap->getKey()]['start_minutes']);
+        self::assertSame(90, $day[$secondOverlap->getKey()]['end_minutes'] - $day[$secondOverlap->getKey()]['start_minutes']);
+        self::assertSame(30, $day[$thirdOverlap->getKey()]['end_minutes'] - $day[$thirdOverlap->getKey()]['start_minutes']);
+
+        $html = $journal->html();
+        self::assertSame(1, substr_count($html, 'data-testid="journal-calendar-workspace"'));
+        self::assertStringContainsString('data-testid="journal-density-control"', $html);
+        self::assertStringContainsString($first->display_name, $html);
+        self::assertStringContainsString($second->display_name, $html);
+        self::assertStringContainsString($third->display_name, $html);
+        self::assertStringContainsString('Добавить запись на 10:30', $html);
+
+        $journal->assertSet('calendarDensity', 'normal')
+            ->call('setCalendarDensity', 'wide')
+            ->assertSet('calendarDensity', 'wide');
+        self::assertStringContainsString('min-width: 1960px;', $journal->html());
+
+        $journal->call('setCalendarDensity', 'compact')->assertSet('calendarDensity', 'compact');
+        $reloaded = Livewire::withQueryParams([
+            'week' => '2026-10-05',
+            'view' => 'week',
+        ])->actingAs($admin)->test(ListBookings::class);
+        $reloaded->assertSet('calendarDensity', 'compact');
+        self::assertStringNotContainsString('min-width: 1960px;', $reloaded->html());
+    }
+
     public function test_schedule_projection_splits_midnight_once_and_keeps_end_minute_at_day_boundary(): void
     {
         [$organization, $admin, $specialist] = $this->fixture('Asia/Bangkok', 'America/Los_Angeles');

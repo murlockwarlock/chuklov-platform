@@ -27,14 +27,14 @@ final class EnsureOperationalNotificationDefaults
                     variables: ['client.full_name'],
                     subject: 'Запрос специалиста',
                 ),
-                'companion-specialist-attention' => $this->ensureTemplate(
+                'companion-specialist-attention' => $this->upgradeDefaultCompanionAttentionTemplate($this->ensureTemplate(
                     organization: $organization,
                     key: 'companion-specialist-attention',
                     name: 'Сообщение клиента требует внимания',
                     body: '{{ companion.notification_body }}',
-                    variables: ['companion.notification_body'],
+                    variables: ['companion.notification_body', 'companion.notification_title'],
                     subject: '{{ companion.notification_title }}',
-                ),
+                )),
                 'referral-payout-request' => $this->ensureTemplate(
                     organization: $organization,
                     key: 'referral-payout-request',
@@ -911,6 +911,30 @@ final class EnsureOperationalNotificationDefaults
             'subject' => 'Сбой AI-компаньона',
             'body' => 'AI-компаньон не смог подготовить ответ клиенту {{ client.full_name }}. Причина: {{ companion.failure_label }} (попытка {{ companion.attempt_number }}). Проверьте настройки AI: {{ companion.ai_monitoring_url }}. Диалог: {{ companion.crm_url }}.',
             'variables' => ['client.full_name', 'companion.failure_label', 'companion.attempt_number', 'companion.ai_monitoring_url', 'companion.crm_url'],
+            'published_at' => now(),
+        ])->save();
+
+        return $next;
+    }
+
+    private function upgradeDefaultCompanionAttentionTemplate(NotificationTemplateVersion $version): NotificationTemplateVersion
+    {
+        if ($version->created_by_user_id !== null
+            || $version->body !== '{{ companion.notification_body }}'
+            || $version->subject !== '{{ companion.notification_title }}'
+            || $version->variables !== ['companion.notification_body']) {
+            return $version;
+        }
+
+        $next = new NotificationTemplateVersion;
+        $next->forceFill([
+            'organization_id' => $version->organization_id,
+            'template_id' => $version->template_id,
+            'version' => $version->version + 1,
+            'status' => NotificationTemplateStatus::Published->value,
+            'subject' => '{{ companion.notification_title }}',
+            'body' => '{{ companion.notification_body }}',
+            'variables' => ['companion.notification_body', 'companion.notification_title'],
             'published_at' => now(),
         ])->save();
 

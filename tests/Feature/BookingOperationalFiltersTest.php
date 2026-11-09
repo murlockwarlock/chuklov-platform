@@ -389,6 +389,10 @@ final class BookingOperationalFiltersTest extends TestCase
             ->assertCanNotSeeTableRecords([$thirdBooking]);
         $days = $component->instance()->getJournalDaysProperty();
         self::assertSame([$firstBooking->getKey(), $secondBooking->getKey()], array_column($days[$startsAt->toDateString()]['bookings'], 'id'));
+        self::assertSame(1, substr_count($component->html(), 'data-testid="journal-calendar-workspace"'));
+        self::assertStringContainsString('Выбраны специалисты', $component->html());
+        self::assertStringContainsString($first->display_name, $component->html());
+        self::assertStringContainsString($second->display_name, $component->html());
 
         Livewire::withQueryParams(['specialist_ids' => [$first->getKey(), $second->getKey()]])
             ->test(ListBookings::class)

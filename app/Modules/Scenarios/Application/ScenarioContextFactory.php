@@ -830,6 +830,10 @@ final class ScenarioContextFactory
     private function companionAttentionCopy(string $reason, string $clientName): array
     {
         return match ($reason) {
+            'human_handoff_message' => [
+                'Новое сообщение от клиента '.$clientName,
+                'Клиент '.$clientName.' отправил новое сообщение в диалоге со специалистом. Откройте диалог в CRM.',
+            ],
             'urgent_safety_concern' => [
                 'Сообщение клиента '.$clientName.' требует внимания',
                 'AI отметил сообщение клиента как требующее внимания специалиста. Откройте диалог в CRM.',

@@ -53,7 +53,12 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
+use App\Modules\Scenarios\Application\EnsureOperationalNotificationDefaults;
+use App\Modules\Scenarios\Application\ExecuteScenarioAction;
+use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
+use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
+use App\Modules\Scenarios\Domain\Models\ScenarioAction;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use Carbon\Carbon;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -629,6 +634,94 @@ final class ClientCompanionProcessingTest extends TestCase
             $this->organization->getKey(),
             ConversationMessage::query()->findOrFail($turn->outbound_message_id),
         ));
+    }
+
+    public function test_client_message_in_human_handoff_notifies_staff_once_and_ignores_staff_messages(): void
+    {
+        $admin = User::factory()->forOrganization($this->organization, OrganizationRole::Administrator)->create();
+        app(EnsureOperationalNotificationDefaults::class)->handle($this->organization);
+
+        $this->accept('Первое сообщение клиента');
+        app(TakeOverCompanionConversation::class)->handle($admin, $this->client);
+
+        $inbound = app(AcceptCompanionMessage::class)->handle(
+            client: $this->client,
+            channel: 'telegram',
+            body: 'Новое сообщение клиента после подключения специалиста',
+            idempotencyKey: null,
+            originExternalId: 'handoff-inbound-1',
+            transportChatId: 'chat-1',
+            locale: 'ru',
+        );
+        $eventQuery = ScenarioEvent::query()
+            ->where('organization_id', $this->organization->getKey())
+            ->where('event_name', ScenarioEventType::CompanionSpecialistAttention->value)
+            ->whereJsonContains('payload->reason', 'human_handoff_message');
+        $event = $eventQuery->sole();
+
+        self::assertSame($inbound->inbound_message_id, $event->payload['message_id']);
+        self::assertSame($this->client->getKey(), $event->payload['client_id']);
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $action = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->where('recipient_user_id', $admin->getKey())
+            ->whereJsonContains('channel_priority', 'database')
+            ->sole();
+        $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+        $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+
+        $notification = $admin->fresh()->notifications()->sole();
+        $notificationTitle = html_entity_decode((string) $notification->data['title'], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $notificationBody = html_entity_decode((string) $notification->data['body'], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
+        self::assertStringContainsString($this->client->full_name, $notificationTitle);
+        self::assertStringContainsString('новое сообщение', mb_strtolower($notificationBody));
+        self::assertSame(
+            url('/admin/messages?client='.$this->client->getKey()),
+            $notification->data['actions'][0]['url'],
+        );
+
+        app(AcceptCompanionMessage::class)->handle(
+            client: $this->client,
+            channel: 'telegram',
+            body: 'Новое сообщение клиента после подключения специалиста',
+            idempotencyKey: null,
+            originExternalId: 'handoff-inbound-1',
+            transportChatId: 'chat-1',
+            locale: 'ru',
+        );
+        app(ReplyToCompanion::class)->handle($admin, $this->client, 'Ответ специалиста');
+
+        self::assertSame(1, $eventQuery->count(), 'duplicate inbound and staff outbound must not add an attention event');
+        self::assertSame(1, $admin->fresh()->notifications()->count(), 'duplicate inbound and staff outbound must not add a notification');
+
+        $secondInbound = app(AcceptCompanionMessage::class)->handle(
+            client: $this->client,
+            channel: 'telegram',
+            body: 'Второе сообщение клиента',
+            idempotencyKey: null,
+            originExternalId: 'handoff-inbound-2',
+            transportChatId: 'chat-1',
+            locale: 'ru',
+        );
+        $secondEvent = (clone $eventQuery)->whereJsonContains('payload->message_id', $secondInbound->inbound_message_id)->sole();
+        app(MaterializeScenarioEvent::class)->handle($secondEvent->getKey());
+        $secondAction = ScenarioAction::query()
+            ->where('scenario_event_id', $secondEvent->getKey())
+            ->where('recipient_user_id', $admin->getKey())
+            ->whereJsonContains('channel_priority', 'database')
+            ->sole();
+        $secondAction->forceFill(['scheduled_for' => now()->subSecond()])->save();
+        $secondAction->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+        app(ExecuteScenarioAction::class)->handle($secondAction->getKey());
+
+        self::assertSame(2, $eventQuery->count(), 'a distinct inbound message must add one attention event');
+        self::assertSame(2, $admin->fresh()->notifications()->count(), 'a distinct inbound message must add one notification');
     }
 
     public function test_urgent_safety_escalation_uses_attention_event_without_claiming_client_requested_a_specialist(): void

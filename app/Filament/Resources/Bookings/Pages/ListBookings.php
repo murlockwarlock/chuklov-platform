@@ -52,6 +52,8 @@ class ListBookings extends LocalizedListRecords
     #[Url(as: 'specialist_ids', history: true)]
     public array $selectedSpecialistIds = [];
 
+    public string $calendarDensity = 'normal';
+
     /** @var list<int> */
     #[Locked]
     public array $validatedSpecialistIds = [];
@@ -73,6 +75,9 @@ class ListBookings extends LocalizedListRecords
     {
         parent::mount();
 
+        $this->calendarDensity = $this->normalizeCalendarDensity(
+            session()->get($this->calendarDensitySessionKey(), $this->calendarDensity),
+        );
         $timezone = $this->journalTimezone();
         $week = $this->parseWeek($this->weekStart, $timezone)
             ?? CarbonImmutable::now($timezone)->startOfWeek(CarbonImmutable::MONDAY);
@@ -140,6 +145,33 @@ class ListBookings extends LocalizedListRecords
         $this->validatedSpecialistIds = [];
         $this->selectedSpecialistId = null;
         $this->flushCachedTableRecords();
+    }
+
+    public function setCalendarDensity(string $density): void
+    {
+        $this->calendarDensity = $this->normalizeCalendarDensity($density);
+        session()->put($this->calendarDensitySessionKey(), $this->calendarDensity);
+    }
+
+    public function selectedSpecialistsSummary(): ?string
+    {
+        $ids = $this->specialistFilterIds();
+        if ($ids === []) {
+            return null;
+        }
+
+        $options = $this->getSpecialistOptionsProperty();
+        $names = array_values(array_filter(array_map(
+            static fn (int $id): ?string => isset($options[$id]) ? (string) $options[$id] : null,
+            $ids,
+        )));
+        if ($names === []) {
+            return null;
+        }
+
+        return count($names) === 1
+            ? __('Выбран специалист: :names', ['names' => $names[0]])
+            : __('Выбраны специалисты: :names', ['names' => implode(', ', $names)]);
     }
 
     /** @return list<int> */
@@ -275,6 +307,10 @@ class ListBookings extends LocalizedListRecords
             if (isset($calendar[$date]['specialists'][$specialistId])) {
                 $calendar[$date]['specialists'][$specialistId]['bookings'][] = $projection;
             }
+        }
+
+        foreach ($calendar as $date => $day) {
+            $calendar[$date]['bookings'] = $this->applyBookingOverlapLayout($day['bookings']);
         }
 
         return $calendar;
@@ -439,14 +475,25 @@ class ListBookings extends LocalizedListRecords
         }
     }
 
-    /** @param array{start_minutes: int, end_minutes: int} $booking */
+    /** @param array{start_minutes: int, end_minutes: int, overlap_column?: int, overlap_column_count?: int} $booking */
     public function bookingStyle(array $booking): string
     {
         $grid = $this->getJournalGridProperty();
         $top = max(0, $booking['start_minutes'] - $grid['start']) * (44 / 30);
         $height = max(36, ($booking['end_minutes'] - $booking['start_minutes']) * (44 / 30));
+        $column = max(0, (int) ($booking['overlap_column'] ?? 0));
+        $columnCount = max(1, (int) ($booking['overlap_column_count'] ?? 1));
+        $columnWidth = 100 / $columnCount;
+        $left = $column * $columnWidth;
 
-        return 'top: '.$top.'px; height: '.$height.'px;';
+        return 'top: '.$top.'px; height: '.$height.'px; left: calc('.$left.'% + 2px); width: calc('.$columnWidth.'% - 4px);';
+    }
+
+    public function calendarWorkspaceStyle(): string
+    {
+        return $this->normalizeCalendarDensity($this->calendarDensity) === 'wide'
+            ? 'min-width: 1960px;'
+            : 'min-width: 0;';
     }
 
     public function weekLabel(): string
@@ -650,5 +697,78 @@ class ListBookings extends LocalizedListRecords
         return $date instanceof CarbonImmutable && $date->format('Y-m-d') === $value
             ? $date
             : null;
+    }
+
+    /** @param list<array<string, mixed>> $bookings
+     * @return list<array<string, mixed>>
+     */
+    private function applyBookingOverlapLayout(array $bookings): array
+    {
+        if ($bookings === []) {
+            return [];
+        }
+
+        $orderedKeys = array_keys($bookings);
+        usort($orderedKeys, static fn (int $left, int $right): int => [
+            (int) ($bookings[$left]['start_minutes'] ?? 0),
+            (int) ($bookings[$left]['end_minutes'] ?? 0),
+            (int) ($bookings[$left]['id'] ?? 0),
+        ] <=> [
+            (int) ($bookings[$right]['start_minutes'] ?? 0),
+            (int) ($bookings[$right]['end_minutes'] ?? 0),
+            (int) ($bookings[$right]['id'] ?? 0),
+        ]);
+
+        $groups = [];
+        foreach ($orderedKeys as $bookingKey) {
+            $start = (int) ($bookings[$bookingKey]['start_minutes'] ?? 0);
+            $end = max($start + 1, (int) ($bookings[$bookingKey]['end_minutes'] ?? $start + 1));
+            $lastGroup = array_key_last($groups);
+            if ($lastGroup === null || $start >= $groups[$lastGroup]['end']) {
+                $groups[] = ['end' => $end, 'keys' => [$bookingKey]];
+
+                continue;
+            }
+
+            $groups[$lastGroup]['keys'][] = $bookingKey;
+            $groups[$lastGroup]['end'] = max($groups[$lastGroup]['end'], $end);
+        }
+
+        foreach ($groups as $group) {
+            $trackEnds = [];
+            foreach ($group['keys'] as $bookingKey) {
+                $start = (int) ($bookings[$bookingKey]['start_minutes'] ?? 0);
+                $end = max($start + 1, (int) ($bookings[$bookingKey]['end_minutes'] ?? $start + 1));
+                $track = null;
+                foreach ($trackEnds as $trackIndex => $trackEnd) {
+                    if ($trackEnd <= $start) {
+                        $track = $trackIndex;
+                        break;
+                    }
+                }
+                if ($track === null) {
+                    $track = count($trackEnds);
+                }
+                $trackEnds[$track] = $end;
+                $bookings[$bookingKey]['overlap_column'] = $track;
+            }
+
+            $columnCount = max(1, count($trackEnds));
+            foreach ($group['keys'] as $bookingKey) {
+                $bookings[$bookingKey]['overlap_column_count'] = $columnCount;
+            }
+        }
+
+        return $bookings;
+    }
+
+    private function normalizeCalendarDensity(mixed $density): string
+    {
+        return in_array($density, ['compact', 'normal', 'wide'], true) ? $density : 'normal';
+    }
+
+    private function calendarDensitySessionKey(): string
+    {
+        return 'crm.booking_journal.calendar_density';
     }
 }
