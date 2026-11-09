@@ -494,7 +494,7 @@ class ListBookings extends LocalizedListRecords
         return match ($this->normalizeCalendarDensity($this->calendarDensity)) {
             'compact' => '--journal-day-min-width: 112px; min-width: 0;',
             'wide' => '--journal-day-min-width: 216px; min-width: 1584px;',
-            default => '--journal-day-min-width: 152px; min-width: 0;',
+            default => '--journal-day-min-width: 136px; min-width: 0;',
         };
     }
 

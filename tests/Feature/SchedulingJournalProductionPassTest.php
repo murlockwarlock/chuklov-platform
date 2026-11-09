@@ -1274,7 +1274,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         self::assertStringContainsString($second->display_name, $html);
         self::assertStringContainsString($third->display_name, $html);
         self::assertStringContainsString('Добавить запись на 10:30', $html);
-        self::assertStringContainsString('--journal-day-min-width: 152px;', $html);
+        self::assertStringContainsString('--journal-day-min-width: 136px;', $html);
         self::assertStringContainsString('grid-template-columns: 4rem repeat(7, minmax(var(--journal-day-min-width), 1fr));', $html);
         self::assertStringContainsString('max-w-full overflow-x-auto', $html);
 
@@ -1282,16 +1282,16 @@ final class SchedulingJournalProductionPassTest extends TestCase
             ->call('setCalendarDensity', 'compact')
             ->assertSet('calendarDensity', 'compact');
         self::assertStringContainsString('--journal-day-min-width: 112px;', $journal->html());
-        self::assertStringNotContainsString('--journal-day-min-width: 152px;', $journal->html());
+        self::assertStringNotContainsString('--journal-day-min-width: 136px;', $journal->html());
 
         $journal->call('setCalendarDensity', 'normal')->assertSet('calendarDensity', 'normal');
-        self::assertStringContainsString('--journal-day-min-width: 152px;', $journal->html());
+        self::assertStringContainsString('--journal-day-min-width: 136px;', $journal->html());
         self::assertStringNotContainsString('--journal-day-min-width: 112px;', $journal->html());
 
         $journal->call('setCalendarDensity', 'wide')->assertSet('calendarDensity', 'wide');
         self::assertStringContainsString('--journal-day-min-width: 216px;', $journal->html());
         self::assertStringContainsString('min-width: 1584px;', $journal->html());
-        self::assertStringNotContainsString('--journal-day-min-width: 152px;', $journal->html());
+        self::assertStringNotContainsString('--journal-day-min-width: 136px;', $journal->html());
 
         $journal->call('setCalendarDensity', 'compact')->assertSet('calendarDensity', 'compact');
         $reloaded = Livewire::withQueryParams([
