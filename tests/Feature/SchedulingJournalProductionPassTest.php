@@ -1262,16 +1262,36 @@ final class SchedulingJournalProductionPassTest extends TestCase
 
         $html = $journal->html();
         self::assertSame(1, substr_count($html, 'data-testid="journal-calendar-workspace"'));
-        self::assertStringContainsString('data-testid="journal-density-control"', $html);
+        self::assertStringContainsString('data-testid="journal-density-trigger"', $html);
+        self::assertStringContainsString('aria-label="Ширина карточек"', $html);
+        self::assertStringContainsString('x-tooltip', $html);
+        self::assertStringContainsString('data-testid="journal-density-popover"', $html);
+        self::assertStringContainsString('data-testid="journal-density-option-compact"', $html);
+        self::assertStringContainsString('data-testid="journal-density-option-normal"', $html);
+        self::assertStringContainsString('data-testid="journal-density-option-wide"', $html);
+        self::assertStringNotContainsString('data-testid="journal-density-control"', $html);
         self::assertStringContainsString($first->display_name, $html);
         self::assertStringContainsString($second->display_name, $html);
         self::assertStringContainsString($third->display_name, $html);
         self::assertStringContainsString('Добавить запись на 10:30', $html);
+        self::assertStringContainsString('--journal-day-min-width: 152px;', $html);
+        self::assertStringContainsString('grid-template-columns: 4rem repeat(7, minmax(var(--journal-day-min-width), 1fr));', $html);
+        self::assertStringContainsString('max-w-full overflow-x-auto', $html);
 
         $journal->assertSet('calendarDensity', 'normal')
-            ->call('setCalendarDensity', 'wide')
-            ->assertSet('calendarDensity', 'wide');
-        self::assertStringContainsString('min-width: 1960px;', $journal->html());
+            ->call('setCalendarDensity', 'compact')
+            ->assertSet('calendarDensity', 'compact');
+        self::assertStringContainsString('--journal-day-min-width: 112px;', $journal->html());
+        self::assertStringNotContainsString('--journal-day-min-width: 152px;', $journal->html());
+
+        $journal->call('setCalendarDensity', 'normal')->assertSet('calendarDensity', 'normal');
+        self::assertStringContainsString('--journal-day-min-width: 152px;', $journal->html());
+        self::assertStringNotContainsString('--journal-day-min-width: 112px;', $journal->html());
+
+        $journal->call('setCalendarDensity', 'wide')->assertSet('calendarDensity', 'wide');
+        self::assertStringContainsString('--journal-day-min-width: 216px;', $journal->html());
+        self::assertStringContainsString('min-width: 1584px;', $journal->html());
+        self::assertStringNotContainsString('--journal-day-min-width: 152px;', $journal->html());
 
         $journal->call('setCalendarDensity', 'compact')->assertSet('calendarDensity', 'compact');
         $reloaded = Livewire::withQueryParams([
@@ -1279,7 +1299,8 @@ final class SchedulingJournalProductionPassTest extends TestCase
             'view' => 'week',
         ])->actingAs($admin)->test(ListBookings::class);
         $reloaded->assertSet('calendarDensity', 'compact');
-        self::assertStringNotContainsString('min-width: 1960px;', $reloaded->html());
+        self::assertStringContainsString('--journal-day-min-width: 112px;', $reloaded->html());
+        self::assertStringNotContainsString('min-width: 1584px;', $reloaded->html());
     }
 
     public function test_schedule_projection_splits_midnight_once_and_keeps_end_minute_at_day_boundary(): void

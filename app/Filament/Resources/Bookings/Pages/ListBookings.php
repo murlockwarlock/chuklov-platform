@@ -491,9 +491,11 @@ class ListBookings extends LocalizedListRecords
 
     public function calendarWorkspaceStyle(): string
     {
-        return $this->normalizeCalendarDensity($this->calendarDensity) === 'wide'
-            ? 'min-width: 1960px;'
-            : 'min-width: 0;';
+        return match ($this->normalizeCalendarDensity($this->calendarDensity)) {
+            'compact' => '--journal-day-min-width: 112px; min-width: 0;',
+            'wide' => '--journal-day-min-width: 216px; min-width: 1584px;',
+            default => '--journal-day-min-width: 152px; min-width: 0;',
+        };
     }
 
     public function weekLabel(): string

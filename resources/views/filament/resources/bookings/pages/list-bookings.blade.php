@@ -22,6 +22,12 @@
             'wide' => 'p-2 text-xs',
             default => 'p-1.5 text-[11px]',
         };
+        $calendarGridStyle = 'grid-template-columns: 4rem repeat(7, minmax(var(--journal-day-min-width), 1fr));';
+        $densityOptions = [
+            'compact' => ['label' => __('Компактно'), 'icon' => 'heroicon-o-arrows-pointing-in'],
+            'normal' => ['label' => __('Обычно'), 'icon' => 'heroicon-o-arrows-right-left'],
+            'wide' => ['label' => __('Широко'), 'icon' => 'heroicon-o-arrows-pointing-out'],
+        ];
         $selectedSpecialistsSummary = $this->selectedSpecialistsSummary();
     @endphp
 
@@ -44,38 +50,66 @@
                 </div>
             </div>
 
-            <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
-                @if (count($this->specialistOptions) > 1)
-                    <x-filament::dropdown wire:key="booking-journal-specialist-filter" placement="bottom-start" shift width="sm">
-                        <x-slot name="trigger">
-                            <x-filament::button id="booking-journal-specialist" color="gray" icon="heroicon-o-funnel">
-                                {{ $selectedSpecialistIds === [] ? __('Все специалисты') : __('Специалисты: :count', ['count' => count($selectedSpecialistIds)]) }}
-                            </x-filament::button>
-                        </x-slot>
-                        <div class="max-h-64 space-y-1 overflow-y-auto p-2">
-                            <button type="button" wire:click="clearSpecialistFilter" class="w-full rounded-lg px-3 py-2 text-start text-sm">{{ __('Все специалисты') }}</button>
-                            @foreach ($this->specialistOptions as $id => $name)
-                                <label class="flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm">
-                                    <x-filament::input.checkbox wire:model.live="selectedSpecialistIds" value="{{ $id }}" />
-                                    <span class="min-w-0 break-words">{{ $name }}</span>
-                                </label>
-                            @endforeach
-                        </div>
-                    </x-filament::dropdown>
+            <div class="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
+                    @if (count($this->specialistOptions) > 1)
+                        <x-filament::dropdown wire:key="booking-journal-specialist-filter" placement="bottom-start" shift width="sm">
+                            <x-slot name="trigger">
+                                <x-filament::button id="booking-journal-specialist" color="gray" icon="heroicon-o-funnel">
+                                    {{ $selectedSpecialistIds === [] ? __('Все специалисты') : __('Специалисты: :count', ['count' => count($selectedSpecialistIds)]) }}
+                                </x-filament::button>
+                            </x-slot>
+                            <div class="max-h-64 space-y-1 overflow-y-auto p-2">
+                                <button type="button" wire:click="clearSpecialistFilter" class="w-full rounded-lg px-3 py-2 text-start text-sm">{{ __('Все специалисты') }}</button>
+                                @foreach ($this->specialistOptions as $id => $name)
+                                    <label class="flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm">
+                                        <x-filament::input.checkbox wire:model.live="selectedSpecialistIds" value="{{ $id }}" />
+                                        <span class="min-w-0 break-words">{{ $name }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                        </x-filament::dropdown>
+                    @endif
+                    @if ($viewMode === 'week')
+                        <x-filament::dropdown wire:key="booking-journal-density" placement="bottom-start" shift width="xs">
+                            <x-slot name="trigger">
+                                <x-filament::icon-button
+                                    id="booking-journal-density"
+                                    data-testid="journal-density-trigger"
+                                    color="gray"
+                                    icon="heroicon-o-arrows-right-left"
+                                    label="{{ __('Ширина карточек') }}"
+                                    tooltip="{{ __('Ширина карточек') }}"
+                                />
+                            </x-slot>
+                            <div class="min-w-48 p-2" data-testid="journal-density-popover" aria-label="{{ __('Ширина карточек') }}">
+                                <div class="px-2 pb-2 text-sm font-semibold text-gray-950 dark:text-white">{{ __('Ширина карточек') }}</div>
+                                <div class="space-y-1">
+                                    @foreach ($densityOptions as $density => $option)
+                                        <button
+                                            type="button"
+                                            wire:click="setCalendarDensity('{{ $density }}')"
+                                            data-testid="journal-density-option-{{ $density }}"
+                                            class="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 py-2 text-start text-sm {{ $calendarDensity === $density ? 'bg-primary-50 font-semibold text-primary-800 dark:bg-primary-950/40 dark:text-primary-200' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800' }}"
+                                            aria-pressed="{{ $calendarDensity === $density ? 'true' : 'false' }}"
+                                        >
+                                            <span class="flex size-4 shrink-0 items-center justify-center">
+                                                @if ($calendarDensity === $density)
+                                                    <x-filament::icon icon="heroicon-o-check" class="size-4 text-primary-600 dark:text-primary-300" />
+                                                @endif
+                                            </span>
+                                            <x-filament::icon :icon="$option['icon']" class="size-4 shrink-0 text-gray-400 dark:text-gray-500" />
+                                            <span>{{ $option['label'] }}</span>
+                                        </button>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </x-filament::dropdown>
+                    @endif
                     @if ($selectedSpecialistsSummary !== null)
                         <p class="max-w-xs truncate text-xs text-gray-500 dark:text-gray-400" title="{{ $selectedSpecialistsSummary }}">{{ $selectedSpecialistsSummary }}</p>
                     @endif
-                @endif
-                @if ($viewMode === 'week')
-                    <div class="hidden items-center gap-1 lg:flex" data-testid="journal-density-control" aria-label="{{ __('Ширина карточек') }}">
-                        <span class="mr-1 text-xs text-gray-500 dark:text-gray-400">{{ __('Ширина карточек') }}</span>
-                        <div class="inline-flex rounded-lg border border-gray-200 bg-white p-1 dark:border-gray-800 dark:bg-gray-900">
-                            @foreach (['compact' => __('Компактно'), 'normal' => __('Обычно'), 'wide' => __('Широко')] as $density => $label)
-                                <button type="button" wire:click="setCalendarDensity('{{ $density }}')" class="rounded-md px-2.5 py-1.5 text-xs font-medium {{ $calendarDensity === $density ? 'bg-gray-100 text-gray-950 dark:bg-gray-800 dark:text-white' : 'text-gray-600 dark:text-gray-300' }}" aria-pressed="{{ $calendarDensity === $density ? 'true' : 'false' }}">{{ $label }}</button>
-                            @endforeach
-                        </div>
-                    </div>
-                @endif
+                </div>
                 @if ($canCreateBooking)
                     <div class="flex min-w-0 flex-wrap gap-2">
                         <a href="{{ $this->newBookingUrl() }}" class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500">{{ __('Добавить запись') }}</a>
@@ -97,7 +131,7 @@
             <div class="hidden min-w-0 rounded-xl border border-gray-200 bg-white shadow-sm lg:block dark:border-gray-800 dark:bg-gray-900" data-testid="journal-calendar-workspace">
                 <div class="max-w-full overflow-x-auto overscroll-x-contain">
                     <div class="min-w-0" style="{{ $this->calendarWorkspaceStyle() }}">
-                        <div class="grid min-w-0 grid-cols-[4rem_repeat(7,minmax(0,1fr))] border-b border-gray-200 dark:border-gray-800">
+                        <div class="grid min-w-0 border-b border-gray-200 dark:border-gray-800" style="{{ $calendarGridStyle }}">
                             <div class="border-r border-gray-200 dark:border-gray-800"></div>
                             @foreach ($days as $day)
                                 <div class="min-w-0 border-r border-gray-200 px-2 py-3 last:border-r-0 dark:border-gray-800 {{ $day['is_today'] ? 'bg-primary-50 dark:bg-primary-950/30' : '' }}">
@@ -108,7 +142,7 @@
                             @endforeach
                         </div>
 
-                        <div class="grid min-w-0 grid-cols-[4rem_repeat(7,minmax(0,1fr))]">
+                        <div class="grid min-w-0" style="{{ $calendarGridStyle }}">
                             <div class="relative border-r border-gray-200 dark:border-gray-800" style="height: {{ $calendarHeight }}px;">
                                 @foreach ($grid['labels'] as $label)
                                     <span class="absolute right-2 -translate-y-1/2 text-[11px] text-gray-400 dark:text-gray-500" style="{{ $minuteStyle($label['minutes']) }}">{{ $label['label'] }}</span>
