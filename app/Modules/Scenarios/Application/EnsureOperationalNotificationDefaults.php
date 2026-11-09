@@ -828,6 +828,10 @@ final class EnsureOperationalNotificationDefaults
             && $rule->template_version_id !== $templates['companion-fallback-failed']->getKey()) {
             $attributes['template_version_id'] = $templates['companion-fallback-failed']->getKey();
         }
+        if (in_array($rule->rule_key, ['companion-specialist-attention-database', 'companion-specialist-attention-telegram'], true)
+            && $rule->template_version_id !== $templates['companion-specialist-attention']->getKey()) {
+            $attributes['template_version_id'] = $templates['companion-specialist-attention']->getKey();
+        }
 
         if ($attributes === []) {
             return;

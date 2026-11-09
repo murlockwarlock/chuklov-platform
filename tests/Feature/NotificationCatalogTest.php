@@ -148,6 +148,48 @@ final class NotificationCatalogTest extends TestCase
         self::assertContains('companion.failure_label', $template->latestVersion()->firstOrFail()->variables);
     }
 
+    public function test_untouched_legacy_companion_attention_defaults_are_upgraded_and_relinked(): void
+    {
+        $organization = Organization::factory()->create();
+        $template = NotificationTemplate::factory()->forOrganization($organization)->create([
+            'template_key' => 'companion-specialist-attention',
+            'name' => 'Сообщение клиента требует внимания',
+            'locale' => 'ru',
+            'purpose' => ScenarioRulePurpose::Transactional->value,
+        ]);
+        $oldVersion = NotificationTemplateVersion::factory()->forTemplate($template)->create([
+            'version' => 1,
+            'subject' => '{{ companion.notification_title }}',
+            'body' => '{{ companion.notification_body }}',
+            'variables' => ['companion.notification_body'],
+        ]);
+        $databaseRule = ScenarioRule::factory()->forOrganization($organization)->usingTemplate($oldVersion)->create([
+            'rule_key' => 'companion-specialist-attention-database',
+            'trigger_event' => ScenarioEventType::CompanionSpecialistAttention->value,
+            'purpose' => ScenarioRulePurpose::Transactional->value,
+            'channel_priority' => ['database'],
+            'created_by_user_id' => null,
+            'updated_by_user_id' => null,
+        ]);
+        $telegramRule = ScenarioRule::factory()->forOrganization($organization)->usingTemplate($oldVersion)->create([
+            'rule_key' => 'companion-specialist-attention-telegram',
+            'trigger_event' => ScenarioEventType::CompanionSpecialistAttention->value,
+            'purpose' => ScenarioRulePurpose::Transactional->value,
+            'channel_priority' => ['telegram'],
+            'created_by_user_id' => null,
+            'updated_by_user_id' => null,
+        ]);
+
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+
+        $latest = $template->latestVersion()->firstOrFail();
+        self::assertSame(1, $oldVersion->fresh()->version);
+        self::assertSame(2, $latest->version);
+        self::assertSame(['companion.notification_body', 'companion.notification_title'], $latest->variables);
+        self::assertSame($latest->getKey(), $databaseRule->fresh()->template_version_id);
+        self::assertSame($latest->getKey(), $telegramRule->fresh()->template_version_id);
+    }
+
     public function test_catalog_toggles_only_the_selected_channel_rule_through_existing_scenario_authority(): void
     {
         $organization = Organization::factory()->create();
