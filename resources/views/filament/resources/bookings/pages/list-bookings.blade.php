@@ -171,7 +171,7 @@
                                             <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-md"></a>
                                             <div class="relative z-10 pointer-events-none">
                                                 <div class="flex min-w-0 items-center gap-1">
-                                                    <span class="min-w-0 flex-1 truncate font-semibold" title="{{ $booking['specialist'] }}">{{ $booking['start_time'] }} · {{ $booking['specialist'] }}</span>
+                                                    <span class="min-w-0 flex-1 {{ $calendarDensity === 'wide' ? 'whitespace-normal break-words' : 'truncate' }} font-semibold" title="{{ $booking['specialist'] }}">{{ $booking['start_time'] }} · {{ $booking['specialist'] }}</span>
                                                     @if ($booking['released_for_rebooking'])
                                                         <a
                                                             href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"

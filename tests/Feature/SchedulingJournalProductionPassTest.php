@@ -1304,6 +1304,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         $journal->call('setCalendarDensity', 'wide')->assertSet('calendarDensity', 'wide');
         self::assertStringContainsString('--journal-day-min-width: 360px;', $journal->html());
         self::assertStringContainsString('min-width: 2520px;', $journal->html());
+        self::assertStringContainsString('whitespace-normal break-words', $journal->html());
         self::assertStringNotContainsString('--journal-day-min-width: 136px;', $journal->html());
 
         $journal->call('setCalendarDensity', 'compact')->assertSet('calendarDensity', 'compact');
