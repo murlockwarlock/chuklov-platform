@@ -71,7 +71,7 @@
                         </x-filament::dropdown>
                     @endif
                     @if ($viewMode === 'week')
-                        <x-filament::dropdown wire:key="booking-journal-density" placement="bottom-start" shift width="xs">
+                        <x-filament::dropdown wire:key="booking-journal-density" class="hidden lg:block" placement="bottom-start" shift width="xs">
                             <x-slot name="trigger">
                                 <x-filament::icon-button
                                     id="booking-journal-density"
