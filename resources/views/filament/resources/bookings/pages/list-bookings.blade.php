@@ -28,7 +28,7 @@
             'normal' => ['label' => __('Обычно'), 'icon' => 'heroicon-o-arrows-right-left'],
             'wide' => ['label' => __('Широко'), 'icon' => 'heroicon-o-arrows-pointing-out'],
         ];
-        $selectedSpecialistsSummary = $this->selectedSpecialistsSummary();
+        $specialistFilterLabel = $this->selectedSpecialistsSummary();
     @endphp
 
     <div class="flex min-w-0 flex-col gap-5" wire:poll.30s>
@@ -56,7 +56,7 @@
                         <x-filament::dropdown wire:key="booking-journal-specialist-filter" placement="bottom-start" shift width="sm">
                             <x-slot name="trigger">
                                 <x-filament::button id="booking-journal-specialist" color="gray" icon="heroicon-o-funnel">
-                                    {{ $selectedSpecialistIds === [] ? __('Все специалисты') : __('Специалисты: :count', ['count' => count($selectedSpecialistIds)]) }}
+                                    {{ $specialistFilterLabel }}
                                 </x-filament::button>
                             </x-slot>
                             <div class="max-h-64 space-y-1 overflow-y-auto p-2">
@@ -105,9 +105,6 @@
                                 </div>
                             </div>
                         </x-filament::dropdown>
-                    @endif
-                    @if ($selectedSpecialistsSummary !== null)
-                        <p class="max-w-xs truncate text-xs text-gray-500 dark:text-gray-400" title="{{ $selectedSpecialistsSummary }}">{{ $selectedSpecialistsSummary }}</p>
                     @endif
                 </div>
                 @if ($canCreateBooking)
