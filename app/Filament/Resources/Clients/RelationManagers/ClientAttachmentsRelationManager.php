@@ -30,6 +30,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Support\Images\SupportedImageTypes;
 use Filament\Actions\Action;
 use Filament\Actions\ActionGroup;
 use Filament\Forms\Components\FileUpload;
@@ -137,10 +138,10 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                             ->acceptedFileTypes([
                                 'application/pdf',
                                 'text/plain',
-                                'image/jpeg',
-                                'image/png',
-                                'image/webp',
+                                ...SupportedImageTypes::acceptedMimeTypes(),
                             ])
+                            ->extraInputAttributes(['accept' => 'application/pdf,text/plain,'.SupportedImageTypes::browserAccept()])
+                            ->helperText(__('Загрузите документ или фотографию.'))
                             ->maxSize((int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024))
                             ->storeFiles(false)
                             ->required(),

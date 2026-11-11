@@ -3,6 +3,8 @@
 namespace App\Modules\Services\Infrastructure\Storage;
 
 use App\Modules\Services\Domain\Contracts\ServiceMediaStorageInterface;
+use App\Support\Images\ImageNormalizationException;
+use App\Support\Images\NormalizeUploadedImage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -11,58 +13,26 @@ use RuntimeException;
 
 final class FilesystemServiceMediaStorage implements ServiceMediaStorageInterface
 {
-    /** @var array<string, string> */
-    private const MIME_EXTENSIONS = [
-        'image/jpeg' => 'jpg',
-        'image/png' => 'png',
-    ];
+    public function __construct(private readonly NormalizeUploadedImage $images) {}
 
     public function store(int $organizationId, UploadedFile $file): string
     {
-        if (! $file->isValid()) {
+        try {
+            $normalized = $this->images->normalize($file, $this->maxBytes());
+        } catch (ImageNormalizationException $exception) {
             throw ValidationException::withMessages([
-                'service_image' => ['Изображение не удалось загрузить.'],
+                'service_image' => [$this->validationMessage($exception)],
             ]);
         }
 
-        $realPath = $file->getRealPath();
-        $size = $file->getSize();
-
-        if ($realPath === false || ! is_file($realPath) || $size === false || $size <= 0) {
-            throw ValidationException::withMessages([
-                'service_image' => ['Изображение не удалось прочитать.'],
-            ]);
-        }
-
-        if ($size > $this->maxBytes()) {
-            throw ValidationException::withMessages([
-                'service_image' => ['Изображение должно быть JPG или PNG размером до 5 МБ.'],
-            ]);
-        }
-
-        $mime = $this->sniffMimeType($realPath);
-        $extension = self::MIME_EXTENSIONS[$mime] ?? null;
-
-        if ($extension === null) {
-            throw ValidationException::withMessages([
-                'service_image' => ['Поддерживаются только изображения JPG и PNG.'],
-            ]);
-        }
-
-        $path = "services/{$organizationId}/".Str::uuid()->toString().".{$extension}";
-        $storedPath = Storage::disk($this->disk())->putFileAs(
-            dirname($path),
-            $file,
-            basename($path),
-        );
-
-        if (! is_string($storedPath)) {
+        $path = "services/{$organizationId}/".Str::uuid()->toString().".{$normalized->extension}";
+        if (! Storage::disk($this->disk())->put($path, $normalized->contents)) {
             throw ValidationException::withMessages([
                 'service_image' => ['Не удалось сохранить изображение.'],
             ]);
         }
 
-        return $storedPath;
+        return $path;
     }
 
     public function isManagedPath(int $organizationId, ?string $path): bool
@@ -72,7 +42,7 @@ final class FilesystemServiceMediaStorage implements ServiceMediaStorageInterfac
         }
 
         $matched = preg_match(
-            '/\Aservices\/(\d+)\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(jpg|png)\z/i',
+            '/\Aservices\/(\d+)\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.(jpg|png|webp)\z/i',
             $path,
             $matches,
         ) === 1;
@@ -111,20 +81,15 @@ final class FilesystemServiceMediaStorage implements ServiceMediaStorageInterfac
 
     private function maxBytes(): int
     {
-        return max(1, (int) config('service_media.max_bytes', 5_242_880));
+        return max(1, (int) config('service_media.max_bytes', 15_728_640));
     }
 
-    private function sniffMimeType(string $path): string
+    private function validationMessage(ImageNormalizationException $exception): string
     {
-        $finfo = finfo_open(FILEINFO_MIME_TYPE);
-
-        if ($finfo === false) {
-            return 'application/octet-stream';
+        if ($exception->reason === ImageNormalizationException::TOO_LARGE) {
+            return 'Изображение должно быть размером до 15 МБ.';
         }
 
-        $mime = finfo_file($finfo, $path);
-        finfo_close($finfo);
-
-        return is_string($mime) ? strtolower($mime) : 'application/octet-stream';
+        return 'Не удалось прочитать изображение. Попробуйте другой файл.';
     }
 }

@@ -5,6 +5,8 @@ namespace App\Filament\Resources\AiProviders\Pages;
 use App\Filament\Resources\AiProviders\AiProviderResource;
 use App\Filament\Support\LocalizedListRecords;
 use Filament\Actions\CreateAction;
+use Filament\Schemas\Components\Tabs\Tab;
+use Illuminate\Database\Eloquent\Builder;
 
 class ListAiProviders extends LocalizedListRecords
 {
@@ -21,6 +23,17 @@ class ListAiProviders extends LocalizedListRecords
     {
         return [
             CreateAction::make(),
+        ];
+    }
+
+    public function getTabs(): array
+    {
+        return [
+            'enabled' => Tab::make(__('Включённые'))
+                ->modifyQueryUsing(fn (Builder $query): Builder => $query->where('is_enabled', true)),
+            'disabled' => Tab::make(__('Отключённые'))
+                ->modifyQueryUsing(fn (Builder $query): Builder => $query->where('is_enabled', false)),
+            'all' => Tab::make(__('Все')),
         ];
     }
 }

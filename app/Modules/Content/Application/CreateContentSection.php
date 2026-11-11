@@ -84,7 +84,7 @@ class CreateContentSection
 
         if (! $value instanceof UploadedFile) {
             throw ValidationException::withMessages([
-                'content_image' => ['Загрузите изображение в формате JPG, PNG или WebP.'],
+                'content_image' => ['Не удалось прочитать изображение. Попробуйте другой файл.'],
             ]);
         }
 

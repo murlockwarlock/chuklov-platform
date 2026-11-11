@@ -14,6 +14,7 @@ use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
 use App\Modules\Content\Domain\Enums\ContentDeliveryMode;
 use App\Modules\Content\Domain\Enums\ContentTelegramMediaType;
 use App\Modules\Content\Domain\Models\ContentSection;
+use App\Support\Images\SupportedImageTypes;
 use App\Support\RichText\RichTextDocument;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
@@ -187,14 +188,15 @@ class ContentSectionForm
                         FileUpload::make('content_image')
                             ->label(__('Загрузить изображение'))
                             ->image()
-                            ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                            ->acceptedFileTypes(SupportedImageTypes::acceptedMimeTypes())
+                            ->extraInputAttributes(['accept' => SupportedImageTypes::browserAccept()])
                             ->maxSize(self::imageUploadKilobytes())
                             ->storeFiles(false)
                             ->validationMessages([
-                                'mimetypes' => __('Поддерживаются только изображения JPG, PNG и WebP.'),
+                                'mimetypes' => __('Не удалось прочитать изображение. Попробуйте другой файл.'),
                                 'max' => __('Изображение должно быть размером до 5 МБ.'),
                             ])
-                            ->helperText(__('JPG, PNG или WebP размером до 5 МБ. Видео и несколько файлов не поддерживаются.'))
+                            ->helperText(__('Загрузите фотографию или изображение размером до 5 МБ. Видео и несколько файлов не поддерживаются.'))
                             ->live()
                             ->afterStateUpdated(function (Set $set): void {
                                 $set('remove_image', false);

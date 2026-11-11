@@ -20,12 +20,15 @@ use App\Modules\Scheduling\Application\ConfirmBooking;
 use App\Modules\Scheduling\Application\CreateBooking;
 use App\Modules\Scheduling\Application\CreateScheduleException;
 use App\Modules\Scheduling\Application\CreateUnavailablePeriod;
+use App\Modules\Scheduling\Application\DeleteUnavailablePeriod;
 use App\Modules\Scheduling\Application\MarkBookingNoShow;
 use App\Modules\Scheduling\Application\RemoveSpecialistServiceAssignment;
 use App\Modules\Scheduling\Application\RescheduleBooking;
 use App\Modules\Scheduling\Application\SetOnlineMeetingUrl;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Application\UpdateClientTimezonePreference;
+use App\Modules\Scheduling\Application\UpdateScheduleException;
+use App\Modules\Scheduling\Application\UpdateUnavailablePeriod;
 use App\Modules\Scheduling\Domain\Enums\BookingEventType;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\MeetingLinkMode;
@@ -34,6 +37,7 @@ use App\Modules\Scheduling\Domain\Enums\VisitFormat;
 use App\Modules\Scheduling\Domain\Models\Booking;
 use App\Modules\Scheduling\Domain\Models\BookingEvent;
 use App\Modules\Scheduling\Domain\Models\SpecialistServiceAssignment;
+use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use App\Modules\Services\Application\UpdateService;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Specialists\Application\SetSpecialistActive;
@@ -545,6 +549,102 @@ class MilestoneFourFinalLifecycleTest extends TestCase
             acknowledgedImpactDigest: $unavailableImpactDigest,
         );
         self::assertModelExists($booking->fresh());
+    }
+
+    public function test_deleting_unavailable_period_requires_impact_acknowledgement_and_preserves_booking(): void
+    {
+        [$organization, $admin, $specialist, $service] = $this->fixture();
+        $client = Client::factory()->forOrganization($organization)->create();
+        $booking = $this->createBooking($admin, $client, $specialist, $service, '2026-04-06 09:00:00');
+        $impactDigest = null;
+
+        try {
+            app(CreateUnavailablePeriod::class)->handle(
+                actor: $admin,
+                specialist: $specialist,
+                startsAt: CarbonImmutable::create(2026, 4, 6, 8, 0, 0, 'UTC'),
+                endsAt: CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
+            );
+            self::fail('An unavailable period with an affected booking was created without acknowledgement.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('schedule_impact', $exception->errors());
+            $impactDigest = (string) $exception->errors()['schedule_impact_digest'][0];
+        }
+
+        app(CreateUnavailablePeriod::class)->handle(
+            actor: $admin,
+            specialist: $specialist,
+            startsAt: CarbonImmutable::create(2026, 4, 6, 8, 0, 0, 'UTC'),
+            endsAt: CarbonImmutable::create(2026, 4, 6, 10, 0, 0, 'UTC'),
+            acknowledgeImpact: true,
+            acknowledgedImpactDigest: $impactDigest,
+        );
+        $period = UnavailablePeriod::query()
+            ->where('organization_id', $organization->getKey())
+            ->sole();
+
+        try {
+            app(DeleteUnavailablePeriod::class)->handle($admin, $period);
+            self::fail('An unavailable period with an affected booking was deleted without acknowledgement.');
+        } catch (ValidationException $exception) {
+            self::assertArrayHasKey('schedule_impact', $exception->errors());
+            $impactDigest = (string) $exception->errors()['schedule_impact_digest'][0];
+        }
+
+        self::assertModelExists($period->fresh());
+        self::assertModelExists($booking->fresh());
+
+        app(DeleteUnavailablePeriod::class)->handle($admin, $period, true, $impactDigest);
+
+        self::assertModelMissing($period);
+        self::assertModelExists($booking->fresh());
+    }
+
+    public function test_schedule_exception_and_unavailable_period_edits_persist_the_selected_specialist(): void
+    {
+        [$organization, $admin, $specialist] = $this->fixture();
+        $otherSpecialist = Specialist::factory()->forOrganization($organization)->create();
+
+        $exception = app(CreateScheduleException::class)->handle($admin, $specialist, [
+            'exception_date' => '2026-04-07',
+            'exception_type' => 'day_off',
+        ]);
+        $updatedException = app(UpdateScheduleException::class)->handle(
+            actor: $admin,
+            exception: $exception,
+            attributes: [
+                'exception_date' => '2026-04-08',
+                'exception_type' => 'day_off',
+            ],
+            targetSpecialist: $otherSpecialist,
+        );
+
+        self::assertSame($otherSpecialist->getKey(), $updatedException->specialist_id);
+        self::assertSame('2026-04-08', $updatedException->dateKey());
+
+        $period = app(CreateUnavailablePeriod::class)->handle(
+            actor: $admin,
+            specialist: $specialist,
+            startsAt: CarbonImmutable::create(2026, 4, 9, 8, 0, 0, 'UTC'),
+            endsAt: CarbonImmutable::create(2026, 4, 9, 10, 0, 0, 'UTC'),
+        );
+        $updatedPeriod = app(UpdateUnavailablePeriod::class)->handle(
+            actor: $admin,
+            period: $period,
+            specialist: $otherSpecialist,
+            startsAt: CarbonImmutable::create(2026, 4, 9, 9, 0, 0, 'UTC'),
+            endsAt: CarbonImmutable::create(2026, 4, 9, 11, 0, 0, 'UTC'),
+            reason: 'Обновлённая причина',
+        );
+
+        self::assertSame($otherSpecialist->getKey(), $updatedPeriod->specialist_id);
+        self::assertSame('Обновлённая причина', $updatedPeriod->reason);
+        self::assertDatabaseHas('unavailable_periods', [
+            'id' => $period->getKey(),
+            'organization_id' => $organization->getKey(),
+            'specialist_id' => $otherSpecialist->getKey(),
+        ]);
+        self::assertInstanceOf(UnavailablePeriod::class, $updatedPeriod->fresh());
     }
 
     public function test_specialist_service_and_assignment_mutations_preserve_future_booking_history(): void

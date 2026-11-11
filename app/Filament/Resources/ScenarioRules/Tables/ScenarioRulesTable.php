@@ -3,9 +3,12 @@
 namespace App\Filament\Resources\ScenarioRules\Tables;
 
 use App\Filament\Support\RichTextPresentation;
+use App\Models\User;
+use App\Modules\Scenarios\Application\SetScenarioRuleEnabled;
 use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioRule;
 use BackedEnum;
+use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Tables\Columns\IconColumn;
@@ -54,7 +57,31 @@ final class ScenarioRulesTable
                     ->icon('heroicon-o-pencil')
                     ->iconButton()
                     ->tooltip(__('Редактировать авто-сообщение')),
+                Action::make('disable')
+                    ->label(__('Отключить'))
+                    ->color('warning')
+                    ->icon('heroicon-o-pause')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Отключить авто-сообщение?'))
+                    ->modalDescription(__('Автоматическая отправка прекратится. Настройки и история уже отправленных сообщений останутся.'))
+                    ->visible(fn (ScenarioRule $record): bool => $record->is_enabled)
+                    ->action(fn (ScenarioRule $record): ScenarioRule => self::setEnabled($record, false)),
+                Action::make('enable')
+                    ->label(__('Включить'))
+                    ->color('success')
+                    ->icon('heroicon-o-play')
+                    ->requiresConfirmation()
+                    ->visible(fn (ScenarioRule $record): bool => ! $record->is_enabled)
+                    ->action(fn (ScenarioRule $record): ScenarioRule => self::setEnabled($record, true)),
             ]);
+    }
+
+    private static function setEnabled(ScenarioRule $record, bool $isEnabled): ScenarioRule
+    {
+        $actor = auth()->user();
+        abort_unless($actor instanceof User, 403);
+
+        return app(SetScenarioRuleEnabled::class)->handle($actor, $record, $isEnabled);
     }
 
     private static function eventLabel(mixed $event): string

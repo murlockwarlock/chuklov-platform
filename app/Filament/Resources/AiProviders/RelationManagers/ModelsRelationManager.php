@@ -7,6 +7,7 @@ use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
 use App\Modules\AI\Application\Actions\CreateAndActivateModelRelease;
 use App\Modules\AI\Application\Actions\CreateModelConfiguration;
+use App\Modules\AI\Application\Actions\SetAiModelEnabled;
 use App\Modules\AI\Domain\Enums\AiCapability;
 use App\Modules\AI\Domain\Enums\AiModelModality;
 use App\Modules\AI\Domain\Enums\ModelLifecycleStatus;
@@ -34,6 +35,7 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Auth;
@@ -291,6 +293,14 @@ class ModelsRelationManager extends LocalizedRelationManager
                             .' / $'.AiMoney::displayDecimalFromRateUnits($pricing->outputRatePerMillionUnits());
                     }),
             ])
+            ->filters([
+                SelectFilter::make('is_enabled')
+                    ->label(__('Статус'))
+                    ->options([
+                        '1' => __('Включённые'),
+                        '0' => __('Отключённые'),
+                    ]),
+            ])
             ->emptyStateHeading(__('Моделей пока нет'))
             ->emptyStateDescription(__('Выберите одну или несколько моделей. Первая используется как основная, остальные — как резервные.'))
             ->headerActions([
@@ -347,6 +357,24 @@ class ModelsRelationManager extends LocalizedRelationManager
                             ->success()
                             ->send();
                     }),
+                Action::make('disable')
+                    ->label(__('Отключить модель'))
+                    ->icon(Heroicon::OutlinedPause)
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Отключить модель?'))
+                    ->modalDescription(__('Модель перестанет использоваться для новых запросов. Настройки, версии и история запусков сохранятся.'))
+                    ->visible(fn (AiModelConfiguration $record): bool => $record->is_enabled)
+                    ->action(fn (AiModelConfiguration $record): AiModelConfiguration => self::setEnabled($record, false)),
+                Action::make('enable')
+                    ->label(__('Включить модель'))
+                    ->icon(Heroicon::OutlinedPlay)
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Включить модель?'))
+                    ->modalDescription(__('Модель снова сможет использоваться для новых запросов. Настройки, версии и история запусков сохранятся.'))
+                    ->visible(fn (AiModelConfiguration $record): bool => ! $record->is_enabled)
+                    ->action(fn (AiModelConfiguration $record): AiModelConfiguration => self::setEnabled($record, true)),
                 EditAction::make()
                     ->using(function (AiModelConfiguration $record, array $data): AiModelConfiguration {
                         $actor = Auth::user();
@@ -359,6 +387,16 @@ class ModelsRelationManager extends LocalizedRelationManager
                         return $record->fresh() ?? $record;
                     }),
             ]);
+    }
+
+    private static function setEnabled(AiModelConfiguration $record, bool $enabled): AiModelConfiguration
+    {
+        $actor = Auth::user();
+        if (! $actor instanceof User) {
+            throw new \LogicException('Authenticated user required.');
+        }
+
+        return app(SetAiModelEnabled::class)->handle($actor, $record, $enabled);
     }
 
     /** @return array<int, string> */

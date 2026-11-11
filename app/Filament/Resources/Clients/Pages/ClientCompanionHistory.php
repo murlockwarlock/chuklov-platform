@@ -24,6 +24,7 @@ use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Support\Images\SupportedImageTypes;
 use App\Support\RichText\RichTextDocument;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
@@ -87,9 +88,7 @@ final class ClientCompanionHistory extends LocalizedViewRecord
             mediaAcceptedFileTypes: [
                 'application/pdf',
                 'text/plain',
-                'image/jpeg',
-                'image/png',
-                'image/webp',
+                ...SupportedImageTypes::acceptedMimeTypes(),
             ],
             mediaMaxKilobytes: (int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024),
             mediaMultiple: false,
@@ -98,7 +97,7 @@ final class ClientCompanionHistory extends LocalizedViewRecord
             mediaSectionTitle: 'Вложение',
             mediaSectionDescription: 'Можно добавить один безопасный файл. Защищённые медицинские файлы здесь не показываются.',
             mediaUploadLabel: 'Загрузить файл для сообщения',
-            mediaHelperText: 'Только PDF, TXT, JPG, PNG или WebP. Один файл до 20 МБ.',
+            mediaHelperText: 'Можно добавить фотографию, изображение, PDF или TXT. Один файл до 20 МБ.',
             additionalMediaComponents: [
                 Select::make('existing_attachment_id')
                     ->label(__('Или выбрать уже разрешённый файл'))

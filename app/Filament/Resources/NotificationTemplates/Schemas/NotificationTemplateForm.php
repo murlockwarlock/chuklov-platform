@@ -201,7 +201,7 @@ final class NotificationTemplateForm
     private static function mediaType(?string $mime, string $name): string
     {
         $extension = strtolower(pathinfo(parse_url($name, PHP_URL_PATH) ?: $name, PATHINFO_EXTENSION));
-        if (str_starts_with(strtolower($mime ?? ''), 'image/') || in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+        if (str_starts_with(strtolower($mime ?? ''), 'image/') || in_array($extension, ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], true)) {
             return 'photo';
         }
         if (strtolower($mime ?? '') === 'video/mp4' || $extension === 'mp4') {

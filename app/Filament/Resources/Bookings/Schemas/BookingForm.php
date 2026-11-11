@@ -329,7 +329,7 @@ class BookingForm
             DatePicker::make('booking_date')
                 ->label(__('Дата'))
                 ->native()
-                ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
+                ->helperText(fn (): string => __('Время для вас: ').self::viewerTimezoneLabel().'.')
                 ->live()
                 ->afterStateUpdated(function (Set $set): void {
                     self::clearAvailableTime($set);
@@ -355,6 +355,12 @@ class BookingForm
                 ->required(fn (Get $get): bool => self::startsAt($get('starts_at')) === null)
                 ->validationMessages(['required' => __('Выберите доступное время.')])
                 ->helperText(fn (Get $get): string => self::availableTimeHelper($get)),
+            TextEntry::make('specialist_time_context')
+                ->label('')
+                ->state(fn (Get $get): string => self::specialistTimeContext($get))
+                ->color('gray')
+                ->visible(fn (Get $get): bool => self::hasDifferentScheduleTimezone($get))
+                ->columnSpanFull(),
             Hidden::make('journal_time_unavailable')
                 ->default(false)
                 ->dehydrated(false),
@@ -390,14 +396,15 @@ class BookingForm
                 ->label(__('Внимание'))
                 ->color('danger')
                 ->state(fn (Get $get): string => self::backdatedWarning($get))
+                ->extraAttributes(['class' => 'whitespace-pre-line'])
                 ->visible(fn (Get $get): bool => self::isBackdated($get))
                 ->columnSpanFull(),
             Checkbox::make('confirm_backdated')
-                ->label(__('Подтверждаю создание записи задним числом'))
+                ->label(__('Всё равно создать запись на прошедшее время'))
                 ->default(false)
                 ->accepted(fn (Get $get): bool => self::isBackdated($get))
                 ->validationMessages([
-                    'accepted' => __('Подтвердите создание записи задним числом.'),
+                    'accepted' => __('Подтвердите создание записи на прошедшее время.'),
                 ])
                 ->visible(fn (Get $get): bool => self::isBackdated($get))
                 ->columnSpanFull(),
@@ -506,7 +513,7 @@ class BookingForm
             return __('Сначала выберите дату.');
         }
 
-        return __('Показываются только свободные интервалы в часовом поясе CRM. Если список пуст, на эту дату свободного времени нет.');
+        return __('Показываются только свободные интервалы в вашем часовом поясе. Если список пуст, на эту дату свободного времени нет.');
     }
 
     /** @return array<string, string> */
@@ -641,9 +648,36 @@ class BookingForm
             return '';
         }
 
+        $viewerTimezone = self::viewerTimezone();
+
+        return implode("\n", [
+            __('Это время уже прошло.'),
+            __('Выбрано: ').$startsAt->setTimezone($viewerTimezone)->format('H:i').' · '.TimezoneOptions::label($viewerTimezone),
+            __('Сейчас в вашем часовом поясе: ').CarbonImmutable::now($viewerTimezone)->format('H:i'),
+        ]);
+    }
+
+    private static function hasDifferentScheduleTimezone(Get $get): bool
+    {
+        $startsAt = self::startsAt($get('starts_at'));
+
+        if (! $startsAt instanceof CarbonImmutable) {
+            return false;
+        }
+
+        return self::scheduleTimezone($get, $startsAt) !== self::viewerTimezone();
+    }
+
+    private static function specialistTimeContext(Get $get): string
+    {
+        $startsAt = self::startsAt($get('starts_at'));
+        if (! $startsAt instanceof CarbonImmutable) {
+            return '';
+        }
+
         $timezone = self::scheduleTimezone($get, $startsAt);
 
-        return __('Вы создаёте запись задним числом: ').$startsAt->setTimezone($timezone)->format('d.m.Y H:i').'.';
+        return __('У специалиста: ').$startsAt->setTimezone($timezone)->format('H:i').' · '.TimezoneOptions::label($timezone).' ('.$timezone.')';
     }
 
     private static function startsAt(mixed $state): ?CarbonImmutable

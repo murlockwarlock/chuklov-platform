@@ -14,6 +14,7 @@ use App\Modules\Services\Domain\Models\Service;
 use App\Rules\HttpsImageUrl;
 use App\Rules\MajorUnitPrice;
 use App\Rules\ServicePriceCurrencyPair;
+use App\Support\Images\SupportedImageTypes;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
@@ -60,6 +61,13 @@ class ServiceForm
                             ->required()
                             ->maxLength(500)
                             ->rows(3)
+                            ->helperText(__('Короткий текст для карточки услуги — обычно 1–3 предложения.'))
+                            ->columnSpanFull(),
+                        Textarea::make('description_ru')
+                            ->label(__('Полное описание'))
+                            ->maxLength(10000)
+                            ->rows(8)
+                            ->helperText(__('Подробное описание услуги для клиента. Здесь можно указать показания, формат консультации, что входит в услугу и другую полезную информацию.'))
                             ->columnSpanFull(),
                     ])
                     ->columns(2)
@@ -189,14 +197,15 @@ class ServiceForm
                         FileUpload::make('service_image')
                             ->label(__('Загрузить изображение'))
                             ->image()
-                            ->acceptedFileTypes(['image/jpeg', 'image/png'])
+                            ->acceptedFileTypes(SupportedImageTypes::acceptedMimeTypes())
+                            ->extraInputAttributes(['accept' => SupportedImageTypes::browserAccept()])
                             ->maxSize(self::imageUploadKilobytes())
                             ->storeFiles(false)
                             ->validationMessages([
-                                'mimetypes' => __('Поддерживаются только изображения JPG и PNG.'),
-                                'max' => __('Изображение должно быть размером до 5 МБ.'),
+                                'mimetypes' => __('Не удалось прочитать изображение. Попробуйте другой файл.'),
+                                'max' => __('Изображение должно быть размером до 15 МБ.'),
                             ])
-                            ->helperText(__('JPG или PNG размером до 5 МБ.'))
+                            ->helperText(__('Загрузите фотографию или изображение размером до 15 МБ.'))
                             ->columnSpanFull(),
                         TextInput::make('external_image_url')
                             ->label(__('Ссылка на изображение'))
@@ -221,10 +230,6 @@ class ServiceForm
                         TextInput::make('name_en')
                             ->label(__('Название на английском'))
                             ->maxLength(160),
-                        Textarea::make('description_ru')
-                            ->label(__('Полное описание на русском'))
-                            ->maxLength(10000)
-                            ->rows(3),
                         Textarea::make('description_en')
                             ->label(__('Полное описание на английском'))
                             ->maxLength(10000)
@@ -314,7 +319,7 @@ class ServiceForm
 
     private static function imageUploadKilobytes(): int
     {
-        $bytes = max(1, (int) config('service_media.max_bytes', 5_242_880));
+        $bytes = max(1, (int) config('service_media.max_bytes', 15_728_640));
 
         return intdiv($bytes + 1023, 1024);
     }

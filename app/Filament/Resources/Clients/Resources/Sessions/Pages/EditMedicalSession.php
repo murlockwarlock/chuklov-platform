@@ -31,6 +31,7 @@ use App\Modules\Sessions\Application\UploadSessionPhoto;
 use App\Modules\Sessions\Domain\Enums\MedicalSessionAttachmentGallery;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use App\Modules\Sessions\Domain\Models\MedicalSessionPain;
+use App\Support\Images\SupportedImageTypes;
 use Filament\Actions\Action;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
@@ -397,7 +398,9 @@ class EditMedicalSession extends LocalizedEditRecord
             ->schema([
                 FileUpload::make('file')
                     ->label(__('Фото'))
-                    ->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])
+                    ->acceptedFileTypes(SupportedImageTypes::acceptedMimeTypes())
+                    ->extraInputAttributes(['accept' => SupportedImageTypes::browserAccept()])
+                    ->helperText(__('Загрузите фотографию или изображение.'))
                     ->maxSize((int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024))
                     ->storeFiles(false)
                     ->required(),

@@ -80,6 +80,53 @@ final class ServiceCatalogFormTest extends TestCase
         );
     }
 
+    public function test_service_form_explains_short_and_full_descriptions_and_persists_long_text(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $fullDescription = rtrim(str_repeat('Подробная информация о формате услуги и подготовке клиента. ', 20));
+
+        Testable::actingAs($admin);
+        $create = Testable::create(CreateService::class);
+        $page = $create->instance();
+        self::assertSame('Краткое описание', $page->getSchemaComponent('form.summary')->getLabel());
+        self::assertSame('Полное описание', $page->getSchemaComponent('form.description_ru')->getLabel());
+        $create
+            ->assertFormFieldVisible('summary')
+            ->assertFormFieldVisible('description_ru');
+        self::assertStringContainsString('Короткий текст для карточки услуги', $create->html());
+        self::assertStringContainsString('Подробное описание услуги для клиента.', $create->html());
+
+        $create
+            ->fillForm([
+                'name' => 'Первичная консультация',
+                'summary' => 'Короткая карточка консультации.',
+                'description_ru' => $fullDescription,
+                'catalog_type' => CatalogItemType::Service->value,
+                'is_active' => true,
+                'duration_minutes' => 45,
+                'formats' => ['office'],
+                'payment_requirement' => ServicePaymentRequirement::Postpay->value,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $service = Service::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('name', 'Первичная консультация')
+            ->sole();
+        self::assertGreaterThan(500, mb_strlen((string) $service->description_ru));
+        self::assertSame($fullDescription, $service->description_ru);
+
+        Testable::create(EditService::class, ['record' => $service->getRouteKey()])
+            ->assertSet('data.summary', 'Короткая карточка консультации.')
+            ->assertSet('data.description_ru', $fullDescription)
+            ->set('data.description_ru', $fullDescription.' Дополнительное пояснение.')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        self::assertStringEndsWith('Дополнительное пояснение.', (string) $service->refresh()->description_ru);
+    }
+
     public function test_service_medical_profile_requirement_is_created_and_persisted_through_edit_and_reopen(): void
     {
         [$organization, $admin] = $this->fixture();

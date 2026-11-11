@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ScheduleExceptions;
 
 use App\Filament\Resources\ScheduleExceptions\Pages\CreateScheduleException;
+use App\Filament\Resources\ScheduleExceptions\Pages\EditScheduleException;
 use App\Filament\Resources\ScheduleExceptions\Pages\ListScheduleExceptions;
 use App\Filament\Resources\ScheduleExceptions\Schemas\ScheduleExceptionForm;
 use App\Filament\Resources\ScheduleExceptions\Tables\ScheduleExceptionsTable;
@@ -100,6 +101,7 @@ class ScheduleExceptionResource extends LocalizedResource
         return [
             'index' => ListScheduleExceptions::route('/'),
             'create' => CreateScheduleException::route('/create'),
+            'edit' => EditScheduleException::route('/{record}/edit'),
         ];
     }
 }

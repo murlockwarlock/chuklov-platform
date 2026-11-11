@@ -81,8 +81,42 @@ final class SurveyDefinitionResource extends LocalizedResource
                         app(UpdateSurveyPresentation::class)->handle($actor, $record, $data['title'], (bool) $data['is_available'], $data['expected_snapshot']);
                         Notification::make()->title(__('Название и доступ сохранены'))->success()->send();
                     }),
+                Action::make('hide')
+                    ->label(__('Скрыть из доступа'))
+                    ->icon(Heroicon::OutlinedEyeSlash)
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Скрыть опросник из доступа?'))
+                    ->modalDescription(__('Новые прохождения будут недоступны. Вопросы, результаты и история уже начатых прохождений сохранятся.'))
+                    ->visible(fn (SurveyDefinition $record): bool => $record->is_available && self::canEdit($record))
+                    ->action(fn (SurveyDefinition $record): SurveyDefinition => self::setAvailability($record, false)),
+                Action::make('restore')
+                    ->label(__('Вернуть в доступ'))
+                    ->icon(Heroicon::OutlinedEye)
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Вернуть опросник в доступ?'))
+                    ->modalDescription(__('Опубликованная версия снова станет доступна для новых прохождений. История уже начатых прохождений сохранится.'))
+                    ->visible(fn (SurveyDefinition $record): bool => ! $record->is_available && self::canEdit($record))
+                    ->action(fn (SurveyDefinition $record): SurveyDefinition => self::setAvailability($record, true)),
                 EditAction::make(),
             ])->defaultSort('title');
+    }
+
+    private static function setAvailability(SurveyDefinition $record, bool $available): SurveyDefinition
+    {
+        $actor = auth()->user();
+        abort_unless($actor instanceof User, 403);
+
+        $presentation = app(UpdateSurveyPresentation::class);
+
+        return $presentation->handle(
+            $actor,
+            $record,
+            $record->title,
+            $available,
+            $presentation->snapshot($record),
+        );
     }
 
     public static function getEloquentQuery(): Builder

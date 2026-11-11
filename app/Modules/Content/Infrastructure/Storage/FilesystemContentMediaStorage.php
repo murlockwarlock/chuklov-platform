@@ -3,6 +3,8 @@
 namespace App\Modules\Content\Infrastructure\Storage;
 
 use App\Modules\Content\Domain\Contracts\ContentMediaStorageInterface;
+use App\Support\Images\ImageNormalizationException;
+use App\Support\Images\NormalizeUploadedImage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -11,58 +13,26 @@ use RuntimeException;
 
 final class FilesystemContentMediaStorage implements ContentMediaStorageInterface
 {
-    /** @var array<string, string> */
-    private const MIME_EXTENSIONS = [
-        'image/jpeg' => 'jpg',
-        'image/png' => 'png',
-        'image/webp' => 'webp',
-    ];
+    public function __construct(private readonly NormalizeUploadedImage $images) {}
 
     public function store(int $organizationId, UploadedFile $file): string
     {
-        if (! $file->isValid()) {
+        try {
+            $normalized = $this->images->normalize($file, $this->maxBytes());
+        } catch (ImageNormalizationException $exception) {
             throw ValidationException::withMessages([
-                'content_image' => ['Изображение не удалось загрузить.'],
+                'content_image' => [$this->validationMessage($exception)],
             ]);
         }
 
-        $realPath = $file->getRealPath();
-        $size = $file->getSize();
-
-        if ($realPath === false || ! is_file($realPath) || $size === false || $size <= 0) {
-            throw ValidationException::withMessages([
-                'content_image' => ['Изображение не удалось прочитать.'],
-            ]);
-        }
-
-        if ($size > $this->maxBytes()) {
-            throw ValidationException::withMessages([
-                'content_image' => ['Изображение должно быть JPG, PNG или WebP размером до 5 МБ.'],
-            ]);
-        }
-
-        $extension = self::MIME_EXTENSIONS[$this->sniffMimeType($realPath)] ?? null;
-
-        if ($extension === null) {
-            throw ValidationException::withMessages([
-                'content_image' => ['Поддерживаются только изображения JPG, PNG и WebP.'],
-            ]);
-        }
-
-        $path = "content/{$organizationId}/".Str::uuid()->toString().".{$extension}";
-        $storedPath = Storage::disk($this->disk())->putFileAs(
-            dirname($path),
-            $file,
-            basename($path),
-        );
-
-        if (! is_string($storedPath)) {
+        $path = "content/{$organizationId}/".Str::uuid()->toString().".{$normalized->extension}";
+        if (! Storage::disk($this->disk())->put($path, $normalized->contents)) {
             throw ValidationException::withMessages([
                 'content_image' => ['Не удалось сохранить изображение.'],
             ]);
         }
 
-        return $storedPath;
+        return $path;
     }
 
     public function isManagedPath(int $organizationId, ?string $path): bool
@@ -170,8 +140,17 @@ final class FilesystemContentMediaStorage implements ContentMediaStorageInterfac
         }
 
         $mime = finfo_file($finfo, $path);
-        finfo_close($finfo);
+        unset($finfo);
 
         return is_string($mime) ? strtolower($mime) : 'application/octet-stream';
+    }
+
+    private function validationMessage(ImageNormalizationException $exception): string
+    {
+        if ($exception->reason === ImageNormalizationException::TOO_LARGE) {
+            return 'Изображение должно быть размером до 5 МБ.';
+        }
+
+        return 'Не удалось прочитать изображение. Попробуйте другой файл.';
     }
 }

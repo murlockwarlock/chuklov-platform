@@ -2,6 +2,10 @@
 
 namespace App\Filament\Resources\LocationDays\Tables;
 
+use App\Models\User;
+use App\Modules\Scheduling\Application\SaveLocationDay;
+use App\Modules\Scheduling\Domain\Models\LocationDay;
+use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
@@ -23,7 +27,45 @@ class LocationDaysTable
                 IconColumn::make('is_active')->label(__('Активен'))->boolean(),
             ])
             ->defaultSort('area_name')
-            ->recordActions([EditAction::make()->label(__('Изменить'))]);
+            ->recordActions([
+                EditAction::make()->label(__('Редактировать')),
+                Action::make('deactivate')
+                    ->label(__('Отключить правило'))
+                    ->color('danger')
+                    ->icon('heroicon-o-eye-slash')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Отключить правило выезда?'))
+                    ->modalDescription(__('Это правило перестанет использоваться при подборе новых записей.'))
+                    ->visible(fn (LocationDay $record): bool => $record->is_active)
+                    ->action(fn (LocationDay $record): LocationDay => self::setActive($record, false)),
+                Action::make('activate')
+                    ->label(__('Включить правило'))
+                    ->color('success')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->requiresConfirmation()
+                    ->visible(fn (LocationDay $record): bool => ! $record->is_active)
+                    ->action(fn (LocationDay $record): LocationDay => self::setActive($record, true)),
+            ]);
+    }
+
+    private static function setActive(LocationDay $record, bool $isActive): LocationDay
+    {
+        $actor = auth()->user();
+        abort_unless($actor instanceof User, 403);
+
+        return app(SaveLocationDay::class)->handle(
+            actor: $actor,
+            locationDay: $record,
+            areaName: (string) $record->area_name,
+            weekday: $record->weekday === null ? null : (int) $record->weekday,
+            specificDate: $record->specific_date === null ? null : (string) $record->specific_date,
+            startTime: (string) $record->start_time,
+            endTime: (string) $record->end_time,
+            timezone: (string) $record->timezone,
+            isActive: $isActive,
+            notes: $record->notes,
+            specialistId: $record->specialist_id === null ? null : (int) $record->specialist_id,
+        );
     }
 
     private static function weekdayLabel(?int $weekday): string

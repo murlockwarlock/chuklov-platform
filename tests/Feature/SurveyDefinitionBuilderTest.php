@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\SurveyDefinitions\Pages\CreateSurveyDefinition as CreateSurveyDefinitionPage;
 use App\Filament\Resources\SurveyDefinitions\Pages\EditSurveyDefinition;
+use App\Filament\Resources\SurveyDefinitions\Pages\ListSurveyDefinitions;
 use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
@@ -84,6 +85,46 @@ final class SurveyDefinitionBuilderTest extends TestCase
 
         $this->expectException(AuthorizationException::class);
         $action->handle($admin, $foreign, 'Изменение', false, $action->snapshot($foreign));
+    }
+
+    public function test_definition_list_has_direct_hide_and_restore_without_rewriting_versions(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $definition = SurveyDefinition::query()->create([
+            'organization_id' => $organization->getKey(),
+            'definition_key' => 'direct-availability',
+            'title' => 'Опросник для списка',
+            'is_available' => true,
+        ]);
+        $version = SurveyVersion::query()->create([
+            'organization_id' => $organization->getKey(),
+            'survey_definition_id' => $definition->getKey(),
+            'version' => 1,
+            'status' => 'published',
+            'title' => 'Историческая версия',
+            'definition' => ['sections' => []],
+            'scoring' => ['schema' => 'history'],
+            'metric_schema_key' => 'history',
+            'source' => 'platform_default',
+            'approval_status' => 'approved',
+        ]);
+        $definition->forceFill(['active_version_id' => $version->getKey()])->save();
+
+        $component = Livewire::actingAs($admin)->test(ListSurveyDefinitions::class);
+        $component
+            ->assertTableActionVisible('hide', $definition)
+            ->callTableAction('hide', $definition);
+
+        self::assertFalse($definition->fresh()->is_available);
+        self::assertSame(1, $definition->refresh()->versions()->count());
+
+        $component
+            ->set('activeTab', 'hidden')
+            ->assertTableActionVisible('restore', $definition->fresh())
+            ->callTableAction('restore', $definition->fresh());
+
+        self::assertTrue($definition->fresh()->is_available);
+        self::assertSame(1, $definition->refresh()->versions()->count());
     }
 
     public function test_editor_uses_human_tabs_and_collapsible_repeater_summaries(): void

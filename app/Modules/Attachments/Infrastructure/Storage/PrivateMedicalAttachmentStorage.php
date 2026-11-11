@@ -7,6 +7,9 @@ use App\Modules\Attachments\Domain\Enums\AttachmentType;
 use App\Modules\Attachments\Domain\Exceptions\InvalidAttachmentException;
 use App\Modules\Attachments\Domain\Exceptions\UnsupportedDicomException;
 use App\Modules\Attachments\Domain\ValueObjects\StoredAttachment;
+use App\Support\Images\ImageNormalizationException;
+use App\Support\Images\NormalizedUploadedImage;
+use App\Support\Images\NormalizeUploadedImage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -14,10 +17,16 @@ use RuntimeException;
 
 final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterface
 {
+    public function __construct(private readonly NormalizeUploadedImage $images) {}
+
     public function maxBytes(?AttachmentType $attachmentType = null): int
     {
         if ($attachmentType === AttachmentType::AudioRecording) {
             return (int) config('medical.audio_attachment_max_bytes', 67_108_864);
+        }
+
+        if ($attachmentType === AttachmentType::CompanionImage) {
+            return (int) config('ai.companion.maximum_image_bytes', 10_485_760);
         }
 
         return (int) config('medical.attachment_max_bytes', 20_971_520);
@@ -71,36 +80,45 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
         }
 
         $sniffedMime = $this->sniffMimeType($realPath);
+        $normalized = null;
+        $allowedExtensions = [];
+        if ($this->isImageCandidate($file, $sniffedMime, $attachmentType)) {
+            try {
+                $normalized = $this->images->normalize($file, $maxBytes, $this->maxPixels($attachmentType));
+            } catch (ImageNormalizationException $exception) {
+                throw new InvalidAttachmentException($this->imageValidationMessage($exception, $maxBytes), 0, $exception);
+            }
+        } else {
+            $allowedMimeExtensions = $this->allowedMimeExtensions($attachmentType);
 
-        $allowedMimeExtensions = $this->allowedMimeExtensions($attachmentType);
+            if (! isset($allowedMimeExtensions[$sniffedMime])) {
+                throw new InvalidAttachmentException($attachmentType === AttachmentType::AudioRecording
+                    ? "Неподдерживаемый аудиоформат ({$sniffedMime}). Допустимы MP3, M4A, WAV, OGG и WebM."
+                    : 'Не удалось прочитать файл. Выберите PDF, текстовый файл или фотографию.');
+            }
 
-        if (! isset($allowedMimeExtensions[$sniffedMime])) {
-            throw new InvalidAttachmentException($attachmentType === AttachmentType::AudioRecording
-                ? "Неподдерживаемый аудиоформат ({$sniffedMime}). Допустимы MP3, M4A, WAV, OGG и WebM."
-                : "Неподдерживаемый тип файла ({$sniffedMime}). Допустимы только PDF, текстовые файлы и изображения (JPG, PNG, WebP).");
+            $clientExtension = strtolower((string) $file->getClientOriginalExtension());
+            $allowedExtensions = $allowedMimeExtensions[$sniffedMime];
+
+            if ($clientExtension !== '' && ! in_array($clientExtension, $allowedExtensions, true)) {
+                throw new InvalidAttachmentException('Расширение файла не соответствует его содержимому.');
+            }
         }
 
-        $clientExtension = strtolower((string) $file->getClientOriginalExtension());
-        $allowedExtensions = $allowedMimeExtensions[$sniffedMime];
-
-        if ($clientExtension !== '' && ! in_array($clientExtension, $allowedExtensions, true)) {
-            throw new InvalidAttachmentException("Расширение файла .{$clientExtension} не соответствует его реальному содержимому ({$sniffedMime}).");
-        }
-
-        $extension = $allowedExtensions[0];
+        $extension = $normalized?->extension ?? $allowedExtensions[0];
         $storagePath = "medical/attachments/{$organizationId}/{$uuid}.{$extension}";
 
-        $stored = Storage::disk('private')->putFileAs(
-            dirname($storagePath),
-            $file,
-            basename($storagePath),
-        );
+        $stored = $normalized instanceof NormalizedUploadedImage
+            ? (Storage::disk('private')->put($storagePath, $normalized->contents) ? $storagePath : false)
+            : Storage::disk('private')->putFileAs(dirname($storagePath), $file, basename($storagePath));
 
         if ($stored === false) {
             throw new InvalidAttachmentException('Не удалось сохранить файл во внутреннее хранилище.');
         }
 
-        $checksum = hash_file('sha256', $realPath);
+        $checksum = $normalized instanceof NormalizedUploadedImage
+            ? hash('sha256', $normalized->contents)
+            : hash_file('sha256', $realPath);
 
         if ($checksum === false) {
             $checksum = '';
@@ -112,8 +130,8 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
             disk: 'private',
             storagePath: $stored,
             originalFilename: $originalName,
-            mimeType: $sniffedMime,
-            sizeBytes: $size,
+            mimeType: $normalized?->mimeType ?? $sniffedMime,
+            sizeBytes: $normalized?->sizeBytes ?? $size,
             sha256Checksum: $checksum,
         );
     }
@@ -141,6 +159,36 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
         return $attachmentType === AttachmentType::AudioRecording
             ? self::AUDIO_MIME_EXTENSIONS
             : self::MEDICAL_MIME_EXTENSIONS;
+    }
+
+    private function isImageCandidate(UploadedFile $file, string $mimeType, ?AttachmentType $attachmentType): bool
+    {
+        if ($attachmentType === AttachmentType::AudioRecording) {
+            return false;
+        }
+
+        return str_starts_with($mimeType, 'image/')
+            || in_array(strtolower((string) $file->getClientOriginalExtension()), ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], true);
+    }
+
+    private function maxPixels(?AttachmentType $attachmentType): ?int
+    {
+        return $attachmentType === AttachmentType::CompanionImage
+            ? max(1, (int) config('ai.companion.maximum_image_pixels', 25_000_000))
+            : null;
+    }
+
+    private function imageValidationMessage(ImageNormalizationException $exception, int $maxBytes): string
+    {
+        if ($exception->reason === ImageNormalizationException::TOO_LARGE) {
+            return 'Размер изображения превышает допустимый лимит '.round($maxBytes / 1_048_576, 1).' МБ.';
+        }
+
+        if ($exception->reason === ImageNormalizationException::TOO_LARGE_DIMENSIONS) {
+            return 'Размер изображения не поддерживается.';
+        }
+
+        return 'Не удалось прочитать изображение. Попробуйте другой файл.';
     }
 
     private function assertNotDicom(UploadedFile $file, string $realPath): void
@@ -183,7 +231,7 @@ final class PrivateMedicalAttachmentStorage implements AttachmentStorageInterfac
         }
 
         $mime = finfo_file($finfo, $realPath);
-        finfo_close($finfo);
+        unset($finfo);
 
         return is_string($mime) ? strtolower($mime) : 'application/octet-stream';
     }

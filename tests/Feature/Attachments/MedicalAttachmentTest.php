@@ -435,9 +435,13 @@ final class MedicalAttachmentTest extends TestCase
 
     private function fakeWebp(string $name = 'test.webp'): UploadedFile
     {
-        $webpHeader = "RIFF\x24\x00\x00\x00WEBPVP8 \x18\x00\x00\x00\x30\x01\x00\x9d\x01\x2a\x01\x00\x01\x00\x02\x00\x34\x25\xa4\x00\x03\x70\x00\xfe\xfb\xfd\x00\x00";
+        $image = imagecreatetruecolor(2, 2);
+        ob_start();
+        imagewebp($image, null, 85);
+        $contents = ob_get_clean();
+        unset($image);
 
-        return UploadedFile::fake()->createWithContent($name, $webpHeader);
+        return UploadedFile::fake()->createWithContent($name, (string) $contents);
     }
 
     private function wavContent(): string

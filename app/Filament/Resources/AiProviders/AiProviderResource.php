@@ -9,7 +9,9 @@ use App\Filament\Resources\AiProviders\RelationManagers\ModelsRelationManager;
 use App\Filament\Resources\AiProviders\Schemas\AiProviderForm;
 use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedResource;
+use App\Models\User;
 use App\Modules\AI\Application\Actions\TestProviderConnection;
+use App\Modules\AI\Application\Actions\UpdateAiProviderConfiguration;
 use App\Modules\AI\Domain\Enums\ProviderHealthStatus;
 use App\Modules\AI\Domain\Models\AiProviderConfiguration;
 use App\Modules\AI\Domain\Registry\AiProviderCatalog;
@@ -113,6 +115,24 @@ final class AiProviderResource extends LocalizedResource
                             }
                         }
                     }),
+                Action::make('disable')
+                    ->label(__('Отключить подключение'))
+                    ->icon(Heroicon::OutlinedPause)
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Отключить подключение?'))
+                    ->modalDescription(__('Новые запросы AI перестанут использовать это подключение. Настройки и история запросов сохранятся.'))
+                    ->visible(fn (AiProviderConfiguration $record): bool => $record->is_enabled)
+                    ->action(fn (AiProviderConfiguration $record): AiProviderConfiguration => self::setEnabled($record, false)),
+                Action::make('enable')
+                    ->label(__('Включить подключение'))
+                    ->icon(Heroicon::OutlinedPlay)
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Включить подключение?'))
+                    ->modalDescription(__('Это подключение снова сможет использоваться для новых запросов AI. История запросов сохранится.'))
+                    ->visible(fn (AiProviderConfiguration $record): bool => ! $record->is_enabled)
+                    ->action(fn (AiProviderConfiguration $record): AiProviderConfiguration => self::setEnabled($record, true)),
                 EditAction::make()
                     ->label(__('Редактировать'))
                     ->icon(Heroicon::OutlinedPencil)
@@ -120,6 +140,14 @@ final class AiProviderResource extends LocalizedResource
                     ->tooltip(__('Редактировать провайдера')),
             ])
             ->defaultSort('updated_at', 'desc');
+    }
+
+    private static function setEnabled(AiProviderConfiguration $record, bool $enabled): AiProviderConfiguration
+    {
+        $actor = Auth::user();
+        abort_unless($actor instanceof User, 403);
+
+        return app(UpdateAiProviderConfiguration::class)->handle($actor, $record, ['is_enabled' => $enabled]);
     }
 
     public static function getEloquentQuery(): Builder

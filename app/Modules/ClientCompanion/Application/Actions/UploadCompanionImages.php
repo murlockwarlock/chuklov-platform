@@ -4,6 +4,7 @@ namespace App\Modules\ClientCompanion\Application\Actions;
 
 use App\Modules\Attachments\Domain\Contracts\AttachmentStorageInterface;
 use App\Modules\Attachments\Domain\Enums\AttachmentType;
+use App\Modules\Attachments\Domain\Exceptions\InvalidAttachmentException;
 use App\Modules\Attachments\Domain\Models\MedicalAttachment;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -40,9 +41,17 @@ final class UploadCompanionImages
         $created = [];
         try {
             foreach ($files as $file) {
-                $this->assertImage($file);
                 $uuid = (string) Str::uuid();
-                $storedAttachment = $this->storage->store((int) $organization->getKey(), $file, $uuid);
+                try {
+                    $storedAttachment = $this->storage->store(
+                        (int) $organization->getKey(),
+                        $file,
+                        $uuid,
+                        AttachmentType::CompanionImage,
+                    );
+                } catch (InvalidAttachmentException $exception) {
+                    throw ValidationException::withMessages(['images' => $exception->getMessage()]);
+                }
                 $stored[] = $storedAttachment;
 
                 $created[] = [
@@ -95,28 +104,6 @@ final class UploadCompanionImages
             }
 
             throw $exception;
-        }
-    }
-
-    private function assertImage(UploadedFile $file): void
-    {
-        if (! $file->isValid() || $file->getSize() === false || $file->getSize() <= 0
-            || $file->getSize() > (int) config('ai.companion.maximum_image_bytes', 10_485_760)) {
-            throw ValidationException::withMessages(['images' => 'Изображение слишком большое или повреждено.']);
-        }
-
-        $path = $file->getRealPath();
-        $info = $path === false ? false : @getimagesize($path);
-        if ($info === false) {
-            throw ValidationException::withMessages(['images' => 'Файл не является изображением.']);
-        }
-        $mime = strtolower($info['mime']);
-        if (! in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) {
-            throw ValidationException::withMessages(['images' => 'Поддерживаются только изображения JPG, PNG или WebP.']);
-        }
-        $pixels = $info[0] * $info[1];
-        if ($pixels < 1 || $pixels > (int) config('ai.companion.maximum_image_pixels', 25_000_000)) {
-            throw ValidationException::withMessages(['images' => 'Размер изображения не поддерживается.']);
         }
     }
 }

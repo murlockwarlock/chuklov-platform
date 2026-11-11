@@ -288,7 +288,7 @@ final class BookingLifecycleActions
                             ->toDateString())
                         ->native()
                         ->live()
-                        ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
+                        ->helperText(fn (): string => __('Время для вас: ').self::viewerTimezoneLabel().'.')
                         ->afterStateUpdated(function (Set $set): void {
                             self::clearRescheduleTime($set);
                         })
