@@ -17,14 +17,71 @@
 }
 
 @media (min-width: 640px) {
-    .fi-ta-table {
+    :where(
+        .fi-resource-clients,
+        .fi-resource-services,
+        .fi-resource-specialists,
+        .fi-resource-specialist-service-assignments,
+        .fi-resource-working-locations,
+        .fi-resource-location-days,
+        .fi-resource-schedule-exceptions,
+        .fi-resource-unavailable-periods,
+        .fi-resource-content-sections,
+        .fi-resource-legal-documents,
+        .fi-resource-survey-definitions,
+        .fi-resource-knowledge-sources,
+        .fi-resource-tracker-plans,
+        .fi-resource-notification-templates,
+        .fi-resource-scenario-rules,
+        .fi-resource-ai-providers,
+        .fi-resource-ai-prompts,
+        .fi-resource-broadcast-campaigns
+    ) .fi-ta-table {
         width: 100%;
         max-width: 100%;
         table-layout: fixed;
     }
 
-    .fi-ta-table .fi-ta-header-cell,
-    .fi-ta-table .fi-ta-cell {
+    :where(
+        .fi-resource-clients,
+        .fi-resource-services,
+        .fi-resource-specialists,
+        .fi-resource-specialist-service-assignments,
+        .fi-resource-working-locations,
+        .fi-resource-location-days,
+        .fi-resource-schedule-exceptions,
+        .fi-resource-unavailable-periods,
+        .fi-resource-content-sections,
+        .fi-resource-legal-documents,
+        .fi-resource-survey-definitions,
+        .fi-resource-knowledge-sources,
+        .fi-resource-tracker-plans,
+        .fi-resource-notification-templates,
+        .fi-resource-scenario-rules,
+        .fi-resource-ai-providers,
+        .fi-resource-ai-prompts,
+        .fi-resource-broadcast-campaigns
+    ) .fi-ta-table .fi-ta-header-cell,
+    :where(
+        .fi-resource-clients,
+        .fi-resource-services,
+        .fi-resource-specialists,
+        .fi-resource-specialist-service-assignments,
+        .fi-resource-working-locations,
+        .fi-resource-location-days,
+        .fi-resource-schedule-exceptions,
+        .fi-resource-unavailable-periods,
+        .fi-resource-content-sections,
+        .fi-resource-legal-documents,
+        .fi-resource-survey-definitions,
+        .fi-resource-knowledge-sources,
+        .fi-resource-tracker-plans,
+        .fi-resource-notification-templates,
+        .fi-resource-scenario-rules,
+        .fi-resource-ai-providers,
+        .fi-resource-ai-prompts,
+        .fi-resource-broadcast-campaigns
+    ) .fi-ta-table .fi-ta-cell {
         min-width: 0;
         max-width: 100%;
         overflow-wrap: anywhere;
@@ -32,13 +89,70 @@
         white-space: normal;
     }
 
-    .fi-ta-table .fi-ta-cell:has(.fi-ta-actions),
-    .fi-ta-table .fi-ta-actions-header-cell {
+    :where(
+        .fi-resource-clients,
+        .fi-resource-services,
+        .fi-resource-specialists,
+        .fi-resource-specialist-service-assignments,
+        .fi-resource-working-locations,
+        .fi-resource-location-days,
+        .fi-resource-schedule-exceptions,
+        .fi-resource-unavailable-periods,
+        .fi-resource-content-sections,
+        .fi-resource-legal-documents,
+        .fi-resource-survey-definitions,
+        .fi-resource-knowledge-sources,
+        .fi-resource-tracker-plans,
+        .fi-resource-notification-templates,
+        .fi-resource-scenario-rules,
+        .fi-resource-ai-providers,
+        .fi-resource-ai-prompts,
+        .fi-resource-broadcast-campaigns
+    ) .fi-ta-table .fi-ta-cell:has(.fi-ta-actions),
+    :where(
+        .fi-resource-clients,
+        .fi-resource-services,
+        .fi-resource-specialists,
+        .fi-resource-specialist-service-assignments,
+        .fi-resource-working-locations,
+        .fi-resource-location-days,
+        .fi-resource-schedule-exceptions,
+        .fi-resource-unavailable-periods,
+        .fi-resource-content-sections,
+        .fi-resource-legal-documents,
+        .fi-resource-survey-definitions,
+        .fi-resource-knowledge-sources,
+        .fi-resource-tracker-plans,
+        .fi-resource-notification-templates,
+        .fi-resource-scenario-rules,
+        .fi-resource-ai-providers,
+        .fi-resource-ai-prompts,
+        .fi-resource-broadcast-campaigns
+    ) .fi-ta-table .fi-ta-actions-header-cell {
         width: 13rem;
         min-width: 13rem;
     }
 
-    .fi-ta-table .fi-ta-actions {
+    :where(
+        .fi-resource-clients,
+        .fi-resource-services,
+        .fi-resource-specialists,
+        .fi-resource-specialist-service-assignments,
+        .fi-resource-working-locations,
+        .fi-resource-location-days,
+        .fi-resource-schedule-exceptions,
+        .fi-resource-unavailable-periods,
+        .fi-resource-content-sections,
+        .fi-resource-legal-documents,
+        .fi-resource-survey-definitions,
+        .fi-resource-knowledge-sources,
+        .fi-resource-tracker-plans,
+        .fi-resource-notification-templates,
+        .fi-resource-scenario-rules,
+        .fi-resource-ai-providers,
+        .fi-resource-ai-prompts,
+        .fi-resource-broadcast-campaigns
+    ) .fi-ta-table .fi-ta-actions {
         width: 100%;
         min-width: 0;
         max-width: 100%;
@@ -47,13 +161,51 @@
         white-space: normal;
     }
 
-    .fi-ta-table .fi-ta-actions > * {
+    :where(
+        .fi-resource-clients,
+        .fi-resource-services,
+        .fi-resource-specialists,
+        .fi-resource-specialist-service-assignments,
+        .fi-resource-working-locations,
+        .fi-resource-location-days,
+        .fi-resource-schedule-exceptions,
+        .fi-resource-unavailable-periods,
+        .fi-resource-content-sections,
+        .fi-resource-legal-documents,
+        .fi-resource-survey-definitions,
+        .fi-resource-knowledge-sources,
+        .fi-resource-tracker-plans,
+        .fi-resource-notification-templates,
+        .fi-resource-scenario-rules,
+        .fi-resource-ai-providers,
+        .fi-resource-ai-prompts,
+        .fi-resource-broadcast-campaigns
+    ) .fi-ta-table .fi-ta-actions > * {
         min-width: 0;
         max-width: 100%;
         flex: 0 1 auto;
     }
 
-    .fi-ta-table .fi-ta-actions .fi-btn {
+    :where(
+        .fi-resource-clients,
+        .fi-resource-services,
+        .fi-resource-specialists,
+        .fi-resource-specialist-service-assignments,
+        .fi-resource-working-locations,
+        .fi-resource-location-days,
+        .fi-resource-schedule-exceptions,
+        .fi-resource-unavailable-periods,
+        .fi-resource-content-sections,
+        .fi-resource-legal-documents,
+        .fi-resource-survey-definitions,
+        .fi-resource-knowledge-sources,
+        .fi-resource-tracker-plans,
+        .fi-resource-notification-templates,
+        .fi-resource-scenario-rules,
+        .fi-resource-ai-providers,
+        .fi-resource-ai-prompts,
+        .fi-resource-broadcast-campaigns
+    ) .fi-ta-table .fi-ta-actions .fi-btn {
         overflow-wrap: anywhere;
         white-space: normal;
     }
@@ -84,7 +236,26 @@
     min-width: 9rem;
 }
 
-.fi-ta-table .fi-ta-actions {
+:where(
+    .fi-resource-clients,
+    .fi-resource-services,
+    .fi-resource-specialists,
+    .fi-resource-specialist-service-assignments,
+    .fi-resource-working-locations,
+    .fi-resource-location-days,
+    .fi-resource-schedule-exceptions,
+    .fi-resource-unavailable-periods,
+    .fi-resource-content-sections,
+    .fi-resource-legal-documents,
+    .fi-resource-survey-definitions,
+    .fi-resource-knowledge-sources,
+    .fi-resource-tracker-plans,
+    .fi-resource-notification-templates,
+    .fi-resource-scenario-rules,
+    .fi-resource-ai-providers,
+    .fi-resource-ai-prompts,
+    .fi-resource-broadcast-campaigns
+) .fi-ta-table .fi-ta-actions {
     justify-content: flex-end;
 }
 
