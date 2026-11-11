@@ -348,6 +348,7 @@ final class SpecialistProfileTest extends TestCase
         $image = new \Imagick;
         $image->newImage(4, 3, new \ImagickPixel('royalblue'));
         $image->setImageFormat('HEIC');
+        $image->setImageCompressionQuality(80);
         $contents = $image->getImagesBlob();
         $image->clear();
         $image->destroy();
