@@ -22,4 +22,17 @@ final class SupportedImageTypes
     {
         return 'image/jpeg,image/png,image/webp,.heic,.heif';
     }
+
+    /** @return array<string, string> */
+    public static function mimeTypeMap(): array
+    {
+        return [
+            'jpg' => 'image/jpeg',
+            'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'webp' => 'image/webp',
+            'heic' => 'image/heic',
+            'heif' => 'image/heif',
+        ];
+    }
 }

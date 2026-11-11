@@ -140,6 +140,7 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                                 'text/plain',
                                 ...SupportedImageTypes::acceptedMimeTypes(),
                             ])
+                            ->mimeTypeMap(SupportedImageTypes::mimeTypeMap())
                             ->extraInputAttributes(['accept' => 'application/pdf,text/plain,'.SupportedImageTypes::browserAccept()])
                             ->helperText(__('Загрузите документ или фотографию.'))
                             ->maxSize((int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024))

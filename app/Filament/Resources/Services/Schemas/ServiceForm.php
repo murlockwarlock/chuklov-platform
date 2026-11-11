@@ -198,6 +198,7 @@ class ServiceForm
                             ->label(__('Загрузить изображение'))
                             ->image()
                             ->acceptedFileTypes(SupportedImageTypes::acceptedMimeTypes())
+                            ->mimeTypeMap(SupportedImageTypes::mimeTypeMap())
                             ->extraInputAttributes(['accept' => SupportedImageTypes::browserAccept()])
                             ->maxSize(self::imageUploadKilobytes())
                             ->storeFiles(false)
