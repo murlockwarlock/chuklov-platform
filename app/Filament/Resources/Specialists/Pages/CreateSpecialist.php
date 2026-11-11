@@ -42,6 +42,7 @@ class CreateSpecialist extends LocalizedCreateRecord
             timezone: $data['timezone'] ?? null,
             staffUserId: isset($data['staff_user_id']) ? (int) $data['staff_user_id'] : null,
             notificationSettings: SpecialistNotificationSettings::from(null, (bool) ($data['notifications_enabled'] ?? true)),
+            profileAttributes: $data,
         );
 
         if (array_key_exists('viewer_timezone', $data)) {

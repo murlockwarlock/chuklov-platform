@@ -23,7 +23,26 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
  * @property-read User|null $staffUser
  * @property bool $notifications_enabled
  */
-#[Fillable(['display_name', 'timezone', 'viewer_timezone', 'viewer_timezone_source', 'viewer_timezone_suggestion'])]
+#[Fillable([
+    'display_name',
+    'profile_image_path',
+    'specialization',
+    'practices_since_year',
+    'qualification',
+    'bio',
+    'country',
+    'city',
+    'phone',
+    'email',
+    'telegram',
+    'phone_visible',
+    'email_visible',
+    'telegram_visible',
+    'timezone',
+    'viewer_timezone',
+    'viewer_timezone_source',
+    'viewer_timezone_suggestion',
+])]
 class Specialist extends Model
 {
     /** @use HasFactory<SpecialistFactory> */
@@ -89,6 +108,10 @@ class Specialist extends Model
         return [
             'is_active' => 'boolean',
             'notifications_enabled' => 'boolean',
+            'practices_since_year' => 'integer',
+            'phone_visible' => 'boolean',
+            'email_visible' => 'boolean',
+            'telegram_visible' => 'boolean',
         ];
     }
 }

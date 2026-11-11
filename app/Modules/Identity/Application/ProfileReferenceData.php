@@ -21,6 +21,40 @@ final class ProfileReferenceData
         return null;
     }
 
+    /** @return array<string, string> */
+    public function countryOptions(string $locale = 'ru'): array
+    {
+        $locale = $locale === 'en' ? 'en' : 'ru';
+
+        return collect($this->countries())
+            ->mapWithKeys(fn (array $data): array => [$data['names'][$locale] => $data['names'][$locale]])
+            ->sort()
+            ->all();
+    }
+
+    /** @return array<string, string> */
+    public function countryCodeOptions(string $locale = 'ru'): array
+    {
+        $locale = $locale === 'en' ? 'en' : 'ru';
+
+        return collect($this->countries())
+            ->mapWithKeys(fn (array $data, string $code): array => [$code => $data['names'][$locale]])
+            ->sort()
+            ->all();
+    }
+
+    public function countryName(string $country, string $locale = 'ru'): ?string
+    {
+        $code = $this->countryCode($country);
+        if ($code === null) {
+            return null;
+        }
+
+        $locale = $locale === 'en' ? 'en' : 'ru';
+
+        return $this->countries()[$code]['names'][$locale];
+    }
+
     public function phone(string $value, ?string $country): string
     {
         $value = trim($value);

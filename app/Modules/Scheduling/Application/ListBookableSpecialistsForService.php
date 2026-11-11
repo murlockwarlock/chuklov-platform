@@ -49,6 +49,17 @@ class ListBookableSpecialistsForService
             ->where('is_active', true)
             ->whereIn('id', $assignedSpecialists)
             ->orderBy('display_name')
-            ->get(['id', 'display_name', 'timezone']);
+            ->get([
+                'id',
+                'organization_id',
+                'display_name',
+                'profile_image_path',
+                'specialization',
+                'practices_since_year',
+                'qualification',
+                'country',
+                'city',
+                'timezone',
+            ]);
     }
 }

@@ -46,6 +46,7 @@ class EditSpecialist extends LocalizedEditRecord
                 acknowledgeImpact: $acknowledgeImpact,
                 acknowledgedImpactDigest: $impactDigest,
                 notificationSettings: SpecialistNotificationSettings::from(null, (bool) ($data['notifications_enabled'] ?? true)),
+                profileAttributes: $data,
             );
             if (array_key_exists('viewer_timezone', $data)) {
                 app(UpdateSpecialistViewerTimezone::class)->handle(

@@ -15,6 +15,7 @@ use App\Modules\ClientPortal\Application\GetClientProfile;
 use App\Modules\ClientPortal\Application\ListPatientProfiles;
 use App\Modules\ClientPortal\Application\PortalBookingErrorMessages;
 use App\Modules\ClientPortal\Application\ProjectPortalService;
+use App\Modules\ClientPortal\Application\ProjectPortalSpecialist;
 use App\Modules\Identity\Application\ListPublishedLegalDocuments;
 use App\Modules\Identity\Domain\Enums\ConsentSubject;
 use App\Modules\Identity\Domain\Models\PatientProfile;
@@ -59,6 +60,7 @@ class BookingController extends Controller
         CalculateAvailability $availability,
         BookingLocationResolver $locationResolver,
         ProjectPortalService $serviceProjection,
+        ProjectPortalSpecialist $specialistProjection,
         ListPublishedLegalDocuments $legalDocuments,
         GetClientAttribution $getAttribution,
     ): Response {
@@ -150,10 +152,14 @@ class BookingController extends Controller
                     static fn (string $value): bool => VisitFormat::tryFrom($value) instanceof VisitFormat,
                 )),
             ])->values()->all(),
-            'specialists' => $bookableSpecialists->map(fn (Specialist $specialist): array => [
-                'id' => $specialist->getKey(),
-                'displayName' => $specialist->display_name,
-            ])->values()->all(),
+            'specialists' => $bookableSpecialists->map(fn (Specialist $specialist): array => $specialistProjection->compact(
+                $specialist,
+                app()->getLocale(),
+                route('portal.specialists.show', [
+                    'specialist' => $specialist->getKey(),
+                    'service_id' => $selectedService?->getKey(),
+                ]),
+            ))->values()->all(),
             'workingLocations' => $officeLocations->map(fn (WorkingLocation $location): array => [
                 'id' => (int) $location->getKey(),
                 'name' => $location->name,
