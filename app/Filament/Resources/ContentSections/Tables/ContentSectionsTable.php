@@ -20,6 +20,7 @@ class ContentSectionsTable
     public static function configure(Table $table): Table
     {
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('section_key')
                     ->label(__('Раздел'))

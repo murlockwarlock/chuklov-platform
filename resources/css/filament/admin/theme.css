@@ -20,6 +20,49 @@
     width: 15rem;
 }
 
+@media (min-width: 640px) {
+    .fi-ta-table {
+        width: 100%;
+        max-width: 100%;
+        table-layout: fixed;
+    }
+
+    .fi-ta-table .fi-ta-header-cell,
+    .fi-ta-table .fi-ta-cell {
+        min-width: 0;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: normal;
+    }
+
+    .fi-ta-table .fi-ta-cell:has(.fi-ta-actions),
+    .fi-ta-table .fi-ta-actions-header-cell {
+        width: 13rem;
+        min-width: 13rem;
+    }
+
+    .fi-ta-table .fi-ta-actions {
+        width: 100%;
+        min-width: 0;
+        max-width: 100%;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        white-space: normal;
+    }
+
+    .fi-ta-table .fi-ta-actions > * {
+        min-width: 0;
+        max-width: 100%;
+        flex: 0 1 auto;
+    }
+
+    .fi-ta-table .fi-ta-actions .fi-btn {
+        overflow-wrap: anywhere;
+        white-space: normal;
+    }
+}
+
 .fi-resource-view-record-page:is(.fi-resource-clients, .fi-resource-referral-partner-profiles) .fi-header > :first-child {
     min-width: 0;
     max-width: 100%;

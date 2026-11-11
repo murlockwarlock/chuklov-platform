@@ -197,6 +197,7 @@ class ServiceForm
                         FileUpload::make('service_image')
                             ->label(__('Загрузить изображение'))
                             ->image()
+                            ->previewable(false)
                             ->acceptedFileTypes(SupportedImageTypes::acceptedMimeTypes())
                             ->mimeTypeMap(SupportedImageTypes::mimeTypeMap())
                             ->extraInputAttributes(['accept' => SupportedImageTypes::browserAccept()])

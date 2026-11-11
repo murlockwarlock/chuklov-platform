@@ -16,6 +16,7 @@ class WorkingLocationsTable
     public static function configure(Table $table): Table
     {
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('name')->label(__('Название'))->searchable()->sortable(),
                 TextColumn::make('address')->label(__('Адрес'))->wrap(),

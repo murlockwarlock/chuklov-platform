@@ -197,6 +197,7 @@ class ViewMedicalSession extends LocalizedViewRecord
                 FileUpload::make('file')
                     ->label(__('Фото'))
                     ->acceptedFileTypes(SupportedImageTypes::acceptedMimeTypes())
+                    ->previewable(false)
                     ->mimeTypeMap(SupportedImageTypes::mimeTypeMap())
                     ->extraInputAttributes(['accept' => SupportedImageTypes::browserAccept()])
                     ->helperText(__('Загрузите фотографию или изображение.'))

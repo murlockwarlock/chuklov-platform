@@ -16,6 +16,7 @@ class LocationDaysTable
     public static function configure(Table $table): Table
     {
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('specialist.display_name')->label(__('Специалист'))->placeholder(__('Все специалисты'))->searchable()->sortable(),
                 TextColumn::make('area_name')->label(__('Район'))->searchable()->sortable(),

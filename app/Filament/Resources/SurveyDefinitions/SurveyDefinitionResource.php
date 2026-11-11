@@ -52,7 +52,7 @@ final class SurveyDefinitionResource extends LocalizedResource
 
     public static function table(Table $table): Table
     {
-        return $table->columns([
+        return $table->stackedOnMobile()->columns([
             TextColumn::make('title')->label(__('Название'))->searchable()->sortable(),
             TextColumn::make('activeVersion.version')->label(__('Опубликованная версия'))->placeholder(__('Нет')),
             TextColumn::make('versions_count')->label(__('Всего версий')),

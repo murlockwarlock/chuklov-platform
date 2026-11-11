@@ -140,6 +140,7 @@ final class ClientAttachmentsRelationManager extends LocalizedRelationManager
                                 'text/plain',
                                 ...SupportedImageTypes::acceptedMimeTypes(),
                             ])
+                            ->previewable(false)
                             ->mimeTypeMap(SupportedImageTypes::mimeTypeMap())
                             ->extraInputAttributes(['accept' => 'application/pdf,text/plain,'.SupportedImageTypes::browserAccept()])
                             ->helperText(__('Загрузите документ или фотографию.'))

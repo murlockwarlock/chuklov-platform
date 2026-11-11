@@ -22,6 +22,7 @@ class SpecialistServiceAssignmentsTable
         $canViewSpecialists = SpecialistResource::canViewAny();
 
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('specialist.display_name')
                     ->label(__('Специалист'))

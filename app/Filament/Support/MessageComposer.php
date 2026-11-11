@@ -185,6 +185,10 @@ final class MessageComposer
             $fileUpload
                 ->acceptedFileTypes($mediaAcceptedFileTypes)
                 ->mimeTypeMap(SupportedImageTypes::mimeTypeMap());
+
+            if (array_intersect($mediaAcceptedFileTypes, SupportedImageTypes::acceptedMimeTypes()) !== []) {
+                $fileUpload->previewable(false);
+            }
         }
 
         if ($compact) {

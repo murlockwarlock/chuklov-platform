@@ -18,6 +18,7 @@ final class TrackerPlansTable
     public static function configure(Table $table): Table
     {
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('name')->label(__('Название'))->searchable()->sortable(),
                 TextColumn::make('currentVersion.version')->label(__('Версия'))->formatStateUsing(fn (mixed $state): string => $state === null ? '—' : 'v'.$state),
