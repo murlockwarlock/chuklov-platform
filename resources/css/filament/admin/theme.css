@@ -64,6 +64,26 @@
     min-width: 0;
 }
 
+.fi-resource-broadcast-campaigns .fi-ta-table {
+    table-layout: fixed;
+}
+
+.fi-resource-broadcast-campaigns .fi-ta-table .fi-ta-header-cell,
+.fi-resource-broadcast-campaigns .fi-ta-table .fi-ta-cell {
+    width: auto !important;
+    min-width: 0;
+    max-width: 100%;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    white-space: normal;
+}
+
+.fi-resource-broadcast-campaigns .fi-ta-table .fi-ta-cell:has(.fi-ta-actions),
+.fi-resource-broadcast-campaigns .fi-ta-table .fi-ta-actions-header-cell {
+    width: 9rem !important;
+    min-width: 9rem;
+}
+
 .fi-ta-table .fi-ta-actions {
     justify-content: flex-end;
 }
