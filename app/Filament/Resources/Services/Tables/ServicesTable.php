@@ -120,11 +120,30 @@ class ServicesTable
                     ->requiresConfirmation()
                     ->modalHeading(__('Вернуть услугу из архива?'))
                     ->modalDescription(__('Услуга снова станет доступна для новых записей и клиентского каталога.'))
+                    ->schema([
+                        ...ScheduleImpactPreview::components(),
+                    ])
+                    ->fillForm(fn (Service $record): array => ScheduleImpactPreview::stateFromImpact(
+                        app(ScheduleMutationImpactCalculator::class)->forServiceChange($record, ['is_active' => true]),
+                    ))
                     ->visible(fn (Service $record): bool => ! $record->is_active)
-                    ->action(function (Service $record): void {
+                    ->action(function (Service $record, array $data, Schema $schema): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
-                        app(SetServiceActive::class)->handle($actor, $record, true);
+
+                        try {
+                            app(SetServiceActive::class)->handle(
+                                actor: $actor,
+                                service: $record,
+                                isActive: true,
+                                acknowledgeImpact: (bool) ($data['acknowledge_impact'] ?? false),
+                                acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
+                            );
+                        } catch (ValidationException $exception) {
+                            ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+
+                            throw $exception;
+                        }
                     }),
             ], RecordActionsPosition::AfterColumns)
             ->extraAttributes(['class' => 'services-table']);

@@ -53,10 +53,30 @@ class EditService extends LocalizedEditRecord
                 ->requiresConfirmation()
                 ->modalHeading(__('Вернуть услугу из архива?'))
                 ->modalDescription(__('Услуга снова станет доступна для новых записей и клиентского каталога.'))
-                ->action(function (): void {
+                ->schema([
+                    ...ScheduleImpactPreview::components(),
+                ])
+                ->fillForm(fn (): array => ScheduleImpactPreview::stateFromImpact(
+                    app(ScheduleMutationImpactCalculator::class)->forServiceChange($record, ['is_active' => true]),
+                ))
+                ->action(function (array $data, Schema $schema): void {
                     $actor = auth()->user();
                     abort_unless($actor instanceof User, 403);
-                    app(SetServiceActive::class)->handle($actor, $record, true);
+
+                    try {
+                        app(SetServiceActive::class)->handle(
+                            actor: $actor,
+                            service: $record,
+                            isActive: true,
+                            acknowledgeImpact: (bool) ($data['acknowledge_impact'] ?? false),
+                            acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
+                        );
+                    } catch (ValidationException $exception) {
+                        ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+
+                        throw $exception;
+                    }
+
                     $this->redirect(ServiceResource::getUrl('index'));
                 });
         }

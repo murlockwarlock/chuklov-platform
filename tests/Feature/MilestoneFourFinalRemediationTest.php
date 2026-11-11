@@ -8,6 +8,7 @@ use App\Filament\Resources\ScheduleExceptions\Pages\CreateScheduleException as C
 use App\Filament\Resources\ScheduleExceptions\Pages\ListScheduleExceptions;
 use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
 use App\Filament\Resources\Services\Pages\EditService;
+use App\Filament\Resources\Services\Pages\ListServices;
 use App\Filament\Resources\Specialists\Pages\ListSpecialists;
 use App\Filament\Resources\UnavailablePeriods\Pages\CreateUnavailablePeriod as CreateUnavailablePeriodPage;
 use App\Filament\Support\ScheduleImpactPreview;
@@ -186,6 +187,29 @@ class MilestoneFourFinalRemediationTest extends TestCase
             ->assertHasNoErrors();
 
         self::assertSame(30, $service->refresh()->buffer_minutes);
+    }
+
+    public function test_filament_service_restore_requires_visible_impact_acknowledgement(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $this->createBooking($client, $specialist, $service, 'filament-service-restore-impact');
+        $service->forceFill(['is_active' => false])->save();
+        $impact = app(ScheduleMutationImpactCalculator::class)->forServiceChange($service->fresh(), ['is_active' => true]);
+        $this->resolveFilamentContext($admin, $organization);
+
+        $component = Livewire::actingAs($admin)
+            ->test(ListServices::class)
+            ->set('activeTab', 'archived')
+            ->mountTableAction('restore', $service->getKey())
+            ->assertTableActionDataSet(['impact_digest' => $impact->digest])
+            ->assertSchemaComponentVisible('schedule_impact_preview');
+
+        $component
+            ->setTableActionData(['acknowledge_impact' => true])
+            ->callMountedTableAction()
+            ->assertHasNoErrors();
+
+        self::assertTrue((bool) $service->fresh()->is_active);
     }
 
     public function test_filament_preview_refreshes_when_the_affected_booking_set_changes(): void
