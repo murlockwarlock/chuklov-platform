@@ -7,17 +7,13 @@
     @apply text-primary-600 dark:text-primary-400 hover:underline focus-visible:rounded-sm focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current;
 }
 
-.fi-resource-services .fi-ta-table.services-table {
+.fi-resource-services .services-table .fi-ta-table {
     table-layout: fixed;
 }
 
-.fi-resource-services .fi-ta-table.services-table .fi-ta-text {
+.fi-resource-services .services-table .fi-ta-table .fi-ta-text {
     min-width: 0;
     overflow-wrap: anywhere;
-}
-
-.fi-resource-services .fi-ta-table.services-table .fi-ta-cell:has(.fi-ta-actions) {
-    width: 15rem;
 }
 
 @media (min-width: 640px) {
@@ -63,9 +59,40 @@
     }
 }
 
-.fi-resource-services .fi-ta-table.services-table .fi-ta-cell:has(.fi-ta-actions),
-.fi-resource-services .fi-ta-table.services-table .fi-ta-actions-header-cell {
+.fi-resource-services .services-table .fi-ta-table .fi-ta-cell:has(.fi-ta-actions),
+.fi-resource-services .services-table .fi-ta-table .fi-ta-actions-header-cell {
     min-width: 0;
+}
+
+@media (min-width: 1280px) {
+    .fi-resource-services .services-table .fi-ta-header-cell-name,
+    .fi-resource-services .services-table .fi-ta-cell-name {
+        width: 17% !important;
+    }
+
+    .fi-resource-services .services-table .fi-ta-header-cell-summary,
+    .fi-resource-services .services-table .fi-ta-cell-summary {
+        width: 25% !important;
+    }
+
+    .fi-resource-services .services-table .fi-ta-header-cell-catalog-type,
+    .fi-resource-services .services-table .fi-ta-cell-catalog-type,
+    .fi-resource-services .services-table .fi-ta-header-cell-duration-minutes,
+    .fi-resource-services .services-table .fi-ta-cell-duration-minutes,
+    .fi-resource-services .services-table .fi-ta-header-cell-price-minor,
+    .fi-resource-services .services-table .fi-ta-cell-price-minor {
+        width: 9% !important;
+    }
+
+    .fi-resource-services .services-table .fi-ta-header-cell-is-active,
+    .fi-resource-services .services-table .fi-ta-cell-is-active {
+        width: 11% !important;
+    }
+
+    .fi-resource-services .services-table .fi-ta-actions-header-cell,
+    .fi-resource-services .services-table .fi-ta-cell:has(.fi-ta-actions) {
+        width: 20% !important;
+    }
 }
 
 .fi-resource-view-record-page:is(.fi-resource-clients, .fi-resource-referral-partner-profiles) .fi-header > :first-child {
