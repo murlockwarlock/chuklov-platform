@@ -93,12 +93,23 @@ final class NormalizeUploadedImageTest extends TestCase
             $image = new \Imagick;
             $image->newImage(2, 3, new \ImagickPixel('red'));
             $image->setImageFormat('jpeg');
-            $image->setImageOrientation(\Imagick::ORIENTATION_RIGHTTOP);
-            $image->setImageProperty('exif:GPSLatitude', '51/1,30/1,0/1');
-            $image->setImageProperty('exif:GPSLongitude', '0/1,7/1,0/1');
-            $image->writeImage($path);
+            $jpeg = $image->getImagesBlob();
             $image->clear();
             $image->destroy();
+
+            $tiff = "II*\0";
+            $tiff .= pack('V', 8);
+            $tiff .= pack('v', 2);
+            $tiff .= pack('v', 0x0112).pack('v', 3).pack('V', 1).pack('v', 6).pack('v', 0);
+            $tiff .= pack('v', 0x8825).pack('v', 4).pack('V', 1).pack('V', 38);
+            $tiff .= pack('V', 0);
+            $tiff .= pack('v', 2);
+            $tiff .= pack('v', 0x0001).pack('v', 2).pack('V', 2)."N\0\0\0";
+            $tiff .= pack('v', 0x0003).pack('v', 2).pack('V', 2)."E\0\0\0";
+            $tiff .= pack('V', 0);
+            $exif = "Exif\0\0".$tiff;
+            $jpeg = substr($jpeg, 0, 2)."\xFF\xE1".pack('n', strlen($exif) + 2).$exif.substr($jpeg, 2);
+            file_put_contents($path, $jpeg);
 
             $normalized = app(NormalizeUploadedImage::class)->normalize(
                 new UploadedFile($path, 'phone.jpg', 'image/jpeg', UPLOAD_ERR_OK, true),
