@@ -37,11 +37,6 @@ class UpdateContentSection
         }
 
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageContent);
-        error_log(json_encode([
-            'marker' => 'content-image-update-attributes',
-            'keys' => array_keys($attributes),
-            'content_image_type' => get_debug_type($attributes['content_image'] ?? null),
-        ], JSON_UNESCAPED_UNICODE));
         $uploadedFile = $this->uploadedFile($attributes);
         $removeImage = (bool) ($attributes['remove_image'] ?? false);
         unset($attributes['content_image'], $attributes['remove_image']);
