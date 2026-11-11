@@ -10,7 +10,6 @@ use App\Modules\Services\Application\SetServiceActive;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use Filament\Actions\Action;
-use Filament\Actions\ActionGroup;
 use Filament\Actions\EditAction;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -82,59 +81,51 @@ class ServicesTable
             ->emptyStateDescription(__('Добавьте консультации или процедуры, доступные для записи клиентов.'))
             ->recordActions([
                 EditAction::make()->label(__('Редактировать')),
-                ActionGroup::make([
-                    Action::make('archive')
-                        ->label(__('Архивировать'))
-                        ->color('danger')
-                        ->icon('heroicon-o-archive-box')
-                        ->requiresConfirmation()
-                        ->modalHeading(__('Архивировать услугу?'))
-                        ->modalDescription(__('Услуга исчезнет из новых записей и клиентского каталога. История записей и оплат останется без изменений.'))
-                        ->schema([
-                            ...ScheduleImpactPreview::components(),
-                        ])
-                        ->fillForm(fn (Service $record): array => ScheduleImpactPreview::stateFromImpact(
-                            app(ScheduleMutationImpactCalculator::class)->forServiceChange($record, ['is_active' => false]),
-                        ))
-                        ->visible(fn (Service $record): bool => $record->is_active)
-                        ->action(function (Service $record, array $data, Schema $schema): void {
-                            $actor = auth()->user();
-                            abort_unless($actor instanceof User, 403);
+                Action::make('archive')
+                    ->label(__('Архивировать'))
+                    ->color('danger')
+                    ->icon('heroicon-o-archive-box')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Архивировать услугу?'))
+                    ->modalDescription(__('Услуга исчезнет из новых записей и клиентского каталога. История записей и оплат останется без изменений.'))
+                    ->schema([
+                        ...ScheduleImpactPreview::components(),
+                    ])
+                    ->fillForm(fn (Service $record): array => ScheduleImpactPreview::stateFromImpact(
+                        app(ScheduleMutationImpactCalculator::class)->forServiceChange($record, ['is_active' => false]),
+                    ))
+                    ->visible(fn (Service $record): bool => $record->is_active)
+                    ->action(function (Service $record, array $data, Schema $schema): void {
+                        $actor = auth()->user();
+                        abort_unless($actor instanceof User, 403);
 
-                            try {
-                                app(SetServiceActive::class)->handle(
-                                    actor: $actor,
-                                    service: $record,
-                                    isActive: false,
-                                    acknowledgeImpact: (bool) ($data['acknowledge_impact'] ?? false),
-                                    acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
-                                );
-                            } catch (ValidationException $exception) {
-                                ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+                        try {
+                            app(SetServiceActive::class)->handle(
+                                actor: $actor,
+                                service: $record,
+                                isActive: false,
+                                acknowledgeImpact: (bool) ($data['acknowledge_impact'] ?? false),
+                                acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
+                            );
+                        } catch (ValidationException $exception) {
+                            ScheduleImpactPreview::applyValidationPreview($schema, $exception);
 
-                                throw $exception;
-                            }
-                        }),
-                    Action::make('restore')
-                        ->label(__('Вернуть из архива'))
-                        ->color('success')
-                        ->icon('heroicon-o-arrow-uturn-left')
-                        ->requiresConfirmation()
-                        ->modalHeading(__('Вернуть услугу из архива?'))
-                        ->modalDescription(__('Услуга снова станет доступна для новых записей и клиентского каталога.'))
-                        ->visible(fn (Service $record): bool => ! $record->is_active)
-                        ->action(function (Service $record): void {
-                            $actor = auth()->user();
-                            abort_unless($actor instanceof User, 403);
-                            app(SetServiceActive::class)->handle($actor, $record, true);
-                        }),
-                ])
-                    ->label(__('Действия'))
-                    ->icon('heroicon-m-ellipsis-vertical')
-                    ->button()
-                    ->color('gray')
-                    ->size('sm')
-                    ->dropdownPlacement('bottom-end'),
+                            throw $exception;
+                        }
+                    }),
+                Action::make('restore')
+                    ->label(__('Вернуть из архива'))
+                    ->color('success')
+                    ->icon('heroicon-o-arrow-uturn-left')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Вернуть услугу из архива?'))
+                    ->modalDescription(__('Услуга снова станет доступна для новых записей и клиентского каталога.'))
+                    ->visible(fn (Service $record): bool => ! $record->is_active)
+                    ->action(function (Service $record): void {
+                        $actor = auth()->user();
+                        abort_unless($actor instanceof User, 403);
+                        app(SetServiceActive::class)->handle($actor, $record, true);
+                    }),
             ], RecordActionsPosition::AfterColumns)
             ->extraAttributes(['class' => 'services-table']);
     }
