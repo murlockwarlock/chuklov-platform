@@ -36,6 +36,7 @@ class ServicesTable
                     ->label(__('Описание'))
                     ->limit(60)
                     ->wrap()
+                    ->visibleFrom('xl')
                     ->width('18rem'),
                 TextColumn::make('catalog_type')
                     ->label(__('Тип'))
@@ -45,14 +46,17 @@ class ServicesTable
                         CatalogItemType::GiftCertificate => __('Подарочный сертификат'),
                         default => __('Услуга'),
                     })
+                    ->visibleFrom('xl')
                     ->width('8rem'),
                 TextColumn::make('duration_minutes')
                     ->label(__('Длительность'))
                     ->suffix(' мин.')
                     ->sortable()
+                    ->visibleFrom('xl')
                     ->width('8rem'),
                 TextColumn::make('price_minor')
                     ->label(__('Цена'))
+                    ->visibleFrom('xl')
                     ->width('8rem')
                     ->state(function (Service $record): string {
                         if ($record->price_minor === null || $record->price_currency === null) {
