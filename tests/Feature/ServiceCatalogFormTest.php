@@ -136,7 +136,7 @@ final class ServiceCatalogFormTest extends TestCase
 
         Testable::actingAs($admin);
         $list = Testable::create(ListServices::class)->assertSuccessful();
-        self::assertSame(RecordActionsPosition::BeforeColumns, $list->instance()->getTable()->getRecordActionsPosition());
+        self::assertSame(RecordActionsPosition::AfterColumns, $list->instance()->getTable()->getRecordActionsPosition());
 
         Testable::create(EditService::class, ['record' => $service->getRouteKey()])
             ->assertSee('Архивировать');
