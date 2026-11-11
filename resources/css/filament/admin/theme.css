@@ -63,6 +63,11 @@
     }
 }
 
+.fi-resource-services .fi-ta-table.services-table .fi-ta-cell:has(.fi-ta-actions),
+.fi-resource-services .fi-ta-table.services-table .fi-ta-actions-header-cell {
+    min-width: 0;
+}
+
 .fi-resource-view-record-page:is(.fi-resource-clients, .fi-resource-referral-partner-profiles) .fi-header > :first-child {
     min-width: 0;
     max-width: 100%;
