@@ -37,6 +37,11 @@ class UpdateContentSection
         }
 
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageContent);
+        error_log(json_encode([
+            'marker' => 'content-image-update-attributes',
+            'keys' => array_keys($attributes),
+            'content_image_type' => get_debug_type($attributes['content_image'] ?? null),
+        ], JSON_UNESCAPED_UNICODE));
         $uploadedFile = $this->uploadedFile($attributes);
         $removeImage = (bool) ($attributes['remove_image'] ?? false);
         unset($attributes['content_image'], $attributes['remove_image']);
@@ -131,14 +136,6 @@ class UpdateContentSection
         }
 
         $file = UploadedFileState::first($value);
-
-        error_log(json_encode([
-            'marker' => 'content-image-upload-state',
-            'raw_type' => get_debug_type($value),
-            'raw_keys' => is_array($value) ? array_keys($value) : [],
-            'raw_item_types' => is_array($value) ? array_map(static fn (mixed $item): string => get_debug_type($item), $value) : [],
-            'resolved_type' => get_debug_type($file),
-        ], JSON_UNESCAPED_UNICODE));
 
         if (! $file instanceof UploadedFile) {
             throw ValidationException::withMessages([
