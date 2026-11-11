@@ -16,6 +16,7 @@ use App\Modules\Services\Domain\Models\Service;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Tables\Enums\RecordActionsPosition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -145,6 +146,26 @@ final class ServiceCatalogFormTest extends TestCase
 
         Testable::create(EditService::class, ['record' => $service->getRouteKey()])
             ->assertSee('Вернуть из архива');
+    }
+
+    public function test_service_edit_form_shows_the_current_image_after_reload(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $image = 'https://cdn.example.test/services/current.jpg';
+        $service = Service::factory()->forOrganization($organization)->create([
+            'external_image_url' => $image,
+        ]);
+
+        Testable::actingAs($admin);
+        $component = Testable::create(EditService::class, ['record' => $service->getRouteKey()])
+            ->assertSuccessful()
+            ->assertSee('Текущее изображение');
+        $preview = collect($component->instance()->getSchema('form')?->getFlatComponents(withHidden: true))
+            ->first(fn (mixed $schemaComponent): bool => $schemaComponent instanceof SchemaImage);
+
+        self::assertInstanceOf(SchemaImage::class, $preview);
+        self::assertSame($image, $preview->getUrl());
+        self::assertSame($service->name, $preview->getAlt());
     }
 
     public function test_service_medical_profile_requirement_is_created_and_persisted_through_edit_and_reopen(): void

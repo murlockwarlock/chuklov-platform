@@ -8,6 +8,7 @@ use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Services\Application\ServiceImageUrlResolver;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use App\Modules\Services\Domain\Models\Service;
@@ -25,6 +26,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -208,6 +210,20 @@ class ServiceForm
                             ])
                             ->helperText(__('Загрузите фотографию или изображение размером до 15 МБ.'))
                             ->columnSpanFull(),
+                        SchemaImage::make(
+                            fn (?Service $record): string => self::imagePreviewUrl($record) ?? '',
+                            fn (?Service $record): string => self::imageAlt($record),
+                        )
+                            ->imageHeight('16rem')
+                            ->imageWidth('24rem')
+                            ->extraAttributes(['class' => 'max-w-full rounded-xl object-contain'])
+                            ->visible(fn (?Service $record, Get $get): bool => self::imagePreviewUrl($record) !== null && ! (bool) $get('remove_image'))
+                            ->columnSpanFull(),
+                        Placeholder::make('current_image_status')
+                            ->label(__('Текущее изображение'))
+                            ->content(fn (?Service $record): string => self::imageStatus($record))
+                            ->visible(fn (?Service $record, Get $get): bool => self::hasImage($record) && ! (bool) $get('remove_image'))
+                            ->columnSpanFull(),
                         TextInput::make('external_image_url')
                             ->label(__('Ссылка на изображение'))
                             ->helperText(__('Укажите ссылку на изображение, если не загружаете файл.'))
@@ -328,6 +344,46 @@ class ServiceForm
     private static function hasValue(mixed $value): bool
     {
         return is_string($value) && trim($value) !== '';
+    }
+
+    private static function hasImage(?Service $record): bool
+    {
+        return $record instanceof Service
+            && (self::hasValue($record->getAttribute('image_path'))
+                || self::hasValue($record->getAttribute('external_image_url')));
+    }
+
+    private static function imagePreviewUrl(?Service $record): ?string
+    {
+        if (! $record instanceof Service) {
+            return null;
+        }
+
+        return app(ServiceImageUrlResolver::class)->resolve($record);
+    }
+
+    private static function imageAlt(?Service $record): string
+    {
+        if (! $record instanceof Service) {
+            return __('Изображение услуги');
+        }
+
+        $name = trim((string) $record->getAttribute('name'));
+
+        return $name !== '' ? $name : __('Изображение услуги');
+    }
+
+    private static function imageStatus(?Service $record): string
+    {
+        if (! $record instanceof Service) {
+            return __('Изображение не добавлено.');
+        }
+
+        $kind = self::hasValue($record->getAttribute('image_path'))
+            ? __('Загруженный файл')
+            : __('Внешняя ссылка');
+
+        return __(':kind. Новая загрузка или ссылка заменит текущее изображение после сохранения.', ['kind' => $kind]);
     }
 
     private static function nullableString(mixed $value): ?string
