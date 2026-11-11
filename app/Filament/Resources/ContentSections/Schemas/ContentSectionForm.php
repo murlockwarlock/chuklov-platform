@@ -16,6 +16,7 @@ use App\Modules\Content\Domain\Enums\ContentTelegramMediaType;
 use App\Modules\Content\Domain\Models\ContentSection;
 use App\Support\Images\SupportedImageTypes;
 use App\Support\RichText\RichTextDocument;
+use App\Support\Uploads\UploadedFileState;
 use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
@@ -392,7 +393,7 @@ class ContentSectionForm
             return [];
         }
 
-        $upload = $get('content_image');
+        $upload = UploadedFileState::first($get('content_image'));
         if ($upload instanceof UploadedFile && method_exists($upload, 'temporaryUrl')) {
             try {
                 $url = $upload->temporaryUrl();

@@ -325,6 +325,28 @@ final class ContentSectionMediaTest extends TestCase
         );
     }
 
+    public function test_nested_filament_content_image_upload_state_is_stored(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'О нашей академии',
+            'body' => 'Текст раздела.',
+            'content_image' => ['upload' => ['file' => UploadedFile::fake()->image('academy.webp', 640, 480)]],
+        ]);
+
+        $path = $section->media['image'] ?? null;
+
+        self::assertIsString($path);
+        self::assertMatchesRegularExpression(
+            '/^content\/'.$organization->id.'\/[0-9a-f-]{36}\.webp$/i',
+            $path,
+        );
+        Storage::disk(self::DISK)->assertExists($path);
+    }
+
     public function test_managed_content_image_is_streamed_for_telegram_delivery(): void
     {
         [$organization, $admin] = $this->organizationAndAdmin();
