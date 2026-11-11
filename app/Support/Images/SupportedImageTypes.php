@@ -20,7 +20,7 @@ final class SupportedImageTypes
 
     public static function browserAccept(): string
     {
-        return 'image/jpeg,image/png,image/webp,.heic,.heif';
+        return 'image/jpeg,image/png,image/webp,image/heic,image/heif';
     }
 
     /** @return array<string, string> */

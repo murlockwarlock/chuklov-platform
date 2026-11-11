@@ -18,4 +18,12 @@ final class SupportedImageTypesTest extends TestCase
             'heif' => 'image/heif',
         ], SupportedImageTypes::mimeTypeMap());
     }
+
+    public function test_browser_accept_uses_mime_types_for_heif_family(): void
+    {
+        self::assertSame(
+            'image/jpeg,image/png,image/webp,image/heic,image/heif',
+            SupportedImageTypes::browserAccept(),
+        );
+    }
 }
