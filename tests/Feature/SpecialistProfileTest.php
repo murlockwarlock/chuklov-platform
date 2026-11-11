@@ -345,28 +345,22 @@ final class SpecialistProfileTest extends TestCase
         }
 
         Storage::fake('public');
-        $path = tempnam(sys_get_temp_dir(), 'specialist-heic-');
-        self::assertIsString($path);
         $image = new \Imagick;
         $image->newImage(4, 3, new \ImagickPixel('royalblue'));
         $image->setImageFormat('HEIC');
-        $image->writeImage($path);
+        $contents = $image->getImagesBlob();
         $image->clear();
         $image->destroy();
 
-        try {
-            $storedPath = app(SpecialistMediaStorageInterface::class)->store(
-                99,
-                new UploadedFile($path, 'phone.heic', 'image/heic', UPLOAD_ERR_OK, true),
-            );
-            self::assertStringEndsWith('.webp', $storedPath);
-            Storage::disk('public')->assertExists($storedPath);
-            $contents = Storage::disk('public')->get($storedPath);
-            self::assertIsString($contents);
-            self::assertSame('image/webp', getimagesizefromstring($contents)['mime'] ?? null);
-        } finally {
-            @unlink($path);
-        }
+        $storedPath = app(SpecialistMediaStorageInterface::class)->store(
+            99,
+            UploadedFile::fake()->createWithContent('phone.heic', $contents),
+        );
+        self::assertStringEndsWith('.webp', $storedPath);
+        Storage::disk('public')->assertExists($storedPath);
+        $storedContents = Storage::disk('public')->get($storedPath);
+        self::assertIsString($storedContents);
+        self::assertSame('image/webp', getimagesizefromstring($storedContents)['mime'] ?? null);
     }
 
     private function setOrganization(Organization $organization): void
