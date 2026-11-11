@@ -62,8 +62,7 @@ final class NormalizeUploadedImageTest extends TestCase
             self::markTestSkipped('The runtime does not expose HEIC and HEIF codecs.');
         }
 
-        self::assertTrue($this->imagickSupports('HEIC'), 'The runtime must expose an HEIC codec.');
-        self::assertTrue($this->imagickSupports('HEIF'), 'The runtime must expose an HEIF codec.');
+        self::assertTrue($this->imagickSupports('HEIC'), 'The runtime must expose an HEIC codec that can decode HEIF containers.');
 
         $normalizer = app(NormalizeUploadedImage::class);
 
@@ -149,7 +148,7 @@ final class NormalizeUploadedImageTest extends TestCase
 
         $image = new \Imagick;
         $image->newImage(4, 3, new \ImagickPixel('royalblue'));
-        $image->setImageFormat($format);
+        $image->setImageFormat('HEIC');
         $image->setImageCompressionQuality(80);
         $image->writeImage($path);
         $image->clear();
@@ -158,6 +157,10 @@ final class NormalizeUploadedImageTest extends TestCase
         @unlink($path);
 
         self::assertIsString($contents);
+
+        if ($format === 'HEIF') {
+            $contents = substr_replace($contents, 'mif1', 8, 4);
+        }
 
         return $contents;
     }

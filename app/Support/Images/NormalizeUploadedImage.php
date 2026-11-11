@@ -48,7 +48,8 @@ final class NormalizeUploadedImage
 
         try {
             $image = $manager->decodePath($path);
-            $sourceMimeType = $this->canonicalMimeType($image->origin()->mediaType());
+            $decodedMimeType = $this->canonicalMimeType($image->origin()->mediaType());
+            $sourceMimeType = $this->resolveSourceMimeType($sniffedMime, $decodedMimeType);
         } catch (Throwable $exception) {
             throw $this->invalid($exception);
         }
@@ -204,6 +205,24 @@ final class NormalizeUploadedImage
             'image/x-heif' => 'image/heif',
             default => strtolower($mimeType),
         };
+    }
+
+    private function resolveSourceMimeType(string $sniffedMimeType, ?string $decodedMimeType): ?string
+    {
+        if ($decodedMimeType === null) {
+            return null;
+        }
+
+        $supportedMimeTypes = array_keys(self::MIME_EXTENSIONS);
+        if (! in_array($sniffedMimeType, $supportedMimeTypes, true)) {
+            return $decodedMimeType;
+        }
+
+        $heifFamily = ['image/heic', 'image/heif'];
+        $compatible = $sniffedMimeType === $decodedMimeType
+            || (in_array($sniffedMimeType, $heifFamily, true) && in_array($decodedMimeType, $heifFamily, true));
+
+        return $compatible ? $sniffedMimeType : null;
     }
 
     private function sniffMimeType(string $path): string
