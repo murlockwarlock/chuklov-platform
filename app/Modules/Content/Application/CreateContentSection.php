@@ -10,6 +10,7 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Security\Application\RecordAuditEvent;
+use App\Support\Uploads\UploadedFileState;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -78,17 +79,19 @@ class CreateContentSection
     {
         $value = $attributes['content_image'] ?? null;
 
-        if ($value === null || $value === '') {
+        if ($value === null || $value === '' || $value === []) {
             return null;
         }
 
-        if (! $value instanceof UploadedFile) {
+        $file = UploadedFileState::first($value);
+
+        if (! $file instanceof UploadedFile) {
             throw ValidationException::withMessages([
-                'content_image' => ['Загрузите изображение в формате JPG, PNG или WebP.'],
+                'content_image' => ['Не удалось прочитать изображение. Попробуйте другой файл.'],
             ]);
         }
 
-        return $value;
+        return $file;
     }
 
     /** @param array<string, mixed> $attributes */

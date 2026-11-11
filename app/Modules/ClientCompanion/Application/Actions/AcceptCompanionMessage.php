@@ -22,6 +22,7 @@ use App\Modules\Conversations\Domain\Models\Conversation;
 use App\Modules\Conversations\Domain\Models\ConversationMessage;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Collection;
@@ -37,6 +38,7 @@ final class AcceptCompanionMessage
         private readonly RecordCompanionMessage $recordMessage,
         private readonly CompanionMessageBodyReader $bodyReader,
         private readonly InvalidateCompanionAlbum $invalidateAlbum,
+        private readonly RecordScenarioEvent $recordScenarioEvent,
     ) {}
 
     /** @param list<int> $attachmentIds */
@@ -221,6 +223,15 @@ final class AcceptCompanionMessage
                         'transport' => $channel,
                     ],
                 );
+
+                if ($lockedConversation->automation_state === ConversationAutomationState::HumanHandoff) {
+                    $event = $this->recordScenarioEvent->companionMessageRequiresSpecialistAttention(
+                        message: $message,
+                        conversation: $lockedConversation,
+                        occurredAt: now()->toImmutable(),
+                    );
+                    $this->recordScenarioEvent->dispatchProcessing($event);
+                }
 
                 if ($mediaGroupId !== null) {
                     $lateTurn = CompanionTurn::query()

@@ -3,6 +3,7 @@
 namespace App\Filament\Support;
 
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
+use App\Support\Images\SupportedImageTypes;
 use App\Support\RichText\RichTextDocument;
 use Closure;
 use Filament\Actions\Action;
@@ -181,7 +182,9 @@ final class MessageComposer
             ->helperText($compact ? null : __($mediaHelperText ?? 'Фото до 10 МБ; MP4 и другие файлы до 50 МБ. От 2 до 10 фото или видео одного типа отправятся альбомом Telegram.'))
             ->columnSpanFull();
         if ($mediaAcceptedFileTypes !== null) {
-            $fileUpload->acceptedFileTypes($mediaAcceptedFileTypes);
+            $fileUpload
+                ->acceptedFileTypes($mediaAcceptedFileTypes)
+                ->mimeTypeMap(SupportedImageTypes::mimeTypeMap());
         }
 
         if ($compact) {

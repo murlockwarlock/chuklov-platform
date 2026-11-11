@@ -3,19 +3,32 @@
         $days = $this->journalDays;
         $multipleSpecialists = $this->journalUsesMultipleSpecialists();
         $grid = $this->journalGrid;
-        $weekdays = [1 => __('Пн'), 2 => __('Вт'), 3 => __('Ср'), 4 => __('Чт'), 5 => __('Пт'), 6 => __('Сб'), 7 => __('Вс')];
         $rowHeight = 44;
         $calendarBottomPadding = 16;
         $calendarHeight = ($grid['rows'] * $rowHeight) + $calendarBottomPadding;
-        $firstDay = $days[array_key_first($days)] ?? ['specialists' => []];
-        $specialistHeaderHeight = 32;
-        $specialistLaneHeight = $calendarHeight + $specialistHeaderHeight;
-        $multiCalendarHeight = count($firstDay['specialists']) * $specialistLaneHeight;
         $minuteStyle = fn (int $minutes): string => 'top: '.(($minutes - $grid['start']) * ($rowHeight / 30)).'px;';
         $heightStyle = fn (int $start, int $end): string => 'top: '.(($start - $grid['start']) * ($rowHeight / 30)).'px; height: '.max($rowHeight, ($end - $start) * ($rowHeight / 30)).'px;';
         $isOpen = fn (array $day, int $minutes): bool => collect($day['intervals'])->contains(fn (array $interval): bool => $minutes >= $interval['start_minutes'] && $minutes < $interval['end_minutes']);
         $isOccupied = fn (array $day, int $minutes): bool => collect($day['bookings'])->contains(fn (array $booking): bool => ($booking['blocks_availability'] ?? false) && $minutes >= $booking['start_minutes'] && $minutes < $booking['end_minutes']);
+        $hasAvailableSpecialist = fn (array $day, int $minutes): bool => collect($day['specialists'])->contains(
+            fn (array $specialist): bool => $specialist['is_active']
+                && $isOpen($specialist, $minutes)
+                && ! $isOccupied($specialist, $minutes),
+        );
         $canCreateBooking = $this->canCreateBooking();
+        $calendarDensity = in_array($this->calendarDensity, ['compact', 'normal', 'wide'], true) ? $this->calendarDensity : 'normal';
+        $calendarCardClass = match ($calendarDensity) {
+            'compact' => 'p-1 text-[10px]',
+            'wide' => 'p-2 text-xs',
+            default => 'p-1.5 text-[11px]',
+        };
+        $calendarGridStyle = 'grid-template-columns: 4rem repeat(7, minmax(var(--journal-day-min-width), 1fr));';
+        $densityOptions = [
+            'compact' => ['label' => __('Компактно'), 'icon' => 'heroicon-o-arrows-pointing-in'],
+            'normal' => ['label' => __('Обычно'), 'icon' => 'heroicon-o-arrows-right-left'],
+            'wide' => ['label' => __('Широко'), 'icon' => 'heroicon-o-arrows-pointing-out'],
+        ];
+        $specialistFilterLabel = $this->selectedSpecialistsSummary();
     @endphp
 
     <div class="flex min-w-0 flex-col gap-5" wire:poll.30s>
@@ -37,25 +50,63 @@
                 </div>
             </div>
 
-            <div class="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
-                @if (count($this->specialistOptions) > 1)
-                    <x-filament::dropdown wire:key="booking-journal-specialist-filter" placement="bottom-start" shift width="sm">
-                        <x-slot name="trigger">
-                            <x-filament::button id="booking-journal-specialist" color="gray" icon="heroicon-o-funnel">
-                                {{ $selectedSpecialistIds === [] ? __('Все специалисты') : __('Специалисты: :count', ['count' => count($selectedSpecialistIds)]) }}
-                            </x-filament::button>
-                        </x-slot>
-                        <div class="max-h-64 space-y-1 overflow-y-auto p-2">
-                            <button type="button" wire:click="clearSpecialistFilter" class="w-full rounded-lg px-3 py-2 text-start text-sm">{{ __('Все специалисты') }}</button>
-                            @foreach ($this->specialistOptions as $id => $name)
-                                <label class="flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm">
-                                    <x-filament::input.checkbox wire:model.live="selectedSpecialistIds" value="{{ $id }}" />
-                                    <span class="min-w-0 break-words">{{ $name }}</span>
-                                </label>
-                            @endforeach
-                        </div>
-                    </x-filament::dropdown>
-                @endif
+            <div class="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
+                    @if (count($this->specialistOptions) > 1)
+                        <x-filament::dropdown wire:key="booking-journal-specialist-filter" placement="bottom-start" shift width="sm">
+                            <x-slot name="trigger">
+                                <x-filament::button id="booking-journal-specialist" color="gray" icon="heroicon-o-funnel">
+                                    {{ $specialistFilterLabel }}
+                                </x-filament::button>
+                            </x-slot>
+                            <div class="max-h-64 space-y-1 overflow-y-auto p-2">
+                                <button type="button" wire:click="clearSpecialistFilter" class="w-full rounded-lg px-3 py-2 text-start text-sm">{{ __('Все специалисты') }}</button>
+                                @foreach ($this->specialistOptions as $id => $name)
+                                    <label class="flex min-h-11 min-w-0 items-center gap-2 rounded-lg px-3 py-2 text-sm">
+                                        <x-filament::input.checkbox wire:model.live="selectedSpecialistIds" value="{{ $id }}" />
+                                        <span class="min-w-0 break-words">{{ $name }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                        </x-filament::dropdown>
+                    @endif
+                    @if ($viewMode === 'week')
+                        <x-filament::dropdown wire:key="booking-journal-density" class="hidden lg:block" placement="bottom-start" shift width="xs">
+                            <x-slot name="trigger">
+                                <x-filament::icon-button
+                                    id="booking-journal-density"
+                                    data-testid="journal-density-trigger"
+                                    color="gray"
+                                    icon="heroicon-o-arrows-right-left"
+                                    label="{{ __('Ширина карточек') }}"
+                                    tooltip="{{ __('Ширина карточек') }}"
+                                />
+                            </x-slot>
+                            <div class="min-w-48 p-2" data-testid="journal-density-popover" aria-label="{{ __('Ширина карточек') }}">
+                                <div class="px-2 pb-2 text-sm font-semibold text-gray-950 dark:text-white">{{ __('Ширина карточек') }}</div>
+                                <div class="space-y-1">
+                                    @foreach ($densityOptions as $density => $option)
+                                        <button
+                                            type="button"
+                                            wire:click="setCalendarDensity('{{ $density }}')"
+                                            data-testid="journal-density-option-{{ $density }}"
+                                            class="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 py-2 text-start text-sm {{ $calendarDensity === $density ? 'bg-primary-50 font-semibold text-primary-800 dark:bg-primary-950/40 dark:text-primary-200' : 'text-gray-700 hover:bg-gray-50 dark:text-gray-200 dark:hover:bg-gray-800' }}"
+                                            aria-pressed="{{ $calendarDensity === $density ? 'true' : 'false' }}"
+                                        >
+                                            <span class="flex size-4 shrink-0 items-center justify-center">
+                                                @if ($calendarDensity === $density)
+                                                    <x-filament::icon icon="heroicon-o-check" class="size-4 text-primary-600 dark:text-primary-300" />
+                                                @endif
+                                            </span>
+                                            <x-filament::icon :icon="$option['icon']" class="size-4 shrink-0 text-gray-400 dark:text-gray-500" />
+                                            <span>{{ $option['label'] }}</span>
+                                        </button>
+                                    @endforeach
+                                </div>
+                            </div>
+                        </x-filament::dropdown>
+                    @endif
+                </div>
                 @if ($canCreateBooking)
                     <div class="flex min-w-0 flex-wrap gap-2">
                         <a href="{{ $this->newBookingUrl() }}" class="inline-flex items-center justify-center rounded-lg bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-primary-500">{{ __('Добавить запись') }}</a>
@@ -74,138 +125,75 @@
                 {{ $this->table }}
             </div>
         @else
-            <div class="hidden min-w-0 rounded-xl border border-gray-200 bg-white shadow-sm lg:block dark:border-gray-800 dark:bg-gray-900">
-                <div class="grid min-w-0 grid-cols-[4rem_repeat(7,minmax(0,1fr))] border-b border-gray-200 dark:border-gray-800">
-                    <div class="border-r border-gray-200 dark:border-gray-800"></div>
-                    @foreach ($days as $day)
-                        <div class="min-w-0 border-r border-gray-200 px-2 py-3 last:border-r-0 dark:border-gray-800 {{ $day['is_today'] ? 'bg-primary-50 dark:bg-primary-950/30' : '' }}">
-                            <div class="text-center text-xs font-medium {{ $day['is_today'] ? 'text-primary-700 dark:text-primary-300' : 'text-gray-500 dark:text-gray-400' }}">{{ $day['weekday'] }}</div>
-                            <div class="mt-1 text-center text-sm font-semibold text-gray-950 dark:text-white">{{ $day['day_number'] }}</div>
-                            <div class="mt-1 truncate text-center text-[11px] {{ $day['is_working'] ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-400 dark:text-gray-500' }}">{{ $day['is_working'] ? __('Рабочий день') : __('Не работает') }}</div>
-                        </div>
-                    @endforeach
-                </div>
-
-                <div class="grid min-w-0 grid-cols-[4rem_repeat(7,minmax(0,1fr))]">
-                    @if (! $multipleSpecialists)
-                        <div class="relative border-r border-gray-200 dark:border-gray-800" style="height: {{ $calendarHeight }}px;">
-                            @foreach ($grid['labels'] as $label)
-                                <span class="absolute right-2 -translate-y-1/2 text-[11px] text-gray-400 dark:text-gray-500" style="{{ $minuteStyle($label['minutes']) }}">{{ $label['label'] }}</span>
-                            @endforeach
-                        </div>
-                        @foreach ($days as $day)
-                            <div class="relative min-w-0 border-r border-gray-200 last:border-r-0 dark:border-gray-800" style="height: {{ $calendarHeight }}px;">
-                                @for ($minute = $grid['start']; $minute < $grid['end']; $minute += 30)
-                                    @php($open = $isOpen($day, $minute))
-                                    @php($occupied = $isOccupied($day, $minute))
-                                    @php($slotTime = sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60))
-                                    @if ($open && ! $occupied && $canCreateBooking)
-                                        <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime) }}" class="absolute inset-x-0 border-t border-gray-100 bg-white/70 transition hover:bg-primary-50 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:bg-primary-950/30" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-label="{{ __('Добавить запись на :time', ['time' => $slotTime]) }}" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')))" ></a>
-                                    @else
-                                        <div class="absolute inset-x-0 border-t border-gray-100 {{ $open ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : 'bg-gray-50/80 dark:bg-gray-950/40' }}" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-hidden="true" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')))" ></div>
-                                    @endif
-                                @endfor
-
-                                @foreach ($day['intervals'] as $interval)
-                                    <div class="pointer-events-none absolute inset-x-0.5 rounded-md bg-emerald-50/40 dark:bg-emerald-950/20" style="{{ $heightStyle($interval['start_minutes'], $interval['end_minutes']) }}"></div>
-                                @endforeach
-
-                                @foreach ($day['bookings'] as $booking)
-                                    <div draggable="{{ $booking['is_terminal'] ? 'false' : 'true' }}" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute inset-x-1 z-10 min-w-0 overflow-hidden rounded-md border p-1.5 text-[11px] leading-tight shadow-sm transition hover:shadow-md {{ $booking['is_terminal'] ? '' : 'cursor-grab active:cursor-grabbing' }} {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}" @if ($booking['released_for_rebooking']) data-testid="journal-released-booking-card" @endif>
-                                        <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-md"></a>
-                                        <div class="relative z-10 pointer-events-none">
-                                            <div class="flex min-w-0 items-center gap-1">
-                                                <span class="min-w-0 flex-1 truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
-                                                @if ($booking['released_for_rebooking'])
-                                                    <a
-                                                        href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"
-                                                        aria-label="{{ __('Создать новую запись на :time', ['time' => $booking['start_time']]) }}"
-                                                        data-testid="journal-released-booking-create"
-                                                        class="pointer-events-auto relative z-20 inline-flex shrink-0 items-center gap-1 rounded-md border border-primary-200 bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-primary-700 shadow-sm hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary-600 dark:border-primary-900/60 dark:bg-gray-900/90 dark:text-primary-300 dark:hover:bg-primary-950/30"
-                                                    >
-                                                        <x-filament::icon icon="heroicon-o-plus" class="size-3" />
-                                                        <span>{{ __('Добавить') }}</span>
-                                                    </a>
-                                                @endif
-                                            </div>
-                                            <span class="block truncate">{{ $booking['service'] }}</span>
-                                            <span class="block truncate opacity-80">{{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</span>
-                                            @if ($booking['retention_warning'])
-                                                <span class="block truncate font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</span>
-                                            @endif
-                                        </div>
-                                    </div>
-                                @endforeach
-                            </div>
-                        @endforeach
-                    @else
-                        <div class="relative border-r border-gray-200 dark:border-gray-800" style="height: {{ $multiCalendarHeight }}px;">
-                            @foreach ($firstDay['specialists'] as $specialist)
-                                <div class="relative border-b border-gray-200 dark:border-gray-800" style="height: {{ $specialistLaneHeight }}px;">
-                                    <div class="h-8"></div>
-                                    <div class="relative" style="height: {{ $calendarHeight }}px;">
-                                        @foreach ($grid['labels'] as $label)
-                                            <span class="absolute right-2 -translate-y-1/2 text-[11px] text-gray-400 dark:text-gray-500" style="{{ $minuteStyle($label['minutes']) }}">{{ $label['label'] }}</span>
-                                        @endforeach
-                                    </div>
+            <div class="hidden min-w-0 rounded-xl border border-gray-200 bg-white shadow-sm lg:block dark:border-gray-800 dark:bg-gray-900" data-testid="journal-calendar-workspace">
+                <div class="max-w-full overflow-x-auto overscroll-x-contain">
+                    <div class="min-w-0" style="{{ $this->calendarWorkspaceStyle() }}">
+                        <div class="grid min-w-0 border-b border-gray-200 dark:border-gray-800" style="{{ $calendarGridStyle }}">
+                            <div class="border-r border-gray-200 dark:border-gray-800"></div>
+                            @foreach ($days as $day)
+                                <div class="min-w-0 border-r border-gray-200 px-2 py-3 last:border-r-0 dark:border-gray-800 {{ $day['is_today'] ? 'bg-primary-50 dark:bg-primary-950/30' : '' }}">
+                                    <div class="text-center text-xs font-medium {{ $day['is_today'] ? 'text-primary-700 dark:text-primary-300' : 'text-gray-500 dark:text-gray-400' }}">{{ $day['weekday'] }}</div>
+                                    <div class="mt-1 text-center text-sm font-semibold text-gray-950 dark:text-white">{{ $day['day_number'] }}</div>
+                                    <div class="mt-1 truncate text-center text-[11px] {{ $day['is_working'] ? 'text-emerald-700 dark:text-emerald-300' : 'text-gray-400 dark:text-gray-500' }}">{{ $day['is_working'] ? __('Рабочий день') : __('Не работает') }}</div>
                                 </div>
                             @endforeach
                         </div>
-                        @foreach ($days as $day)
-                            <div class="relative min-w-0 border-r border-gray-200 last:border-r-0 dark:border-gray-800" style="height: {{ $multiCalendarHeight }}px;">
-                                @foreach ($day['specialists'] as $specialist)
-                                    <div class="relative border-b border-gray-200 dark:border-gray-800" style="height: {{ $specialistLaneHeight }}px;">
-                                        <div class="flex h-8 min-w-0 items-center border-b border-gray-100 px-1 text-[10px] font-semibold leading-3 text-gray-700 dark:border-gray-800 dark:text-gray-200" title="{{ $specialist['name'] }}">
-                                            <span class="min-w-0 break-words">{{ $specialist['name'] }}@if (! $specialist['is_active']) ({{ __('неактивен') }})@endif</span>
-                                        </div>
-                                        <div class="relative min-w-0" style="height: {{ $calendarHeight }}px;">
-                                            @for ($minute = $grid['start']; $minute < $grid['end']; $minute += 30)
-                                                @php($open = $isOpen($specialist, $minute))
-                                                @php($occupied = $isOccupied($specialist, $minute))
-                                                @php($slotTime = sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60))
-                                                @if ($open && ! $occupied && $specialist['is_active'] && $canCreateBooking)
-                                                    <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime, $specialist['specialist_id']) }}" class="absolute inset-x-0 border-t border-gray-100 bg-white/70 transition hover:bg-primary-50 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:bg-primary-950/30" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-label="{{ $specialist['name'] }}: {{ __('Добавить запись на :time', ['time' => $slotTime]) }}" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')), {{ $specialist['specialist_id'] }})"></a>
-                                                @else
-                                                    <div class="absolute inset-x-0 border-t border-gray-100 {{ $open ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : 'bg-gray-50/80 dark:bg-gray-950/40' }}" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-hidden="true" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')), {{ $specialist['specialist_id'] }})"></div>
-                                                @endif
-                                            @endfor
 
-                                            @foreach ($specialist['intervals'] as $interval)
-                                                <div class="pointer-events-none absolute inset-x-0.5 rounded-md bg-emerald-50/40 dark:bg-emerald-950/20" style="{{ $heightStyle($interval['start_minutes'], $interval['end_minutes']) }}"></div>
-                                            @endforeach
-
-                                            @foreach ($specialist['bookings'] as $booking)
-                                                <div draggable="{{ $booking['is_terminal'] ? 'false' : 'true' }}" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute inset-x-1 z-10 min-w-0 overflow-hidden rounded-md border p-1.5 text-[11px] leading-tight shadow-sm transition hover:shadow-md {{ $booking['is_terminal'] ? '' : 'cursor-grab active:cursor-grabbing' }} {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}" aria-label="{{ $specialist['name'] }}: {{ $booking['time_range'] }}" @if ($booking['released_for_rebooking']) data-testid="journal-released-booking-card" @endif>
-                                                    <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-md"></a>
-                                                    <div class="relative z-10 pointer-events-none">
-                                                        <div class="flex min-w-0 items-center gap-1">
-                                                            <span class="min-w-0 flex-1 truncate font-semibold">{{ $booking['start_time'] }} · @if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
-                                                            @if ($booking['released_for_rebooking'])
-                                                                <a
-                                                                    href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"
-                                                                    aria-label="{{ __('Создать новую запись на :time', ['time' => $booking['start_time']]) }}"
-                                                                    data-testid="journal-released-booking-create"
-                                                                    class="pointer-events-auto relative z-20 inline-flex shrink-0 items-center gap-1 rounded-md border border-primary-200 bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-primary-700 shadow-sm hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary-600 dark:border-primary-900/60 dark:bg-gray-900/90 dark:text-primary-300 dark:hover:bg-primary-950/30"
-                                                                >
-                                                                    <x-filament::icon icon="heroicon-o-plus" class="size-3" />
-                                                                    <span>{{ __('Добавить') }}</span>
-                                                                </a>
-                                                            @endif
-                                                        </div>
-                                                        <span class="block truncate">{{ $booking['service'] }}</span>
-                                                        <span class="block truncate opacity-80">{{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</span>
-                                                        @if ($booking['retention_warning'])
-                                                            <span class="block truncate font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</span>
-                                                        @endif
-                                                    </div>
-                                                </div>
-                                            @endforeach
-                                        </div>
-                                    </div>
+                        <div class="grid min-w-0" style="{{ $calendarGridStyle }}">
+                            <div class="relative border-r border-gray-200 dark:border-gray-800" style="height: {{ $calendarHeight }}px;">
+                                @foreach ($grid['labels'] as $label)
+                                    <span class="absolute right-2 -translate-y-1/2 text-[11px] text-gray-400 dark:text-gray-500" style="{{ $minuteStyle($label['minutes']) }}">{{ $label['label'] }}</span>
                                 @endforeach
                             </div>
-                        @endforeach
-                    @endif
+                            @foreach ($days as $day)
+                                <div class="relative min-w-0 border-r border-gray-200 last:border-r-0 dark:border-gray-800" style="height: {{ $calendarHeight }}px;">
+                                    @for ($minute = $grid['start']; $minute < $grid['end']; $minute += 30)
+                                        @php($open = $isOpen($day, $minute))
+                                        @php($occupied = $isOccupied($day, $minute))
+                                        @php($slotAvailable = $multipleSpecialists ? $hasAvailableSpecialist($day, $minute) : ($open && ! $occupied))
+                                        @php($slotTime = sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60))
+                                        @if ($open && $canCreateBooking && $slotAvailable)
+                                            <a href="{{ $this->bookingCreationUrl($day['date'], $slotTime, $selectedSpecialistId) }}" class="absolute inset-x-0 border-t border-gray-100 bg-white/70 transition hover:bg-primary-50 dark:border-gray-800 dark:bg-gray-900/70 dark:hover:bg-primary-950/30" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-label="{{ __('Добавить запись на :time', ['time' => $slotTime]) }}" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')))" ></a>
+                                        @else
+                                            <div class="absolute inset-x-0 border-t border-gray-100 {{ $open ? 'bg-emerald-50/30 dark:bg-emerald-950/10' : 'bg-gray-50/80 dark:bg-gray-950/40' }}" style="{{ $minuteStyle($minute) }} height: {{ $rowHeight }}px;" aria-hidden="true" x-on:dragover.prevent x-on:drop.prevent="$wire.rescheduleFromJournal(Number(event.dataTransfer.getData('booking-id')), '{{ $day['date'] }}', '{{ $slotTime }}', Number(event.dataTransfer.getData('event-version')))" ></div>
+                                        @endif
+                                    @endfor
+
+                                    @foreach ($day['intervals'] as $interval)
+                                        <div class="pointer-events-none absolute inset-x-0.5 rounded-md bg-emerald-50/40 dark:bg-emerald-950/20" style="{{ $heightStyle($interval['start_minutes'], $interval['end_minutes']) }}"></div>
+                                    @endforeach
+
+                                    @foreach ($day['bookings'] as $booking)
+                                        <div draggable="{{ $booking['is_terminal'] ? 'false' : 'true' }}" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute z-10 min-w-0 overflow-hidden rounded-md border {{ $calendarCardClass }} leading-tight shadow-sm transition hover:shadow-md {{ $booking['is_terminal'] ? '' : 'cursor-grab active:cursor-grabbing' }} {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}" aria-label="{{ $booking['specialist'] }}: {{ $booking['time_range'] }}" @if ($booking['released_for_rebooking']) data-testid="journal-released-booking-card" @endif>
+                                            <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-md"></a>
+                                            <div class="relative z-10 pointer-events-none">
+                                                <div class="flex min-w-0 items-center gap-1">
+                                                    <span class="min-w-0 flex-1 {{ $calendarDensity === 'wide' ? 'whitespace-normal break-words' : 'truncate' }} font-semibold" title="{{ $booking['specialist'] }}">{{ $booking['start_time'] }} · {{ $booking['specialist'] }}</span>
+                                                    @if ($booking['released_for_rebooking'])
+                                                        <a
+                                                            href="{{ $this->bookingCreationUrl($day['date'], $booking['start_time'], $booking['specialist_id']) }}"
+                                                            aria-label="{{ __('Создать новую запись на :time', ['time' => $booking['start_time']]) }}"
+                                                            data-testid="journal-released-booking-create"
+                                                            class="pointer-events-auto relative z-20 inline-flex shrink-0 items-center gap-1 rounded-md border border-primary-200 bg-white/90 px-1.5 py-1 text-[10px] font-semibold text-primary-700 shadow-sm hover:bg-primary-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary-600 dark:border-primary-900/60 dark:bg-gray-900/90 dark:text-primary-300 dark:hover:bg-primary-950/30"
+                                                        >
+                                                            <x-filament::icon icon="heroicon-o-plus" class="size-3" />
+                                                            <span>{{ __('Добавить') }}</span>
+                                                        </a>
+                                                    @endif
+                                                </div>
+                                                <span class="block truncate" title="{{ $booking['client'] }}">@if ($booking['client_url'])<a href="{{ $booking['client_url'] }}" class="pointer-events-auto relative z-20 crm-entity-link">{{ $booking['client'] }}</a>@else{{ $booking['client'] }}@endif</span>
+                                                <span class="block truncate" title="{{ $booking['service'] }}">{{ $booking['service'] }}</span>
+                                                <span class="block truncate opacity-80">{{ $booking['status'] }} · {{ $booking['location_label'] }}@if ($booking['party_size_label']) · {{ $booking['party_size_label'] }}@endif @if ($booking['has_debt']) · {{ __('Есть долг') }}@endif</span>
+                                                @if ($booking['retention_warning'])
+                                                    <span class="block truncate font-semibold text-danger-700 dark:text-danger-300">{{ $booking['retention_label'] }}</span>
+                                                @endif
+                                            </div>
+                                        </div>
+                                    @endforeach
+                                </div>
+                            @endforeach
+                        </div>
+                    </div>
                 </div>
             </div>
 

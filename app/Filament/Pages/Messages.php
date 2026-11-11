@@ -27,6 +27,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Application\OrganizationFeatureGate;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Support\Images\SupportedImageTypes;
 use App\Support\RichText\RichTextDocument;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
@@ -157,9 +158,7 @@ final class Messages extends LocalizedPage
             mediaAcceptedFileTypes: [
                 'application/pdf',
                 'text/plain',
-                'image/jpeg',
-                'image/png',
-                'image/webp',
+                ...SupportedImageTypes::acceptedMimeTypes(),
             ],
             mediaMaxKilobytes: (int) ceil((int) config('medical.attachment_max_bytes', 20_971_520) / 1024),
             mediaMultiple: false,
@@ -168,7 +167,7 @@ final class Messages extends LocalizedPage
             mediaSectionTitle: 'Вложение',
             mediaSectionDescription: 'Один безопасный файл. Защищённые медицинские файлы здесь не показываются.',
             mediaUploadLabel: 'Добавить вложение',
-            mediaHelperText: 'PDF, TXT, JPG, PNG или WebP; до 20 МБ.',
+            mediaHelperText: 'Можно добавить фотографию, изображение, PDF или TXT; до 20 МБ.',
             additionalMediaComponents: [
                 Select::make('existing_attachment_id')
                     ->label(__('Выбрать ранее загруженный файл'))

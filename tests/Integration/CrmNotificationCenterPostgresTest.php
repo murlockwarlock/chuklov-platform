@@ -8,6 +8,9 @@ use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Channels\Domain\Enums\NotificationSeverity;
 use App\Modules\Channels\Domain\ValueObjects\NotificationMessage;
 use App\Modules\Channels\Infrastructure\Database\DatabaseNotificationChannel;
+use App\Modules\ClientCompanion\Application\Actions\AcceptCompanionMessage;
+use App\Modules\ClientCompanion\Application\Actions\ReplyToCompanion;
+use App\Modules\ClientCompanion\Application\Actions\TakeOverCompanionConversation;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationRole;
@@ -17,7 +20,9 @@ use App\Modules\Scenarios\Application\ExecuteScenarioAction;
 use App\Modules\Scenarios\Application\MaterializeScenarioEvent;
 use App\Modules\Scenarios\Application\RecordScenarioEvent;
 use App\Modules\Scenarios\Domain\Enums\ScenarioActionStatus;
+use App\Modules\Scenarios\Domain\Enums\ScenarioEventType;
 use App\Modules\Scenarios\Domain\Models\ScenarioAction;
+use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Domain\Enums\BookingSource;
 use App\Modules\Scheduling\Domain\Enums\BookingStatus;
 use App\Modules\Scheduling\Domain\Enums\VisitFormat;
@@ -27,6 +32,7 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\DatabaseTruncation;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 
 final class CrmNotificationCenterPostgresTest extends TestCase
@@ -147,6 +153,77 @@ final class CrmNotificationCenterPostgresTest extends TestCase
         self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
         self::assertSame(1, $staff->fresh()->notifications()->count());
         self::assertSame(0, $foreignAdministrator->fresh()->notifications()->count());
+    }
+
+    public function test_postgresql_persists_one_notification_for_a_replayed_handoff_message_and_none_for_staff_reply(): void
+    {
+        $this->requirePostgres();
+        [$organization, $administrator, , , $client] = $this->fixture();
+        app(OrganizationContext::class)->set($organization);
+        app(EnsureOperationalNotificationDefaults::class)->handle($organization);
+        Queue::fake();
+
+        app(AcceptCompanionMessage::class)->handle(
+            client: $client,
+            channel: 'telegram',
+            body: 'Первое сообщение клиента',
+            idempotencyKey: null,
+            originExternalId: 'postgres-handoff-initial',
+            transportChatId: 'postgres-chat',
+            locale: 'ru',
+        );
+        app(TakeOverCompanionConversation::class)->handle($administrator, $client);
+        $inbound = app(AcceptCompanionMessage::class)->handle(
+            client: $client,
+            channel: 'telegram',
+            body: 'Новое сообщение после подключения специалиста',
+            idempotencyKey: null,
+            originExternalId: 'postgres-handoff-inbound',
+            transportChatId: 'postgres-chat',
+            locale: 'ru',
+        );
+        $event = ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', ScenarioEventType::CompanionSpecialistAttention->value)
+            ->whereJsonContains('payload->message_id', $inbound->inbound_message_id)
+            ->sole();
+
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        app(MaterializeScenarioEvent::class)->handle($event->getKey());
+        $action = ScenarioAction::query()
+            ->where('scenario_event_id', $event->getKey())
+            ->where('recipient_user_id', $administrator->getKey())
+            ->whereJsonContains('channel_priority', 'database')
+            ->sole();
+        $action->forceFill(['scheduled_for' => now()->subSecond()])->save();
+        $action->deliveries()->update(['next_attempt_at' => now()->subSecond()]);
+        $this->app->instance(NotificationChannelRegistry::class, new NotificationChannelRegistry([
+            app(DatabaseNotificationChannel::class),
+        ]));
+
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+        app(ExecuteScenarioAction::class)->handle($action->getKey());
+        app(AcceptCompanionMessage::class)->handle(
+            client: $client,
+            channel: 'telegram',
+            body: 'Новое сообщение после подключения специалиста',
+            idempotencyKey: null,
+            originExternalId: 'postgres-handoff-inbound',
+            transportChatId: 'postgres-chat',
+            locale: 'ru',
+        );
+        app(ReplyToCompanion::class)->handle($administrator, $client, 'Ответ специалиста');
+
+        self::assertSame(ScenarioActionStatus::Delivered, $action->fresh()->status);
+        self::assertSame(1, ScenarioEvent::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('event_name', ScenarioEventType::CompanionSpecialistAttention->value)
+            ->count());
+        self::assertSame(1, $administrator->fresh()->notifications()->count());
+        self::assertSame(
+            url('/admin/messages?client='.$client->getKey()),
+            $administrator->fresh()->notifications()->sole()->data['actions'][0]['url'],
+        );
     }
 
     public function test_postgresql_unread_total_remains_authoritative_across_paginated_pages_and_read_actions(): void

@@ -208,7 +208,7 @@ final readonly class NotificationTemplateMedia
         $mime = strtolower($mime ?? '');
         $extension = strtolower(pathinfo(parse_url($name, PHP_URL_PATH) ?: $name, PATHINFO_EXTENSION));
 
-        if (str_starts_with($mime, 'image/') || in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+        if (str_starts_with($mime, 'image/') || in_array($extension, ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], true)) {
             return 'photo';
         }
         if ($mime === 'video/mp4' || $extension === 'mp4') {

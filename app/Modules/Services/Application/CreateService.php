@@ -136,7 +136,7 @@ class CreateService
 
         if (! $value instanceof UploadedFile) {
             throw ValidationException::withMessages([
-                'service_image' => ['Загрузите изображение в формате JPG или PNG.'],
+                'service_image' => ['Не удалось прочитать изображение. Попробуйте другой файл.'],
             ]);
         }
 

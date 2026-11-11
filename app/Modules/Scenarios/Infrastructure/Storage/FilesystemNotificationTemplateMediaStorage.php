@@ -3,6 +3,8 @@
 namespace App\Modules\Scenarios\Infrastructure\Storage;
 
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateMediaStorageInterface;
+use App\Support\Images\ImageNormalizationException;
+use App\Support\Images\NormalizeUploadedImage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -37,6 +39,8 @@ final class FilesystemNotificationTemplateMediaStorage implements NotificationTe
         'application/vnd.oasis.opendocument.presentation' => 'odp',
     ];
 
+    public function __construct(private readonly NormalizeUploadedImage $images) {}
+
     public function store(int $organizationId, UploadedFile $file): string
     {
         if (! $file->isValid()) {
@@ -50,6 +54,23 @@ final class FilesystemNotificationTemplateMediaStorage implements NotificationTe
         }
 
         $mimeType = $this->mimeType($realPath);
+        if ($this->isImageCandidate($file, $mimeType)) {
+            try {
+                $normalized = $this->images->normalize($file, $this->photoMaxBytes());
+            } catch (ImageNormalizationException $exception) {
+                throw ValidationException::withMessages([
+                    'media_image' => [$this->imageValidationMessage($exception)],
+                ]);
+            }
+
+            $path = "notification-template/{$organizationId}/".Str::uuid()->toString().".{$normalized->extension}";
+            if (! Storage::disk($this->disk())->put($path, $normalized->contents)) {
+                throw ValidationException::withMessages(['media_image' => 'Не удалось сохранить изображение.']);
+            }
+
+            return $path;
+        }
+
         $extension = self::MIME_EXTENSIONS[$mimeType] ?? null;
         if ($extension === null) {
             throw ValidationException::withMessages(['media_image' => 'Формат файла не поддерживается Telegram.']);
@@ -124,8 +145,23 @@ final class FilesystemNotificationTemplateMediaStorage implements NotificationTe
         }
 
         $mime = finfo_file($finfo, $path);
-        finfo_close($finfo);
+        unset($finfo);
 
         return is_string($mime) ? strtolower($mime) : 'application/octet-stream';
+    }
+
+    private function isImageCandidate(UploadedFile $file, string $mimeType): bool
+    {
+        return str_starts_with($mimeType, 'image/')
+            || in_array(strtolower((string) $file->getClientOriginalExtension()), ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], true);
+    }
+
+    private function imageValidationMessage(ImageNormalizationException $exception): string
+    {
+        if ($exception->reason === ImageNormalizationException::TOO_LARGE) {
+            return 'Изображение должно быть размером до 10 МБ.';
+        }
+
+        return 'Не удалось прочитать изображение. Попробуйте другой файл.';
     }
 }

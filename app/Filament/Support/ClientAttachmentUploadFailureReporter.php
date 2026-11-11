@@ -72,8 +72,8 @@ final class ClientAttachmentUploadFailureReporter
                 ? 'unsupported_medical_file_type'
                 : 'invalid_medical_attachment';
             $body = $exception instanceof UnsupportedDicomException
-                ? __('Формат DICOM не поддерживается. Выберите PDF, текстовый файл, JPG, PNG или WebP размером до 20 МБ.')
-                : __('Проверьте формат и размер файла. Поддерживаются PDF, текстовые файлы, JPG, PNG и WebP до 20 МБ.');
+                ? __('Формат DICOM не поддерживается. Выберите PDF, текстовый файл или фотографию размером до 20 МБ.')
+                : __('Не удалось прочитать файл. Выберите PDF, текстовый файл или фотографию размером до 20 МБ.');
 
             $this->report(
                 level: 'warning',

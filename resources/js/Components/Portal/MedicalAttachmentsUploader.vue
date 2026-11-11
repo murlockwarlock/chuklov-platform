@@ -44,7 +44,11 @@ function select(event: Event): void {
         selectionError.value = t('medical.fileTooLarge');
         return;
     }
-    if (files.some((file) => !['image/jpeg', 'image/png', 'application/pdf'].includes(file.type))) {
+    if (files.some((file) => {
+        const extension = file.name.toLowerCase().split('.').pop() ?? '';
+        return !['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf'].includes(file.type)
+            && !['heic', 'heif'].includes(extension);
+    })) {
         selectionError.value = t('medical.unsupportedFileType');
         return;
     }
@@ -151,7 +155,7 @@ function send(index: number): void {
       ref="fileInput"
       type="file"
       multiple
-      accept="image/jpeg,image/png,application/pdf"
+      accept="image/jpeg,image/png,image/webp,.heic,.heif,application/pdf"
       :disabled="uploading || remainingFiles === 0"
       aria-hidden="true"
       class="medical-attachments__input"

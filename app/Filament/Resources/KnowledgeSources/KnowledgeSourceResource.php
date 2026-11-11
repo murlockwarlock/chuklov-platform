@@ -11,6 +11,9 @@ use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Knowledge\Application\DeleteKnowledgeSource;
+use App\Modules\Knowledge\Application\ReactivateKnowledgeSource;
+use App\Modules\Knowledge\Application\RetireKnowledgeSource;
+use App\Modules\Knowledge\Domain\Enums\KnowledgeSourceStatus;
 use App\Modules\Knowledge\Domain\Models\KnowledgeIngestionRun;
 use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use App\Modules\Knowledge\Domain\ValueObjects\EmbeddingConfiguration;
@@ -74,6 +77,34 @@ final class KnowledgeSourceResource extends LocalizedResource
                     ->icon(Heroicon::OutlinedPencil)
                     ->iconButton()
                     ->tooltip(__('Открыть материал')),
+                Action::make('retire')
+                    ->label(__('Скрыть из поиска'))
+                    ->icon(Heroicon::OutlinedEyeSlash)
+                    ->color('warning')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Скрыть материал из поиска?'))
+                    ->modalDescription(__('Материал перестанет использоваться в ответах. Версии и история обработки останутся сохранены.'))
+                    ->visible(fn (KnowledgeSource $record): bool => $record->status === KnowledgeSourceStatus::Active)
+                    ->action(function (KnowledgeSource $record): void {
+                        $actor = auth()->user();
+                        abort_unless($actor instanceof User, 403);
+                        app(RetireKnowledgeSource::class)->handle($actor, $record);
+                        Notification::make()->title(__('Материал скрыт из поиска'))->success()->send();
+                    }),
+                Action::make('reactivate')
+                    ->label(__('Вернуть в поиск'))
+                    ->icon(Heroicon::OutlinedEye)
+                    ->color('success')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Вернуть материал в поиск?'))
+                    ->modalDescription(__('Последняя готовая версия снова станет доступна для поиска. История версий сохранится.'))
+                    ->visible(fn (KnowledgeSource $record): bool => $record->status === KnowledgeSourceStatus::Retired)
+                    ->action(function (KnowledgeSource $record): void {
+                        $actor = auth()->user();
+                        abort_unless($actor instanceof User, 403);
+                        app(ReactivateKnowledgeSource::class)->handle($actor, $record);
+                        Notification::make()->title(__('Материал снова используется'))->success()->send();
+                    }),
                 Action::make('delete')
                     ->label(__('Удалить'))
                     ->icon(Heroicon::OutlinedTrash)

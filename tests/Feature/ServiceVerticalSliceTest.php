@@ -45,6 +45,31 @@ class ServiceVerticalSliceTest extends TestCase
                 ->where('services.0.imageUrl', asset('portal-assets/services/consultation.jpg')));
     }
 
+    public function test_portal_prefers_full_localized_description_and_falls_back_to_summary(): void
+    {
+        $organization = Organization::factory()->create();
+        $this->enableServiceCatalog($organization);
+        config()->set('tenancy.default_organization_id', $organization->id);
+        app(OrganizationContext::class)->set($organization);
+        app()->setLocale('ru');
+        $fullDescription = rtrim(str_repeat('Подробное описание услуги для клиента. ', 20));
+        $service = Service::factory()->forOrganization($organization)->create([
+            'name' => 'Консультация по восстановлению',
+            'summary' => 'Короткое описание для карточки.',
+            'description_ru' => $fullDescription,
+        ]);
+
+        $this->get(route('portal.services.index'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('services.0.summary', $fullDescription));
+
+        $service->forceFill(['description_ru' => null, 'description_en' => null])->save();
+
+        $this->get(route('portal.services.index'))
+            ->assertInertia(fn (AssertableInertia $page) => $page
+                ->where('services.0.summary', 'Короткое описание для карточки.'));
+    }
+
     public function test_portal_projects_service_price_as_an_exact_major_unit_string(): void
     {
         $organization = Organization::factory()->create();

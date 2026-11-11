@@ -139,7 +139,7 @@ class CreateBooking
 
         if ($isBackdated && ! $confirmedBackdated) {
             throw ValidationException::withMessages([
-                'startsAt' => 'Подтвердите создание записи задним числом.',
+                'startsAt' => 'Подтвердите создание записи на прошедшее время.',
             ]);
         }
 

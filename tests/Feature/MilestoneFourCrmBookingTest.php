@@ -22,11 +22,13 @@ use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Scenarios\Domain\Models\ScenarioEvent;
 use App\Modules\Scheduling\Application\AssignSpecialistToService;
+use App\Modules\Scheduling\Application\BookingDateTimeFormatter;
 use App\Modules\Scheduling\Application\CalculateAvailability;
 use App\Modules\Scheduling\Application\ConfirmBooking;
 use App\Modules\Scheduling\Application\CreateBooking as CreateBookingAction;
 use App\Modules\Scheduling\Application\CreateMultipleBookings as CreateMultipleBookingsAction;
 use App\Modules\Scheduling\Application\RescheduleBooking;
+use App\Modules\Scheduling\Application\ResolveSpecialistViewerTimezone;
 use App\Modules\Scheduling\Application\SetBookingLeadTime;
 use App\Modules\Scheduling\Application\SetSpecialistWorkingHours;
 use App\Modules\Scheduling\Application\UpdateBookingBlockingInterval;
@@ -455,7 +457,7 @@ class MilestoneFourCrmBookingTest extends TestCase
             );
             self::fail('A backdated booking without confirmation must be rejected.');
         } catch (ValidationException $exception) {
-            self::assertSame(['Подтвердите создание записи задним числом.'], $exception->errors()['startsAt']);
+            self::assertSame(['Подтвердите создание записи на прошедшее время.'], $exception->errors()['startsAt']);
         }
 
         self::assertSame($organization->getKey(), app(OrganizationContext::class)->id());
@@ -481,7 +483,9 @@ class MilestoneFourCrmBookingTest extends TestCase
             ])
             ->assertFormFieldExists('confirm_backdated')
             ->assertSee('Внимание')
-            ->assertSee('Вы создаёте запись задним числом: 23.03.2026 09:00.')
+            ->assertSee('Это время уже прошло.')
+            ->assertSee('Выбрано: 09:00')
+            ->assertSee('Сейчас в вашем часовом поясе:')
             ->call('create')
             ->assertHasFormErrors(['confirm_backdated']);
 
@@ -715,6 +719,58 @@ class MilestoneFourCrmBookingTest extends TestCase
         self::assertTrue($booking->startsAtUtc()->equalTo(CarbonImmutable::parse($selectedTime)));
     }
 
+    public function test_one_booking_instant_is_rendered_for_crm_specialist_and_client_without_double_conversion(): void
+    {
+        [$organization, $admin, $client, $specialist, $service] = $this->fixture();
+        $organization->forceFill(['timezone' => 'Asia/Almaty'])->save();
+        $specialist->forceFill([
+            'timezone' => 'Asia/Bangkok',
+            'viewer_timezone' => 'Europe/Berlin',
+        ])->save();
+        $client->forceFill(['timezone' => 'America/New_York'])->save();
+        $crmViewer = Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'CRM viewer',
+            'staff_user_id' => $admin->getKey(),
+            'timezone' => 'Asia/Almaty',
+            'viewer_timezone' => 'Asia/Almaty',
+        ]);
+        self::assertInstanceOf(Specialist::class, $crmViewer);
+        app(OrganizationContext::class)->set($organization->refresh());
+
+        $booking = app(CreateBookingAction::class)->handle(
+            actor: $admin,
+            client: $client,
+            specialist: $specialist,
+            service: $service,
+            startsAt: CarbonImmutable::create(2026, 4, 6, 2, 0, 0, 'UTC'),
+            format: VisitFormat::Office,
+            clientTimezone: 'America/New_York',
+            idempotencyKey: 'timezone-ux-regression',
+        );
+
+        $reloaded = Booking::query()->with(['client', 'specialist'])->findOrFail($booking->getKey());
+        self::assertSame('2026-04-06T02:00:00+00:00', $reloaded->startsAtUtc()->toIso8601String());
+        self::assertSame('Asia/Almaty', app(ResolveSpecialistViewerTimezone::class)->forUser($admin));
+
+        $formatter = app(BookingDateTimeFormatter::class);
+        self::assertSame([
+            'date' => '06.04.2026',
+            'time' => '07:00',
+            'timezone' => 'Asia/Almaty',
+        ], $formatter->format($reloaded, 'Asia/Almaty'));
+        self::assertSame([
+            'date' => '06.04.2026',
+            'time' => '04:00',
+            'timezone' => 'Europe/Berlin',
+        ], $formatter->forSpecialist($reloaded));
+        self::assertSame([
+            'date' => '05.04.2026',
+            'time' => '22:00',
+            'timezone' => 'America/New_York',
+        ], $formatter->forClient($reloaded));
+        self::assertSame($reloaded->startsAtUtc()->toIso8601String(), $reloaded->fresh()->startsAtUtc()->toIso8601String());
+    }
+
     public function test_crm_form_exposes_historical_slots_without_url_prefill_and_requires_confirmation(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture();
@@ -748,7 +804,8 @@ class MilestoneFourCrmBookingTest extends TestCase
         self::assertIsString($selectedTime);
         $component
             ->fillForm(['booking_time' => $selectedTime])
-            ->assertSee('Вы создаёте запись задним числом: 23.03.2026 09:00.')
+            ->assertSee('Это время уже прошло.')
+            ->assertSee('Выбрано: 09:00')
             ->call('create')
             ->assertHasFormErrors(['confirm_backdated']);
 

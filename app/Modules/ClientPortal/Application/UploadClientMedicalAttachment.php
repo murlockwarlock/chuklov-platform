@@ -26,7 +26,7 @@ final readonly class UploadClientMedicalAttachment
     {
         $client = $this->context->client();
         $validator = Validator::make(['file' => $file, 'upload_key' => $uploadKey], [
-            'file' => ['required', 'file', 'mimetypes:image/jpeg,image/png,application/pdf', 'max:20480'],
+            'file' => ['required', 'file', 'max:20480'],
             'upload_key' => ['required', 'uuid'],
         ]);
 
@@ -60,7 +60,7 @@ final readonly class UploadClientMedicalAttachment
         } catch (InvalidAttachmentException|UnsupportedDicomException $exception) {
             $this->logFailure('warning', 'portal.medical_attachment.upload_rejected', $client, $patientId, 'unsupported_file_type', 422, $exception);
 
-            throw ValidationException::withMessages(['file' => __('Файл не прошёл проверку. Выберите JPG, PNG или PDF размером до 20 МБ.')]);
+            throw ValidationException::withMessages(['file' => __('Не удалось прочитать файл. Выберите фотографию, изображение или PDF размером до 20 МБ.')]);
         } catch (ValidationException $exception) {
             $errors = $exception->errors();
             $errorCode = array_key_exists('upload_key', $errors)

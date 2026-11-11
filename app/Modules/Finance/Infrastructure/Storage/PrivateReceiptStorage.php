@@ -4,6 +4,9 @@ namespace App\Modules\Finance\Infrastructure\Storage;
 
 use App\Modules\Finance\Domain\Contracts\ReceiptStorage;
 use App\Modules\Finance\Domain\ValueObjects\StoredReceipt;
+use App\Support\Images\ImageNormalizationException;
+use App\Support\Images\NormalizedUploadedImage;
+use App\Support\Images\NormalizeUploadedImage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -18,20 +21,45 @@ final class PrivateReceiptStorage implements ReceiptStorage
         'application/pdf' => 'pdf',
         'image/jpeg' => 'jpg',
         'image/png' => 'png',
+        'image/webp' => 'webp',
     ];
+
+    public function __construct(private readonly NormalizeUploadedImage $images) {}
 
     public function store(int $organizationId, UploadedFile $file): StoredReceipt
     {
-        $mimeType = (string) $file->getMimeType();
+        $realPath = $file->getRealPath();
         $size = $file->getSize();
 
-        if (! $file->isValid() || ! isset(self::MIME_EXTENSIONS[$mimeType]) || $size === false || $size > self::MAX_BYTES) {
-            throw ValidationException::withMessages(['receipt' => 'Квитанция должна быть PDF, JPG или PNG размером до 10 МБ.']);
+        if (! $file->isValid() || $realPath === false || ! is_file($realPath) || $size === false || $size <= 0) {
+            throw ValidationException::withMessages(['receipt' => 'Не удалось прочитать квитанцию.']);
         }
 
-        $extension = self::MIME_EXTENSIONS[$mimeType];
+        if ($size > self::MAX_BYTES) {
+            throw ValidationException::withMessages(['receipt' => 'Квитанция должна быть размером до 10 МБ.']);
+        }
+
+        $mimeType = $this->sniffMimeType($realPath);
+        $normalized = null;
+        if ($this->isImageCandidate($file, $mimeType)) {
+            try {
+                $normalized = $this->images->normalize($file, self::MAX_BYTES);
+            } catch (ImageNormalizationException $exception) {
+                throw ValidationException::withMessages([
+                    'receipt' => [$exception->reason === ImageNormalizationException::TOO_LARGE
+                        ? 'Изображение должно быть размером до 10 МБ.'
+                        : 'Не удалось прочитать изображение. Попробуйте другой файл.'],
+                ]);
+            }
+        } elseif ($mimeType !== 'application/pdf') {
+            throw ValidationException::withMessages(['receipt' => 'Квитанция должна быть PDF или изображением размером до 10 МБ.']);
+        }
+
+        $extension = $normalized?->extension ?? 'pdf';
         $path = 'finance/receipts/'.$organizationId.'/'.Str::uuid()->toString().'.'.$extension;
-        $stored = Storage::disk('private')->putFileAs(dirname($path), $file, basename($path));
+        $stored = $normalized instanceof NormalizedUploadedImage
+            ? (Storage::disk('private')->put($path, $normalized->contents) ? $path : false)
+            : Storage::disk('private')->putFileAs(dirname($path), $file, basename($path));
 
         if ($stored === false) {
             throw ValidationException::withMessages(['receipt' => 'Не удалось сохранить квитанцию.']);
@@ -41,8 +69,8 @@ final class PrivateReceiptStorage implements ReceiptStorage
             disk: 'private',
             path: $stored,
             originalName: Str::limit(basename($file->getClientOriginalName()), 255, ''),
-            mimeType: $mimeType,
-            sizeBytes: $size,
+            mimeType: $normalized?->mimeType ?? $mimeType,
+            sizeBytes: $normalized?->sizeBytes ?? $size,
         );
     }
 
@@ -60,5 +88,24 @@ final class PrivateReceiptStorage implements ReceiptStorage
         }
 
         return $stream;
+    }
+
+    private function isImageCandidate(UploadedFile $file, string $mimeType): bool
+    {
+        return str_starts_with($mimeType, 'image/')
+            || in_array(strtolower((string) $file->getClientOriginalExtension()), ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], true);
+    }
+
+    private function sniffMimeType(string $path): string
+    {
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        if ($finfo === false) {
+            return 'application/octet-stream';
+        }
+
+        $mimeType = finfo_file($finfo, $path);
+        unset($finfo);
+
+        return is_string($mimeType) ? strtolower($mimeType) : 'application/octet-stream';
     }
 }

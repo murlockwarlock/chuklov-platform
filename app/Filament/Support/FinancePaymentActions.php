@@ -19,6 +19,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Referrals\Application\ApplyReferralCreditForStaff;
 use App\Modules\Referrals\Application\RestoreReferralCredit;
 use App\Modules\Scheduling\Domain\Models\Booking;
+use App\Support\Images\SupportedImageTypes;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Forms\Components\DateTimePicker;
@@ -415,9 +416,11 @@ final class FinancePaymentActions
                 ->maxLength(2000),
             FileUpload::make('receipt')
                 ->label(__('Квитанция'))
-                ->helperText(__('PDF, JPG или PNG до 10 МБ.'))
+                ->helperText(__('PDF или фотография до 10 МБ.'))
                 ->storeFiles(false)
-                ->acceptedFileTypes(['application/pdf', 'image/jpeg', 'image/png'])
+                ->acceptedFileTypes(['application/pdf', ...SupportedImageTypes::acceptedMimeTypes()])
+                ->mimeTypeMap(SupportedImageTypes::mimeTypeMap())
+                ->extraInputAttributes(['accept' => 'application/pdf,'.SupportedImageTypes::browserAccept()])
                 ->maxSize(10240),
             Hidden::make('idempotency_key')
                 ->default(fn (): string => 'crm-payment-'.Str::uuid()->toString()),

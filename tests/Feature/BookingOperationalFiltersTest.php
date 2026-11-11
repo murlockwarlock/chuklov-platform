@@ -389,6 +389,11 @@ final class BookingOperationalFiltersTest extends TestCase
             ->assertCanNotSeeTableRecords([$thirdBooking]);
         $days = $component->instance()->getJournalDaysProperty();
         self::assertSame([$firstBooking->getKey(), $secondBooking->getKey()], array_column($days[$startsAt->toDateString()]['bookings'], 'id'));
+        self::assertSame(1, substr_count($component->html(), 'data-testid="journal-calendar-workspace"'));
+        self::assertStringContainsString('Специалисты: 2', $component->html());
+        self::assertStringNotContainsString('Выбраны специалисты', $component->html());
+        self::assertStringContainsString($first->display_name, $component->html());
+        self::assertStringContainsString($second->display_name, $component->html());
 
         Livewire::withQueryParams(['specialist_ids' => [$first->getKey(), $second->getKey()]])
             ->test(ListBookings::class)
@@ -398,6 +403,57 @@ final class BookingOperationalFiltersTest extends TestCase
             ->assertCanSeeTableRecords([$firstBooking, $secondBooking, $thirdBooking])
             ->set('selectedSpecialistIds', [$foreign->getKey()])
             ->assertHasErrors('selectedSpecialistIds');
+    }
+
+    public function test_journal_filter_keeps_grid_range_stable_and_uses_human_button_labels(): void
+    {
+        [$organization, $admin, $client, $first, $service] = $this->fixture();
+        $first->update(['display_name' => 'Первый специалист']);
+        $second = Specialist::factory()->forOrganization($organization)->create([
+            'display_name' => 'Второй специалист',
+            'timezone' => 'UTC',
+        ]);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $first, [
+            ['weekday' => 1, 'start_time' => '08:00', 'end_time' => '17:00'],
+        ]);
+        app(SetSpecialistWorkingHours::class)->handle($admin, $second, [
+            ['weekday' => 1, 'start_time' => '12:00', 'end_time' => '20:00'],
+        ]);
+        $this->createBooking(
+            $organization,
+            $client,
+            $first,
+            $service,
+            CarbonImmutable::create(2026, 8, 17, 7, 0, 0, 'UTC'),
+        );
+
+        $component = Livewire::withQueryParams(['week' => '2026-08-17', 'view' => 'week'])
+            ->actingAs($admin)
+            ->test(ListBookings::class);
+        $allGrid = $component->instance()->getJournalGridProperty();
+
+        self::assertSame(7 * 60, $allGrid['start']);
+        self::assertSame(20 * 60, $allGrid['end']);
+        self::assertStringContainsString('Все специалисты', $component->html());
+
+        $component->set('selectedSpecialistIds', [(string) $first->getKey()]);
+        self::assertSame($allGrid, $component->instance()->getJournalGridProperty());
+        self::assertStringContainsString($first->display_name, $component->html());
+        self::assertStringNotContainsString('Выбран специалист:', $component->html());
+
+        $component->set('selectedSpecialistIds', [(string) $second->getKey()]);
+        self::assertSame($allGrid, $component->instance()->getJournalGridProperty());
+        self::assertStringContainsString($second->display_name, $component->html());
+        self::assertStringNotContainsString('Выбран специалист:', $component->html());
+
+        $component->set('selectedSpecialistIds', [(string) $first->getKey(), (string) $second->getKey()]);
+        self::assertSame($allGrid, $component->instance()->getJournalGridProperty());
+        self::assertStringContainsString('Специалисты: 2', $component->html());
+        self::assertStringNotContainsString('Выбраны специалисты', $component->html());
+
+        $component->call('clearSpecialistFilter');
+        self::assertSame($allGrid, $component->instance()->getJournalGridProperty());
+        self::assertStringContainsString('Все специалисты', $component->html());
     }
 
     public function test_booking_client_filter_uses_a_safe_label_for_clients_without_a_name(): void

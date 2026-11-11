@@ -21,6 +21,7 @@ use App\Modules\Content\Domain\Models\ContentSection;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use Filament\Facades\Filament;
+use Filament\Forms\Components\FileUpload;
 use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Tabs;
@@ -67,6 +68,20 @@ final class ContentSectionMediaTest extends TestCase
                 self::assertSame('full', $component->getColumnSpan('default'));
             }
         }
+    }
+
+    public function test_content_image_upload_keeps_single_file_state_dehydrated_for_save(): void
+    {
+        [$organization, $admin] = $this->filamentOrganizationAndAdmin();
+        $section = ContentSection::factory()->forOrganization($organization)->create();
+        $component = Livewire::actingAs($admin)
+            ->test(EditContentSection::class, ['record' => $section->getKey()])
+            ->assertSuccessful();
+        $upload = collect($component->instance()->getSchema('form')->getFlatComponents(withHidden: true))
+            ->first(fn (mixed $component): bool => $component instanceof FileUpload && $component->getName() === 'content_image');
+
+        self::assertInstanceOf(FileUpload::class, $upload);
+        self::assertFalse($upload->isLive());
     }
 
     public function test_content_delivery_mode_filters_the_same_canonical_section_for_each_channel(): void
@@ -323,6 +338,28 @@ final class ContentSectionMediaTest extends TestCase
             Storage::disk(self::DISK)->url($path),
             app(ContentImageUrlResolver::class)->resolve($section),
         );
+    }
+
+    public function test_nested_filament_content_image_upload_state_is_stored(): void
+    {
+        [$organization, $admin] = $this->organizationAndAdmin();
+
+        $section = app(CreateContentSection::class)->handle($admin, [
+            'section_key' => 'author',
+            'locale' => 'ru',
+            'title' => 'О нашей академии',
+            'body' => 'Текст раздела.',
+            'content_image' => ['upload' => ['file' => UploadedFile::fake()->image('academy.webp', 640, 480)]],
+        ]);
+
+        $path = $section->media['image'] ?? null;
+
+        self::assertIsString($path);
+        self::assertMatchesRegularExpression(
+            '/^content\/'.$organization->id.'\/[0-9a-f-]{36}\.webp$/i',
+            $path,
+        );
+        Storage::disk(self::DISK)->assertExists($path);
     }
 
     public function test_managed_content_image_is_streamed_for_telegram_delivery(): void

@@ -78,7 +78,7 @@ final class MedicalAudioSettings extends LocalizedPage
 
         return $schema->components([
             Section::make(__('Политика аудиозаписей'))
-                ->description(__('Настройка действует без публикации новой версии программы. Серверный hard cap остаётся верхней границей.'))
+                ->description(__('Изменения применяются сразу. Максимальный размер ограничен настройками системы.'))
                 ->schema([
                     Select::make('mime_types')
                         ->label(__('Разрешённые форматы'))
@@ -90,7 +90,7 @@ final class MedicalAudioSettings extends LocalizedPage
                         ->integer()
                         ->minValue(1)
                         ->maxValue($hardCapMb)
-                        ->helperText(__('Не больше :limit МБ — серверного ограничения.', ['limit' => $hardCapMb]))
+                        ->helperText(__('Не больше :limit МБ.', ['limit' => $hardCapMb]))
                         ->required(),
                 ])->columns(2),
         ])->statePath('data');

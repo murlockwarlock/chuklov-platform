@@ -3,7 +3,11 @@
 namespace App\Filament\Resources\NotificationTemplates\Tables;
 
 use App\Filament\Support\RichTextPresentation;
+use App\Models\User;
+use App\Modules\Scenarios\Application\SetNotificationTemplateActive;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
+use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
+use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
 use Filament\Support\Icons\Heroicon;
@@ -60,7 +64,31 @@ final class NotificationTemplatesTable
                     ->icon(Heroicon::OutlinedPencil)
                     ->iconButton()
                     ->tooltip(__('Редактировать сообщение')),
+                Action::make('disable')
+                    ->label(__('Отключить'))
+                    ->color('warning')
+                    ->icon('heroicon-o-eye-slash')
+                    ->requiresConfirmation()
+                    ->modalHeading(__('Отключить шаблон?'))
+                    ->modalDescription(__('Новые автоматические отправки с этим шаблоном создаваться не будут. История отправок останется.'))
+                    ->visible(fn (NotificationTemplate $record): bool => $record->is_active)
+                    ->action(fn (NotificationTemplate $record): NotificationTemplate => self::setActive($record, false)),
+                Action::make('enable')
+                    ->label(__('Включить'))
+                    ->color('success')
+                    ->icon('heroicon-o-eye')
+                    ->requiresConfirmation()
+                    ->visible(fn (NotificationTemplate $record): bool => ! $record->is_active)
+                    ->action(fn (NotificationTemplate $record): NotificationTemplate => self::setActive($record, true)),
             ]);
+    }
+
+    private static function setActive(NotificationTemplate $record, bool $isActive): NotificationTemplate
+    {
+        $actor = auth()->user();
+        abort_unless($actor instanceof User, 403);
+
+        return app(SetNotificationTemplateActive::class)->handle($actor, $record, $isActive);
     }
 
     private static function purposeLabel(ScenarioRulePurpose|string $purpose): string

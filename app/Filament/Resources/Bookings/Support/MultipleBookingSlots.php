@@ -34,7 +34,7 @@ final class MultipleBookingSlots
                             DatePicker::make('date')
                                 ->label(__('Дата'))
                                 ->native()
-                                ->helperText(fn (): string => __('Часовой пояс CRM: ').self::viewerTimezoneLabel().'.')
+                                ->helperText(fn (): string => __('Время для вас: ').self::viewerTimezoneLabel().'.')
                                 ->live()
                                 ->afterStateUpdated(function (Set $set): void {
                                     $set('time', null);

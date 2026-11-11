@@ -513,6 +513,32 @@ final class KnowledgeSourceProductizationTest extends TestCase
         self::assertSame('ready', $revision->fresh()->status->value);
     }
 
+    public function test_knowledge_list_has_direct_hide_and_restore_without_losing_revisions(): void
+    {
+        [, $actor] = $this->fixture();
+        $source = $this->createAuthoredSource($actor, 'booking content');
+        $revision = $source->revisions()->sole();
+        $revision->update(['status' => 'ready', 'ready_at' => now()]);
+        $source->update(['active_revision_id' => $revision->getKey()]);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = Livewire::actingAs($actor)->test(ListKnowledgeSources::class);
+        $component
+            ->assertTableActionVisible('retire', $source)
+            ->callTableAction('retire', $source);
+
+        self::assertSame('retired', $source->fresh()->status->value);
+        self::assertSame(1, $source->refresh()->revisions()->count());
+
+        $component
+            ->set('activeTab', 'retired')
+            ->assertTableActionVisible('reactivate', $source->fresh())
+            ->callTableAction('reactivate', $source->fresh());
+
+        self::assertSame('active', $source->fresh()->status->value);
+        self::assertSame(1, $source->refresh()->revisions()->count());
+    }
+
     public function test_knowledge_list_explains_unconfigured_embedding_search_without_exposing_secrets(): void
     {
         [, $actor] = $this->fixture();

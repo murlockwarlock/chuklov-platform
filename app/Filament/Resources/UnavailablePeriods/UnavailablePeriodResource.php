@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\UnavailablePeriods;
 
 use App\Filament\Resources\UnavailablePeriods\Pages\CreateUnavailablePeriod;
+use App\Filament\Resources\UnavailablePeriods\Pages\EditUnavailablePeriod;
 use App\Filament\Resources\UnavailablePeriods\Pages\ListUnavailablePeriods;
 use App\Filament\Resources\UnavailablePeriods\Schemas\UnavailablePeriodForm;
 use App\Filament\Resources\UnavailablePeriods\Tables\UnavailablePeriodsTable;
@@ -63,6 +64,7 @@ class UnavailablePeriodResource extends LocalizedResource
         return [
             'index' => ListUnavailablePeriods::route('/'),
             'create' => CreateUnavailablePeriod::route('/create'),
+            'edit' => EditUnavailablePeriod::route('/{record}/edit'),
         ];
     }
 }

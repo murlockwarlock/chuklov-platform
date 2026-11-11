@@ -32,6 +32,7 @@ final class UpdateScheduleException
         array $attributes,
         bool $acknowledgeImpact = false,
         ?string $acknowledgedImpactDigest = null,
+        ?Specialist $targetSpecialist = null,
     ): ScheduleException {
         $organization = $this->context->organization();
 
@@ -39,27 +40,50 @@ final class UpdateScheduleException
             throw new AuthorizationException('The schedule exception is outside the current organization.');
         }
 
+        if ($targetSpecialist !== null && (int) $targetSpecialist->organization_id !== $organization->getKey()) {
+            throw new AuthorizationException('The specialist is outside the current organization.');
+        }
+
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageScheduling);
         $definition = ScheduleExceptionDefinition::from($attributes);
 
-        return DB::transaction(function () use ($actor, $organization, $exception, $definition, $acknowledgeImpact, $acknowledgedImpactDigest): ScheduleException {
+        return DB::transaction(function () use ($actor, $organization, $exception, $definition, $acknowledgeImpact, $acknowledgedImpactDigest, $targetSpecialist): ScheduleException {
             $locked = ScheduleException::query()
                 ->where('organization_id', $organization->getKey())
                 ->whereKey($exception->getKey())
                 ->where('is_active', true)
                 ->lockForUpdate()
                 ->firstOrFail();
-            $specialist = Specialist::query()
+
+            $specialistIds = array_values(array_unique([
+                (int) $locked->specialist_id,
+                (int) ($targetSpecialist?->getKey() ?? $locked->specialist_id),
+            ]));
+            sort($specialistIds);
+            $specialists = Specialist::query()
                 ->where('organization_id', $organization->getKey())
-                ->whereKey($locked->specialist_id)
+                ->whereIn('id', $specialistIds)
                 ->lockForUpdate()
-                ->firstOrFail();
-            $impact = $this->impactCalculator->forException($specialist, $definition);
+                ->get()
+                ->keyBy('id');
+            $currentSpecialist = $specialists->get((int) $locked->specialist_id);
+            $newSpecialist = $specialists->get((int) ($targetSpecialist?->getKey() ?? $locked->specialist_id));
+            if (! $currentSpecialist instanceof Specialist || ! $newSpecialist instanceof Specialist) {
+                throw new AuthorizationException('The schedule exception specialist is outside the current organization.');
+            }
+
+            $impact = $this->impactCalculator->forExceptionUpdate(
+                currentSpecialist: $currentSpecialist,
+                exception: $locked,
+                targetSpecialist: $newSpecialist,
+                definition: $definition,
+            );
 
             $this->impactAcknowledgement->handle($impact, $acknowledgeImpact, $acknowledgedImpactDigest);
-            $this->ensureNoOverlap($organization->getKey(), $specialist->getKey(), $locked->getKey(), $definition);
+            $this->ensureNoOverlap($organization->getKey(), $newSpecialist->getKey(), $locked->getKey(), $definition);
 
             $locked->forceFill([
+                'specialist_id' => $newSpecialist->getKey(),
                 'exception_date' => $definition->date,
                 'exception_type' => $definition->type,
                 'start_time' => $definition->interval?->start,
@@ -75,6 +99,7 @@ final class UpdateScheduleException
                 targetId: (string) $locked->getKey(),
                 metadata: [
                     'exception_type' => $definition->type->value,
+                    'specialist_id' => $newSpecialist->getKey(),
                     'source' => 'crm',
                 ],
             );

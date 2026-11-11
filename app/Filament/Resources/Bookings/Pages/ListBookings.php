@@ -52,6 +52,8 @@ class ListBookings extends LocalizedListRecords
     #[Url(as: 'specialist_ids', history: true)]
     public array $selectedSpecialistIds = [];
 
+    public string $calendarDensity = 'normal';
+
     /** @var list<int> */
     #[Locked]
     public array $validatedSpecialistIds = [];
@@ -73,6 +75,9 @@ class ListBookings extends LocalizedListRecords
     {
         parent::mount();
 
+        $this->calendarDensity = $this->normalizeCalendarDensity(
+            session()->get($this->calendarDensitySessionKey(), $this->calendarDensity),
+        );
         $timezone = $this->journalTimezone();
         $week = $this->parseWeek($this->weekStart, $timezone)
             ?? CarbonImmutable::now($timezone)->startOfWeek(CarbonImmutable::MONDAY);
@@ -140,6 +145,27 @@ class ListBookings extends LocalizedListRecords
         $this->validatedSpecialistIds = [];
         $this->selectedSpecialistId = null;
         $this->flushCachedTableRecords();
+    }
+
+    public function setCalendarDensity(string $density): void
+    {
+        $this->calendarDensity = $this->normalizeCalendarDensity($density);
+        session()->put($this->calendarDensitySessionKey(), $this->calendarDensity);
+    }
+
+    public function selectedSpecialistsSummary(): string
+    {
+        $ids = $this->specialistFilterIds();
+        if ($ids === []) {
+            return __('Все специалисты');
+        }
+
+        $options = $this->getSpecialistOptionsProperty();
+        if (count($ids) === 1) {
+            return (string) ($options[$ids[0]] ?? __('Специалисты: 1'));
+        }
+
+        return __('Специалисты: :count', ['count' => count($ids)]);
     }
 
     /** @return list<int> */
@@ -277,36 +303,68 @@ class ListBookings extends LocalizedListRecords
             }
         }
 
+        foreach ($calendar as $date => $day) {
+            $calendar[$date]['bookings'] = $this->applyBookingOverlapLayout($day['bookings']);
+        }
+
         return $calendar;
     }
 
     /** @return array{start: int, end: int, rows: int, labels: list<array{minutes: int, label: string}>} */
     public function getJournalGridProperty(): array
     {
+        $timezone = $this->journalTimezone();
+        $start = $this->weekDate();
+        $end = $start->addDays(6);
+        $organizationId = app(OrganizationContext::class)->id();
         $minutes = [8 * 60, 20 * 60];
-        foreach ($this->getJournalDaysProperty() as $day) {
-            foreach ($day['intervals'] as $interval) {
-                $minutes[] = $interval['start_minutes'];
-                $minutes[] = $interval['end_minutes'];
-            }
-            foreach ($day['bookings'] as $booking) {
-                $minutes[] = $booking['start_minutes'];
-                $minutes[] = $booking['end_minutes'];
+
+        $specialists = Specialist::query()
+            ->where('organization_id', $organizationId)
+            ->orderBy('display_name')
+            ->orderBy('id')
+            ->get();
+        $schedules = app(GetScheduleCalendar::class)->forSpecialists(
+            $specialists,
+            $start->toDateString(),
+            $end->toDateString(),
+            $timezone,
+        );
+        foreach ($schedules as $specialistDays) {
+            foreach ($specialistDays as $day) {
+                foreach ($day['intervals'] as $interval) {
+                    $minutes[] = $interval['start_minutes'];
+                    $minutes[] = $interval['end_minutes'];
+                }
             }
         }
 
-        $start = max(0, intdiv(min($minutes), 30) * 30);
-        $end = min(24 * 60, (int) ceil(max($minutes) / 30) * 30);
-        $end = max($start + 60, $end);
+        $bookings = Booking::query()
+            ->where('organization_id', $organizationId)
+            ->where('starts_at', '>=', $start->startOfDay()->setTimezone('UTC'))
+            ->where('starts_at', '<', $end->addDay()->startOfDay()->setTimezone('UTC'))
+            ->get(['starts_at', 'blocking_ends_at']);
+        foreach ($bookings as $booking) {
+            $localStart = $booking->startsAtUtc()->setTimezone($timezone);
+            $localEnd = $booking->blockingEndsAtUtc()->setTimezone($timezone);
+            $minutes[] = $localStart->hour * 60 + $localStart->minute;
+            $minutes[] = $localEnd->isSameDay($localStart)
+                ? $localEnd->hour * 60 + $localEnd->minute
+                : 24 * 60;
+        }
+
+        $startMinutes = max(0, intdiv(min($minutes), 30) * 30);
+        $endMinutes = min(24 * 60, (int) ceil(max($minutes) / 30) * 30);
+        $endMinutes = max($startMinutes + 60, $endMinutes);
         $labels = [];
-        for ($minute = $start; $minute <= $end; $minute += 60) {
+        for ($minute = $startMinutes; $minute <= $endMinutes; $minute += 60) {
             $labels[] = ['minutes' => $minute, 'label' => sprintf('%02d:%02d', intdiv($minute, 60), $minute % 60)];
         }
 
         return [
-            'start' => $start,
-            'end' => $end,
-            'rows' => max(1, intdiv($end - $start, 30)),
+            'start' => $startMinutes,
+            'end' => $endMinutes,
+            'rows' => max(1, intdiv($endMinutes - $startMinutes, 30)),
             'labels' => $labels,
         ];
     }
@@ -439,14 +497,31 @@ class ListBookings extends LocalizedListRecords
         }
     }
 
-    /** @param array{start_minutes: int, end_minutes: int} $booking */
+    /** @param array{start_minutes: int, end_minutes: int, overlap_column?: int, overlap_column_count?: int} $booking */
     public function bookingStyle(array $booking): string
     {
-        $grid = $this->getJournalGridProperty();
+        $grid = $this->journalGrid;
         $top = max(0, $booking['start_minutes'] - $grid['start']) * (44 / 30);
         $height = max(36, ($booking['end_minutes'] - $booking['start_minutes']) * (44 / 30));
+        $column = max(0, (int) ($booking['overlap_column'] ?? 0));
+        $columnCount = max(1, (int) ($booking['overlap_column_count'] ?? 1));
+        $columnWidth = 100 / $columnCount;
+        $left = $column * $columnWidth;
+        $horizontalInset = match ($this->normalizeCalendarDensity($this->calendarDensity)) {
+            'compact' => 18,
+            default => 4,
+        };
 
-        return 'top: '.$top.'px; height: '.$height.'px;';
+        return 'top: '.$top.'px; height: '.$height.'px; left: calc('.$left.'% + 2px); width: calc('.$columnWidth.'% - '.$horizontalInset.'px);';
+    }
+
+    public function calendarWorkspaceStyle(): string
+    {
+        return match ($this->normalizeCalendarDensity($this->calendarDensity)) {
+            'compact' => '--journal-day-min-width: 112px; min-width: 0;',
+            'wide' => '--journal-day-min-width: 360px; min-width: 2520px;',
+            default => '--journal-day-min-width: 136px; min-width: 0;',
+        };
     }
 
     public function weekLabel(): string
@@ -650,5 +725,78 @@ class ListBookings extends LocalizedListRecords
         return $date instanceof CarbonImmutable && $date->format('Y-m-d') === $value
             ? $date
             : null;
+    }
+
+    /** @param list<array<string, mixed>> $bookings
+     * @return list<array<string, mixed>>
+     */
+    private function applyBookingOverlapLayout(array $bookings): array
+    {
+        if ($bookings === []) {
+            return [];
+        }
+
+        $orderedKeys = array_keys($bookings);
+        usort($orderedKeys, static fn (int $left, int $right): int => [
+            (int) ($bookings[$left]['start_minutes'] ?? 0),
+            (int) ($bookings[$left]['end_minutes'] ?? 0),
+            (int) ($bookings[$left]['id'] ?? 0),
+        ] <=> [
+            (int) ($bookings[$right]['start_minutes'] ?? 0),
+            (int) ($bookings[$right]['end_minutes'] ?? 0),
+            (int) ($bookings[$right]['id'] ?? 0),
+        ]);
+
+        $groups = [];
+        foreach ($orderedKeys as $bookingKey) {
+            $start = (int) ($bookings[$bookingKey]['start_minutes'] ?? 0);
+            $end = max($start + 1, (int) ($bookings[$bookingKey]['end_minutes'] ?? $start + 1));
+            $lastGroup = array_key_last($groups);
+            if ($lastGroup === null || $start >= $groups[$lastGroup]['end']) {
+                $groups[] = ['end' => $end, 'keys' => [$bookingKey]];
+
+                continue;
+            }
+
+            $groups[$lastGroup]['keys'][] = $bookingKey;
+            $groups[$lastGroup]['end'] = max($groups[$lastGroup]['end'], $end);
+        }
+
+        foreach ($groups as $group) {
+            $trackEnds = [];
+            foreach ($group['keys'] as $bookingKey) {
+                $start = (int) ($bookings[$bookingKey]['start_minutes'] ?? 0);
+                $end = max($start + 1, (int) ($bookings[$bookingKey]['end_minutes'] ?? $start + 1));
+                $track = null;
+                foreach ($trackEnds as $trackIndex => $trackEnd) {
+                    if ($trackEnd <= $start) {
+                        $track = $trackIndex;
+                        break;
+                    }
+                }
+                if ($track === null) {
+                    $track = count($trackEnds);
+                }
+                $trackEnds[$track] = $end;
+                $bookings[$bookingKey]['overlap_column'] = $track;
+            }
+
+            $columnCount = max(1, count($trackEnds));
+            foreach ($group['keys'] as $bookingKey) {
+                $bookings[$bookingKey]['overlap_column_count'] = $columnCount;
+            }
+        }
+
+        return $bookings;
+    }
+
+    private function normalizeCalendarDensity(mixed $density): string
+    {
+        return in_array($density, ['compact', 'normal', 'wide'], true) ? $density : 'normal';
+    }
+
+    private function calendarDensitySessionKey(): string
+    {
+        return 'crm.booking_journal.calendar_density';
     }
 }

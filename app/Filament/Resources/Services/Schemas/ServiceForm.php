@@ -8,12 +8,14 @@ use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Domain\Services\CurrencyCatalog;
 use App\Modules\Organizations\Application\OrganizationContext;
+use App\Modules\Services\Application\ServiceImageUrlResolver;
 use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Enums\ServicePaymentRequirement;
 use App\Modules\Services\Domain\Models\Service;
 use App\Rules\HttpsImageUrl;
 use App\Rules\MajorUnitPrice;
 use App\Rules\ServicePriceCurrencyPair;
+use App\Support\Images\SupportedImageTypes;
 use Filament\Forms\Components\CheckboxList;
 use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Hidden;
@@ -24,6 +26,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -60,6 +63,13 @@ class ServiceForm
                             ->required()
                             ->maxLength(500)
                             ->rows(3)
+                            ->helperText(__('Короткий текст для карточки услуги — обычно 1–3 предложения.'))
+                            ->columnSpanFull(),
+                        Textarea::make('description_ru')
+                            ->label(__('Полное описание'))
+                            ->maxLength(10000)
+                            ->rows(8)
+                            ->helperText(__('Подробное описание услуги для клиента. Здесь можно указать показания, формат консультации, что входит в услугу и другую полезную информацию.'))
                             ->columnSpanFull(),
                     ])
                     ->columns(2)
@@ -189,14 +199,30 @@ class ServiceForm
                         FileUpload::make('service_image')
                             ->label(__('Загрузить изображение'))
                             ->image()
-                            ->acceptedFileTypes(['image/jpeg', 'image/png'])
+                            ->acceptedFileTypes(SupportedImageTypes::acceptedMimeTypes())
+                            ->mimeTypeMap(SupportedImageTypes::mimeTypeMap())
+                            ->extraInputAttributes(['accept' => SupportedImageTypes::browserAccept()])
                             ->maxSize(self::imageUploadKilobytes())
                             ->storeFiles(false)
                             ->validationMessages([
-                                'mimetypes' => __('Поддерживаются только изображения JPG и PNG.'),
-                                'max' => __('Изображение должно быть размером до 5 МБ.'),
+                                'mimetypes' => __('Не удалось прочитать изображение. Попробуйте другой файл.'),
+                                'max' => __('Изображение должно быть размером до 15 МБ.'),
                             ])
-                            ->helperText(__('JPG или PNG размером до 5 МБ.'))
+                            ->helperText(__('Загрузите фотографию или изображение размером до 15 МБ.'))
+                            ->columnSpanFull(),
+                        SchemaImage::make(
+                            fn (?Service $record): string => self::imagePreviewUrl($record) ?? '',
+                            fn (?Service $record): string => self::imageAlt($record),
+                        )
+                            ->imageHeight('16rem')
+                            ->imageWidth('24rem')
+                            ->extraAttributes(['class' => 'max-w-full rounded-xl object-contain'])
+                            ->visible(fn (?Service $record, Get $get): bool => self::imagePreviewUrl($record) !== null && ! (bool) $get('remove_image'))
+                            ->columnSpanFull(),
+                        Placeholder::make('current_image_status')
+                            ->label(__('Текущее изображение'))
+                            ->content(fn (?Service $record): string => self::imageStatus($record))
+                            ->visible(fn (?Service $record, Get $get): bool => self::hasImage($record) && ! (bool) $get('remove_image'))
                             ->columnSpanFull(),
                         TextInput::make('external_image_url')
                             ->label(__('Ссылка на изображение'))
@@ -221,10 +247,6 @@ class ServiceForm
                         TextInput::make('name_en')
                             ->label(__('Название на английском'))
                             ->maxLength(160),
-                        Textarea::make('description_ru')
-                            ->label(__('Полное описание на русском'))
-                            ->maxLength(10000)
-                            ->rows(3),
                         Textarea::make('description_en')
                             ->label(__('Полное описание на английском'))
                             ->maxLength(10000)
@@ -314,7 +336,7 @@ class ServiceForm
 
     private static function imageUploadKilobytes(): int
     {
-        $bytes = max(1, (int) config('service_media.max_bytes', 5_242_880));
+        $bytes = max(1, (int) config('service_media.max_bytes', 15_728_640));
 
         return intdiv($bytes + 1023, 1024);
     }
@@ -322,6 +344,46 @@ class ServiceForm
     private static function hasValue(mixed $value): bool
     {
         return is_string($value) && trim($value) !== '';
+    }
+
+    private static function hasImage(?Service $record): bool
+    {
+        return $record instanceof Service
+            && (self::hasValue($record->getAttribute('image_path'))
+                || self::hasValue($record->getAttribute('external_image_url')));
+    }
+
+    private static function imagePreviewUrl(?Service $record): ?string
+    {
+        if (! $record instanceof Service) {
+            return null;
+        }
+
+        return app(ServiceImageUrlResolver::class)->resolve($record);
+    }
+
+    private static function imageAlt(?Service $record): string
+    {
+        if (! $record instanceof Service) {
+            return __('Изображение услуги');
+        }
+
+        $name = trim((string) $record->getAttribute('name'));
+
+        return $name !== '' ? $name : __('Изображение услуги');
+    }
+
+    private static function imageStatus(?Service $record): string
+    {
+        if (! $record instanceof Service) {
+            return __('Изображение не добавлено.');
+        }
+
+        $kind = self::hasValue($record->getAttribute('image_path'))
+            ? __('Загруженный файл')
+            : __('Внешняя ссылка');
+
+        return __(':kind. Новая загрузка или ссылка заменит текущее изображение после сохранения.', ['kind' => $kind]);
     }
 
     private static function nullableString(mixed $value): ?string

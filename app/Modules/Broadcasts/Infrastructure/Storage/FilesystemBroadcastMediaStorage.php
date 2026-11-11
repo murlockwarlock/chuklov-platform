@@ -3,6 +3,8 @@
 namespace App\Modules\Broadcasts\Infrastructure\Storage;
 
 use App\Modules\Broadcasts\Domain\Contracts\BroadcastMediaStorageInterface;
+use App\Support\Images\ImageNormalizationException;
+use App\Support\Images\NormalizeUploadedImage;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -38,6 +40,8 @@ final class FilesystemBroadcastMediaStorage implements BroadcastMediaStorageInte
         'application/vnd.oasis.opendocument.presentation' => 'odp',
     ];
 
+    public function __construct(private readonly NormalizeUploadedImage $images) {}
+
     public function store(int $organizationId, UploadedFile $file): string
     {
         if (! $file->isValid()) {
@@ -62,6 +66,25 @@ final class FilesystemBroadcastMediaStorage implements BroadcastMediaStorageInte
         }
 
         $mimeType = $this->sniffMimeType($realPath);
+        if ($this->isImageCandidate($file, $mimeType)) {
+            try {
+                $normalized = $this->images->normalize($file, $this->photoMaxBytes());
+            } catch (ImageNormalizationException $exception) {
+                throw ValidationException::withMessages([
+                    'media_image' => [$this->imageValidationMessage($exception)],
+                ]);
+            }
+
+            $path = "broadcast/{$organizationId}/".Str::uuid()->toString().".{$normalized->extension}";
+            if (! Storage::disk($this->disk())->put($path, $normalized->contents)) {
+                throw ValidationException::withMessages([
+                    'media_image' => ['Не удалось сохранить изображение.'],
+                ]);
+            }
+
+            return $path;
+        }
+
         if (str_starts_with($mimeType, 'image/') && $size > $this->photoMaxBytes()) {
             throw ValidationException::withMessages([
                 'media_image' => ['Фото должно быть размером до 10 МБ.'],
@@ -155,8 +178,23 @@ final class FilesystemBroadcastMediaStorage implements BroadcastMediaStorageInte
         }
 
         $mime = finfo_file($finfo, $path);
-        finfo_close($finfo);
+        unset($finfo);
 
         return is_string($mime) ? strtolower($mime) : 'application/octet-stream';
+    }
+
+    private function isImageCandidate(UploadedFile $file, string $mimeType): bool
+    {
+        return str_starts_with($mimeType, 'image/')
+            || in_array(strtolower((string) $file->getClientOriginalExtension()), ['jpg', 'jpeg', 'png', 'webp', 'heic', 'heif'], true);
+    }
+
+    private function imageValidationMessage(ImageNormalizationException $exception): string
+    {
+        if ($exception->reason === ImageNormalizationException::TOO_LARGE) {
+            return 'Изображение должно быть размером до 10 МБ.';
+        }
+
+        return 'Не удалось прочитать изображение. Попробуйте другой файл.';
     }
 }

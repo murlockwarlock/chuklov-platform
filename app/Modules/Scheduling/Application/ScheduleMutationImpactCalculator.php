@@ -59,6 +59,31 @@ final class ScheduleMutationImpactCalculator
         ]);
     }
 
+    public function forExceptionUpdate(
+        Specialist $currentSpecialist,
+        ScheduleException $exception,
+        Specialist $targetSpecialist,
+        ScheduleExceptionDefinition $definition,
+    ): ScheduleMutationImpact {
+        if ((int) $currentSpecialist->getKey() === (int) $targetSpecialist->getKey()) {
+            return $this->forException($targetSpecialist, $definition);
+        }
+
+        return $this->mergeImpacts(
+            $this->forExceptionDeletion($currentSpecialist, $exception),
+            $this->forException($targetSpecialist, $definition),
+            [
+                'type' => 'schedule_exception_move',
+                'from_specialist_id' => $currentSpecialist->getKey(),
+                'to_specialist_id' => $targetSpecialist->getKey(),
+                'date' => $definition->date,
+                'exception_type' => $definition->type->value,
+                'start_time' => $definition->interval?->start,
+                'end_time' => $definition->interval?->end,
+            ],
+        );
+    }
+
     /** @param array<string, list<ScheduleExceptionDefinition>> $definitionsByDate */
     public function forExceptionSet(
         Specialist $specialist,
@@ -124,6 +149,40 @@ final class ScheduleMutationImpactCalculator
             'starts_at' => $start->toIso8601String(),
             'ends_at' => $end->toIso8601String(),
         ]);
+    }
+
+    public function forUnavailablePeriodUpdate(
+        Specialist $currentSpecialist,
+        DateTimeInterface $currentStartsAt,
+        DateTimeInterface $currentEndsAt,
+        Specialist $targetSpecialist,
+        DateTimeInterface $targetStartsAt,
+        DateTimeInterface $targetEndsAt,
+    ): ScheduleMutationImpact {
+        $currentStart = CarbonImmutable::instance($currentStartsAt)->utc();
+        $currentEnd = CarbonImmutable::instance($currentEndsAt)->utc();
+        $targetStart = CarbonImmutable::instance($targetStartsAt)->utc();
+        $targetEnd = CarbonImmutable::instance($targetEndsAt)->utc();
+
+        if ((int) $currentSpecialist->getKey() === (int) $targetSpecialist->getKey()
+            && $currentStart->equalTo($targetStart)
+            && $currentEnd->equalTo($targetEnd)) {
+            return new ScheduleMutationImpact([]);
+        }
+
+        return $this->mergeImpacts(
+            $this->forUnavailablePeriod($currentSpecialist, $currentStart, $currentEnd),
+            $this->forUnavailablePeriod($targetSpecialist, $targetStart, $targetEnd),
+            [
+                'type' => 'unavailable_period_update',
+                'from_specialist_id' => $currentSpecialist->getKey(),
+                'to_specialist_id' => $targetSpecialist->getKey(),
+                'from_starts_at' => $currentStart->toIso8601String(),
+                'from_ends_at' => $currentEnd->toIso8601String(),
+                'starts_at' => $targetStart->toIso8601String(),
+                'ends_at' => $targetEnd->toIso8601String(),
+            ],
+        );
     }
 
     public function forSpecialistChange(
@@ -291,10 +350,27 @@ final class ScheduleMutationImpactCalculator
      */
     private function fromBookings(array $bookings, array $mutation = []): ScheduleMutationImpact
     {
-        $bookingIds = array_values(array_map(
+        return $this->fromBookingIds(array_values(array_map(
             static fn (Booking $booking): int => $booking->getKey(),
             $bookings,
-        ));
+        )), $mutation);
+    }
+
+    private function mergeImpacts(
+        ScheduleMutationImpact $first,
+        ScheduleMutationImpact $second,
+        array $mutation,
+    ): ScheduleMutationImpact {
+        return $this->fromBookingIds(array_values(array_unique([
+            ...$first->bookingIds,
+            ...$second->bookingIds,
+        ])), $mutation);
+    }
+
+    /** @param list<int> $bookingIds */
+    private function fromBookingIds(array $bookingIds, array $mutation = []): ScheduleMutationImpact
+    {
+        sort($bookingIds);
 
         if ($bookingIds === []) {
             return new ScheduleMutationImpact([]);

@@ -26,6 +26,7 @@ class ClientsTable
         $canViewClients = ClientResource::canViewAny();
 
         return $table
+            ->stackedOnMobile()
             ->searchable()
             ->defaultSort(fn (Builder $query): Builder => $query
                 ->orderByDesc('created_at')

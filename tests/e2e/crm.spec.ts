@@ -1693,7 +1693,7 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
 
     await checkbox(fixture.specialistName).check();
     await expect(panel).toBeVisible();
-    await expect(filter).toHaveAccessibleName('Специалисты: 1');
+    await expect(filter).toHaveAccessibleName(fixture.specialistName);
     await checkbox(secondSpecialist.name).check();
     await expect(panel).toBeVisible();
     await expect.poll(() => page.locator('[wire\\:key="booking-journal-specialist-filter"] input[type="checkbox"]:checked').count()).toBe(2);
@@ -1703,7 +1703,7 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
     await checkbox(fixture.specialistName).uncheck();
     await expect.poll(() => page.locator('[wire\\:key="booking-journal-specialist-filter"] input[type="checkbox"]:checked').count()).toBe(1);
     await expect(checkbox(secondSpecialist.name)).toBeChecked();
-    await expect(filter).toHaveAccessibleName('Специалисты: 1');
+    await expect(filter).toHaveAccessibleName(secondSpecialist.name);
 
     await panel.getByRole('button', { name: 'Все специалисты', exact: true }).click();
     await expect.poll(() => page.locator('[wire\\:key="booking-journal-specialist-filter"] input[type="checkbox"]:checked').count()).toBe(0);
@@ -1721,7 +1721,7 @@ test('multi-specialist Journal keeps the accepted layout and slot ownership', as
     await expect(filter).toContainText('Все специалисты');
 
     await page.goBack();
-    await expect(filter).toHaveAccessibleName('Специалисты: 1');
+    await expect(filter).toHaveAccessibleName(secondSpecialist.name);
     await expect.poll(() => {
         const url = new URL(page.url());
 

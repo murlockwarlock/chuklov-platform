@@ -2,7 +2,9 @@
 
 namespace App\Filament\Resources\ScheduleExceptions\Tables;
 
+use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
 use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
 use App\Filament\Support\CrmEntityLinks;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
@@ -26,6 +28,7 @@ class ScheduleExceptionsTable
         $canViewSpecialists = SpecialistResource::canViewAny();
 
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('specialist.display_name')
                     ->label(__('Специалист'))
@@ -48,6 +51,20 @@ class ScheduleExceptionsTable
                 TextColumn::make('reason')->label(__('Причина'))->limit(80)->placeholder('—'),
             ])
             ->recordActions([
+                Action::make('edit')
+                    ->label(__('Редактировать'))
+                    ->icon('heroicon-o-pencil-square')
+                    ->url(function (ScheduleException $record): string {
+                        if (($record->getAttribute('change_kind') ?? 'exception') === 'unavailable') {
+                            return UnavailablePeriodResource::getUrl('edit', [
+                                'record' => (int) $record->getAttribute('source_id'),
+                            ]);
+                        }
+
+                        return ScheduleExceptionResource::getUrl('edit', [
+                            'record' => (string) $record->getKey(),
+                        ]);
+                    }),
                 Action::make('delete')
                     ->label(__('Удалить'))
                     ->color('danger')
@@ -57,7 +74,19 @@ class ScheduleExceptionsTable
                     ])
                     ->fillForm(function (ScheduleException $record): array {
                         if (($record->getAttribute('change_kind') ?? 'exception') === 'unavailable') {
-                            return [];
+                            $period = UnavailablePeriod::query()
+                                ->where('organization_id', app(OrganizationContext::class)->id())
+                                ->whereKey((int) $record->getAttribute('source_id'))
+                                ->with('specialist')
+                                ->firstOrFail();
+
+                            return ScheduleImpactPreview::stateFromImpact(
+                                app(ScheduleMutationImpactCalculator::class)->forUnavailablePeriod(
+                                    specialist: $period->specialist,
+                                    startsAt: $period->starts_at,
+                                    endsAt: $period->ends_at,
+                                ),
+                            );
                         }
 
                         $record->loadMissing('specialist');
@@ -77,7 +106,19 @@ class ScheduleExceptionsTable
                                 ->where('organization_id', app(OrganizationContext::class)->id())
                                 ->whereKey((int) $record->getAttribute('source_id'))
                                 ->firstOrFail();
-                            app(DeleteUnavailablePeriod::class)->handle($actor, $period);
+
+                            try {
+                                app(DeleteUnavailablePeriod::class)->handle(
+                                    actor: $actor,
+                                    period: $period,
+                                    acknowledgeImpact: (bool) ($data['acknowledge_impact'] ?? false),
+                                    acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
+                                );
+                            } catch (ValidationException $exception) {
+                                ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+
+                                throw $exception;
+                            }
 
                             return;
                         }

@@ -22,6 +22,7 @@ class SpecialistServiceAssignmentsTable
         $canViewSpecialists = SpecialistResource::canViewAny();
 
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('specialist.display_name')
                     ->label(__('Специалист'))
@@ -34,9 +35,11 @@ class SpecialistServiceAssignmentsTable
             ])
             ->recordActions([
                 Action::make('remove')
-                    ->label(__('Убрать услугу'))
+                    ->label(__('Отвязать услугу от специалиста'))
                     ->color('danger')
                     ->requiresConfirmation()
+                    ->modalHeading(__('Отвязать услугу от специалиста?'))
+                    ->modalDescription(__('Услуга останется в каталоге. Это действие уберёт только связь с выбранным специалистом.'))
                     ->schema([
                         ...ScheduleImpactPreview::components(),
                     ])

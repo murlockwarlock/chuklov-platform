@@ -116,6 +116,7 @@ final class LegalDocumentResource extends LocalizedResource
     public static function table(Table $table): Table
     {
         return $table
+            ->stackedOnMobile()
             ->columns([
                 TextColumn::make('document_type')->label(__('Документ'))->formatStateUsing(fn (string $state): string => self::subjectOptions()[$state] ?? $state)->searchable(),
                 TextColumn::make('locale')->label(__('Язык'))->formatStateUsing(fn (string $state): string => $state === 'ru' ? __('Русский') : __('Английский')),

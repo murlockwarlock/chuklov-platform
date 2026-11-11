@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\Services\Pages\CreateService;
 use App\Filament\Resources\Services\Pages\EditService;
+use App\Filament\Resources\Services\Pages\ListServices;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -15,6 +16,8 @@ use App\Modules\Services\Domain\Models\Service;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
+use Filament\Schemas\Components\Image as SchemaImage;
+use Filament\Tables\Enums\RecordActionsPosition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportTesting\Testable;
@@ -78,6 +81,91 @@ final class ServiceCatalogFormTest extends TestCase
             'Это время блокируется после завершения услуги перед следующей записью.',
             $component->html(),
         );
+    }
+
+    public function test_service_form_explains_short_and_full_descriptions_and_persists_long_text(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $fullDescription = rtrim(str_repeat('Подробная информация о формате услуги и подготовке клиента. ', 20));
+
+        Testable::actingAs($admin);
+        $create = Testable::create(CreateService::class);
+        $page = $create->instance();
+        self::assertSame('Краткое описание', $page->getSchemaComponent('form.summary')->getLabel());
+        self::assertSame('Полное описание', $page->getSchemaComponent('form.description_ru')->getLabel());
+        $create
+            ->assertFormFieldVisible('summary')
+            ->assertFormFieldVisible('description_ru');
+        self::assertStringContainsString('Короткий текст для карточки услуги', $create->html());
+        self::assertStringContainsString('Подробное описание услуги для клиента.', $create->html());
+
+        $create
+            ->fillForm([
+                'name' => 'Первичная консультация',
+                'summary' => 'Короткая карточка консультации.',
+                'description_ru' => $fullDescription,
+                'catalog_type' => CatalogItemType::Service->value,
+                'is_active' => true,
+                'duration_minutes' => 45,
+                'formats' => ['office'],
+                'payment_requirement' => ServicePaymentRequirement::Postpay->value,
+            ])
+            ->call('create')
+            ->assertHasNoFormErrors();
+
+        $service = Service::query()
+            ->where('organization_id', $organization->getKey())
+            ->where('name', 'Первичная консультация')
+            ->sole();
+        self::assertGreaterThan(500, mb_strlen((string) $service->description_ru));
+        self::assertSame($fullDescription, $service->description_ru);
+
+        Testable::create(EditService::class, ['record' => $service->getRouteKey()])
+            ->assertSet('data.summary', 'Короткая карточка консультации.')
+            ->assertSet('data.description_ru', $fullDescription)
+            ->set('data.description_ru', $fullDescription.' Дополнительное пояснение.')
+            ->call('save')
+            ->assertHasNoFormErrors();
+
+        self::assertStringEndsWith('Дополнительное пояснение.', (string) $service->refresh()->description_ru);
+    }
+
+    public function test_service_lifecycle_actions_are_visible_in_the_table_and_edit_form(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $service = Service::factory()->forOrganization($organization)->create(['is_active' => true]);
+
+        Testable::actingAs($admin);
+        $list = Testable::create(ListServices::class)->assertSuccessful();
+        self::assertSame(RecordActionsPosition::AfterColumns, $list->instance()->getTable()->getRecordActionsPosition());
+
+        Testable::create(EditService::class, ['record' => $service->getRouteKey()])
+            ->assertSee('Архивировать');
+
+        $service->forceFill(['is_active' => false])->save();
+
+        Testable::create(EditService::class, ['record' => $service->getRouteKey()])
+            ->assertSee('Вернуть из архива');
+    }
+
+    public function test_service_edit_form_shows_the_current_image_after_reload(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $image = 'https://cdn.example.test/services/current.jpg';
+        $service = Service::factory()->forOrganization($organization)->create([
+            'external_image_url' => $image,
+        ]);
+
+        Testable::actingAs($admin);
+        $component = Testable::create(EditService::class, ['record' => $service->getRouteKey()])
+            ->assertSuccessful()
+            ->assertSee('Текущее изображение');
+        $preview = collect($component->instance()->getSchema('form')?->getFlatComponents(withHidden: true))
+            ->first(fn (mixed $schemaComponent): bool => $schemaComponent instanceof SchemaImage);
+
+        self::assertInstanceOf(SchemaImage::class, $preview);
+        self::assertSame($image, $preview->getUrl());
+        self::assertSame($service->name, $preview->getAlt());
     }
 
     public function test_service_medical_profile_requirement_is_created_and_persisted_through_edit_and_reopen(): void
