@@ -10,11 +10,15 @@ use App\Modules\Commerce\Domain\Models\PaymentProviderOfferMapping;
 use App\Modules\Finance\Application\FinanceAuthorization;
 use App\Modules\Finance\Application\SavePaymentProviderOfferMappings;
 use App\Modules\Finance\Domain\ValueObjects\Money;
+use App\Modules\Scheduling\Application\ScheduleMutationImpactCalculator;
 use App\Modules\Services\Application\ServiceSnapshotHasher;
+use App\Modules\Services\Application\SetServiceActive;
 use App\Modules\Services\Application\UpdateService;
 use App\Modules\Services\Domain\Models\Service;
 use App\Modules\Services\Domain\ValueObjects\ServicePriceMatrix;
+use Filament\Actions\Action;
 use Filament\Notifications\Notification;
+use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -24,6 +28,73 @@ class EditService extends LocalizedEditRecord
     protected static string $resource = ServiceResource::class;
 
     protected static ?string $title = 'Редактировать услугу';
+
+    protected function getFormActions(): array
+    {
+        return [
+            $this->getLifecycleAction(),
+            ...parent::getFormActions(),
+        ];
+    }
+
+    private function getLifecycleAction(): Action
+    {
+        $record = $this->getRecord();
+
+        if (! $record instanceof Service) {
+            return Action::make('lifecycle')->hidden();
+        }
+
+        if (! $record->is_active) {
+            return Action::make('restore')
+                ->label(__('Вернуть из архива'))
+                ->color('success')
+                ->icon('heroicon-o-arrow-uturn-left')
+                ->requiresConfirmation()
+                ->modalHeading(__('Вернуть услугу из архива?'))
+                ->modalDescription(__('Услуга снова станет доступна для новых записей и клиентского каталога.'))
+                ->action(function (): void {
+                    $actor = auth()->user();
+                    abort_unless($actor instanceof User, 403);
+                    app(SetServiceActive::class)->handle($actor, $record, true);
+                    $this->redirect(ServiceResource::getUrl('index'));
+                });
+        }
+
+        return Action::make('archive')
+            ->label(__('Архивировать'))
+            ->color('danger')
+            ->icon('heroicon-o-archive-box')
+            ->requiresConfirmation()
+            ->modalHeading(__('Архивировать услугу?'))
+            ->modalDescription(__('Услуга исчезнет из новых записей и клиентского каталога. История записей и оплат останется без изменений.'))
+            ->schema([
+                ...ScheduleImpactPreview::components(),
+            ])
+            ->fillForm(fn (): array => ScheduleImpactPreview::stateFromImpact(
+                app(ScheduleMutationImpactCalculator::class)->forServiceChange($record, ['is_active' => false]),
+            ))
+            ->action(function (array $data, Schema $schema): void {
+                $actor = auth()->user();
+                abort_unless($actor instanceof User, 403);
+
+                try {
+                    app(SetServiceActive::class)->handle(
+                        actor: $actor,
+                        service: $record,
+                        isActive: false,
+                        acknowledgeImpact: (bool) ($data['acknowledge_impact'] ?? false),
+                        acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
+                    );
+                } catch (ValidationException $exception) {
+                    ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+
+                    throw $exception;
+                }
+
+                $this->redirect(ServiceResource::getUrl('index'));
+            });
+    }
 
     protected function mutateFormDataBeforeFill(array $data): array
     {

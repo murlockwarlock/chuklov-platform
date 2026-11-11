@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Filament\Resources\Services\Pages\CreateService;
 use App\Filament\Resources\Services\Pages\EditService;
+use App\Filament\Resources\Services\Pages\ListServices;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationFeature;
@@ -15,6 +16,7 @@ use App\Modules\Services\Domain\Models\Service;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
+use Filament\Tables\Enums\RecordActionsPosition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Features\SupportTesting\Testable;
@@ -125,6 +127,24 @@ final class ServiceCatalogFormTest extends TestCase
             ->assertHasNoFormErrors();
 
         self::assertStringEndsWith('Дополнительное пояснение.', (string) $service->refresh()->description_ru);
+    }
+
+    public function test_service_lifecycle_actions_are_visible_in_the_table_and_edit_form(): void
+    {
+        [$organization, $admin] = $this->fixture();
+        $service = Service::factory()->forOrganization($organization)->create(['is_active' => true]);
+
+        Testable::actingAs($admin);
+        $list = Testable::create(ListServices::class)->assertSuccessful();
+        self::assertSame(RecordActionsPosition::BeforeColumns, $list->instance()->getTable()->getRecordActionsPosition());
+
+        Testable::create(EditService::class, ['record' => $service->getRouteKey()])
+            ->assertSee('Архивировать');
+
+        $service->forceFill(['is_active' => false])->save();
+
+        Testable::create(EditService::class, ['record' => $service->getRouteKey()])
+            ->assertSee('Вернуть из архива');
     }
 
     public function test_service_medical_profile_requirement_is_created_and_persisted_through_edit_and_reopen(): void

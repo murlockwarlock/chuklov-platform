@@ -13,6 +13,7 @@ use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
+use Filament\Tables\Enums\RecordActionsPosition;
 use Filament\Tables\Table;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
@@ -105,6 +106,6 @@ class ServicesTable
                         abort_unless($actor instanceof User, 403);
                         app(SetServiceActive::class)->handle($actor, $record, true);
                     }),
-            ]);
+            ], RecordActionsPosition::BeforeColumns);
     }
 }
