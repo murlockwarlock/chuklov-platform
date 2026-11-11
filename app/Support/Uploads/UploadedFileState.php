@@ -3,6 +3,7 @@
 namespace App\Support\Uploads;
 
 use Illuminate\Http\UploadedFile;
+use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 final class UploadedFileState
 {
@@ -10,6 +11,12 @@ final class UploadedFileState
     {
         if ($value instanceof UploadedFile) {
             return $value;
+        }
+
+        if (is_string($value) && str_starts_with($value, 'livewire-file:')) {
+            $file = TemporaryUploadedFile::unserializeFromLivewireRequest($value);
+
+            return $file instanceof UploadedFile ? $file : null;
         }
 
         if (! is_array($value)) {
