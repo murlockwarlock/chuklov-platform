@@ -199,7 +199,6 @@ class ContentSectionForm
                                 'max' => __('Изображение должно быть размером до 5 МБ.'),
                             ])
                             ->helperText(__('Загрузите фотографию или изображение размером до 5 МБ. Видео и несколько файлов не поддерживаются.'))
-                            ->live()
                             ->afterStateUpdated(function (Set $set): void {
                                 $set('remove_image', false);
                             })
