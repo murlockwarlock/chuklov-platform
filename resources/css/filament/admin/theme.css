@@ -64,6 +64,10 @@
     min-width: 0;
 }
 
+.fi-ta-table .fi-ta-actions {
+    justify-content: flex-end;
+}
+
 @media (min-width: 1280px) {
     .fi-resource-services .services-table .fi-ta-header-cell-name,
     .fi-resource-services .services-table .fi-ta-cell-name {
