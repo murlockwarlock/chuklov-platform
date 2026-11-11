@@ -419,7 +419,6 @@ final class FinancePaymentActions
                 ->helperText(__('PDF или фотография до 10 МБ.'))
                 ->storeFiles(false)
                 ->acceptedFileTypes(['application/pdf', ...SupportedImageTypes::acceptedMimeTypes()])
-                ->previewable(false)
                 ->mimeTypeMap(SupportedImageTypes::mimeTypeMap())
                 ->extraInputAttributes(['accept' => 'application/pdf,'.SupportedImageTypes::browserAccept()])
                 ->maxSize(10240),
