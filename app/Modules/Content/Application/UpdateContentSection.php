@@ -132,6 +132,14 @@ class UpdateContentSection
 
         $file = UploadedFileState::first($value);
 
+        error_log(json_encode([
+            'marker' => 'content-image-upload-state',
+            'raw_type' => get_debug_type($value),
+            'raw_keys' => is_array($value) ? array_keys($value) : [],
+            'raw_item_types' => is_array($value) ? array_map(static fn (mixed $item): string => get_debug_type($item), $value) : [],
+            'resolved_type' => get_debug_type($file),
+        ], JSON_UNESCAPED_UNICODE));
+
         if (! $file instanceof UploadedFile) {
             throw ValidationException::withMessages([
                 'content_image' => ['Не удалось прочитать изображение. Попробуйте другой файл.'],
