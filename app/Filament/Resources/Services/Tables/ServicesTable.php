@@ -46,12 +46,6 @@ class ServicesTable
                         default => __('Услуга'),
                     })
                     ->width('8rem'),
-                TextColumn::make('category')
-                    ->label(__('Категория'))
-                    ->placeholder('—')
-                    ->sortable()
-                    ->wrap()
-                    ->width('10rem'),
                 TextColumn::make('duration_minutes')
                     ->label(__('Длительность'))
                     ->suffix(' мин.')
