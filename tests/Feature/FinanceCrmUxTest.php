@@ -189,6 +189,8 @@ final class FinanceCrmUxTest extends TestCase
                 'currency' => 'USD',
             ]);
 
+        self::assertStringContainsString('wire:loading.attr="disabled"', $component->html());
+
         $component
             ->setTableActionData([
                 'amount' => '25.00',
