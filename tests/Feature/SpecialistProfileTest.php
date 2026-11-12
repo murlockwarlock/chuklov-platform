@@ -24,7 +24,9 @@ use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia;
+use Livewire\Features\SupportTesting\Testable;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -138,8 +140,7 @@ final class SpecialistProfileTest extends TestCase
         $this->setOrganization($organization);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
-        $component = Livewire::actingAs($admin)
-            ->test(CreateSpecialistPage::class)
+        $component = $this->createSpecialistPage($admin)
             ->assertFormFieldVisible('profile_image')
             ->assertFormFieldVisible('specialization')
             ->assertFormFieldVisible('practices_since_year')
@@ -169,8 +170,7 @@ final class SpecialistProfileTest extends TestCase
         $specialist = Specialist::query()->where('display_name', 'Марина Орлова')->sole();
         self::assertSame('Специалист по восстановлению', $specialist->specialization);
 
-        Livewire::actingAs($admin)
-            ->test(EditSpecialistPage::class, ['record' => $specialist->getKey()])
+        $this->editSpecialistPage($admin, $specialist)
             ->fillForm([
                 'display_name' => 'Марина Орлова',
                 'specialization' => 'Новая специализация',
@@ -194,6 +194,173 @@ final class SpecialistProfileTest extends TestCase
         self::assertSame('Новая специализация', $reloaded->specialization);
         self::assertSame('Астана', $reloaded->city);
         self::assertTrue($reloaded->email_visible);
+    }
+
+    public function test_crm_create_validation_preserves_form_state_and_allows_phone_correction(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->setOrganization($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = $this->createSpecialistPage($admin)
+            ->fillForm([
+                'display_name' => 'Сергей Воронцов',
+                'specialization' => 'Реабилитолог',
+                'practices_since_year' => 2014,
+                'qualification' => 'Квалификация специалиста.',
+                'bio' => 'Описание подхода специалиста.',
+                'country' => 'KZ',
+                'city' => 'Алматы',
+                'phone' => 'не телефон',
+                'email' => 'sergey@example.com',
+                'telegram' => '@sergey_work',
+                'is_active' => true,
+                'notifications_enabled' => true,
+            ])
+            ->call('create')
+            ->assertHasErrors(['data.phone'])
+            ->assertNotified('Не удалось сохранить специалиста. Исправьте отмеченные поля.')
+            ->assertSet('data.specialization', 'Реабилитолог')
+            ->assertSet('data.qualification', 'Квалификация специалиста.')
+            ->assertSet('data.bio', 'Описание подхода специалиста.')
+            ->assertSet('data.phone', 'не телефон');
+
+        self::assertDatabaseMissing('specialists', ['display_name' => 'Сергей Воронцов']);
+
+        $component
+            ->fillForm(['phone' => '+77001234567'])
+            ->call('create')
+            ->assertHasNoErrors()
+            ->assertNotified('Изменения сохранены');
+
+        $specialist = Specialist::query()->where('display_name', 'Сергей Воронцов')->sole();
+        self::assertSame('+77001234567', $specialist->phone);
+        self::assertSame('Реабилитолог', $specialist->specialization);
+        self::assertSame('Описание подхода специалиста.', $specialist->bio);
+        self::assertSame('Алматы', $specialist->city);
+    }
+
+    public function test_crm_edit_validation_preserves_form_state_and_allows_telegram_correction(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->setOrganization($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $specialist = app(CreateSpecialist::class)->handle(
+            actor: $admin,
+            displayName: 'Ольга Белова',
+            profileAttributes: ['specialization' => 'Массажист'],
+        );
+
+        $component = $this->editSpecialistPage($admin, $specialist)
+            ->fillForm([
+                'display_name' => 'Ольга Белова',
+                'specialization' => 'Массажист по восстановлению',
+                'qualification' => 'Обновленная квалификация.',
+                'bio' => 'Обновленное описание подхода.',
+                'country' => 'KZ',
+                'city' => 'Астана',
+                'phone' => '+77001234567',
+                'email' => 'olga@example.com',
+                'telegram' => 'не Telegram',
+                'is_active' => true,
+                'notifications_enabled' => true,
+            ])
+            ->call('save')
+            ->assertHasErrors(['data.telegram'])
+            ->assertNotified('Не удалось сохранить специалиста. Исправьте отмеченные поля.')
+            ->assertSet('data.specialization', 'Массажист по восстановлению')
+            ->assertSet('data.qualification', 'Обновленная квалификация.')
+            ->assertSet('data.bio', 'Обновленное описание подхода.')
+            ->assertSet('data.telegram', 'не Telegram');
+
+        $afterInvalid = $specialist->fresh();
+        self::assertNotNull($afterInvalid);
+        self::assertSame('Массажист', $afterInvalid->specialization);
+
+        $component
+            ->fillForm(['telegram' => '@olga_work'])
+            ->call('save')
+            ->assertHasNoErrors()
+            ->assertNotified('Изменения сохранены');
+
+        $reloaded = $specialist->fresh();
+        self::assertNotNull($reloaded);
+        self::assertSame('Массажист по восстановлению', $reloaded->specialization);
+        self::assertSame('@olga_work', $reloaded->telegram);
+        self::assertSame('Астана', $reloaded->city);
+    }
+
+    public function test_crm_builtin_email_validation_keeps_state_and_shows_save_error(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->setOrganization($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        $component = $this->createSpecialistPage($admin)
+            ->fillForm([
+                'display_name' => 'Ирина Крылова',
+                'specialization' => 'Реабилитолог',
+                'email' => 'not-an-email',
+                'is_active' => true,
+                'notifications_enabled' => true,
+            ])
+            ->call('create')
+            ->assertHasErrors(['data.email'])
+            ->assertNotified('Не удалось сохранить специалиста. Исправьте отмеченные поля.')
+            ->assertSet('data.display_name', 'Ирина Крылова')
+            ->assertSet('data.specialization', 'Реабилитолог')
+            ->assertSet('data.email', 'not-an-email');
+
+        self::assertDatabaseMissing('specialists', ['display_name' => 'Ирина Крылова']);
+    }
+
+    public function test_crm_profile_image_storage_validation_maps_to_the_image_field(): void
+    {
+        $organization = Organization::factory()->create();
+        $admin = User::factory()->forOrganization($organization)->create();
+        $this->setOrganization($organization);
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        app()->instance(SpecialistMediaStorageInterface::class, new class implements SpecialistMediaStorageInterface
+        {
+            public function store(int $organizationId, UploadedFile $file): string
+            {
+                throw ValidationException::withMessages([
+                    'profile_image' => ['Не удалось прочитать фотографию. Попробуйте другой файл.'],
+                ]);
+            }
+
+            public function isManagedPath(int $organizationId, ?string $path): bool
+            {
+                return false;
+            }
+
+            public function url(string $path): string
+            {
+                return '';
+            }
+
+            public function deleteManaged(int $organizationId, string $path): void {}
+        });
+
+        $this->createSpecialistPage($admin)
+            ->fillForm([
+                'display_name' => 'Андрей Лебедев',
+                'specialization' => 'Массажист',
+                'profile_image' => UploadedFile::fake()->image('andrey.jpg'),
+                'is_active' => true,
+                'notifications_enabled' => true,
+            ])
+            ->call('create')
+            ->assertHasErrors(['data.profile_image'])
+            ->assertNotified('Не удалось сохранить специалиста. Исправьте отмеченные поля.')
+            ->assertSet('data.display_name', 'Андрей Лебедев');
+
+        self::assertDatabaseMissing('specialists', ['display_name' => 'Андрей Лебедев']);
     }
 
     public function test_public_projection_contains_only_allowed_contacts_and_active_assigned_services(): void
@@ -392,5 +559,17 @@ final class SpecialistProfileTest extends TestCase
             'feature_key' => OrganizationFeature::ServiceCatalog->value,
             'enabled' => true,
         ]);
+    }
+
+    /** @return Testable<CreateSpecialistPage> */
+    private function createSpecialistPage(User $admin): Testable
+    {
+        return Livewire::actingAs($admin)->test(new CreateSpecialistPage);
+    }
+
+    /** @return Testable<EditSpecialistPage> */
+    private function editSpecialistPage(User $admin, Specialist $specialist): Testable
+    {
+        return Livewire::actingAs($admin)->test(new EditSpecialistPage, ['record' => $specialist->getKey()]);
     }
 }

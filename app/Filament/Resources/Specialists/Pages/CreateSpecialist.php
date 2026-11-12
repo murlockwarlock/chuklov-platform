@@ -4,6 +4,8 @@ namespace App\Filament\Resources\Specialists\Pages;
 
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Support\LocalizedCreateRecord;
+use App\Filament\Support\ScheduleImpactPreview;
+use App\Filament\Support\SpecialistFormValidation;
 use App\Models\User;
 use App\Modules\Identity\Application\InitiateTelegramOrganizationLink;
 use App\Modules\Identity\Domain\Enums\ChannelIdentityStatus;
@@ -16,6 +18,8 @@ use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 use LogicException;
 
 class CreateSpecialist extends LocalizedCreateRecord
@@ -30,31 +34,54 @@ class CreateSpecialist extends LocalizedCreateRecord
 
     private bool $telegramLinkUnavailable = false;
 
+    protected function getCreatedNotificationTitle(): ?string
+    {
+        return __('Изменения сохранены');
+    }
+
+    protected function onValidationError(ValidationException $exception): void
+    {
+        SpecialistFormValidation::notify($exception);
+    }
+
     protected function handleRecordCreation(array $data): Model
     {
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
-        $specialist = app(CreateSpecialistAction::class)->handle(
-            actor: $actor,
-            displayName: $data['display_name'],
-            isActive: (bool) $data['is_active'],
-            timezone: $data['timezone'] ?? null,
-            staffUserId: isset($data['staff_user_id']) ? (int) $data['staff_user_id'] : null,
-            notificationSettings: SpecialistNotificationSettings::from(null, (bool) ($data['notifications_enabled'] ?? true)),
-            profileAttributes: $data,
-        );
-
-        if (array_key_exists('viewer_timezone', $data)) {
-            app(UpdateSpecialistViewerTimezone::class)->handle(
+        try {
+            $specialist = app(CreateSpecialistAction::class)->handle(
                 actor: $actor,
-                specialist: $specialist,
-                timezone: $data['viewer_timezone'] === null || $data['viewer_timezone'] === '' ? null : (string) $data['viewer_timezone'],
-                source: $data['viewer_timezone'] === null || $data['viewer_timezone'] === '' ? 'organization' : 'manual',
+                displayName: $data['display_name'],
+                isActive: (bool) $data['is_active'],
+                timezone: $data['timezone'] ?? null,
+                staffUserId: isset($data['staff_user_id']) ? (int) $data['staff_user_id'] : null,
+                notificationSettings: SpecialistNotificationSettings::from(null, (bool) ($data['notifications_enabled'] ?? true)),
+                profileAttributes: $data,
             );
-        }
 
-        return $specialist->refresh();
+            if (array_key_exists('viewer_timezone', $data)) {
+                app(UpdateSpecialistViewerTimezone::class)->handle(
+                    actor: $actor,
+                    specialist: $specialist,
+                    timezone: $data['viewer_timezone'] === null || $data['viewer_timezone'] === '' ? null : (string) $data['viewer_timezone'],
+                    source: $data['viewer_timezone'] === null || $data['viewer_timezone'] === '' ? 'organization' : 'manual',
+                );
+            }
+
+            return $specialist->refresh();
+        } catch (ValidationException $exception) {
+            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($data, $exception));
+            SpecialistFormValidation::notify($exception);
+
+            throw SpecialistFormValidation::forForm($exception);
+        } catch (InvalidArgumentException $exception) {
+            $validation = SpecialistFormValidation::fromInvalidArgument($exception, $data);
+            $this->form->fill($data);
+            SpecialistFormValidation::notify($validation);
+
+            throw SpecialistFormValidation::forForm($validation);
+        }
     }
 
     protected function afterCreate(): void
@@ -99,7 +126,7 @@ class CreateSpecialist extends LocalizedCreateRecord
 
             return Notification::make()
                 ->success()
-                ->title(__('Специалист создан'))
+                ->title($this->getCreatedNotificationTitle())
                 ->body(__('Ссылка для привязки Telegram: :link', ['link' => $link]))
                 ->persistent()
                 ->actions([
@@ -114,14 +141,14 @@ class CreateSpecialist extends LocalizedCreateRecord
         if ($this->telegramAlreadyConnected) {
             return Notification::make()
                 ->success()
-                ->title(__('Специалист создан'))
+                ->title($this->getCreatedNotificationTitle())
                 ->body(__('Telegram выбранного сотрудника уже подключён. Для смены аккаунта откройте редактирование специалиста и выберите «Перепривязать Telegram».'));
         }
 
         if ($this->telegramLinkUnavailable) {
             return Notification::make()
                 ->warning()
-                ->title(__('Специалист создан'))
+                ->title($this->getCreatedNotificationTitle())
                 ->body(__('Ссылку для привязки Telegram можно создать в редактировании специалиста.'));
         }
 
