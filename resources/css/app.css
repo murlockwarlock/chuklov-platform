@@ -3781,6 +3781,16 @@ select.portal-input[aria-invalid='true'] {
 }
 
 @media (max-width: 47.99rem) {
+    .portal-specialist-choice {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .portal-specialist-choice__details {
+        justify-self: end;
+        white-space: normal;
+        text-align: right;
+    }
+
     .portal-legal-modal {
         align-items: end;
         padding: 0.5rem;
