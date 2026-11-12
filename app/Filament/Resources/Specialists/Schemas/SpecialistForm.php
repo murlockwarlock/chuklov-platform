@@ -63,16 +63,28 @@ class SpecialistForm
                         TextInput::make('display_name')
                             ->label(__('Имя и фамилия'))
                             ->required()
-                            ->maxLength(160),
+                            ->maxLength(160)
+                            ->validationMessages([
+                                'required' => __('Укажите имя и фамилию специалиста.'),
+                                'max' => __('Имя и фамилия должны быть не длиннее 160 символов.'),
+                            ]),
                         TextInput::make('specialization')
                             ->label(__('Специализация'))
                             ->maxLength(160)
+                            ->validationMessages([
+                                'max' => __('Специализация должна быть не длиннее 160 символов.'),
+                            ])
                             ->placeholder(__('Например, реабилитолог')),
                         TextInput::make('practices_since_year')
                             ->label(__('Практикует с'))
                             ->integer()
                             ->minValue(1900)
                             ->maxValue((int) now()->year)
+                            ->validationMessages([
+                                'integer' => __('Укажите год целым числом.'),
+                                'min' => __('Год начала практики должен быть не раньше 1900 года.'),
+                                'max' => __('Год начала практики не может быть в будущем.'),
+                            ])
                             ->placeholder((string) now()->year)
                             ->helperText(__('Укажите год начала практики. Опыт для клиента посчитается автоматически.')),
                         Select::make('country')
@@ -89,6 +101,9 @@ class SpecialistForm
                         TextInput::make('city')
                             ->label(__('Город'))
                             ->maxLength(100)
+                            ->validationMessages([
+                                'max' => __('Название города должно быть не длиннее 100 символов.'),
+                            ])
                             ->placeholder(__('Например, Алматы')),
                     ])
                     ->columns(2)
@@ -101,12 +116,18 @@ class SpecialistForm
                             ->label(__('Квалификация и регалии'))
                             ->maxLength(2000)
                             ->rows(4)
+                            ->validationMessages([
+                                'max' => __('Квалификация и регалии должны быть не длиннее 2000 символов.'),
+                            ])
                             ->helperText(__('Коротко укажите образование, квалификацию, сертификаты или профессиональные достижения, которые важно показать клиенту.'))
                             ->columnSpanFull(),
                         Textarea::make('bio')
                             ->label(__('О специалисте'))
                             ->maxLength(10000)
                             ->rows(8)
+                            ->validationMessages([
+                                'max' => __('Описание должно быть не длиннее 10000 символов.'),
+                            ])
                             ->helperText(__('Описание опыта, подхода и работы специалиста для клиентов.'))
                             ->columnSpanFull(),
                     ])
@@ -120,6 +141,10 @@ class SpecialistForm
                             ->label(__('Телефон'))
                             ->tel()
                             ->maxLength(32)
+                            ->validationMessages([
+                                'regex' => __('Введите корректный номер телефона с кодом страны.'),
+                                'max' => __('Телефон должен быть не длиннее 32 символов.'),
+                            ])
                             ->placeholder(__('С кодом страны')),
                         Toggle::make('phone_visible')
                             ->label(__('Показывать клиентам'))
@@ -127,13 +152,20 @@ class SpecialistForm
                         TextInput::make('email')
                             ->label(__('Email'))
                             ->email()
-                            ->maxLength(320),
+                            ->maxLength(320)
+                            ->validationMessages([
+                                'email' => __('Введите корректный email.'),
+                                'max' => __('Email должен быть не длиннее 320 символов.'),
+                            ]),
                         Toggle::make('email_visible')
                             ->label(__('Показывать клиентам'))
                             ->default(false),
                         TextInput::make('telegram')
                             ->label(__('Telegram'))
                             ->maxLength(255)
+                            ->validationMessages([
+                                'max' => __('Telegram должен быть не длиннее 255 символов.'),
+                            ])
                             ->placeholder(__('@username или https://t.me/username'))
                             ->helperText(__('Укажите username или ссылку на профиль, а не служебный Telegram ID.')),
                         Toggle::make('telegram_visible')

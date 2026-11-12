@@ -37,10 +37,14 @@ final class SpecialistFormValidation
             ->filter(static fn (mixed $message): bool => is_string($message) && trim($message) !== '')
             ->first();
 
+        $body = is_string($firstMessage) && ! str_starts_with($firstMessage, 'validation.')
+            ? $firstMessage
+            : __('Проверьте заполнение отмеченных полей.');
+
         Notification::make()
             ->danger()
             ->title(__('Не удалось сохранить специалиста. Исправьте отмеченные поля.'))
-            ->body(is_string($firstMessage) ? $firstMessage : __('Проверьте заполнение полей.'))
+            ->body($body)
             ->send();
     }
 

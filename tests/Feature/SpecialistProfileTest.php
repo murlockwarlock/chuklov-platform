@@ -212,19 +212,19 @@ final class SpecialistProfileTest extends TestCase
                 'bio' => 'Описание подхода специалиста.',
                 'country' => 'KZ',
                 'city' => 'Алматы',
-                'phone' => 'не телефон',
+                'phone' => '+7',
                 'email' => 'sergey@example.com',
                 'telegram' => '@sergey_work',
                 'is_active' => true,
                 'notifications_enabled' => true,
             ])
             ->call('create')
-            ->assertHasErrors(['data.phone'])
+            ->assertHasErrors(['data.phone' => 'Введите корректный номер телефона с кодом страны.'])
             ->assertNotified('Не удалось сохранить специалиста. Исправьте отмеченные поля.')
             ->assertSet('data.specialization', 'Реабилитолог')
             ->assertSet('data.qualification', 'Квалификация специалиста.')
             ->assertSet('data.bio', 'Описание подхода специалиста.')
-            ->assertSet('data.phone', 'не телефон');
+            ->assertSet('data.phone', '+7');
 
         self::assertDatabaseMissing('specialists', ['display_name' => 'Сергей Воронцов']);
 
@@ -309,7 +309,7 @@ final class SpecialistProfileTest extends TestCase
                 'notifications_enabled' => true,
             ])
             ->call('create')
-            ->assertHasErrors(['data.email'])
+            ->assertHasErrors(['data.email' => 'Введите корректный email.'])
             ->assertNotified('Не удалось сохранить специалиста. Исправьте отмеченные поля.')
             ->assertSet('data.display_name', 'Ирина Крылова')
             ->assertSet('data.specialization', 'Реабилитолог')
