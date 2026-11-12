@@ -3684,6 +3684,12 @@ select.portal-input[aria-invalid='true'] {
     padding: 0.65rem 1rem;
 }
 
+@media (max-width: 47.99rem) {
+    .portal-booking-flow__cta {
+        margin-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+    }
+}
+
 .portal-booking-session-selection {
     gap: 0.9rem;
     padding-top: 0.25rem;
