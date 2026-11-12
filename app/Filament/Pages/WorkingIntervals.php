@@ -3,6 +3,7 @@
 namespace App\Filament\Pages;
 
 use App\Filament\Resources\Specialists\SpecialistResource;
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\LocalizedPage;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Filament\Support\TimezoneOptions;
@@ -36,6 +37,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use LogicException;
+use Throwable;
 use UnitEnum;
 
 /** @property-read Schema $form */
@@ -246,12 +248,31 @@ final class WorkingIntervals extends LocalizedPage
             });
             $this->data['working_hours_digest'] = app(SetSpecialistWorkingHours::class)->digest($specialist);
         } catch (ValidationException $exception) {
-            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview(
-                $data, $exception,
-            ));
-            throw $exception;
+            $state = ScheduleImpactPreview::mergeValidationPreview($data, $exception);
+            $mapped = FormValidationFeedback::forForm(
+                $exception,
+                aliases: ['schedule_impact' => 'acknowledge_impact'],
+                preserve: ['schedule_impact'],
+            );
+            $this->form->fill($state);
+            FormValidationFeedback::notifyValidation($mapped);
+
+            throw $mapped;
         } catch (InvalidArgumentException $exception) {
-            throw ValidationException::withMessages(['working_hours' => [$this->humanScheduleError($exception->getMessage())]]);
+            $validation = ValidationException::withMessages([
+                'working_hours' => [$this->humanScheduleError($exception->getMessage())],
+            ]);
+            $this->form->fill($data);
+            $mapped = FormValidationFeedback::forForm($validation);
+            FormValidationFeedback::notifyValidation($mapped);
+
+            throw $mapped;
+        } catch (Throwable $exception) {
+            $this->form->fill($data);
+            $mapped = FormValidationFeedback::unexpectedForForm($exception);
+            FormValidationFeedback::notifyValidation($mapped);
+
+            throw $mapped;
         }
         Notification::make()->success()->title(__('Расписание сохранено'))->send();
     }
@@ -272,15 +293,26 @@ final class WorkingIntervals extends LocalizedPage
             return;
         }
 
-        app(UpdateSpecialistViewerTimezone::class)->handle(
-            actor: $actor,
-            specialist: $specialist,
-            timezone: $this->deviceTimezone,
-            source: 'device',
-        );
-        $this->data['viewer_timezone'] = $this->deviceTimezone;
-        $this->data['viewer_timezone_suggestion'] = null;
-        $this->deviceTimezone = null;
+        try {
+            app(UpdateSpecialistViewerTimezone::class)->handle(
+                actor: $actor,
+                specialist: $specialist,
+                timezone: $this->deviceTimezone,
+                source: 'device',
+            );
+            $this->data['viewer_timezone'] = $this->deviceTimezone;
+            $this->data['viewer_timezone_suggestion'] = null;
+            $this->deviceTimezone = null;
+            Notification::make()->success()->title(__('Часовой пояс CRM обновлён'))->send();
+        } catch (ValidationException $exception) {
+            $mapped = FormValidationFeedback::forForm($exception, aliases: ['viewer_timezone_source' => 'viewer_timezone']);
+            FormValidationFeedback::notifyValidation($mapped);
+            throw $mapped;
+        } catch (Throwable $exception) {
+            $mapped = FormValidationFeedback::unexpectedForForm($exception);
+            FormValidationFeedback::notifyValidation($mapped);
+            throw $mapped;
+        }
     }
 
     public function dismissDeviceTimezone(): void
@@ -353,7 +385,7 @@ final class WorkingIntervals extends LocalizedPage
     {
         return str_contains(mb_strtolower($message), 'overlap')
             ? (string) __('Рабочие интервалы не должны пересекаться.')
-            : $message;
+            : (string) __('Проверьте рабочие интервалы и повторите попытку.');
     }
 
     /** @return list<array{weekday: int, start_time: string, end_time: string, starts_on: string|null, ends_on: string|null}> */

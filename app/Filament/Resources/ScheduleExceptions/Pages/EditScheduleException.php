@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ScheduleExceptions\Pages;
 
 use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
@@ -13,9 +14,12 @@ use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Specialists\Domain\Models\Specialist;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class EditScheduleException extends LocalizedEditRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = ScheduleExceptionResource::class;
 
     protected static ?string $title = 'Изменить исключение расписания';
@@ -66,9 +70,14 @@ final class EditScheduleException extends LocalizedEditRecord
                 targetSpecialist: $specialist,
             );
         } catch (ValidationException $exception) {
-            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($data, $exception));
-
-            throw $exception;
+            throw $this->formValidationFailure(
+                $exception,
+                ScheduleImpactPreview::mergeValidationPreview($data, $exception),
+                aliases: ['schedule_impact' => 'acknowledge_impact'],
+                preserve: ['schedule_impact'],
+            );
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $data);
         }
     }
 }

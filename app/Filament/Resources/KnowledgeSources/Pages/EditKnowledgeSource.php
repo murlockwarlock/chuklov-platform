@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\KnowledgeSources\Pages;
 
 use App\Filament\Resources\KnowledgeSources\KnowledgeSourceResource;
+use App\Filament\Support\FormValidationFeedback;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
@@ -14,9 +16,13 @@ use App\Modules\Knowledge\Domain\Models\KnowledgeSource;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class EditKnowledgeSource extends LocalizedEditRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = KnowledgeSourceResource::class;
 
     protected static ?string $title = 'Редактировать источник знаний';
@@ -41,9 +47,15 @@ final class EditKnowledgeSource extends LocalizedEditRecord
         abort_unless($record instanceof KnowledgeSource, 404);
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
-        $result = app(UpdateKnowledgeSourceAction::class)->handle($actor, $record, $data);
+        try {
+            $result = app(UpdateKnowledgeSourceAction::class)->handle($actor, $record, $data);
 
-        return $result->source;
+            return $result->source;
+        } catch (ValidationException $exception) {
+            throw $this->formValidationFailure($exception, $data);
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $data);
+        }
     }
 
     protected function getHeaderActions(): array
@@ -53,30 +65,50 @@ final class EditKnowledgeSource extends LocalizedEditRecord
                 $record = $this->getRecord();
 
                 return $record instanceof KnowledgeSource && $record->status->value === 'active';
-            })->action(function (): void {
+            })->action(function (Action $action): void {
                 $actor = auth()->user();
                 $record = $this->getRecord();
                 abort_unless($actor instanceof User && $record instanceof KnowledgeSource, 403);
-                app(RetireKnowledgeSource::class)->handle($actor, $record);
-                Notification::make()->title(__('Источник скрыт из поиска'))->success()->send();
-                $this->redirect(KnowledgeSourceResource::getUrl('index'));
+                try {
+                    app(RetireKnowledgeSource::class)->handle($actor, $record);
+                    Notification::make()->title(__('Источник скрыт из поиска'))->success()->send();
+                    $this->redirect(KnowledgeSourceResource::getUrl('index'));
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                }
             }),
             Action::make('reactivate')->label(__('Снова использовать материал'))->visible(function (): bool {
                 $record = $this->getRecord();
 
                 return $record instanceof KnowledgeSource && $record->status->value === 'retired';
-            })->action(function (): void {
+            })->action(function (Action $action): void {
                 $actor = auth()->user();
                 $record = $this->getRecord();
                 abort_unless($actor instanceof User && $record instanceof KnowledgeSource, 403);
-                $reactivated = app(ReactivateKnowledgeSource::class)->handle($actor, $record);
-                $this->record = $reactivated;
-                $this->form->model($reactivated);
-                $this->fillForm();
-                $body = app(KnowledgeSourcePresentation::class)->semanticSearchStatus() === __('Готов')
-                    ? __('Материал снова используется. Состояние поиска обновлено.')
-                    : __('Материал включён, но поиск по нему пока недоступен: настройте поиск по смыслу.');
-                Notification::make()->title(__('Материал снова используется'))->body($body)->success()->send();
+                try {
+                    $reactivated = app(ReactivateKnowledgeSource::class)->handle($actor, $record);
+                    $this->record = $reactivated;
+                    $this->form->model($reactivated);
+                    $this->fillForm();
+                    $body = app(KnowledgeSourcePresentation::class)->semanticSearchStatus() === __('Готов')
+                        ? __('Материал снова используется. Состояние поиска обновлено.')
+                        : __('Материал включён, но поиск по нему пока недоступен: настройте поиск по смыслу.');
+                    Notification::make()->title(__('Материал снова используется'))->body($body)->success()->send();
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                }
             }),
             Action::make('delete')
                 ->label(__('Удалить материал'))
@@ -84,13 +116,23 @@ final class EditKnowledgeSource extends LocalizedEditRecord
                 ->requiresConfirmation()
                 ->modalHeading(__('Удалить материал из базы знаний?'))
                 ->modalDescription(__('Материал, его поисковые фрагменты и загруженный файл будут удалены. Это действие нельзя отменить.'))
-                ->action(function (): void {
+                ->action(function (Action $action): void {
                     $actor = auth()->user();
                     $record = $this->getRecord();
                     abort_unless($actor instanceof User && $record instanceof KnowledgeSource, 403);
-                    app(DeleteKnowledgeSource::class)->handle($actor, $record);
-                    Notification::make()->title(__('Материал удалён из базы знаний'))->success()->send();
-                    $this->redirect(KnowledgeSourceResource::getUrl('index'));
+                    try {
+                        app(DeleteKnowledgeSource::class)->handle($actor, $record);
+                        Notification::make()->title(__('Материал удалён из базы знаний'))->success()->send();
+                        $this->redirect(KnowledgeSourceResource::getUrl('index'));
+                    } catch (ValidationException $exception) {
+                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                        throw $mapped;
+                    } catch (Throwable $exception) {
+                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
+                    }
                 }),
         ];
     }

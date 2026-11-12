@@ -6,6 +6,7 @@ use App\Filament\Resources\SurveyDefinitions\Pages\CreateSurveyDefinition;
 use App\Filament\Resources\SurveyDefinitions\Pages\EditSurveyDefinition;
 use App\Filament\Resources\SurveyDefinitions\Pages\ListSurveyDefinitions;
 use App\Filament\Resources\SurveyDefinitions\Schemas\SurveyDefinitionForm;
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\LocalizedResource;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -24,6 +25,8 @@ use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class SurveyDefinitionResource extends LocalizedResource
 {
@@ -75,11 +78,21 @@ final class SurveyDefinitionResource extends LocalizedResource
                         Toggle::make('is_available')->label(__('Доступен клиентам после публикации')),
                         Hidden::make('expected_snapshot')->required(),
                     ])
-                    ->action(function (SurveyDefinition $record, array $data): void {
+                    ->action(function (Action $action, SurveyDefinition $record, array $data): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
-                        app(UpdateSurveyPresentation::class)->handle($actor, $record, $data['title'], (bool) $data['is_available'], $data['expected_snapshot']);
-                        Notification::make()->title(__('Название и доступ сохранены'))->success()->send();
+                        try {
+                            app(UpdateSurveyPresentation::class)->handle($actor, $record, $data['title'], (bool) $data['is_available'], $data['expected_snapshot']);
+                            Notification::make()->title(__('Название и доступ сохранены'))->success()->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
                     }),
                 Action::make('hide')
                     ->label(__('Скрыть из доступа'))
@@ -89,7 +102,20 @@ final class SurveyDefinitionResource extends LocalizedResource
                     ->modalHeading(__('Скрыть опросник из доступа?'))
                     ->modalDescription(__('Новые прохождения будут недоступны. Вопросы, результаты и история уже начатых прохождений сохранятся.'))
                     ->visible(fn (SurveyDefinition $record): bool => $record->is_available && self::canEdit($record))
-                    ->action(fn (SurveyDefinition $record): SurveyDefinition => self::setAvailability($record, false)),
+                    ->action(function (Action $action, SurveyDefinition $record): void {
+                        try {
+                            self::setAvailability($record, false);
+                            Notification::make()->success()->title(__('Опросник скрыт из доступа'))->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
+                    }),
                 Action::make('restore')
                     ->label(__('Вернуть в доступ'))
                     ->icon(Heroicon::OutlinedEye)
@@ -98,7 +124,20 @@ final class SurveyDefinitionResource extends LocalizedResource
                     ->modalHeading(__('Вернуть опросник в доступ?'))
                     ->modalDescription(__('Опубликованная версия снова станет доступна для новых прохождений. История уже начатых прохождений сохранится.'))
                     ->visible(fn (SurveyDefinition $record): bool => ! $record->is_available && self::canEdit($record))
-                    ->action(fn (SurveyDefinition $record): SurveyDefinition => self::setAvailability($record, true)),
+                    ->action(function (Action $action, SurveyDefinition $record): void {
+                        try {
+                            self::setAvailability($record, true);
+                            Notification::make()->success()->title(__('Опросник возвращён в доступ'))->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
+                    }),
                 EditAction::make(),
             ])->defaultSort('title');
     }

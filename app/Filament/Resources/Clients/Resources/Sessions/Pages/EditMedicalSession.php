@@ -6,6 +6,8 @@ use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
+use App\Filament\Support\FormValidationFeedback;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Analytics\Application\AcceptAnalyticsClassification;
@@ -53,9 +55,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class EditMedicalSession extends LocalizedEditRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = MedicalSessionResource::class;
 
     protected static ?string $title = 'Редактирование сеанса';
@@ -83,17 +88,27 @@ class EditMedicalSession extends LocalizedEditRecord
                 ])
                 ->fillForm(fn (): array => ['booking_id' => $this->session()->booking_id])
                 ->modalSubmitActionLabel(__('Сохранить связь'))
-                ->action(function (array $data): void {
-                    app(LinkMedicalSessionBooking::class)->handle(
-                        $this->actor(),
-                        $this->session(),
-                        $this->parentClient(),
-                        (int) $data['booking_id'],
-                    );
-                    Notification::make()->success()->title(__('Связь с записью сохранена'))->send();
-                    $this->record = $this->session()->fresh();
-                    $this->form->model($this->record);
-                    $this->fillForm();
+                ->action(function (Action $action, array $data): void {
+                    try {
+                        app(LinkMedicalSessionBooking::class)->handle(
+                            $this->actor(),
+                            $this->session(),
+                            $this->parentClient(),
+                            (int) $data['booking_id'],
+                        );
+                        Notification::make()->success()->title(__('Связь с записью сохранена'))->send();
+                        $this->record = $this->session()->fresh();
+                        $this->form->model($this->record);
+                        $this->fillForm();
+                    } catch (ValidationException $exception) {
+                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                        throw $mapped;
+                    } catch (Throwable $exception) {
+                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
+                    }
                 })
                 ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord())),
             Action::make('unlinkBooking')
@@ -101,17 +116,27 @@ class EditMedicalSession extends LocalizedEditRecord
                 ->icon('heroicon-o-link-slash')
                 ->color('gray')
                 ->requiresConfirmation()
-                ->action(function (): void {
-                    app(LinkMedicalSessionBooking::class)->handle(
-                        $this->actor(),
-                        $this->session(),
-                        $this->parentClient(),
-                        null,
-                    );
-                    Notification::make()->success()->title(__('Запись отвязана от сеанса'))->send();
-                    $this->record = $this->session()->fresh();
-                    $this->form->model($this->record);
-                    $this->fillForm();
+                ->action(function (Action $action): void {
+                    try {
+                        app(LinkMedicalSessionBooking::class)->handle(
+                            $this->actor(),
+                            $this->session(),
+                            $this->parentClient(),
+                            null,
+                        );
+                        Notification::make()->success()->title(__('Запись отвязана от сеанса'))->send();
+                        $this->record = $this->session()->fresh();
+                        $this->form->model($this->record);
+                        $this->fillForm();
+                    } catch (ValidationException $exception) {
+                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                        throw $mapped;
+                    } catch (Throwable $exception) {
+                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
+                    }
                 })
                 ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->session()->booking_id !== null),
             Action::make('fillResult')
@@ -120,20 +145,30 @@ class EditMedicalSession extends LocalizedEditRecord
                 ->requiresConfirmation(fn (): bool => filled($this->data['result'] ?? null))
                 ->modalHeading(fn (): ?string => filled($this->data['result'] ?? null) ? (string) __('Заменить текст результата?') : null)
                 ->modalDescription(fn (): ?string => filled($this->data['result'] ?? null) ? (string) __('Текущий текст будет заменён сводкой по данным сеанса.') : null)
-                ->action(function (): void {
-                    $actor = $this->actor();
-                    $record = $this->getRecord();
-                    abort_unless($record instanceof MedicalSession, 404);
-                    $result = app(GenerateSessionResult::class)->handleDraft(
-                        $actor,
-                        $record,
-                        $this->parentClient(),
-                        $this->draftForResult(),
-                    );
-                    $this->data['result'] = $result;
-                    $this->resultFormVersion++;
-                    $this->form->fillPartially(['result' => $result], ['result']);
-                    Notification::make()->title(__('Результат заполнен'))->success()->send();
+                ->action(function (Action $action): void {
+                    try {
+                        $actor = $this->actor();
+                        $record = $this->getRecord();
+                        abort_unless($record instanceof MedicalSession, 404);
+                        $result = app(GenerateSessionResult::class)->handleDraft(
+                            $actor,
+                            $record,
+                            $this->parentClient(),
+                            $this->draftForResult(),
+                        );
+                        $this->data['result'] = $result;
+                        $this->resultFormVersion++;
+                        $this->form->fillPartially(['result' => $result], ['result']);
+                        Notification::make()->title(__('Результат заполнен'))->success()->send();
+                    } catch (ValidationException $exception) {
+                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                        throw $mapped;
+                    } catch (Throwable $exception) {
+                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
+                    }
                 }),
             $this->suggestSessionPainTagsAction(),
             $this->acceptSessionPainTagsAction(),
@@ -354,19 +389,29 @@ class EditMedicalSession extends LocalizedEditRecord
                                 ->requiresConfirmation(fn (Get $get): bool => filled($get('result')))
                                 ->modalHeading(fn (Get $get): ?string => filled($get('result')) ? (string) __('Заменить текст результата?') : null)
                                 ->modalDescription(fn (Get $get): ?string => filled($get('result')) ? (string) __('Текущий текст будет заменён сводкой по данным сеанса.') : null)
-                                ->action(function (Set $set): void {
-                                    $actor = $this->actor();
-                                    $record = $this->getRecord();
-                                    abort_unless($record instanceof MedicalSession, 404);
-                                    $result = app(GenerateSessionResult::class)->handleDraft(
-                                        $actor,
-                                        $record,
-                                        $this->parentClient(),
-                                        $this->draftForResult(),
-                                    );
-                                    $set('result', $result);
-                                    $this->resultFormVersion++;
-                                    Notification::make()->title(__('Результат заполнен'))->success()->send();
+                                ->action(function (Action $action, Set $set): void {
+                                    try {
+                                        $actor = $this->actor();
+                                        $record = $this->getRecord();
+                                        abort_unless($record instanceof MedicalSession, 404);
+                                        $result = app(GenerateSessionResult::class)->handleDraft(
+                                            $actor,
+                                            $record,
+                                            $this->parentClient(),
+                                            $this->draftForResult(),
+                                        );
+                                        $set('result', $result);
+                                        $this->resultFormVersion++;
+                                        Notification::make()->title(__('Результат заполнен'))->success()->send();
+                                    } catch (ValidationException $exception) {
+                                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                                        FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                                        throw $mapped;
+                                    } catch (Throwable $exception) {
+                                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                                        FormValidationFeedback::notifyValidation($mapped);
+                                        throw $mapped;
+                                    }
                                 }))
                             ->key(fn (): string => 'session-result-'.$this->resultFormVersion),
                     ])
@@ -407,17 +452,27 @@ class EditMedicalSession extends LocalizedEditRecord
                     ->required(),
             ])
             ->modalSubmitActionLabel(__('Загрузить'))
-            ->action(function (array $data) use ($gallery): void {
+            ->action(function (Action $action, array $data) use ($gallery): void {
                 $file = $data['file'] ?? null;
                 abort_unless($file instanceof UploadedFile, 422);
-                app(UploadSessionPhoto::class)->handle(
-                    $this->actor(),
-                    $this->session(),
-                    $this->parentClient(),
-                    $file,
-                    $gallery,
-                );
-                Notification::make()->success()->title(__('Фото загружено в галерею'))->send();
+                try {
+                    app(UploadSessionPhoto::class)->handle(
+                        $this->actor(),
+                        $this->session(),
+                        $this->parentClient(),
+                        $file,
+                        $gallery,
+                    );
+                    Notification::make()->success()->title(__('Фото загружено в галерею'))->send();
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                }
             })
             ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord())
                 && app(AttachmentAuthorization::class)->allowsUpload($this->actor(), $this->parentClient()));
@@ -432,6 +487,7 @@ class EditMedicalSession extends LocalizedEditRecord
         $record = $this->getRecord();
         $actor = $this->actor();
         $parent = $this->parentClient();
+        $formState = $data;
 
         if (! $record instanceof MedicalSession) {
             return parent::mutateFormDataBeforeFill($data);
@@ -479,6 +535,7 @@ class EditMedicalSession extends LocalizedEditRecord
     {
         $actor = $this->actor();
         $parent = $this->parentClient();
+        $formState = $data;
 
         if (! $record instanceof MedicalSession) {
             return parent::handleRecordUpdate($record, $data);
@@ -487,15 +544,21 @@ class EditMedicalSession extends LocalizedEditRecord
         try {
             $command = UpdateSessionCommand::fromArray(self::normalizeClinical($data));
         } catch (ValidationException $exception) {
-            self::throwValidation($exception->errors());
+            throw $this->formValidationFailure($exception, $formState);
         }
 
-        $updated = app(UpdateSession::class)->handle($actor, $record, $command, $parent);
+        try {
+            $updated = app(UpdateSession::class)->handle($actor, $record, $command, $parent);
 
-        return MedicalSession::query()
-            ->where('organization_id', $updated->organizationId)
-            ->where('id', $updated->id)
-            ->firstOrFail();
+            return MedicalSession::query()
+                ->where('organization_id', $updated->organizationId)
+                ->where('id', $updated->id)
+                ->firstOrFail();
+        } catch (ValidationException $exception) {
+            throw $this->formValidationFailure($exception, $formState);
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $formState);
+        }
     }
 
     protected function getRedirectUrl(): ?string
@@ -567,7 +630,7 @@ class EditMedicalSession extends LocalizedEditRecord
         } elseif ($normalized !== '') {
             try {
                 $query->whereDate('starts_at', Carbon::parse($normalized));
-            } catch (\Throwable) {
+            } catch (Throwable) {
                 $query->whereKey(0);
             }
         }
@@ -641,38 +704,48 @@ class EditMedicalSession extends LocalizedEditRecord
             ])
             ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()))
             ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()))
-            ->action(function (array $data): void {
-                $pain = $this->sessionPain((int) ($data['pain_id'] ?? 0));
-                $sourceText = $this->sessionPainName($pain);
-                if ($sourceText === null) {
-                    Notification::make()->warning()->title(__('Не удалось прочитать боль'))->send();
+            ->action(function (Action $action, array $data): void {
+                try {
+                    $pain = $this->sessionPain((int) ($data['pain_id'] ?? 0));
+                    $sourceText = $this->sessionPainName($pain);
+                    if ($sourceText === null) {
+                        Notification::make()->warning()->title(__('Не удалось прочитать боль'))->send();
 
-                    return;
+                        return;
+                    }
+
+                    $options = app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id());
+                    $result = app(SuggestAnalyticsTags::class)->handle(
+                        actor: $this->actor(),
+                        taxonomy: 'complaints',
+                        sourceType: 'medical_session_pain',
+                        sourceId: (int) $pain->getKey(),
+                        clientId: (int) $pain->client_id,
+                        sourceText: $sourceText,
+                        availableTags: array_map(
+                            static fn (int|string $id, string $label): array => ['id' => (int) $id, 'label' => $label],
+                            array_keys($options),
+                            array_values($options),
+                        ),
+                        force: true,
+                    );
+                    $labels = collect($result->suggestions)->pluck('label')->implode(', ');
+                    if ($labels !== '') {
+                        Notification::make()->success()->title(__('Предложения категорий готовы'))->body($labels)->send();
+
+                        return;
+                    }
+
+                    Notification::make()->warning()->title(__('Предложения категорий недоступны'))->body(__('Настройте prompt классификатора или добавьте категории проблем.'))->send();
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
                 }
-
-                $options = app(MedicalProblemTagCatalog::class)->options(app(OrganizationContext::class)->id());
-                $result = app(SuggestAnalyticsTags::class)->handle(
-                    actor: $this->actor(),
-                    taxonomy: 'complaints',
-                    sourceType: 'medical_session_pain',
-                    sourceId: (int) $pain->getKey(),
-                    clientId: (int) $pain->client_id,
-                    sourceText: $sourceText,
-                    availableTags: array_map(
-                        static fn (int|string $id, string $label): array => ['id' => (int) $id, 'label' => $label],
-                        array_keys($options),
-                        array_values($options),
-                    ),
-                    force: true,
-                );
-                $labels = collect($result->suggestions)->pluck('label')->implode(', ');
-                if ($labels !== '') {
-                    Notification::make()->success()->title(__('Предложения категорий готовы'))->body($labels)->send();
-
-                    return;
-                }
-
-                Notification::make()->warning()->title(__('Предложения категорий недоступны'))->body(__('Настройте prompt классификатора или добавьте категории проблем.'))->send();
             });
     }
 
@@ -702,16 +775,26 @@ class EditMedicalSession extends LocalizedEditRecord
             ])
             ->visible(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()) && $this->sessionPainWithSuggestionsExists())
             ->authorize(fn (): bool => MedicalSessionResource::canEdit($this->getRecord()))
-            ->action(function (array $data): void {
-                $painId = (int) ($data['pain_id'] ?? 0);
-                $run = $this->latestSessionPainClassificationRun($painId);
-                abort_unless($run instanceof AnalyticsClassificationRun, 422);
-                app(AcceptAnalyticsClassification::class)->handle(
-                    actor: $this->actor(),
-                    runId: (int) $run->getKey(),
-                    themeIds: is_array($data['tag_ids'] ?? null) ? $data['tag_ids'] : [],
-                );
-                Notification::make()->success()->title(__('Категории боли сохранены'))->send();
+            ->action(function (Action $action, array $data): void {
+                try {
+                    $painId = (int) ($data['pain_id'] ?? 0);
+                    $run = $this->latestSessionPainClassificationRun($painId);
+                    abort_unless($run instanceof AnalyticsClassificationRun, 422);
+                    app(AcceptAnalyticsClassification::class)->handle(
+                        actor: $this->actor(),
+                        runId: (int) $run->getKey(),
+                        themeIds: is_array($data['tag_ids'] ?? null) ? $data['tag_ids'] : [],
+                    );
+                    Notification::make()->success()->title(__('Категории боли сохранены'))->send();
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                }
             });
     }
 
@@ -877,12 +960,6 @@ class EditMedicalSession extends LocalizedEditRecord
             ->label(__('Настроить категории'))
             ->url(MedicalClinicalCatalogConfiguration::getUrl())
             ->visible(fn (): bool => self::problemTagOptions([]) === [] && MedicalClinicalCatalogConfiguration::canAccess());
-    }
-
-    /** @param array<string, list<string>> $messages */
-    private static function throwValidation(array $messages): never
-    {
-        throw ValidationException::withMessages($messages);
     }
 
     private static function scoreUiValue(mixed $value): int

@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\Services\Tables;
 
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Finance\Domain\ValueObjects\Money;
@@ -11,12 +12,14 @@ use App\Modules\Services\Domain\Enums\CatalogItemType;
 use App\Modules\Services\Domain\Models\Service;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\RecordActionsPosition;
 use Filament\Tables\Table;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Throwable;
 
 class ServicesTable
 {
@@ -95,7 +98,7 @@ class ServicesTable
                         app(ScheduleMutationImpactCalculator::class)->forServiceChange($record, ['is_active' => false]),
                     ))
                     ->visible(fn (Service $record): bool => $record->is_active)
-                    ->action(function (Service $record, array $data, Schema $schema): void {
+                    ->action(function (Action $action, Service $record, array $data, Schema $schema): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
 
@@ -107,10 +110,17 @@ class ServicesTable
                                 acknowledgeImpact: (bool) ($data['acknowledge_impact'] ?? false),
                                 acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
                             );
+                            Notification::make()->success()->title(__('Услуга архивирована'))->send();
                         } catch (ValidationException $exception) {
                             ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Нужно подтвердить изменение'));
 
-                            throw $exception;
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
                         }
                     }),
                 Action::make('restore')
@@ -127,7 +137,7 @@ class ServicesTable
                         app(ScheduleMutationImpactCalculator::class)->forServiceChange($record, ['is_active' => true]),
                     ))
                     ->visible(fn (Service $record): bool => ! $record->is_active)
-                    ->action(function (Service $record, array $data, Schema $schema): void {
+                    ->action(function (Action $action, Service $record, array $data, Schema $schema): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
 
@@ -139,10 +149,17 @@ class ServicesTable
                                 acknowledgeImpact: (bool) ($data['acknowledge_impact'] ?? false),
                                 acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
                             );
+                            Notification::make()->success()->title(__('Услуга возвращена из архива'))->send();
                         } catch (ValidationException $exception) {
                             ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Нужно подтвердить изменение'));
 
-                            throw $exception;
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
                         }
                     }),
             ], RecordActionsPosition::AfterColumns)

@@ -16,6 +16,7 @@ use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Scenarios\Application\NotificationTemplateMedia;
 use App\Modules\Scenarios\Application\PreviewNotificationTemplateMedia;
+use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateMediaStorageInterface;
 use App\Modules\Scenarios\Domain\Contracts\NotificationTemplateRenderer;
 use App\Modules\Scenarios\Domain\Enums\NotificationTemplateStatus;
 use App\Modules\Scenarios\Domain\Enums\ScenarioRulePurpose;
@@ -28,6 +29,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
+use Mockery;
+use RuntimeException;
 use Tests\TestCase;
 
 final class NotificationTemplateUxTest extends TestCase
@@ -139,7 +142,7 @@ final class NotificationTemplateUxTest extends TestCase
         Filament::setCurrentPanel(Filament::getPanel('admin'));
         $this->actingAs($admin);
 
-        Livewire::test(CreateNotificationTemplate::class)
+        $component = Livewire::test(CreateNotificationTemplate::class)
             ->fillForm([
                 'name' => 'Ошибочный шаблон',
                 'locale' => 'ru',
@@ -148,7 +151,48 @@ final class NotificationTemplateUxTest extends TestCase
                 'body' => 'Текст с ошибкой {{ invalid.variable }}',
             ])
             ->call('create')
-            ->assertHasErrors(['body']);
+            ->assertHasErrors(['data.body'])
+            ->assertNotified('Не удалось сохранить. Исправьте отмеченные поля.');
+
+        $component
+            ->fillForm(['body' => 'Исправленный текст {{ client.full_name }}'])
+            ->call('create')
+            ->assertHasNoFormErrors()
+            ->assertNotified('Изменения сохранены');
+
+        self::assertDatabaseHas('notification_templates', ['name' => 'Ошибочный шаблон']);
+    }
+
+    public function test_unexpected_create_failure_shows_generic_feedback_without_leaking_details(): void
+    {
+        [$organization, $admin] = $this->organizationWithAdmin();
+
+        $storage = Mockery::mock(NotificationTemplateMediaStorageInterface::class);
+        $storage->shouldReceive('store')
+            ->andThrow(new RuntimeException('internal database detail must stay private'));
+        $this->app->instance(NotificationTemplateMediaStorageInterface::class, $storage);
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+        $this->actingAs($admin);
+
+        $component = Livewire::test(CreateNotificationTemplate::class)
+            ->fillForm([
+                'name' => 'Шаблон с неожиданной ошибкой',
+                'locale' => 'ru',
+                'purpose' => ScenarioRulePurpose::Service->value,
+                'is_active' => true,
+                'delivery_mode' => NotificationMessageMode::ImageWithCaption->value,
+                'body' => 'Здравствуйте, {{ client.full_name }}.',
+                'media_image' => [UploadedFile::fake()->image('unexpected.png')],
+            ])
+            ->call('create')
+            ->assertHasErrors(['data.__form' => 'Не удалось выполнить действие. Попробуйте ещё раз.'])
+            ->assertNotified('Не удалось выполнить действие. Попробуйте ещё раз.')
+            ->assertSet('data.name', 'Шаблон с неожиданной ошибкой')
+            ->assertDontSee('internal database detail must stay private');
+
+        self::assertSame(0, NotificationTemplate::query()->where('organization_id', $organization->getKey())->count());
+        self::assertStringNotContainsString('internal database detail must stay private', $component->html());
     }
 
     public function test_template_variables_are_automatically_derived_on_edit(): void
@@ -234,7 +278,8 @@ final class NotificationTemplateUxTest extends TestCase
 
         $tabB
             ->call('save')
-            ->assertHasErrors(['body']);
+            ->assertHasErrors(['data.body'])
+            ->assertNotified('Не удалось сохранить. Исправьте отмеченные поля.');
 
         $versions = $template->versions()->latest('version')->get();
         self::assertCount(2, $versions);
@@ -353,6 +398,19 @@ final class NotificationTemplateUxTest extends TestCase
             ])
             ->assertFormComponentActionExists('template_actions', 'createMessage')
             ->assertFormComponentActionHasLabel('template_actions', 'createMessage', 'Создать текст сообщения');
+
+        $component
+            ->callFormComponentAction('template_actions', 'createMessage', [
+                'name' => 'Невалидное сообщение из правила',
+                'locale' => 'ru',
+                'purpose' => ScenarioRulePurpose::Service->value,
+                'is_active' => true,
+                'delivery_mode' => NotificationMessageMode::Text->value,
+                'caption_position' => 'below',
+                'body' => 'Текст с ошибкой {{ invalid.variable }}',
+            ])
+            ->assertHasFormComponentActionErrors()
+            ->assertNotified('Не удалось сохранить. Исправьте отмеченные поля.');
 
         $component
             ->callFormComponentAction('template_actions', 'createMessage', [

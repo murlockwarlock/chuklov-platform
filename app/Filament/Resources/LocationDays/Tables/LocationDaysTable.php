@@ -2,14 +2,18 @@
 
 namespace App\Filament\Resources\LocationDays\Tables;
 
+use App\Filament\Support\FormValidationFeedback;
 use App\Models\User;
 use App\Modules\Scheduling\Application\SaveLocationDay;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class LocationDaysTable
 {
@@ -38,14 +42,40 @@ class LocationDaysTable
                     ->modalHeading(__('Отключить правило выезда?'))
                     ->modalDescription(__('Это правило перестанет использоваться при подборе новых записей.'))
                     ->visible(fn (LocationDay $record): bool => $record->is_active)
-                    ->action(fn (LocationDay $record): LocationDay => self::setActive($record, false)),
+                    ->action(function (Action $action, LocationDay $record): void {
+                        try {
+                            self::setActive($record, false);
+                            Notification::make()->success()->title(__('Правило выезда отключено'))->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
+                    }),
                 Action::make('activate')
                     ->label(__('Включить правило'))
                     ->color('success')
                     ->icon('heroicon-o-arrow-uturn-left')
                     ->requiresConfirmation()
                     ->visible(fn (LocationDay $record): bool => ! $record->is_active)
-                    ->action(fn (LocationDay $record): LocationDay => self::setActive($record, true)),
+                    ->action(function (Action $action, LocationDay $record): void {
+                        try {
+                            self::setActive($record, true);
+                            Notification::make()->success()->title(__('Правило выезда включено'))->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
+                    }),
             ]);
     }
 

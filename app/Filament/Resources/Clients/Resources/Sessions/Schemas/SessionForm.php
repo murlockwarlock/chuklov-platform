@@ -4,6 +4,7 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Schemas;
 
 use App\Filament\Pages\MedicalClinicalCatalogConfiguration;
 use App\Filament\Resources\Clients\Resources\Sessions\Pages\CreateMedicalSession;
+use App\Filament\Support\FormValidationFeedback;
 use App\Modules\Identity\Domain\Models\Client;
 use App\Modules\MedicalProfiles\Application\MedicalFrequencyPeriodCatalog;
 use App\Modules\MedicalProfiles\Application\MedicalProblemTagCatalog;
@@ -30,6 +31,8 @@ use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class SessionForm
 {
@@ -279,9 +282,19 @@ final class SessionForm
                                 ->requiresConfirmation(fn (Get $get): bool => filled($get('result')))
                                 ->modalHeading(fn (Get $get): ?string => filled($get('result')) ? (string) __('Заменить текст результата?') : null)
                                 ->modalDescription(fn (Get $get): ?string => filled($get('result')) ? (string) __('Текущий текст будет заменён сводкой по данным сеанса.') : null)
-                                ->action(function (CreateMedicalSession $livewire, Set $set): void {
-                                    $set('result', $livewire->fillDraftResult());
-                                    Notification::make()->title(__('Результат заполнен'))->success()->send();
+                                ->action(function (Action $action, CreateMedicalSession $livewire, Set $set): void {
+                                    try {
+                                        $set('result', $livewire->fillDraftResult());
+                                        Notification::make()->title(__('Результат заполнен'))->success()->send();
+                                    } catch (ValidationException $exception) {
+                                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                                        FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                                        throw $mapped;
+                                    } catch (Throwable $exception) {
+                                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                                        FormValidationFeedback::notifyValidation($mapped);
+                                        throw $mapped;
+                                    }
                                 })),
                     ])->columnSpanFull(),
                 Section::make(__('Фото до / после'))
@@ -453,7 +466,7 @@ final class SessionForm
         } elseif ($normalized !== '') {
             try {
                 $query->whereDate('starts_at', Carbon::parse($normalized));
-            } catch (\Throwable) {
+            } catch (Throwable) {
                 $query->whereKey(0);
             }
         }

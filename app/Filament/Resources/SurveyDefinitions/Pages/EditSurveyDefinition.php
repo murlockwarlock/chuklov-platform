@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\SurveyDefinitions\Pages;
 
 use App\Filament\Resources\SurveyDefinitions\SurveyDefinitionResource;
+use App\Filament\Support\FormValidationFeedback;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Filament\Support\SurveyDefinitionFormMapper;
 use App\Models\User;
@@ -15,9 +17,13 @@ use App\Modules\Surveys\Domain\Models\SurveyVersion;
 use Filament\Actions\Action;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class EditSurveyDefinition extends LocalizedEditRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = SurveyDefinitionResource::class;
 
     protected static ?string $title = 'Редактировать тест';
@@ -46,15 +52,21 @@ final class EditSurveyDefinition extends LocalizedEditRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
-        $updated = app(UpdateSurveyDefinitionDraft::class)->handle(
-            $actor,
-            $record,
-            SurveyDefinitionFormMapper::normalize($data),
-            is_array($data['legacy_scoring'] ?? null),
-        );
-        $this->data['start_new_metric_scale'] = false;
+        try {
+            $updated = app(UpdateSurveyDefinitionDraft::class)->handle(
+                $actor,
+                $record,
+                SurveyDefinitionFormMapper::normalize($data),
+                is_array($data['legacy_scoring'] ?? null),
+            );
+            $this->data['start_new_metric_scale'] = false;
 
-        return $updated;
+            return $updated;
+        } catch (ValidationException $exception) {
+            throw $this->formValidationFailure($exception, $data);
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $data);
+        }
     }
 
     protected function getHeaderActions(): array
@@ -76,16 +88,26 @@ final class EditSurveyDefinition extends LocalizedEditRecord
                     $this->form->fill($this->data);
                     Notification::make()->title(__('Новая шкала будет создана при сохранении'))->info()->send();
                 }),
-            Action::make('publish')->label(__('Опубликовать черновик'))->icon('heroicon-o-check-circle')->requiresConfirmation()->action(function (): void {
+            Action::make('publish')->label(__('Опубликовать черновик'))->icon('heroicon-o-check-circle')->requiresConfirmation()->action(function (Action $action): void {
                 $actor = auth()->user();
                 abort_unless($actor instanceof User, 403);
                 $record = $this->getRecord();
                 abort_unless($record instanceof SurveyDefinition, 404);
                 $draft = $record->versions()->where('status', SurveyVersionStatus::Draft)->latest('version')->first();
                 abort_unless($draft instanceof SurveyVersion, 422, __('Сначала сохраните новый черновик.'));
-                app(PublishSurveyVersion::class)->handle($actor, $draft);
-                Notification::make()->title(__('Версия опубликована'))->success()->send();
-                $this->redirect(SurveyDefinitionResource::getUrl('edit', ['record' => $record]));
+                try {
+                    app(PublishSurveyVersion::class)->handle($actor, $draft);
+                    Notification::make()->title(__('Версия опубликована'))->success()->send();
+                    $this->redirect(SurveyDefinitionResource::getUrl('edit', ['record' => $record]));
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                }
             }),
         ];
     }

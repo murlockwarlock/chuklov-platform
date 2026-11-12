@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\KnowledgeSources\RelationManagers;
 
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Filament\Support\LocalizedRelationManager;
 use App\Models\User;
@@ -22,6 +23,8 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class RevisionsRelationManager extends LocalizedRelationManager
 {
@@ -141,33 +144,73 @@ final class RevisionsRelationManager extends LocalizedRelationManager
                     ->modalHeading(__('Запустить AI-разбор PDF?'))
                     ->modalDescription(__('Это явный запрос владельца. Автоматический разбор не запускается скрыто и требует отдельной настроенной версии AI.'))
                     ->visible(fn (KnowledgeRevision $record): bool => $record->extraction_status === KnowledgeExtractionStatus::TextNotFound->value)
-                    ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
-                        app(RequestKnowledgeAiParsing::class)->handle($actor, $source, $record->getKey());
-                        Notification::make()->title(__('Запрос на AI-разбор сохранён'))->success()->send();
+                    ->action(function (Action $action, KnowledgeRevision $record) use ($actor, $source): void {
+                        try {
+                            app(RequestKnowledgeAiParsing::class)->handle($actor, $source, $record->getKey());
+                            Notification::make()->title(__('Запрос на AI-разбор сохранён'))->success()->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
                     }),
                 Action::make('retry')
                     ->label(__('Повторить обработку'))
                     ->color('warning')
                     ->visible(fn (KnowledgeRevision $record): bool => app(KnowledgeSourcePresentation::class)->canRetry($source, $record))
-                    ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
-                        app(RetryKnowledgeIngestion::class)->handle($actor, $source, $record->getKey());
-                        Notification::make()->title(__('Повторная обработка запущена'))->success()->send();
+                    ->action(function (Action $action, KnowledgeRevision $record) use ($actor, $source): void {
+                        try {
+                            app(RetryKnowledgeIngestion::class)->handle($actor, $source, $record->getKey());
+                            Notification::make()->title(__('Повторная обработка запущена'))->success()->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
                     }),
                 Action::make('startPending')
                     ->label(__('Запустить обработку'))
                     ->color('warning')
                     ->visible(fn (KnowledgeRevision $record): bool => $presentation->canStartPending($source, $record))
-                    ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
-                        app(StartPendingKnowledgeIngestion::class)->handle($actor, $source, $record->getKey());
-                        Notification::make()->title(__('Обработка запущена'))->success()->send();
+                    ->action(function (Action $action, KnowledgeRevision $record) use ($actor, $source): void {
+                        try {
+                            app(StartPendingKnowledgeIngestion::class)->handle($actor, $source, $record->getKey());
+                            Notification::make()->title(__('Обработка запущена'))->success()->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
                     }),
                 Action::make('reprocessForSearch')
                     ->label(__('Подготовить материал к поиску'))
                     ->color('warning')
                     ->visible(fn (KnowledgeRevision $record): bool => $presentation->canReprocessForSearch($source, $record))
-                    ->action(function (KnowledgeRevision $record) use ($actor, $source): void {
-                        app(ReprocessKnowledgeForSearch::class)->handle($actor, $source, $record->getKey());
-                        Notification::make()->title(__('Индексация материала запущена'))->success()->send();
+                    ->action(function (Action $action, KnowledgeRevision $record) use ($actor, $source): void {
+                        try {
+                            app(ReprocessKnowledgeForSearch::class)->handle($actor, $source, $record->getKey());
+                            Notification::make()->title(__('Индексация материала запущена'))->success()->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
                     }),
             ])
             ->defaultSort(

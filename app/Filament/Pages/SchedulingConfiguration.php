@@ -2,6 +2,7 @@
 
 namespace App\Filament\Pages;
 
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\LocalizedPage;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Filament\Support\TimezoneOptions;
@@ -53,6 +54,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use LogicException;
+use Throwable;
 use UnitEnum;
 
 /**
@@ -292,7 +294,8 @@ class SchedulingConfiguration extends LocalizedPage
     {
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
-        $data = null;
+        $rawState = $this->form->getRawState();
+        $data = $rawState instanceof Arrayable ? $rawState->toArray() : $rawState;
 
         try {
             $data = $this->form->getState();
@@ -400,13 +403,31 @@ class SchedulingConfiguration extends LocalizedPage
                 }
             });
         } catch (ValidationException $exception) {
-            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($this->safeFormState($data), $exception));
+            $state = ScheduleImpactPreview::mergeValidationPreview($this->safeFormState($data), $exception);
+            $mapped = FormValidationFeedback::forForm(
+                $exception,
+                aliases: ['schedule_impact' => 'acknowledge_impact'],
+                preserve: ['schedule_impact'],
+            );
+            $this->form->fill($state);
+            FormValidationFeedback::notifyValidation($mapped);
 
-            throw $exception;
+            throw $mapped;
         } catch (InvalidArgumentException $exception) {
-            throw ValidationException::withMessages([
-                'schedule' => [$exception->getMessage()],
+            $validation = ValidationException::withMessages([
+                '__form' => [__('Проверьте настройки расписания и повторите попытку.')],
             ]);
+            $this->form->fill($this->safeFormState($data));
+            $mapped = FormValidationFeedback::forForm($validation);
+            FormValidationFeedback::notifyValidation($mapped);
+
+            throw $mapped;
+        } catch (Throwable $exception) {
+            $this->form->fill($this->safeFormState($data));
+            $mapped = FormValidationFeedback::unexpectedForForm($exception);
+            FormValidationFeedback::notifyValidation($mapped);
+
+            throw $mapped;
         } finally {
             $this->scrubZoomClientSecret();
         }
