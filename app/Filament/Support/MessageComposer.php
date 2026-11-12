@@ -123,7 +123,13 @@ final class MessageComposer
             ->helperText($compact ? null : __($bodyHelper))
             ->columnSpanFull()
             ->visible(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField))
-            ->required(fn (Get $get): bool => self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField));
+            ->required(fn (Get $get): bool => ! $compact && self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField))
+            ->rules(
+                'required',
+                fn (Get $get): bool => $compact && self::bodyIsEditable($get, $deliveryModeField, $allowSavedTemplates, $messageModeField),
+            )
+            ->validationAttribute(__('Сообщение'))
+            ->validationMessages(['required' => __('Введите сообщение перед отправкой.')]);
         if (! $compact) {
             $messageComponents[] = Placeholder::make('message_counter')
                 ->label(__('Лимит Telegram'))

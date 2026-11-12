@@ -7,6 +7,60 @@
     @apply text-primary-600 dark:text-primary-400 hover:underline focus-visible:rounded-sm focus-visible:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-current;
 }
 
+.crm-dashboard-loading {
+    min-height: 8rem;
+    padding: 1.25rem;
+}
+
+.crm-dashboard-loading__content {
+    display: grid;
+    gap: 0.75rem;
+    min-height: 5.5rem;
+    align-content: center;
+}
+
+.crm-dashboard-loading__bar {
+    display: block;
+    height: 0.75rem;
+    border-radius: 9999px;
+    background: rgb(226 232 240 / 0.9);
+    animation: crm-dashboard-loading-pulse 1.5s ease-in-out infinite;
+}
+
+.crm-dashboard-loading__bar--title {
+    width: min(14rem, 70%);
+}
+
+.crm-dashboard-loading__bar--value {
+    width: min(24rem, 92%);
+    animation-delay: 100ms;
+}
+
+.crm-dashboard-loading__label {
+    color: rgb(100 116 139);
+    font-size: 0.8125rem;
+    line-height: 1.25rem;
+}
+
+@keyframes crm-dashboard-loading-pulse {
+    0%,
+    100% {
+        opacity: 0.55;
+    }
+
+    50% {
+        opacity: 1;
+    }
+}
+
+.dark .crm-dashboard-loading__bar {
+    background: rgb(51 65 85 / 0.9);
+}
+
+.dark .crm-dashboard-loading__label {
+    color: rgb(148 163 184);
+}
+
 .fi-resource-services .services-table .fi-ta-table {
     table-layout: fixed;
 }

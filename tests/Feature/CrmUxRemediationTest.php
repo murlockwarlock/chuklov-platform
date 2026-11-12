@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\FeedbackConfiguration;
+use App\Filament\Widgets\AnalyticsKpiWidget;
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\BroadcastCampaigns\Pages\CreateBroadcastCampaign;
@@ -141,6 +142,14 @@ final class CrmUxRemediationTest extends TestCase
         self::assertStringContainsString("resources/js/filament/network-feedback.ts", $viteConfig);
     }
 
+    public function test_dashboard_lazy_widgets_show_a_visible_loading_state(): void
+    {
+        $placeholder = app(AnalyticsKpiWidget::class)->placeholder()->render();
+
+        self::assertStringContainsString('Показатели загружаются', $placeholder);
+        self::assertStringContainsString('aria-busy="true"', $placeholder);
+    }
+
     public function test_content_order_uses_reordering_controls_instead_of_numeric_inputs(): void
     {
         $table = (string) file_get_contents(app_path('Filament/Resources/ContentSections/Tables/ContentSectionsTable.php'));
@@ -150,6 +159,21 @@ final class CrmUxRemediationTest extends TestCase
         self::assertStringNotContainsString("TextColumn::make('sort_order')", $table);
         self::assertStringNotContainsString("TextInput::make('sort_order')", $form);
         self::assertStringContainsString('->reorderable()', $form);
+    }
+
+    public function test_configuration_order_uses_human_reordering_and_filament_actions_are_localized(): void
+    {
+        $tracker = (string) file_get_contents(app_path('Filament/Pages/TrackerSettings.php'));
+        $frequency = (string) file_get_contents(app_path('Filament/Pages/MedicalFrequencyConfiguration.php'));
+
+        foreach ([$tracker, $frequency] as $source) {
+            self::assertStringContainsString("Hidden::make('sort_order')->dehydrated(true)", $source);
+            self::assertStringNotContainsString("TextInput::make('sort_order')", $source);
+            self::assertStringContainsString('->reorderableWithButtons()', $source);
+        }
+
+        self::assertSame('Удалить выбранный формат', trans('filament-forms::components.select.actions.remove_option.label'));
+        self::assertSame('Развернуть раздел', trans('filament-schemas::components.section.actions.expand.label'));
     }
 
     public function test_crm_timezone_labels_do_not_expose_iana_keys(): void

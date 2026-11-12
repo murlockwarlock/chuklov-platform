@@ -236,6 +236,18 @@ class PortalProductUxTest extends TestCase
         }
     }
 
+    public function test_medical_profile_explains_required_fields_before_submit_and_summarizes_errors(): void
+    {
+        $source = (string) file_get_contents(resource_path('js/Pages/Portal/MedicalProfile.vue'));
+        $localeSource = (string) file_get_contents(resource_path('js/locales/portal.ts'));
+
+        self::assertStringContainsString("t('medical.requiredField')", $source);
+        self::assertStringContainsString("t('medical.validationSummary')", $source);
+        self::assertStringContainsString('role="alert"', $source);
+        self::assertStringContainsString("'medical.requiredField': 'обязательно'", $localeSource);
+        self::assertStringContainsString("'medical.validationSummary': 'Проверьте обязательные поля и исправьте отмеченные ошибки.'", $localeSource);
+    }
+
     public function test_authenticated_home_exposes_the_authorized_referrals_destination_and_personal_link(): void
     {
         $organization = $this->organizationWithClientRecords();

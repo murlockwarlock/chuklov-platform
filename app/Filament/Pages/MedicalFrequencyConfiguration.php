@@ -94,11 +94,12 @@ final class MedicalFrequencyConfiguration extends LocalizedPage
                                 Hidden::make('key')->default(fn (): string => 'period_'.Str::lower(Str::random(12))),
                                 TextInput::make('label')->label(__('Название периода'))->required()->maxLength(120),
                                 Toggle::make('is_active')->label(__('Использовать в новых записях'))->default(true),
-                                TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                                Hidden::make('sort_order')->dehydrated(true),
                             ])
                             ->columns(['default' => 1, 'sm' => 3])
                             ->defaultItems(0)
                             ->reorderable()
+                            ->reorderableWithButtons()
                             ->itemLabel(fn (array $state): string => (string) ($state['label'] ?? __('Новый период')))
                             ->addActionLabel(__('Добавить период'))
                             ->columnSpanFull(),
@@ -130,7 +131,13 @@ final class MedicalFrequencyConfiguration extends LocalizedPage
         $actor = Auth::user();
         abort_unless($actor instanceof User, 403);
         $state = $this->form->getState();
-        app(SaveMedicalFrequencyPeriods::class)->handle($actor, is_array($state['periods'] ?? null) ? $state['periods'] : []);
+        $periods = array_values(is_array($state['periods'] ?? null) ? $state['periods'] : []);
+        foreach ($periods as $index => $period) {
+            if (is_array($period)) {
+                $periods[$index]['sort_order'] = $index;
+            }
+        }
+        app(SaveMedicalFrequencyPeriods::class)->handle($actor, $periods);
         Notification::make()->success()->title(__('Периоды сохранены'))->send();
     }
 }

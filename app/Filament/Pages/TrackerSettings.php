@@ -16,6 +16,7 @@ use App\Modules\Tracker\Application\GetTrackerSettings;
 use App\Modules\Tracker\Application\SaveTrackerGoalCatalog;
 use App\Modules\Tracker\Domain\Models\TrackerGoalTag;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Hidden;
 use Filament\Forms\Components\Placeholder;
 use Filament\Forms\Components\Repeater;
 use Filament\Forms\Components\TextInput;
@@ -104,11 +105,12 @@ final class TrackerSettings extends LocalizedPage
                             TextInput::make('name')->label(__('Название'))->required()->maxLength(255),
                             TextInput::make('group_name')->label(__('Группа'))->maxLength(255),
                             Toggle::make('is_active')->label(__('Активна'))->default(true),
-                            TextInput::make('sort_order')->label(__('Порядок'))->integer()->minValue(0)->default(0),
+                            Hidden::make('sort_order')->dehydrated(true),
                         ])
                         ->columns(['default' => 1, 'sm' => 2, 'lg' => 4])
                         ->defaultItems(0)
                         ->reorderable()
+                        ->reorderableWithButtons()
                         ->addActionLabel(__('Добавить категорию'))
                         ->columnSpanFull(),
                 ])
@@ -137,7 +139,13 @@ final class TrackerSettings extends LocalizedPage
         $setter = app(SetOrganizationSetting::class);
         $setter->handle($actor, OrganizationSettingKey::TrackerEnabled, (bool) ($data['enabled'] ?? false));
         $setter->handle($actor, OrganizationSettingKey::TrackerFreeMode, (bool) ($data['free_mode'] ?? false));
-        app(SaveTrackerGoalCatalog::class)->handle($actor, is_array($data['goal_tags'] ?? null) ? $data['goal_tags'] : []);
+        $goalTags = array_values(is_array($data['goal_tags'] ?? null) ? $data['goal_tags'] : []);
+        foreach ($goalTags as $index => $goalTag) {
+            if (is_array($goalTag)) {
+                $goalTags[$index]['sort_order'] = $index;
+            }
+        }
+        app(SaveTrackerGoalCatalog::class)->handle($actor, $goalTags);
         Notification::make()->success()->title(__('Настройки трекера сохранены'))->send();
     }
 

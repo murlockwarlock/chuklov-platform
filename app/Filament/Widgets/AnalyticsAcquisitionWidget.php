@@ -3,6 +3,7 @@
 namespace App\Filament\Widgets;
 
 use App\Models\User;
+use App\Filament\Support\HasDashboardLoadingPlaceholder;
 use App\Modules\Analytics\Application\AcquisitionAnalytics;
 use App\Modules\Analytics\Application\Data\AcquisitionAnalyticsData;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
@@ -15,6 +16,8 @@ use Illuminate\Support\Facades\Auth;
 
 class AnalyticsAcquisitionWidget extends Widget
 {
+    use HasDashboardLoadingPlaceholder;
+
     use InteractsWithPageFilters;
 
     protected string $view = 'filament.widgets.analytics-acquisition-widget';

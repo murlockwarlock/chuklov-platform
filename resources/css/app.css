@@ -2709,6 +2709,15 @@ select.portal-input[aria-invalid='true'] {
         min-width: 0;
     }
 
+    .medical-profile__required-hint {
+        max-width: 52rem;
+    }
+
+    .medical-profile__required {
+        color: var(--portal-color-brand-strong);
+        font-weight: 700;
+    }
+
     .medical-profile__assessment {
         gap: var(--portal-space-6);
         padding: var(--portal-space-4);

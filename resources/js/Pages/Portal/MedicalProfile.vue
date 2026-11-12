@@ -260,6 +260,13 @@ function save(): void {
         >
           {{ t('medical.prefill') }}
         </p>
+        <p
+          v-if="editing"
+          class="portal-copy medical-profile__required-hint"
+        >
+          <span class="medical-profile__required">({{ t('medical.requiredField') }})</span>
+          {{ t('medical.requiredHint') }}
+        </p>
         <form
           v-if="editing"
           ref="medicalForm"
@@ -267,6 +274,15 @@ function save(): void {
           novalidate
           @submit.prevent="save"
         >
+          <p
+            v-if="Object.keys(clientErrors).length || Object.keys(form.errors).length"
+            id="medical-validation-summary"
+            class="portal-error"
+            role="alert"
+            aria-live="assertive"
+          >
+            {{ t('medical.validationSummary') }}
+          </p>
           <section class="portal-panel portal-panel--compact portal-stack medical-profile__assessment">
             <fieldset
               class="portal-stack min-w-0"
@@ -274,6 +290,7 @@ function save(): void {
             >
               <legend class="portal-label">
                 {{ t('medical.complaints') }}
+                <span class="medical-profile__required">({{ t('medical.requiredField') }})</span>
               </legend>
               <div class="medical-profile__choice-grid medical-profile__choice-grid--symptoms">
                 <label
@@ -375,6 +392,7 @@ function save(): void {
                 <legend class="flex items-start justify-between gap-3">
                   <span class="portal-label">
                     {{ t('medical.' + field) }}
+                    <span class="medical-profile__required">({{ t('medical.requiredField') }})</span>
                   </span>
                   <button
                     v-if="form.answers[field === 'operations' ? 'had_operations' : 'had_injuries']"
@@ -485,7 +503,13 @@ function save(): void {
               <label
                 :for="'medical-' + field"
                 class="portal-label"
-              >{{ t(field === 'complaints' ? 'medical.complaintsDetails' : 'medical.' + field) }}</label>
+              >
+                {{ t(field === 'complaints' ? 'medical.complaintsDetails' : 'medical.' + field) }}
+                <span
+                  v-if="field === 'complaints' || field === 'goals'"
+                  class="medical-profile__required"
+                >({{ t('medical.requiredField') }})</span>
+              </label>
               <label
                 v-if="field === 'chronic_conditions'"
                 class="portal-copy medical-profile__inline-choice"
