@@ -22,6 +22,9 @@ import { timezoneLabel } from '../../utils/timezoneLabel';
 type VisitFormat = 'office' | 'home' | 'online';
 type BookingStep = 'time' | 'confirmation' | 'success';
 
+const selectedStartParam = 'selected_start_at';
+const bookingStepParam = 'booking_step';
+
 type ServiceOption = {
     id: number;
     name: string;
@@ -139,8 +142,70 @@ const { locale, t } = usePortalLocale();
 const selectedServiceId = ref<number | null>(props.query.serviceId);
 const selectedSpecialistId = ref<number | null>(props.query.specialistId);
 const selectedFormat = ref<VisitFormat | null>(props.query.formatSelected ? props.query.format : null);
-const selectedDate = ref<string | null>(props.query.dateFrom);
-const selectedStart = ref<string | null>(props.bookingResult?.startsAt ?? null);
+function readBookingSelection(): { start: string | null; step: BookingStep } {
+    if (typeof window === 'undefined') {
+        return { start: null, step: 'time' };
+    }
+
+    const params = new URL(window.location.href).searchParams;
+    const start = params.get(selectedStartParam);
+    const step = params.get(bookingStepParam) === 'confirmation' ? 'confirmation' : 'time';
+
+    return { start, step };
+}
+
+function updateBookingSelectionUrl(start: string | null, step: BookingStep | null): void {
+    if (typeof window === 'undefined') {
+        return;
+    }
+
+    const url = new URL(window.location.href);
+
+    if (start === null) {
+        url.searchParams.delete(selectedStartParam);
+    } else {
+        url.searchParams.set(selectedStartParam, start);
+    }
+
+    if (step === 'confirmation' && start !== null) {
+        url.searchParams.set(bookingStepParam, step);
+    } else {
+        url.searchParams.delete(bookingStepParam);
+    }
+
+    window.history.replaceState(window.history.state, '', url.pathname + url.search + url.hash);
+}
+
+function localSlotDate(value: string, timezone: string): string | null {
+    try {
+        const parts = new Intl.DateTimeFormat('en-CA', {
+            day: '2-digit',
+            month: '2-digit',
+            timeZone: timezone,
+            year: 'numeric',
+        }).formatToParts(new Date(value));
+        const part = (type: 'year' | 'month' | 'day'): string =>
+            parts.find((item) => item.type === type)?.value ?? '';
+        const result = `${part('year')}-${part('month')}-${part('day')}`;
+
+        return result.includes('undefined') || result === '--' ? null : result;
+    } catch {
+        return null;
+    }
+}
+
+function availableStart(value: string | null): boolean {
+    return value !== null && (props.availability?.slots.some((slot) => slot.startsAt === value) ?? false);
+}
+
+const requestedBookingSelection = readBookingSelection();
+const initialSelectedStart = props.bookingResult?.startsAt
+    ?? (availableStart(requestedBookingSelection.start) ? requestedBookingSelection.start : null);
+const initialSelectedDate = initialSelectedStart === null
+    ? props.query.dateFrom
+    : localSlotDate(initialSelectedStart, props.query.displayTimezone) ?? props.query.dateFrom;
+const selectedDate = ref<string | null>(initialSelectedDate);
+const selectedStart = ref<string | null>(initialSelectedStart);
 const { queuedStarts, startsAtList, canAdd, add: addSession, remove: removeQueuedSession, keyFor } = useBookingSessions(selectedStart);
 const selectionAvailability = computed(() => props.availability === null ? null : {
     ...props.availability,
@@ -151,7 +216,9 @@ const selectedClientTimezoneLabel = computed(() => timezoneLabel(selectedClientT
 const selectedWorkingLocationId = ref<number | null>(props.query.workingLocationId);
 const selectedLocationArea = ref<string | null>(props.query.locationArea);
 const timezoneEditorOpen = ref(false);
-const bookingStep = ref<BookingStep>('time');
+const bookingStep = ref<BookingStep>(initialSelectedStart !== null && requestedBookingSelection.step === 'confirmation'
+    ? 'confirmation'
+    : 'time');
 const cityLookupLoading = ref(false);
 const confirmationForm = ref<HTMLFormElement | null>(null);
 const bookingForm = useForm<{
@@ -180,7 +247,7 @@ const bookingForm = useForm<{
     personal_data: personalData(props.profile),
     service_id: props.query.serviceId,
     specialist_id: props.query.specialistId,
-    starts_at: null,
+    starts_at: initialSelectedStart,
     additional_starts_at: [],
     idempotency_key: null,
     format: props.query.format,
@@ -247,12 +314,23 @@ watch(
         bookingForm.location_area = locationArea;
 
         if (props.bookingResult === null) {
-            selectedStart.value = null;
-            bookingStep.value = 'time';
-            bookingForm.starts_at = null;
+            const restoredStart = availableStart(selectedStart.value) ? selectedStart.value : null;
+            selectedStart.value = restoredStart;
+            selectedDate.value = restoredStart === null
+                ? dateFrom
+                : localSlotDate(restoredStart, displayTimezone) ?? dateFrom;
+            bookingStep.value = restoredStart !== null && readBookingSelection().step === 'confirmation'
+                ? 'confirmation'
+                : 'time';
+            bookingForm.starts_at = restoredStart;
+
+            if (restoredStart === null) {
+                updateBookingSelectionUrl(null, null);
+            }
         } else {
             selectedStart.value = props.bookingResult.startsAt;
             bookingStep.value = 'success';
+            updateBookingSelectionUrl(null, null);
         }
     },
     { immediate: true },
@@ -266,6 +344,7 @@ watch(
         }
 
         rememberedBookingNavigation.acknowledgedBookingId = bookingId;
+        updateBookingSelectionUrl(null, null);
         if (props.bookingResult?.medicalProfileUrl) {
             router.visit(props.bookingResult.medicalProfileUrl);
             return;
@@ -275,6 +354,15 @@ watch(
     },
     { immediate: true },
 );
+
+watch(selectedStart, (value) => {
+    bookingForm.starts_at = value;
+    updateBookingSelectionUrl(value, value === null || bookingStep.value !== 'confirmation' ? null : 'confirmation');
+});
+
+watch(bookingStep, (value) => {
+    updateBookingSelectionUrl(selectedStart.value, value === 'confirmation' ? 'confirmation' : null);
+});
 
 const selectedService = computed(() =>
     props.services.find((service) => service.id === props.query.serviceId) ?? null,
@@ -539,6 +627,9 @@ function continueFormat(): void {
 }
 
 function changeService(): void {
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
+    bookingStep.value = 'time';
     visitBooking({ date_from: props.query.dateFrom, date_to: props.query.dateTo, display_timezone: selectedClientTimezone.value }, false);
 }
 
@@ -558,6 +649,9 @@ function changeFormat(): void {
         query.specialist_id = props.query.specialistId;
     }
 
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
+    bookingStep.value = 'time';
     visitBooking(query, false);
 }
 
@@ -566,6 +660,9 @@ function changeSpecialist(): void {
         return;
     }
 
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
+    bookingStep.value = 'time';
     visitBooking({
         date_from: props.query.dateFrom,
         date_to: props.query.dateTo,
@@ -575,6 +672,9 @@ function changeSpecialist(): void {
 }
 
 function changeMonth(dateFrom: string, dateTo: string): void {
+    selectedStart.value = null;
+    bookingForm.starts_at = null;
+    bookingStep.value = 'time';
     visitBooking(bookingQuery(dateFrom, dateTo), true, true);
 }
 
@@ -590,6 +690,7 @@ function selectDate(date: string): void {
     selectedDate.value = date;
     selectedStart.value = null;
     bookingForm.starts_at = null;
+    bookingStep.value = 'time';
 }
 
 function selectSlot(slot: AvailabilitySlot): void {

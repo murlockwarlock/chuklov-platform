@@ -201,6 +201,16 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString("'survey.technicalDetails': 'Все показатели'", $portalLocale);
     }
 
+    public function test_booking_selection_keeps_the_selected_slot_and_step_after_reload(): void
+    {
+        $booking = (string) file_get_contents(resource_path('js/Pages/Portal/BookingCreate.vue'));
+
+        self::assertStringContainsString("selected_start_at", $booking);
+        self::assertStringContainsString("booking_step", $booking);
+        self::assertStringContainsString('window.history.replaceState', $booking);
+        self::assertStringContainsString('localSlotDate', $booking);
+    }
+
     public function test_common_client_portal_sources_do_not_expose_raw_translation_keys(): void
     {
         $files = array_merge(
