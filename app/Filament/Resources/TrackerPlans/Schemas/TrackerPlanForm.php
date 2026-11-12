@@ -24,7 +24,15 @@ final class TrackerPlanForm
             Section::make(__('Основное'))
                 ->schema([
                     TextInput::make('name')->label(__('Название'))->required()->maxLength(160),
-                    TextInput::make('price')->label(__('Цена'))->required()->inputMode('decimal')->maxLength(32)->regex('/^(?:0|[1-9][0-9]{0,18})(?:\.[0-9]{1,2})?$/'),
+                    TextInput::make('price')
+                        ->label(__('Цена'))
+                        ->required()
+                        ->inputMode('decimal')
+                        ->maxLength(32)
+                        ->regex('/^(?:0|[1-9][0-9]{0,18})(?:\.[0-9]{1,2})?$/')
+                        ->validationMessages([
+                            'regex' => __('Укажите цену в формате 1000 или 1000.50.'),
+                        ]),
                     Select::make('currency')->label(__('Валюта'))->options(fn (): array => self::currencyOptions())->required()->searchable(),
                     TextInput::make('duration_days')
                         ->label(__('Срок доступа (дни)'))

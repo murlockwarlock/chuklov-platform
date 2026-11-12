@@ -72,6 +72,28 @@ final class TrackerPlanCrmTest extends TestCase
         }
     }
 
+    public function test_invalid_tracker_plan_price_keeps_form_state_and_shows_human_error(): void
+    {
+        $admin = $this->trackerAdmin();
+
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        Livewire::actingAs($admin)
+            ->test(CreateTrackerPlan::class)
+            ->fillForm([
+                'name' => 'Практика восстановления',
+                'price' => '-1',
+                'currency' => 'USD',
+                'duration_days' => 30,
+                'display_order' => 0,
+            ])
+            ->call('create')
+            ->assertHasErrors(['data.price' => 'Укажите цену в формате 1000 или 1000.50.'])
+            ->assertNotified('Не удалось сохранить. Исправьте отмеченные поля.')
+            ->assertSet('data.name', 'Практика восстановления')
+            ->assertSet('data.price', '-1');
+    }
+
     public function test_client_workspace_can_assign_a_generic_tracker_task(): void
     {
         $admin = $this->trackerAdmin();
