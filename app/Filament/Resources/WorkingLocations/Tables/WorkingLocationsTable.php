@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\WorkingLocations\Tables;
 
+use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Scheduling\Application\UpdateWorkingLocation;
 use App\Modules\Scheduling\Domain\Models\WorkingLocation;
@@ -20,7 +21,10 @@ class WorkingLocationsTable
             ->columns([
                 TextColumn::make('name')->label(__('Название'))->searchable()->sortable(),
                 TextColumn::make('address')->label(__('Адрес'))->wrap(),
-                TextColumn::make('timezone')->label(__('Часовой пояс'))->sortable(),
+                TextColumn::make('timezone')
+                    ->label(__('Часовой пояс'))
+                    ->formatStateUsing(fn (?string $state): string => TimezoneOptions::display($state))
+                    ->sortable(),
                 IconColumn::make('is_default_office')->label(__('Основная'))->boolean(),
                 IconColumn::make('is_active')->label(__('Активна'))->boolean(),
             ])

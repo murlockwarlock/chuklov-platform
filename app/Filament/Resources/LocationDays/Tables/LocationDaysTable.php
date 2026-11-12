@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\LocationDays\Tables;
 
 use App\Filament\Support\FormValidationFeedback;
+use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Scheduling\Application\SaveLocationDay;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
@@ -28,7 +29,9 @@ class LocationDaysTable
                 TextColumn::make('specific_date')->label(__('Дата'))->date('d.m.Y'),
                 TextColumn::make('start_time')->label(__('Начало')),
                 TextColumn::make('end_time')->label(__('Окончание')),
-                TextColumn::make('timezone')->label(__('Часовой пояс')),
+                TextColumn::make('timezone')
+                    ->label(__('Часовой пояс'))
+                    ->formatStateUsing(fn (?string $state): string => TimezoneOptions::display($state)),
                 IconColumn::make('is_active')->label(__('Активен'))->boolean(),
             ])
             ->defaultSort('area_name')

@@ -207,6 +207,25 @@ final class CrmUxRemediationTest extends TestCase
         self::assertStringNotContainsString('Asia/Almaty', $options['Asia/Almaty']);
     }
 
+    public function test_timezone_values_in_operational_surfaces_use_human_labels(): void
+    {
+        foreach ([
+            app_path('Filament/Resources/WorkingLocations/Tables/WorkingLocationsTable.php'),
+            app_path('Filament/Resources/LocationDays/Tables/LocationDaysTable.php'),
+            app_path('Filament/Resources/BroadcastCampaigns/BroadcastCampaignResource.php'),
+            app_path('Filament/Pages/ReferralRewardConfiguration.php'),
+        ] as $path) {
+            self::assertStringContainsString('TimezoneOptions', (string) file_get_contents($path));
+        }
+    }
+
+    public function test_common_numeric_and_url_validation_messages_are_human(): void
+    {
+        self::assertSame('Значение должно быть не меньше 1.', trans('validation.min.numeric', ['min' => 1]));
+        self::assertSame('Укажите корректную ссылку.', trans('validation.url'));
+        self::assertStringNotContainsString('validation.', trans('validation.min.numeric', ['min' => 1]));
+    }
+
     public function test_operational_tables_keep_primary_actions_compact_and_human(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture(includePeople: true);

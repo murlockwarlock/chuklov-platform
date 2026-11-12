@@ -5,6 +5,7 @@ namespace App\Filament\Resources\TrackerPlans\Tables;
 use App\Filament\Support\FormValidationFeedback;
 use App\Models\User;
 use App\Modules\Finance\Domain\ValueObjects\Money;
+use App\Modules\Tracker\Application\MoveTrackerPlan;
 use App\Modules\Tracker\Application\SetTrackerPlanActive;
 use App\Modules\Tracker\Domain\Models\TrackerPlan;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
@@ -36,6 +37,14 @@ final class TrackerPlansTable
                 IconColumn::make('is_visible')->label(__('Виден клиентам'))->boolean(),
             ])
             ->recordActions([
+                Action::make('moveUp')
+                    ->label(__('Выше'))
+                    ->icon('heroicon-o-chevron-up')
+                    ->action(fn (Action $action, TrackerPlan $record): TrackerPlan => self::move($action, $record, 'up')),
+                Action::make('moveDown')
+                    ->label(__('Ниже'))
+                    ->icon('heroicon-o-chevron-down')
+                    ->action(fn (Action $action, TrackerPlan $record): TrackerPlan => self::move($action, $record, 'down')),
                 EditAction::make()->label(__('Редактировать')),
                 Action::make('archive')
                     ->label(__('Архивировать'))
@@ -90,5 +99,26 @@ final class TrackerPlansTable
         abort_unless($actor instanceof User, 403);
 
         return app(SetTrackerPlanActive::class)->handle($actor, $record, $isActive);
+    }
+
+    private static function move(Action $action, TrackerPlan $record, string $direction): TrackerPlan
+    {
+        $actor = auth()->user();
+        abort_unless($actor instanceof User, 403);
+
+        try {
+            $moved = app(MoveTrackerPlan::class)->handle($actor, $record, $direction);
+            Notification::make()->success()->title($direction === 'up' ? __('Тариф перемещён выше') : __('Тариф перемещён ниже'))->send();
+
+            return $moved;
+        } catch (ValidationException $exception) {
+            $mapped = FormValidationFeedback::forAction($exception, $action);
+            FormValidationFeedback::notifyValidation($mapped, __('Не удалось изменить порядок тарифов.'));
+            throw $mapped;
+        } catch (Throwable $exception) {
+            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+            FormValidationFeedback::notifyValidation($mapped);
+            throw $mapped;
+        }
     }
 }

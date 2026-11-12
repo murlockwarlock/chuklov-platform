@@ -19,6 +19,8 @@ use App\Modules\Organizations\Domain\Enums\OrganizationRole;
 use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Organizations\Domain\Models\OrganizationFeatureFlag;
 use App\Modules\Tracker\Domain\Enums\TrackerTaskType;
+use App\Modules\Tracker\Application\MoveTrackerPlan;
+use App\Modules\Tracker\Application\SaveTrackerPlan;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Toggle;
@@ -70,6 +72,22 @@ final class TrackerPlanCrmTest extends TestCase
                 self::assertFalse($component->isInline());
             }
         }
+    }
+
+    public function test_tracker_plan_order_is_changed_by_human_move_actions_without_mutating_versions(): void
+    {
+        $admin = $this->trackerAdmin();
+        $first = app(SaveTrackerPlan::class)->handle($admin, null, 'Первый тариф', true, true, '10.00', 'USD', 30, null, true, null);
+        $second = app(SaveTrackerPlan::class)->handle($admin, null, 'Второй тариф', true, true, '20.00', 'USD', 30, null, true, null);
+        $firstPlan = $first->plan()->firstOrFail();
+        $secondPlan = $second->plan()->firstOrFail();
+
+        app(MoveTrackerPlan::class)->handle($admin, $secondPlan, 'up');
+
+        self::assertSame(1, (int) $firstPlan->refresh()->currentVersion->display_order);
+        self::assertSame(0, (int) $secondPlan->refresh()->currentVersion->display_order);
+        self::assertGreaterThan(1, $firstPlan->versions()->count());
+        self::assertGreaterThan(1, $secondPlan->versions()->count());
     }
 
     public function test_invalid_tracker_plan_price_keeps_form_state_and_shows_human_error(): void

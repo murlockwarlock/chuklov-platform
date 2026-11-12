@@ -13,6 +13,7 @@ use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
 use App\Modules\Tracker\Domain\Models\TrackerPlan;
+use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
 use BackedEnum;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -58,7 +59,11 @@ final class TrackerPlanResource extends LocalizedResource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->where('organization_id', app(OrganizationContext::class)->id())->with('currentVersion');
+        return parent::getEloquentQuery()
+            ->where('organization_id', app(OrganizationContext::class)->id())
+            ->with('currentVersion')
+            ->orderBy(TrackerPlanVersion::select('display_order')->whereColumn('tracker_plan_versions.id', 'tracker_plans.current_version_id'))
+            ->orderBy('name');
     }
 
     public static function getPages(): array

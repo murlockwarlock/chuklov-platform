@@ -12,6 +12,7 @@ use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
+use Filament\Forms\Components\Hidden;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Schema;
@@ -48,11 +49,12 @@ final class TrackerPlanForm
                 ->columns(2)
                 ->columnSpanFull(),
             Section::make(__('Публикация и доступ'))
+                ->description(__('Порядок меняется кнопками «Выше» и «Ниже» в списке тарифов.'))
                 ->schema([
                     Toggle::make('is_active')->label(__('Тариф активен'))->default(true)->inline(false),
                     Toggle::make('is_visible')->label(__('Показывать клиентам'))->default(true)->inline(false),
                     Toggle::make('included_access')->label(__('Включает доступ к трекеру'))->default(true)->inline(false),
-                    TextInput::make('display_order')->label(__('Порядок отображения'))->integer()->minValue(0)->default(0)->required(),
+                    Hidden::make('display_order')->dehydrated(true),
                 ])
                 ->columns(2)
                 ->columnSpanFull(),

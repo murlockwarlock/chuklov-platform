@@ -4,6 +4,7 @@ namespace App\Filament\Pages;
 
 use App\Filament\Support\CrmLabel;
 use App\Filament\Support\LocalizedPage;
+use App\Filament\Support\TimezoneOptions;
 use App\Models\User;
 use App\Modules\Finance\Application\CurrencyConfigurationService;
 use App\Modules\Finance\Application\FinanceAuthorization;
@@ -297,7 +298,7 @@ final class ReferralRewardConfiguration extends LocalizedPage
 
         return __('Версия действует с ').Carbon::parse($value)
             ->setTimezone(app(OrganizationContext::class)->defaultTimezone())
-            ->format('d.m.Y H:i').' ('.app(OrganizationContext::class)->defaultTimezone().').';
+            ->format('d.m.Y H:i').' ('.TimezoneOptions::display(app(OrganizationContext::class)->defaultTimezone()).').';
     }
 
     private function organizationDisplayCurrency(): ?string

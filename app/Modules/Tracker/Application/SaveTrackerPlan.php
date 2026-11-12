@@ -9,6 +9,7 @@ use App\Modules\Finance\Domain\ValueObjects\Money;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
 use App\Modules\Organizations\Application\OrganizationContext;
 use App\Modules\Organizations\Domain\Enums\OrganizationPermission;
+use App\Modules\Organizations\Domain\Models\Organization;
 use App\Modules\Security\Application\RecordAuditEvent;
 use App\Modules\Tracker\Domain\Models\TrackerPlan;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
@@ -38,13 +39,13 @@ final class SaveTrackerPlan
         int $durationDays,
         ?string $description,
         bool $includedAccess,
-        int $displayOrder,
+        ?int $displayOrder,
         ?string $monthlyPractice = null,
     ): TrackerPlanVersion {
         $organization = $this->context->organization();
         $this->authorizer->authorize($actor, $organization, OrganizationPermission::ManageSettings);
         $name = trim($name);
-        if ($name === '' || mb_strlen($name) > 160 || $durationDays < 1 || $displayOrder < 0) {
+        if ($name === '' || mb_strlen($name) > 160 || $durationDays < 1 || ($displayOrder !== null && $displayOrder < 0)) {
             throw ValidationException::withMessages(['name' => 'Проверьте название, срок и порядок тарифа.']);
         }
 
@@ -63,6 +64,7 @@ final class SaveTrackerPlan
         }
 
         return DB::transaction(function () use ($actor, $organization, $plan, $name, $active, $visible, $money, $code, $durationDays, $description, $includedAccess, $displayOrder, $monthlyPractice): TrackerPlanVersion {
+            Organization::query()->whereKey($organization->getKey())->lockForUpdate()->firstOrFail();
             $locked = $plan instanceof TrackerPlan
                 ? TrackerPlan::query()->where('organization_id', $organization->getKey())->whereKey($plan->getKey())->lockForUpdate()->first()
                 : null;
@@ -70,6 +72,11 @@ final class SaveTrackerPlan
                 throw (new ModelNotFoundException)->setModel(TrackerPlan::class);
             }
             $locked ??= new TrackerPlan;
+            $maxDisplayOrder = TrackerPlanVersion::query()
+                ->where('organization_id', $organization->getKey())
+                ->whereIn('id', TrackerPlan::query()->where('organization_id', $organization->getKey())->pluck('current_version_id'))
+                ->max('display_order');
+            $displayOrder ??= $maxDisplayOrder === null ? 0 : ((int) $maxDisplayOrder + 1);
             $locked->forceFill([
                 'organization_id' => $organization->getKey(),
                 'name' => $name,
