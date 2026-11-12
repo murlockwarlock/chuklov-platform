@@ -2,7 +2,6 @@
 
 namespace App\Filament\Support;
 
-use Filament\Notifications\Notification;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
@@ -28,41 +27,27 @@ final class SpecialistFormValidation
         'staff_user_id',
         'notifications_enabled',
         'is_active',
+        'schedule_impact',
     ];
 
     public static function notify(ValidationException $exception): void
     {
-        $firstMessage = collect($exception->errors())
-            ->flatten()
-            ->filter(static fn (mixed $message): bool => is_string($message) && trim($message) !== '')
-            ->first();
-
-        $body = is_string($firstMessage) && ! str_starts_with($firstMessage, 'validation.')
-            ? $firstMessage
-            : __('Проверьте заполнение отмеченных полей.');
-
-        Notification::make()
-            ->danger()
-            ->title(__('Не удалось сохранить специалиста. Исправьте отмеченные поля.'))
-            ->body($body)
-            ->send();
+        FormValidationFeedback::notifyValidation(
+            $exception,
+            __('Не удалось сохранить специалиста. Исправьте отмеченные поля.'),
+        );
     }
 
     public static function forForm(ValidationException $exception): ValidationException
     {
-        $errors = [];
-
-        foreach ($exception->errors() as $field => $messages) {
-            $path = self::pathFor($field);
-
-            if ($path === null) {
-                continue;
-            }
-
-            $errors[$path] = [...($errors[$path] ?? []), ...array_values((array) $messages)];
-        }
-
-        return ValidationException::withMessages($errors);
+        return FormValidationFeedback::forForm(
+            $exception,
+            aliases: [
+                'viewer_timezone_source' => 'viewer_timezone',
+                'schedule_impact' => 'acknowledge_impact',
+            ],
+            allowedFields: self::FORM_FIELDS,
+        );
     }
 
     /** @param array<string, mixed> $data */
@@ -86,23 +71,6 @@ final class SpecialistFormValidation
         };
 
         return ValidationException::withMessages([$field => [$humanMessage]]);
-    }
-
-    private static function pathFor(string $field): ?string
-    {
-        if (str_starts_with($field, 'data.')) {
-            return $field;
-        }
-
-        if (in_array($field, self::FORM_FIELDS, true)) {
-            return 'data.'.$field;
-        }
-
-        return match ($field) {
-            'viewer_timezone_source' => 'data.viewer_timezone',
-            'schedule_impact' => 'data.acknowledge_impact',
-            default => null,
-        };
     }
 
     /** @param array<string, mixed> $data */

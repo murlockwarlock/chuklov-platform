@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\UnavailablePeriods\Pages;
 
 use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
@@ -15,9 +16,12 @@ use DateTimeInterface;
 use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class EditUnavailablePeriod extends LocalizedEditRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = UnavailablePeriodResource::class;
 
     protected static ?string $title = 'Изменить период недоступности';
@@ -64,9 +68,14 @@ final class EditUnavailablePeriod extends LocalizedEditRecord
                 acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
             );
         } catch (ValidationException $exception) {
-            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($data, $exception));
-
-            throw $exception;
+            throw $this->formValidationFailure(
+                $exception,
+                ScheduleImpactPreview::mergeValidationPreview($data, $exception),
+                aliases: ['schedule_impact' => 'acknowledge_impact'],
+                preserve: ['schedule_impact'],
+            );
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $data);
         }
     }
 

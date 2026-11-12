@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\Services\Pages;
 
 use App\Filament\Resources\Services\ServiceResource;
+use App\Filament\Support\FormValidationFeedback;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
@@ -22,9 +24,12 @@ use Filament\Schemas\Schema;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Throwable;
 
 class EditService extends LocalizedEditRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = ServiceResource::class;
 
     protected static ?string $title = 'Редактировать услугу';
@@ -59,7 +64,7 @@ class EditService extends LocalizedEditRecord
                 ->fillForm(fn (): array => ScheduleImpactPreview::stateFromImpact(
                     app(ScheduleMutationImpactCalculator::class)->forServiceChange($record, ['is_active' => true]),
                 ))
-                ->action(function (array $data, Schema $schema): void {
+                ->action(function (Action $action, array $data, Schema $schema): void {
                     $actor = auth()->user();
                     abort_unless($actor instanceof User, 403);
 
@@ -73,8 +78,14 @@ class EditService extends LocalizedEditRecord
                         );
                     } catch (ValidationException $exception) {
                         ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped, __('Нужно подтвердить изменение'));
 
-                        throw $exception;
+                        throw $mapped;
+                    } catch (Throwable $exception) {
+                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
                     }
 
                     $this->redirect(ServiceResource::getUrl('index'));
@@ -94,7 +105,7 @@ class EditService extends LocalizedEditRecord
             ->fillForm(fn (): array => ScheduleImpactPreview::stateFromImpact(
                 app(ScheduleMutationImpactCalculator::class)->forServiceChange($record, ['is_active' => false]),
             ))
-            ->action(function (array $data, Schema $schema): void {
+            ->action(function (Action $action, array $data, Schema $schema): void {
                 $actor = auth()->user();
                 abort_unless($actor instanceof User, 403);
 
@@ -108,8 +119,14 @@ class EditService extends LocalizedEditRecord
                     );
                 } catch (ValidationException $exception) {
                     ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Нужно подтвердить изменение'));
 
-                    throw $exception;
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
                 }
 
                 $this->redirect(ServiceResource::getUrl('index'));
@@ -148,6 +165,7 @@ class EditService extends LocalizedEditRecord
         abort_unless($record instanceof Service, 404);
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
+        $formState = $data;
         $data['payment_policy'] = $record->getRawOriginal('payment_policy');
         $mapping = $this->mappingData($data);
         unset($data['lava_enabled'], $data['lava_offer_id']);
@@ -178,7 +196,9 @@ class EditService extends LocalizedEditRecord
 
             return $updated;
         } catch (ValidationException $exception) {
-            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview([...$data, 'acknowledge_impact' => $acknowledgeImpact, 'impact_digest' => $impactDigest], $exception));
+            $formState['acknowledge_impact'] = $acknowledgeImpact;
+            $formState['impact_digest'] = $impactDigest;
+            $state = ScheduleImpactPreview::mergeValidationPreview($formState, $exception);
 
             if (ScheduleImpactPreview::isImpactValidation($exception)) {
                 Notification::make()
@@ -188,7 +208,14 @@ class EditService extends LocalizedEditRecord
                     ->send();
             }
 
-            throw $exception;
+            throw $this->formValidationFailure(
+                $exception,
+                $state,
+                aliases: ['schedule_impact' => 'acknowledge_impact'],
+                preserve: ['schedule_impact'],
+            );
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $formState);
         }
     }
 

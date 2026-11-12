@@ -990,6 +990,36 @@ final class SessionCockpitTest extends TestCase
         self::assertTrue($expectedOccurredAt->equalTo($actualOccurredAt));
     }
 
+    public function test_filament_edit_session_keeps_invalid_clinical_draft_and_allows_correction(): void
+    {
+        [$organization, $admin, $client, $specialist] = $this->fixture();
+        $this->resolveFilamentContext($admin, $organization);
+
+        $session = $this->createSession($admin, $client, $specialist, pain: 'Исходная боль');
+        $component = Livewire::actingAs($admin)
+            ->test(EditMedicalSession::class, ['parentRecord' => $client, 'record' => $session->getKey()])
+            ->fillForm([
+                'pain' => ['Неверный формат'],
+                'protocol' => 'Черновик протокола',
+            ])
+            ->call('save')
+            ->assertHasErrors(['data.pain'])
+            ->assertNotified('Не удалось сохранить. Исправьте отмеченные поля.')
+            ->assertSet('data.pain', ['Неверный формат'])
+            ->assertSet('data.protocol', 'Черновик протокола');
+
+        self::assertSame('Исходная боль', app(GetSession::class)->handle($admin, $session->fresh(), $client)?->pain);
+
+        $component
+            ->fillForm(['pain' => 'Исправленная боль'])
+            ->call('save')
+            ->assertHasNoFormErrors()
+            ->assertNotified('Сеанс обновлён');
+
+        self::assertSame('Исправленная боль', app(GetSession::class)->handle($admin, $session->fresh(), $client)?->pain);
+        self::assertSame('Черновик протокола', app(GetSession::class)->handle($admin, $session->fresh(), $client)?->protocol);
+    }
+
     public function test_filament_session_result_action_fills_deterministic_summary_and_confirms_replacement(): void
     {
         [$organization, $admin, $client, $specialist] = $this->fixture();

@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Pages;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Identity\Domain\Models\Client;
@@ -17,9 +18,12 @@ use App\Modules\Sessions\Application\MedicalSessionPainInitializer;
 use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class CreateMedicalSession extends LocalizedCreateRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = MedicalSessionResource::class;
 
     protected static ?string $title = 'Новый сеанс';
@@ -66,21 +70,28 @@ class CreateMedicalSession extends LocalizedCreateRecord
     {
         $actor = $this->actor();
         $parent = $this->parentClient();
+        $formState = $data;
 
         unset($data['pain_not_measured'], $data['pain_vas']);
 
         try {
             $command = CreateSessionCommand::fromArray($data);
         } catch (ValidationException $exception) {
-            throw self::formValidation($exception);
+            throw $this->formValidationFailure($exception, $formState);
         }
 
-        $result = app(CreateSession::class)->handle($actor, $parent, $command);
+        try {
+            $result = app(CreateSession::class)->handle($actor, $parent, $command);
 
-        return MedicalSession::query()
-            ->where('organization_id', $result->organizationId)
-            ->where('id', $result->id)
-            ->firstOrFail();
+            return MedicalSession::query()
+                ->where('organization_id', $result->organizationId)
+                ->where('id', $result->id)
+                ->firstOrFail();
+        } catch (ValidationException $exception) {
+            throw $this->formValidationFailure($exception, $formState);
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $formState);
+        }
     }
 
     protected function getRedirectUrl(): string
@@ -128,11 +139,6 @@ class CreateMedicalSession extends LocalizedCreateRecord
         }
 
         return $parent;
-    }
-
-    private static function formValidation(ValidationException $exception): ValidationException
-    {
-        return ValidationException::withMessages($exception->errors());
     }
 
     private static function scoreUiValue(mixed $value): int

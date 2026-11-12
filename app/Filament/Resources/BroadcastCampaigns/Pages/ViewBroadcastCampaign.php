@@ -4,6 +4,7 @@ namespace App\Filament\Resources\BroadcastCampaigns\Pages;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
 use App\Filament\Support\BroadcastFailurePresentation;
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\LocalizedViewRecord;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\CancelBroadcastCampaign;
@@ -19,6 +20,7 @@ use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
 use Illuminate\Contracts\View\View;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class ViewBroadcastCampaign extends LocalizedViewRecord
 {
@@ -60,20 +62,18 @@ final class ViewBroadcastCampaign extends LocalizedViewRecord
                 ->requiresConfirmation()
                 ->modalDescription(__('Будет создана копия этой рассылки и сразу запущена. После запуска изменить её нельзя.'))
                 ->visible(fn (): bool => $this->campaign()->state !== BroadcastCampaignState::Draft)
-                ->action(function (): void {
+                ->action(function (Action $action): void {
                     try {
                         $copy = app(CopyBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
                         $campaign = app(StartBroadcastCampaign::class)->handle($this->actor(), $copy);
                     } catch (ValidationException $exception) {
-                        $message = __((string) (collect($exception->errors())->flatten()->first() ?: 'Повторный запуск не выполнен.'));
-
-                        Notification::make()
-                            ->title(__('Повторный запуск не выполнен'))
-                            ->body($message)
-                            ->danger()
-                            ->send();
-
-                        return;
+                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped, __('Повторный запуск не выполнен'));
+                        throw $mapped;
+                    } catch (Throwable $exception) {
+                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
                     }
 
                     $this->notifyAboutStartedCampaign($campaign);
@@ -83,9 +83,19 @@ final class ViewBroadcastCampaign extends LocalizedViewRecord
                 ->label(__('Редактировать и повторить'))
                 ->icon('heroicon-o-pencil-square')
                 ->visible(fn (): bool => $this->campaign()->state !== BroadcastCampaignState::Draft)
-                ->action(function (): void {
-                    $copy = app(CopyBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
-                    $this->redirect(BroadcastCampaignResource::getUrl('edit', ['record' => $copy]));
+                ->action(function (Action $action): void {
+                    try {
+                        $copy = app(CopyBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
+                        $this->redirect(BroadcastCampaignResource::getUrl('edit', ['record' => $copy]));
+                    } catch (ValidationException $exception) {
+                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped, __('Не удалось создать копию рассылки'));
+                        throw $mapped;
+                    } catch (Throwable $exception) {
+                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
+                    }
                 }),
             Action::make('test')
                 ->label(__('Тестовая отправка'))
@@ -102,19 +112,17 @@ final class ViewBroadcastCampaign extends LocalizedViewRecord
                         ->required()
                         ->helperText(__('Доступны только клиенты с согласием на маркетинговые сообщения и подтверждённым Telegram.')),
                 ])
-                ->action(function (array $data): void {
+                ->action(function (Action $action, array $data): void {
                     try {
                         $recipient = app(TestBroadcastCampaign::class)->handle($this->actor(), $this->campaign(), (int) $data['test_client_id']);
                     } catch (ValidationException $exception) {
-                        $message = __((string) (collect($exception->errors())->flatten()->first() ?: 'Проверьте получателя и настройки рассылки.'));
-
-                        Notification::make()
-                            ->title(__('Тестовая отправка не выполнена'))
-                            ->body($message)
-                            ->danger()
-                            ->send();
-
-                        return;
+                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped, __('Тестовая отправка не выполнена'));
+                        throw $mapped;
+                    } catch (Throwable $exception) {
+                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
                     }
 
                     $delivered = $recipient->state->value === 'delivered';
@@ -133,16 +141,36 @@ final class ViewBroadcastCampaign extends LocalizedViewRecord
                         ->status($delivered ? 'success' : 'danger')
                         ->send();
                 }),
-            Action::make('start')->label(fn (): string => $this->campaign()->send_mode === 'scheduled' ? __('Запланировать') : __('Запустить рассылку'))->color('primary')->requiresConfirmation()->modalDescription(__('Список получателей и версии сообщений будут зафиксированы. После запуска изменить рассылку нельзя.'))->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->action(function (): void {
-                $campaign = app(StartBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
-                $this->notifyAboutStartedCampaign($campaign);
+            Action::make('start')->label(fn (): string => $this->campaign()->send_mode === 'scheduled' ? __('Запланировать') : __('Запустить рассылку'))->color('primary')->requiresConfirmation()->modalDescription(__('Список получателей и версии сообщений будут зафиксированы. После запуска изменить рассылку нельзя.'))->visible(fn (): bool => $this->campaign()->state === BroadcastCampaignState::Draft)->action(function (Action $action): void {
+                try {
+                    $campaign = app(StartBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
+                    $this->notifyAboutStartedCampaign($campaign);
 
-                $this->refreshFormData(['state', 'scheduled_at', 'audience_count', 'delivered_count', 'failed_count', 'suppressed_count']);
+                    $this->refreshFormData(['state', 'scheduled_at', 'audience_count', 'delivered_count', 'failed_count', 'suppressed_count']);
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Рассылку не удалось запустить'));
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                }
             }),
-            Action::make('cancel')->label(__('Отменить'))->color('danger')->requiresConfirmation()->visible(fn (): bool => in_array($this->campaign()->state, [BroadcastCampaignState::Draft, BroadcastCampaignState::Scheduled], true))->action(function (): void {
-                app(CancelBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
-                Notification::make()->title(__('Рассылка отменена'))->success()->send();
-                $this->refreshFormData(['state', 'cancelled_at']);
+            Action::make('cancel')->label(__('Отменить'))->color('danger')->requiresConfirmation()->visible(fn (): bool => in_array($this->campaign()->state, [BroadcastCampaignState::Draft, BroadcastCampaignState::Scheduled], true))->action(function (Action $action): void {
+                try {
+                    app(CancelBroadcastCampaign::class)->handle($this->actor(), $this->campaign());
+                    Notification::make()->title(__('Рассылка отменена'))->success()->send();
+                    $this->refreshFormData(['state', 'cancelled_at']);
+                } catch (ValidationException $exception) {
+                    $mapped = FormValidationFeedback::forAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped, __('Рассылку не удалось отменить'));
+                    throw $mapped;
+                } catch (Throwable $exception) {
+                    $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                    FormValidationFeedback::notifyValidation($mapped);
+                    throw $mapped;
+                }
             }),
         ];
     }

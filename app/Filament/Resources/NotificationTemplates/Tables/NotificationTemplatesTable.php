@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\NotificationTemplates\Tables;
 
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
 use App\Modules\Scenarios\Application\SetNotificationTemplateActive;
@@ -10,12 +11,15 @@ use App\Modules\Scenarios\Domain\Models\NotificationTemplate;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Notifications\Notification;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class NotificationTemplatesTable
 {
@@ -72,14 +76,40 @@ final class NotificationTemplatesTable
                     ->modalHeading(__('Отключить шаблон?'))
                     ->modalDescription(__('Новые автоматические отправки с этим шаблоном создаваться не будут. История отправок останется.'))
                     ->visible(fn (NotificationTemplate $record): bool => $record->is_active)
-                    ->action(fn (NotificationTemplate $record): NotificationTemplate => self::setActive($record, false)),
+                    ->action(function (Action $action, NotificationTemplate $record): void {
+                        try {
+                            self::setActive($record, false);
+                            Notification::make()->success()->title(__('Шаблон отключён'))->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
+                    }),
                 Action::make('enable')
                     ->label(__('Включить'))
                     ->color('success')
                     ->icon('heroicon-o-eye')
                     ->requiresConfirmation()
                     ->visible(fn (NotificationTemplate $record): bool => ! $record->is_active)
-                    ->action(fn (NotificationTemplate $record): NotificationTemplate => self::setActive($record, true)),
+                    ->action(function (Action $action, NotificationTemplate $record): void {
+                        try {
+                            self::setActive($record, true);
+                            Notification::make()->success()->title(__('Шаблон включён'))->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
+                    }),
             ]);
     }
 

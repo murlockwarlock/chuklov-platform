@@ -3,14 +3,18 @@
 namespace App\Filament\Resources\BroadcastCampaigns\Pages;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\CreateBroadcastCampaign as Action;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class CreateBroadcastCampaign extends LocalizedCreateRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = BroadcastCampaignResource::class;
 
     protected static ?string $title = 'Создать рассылку';
@@ -20,7 +24,13 @@ final class CreateBroadcastCampaign extends LocalizedCreateRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
-        return app(Action::class)->handle($actor, self::normalizeSegment($data));
+        try {
+            return app(Action::class)->handle($actor, self::normalizeSegment($data));
+        } catch (ValidationException $exception) {
+            throw $this->formValidationFailure($exception, $data);
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $data);
+        }
     }
 
     /**

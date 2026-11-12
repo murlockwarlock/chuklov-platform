@@ -7,6 +7,7 @@ use App\Filament\Resources\KnowledgeSources\Pages\EditKnowledgeSource;
 use App\Filament\Resources\KnowledgeSources\Pages\ListKnowledgeSources;
 use App\Filament\Resources\KnowledgeSources\RelationManagers\RevisionsRelationManager;
 use App\Filament\Resources\KnowledgeSources\Schemas\KnowledgeSourceForm;
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\KnowledgeSourcePresentation;
 use App\Filament\Support\LocalizedResource;
 use App\Models\User;
@@ -28,6 +29,8 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class KnowledgeSourceResource extends LocalizedResource
 {
@@ -85,11 +88,21 @@ final class KnowledgeSourceResource extends LocalizedResource
                     ->modalHeading(__('Скрыть материал из поиска?'))
                     ->modalDescription(__('Материал перестанет использоваться в ответах. Версии и история обработки останутся сохранены.'))
                     ->visible(fn (KnowledgeSource $record): bool => $record->status === KnowledgeSourceStatus::Active)
-                    ->action(function (KnowledgeSource $record): void {
-                        $actor = auth()->user();
-                        abort_unless($actor instanceof User, 403);
-                        app(RetireKnowledgeSource::class)->handle($actor, $record);
-                        Notification::make()->title(__('Материал скрыт из поиска'))->success()->send();
+                    ->action(function (Action $action, KnowledgeSource $record): void {
+                        try {
+                            $actor = auth()->user();
+                            abort_unless($actor instanceof User, 403);
+                            app(RetireKnowledgeSource::class)->handle($actor, $record);
+                            Notification::make()->title(__('Материал скрыт из поиска'))->success()->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
                     }),
                 Action::make('reactivate')
                     ->label(__('Вернуть в поиск'))
@@ -99,11 +112,21 @@ final class KnowledgeSourceResource extends LocalizedResource
                     ->modalHeading(__('Вернуть материал в поиск?'))
                     ->modalDescription(__('Последняя готовая версия снова станет доступна для поиска. История версий сохранится.'))
                     ->visible(fn (KnowledgeSource $record): bool => $record->status === KnowledgeSourceStatus::Retired)
-                    ->action(function (KnowledgeSource $record): void {
-                        $actor = auth()->user();
-                        abort_unless($actor instanceof User, 403);
-                        app(ReactivateKnowledgeSource::class)->handle($actor, $record);
-                        Notification::make()->title(__('Материал снова используется'))->success()->send();
+                    ->action(function (Action $action, KnowledgeSource $record): void {
+                        try {
+                            $actor = auth()->user();
+                            abort_unless($actor instanceof User, 403);
+                            app(ReactivateKnowledgeSource::class)->handle($actor, $record);
+                            Notification::make()->title(__('Материал снова используется'))->success()->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
                     }),
                 Action::make('delete')
                     ->label(__('Удалить'))
@@ -114,11 +137,21 @@ final class KnowledgeSourceResource extends LocalizedResource
                     ->requiresConfirmation()
                     ->modalHeading(__('Удалить материал из базы знаний?'))
                     ->modalDescription(__('Материал, его поисковые фрагменты и загруженный файл будут удалены. Это действие нельзя отменить.'))
-                    ->action(function (KnowledgeSource $record): void {
-                        $actor = auth()->user();
-                        abort_unless($actor instanceof User, 403);
-                        app(DeleteKnowledgeSource::class)->handle($actor, $record);
-                        Notification::make()->title(__('Материал удалён из базы знаний'))->success()->send();
+                    ->action(function (Action $action, KnowledgeSource $record): void {
+                        try {
+                            $actor = auth()->user();
+                            abort_unless($actor instanceof User, 403);
+                            app(DeleteKnowledgeSource::class)->handle($actor, $record);
+                            Notification::make()->title(__('Материал удалён из базы знаний'))->success()->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
                     }),
             ])->defaultSort('updated_at', 'desc');
     }

@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\NotificationTemplates\Pages;
 
 use App\Filament\Resources\NotificationTemplates\NotificationTemplateResource;
+use App\Filament\Support\FormValidationFeedback;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Channels\Domain\Enums\NotificationMessageMode;
@@ -13,9 +15,12 @@ use App\Modules\Scenarios\Domain\ValueObjects\ScenarioTemplateVariableCatalog;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Throwable;
 
 final class EditNotificationTemplate extends LocalizedEditRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = NotificationTemplateResource::class;
 
     protected static ?string $title = 'Редактировать шаблон сообщения';
@@ -43,9 +48,12 @@ final class EditNotificationTemplate extends LocalizedEditRecord
                 (string) ($data['subject'] ?? ''),
             );
         } catch (InvalidArgumentException) {
-            throw ValidationException::withMessages([
+            $exception = ValidationException::withMessages([
                 'body' => __('Текст сообщения содержит неподдерживаемые переменные. Используйте список доступных данных.'),
             ]);
+            FormValidationFeedback::notifyValidation($exception);
+
+            throw FormValidationFeedback::forForm($exception);
         }
 
         return $data;
@@ -57,11 +65,17 @@ final class EditNotificationTemplate extends LocalizedEditRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
-        return app(UpdateNotificationTemplate::class)->handle($actor, $record, [
-            ...$data,
-            'template_key' => $record->template_key,
-            'locale' => $record->locale,
-        ]);
+        try {
+            return app(UpdateNotificationTemplate::class)->handle($actor, $record, [
+                ...$data,
+                'template_key' => $record->template_key,
+                'locale' => $record->locale,
+            ]);
+        } catch (ValidationException $exception) {
+            throw $this->formValidationFailure($exception, $data);
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $data);
+        }
     }
 
     protected function getRedirectUrl(): string

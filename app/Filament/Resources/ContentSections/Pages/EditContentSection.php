@@ -3,6 +3,8 @@
 namespace App\Filament\Resources\ContentSections\Pages;
 
 use App\Filament\Resources\ContentSections\ContentSectionResource;
+use App\Filament\Support\FormValidationFeedback;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Content\Application\AttachContentSubtitles;
@@ -15,10 +17,14 @@ use Filament\Actions\Action;
 use Filament\Forms\Components\FileUpload;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Throwable;
 
 class EditContentSection extends LocalizedEditRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected function getHeaderActions(): array
     {
         return [
@@ -29,12 +35,22 @@ class EditContentSection extends LocalizedEditRecord
                     FileUpload::make('content_video')->label(__('Видео'))
                         ->acceptedFileTypes(['video/mp4'])->maxSize(10240)->storeFiles(false)->required(),
                 ])
-                ->action(function (array $data): void {
+                ->action(function (Action $action, array $data): void {
                     $actor = auth()->user();
                     abort_unless($actor instanceof User && $this->record instanceof ContentSection, 403);
-                    app(AttachContentVideo::class)->handle($actor, $this->record, $data['content_video']);
-                    $this->record->refresh();
-                    Notification::make()->title(__('Видео сохранено'))->success()->send();
+                    try {
+                        app(AttachContentVideo::class)->handle($actor, $this->record, $data['content_video']);
+                        $this->record->refresh();
+                        Notification::make()->title(__('Видео сохранено'))->success()->send();
+                    } catch (ValidationException $exception) {
+                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
+                    } catch (Throwable $exception) {
+                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
+                    }
                 }),
             Action::make('uploadSubtitles')
                 ->label(__('Загрузить субтитры'))
@@ -43,13 +59,23 @@ class EditContentSection extends LocalizedEditRecord
                     FileUpload::make('content_subtitles')->label(__('Субтитры WebVTT'))
                         ->acceptedFileTypes(['text/vtt', 'text/plain'])->maxSize(1024)->storeFiles(false)->required(),
                 ])
-                ->action(function (array $data): void {
+                ->action(function (Action $action, array $data): void {
                     $actor = auth()->user();
                     abort_unless($actor instanceof User && $this->record instanceof ContentSection, 403);
-                    app(AttachContentSubtitles::class)->handle($actor, $this->record, $data['content_subtitles']);
-                    $this->record->refresh();
-                    $this->data['media']['subtitles'] = null;
-                    Notification::make()->title(__('Субтитры сохранены'))->success()->send();
+                    try {
+                        app(AttachContentSubtitles::class)->handle($actor, $this->record, $data['content_subtitles']);
+                        $this->record->refresh();
+                        $this->data['media']['subtitles'] = null;
+                        Notification::make()->title(__('Субтитры сохранены'))->success()->send();
+                    } catch (ValidationException $exception) {
+                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
+                    } catch (Throwable $exception) {
+                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                        FormValidationFeedback::notifyValidation($mapped);
+                        throw $mapped;
+                    }
                 }),
         ];
     }
@@ -95,6 +121,12 @@ class EditContentSection extends LocalizedEditRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
-        return app(UpdateContentSection::class)->handle($actor, $record, $data);
+        try {
+            return app(UpdateContentSection::class)->handle($actor, $record, $data);
+        } catch (ValidationException $exception) {
+            throw $this->formValidationFailure($exception, $data);
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $data);
+        }
     }
 }

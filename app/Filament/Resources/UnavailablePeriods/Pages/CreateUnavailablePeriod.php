@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\UnavailablePeriods\Pages;
 
 use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedCreateRecord;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
@@ -14,9 +15,12 @@ use DateTimeInterface;
 use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class CreateUnavailablePeriod extends LocalizedCreateRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = UnavailablePeriodResource::class;
 
     protected static ?string $title = 'Создать период недоступности';
@@ -47,17 +51,14 @@ class CreateUnavailablePeriod extends LocalizedCreateRecord
                 acknowledgedImpactDigest: isset($data['impact_digest']) ? (string) $data['impact_digest'] : null,
             );
         } catch (ValidationException $exception) {
-            $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($data, $exception));
-            $errors = $exception->errors();
-
-            foreach (['starts_at', 'ends_at', 'reason'] as $field) {
-                if (isset($errors[$field])) {
-                    $errors['data.'.$field] = $errors[$field];
-                    unset($errors[$field]);
-                }
-            }
-
-            throw ValidationException::withMessages($errors);
+            throw $this->formValidationFailure(
+                $exception,
+                ScheduleImpactPreview::mergeValidationPreview($data, $exception),
+                aliases: ['schedule_impact' => 'acknowledge_impact'],
+                preserve: ['schedule_impact'],
+            );
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $data);
         }
     }
 

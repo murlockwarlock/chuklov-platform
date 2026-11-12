@@ -3,15 +3,19 @@
 namespace App\Filament\Resources\BroadcastCampaigns\Pages;
 
 use App\Filament\Resources\BroadcastCampaigns\BroadcastCampaignResource;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Broadcasts\Application\UpdateBroadcastCampaign as Action;
 use App\Modules\Broadcasts\Domain\Models\BroadcastCampaign;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class EditBroadcastCampaign extends LocalizedEditRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = BroadcastCampaignResource::class;
 
     protected static ?string $title = 'Редактировать рассылку';
@@ -29,10 +33,16 @@ final class EditBroadcastCampaign extends LocalizedEditRecord
             $data['media'] = $record->media;
         }
 
-        $updated = app(Action::class)->handle($actor, $record, CreateBroadcastCampaign::normalizeSegment($data));
-        $this->record = $updated;
+        try {
+            $updated = app(Action::class)->handle($actor, $record, CreateBroadcastCampaign::normalizeSegment($data));
+            $this->record = $updated;
 
-        return $updated;
+            return $updated;
+        } catch (ValidationException $exception) {
+            throw $this->formValidationFailure($exception, $data);
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $data);
+        }
     }
 
     protected function getRedirectUrl(): string

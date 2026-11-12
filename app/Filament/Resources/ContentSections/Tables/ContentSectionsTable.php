@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\ContentSections\Tables;
 
+use App\Filament\Support\FormValidationFeedback;
 use App\Models\User;
 use App\Modules\Content\Application\ContentVideoUrlResolver;
 use App\Modules\Content\Application\SetContentSectionVisibility;
@@ -11,9 +12,12 @@ use Filament\Actions\Action;
 use Filament\Actions\CreateAction;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class ContentSectionsTable
 {
@@ -57,14 +61,40 @@ class ContentSectionsTable
                     ->modalHeading(__('Скрыть раздел из показа?'))
                     ->modalDescription(__('Раздел останется в CRM и его можно будет снова опубликовать.'))
                     ->visible(fn (ContentSection $record): bool => $record->is_visible)
-                    ->action(fn (ContentSection $record): ContentSection => self::setVisibility($record, false)),
+                    ->action(function (Action $action, ContentSection $record): void {
+                        try {
+                            self::setVisibility($record, false);
+                            Notification::make()->success()->title(__('Раздел скрыт из показа'))->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
+                    }),
                 Action::make('show')
                     ->label(__('Опубликовать'))
                     ->color('success')
                     ->icon('heroicon-o-eye')
                     ->requiresConfirmation()
                     ->visible(fn (ContentSection $record): bool => ! $record->is_visible)
-                    ->action(fn (ContentSection $record): ContentSection => self::setVisibility($record, true)),
+                    ->action(function (Action $action, ContentSection $record): void {
+                        try {
+                            self::setVisibility($record, true);
+                            Notification::make()->success()->title(__('Раздел опубликован'))->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
+                    }),
             ]);
     }
 

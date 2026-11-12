@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources\ScenarioRules\Tables;
 
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
 use App\Modules\Scenarios\Application\SetScenarioRuleEnabled;
@@ -11,10 +12,13 @@ use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
 use Filament\Actions\ViewAction;
+use Filament\Notifications\Notification;
 use Filament\Tables\Columns\IconColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class ScenarioRulesTable
 {
@@ -65,14 +69,40 @@ final class ScenarioRulesTable
                     ->modalHeading(__('Отключить авто-сообщение?'))
                     ->modalDescription(__('Автоматическая отправка прекратится. Настройки и история уже отправленных сообщений останутся.'))
                     ->visible(fn (ScenarioRule $record): bool => $record->is_enabled)
-                    ->action(fn (ScenarioRule $record): ScenarioRule => self::setEnabled($record, false)),
+                    ->action(function (Action $action, ScenarioRule $record): void {
+                        try {
+                            self::setEnabled($record, false);
+                            Notification::make()->success()->title(__('Авто-сообщение отключено'))->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
+                    }),
                 Action::make('enable')
                     ->label(__('Включить'))
                     ->color('success')
                     ->icon('heroicon-o-play')
                     ->requiresConfirmation()
                     ->visible(fn (ScenarioRule $record): bool => ! $record->is_enabled)
-                    ->action(fn (ScenarioRule $record): ScenarioRule => self::setEnabled($record, true)),
+                    ->action(function (Action $action, ScenarioRule $record): void {
+                        try {
+                            self::setEnabled($record, true);
+                            Notification::make()->success()->title(__('Авто-сообщение включено'))->send();
+                        } catch (ValidationException $exception) {
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Не удалось выполнить действие. Попробуйте ещё раз.'));
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
+                        }
+                    }),
             ]);
     }
 

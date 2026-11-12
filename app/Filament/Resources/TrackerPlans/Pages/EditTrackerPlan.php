@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\TrackerPlans\Pages;
 
 use App\Filament\Resources\TrackerPlans\TrackerPlanResource;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Commerce\Domain\Models\PaymentProviderOfferMapping;
@@ -13,9 +14,13 @@ use App\Modules\Tracker\Application\SaveTrackerPlan;
 use App\Modules\Tracker\Domain\Models\TrackerPlan;
 use App\Modules\Tracker\Domain\Models\TrackerPlanVersion;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 final class EditTrackerPlan extends LocalizedEditRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = TrackerPlanResource::class;
 
     protected static ?string $title = 'Изменить тариф';
@@ -54,21 +59,29 @@ final class EditTrackerPlan extends LocalizedEditRecord
         abort_unless($record instanceof TrackerPlan, 404);
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
+        $formState = $data;
         $mapping = $this->mappingData($data);
         unset($data['lava_enabled'], $data['lava_offer_id']);
-        $version = app(SaveTrackerPlan::class)->handle($actor, $record, (string) $data['name'], (bool) $data['is_active'], (bool) $data['is_visible'], (string) $data['price'], (string) $data['currency'], (int) $data['duration_days'], isset($data['description']) ? (string) $data['description'] : null, (bool) $data['included_access'], (int) $data['display_order'], isset($data['monthly_practice']) ? (string) $data['monthly_practice'] : null);
 
-        if (app(FinanceAuthorization::class)->allowsManage($actor)) {
-            app(SavePaymentProviderOfferMappings::class)->handle(
-                actor: $actor,
-                sellableType: TrackerPlanVersion::class,
-                sellableId: (int) $version->getKey(),
-                enabled: $mapping['enabled'],
-                mappings: $mapping['mappings'],
-            );
+        try {
+            $version = app(SaveTrackerPlan::class)->handle($actor, $record, (string) $data['name'], (bool) $data['is_active'], (bool) $data['is_visible'], (string) $data['price'], (string) $data['currency'], (int) $data['duration_days'], isset($data['description']) ? (string) $data['description'] : null, (bool) $data['included_access'], (int) $data['display_order'], isset($data['monthly_practice']) ? (string) $data['monthly_practice'] : null);
+
+            if (app(FinanceAuthorization::class)->allowsManage($actor)) {
+                app(SavePaymentProviderOfferMappings::class)->handle(
+                    actor: $actor,
+                    sellableType: TrackerPlanVersion::class,
+                    sellableId: (int) $version->getKey(),
+                    enabled: $mapping['enabled'],
+                    mappings: $mapping['mappings'],
+                );
+            }
+
+            return $record->refresh();
+        } catch (ValidationException $exception) {
+            throw $this->formValidationFailure($exception, $formState);
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $formState);
         }
-
-        return $record->refresh();
     }
 
     /** @param array<string, mixed> $data @return array{enabled: bool, mappings: list<array{currency: mixed, offer_id: mixed}>} */

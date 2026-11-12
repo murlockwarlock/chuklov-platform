@@ -6,6 +6,7 @@ use App\Filament\Resources\ScheduleExceptions\ScheduleExceptionResource;
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Resources\UnavailablePeriods\UnavailablePeriodResource;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -16,10 +17,12 @@ use App\Modules\Scheduling\Domain\Models\ScheduleException;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class ScheduleExceptionsTable
 {
@@ -98,14 +101,24 @@ class ScheduleExceptionsTable
                             ),
                         );
                     })
-                    ->action(function (ScheduleException $record, array $data, Schema $schema): void {
+                    ->action(function (Action $action, ScheduleException $record, array $data, Schema $schema): void {
                         $actor = auth()->user();
                         abort_unless($actor instanceof User, 403);
                         if (($record->getAttribute('change_kind') ?? 'exception') === 'unavailable') {
-                            $period = UnavailablePeriod::query()
-                                ->where('organization_id', app(OrganizationContext::class)->id())
-                                ->whereKey((int) $record->getAttribute('source_id'))
-                                ->firstOrFail();
+                            try {
+                                $period = UnavailablePeriod::query()
+                                    ->where('organization_id', app(OrganizationContext::class)->id())
+                                    ->whereKey((int) $record->getAttribute('source_id'))
+                                    ->firstOrFail();
+                            } catch (ValidationException $exception) {
+                                $mapped = FormValidationFeedback::forAction($exception, $action);
+                                FormValidationFeedback::notifyValidation($mapped);
+                                throw $mapped;
+                            } catch (Throwable $exception) {
+                                $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                                FormValidationFeedback::notifyValidation($mapped);
+                                throw $mapped;
+                            }
 
                             try {
                                 app(DeleteUnavailablePeriod::class)->handle(
@@ -116,9 +129,17 @@ class ScheduleExceptionsTable
                                 );
                             } catch (ValidationException $exception) {
                                 ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+                                $mapped = FormValidationFeedback::forAction($exception, $action);
+                                FormValidationFeedback::notifyValidation($mapped, __('Нужно подтвердить изменение'));
 
-                                throw $exception;
+                                throw $mapped;
+                            } catch (Throwable $exception) {
+                                $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                                FormValidationFeedback::notifyValidation($mapped);
+                                throw $mapped;
                             }
+
+                            Notification::make()->success()->title(__('Период недоступности удалён'))->send();
 
                             return;
                         }
@@ -131,9 +152,17 @@ class ScheduleExceptionsTable
                             );
                         } catch (ValidationException $exception) {
                             ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Нужно подтвердить изменение'));
 
-                            throw $exception;
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
                         }
+
+                        Notification::make()->success()->title(__('Исключение расписания удалено'))->send();
                     }),
             ]);
     }

@@ -4,6 +4,7 @@ namespace App\Filament\Resources\UnavailablePeriods\Tables;
 
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Support\CrmEntityLinks;
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\ScheduleImpactPreview;
 use App\Models\User;
 use App\Modules\Organizations\Application\OrganizationContext;
@@ -12,10 +13,12 @@ use App\Modules\Scheduling\Application\ScheduleMutationImpactCalculator;
 use App\Modules\Scheduling\Domain\Models\UnavailablePeriod;
 use Filament\Actions\Action;
 use Filament\Actions\EditAction;
+use Filament\Notifications\Notification;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Table;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class UnavailablePeriodsTable
 {
@@ -60,11 +63,10 @@ class UnavailablePeriodsTable
                             endsAt: $record->ends_at,
                         ),
                     ))
-                    ->action(function (UnavailablePeriod $record, array $data, Schema $schema): void {
-                        $actor = auth()->user();
-                        abort_unless($actor instanceof User, 403);
-
+                    ->action(function (Action $action, UnavailablePeriod $record, array $data, Schema $schema): void {
                         try {
+                            $actor = auth()->user();
+                            abort_unless($actor instanceof User, 403);
                             app(DeleteUnavailablePeriod::class)->handle(
                                 actor: $actor,
                                 period: $record,
@@ -73,9 +75,17 @@ class UnavailablePeriodsTable
                             );
                         } catch (ValidationException $exception) {
                             ScheduleImpactPreview::applyValidationPreview($schema, $exception);
+                            $mapped = FormValidationFeedback::forAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped, __('Нужно подтвердить изменение'));
 
-                            throw $exception;
+                            throw $mapped;
+                        } catch (Throwable $exception) {
+                            $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                            FormValidationFeedback::notifyValidation($mapped);
+                            throw $mapped;
                         }
+
+                        Notification::make()->success()->title(__('Период недоступности удалён'))->send();
                     }),
             ]);
     }

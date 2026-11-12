@@ -4,6 +4,7 @@ namespace App\Filament\Resources\ScenarioRules\Schemas;
 
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Resources\NotificationTemplates\Schemas\NotificationTemplateForm;
+use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Support\MessageComposer;
 use App\Filament\Support\RichTextPresentation;
 use App\Models\User;
@@ -43,6 +44,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
+use Throwable;
 
 final class ScenarioRuleForm
 {
@@ -172,13 +174,23 @@ final class ScenarioRuleForm
                                 ->modalSubmitActionLabel(__('Сохранить текст'))
                                 ->schema(self::templateComposerSchema())
                                 ->fillForm(fn (?ScenarioRule $record): array => self::newTemplateFormData($record))
-                                ->action(function (array $data, Set $set): void {
+                                ->action(function (Action $action, array $data, Set $set): void {
                                     $actor = auth()->user();
                                     abort_unless($actor instanceof User, 403);
-                                    $data['variables'] = self::templateVariables($data);
-                                    $template = app(CreateNotificationTemplate::class)->handle($actor, $data);
-                                    $set('template_version_id', $template->latestVersion()->firstOrFail()->getKey(), shouldCallUpdatedHooks: true);
-                                    Notification::make()->title(__('Текст сообщения создан'))->success()->send();
+                                    try {
+                                        $data['variables'] = self::templateVariables($data);
+                                        $template = app(CreateNotificationTemplate::class)->handle($actor, $data);
+                                        $set('template_version_id', $template->latestVersion()->firstOrFail()->getKey(), shouldCallUpdatedHooks: true);
+                                        Notification::make()->title(__('Текст сообщения создан'))->success()->send();
+                                    } catch (ValidationException $exception) {
+                                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                                        FormValidationFeedback::notifyValidation($mapped);
+                                        throw $mapped;
+                                    } catch (Throwable $exception) {
+                                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                                        FormValidationFeedback::notifyValidation($mapped);
+                                        throw $mapped;
+                                    }
                                 }),
                             Action::make('editMessage')
                                 ->label(__('Изменить текст сообщения'))
@@ -189,18 +201,28 @@ final class ScenarioRuleForm
                                 ->modalSubmitActionLabel(__('Сохранить новую версию'))
                                 ->schema(self::templateComposerSchema())
                                 ->fillForm(fn (?ScenarioRule $record, Get $get): array => self::existingTemplateFormData($record, (int) $get('template_version_id')))
-                                ->action(function (array $data, Set $set): void {
+                                ->action(function (Action $action, array $data, Set $set): void {
                                     $actor = auth()->user();
                                     abort_unless($actor instanceof User, 403);
-                                    $version = self::templateVersion((int) ($data['template_version_id'] ?? 0));
-                                    $template = $version?->template;
-                                    abort_unless($template !== null, 404);
-                                    $data['template_key'] = $template->template_key;
-                                    $data['locale'] = $template->locale;
-                                    $data['variables'] = self::templateVariables($data);
-                                    $updated = app(UpdateNotificationTemplate::class)->handle($actor, $template, $data);
-                                    $set('template_version_id', $updated->latestVersion()->firstOrFail()->getKey(), shouldCallUpdatedHooks: true);
-                                    Notification::make()->title(__('Новая версия текста сохранена'))->success()->send();
+                                    try {
+                                        $version = self::templateVersion((int) ($data['template_version_id'] ?? 0));
+                                        $template = $version?->template;
+                                        abort_unless($template !== null, 404);
+                                        $data['template_key'] = $template->template_key;
+                                        $data['locale'] = $template->locale;
+                                        $data['variables'] = self::templateVariables($data);
+                                        $updated = app(UpdateNotificationTemplate::class)->handle($actor, $template, $data);
+                                        $set('template_version_id', $updated->latestVersion()->firstOrFail()->getKey(), shouldCallUpdatedHooks: true);
+                                        Notification::make()->title(__('Новая версия текста сохранена'))->success()->send();
+                                    } catch (ValidationException $exception) {
+                                        $mapped = FormValidationFeedback::forAction($exception, $action);
+                                        FormValidationFeedback::notifyValidation($mapped);
+                                        throw $mapped;
+                                    } catch (Throwable $exception) {
+                                        $mapped = FormValidationFeedback::unexpectedForAction($exception, $action);
+                                        FormValidationFeedback::notifyValidation($mapped);
+                                        throw $mapped;
+                                    }
                                 }),
                         ])->key('template_actions')->columnSpanFull(),
                     ])

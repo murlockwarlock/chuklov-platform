@@ -3,15 +3,20 @@
 namespace App\Filament\Resources\LocationDays\Pages;
 
 use App\Filament\Resources\LocationDays\LocationDayResource;
+use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Models\User;
 use App\Modules\Scheduling\Application\SaveLocationDay;
 use App\Modules\Scheduling\Domain\Models\LocationDay;
 use Filament\Schemas\Components\Component;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class EditLocationDay extends LocalizedEditRecord
 {
+    use InteractsWithFormValidationFeedback;
+
     protected static string $resource = LocationDayResource::class;
 
     protected static ?string $title = 'Изменить день выезда';
@@ -27,19 +32,25 @@ class EditLocationDay extends LocalizedEditRecord
         $actor = auth()->user();
         abort_unless($actor instanceof User, 403);
 
-        return app(SaveLocationDay::class)->handle(
-            actor: $actor,
-            locationDay: $record,
-            areaName: (string) $data['area_name'],
-            weekday: $this->nullableInt($data['weekday'] ?? null),
-            specificDate: isset($data['specific_date']) ? (string) $data['specific_date'] : null,
-            startTime: (string) $data['start_time'],
-            endTime: (string) $data['end_time'],
-            timezone: (string) $data['timezone'],
-            isActive: (bool) ($data['is_active'] ?? true),
-            notes: isset($data['notes']) ? (string) $data['notes'] : null,
-            specialistId: $this->nullableInt($data['specialist_id'] ?? null),
-        );
+        try {
+            return app(SaveLocationDay::class)->handle(
+                actor: $actor,
+                locationDay: $record,
+                areaName: (string) $data['area_name'],
+                weekday: $this->nullableInt($data['weekday'] ?? null),
+                specificDate: isset($data['specific_date']) ? (string) $data['specific_date'] : null,
+                startTime: (string) $data['start_time'],
+                endTime: (string) $data['end_time'],
+                timezone: (string) $data['timezone'],
+                isActive: (bool) ($data['is_active'] ?? true),
+                notes: isset($data['notes']) ? (string) $data['notes'] : null,
+                specialistId: $this->nullableInt($data['specialist_id'] ?? null),
+            );
+        } catch (ValidationException $exception) {
+            throw $this->formValidationFailure($exception, $data);
+        } catch (Throwable $exception) {
+            throw $this->unexpectedFormFailure($exception, $data);
+        }
     }
 
     private function nullableInt(mixed $value): ?int
