@@ -182,6 +182,7 @@ class RecordAuditEvent
         'tracker.goal_catalog.updated' => ['tag_count'],
         'tracker.plan.archived' => ['source'],
         'tracker.plan.restored' => ['source'],
+        'tracker.plan.reordered' => ['plan_id', 'from_order', 'to_order'],
         'medical.profile.created' => ['source', 'key_version', 'updated_fields'],
         'medical.profile.updated' => ['source', 'key_version', 'updated_fields'],
         'medical.session.created' => ['source', 'key_version', 'booking_id', 'client_id', 'specialist_id'],

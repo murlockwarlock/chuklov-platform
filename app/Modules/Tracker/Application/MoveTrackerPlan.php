@@ -104,7 +104,10 @@ final class MoveTrackerPlan
         TrackerPlanVersion $source,
         int $displayOrder,
     ): TrackerPlanVersion {
-        $nextVersion = ((int) $plan->versions()->lockForUpdate()->max('version')) + 1;
+        $nextVersion = ((int) TrackerPlanVersion::query()
+            ->where('tracker_plan_id', $plan->getKey())
+            ->lockForUpdate()
+            ->max('version')) + 1;
         $version = new TrackerPlanVersion;
         $version->forceFill([
             'organization_id' => $organization->getKey(),
