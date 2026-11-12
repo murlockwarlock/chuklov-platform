@@ -58,30 +58,39 @@ class SpecialistResource extends LocalizedResource
         return $schema
             ->components([
                 Section::make(__('Профиль специалиста'))
+                    ->description(__('Основная информация, контакты, расписание и внутренний доступ специалиста.'))
                     ->schema([
                         ImageEntry::make('profile_image_path')
                             ->label(__('Фото'))
                             ->getStateUsing(fn (Specialist $record): ?string => app(SpecialistImageUrlResolver::class)->resolve($record))
                             ->imageSize(160)
-                            ->circular(),
-                        TextEntry::make('display_name')->label(__('Имя и фамилия')),
-                        TextEntry::make('specialization')->label(__('Специализация'))->placeholder(__('Не указана')),
+                            ->circular()
+                            ->columnSpan(1),
+                        TextEntry::make('display_name')
+                            ->label(__('Имя и фамилия'))
+                            ->weight('bold'),
+                        TextEntry::make('specialization')
+                            ->label(__('Специализация'))
+                            ->placeholder(__('Не указана')),
                         TextEntry::make('practices_since_year')
                             ->label(__('Опыт работы'))
                             ->getStateUsing(fn (Specialist $record): ?string => SpecialistExperience::fromYear($record->practices_since_year)?->label(app()->getLocale()))
                             ->placeholder(__('Не указан')),
-                        TextEntry::make('qualification')->label(__('Квалификация и регалии'))->placeholder(__('Не заполнено'))->columnSpanFull(),
-                        TextEntry::make('bio')->label(__('О специалисте'))->placeholder(__('Не заполнено'))->columnSpanFull(),
+                        TextEntry::make('qualification')
+                            ->label(__('Квалификация и регалии'))
+                            ->placeholder(__('Не заполнено'))
+                            ->columnSpanFull(),
+                        TextEntry::make('bio')
+                            ->label(__('О специалисте'))
+                            ->placeholder(__('Не заполнено'))
+                            ->columnSpanFull(),
                         TextEntry::make('country')
                             ->label(__('Страна'))
-                            ->getStateUsing(fn (Specialist $record): ?string => app(ProfileReferenceData::class)->countryName((string) $record->country, app()->getLocale())
-                                ?? (is_string($record->country) && trim($record->country) !== '' ? $record->country : null))
+                            ->getStateUsing(fn (Specialist $record): ?string => self::countryLabel($record))
                             ->placeholder(__('Не указана')),
-                        TextEntry::make('city')->label(__('Город'))->placeholder(__('Не указан')),
-                    ])
-                    ->columns(2),
-                Section::make(__('Контакты'))
-                    ->schema([
+                        TextEntry::make('city')
+                            ->label(__('Город'))
+                            ->placeholder(__('Не указан')),
                         TextEntry::make('phone')
                             ->label(__('Телефон'))
                             ->getStateUsing(fn (Specialist $record): ?string => self::contactLabel($record->phone, $record->phone_visible))
@@ -100,10 +109,6 @@ class SpecialistResource extends LocalizedResource
                             ->url(fn (Specialist $record): ?string => ($username = self::verifiedTelegramUsername($record)) === null
                                 ? null
                                 : 'https://t.me/'.$username),
-                    ])
-                    ->columns(2),
-                Section::make(__('Работа и расписание'))
-                    ->schema([
                         TextEntry::make('timezone')
                             ->label(__('Часовой пояс специалиста'))
                             ->formatStateUsing(fn (?string $state): string => self::timezoneLabel($state)),
@@ -132,7 +137,9 @@ class SpecialistResource extends LocalizedResource
                             ->color(fn (Specialist $record): ?string => $record->staff_user_id === null
                                 ? null
                                 : (CrmEntityLinks::specialistUrl($record) === null ? null : 'primary')),
-                        TextEntry::make('staffUser.email')->label(__('Email сотрудника'))->placeholder(__('Не указан')),
+                        TextEntry::make('staffUser.email')
+                            ->label(__('Email сотрудника'))
+                            ->placeholder(__('Не указан')),
                         TextEntry::make('notifications_enabled')
                             ->label(__('Уведомления специалисту'))
                             ->formatStateUsing(fn (bool $state): string => $state ? __('Включены') : __('Выключены')),
@@ -142,7 +149,8 @@ class SpecialistResource extends LocalizedResource
                         TextEntry::make('created_at')->label(__('Создано'))->dateTime('d.m.Y H:i'),
                         TextEntry::make('updated_at')->label(__('Изменено'))->dateTime('d.m.Y H:i'),
                     ])
-                    ->columns(2),
+                    ->columns(2)
+                    ->columnSpanFull(),
             ]);
     }
 
@@ -215,10 +223,25 @@ class SpecialistResource extends LocalizedResource
 
     private static function contactLabel(?string $value, bool $visible): ?string
     {
-        if ($value === null || trim($value) === '') {
+        if (! self::hasText($value)) {
             return null;
         }
 
         return $value.($visible ? ' · '.__('Показывается клиентам') : ' · '.__('Только CRM'));
+    }
+
+    private static function hasText(?string $value): bool
+    {
+        return is_string($value) && trim($value) !== '';
+    }
+
+    private static function countryLabel(Specialist $record): ?string
+    {
+        if (! self::hasText($record->country)) {
+            return null;
+        }
+
+        return app(ProfileReferenceData::class)->countryName((string) $record->country, app()->getLocale())
+            ?? $record->country;
     }
 }
