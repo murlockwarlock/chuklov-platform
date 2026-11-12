@@ -42,6 +42,7 @@ use App\Http\Controllers\Portal\ReferralPayoutController;
 use App\Http\Controllers\Portal\ReferralRedirectController;
 use App\Http\Controllers\Portal\SectionController;
 use App\Http\Controllers\Portal\ServiceIndexController;
+use App\Http\Controllers\Portal\SpecialistController;
 use App\Http\Controllers\Portal\SurveyController;
 use App\Http\Controllers\Portal\TelegramAuthenticationController;
 use App\Http\Controllers\Portal\TelegramLinkController;
@@ -129,6 +130,9 @@ Route::middleware(ResolveOrganization::class)->group(function (): void {
         Route::get('/portal/sections/{section}', SectionController::class)->name('portal.section');
 
         Route::middleware(RequireClientPortalSession::class)->group(function (): void {
+            Route::get('/portal/specialists/{specialist}', [SpecialistController::class, 'show'])
+                ->whereNumber('specialist')
+                ->name('portal.specialists.show');
             Route::get('/portal/availability', AvailabilityController::class)->name('portal.availability');
             Route::get('/portal/bookings/create', [BookingController::class, 'create'])->name('portal.bookings.create');
             Route::post('/portal/bookings', [BookingController::class, 'store'])->name('portal.bookings.store');

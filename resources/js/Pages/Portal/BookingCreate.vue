@@ -4,6 +4,7 @@ import { computed, ref, unref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import BookingChoiceList from '../../Components/Portal/BookingChoiceList.vue';
+import SpecialistChoiceList from '../../Components/Portal/SpecialistChoiceList.vue';
 import BookingConfirmation from '../../Components/Portal/BookingConfirmation.vue';
 import BookingSuccess from '../../Components/Portal/BookingSuccess.vue';
 import BookingSessionSelection from '../../Components/Portal/BookingSessionSelection.vue';
@@ -33,6 +34,12 @@ type ServiceOption = {
 type SpecialistOption = {
     id: number;
     displayName: string;
+    imageUrl: string | null;
+    specialization: string | null;
+    experienceLabel: string | null;
+    qualification: string | null;
+    city: string | null;
+    detailsUrl: string;
 };
 
 type WorkingLocation = {
@@ -430,11 +437,6 @@ const serviceChoices = computed(() => props.services.map((service) => ({
     meta: durationLabel(service),
     trailing: priceLabel(service),
 })));
-const specialistChoices = computed(() => props.specialists.map((specialist) => ({
-    id: specialist.id,
-    title: specialist.displayName,
-})));
-
 function formatLabel(format: VisitFormat): string {
     return t('booking.' + format);
 }
@@ -762,13 +764,14 @@ function submitBooking(): void {
           @continue="continueService"
         />
 
-        <BookingChoiceList
+        <SpecialistChoiceList
           v-else-if="currentStepKey === 'specialist'"
           heading-id="booking-specialist-heading"
           :heading="t('booking.chooseSpecialist')"
-          :choices="specialistChoices"
+          :choices="props.specialists"
           :selected-id="selectedSpecialistId"
           :continue-label="t('booking.continue')"
+          :details-label="t('specialist.details')"
           :change-label="t('booking.changeService')"
           :context-label="t('booking.service')"
           :context-value="selectedService?.name"

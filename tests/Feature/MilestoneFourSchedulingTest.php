@@ -934,10 +934,9 @@ class MilestoneFourSchedulingTest extends TestCase
             ->assertOk()
             ->assertInertia(fn (AssertableInertia $page) => $page
                 ->component('Portal/BookingCreate')
-                ->where('specialists', [[
-                    'id' => $specialist->id,
-                    'displayName' => $specialist->display_name,
-                ]])
+                ->has('specialists', 1)
+                ->where('specialists.0.id', $specialist->id)
+                ->where('specialists.0.displayName', $specialist->display_name)
                 ->where('query.specialistId', $specialist->id)
                 ->where('query.formatSelected', true)
                 ->where('availability.specialistId', $specialist->id));

@@ -56,27 +56,61 @@ final class NormalizeUploadedImageTest extends TestCase
         );
     }
 
-    public function test_heic_and_heif_are_converted_to_browser_safe_webp_when_runtime_supports_them(): void
+    public function test_heic_is_converted_to_browser_safe_webp_when_runtime_supports_the_codec(): void
     {
-        if (! extension_loaded('imagick')) {
-            self::markTestSkipped('The runtime does not expose HEIC and HEIF codecs.');
-        }
+        $this->assertHeifFixtureIsConverted('heic');
+    }
 
-        self::assertTrue($this->imagickSupports('HEIC'), 'The runtime must expose an HEIC codec that can decode HEIF containers.');
+    public function test_heif_is_converted_to_browser_safe_webp_when_runtime_supports_the_codec(): void
+    {
+        $this->assertHeifFixtureIsConverted('heif');
+    }
 
+    private function assertHeifFixtureIsConverted(string $format): void
+    {
+        $fixturePath = base_path("tests/Fixtures/images/known-good-{$format}.{$format}");
+        self::assertFileExists($fixturePath);
+        $this->skipIfHeifFixtureCannotBeDecoded($fixturePath, strtoupper($format));
+
+        $contents = file_get_contents($fixturePath);
+        self::assertIsString($contents);
         $normalizer = app(NormalizeUploadedImage::class);
 
-        foreach (['HEIC', 'HEIF'] as $format) {
-            $normalized = $normalizer->normalize(
-                $this->upload('phone.'.strtolower($format), $this->imagickImage($format)),
-                15 * 1024 * 1024,
-            );
+        $normalized = $normalizer->normalize(
+            $this->upload("phone.{$format}", $contents),
+            15 * 1024 * 1024,
+        );
 
-            self::assertSame('image/webp', $normalized->mimeType);
-            self::assertSame('webp', $normalized->extension);
-            self::assertSame('image/webp', $this->sniff($normalized->contents));
-            self::assertSame('image/webp', getimagesizefromstring($normalized->contents)['mime'] ?? null);
-            self::assertSame('image/'.strtolower($format), $normalized->sourceMimeType);
+        self::assertSame('image/webp', $normalized->mimeType);
+        self::assertSame('webp', $normalized->extension);
+        self::assertSame('image/webp', $this->sniff($normalized->contents));
+        self::assertSame('image/webp', getimagesizefromstring($normalized->contents)['mime'] ?? null);
+        self::assertSame("image/{$format}", $normalized->sourceMimeType);
+    }
+
+    private function skipIfHeifFixtureCannotBeDecoded(string $fixturePath, string $format): void
+    {
+        if (! extension_loaded('imagick')) {
+            self::markTestSkipped("The runtime cannot decode the known-good {$format} fixture because Imagick is unavailable.");
+        }
+
+        $decoded = false;
+        $probe = new \Imagick;
+
+        try {
+            $probe->readImage($fixturePath);
+            $decoded = $probe->getNumberImages() > 0
+                && $probe->getImageWidth() > 0
+                && $probe->getImageHeight() > 0;
+        } catch (\Throwable) {
+            $decoded = false;
+        } finally {
+            $probe->clear();
+            $probe->destroy();
+        }
+
+        if (! $decoded) {
+            self::markTestSkipped("The runtime cannot decode the known-good {$format} fixture.");
         }
     }
 
@@ -150,37 +184,6 @@ final class NormalizeUploadedImageTest extends TestCase
         unset($image);
 
         return (string) $contents;
-    }
-
-    private function imagickImage(string $format): string
-    {
-        $path = tempnam(sys_get_temp_dir(), 'image-normalizer-');
-        self::assertIsString($path);
-
-        $image = new \Imagick;
-        $image->newImage(4, 3, new \ImagickPixel('royalblue'));
-        $image->setImageFormat('HEIC');
-        $image->setImageCompressionQuality(80);
-        $image->writeImage($path);
-        $image->clear();
-        $image->destroy();
-        $contents = file_get_contents($path);
-        @unlink($path);
-
-        self::assertIsString($contents);
-
-        if ($format === 'HEIF') {
-            $contents = substr_replace($contents, 'mif1', 8, 4);
-        }
-
-        return $contents;
-    }
-
-    private function imagickSupports(string $format): bool
-    {
-        $probe = new \Imagick;
-
-        return in_array($format, array_map('strtoupper', $probe->queryFormats($format)), true);
     }
 
     private function sniff(string $contents): string

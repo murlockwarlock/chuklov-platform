@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Specialists\Pages;
 use App\Filament\Resources\Specialists\SpecialistResource;
 use App\Filament\Support\LocalizedEditRecord;
 use App\Filament\Support\ScheduleImpactPreview;
+use App\Filament\Support\SpecialistFormValidation;
 use App\Filament\Support\SpecialistTelegramLinkAction;
 use App\Models\User;
 use App\Modules\Scheduling\Application\UpdateSpecialistViewerTimezone;
@@ -13,12 +14,23 @@ use App\Modules\Specialists\Domain\Models\Specialist;
 use App\Modules\Specialists\Domain\ValueObjects\SpecialistNotificationSettings;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
+use InvalidArgumentException;
 
 class EditSpecialist extends LocalizedEditRecord
 {
     protected static string $resource = SpecialistResource::class;
 
     protected static ?string $title = 'Редактировать специалиста';
+
+    protected function getSavedNotificationTitle(): ?string
+    {
+        return __('Изменения сохранены');
+    }
+
+    protected function onValidationError(ValidationException $exception): void
+    {
+        SpecialistFormValidation::notify($exception);
+    }
 
     protected function getHeaderActions(): array
     {
@@ -46,6 +58,7 @@ class EditSpecialist extends LocalizedEditRecord
                 acknowledgeImpact: $acknowledgeImpact,
                 acknowledgedImpactDigest: $impactDigest,
                 notificationSettings: SpecialistNotificationSettings::from(null, (bool) ($data['notifications_enabled'] ?? true)),
+                profileAttributes: $data,
             );
             if (array_key_exists('viewer_timezone', $data)) {
                 app(UpdateSpecialistViewerTimezone::class)->handle(
@@ -59,8 +72,15 @@ class EditSpecialist extends LocalizedEditRecord
             return $updated->refresh();
         } catch (ValidationException $exception) {
             $this->form->fill(ScheduleImpactPreview::mergeValidationPreview($data, $exception));
+            SpecialistFormValidation::notify($exception);
 
-            throw $exception;
+            throw SpecialistFormValidation::forForm($exception);
+        } catch (InvalidArgumentException $exception) {
+            $validation = SpecialistFormValidation::fromInvalidArgument($exception, $data);
+            $this->form->fill($data);
+            SpecialistFormValidation::notify($validation);
+
+            throw SpecialistFormValidation::forForm($validation);
         }
     }
 }
