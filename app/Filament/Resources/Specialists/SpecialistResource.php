@@ -121,10 +121,6 @@ class SpecialistResource extends LocalizedResource
                         TextEntry::make('specialist_service_assignments_count')
                             ->label(__('Назначенных услуг'))
                             ->formatStateUsing(fn (?int $state): string => $state === null ? __('Нет данных') : (string) $state),
-                    ])
-                    ->columns(2),
-                Section::make(__('Доступ и уведомления'))
-                    ->schema([
                         TextEntry::make('is_active')
                             ->label(__('Статус'))
                             ->formatStateUsing(fn (bool $state): string => $state ? __('Доступен для новых записей') : __('Скрыт из новых записей')),
