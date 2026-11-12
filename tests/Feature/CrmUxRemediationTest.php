@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Filament\Pages\FeedbackConfiguration;
+use App\Filament\Livewire\DatabaseNotifications;
 use App\Filament\Widgets\AnalyticsKpiWidget;
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
@@ -44,6 +45,7 @@ use Filament\Schemas\Components\Image as SchemaImage;
 use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Enums\RecordActionsPosition;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Notifications\DatabaseNotification;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 use Tests\Support\RecordingNotificationChannel;
@@ -148,6 +150,27 @@ final class CrmUxRemediationTest extends TestCase
 
         self::assertStringContainsString('Показатели загружаются', $placeholder);
         self::assertStringContainsString('aria-busy="true"', $placeholder);
+    }
+
+    public function test_database_notification_center_humanizes_legacy_technical_messages(): void
+    {
+        $component = app(DatabaseNotifications::class);
+        $notification = DatabaseNotification::make([
+            'id' => '00000000-0000-0000-0000-000000000001',
+            'created_at' => now(),
+            'data' => [
+                'format' => 'filament',
+                'title' => 'Сбой AI-компаньона',
+                'body' => 'AI-компаньон не смог подготовить ответ клиенту #298. Причина: AI-провайдер временно недоступен (попытка 1). Проверьте настройки AI: https://example.test/admin/ai-monitoring-overview. Диалог: https://example.test/admin/messages?client=298.',
+            ],
+        ]);
+
+        $rendered = $component->getNotification($notification);
+
+        self::assertStringContainsString('сервис AI временно недоступен', (string) $rendered->getBody());
+        self::assertStringNotContainsString('#298', (string) $rendered->getBody());
+        self::assertStringNotContainsString('попытка', (string) $rendered->getBody());
+        self::assertStringNotContainsString('https://example.test', (string) $rendered->getBody());
     }
 
     public function test_content_order_uses_reordering_controls_instead_of_numeric_inputs(): void
