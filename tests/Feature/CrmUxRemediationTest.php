@@ -132,11 +132,13 @@ final class CrmUxRemediationTest extends TestCase
     public function test_admin_network_failures_have_human_retry_guidance(): void
     {
         $feedback = (string) file_get_contents(resource_path('js/filament/network-feedback.ts'));
+        $viteConfig = (string) file_get_contents(base_path('vite.config.ts'));
 
         self::assertStringContainsString('Livewire.interceptRequest', $feedback);
         self::assertStringContainsString('onFailure', $feedback);
         self::assertStringContainsString('onError', $feedback);
         self::assertStringContainsString('Введённые значения формы останутся на экране', $feedback);
+        self::assertStringContainsString("resources/js/filament/network-feedback.ts", $viteConfig);
     }
 
     public function test_content_order_uses_reordering_controls_instead_of_numeric_inputs(): void
