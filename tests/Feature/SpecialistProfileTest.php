@@ -335,23 +335,13 @@ final class SpecialistProfileTest extends TestCase
 
     public function test_specialist_media_adapter_converts_heic_when_runtime_supports_the_codec(): void
     {
-        if (! extension_loaded('imagick')) {
-            self::markTestSkipped('The runtime does not expose HEIC and HEIF codecs.');
-        }
-
-        $probe = new \Imagick;
-        if (! in_array('HEIC', array_map('strtoupper', $probe->queryFormats('HEIC')), true)) {
-            self::markTestSkipped('The runtime does not expose an HEIC codec.');
-        }
+        $fixturePath = base_path('tests/Fixtures/images/known-good-heic.heic');
+        self::assertFileExists($fixturePath);
+        $this->skipIfHeifFixtureCannotBeDecoded($fixturePath, 'HEIC');
 
         Storage::fake('public');
-        $image = new \Imagick;
-        $image->newImage(4, 3, new \ImagickPixel('royalblue'));
-        $image->setImageFormat('HEIC');
-        $image->setImageCompressionQuality(80);
-        $contents = $image->getImagesBlob();
-        $image->clear();
-        $image->destroy();
+        $contents = file_get_contents($fixturePath);
+        self::assertIsString($contents);
 
         $storedPath = app(SpecialistMediaStorageInterface::class)->store(
             99,
@@ -362,6 +352,32 @@ final class SpecialistProfileTest extends TestCase
         $storedContents = Storage::disk('public')->get($storedPath);
         self::assertIsString($storedContents);
         self::assertSame('image/webp', getimagesizefromstring($storedContents)['mime'] ?? null);
+    }
+
+    private function skipIfHeifFixtureCannotBeDecoded(string $fixturePath, string $format): void
+    {
+        if (! extension_loaded('imagick')) {
+            self::markTestSkipped("The runtime cannot decode the known-good {$format} fixture because Imagick is unavailable.");
+        }
+
+        $decoded = false;
+        $probe = new \Imagick;
+
+        try {
+            $probe->readImage($fixturePath);
+            $decoded = $probe->getNumberImages() > 0
+                && $probe->getImageWidth() > 0
+                && $probe->getImageHeight() > 0;
+        } catch (\Throwable) {
+            $decoded = false;
+        } finally {
+            $probe->clear();
+            $probe->destroy();
+        }
+
+        if (! $decoded) {
+            self::markTestSkipped("The runtime cannot decode the known-good {$format} fixture.");
+        }
     }
 
     private function setOrganization(Organization $organization): void
