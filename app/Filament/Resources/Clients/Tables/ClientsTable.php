@@ -45,11 +45,11 @@ class ClientsTable
                 TextColumn::make('full_name')
                     ->label(__('Имя'))
                     ->sortable()
-                    ->wrap()
+                    ->limit(40)
                     ->url(fn (Client $record): ?string => CrmEntityLinks::clientUrl($record, $canViewClients))
                     ->color(fn (Client $record): ?string => CrmEntityLinks::clientUrl($record, $canViewClients) === null ? null : 'primary')
                     ->disabledClick(fn (Client $record): bool => CrmEntityLinks::clientUrl($record, $canViewClients) === null),
-                TextColumn::make('phone')->label(__('Телефон'))->fontFamily('mono')->placeholder('—')->visibleFrom('sm'),
+                TextColumn::make('phone')->label(__('Телефон'))->fontFamily('mono')->placeholder('—')->limit(24)->visibleFrom('sm'),
                 TextColumn::make('email')
                     ->label('Email')
                     ->placeholder('—')
@@ -62,13 +62,13 @@ class ClientsTable
                     ->label(__('Часовой пояс'))
                     ->formatStateUsing(fn (?string $state): string => TimezoneOptions::label($state))
                     ->sortable()
-                    ->visibleFrom('lg'),
+                    ->visibleFrom('xl'),
                 TextColumn::make('language')
                     ->label(__('Язык'))
                     ->formatStateUsing(fn (string $state): string => $state === 'ru' ? __('Русский') : __('Английский'))
                     ->sortable()
                     ->toggleable()
-                    ->visibleFrom('sm'),
+                    ->visibleFrom('xl'),
                 IconColumn::make('activeBookingRestriction')
                     ->label(__('Запись'))
                     ->boolean()
@@ -88,7 +88,7 @@ class ClientsTable
                     ->badge()
                     ->color(fn (Client $record): string => $record->activeBlacklistRestriction === null ? 'gray' : 'danger')
                     ->description(fn (Client $record): ?string => $record->activeBlacklistRestriction?->reason)
-                    ->wrap(),
+                    ->limit(24),
             ])
             ->filters([
                 SelectFilter::make('segment')

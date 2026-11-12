@@ -84,6 +84,22 @@ final class ResetStagingClientAccountTest extends TestCase
         ]);
     }
 
+    public function test_staging_client_card_does_not_expose_the_internal_reset_action(): void
+    {
+        [, $admin, $client] = $this->fixture();
+        $previousEnvironment = app()->environment();
+        app()->instance('env', 'staging');
+        Filament::setCurrentPanel(Filament::getPanel('admin'));
+
+        try {
+            Livewire::actingAs($admin)
+                ->test(ViewClient::class, ['record' => $client->getKey()])
+                ->assertActionHidden('resetStagingAccount');
+        } finally {
+            app()->instance('env', $previousEnvironment);
+        }
+    }
+
     public function test_reset_removes_a_client_with_working_history(): void
     {
         [$organization, $admin, $client] = $this->fixture();

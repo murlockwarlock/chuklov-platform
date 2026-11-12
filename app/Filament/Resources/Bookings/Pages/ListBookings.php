@@ -559,7 +559,7 @@ class ListBookings extends LocalizedListRecords
     {
         $timezone = $this->journalTimezone();
 
-        return TimezoneOptions::label($timezone).' ('.$timezone.')';
+        return TimezoneOptions::display($timezone);
     }
 
     public static function statusClass(BookingStatus|string $status): string

@@ -4,6 +4,7 @@ import LegalConsentChecklist from './LegalConsentChecklist.vue';
 import PortalDateTime from '../PortalDateTime.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalLocale } from '../../types/portal';
+import { timezoneLabel } from '../../utils/timezoneLabel';
 
 type VisitFormat = 'office' | 'home' | 'online';
 
@@ -182,7 +183,7 @@ const location = computed({
         {{ props.workingLocation.name }}
       </h3>
       <span class="portal-copy portal-copy--small">{{ props.workingLocation.address }}</span>
-      <span class="portal-copy portal-copy--small">{{ t('booking.byLocationTime') }}: {{ props.workingLocation.timezone }}</span>
+      <span class="portal-copy portal-copy--small">{{ t('booking.byLocationTime') }}: {{ timezoneLabel(props.workingLocation.timezone, props.locale) }}</span>
     </section>
 
     <section

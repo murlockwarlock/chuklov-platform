@@ -3,6 +3,7 @@
 namespace App\Filament\Resources\ContentSections\Tables;
 
 use App\Filament\Support\FormValidationFeedback;
+use App\Filament\Resources\ContentSections\ContentSectionResource;
 use App\Models\User;
 use App\Modules\Content\Application\ContentVideoUrlResolver;
 use App\Modules\Content\Application\SetContentSectionVisibility;
@@ -25,6 +26,12 @@ class ContentSectionsTable
     {
         return $table
             ->stackedOnMobile()
+            ->defaultSort('sort_order')
+            ->reorderable('sort_order')
+            ->authorizeReorder(fn (): bool => ContentSectionResource::canCreate())
+            ->reorderRecordsTriggerAction(fn (Action $action): Action => $action
+                ->label(__('Изменить порядок'))
+                ->tooltip(__('Изменить порядок разделов')))
             ->columns([
                 TextColumn::make('section_key')
                     ->label(__('Раздел'))
@@ -36,7 +43,6 @@ class ContentSectionsTable
                     ->formatStateUsing(fn (string $state): string => $state === 'ru' ? __('Русский') : __('Английский'))
                     ->sortable(),
                 TextColumn::make('title')->label(__('Название'))->searchable(),
-                TextColumn::make('sort_order')->label(__('Порядок показа'))->sortable(),
                 IconColumn::make('is_visible')->label(__('Опубликован'))->boolean()->sortable(),
                 TextColumn::make('home_status')
                     ->label(__('Статус показа'))

@@ -126,7 +126,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
 
         Livewire::actingAs($admin)
             ->test(WorkingIntervals::class)
-            ->assertSee('График задан по времени: Алматы (UTC+5) · Asia/Almaty');
+            ->assertSee('График задан по времени: Алматы (UTC+05:00)');
     }
 
     public function test_settings_save_round_trips_multiple_intervals_and_validity_dates(): void
@@ -234,7 +234,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
                 'clear_working_hours' => false,
             ])
             ->call('save')
-            ->assertHasErrors(['working_hours']);
+            ->assertHasErrors(['data.working_hours']);
 
         self::assertDatabaseHas('specialist_working_hours', [
             'organization_id' => $organization->getKey(),
@@ -317,7 +317,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
                 'clear_working_hours' => false,
             ])
             ->call('save')
-            ->assertHasErrors(['working_hours']);
+            ->assertHasErrors(['data.working_hours']);
 
         self::assertStringContainsString(
             'Рабочие интервалы не должны пересекаться.',

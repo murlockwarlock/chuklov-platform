@@ -216,6 +216,11 @@ body {
 .portal-main {
     min-height: calc(100svh - 4.5rem);
     padding-bottom: calc(5.75rem + env(safe-area-inset-bottom));
+    scroll-padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+}
+
+.portal-main :where(input, select, textarea, button, [tabindex]):focus {
+    scroll-margin-bottom: calc(6.5rem + env(safe-area-inset-bottom));
 }
 
 .portal-bottom-nav {

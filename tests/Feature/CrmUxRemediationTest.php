@@ -129,6 +129,35 @@ final class CrmUxRemediationTest extends TestCase
         }
     }
 
+    public function test_admin_network_failures_have_human_retry_guidance(): void
+    {
+        $feedback = (string) file_get_contents(resource_path('js/filament/network-feedback.ts'));
+
+        self::assertStringContainsString('Livewire.interceptRequest', $feedback);
+        self::assertStringContainsString('onFailure', $feedback);
+        self::assertStringContainsString('onError', $feedback);
+        self::assertStringContainsString('Введённые значения формы останутся на экране', $feedback);
+    }
+
+    public function test_content_order_uses_reordering_controls_instead_of_numeric_inputs(): void
+    {
+        $table = (string) file_get_contents(app_path('Filament/Resources/ContentSections/Tables/ContentSectionsTable.php'));
+        $form = (string) file_get_contents(app_path('Filament/Resources/ContentSections/Schemas/ContentSectionForm.php'));
+
+        self::assertStringContainsString("->reorderable('sort_order')", $table);
+        self::assertStringNotContainsString("TextColumn::make('sort_order')", $table);
+        self::assertStringNotContainsString("TextInput::make('sort_order')", $form);
+        self::assertStringContainsString('->reorderable()', $form);
+    }
+
+    public function test_crm_timezone_labels_do_not_expose_iana_keys(): void
+    {
+        $options = \App\Filament\Support\TimezoneOptions::options(current: 'Asia/Almaty', organization: 'Asia/Almaty');
+
+        self::assertSame('Алматы (UTC+05:00)', $options['Asia/Almaty']);
+        self::assertStringNotContainsString('Asia/Almaty', $options['Asia/Almaty']);
+    }
+
     public function test_operational_tables_keep_primary_actions_compact_and_human(): void
     {
         [$organization, $admin, $client, $specialist, $service] = $this->fixture(includePeople: true);
@@ -157,6 +186,8 @@ final class CrmUxRemediationTest extends TestCase
         self::assertNotNull($clientIdColumn);
         self::assertTrue($clientIdColumn->isToggleable());
         self::assertTrue($clientIdColumn->isToggledHiddenByDefault());
+        self::assertFalse($clients->instance()->getTable()->getColumn('full_name')->canWrap());
+        self::assertSame('xl', $clients->instance()->getTable()->getColumn('timezone')->getVisibleFrom());
 
         $bookings = Livewire::actingAs($admin)
             ->test(ListBookings::class)

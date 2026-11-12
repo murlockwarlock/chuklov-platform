@@ -2072,14 +2072,14 @@ test.describe('specialist viewer timezone suggestion', () => {
         await login(page, fixture);
         await page.goto('/admin/working-intervals');
 
-        await expect(page.getByText('Время: Asia/Almaty', { exact: true })).toBeVisible();
-        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).toBeVisible();
-        await page.getByRole('button', { name: 'Оставить Asia/Almaty', exact: true }).click();
-        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
+        await expect(page.getByText(/Время: Алматы \(UTC\+\d{2}:\d{2}\)/)).toBeVisible();
+        await expect(page.getByText(/Мы определили ваш часовой пояс как Берлин \(UTC\+\d{2}:\d{2}\)\./)).toBeVisible();
+        await page.getByRole('button', { name: /Оставить Алматы \(UTC\+\d{2}:\d{2}\)/ }).click();
+        await expect(page.getByText(/Мы определили ваш часовой пояс как Берлин \(UTC\+\d{2}:\d{2}\)\./)).not.toBeVisible();
 
         await page.reload();
-        await expect(page.getByText('Время: Asia/Almaty', { exact: true })).toBeVisible();
-        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
+        await expect(page.getByText(/Время: Алматы \(UTC\+\d{2}:\d{2}\)/)).toBeVisible();
+        await expect(page.getByText(/Мы определили ваш часовой пояс как Берлин \(UTC\+\d{2}:\d{2}\)\./)).not.toBeVisible();
     });
 
     test('specialist can accept the device timezone without changing booking instants', async ({ page }) => {
@@ -2088,10 +2088,10 @@ test.describe('specialist viewer timezone suggestion', () => {
         await login(page, fixture);
         await page.goto('/admin/working-intervals');
 
-        await expect(page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true })).toBeVisible();
-        await page.getByRole('button', { name: 'Использовать Europe/Berlin', exact: true }).click();
-        await expect(page.getByText('Время: Europe/Berlin', { exact: true })).toBeVisible();
-        await expect(page.getByText('Мы определили ваш часовой пояс как Europe/Berlin.', { exact: true })).not.toBeVisible();
+        await expect(page.getByRole('button', { name: /Использовать Берлин \(UTC\+\d{2}:\d{2}\)/ })).toBeVisible();
+        await page.getByRole('button', { name: /Использовать Берлин \(UTC\+\d{2}:\d{2}\)/ }).click();
+        await expect(page.getByText(/Время: Берлин \(UTC\+\d{2}:\d{2}\)/)).toBeVisible();
+        await expect(page.getByText(/Мы определили ваш часовой пояс как Берлин \(UTC\+\d{2}:\d{2}\)\./)).not.toBeVisible();
     });
 });
 
@@ -2126,8 +2126,8 @@ test('staff gets actionable validation and can save a location day after correct
 
     const timezone = page.getByRole('combobox', { name: 'Часовой пояс*', exact: true });
     await timezone.click();
-    await page.getByRole('textbox', { name: 'Search' }).fill('Asia/Almaty');
-    await page.getByRole('option', { name: /Asia\/Almaty/ }).click();
+    await page.getByRole('textbox', { name: 'Search' }).fill('Алматы');
+    await page.getByRole('option', { name: /Алматы \(UTC\+\d{2}:\d{2}\)/ }).click();
     await page.getByRole('button', { name: 'Сохранить', exact: true }).click();
 
     await expect(page).toHaveURL(/\/admin\/location-days\/\d+\/edit$/);

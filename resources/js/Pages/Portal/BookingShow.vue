@@ -7,6 +7,7 @@ import PortalDateTime from '../../Components/PortalDateTime.vue';
 import PortalPageHeader from '../../Components/Portal/PortalPageHeader.vue';
 import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
+import { timezoneLabel } from '../../utils/timezoneLabel';
 
 type Slot = {
     startsAt: string;
@@ -306,6 +307,10 @@ function changeMonth(dateFrom: string, dateTo: string): void {
 }
 
 function cancelBooking(): void {
+    if (!window.confirm(t('booking.confirmCancel'))) {
+        return;
+    }
+
     cancelRequestError.value = null;
     cancelForm.clearErrors();
     cancelForm.post(props.urls.cancel, {
@@ -428,7 +433,7 @@ function rescheduleBooking(): void {
           <span
             v-if="props.booking.locationSnapshot.timezone"
             class="portal-copy portal-copy--small"
-          >{{ t('booking.byLocationTime') }}: {{ props.booking.locationSnapshot.timezone }}</span>
+          >{{ t('booking.byLocationTime') }}: {{ timezoneLabel(props.booking.locationSnapshot.timezone, locale) }}</span>
         </section>
         <a
           v-if="props.booking.meetingUrl"

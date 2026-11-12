@@ -184,7 +184,11 @@ final readonly class ContentSectionData
         }
 
         $communities = [];
-        foreach ($value as $item) {
+        $hasExplicitOrder = collect($value)->contains(
+            static fn (mixed $item): bool => is_array($item) && array_key_exists('sort_order', $item),
+        );
+
+        foreach ($value as $index => $item) {
             if (! is_array($item)) {
                 throw new InvalidArgumentException('The community list is invalid.');
             }
@@ -204,12 +208,16 @@ final readonly class ContentSectionData
                 'title' => $title,
                 'url' => $url,
                 'description' => is_string($description) && trim($description) !== '' ? trim($description) : null,
-                'sort_order' => self::nonNegativeInteger($item['sort_order'] ?? 0, 'The community order is invalid.'),
+                'sort_order' => $hasExplicitOrder
+                    ? self::nonNegativeInteger($item['sort_order'] ?? 0, 'The community order is invalid.')
+                    : $index,
                 'is_visible' => (bool) ($item['is_visible'] ?? true),
             ];
         }
 
-        usort($communities, static fn (array $left, array $right): int => $left['sort_order'] <=> $right['sort_order']);
+        if ($hasExplicitOrder) {
+            usort($communities, static fn (array $left, array $right): int => $left['sort_order'] <=> $right['sort_order']);
+        }
 
         return $communities;
     }

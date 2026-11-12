@@ -86,6 +86,25 @@ class PortalProductUxTest extends TestCase
                 ->where('portal.urls.referrals', route('portal.referrals')));
     }
 
+    public function test_portal_timezone_choices_are_human_readable(): void
+    {
+        $organization = $this->organizationWithClientRecords();
+        $client = Client::factory()->forOrganization($organization)->create([
+            'language' => 'ru',
+            'timezone' => 'Asia/Bangkok',
+        ]);
+        $this->withSession(['client_portal.client_id' => $client->getKey()]);
+
+        $this->get(route('portal.profile'))
+            ->assertOk()
+            ->assertInertia(fn (AssertableInertia $page): AssertableInertia => $page
+                ->where('timezoneOptions.0.value', 'Asia/Bangkok')
+                ->where('timezoneOptions.0.label', 'Бангкок (UTC+07:00)'));
+
+        $timezoneLabel = (string) file_get_contents(resource_path('js/utils/timezoneLabel.ts'));
+        self::assertStringContainsString('Asia/Bangkok', $timezoneLabel);
+    }
+
     public function test_authenticated_booking_catalog_keeps_the_primary_shell_and_client_actions_are_not_duplicated(): void
     {
         $organization = $this->organizationWithClientRecords();
@@ -104,6 +123,7 @@ class PortalProductUxTest extends TestCase
         $shell = (string) file_get_contents(resource_path('js/Components/Portal/MobileBottomNavigation.vue'));
         $home = (string) file_get_contents(resource_path('js/Pages/Portal/Home.vue'));
         $companion = (string) file_get_contents(resource_path('js/Pages/Portal/Companion.vue'));
+        $bookingShow = (string) file_get_contents(resource_path('js/Pages/Portal/BookingShow.vue'));
         $success = (string) file_get_contents(resource_path('js/Components/Portal/BookingSuccess.vue'));
         $health = (string) file_get_contents(resource_path('js/Pages/Portal/Health.vue'));
         $tracker = (string) file_get_contents(resource_path('js/Pages/Portal/Tracker.vue'));
@@ -117,6 +137,7 @@ class PortalProductUxTest extends TestCase
         $more = (string) file_get_contents(resource_path('js/Pages/Portal/More.vue'));
         $finance = (string) file_get_contents(resource_path('js/Pages/Portal/Finance.vue'));
         $portalLocale = (string) file_get_contents(resource_path('js/locales/portal.ts'));
+        $portalCss = (string) file_get_contents(resource_path('css/app.css'));
 
         self::assertStringContainsString('active="bookings"', $servicesPage);
         self::assertStringContainsString('return props.portal.urls.services;', $shell);
@@ -137,10 +158,15 @@ class PortalProductUxTest extends TestCase
         self::assertStringNotContainsString('partner-personal-copy', $partner);
         self::assertStringNotContainsString('disableLink', $partner);
         self::assertStringNotContainsString('disableUrl', $partner);
+        self::assertStringContainsString('scroll-padding-bottom', $portalCss);
+        self::assertStringContainsString('scroll-margin-bottom', $portalCss);
         self::assertStringContainsString('partner-create-link-form', $partner);
         self::assertStringContainsString('portal-companion__composer-buttons', $companion);
         self::assertStringContainsString('@keydown="handleComposerKeydown"', $companion);
         self::assertStringContainsString('event.shiftKey', $companion);
+        self::assertStringContainsString("onNetworkError: ()", $companion);
+        self::assertStringContainsString('companion.sendNetworkError', $companion);
+        self::assertStringContainsString("window.confirm(t('booking.confirmCancel'))", $bookingShow);
         self::assertStringContainsString('group-required-acceptance', $confirmation);
         self::assertStringContainsString('@update:required-consent', $booking);
         self::assertStringContainsString('@required-change', $confirmation);

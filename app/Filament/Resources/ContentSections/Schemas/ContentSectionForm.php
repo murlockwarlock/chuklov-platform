@@ -167,18 +167,13 @@ class ContentSectionForm
                                     ->rows(2)
                                     ->maxLength(500)
                                     ->nullable(),
-                                TextInput::make('sort_order')
-                                    ->label(__('Порядок'))
-                                    ->integer()
-                                    ->minValue(0)
-                                    ->default(0),
                                 Toggle::make('is_visible')
                                     ->label(__('Показывать'))
                                     ->default(true),
                             ])
                             ->columns(2)
                             ->defaultItems(0)
-                            ->reorderable(false)
+                            ->reorderable()
                             ->addActionLabel(__('Добавить сообщество'))
                             ->visible(fn (Get $get): bool => $get('section_key') === 'communities'),
                     ])
@@ -255,15 +250,8 @@ class ContentSectionForm
                             ->columnSpanFull(),
                     ])
                     ->columnSpanFull(),
-                Section::make(__('Показ и порядок'))
+                Section::make(__('Публикация'))
                     ->schema([
-                        TextInput::make('sort_order')
-                            ->label(__('Порядок показа'))
-                            ->integer()
-                            ->dehydrateStateUsing(fn (mixed $state): ?int => $state === null ? null : (int) $state)
-                            ->default(0)
-                            ->minValue(0)
-                            ->maxValue(PHP_INT_MAX),
                         Toggle::make('is_visible')
                             ->label(__('Показывать'))
                             ->required()

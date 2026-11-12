@@ -17,6 +17,7 @@ import { usePortalLocale } from '../../composables/usePortalLocale';
 import type { PortalShell } from '../../types/portal';
 import { personalData, type PersonalData, type PersonalProfile } from '../../types/personalData';
 import { formatMajorPrice } from '../../utils/formatMajorPrice';
+import { timezoneLabel } from '../../utils/timezoneLabel';
 
 type VisitFormat = 'office' | 'home' | 'online';
 type BookingStep = 'time' | 'confirmation' | 'success';
@@ -146,6 +147,7 @@ const selectionAvailability = computed(() => props.availability === null ? null 
     slots: props.availability.slots.filter((slot) => !queuedStarts.value.includes(slot.startsAt)),
 });
 const selectedClientTimezone = ref<string>(props.query.displayTimezone);
+const selectedClientTimezoneLabel = computed(() => timezoneLabel(selectedClientTimezone.value, locale.value));
 const selectedWorkingLocationId = ref<number | null>(props.query.workingLocationId);
 const selectedLocationArea = ref<string | null>(props.query.locationArea);
 const timezoneEditorOpen = ref(false);
@@ -868,14 +870,14 @@ function submitBooking(): void {
               </p>
               <p class="portal-booking-context-summary__timezone">
                 {{ t('booking.yourTime') }}:
-                <strong data-testid="booking-client-timezone">{{ selectedClientTimezone }}</strong>
+                <strong data-testid="booking-client-timezone">{{ selectedClientTimezoneLabel }}</strong>
                 <span v-if="clientTimezoneOffset"> · {{ clientTimezoneOffset }}</span>
               </p>
               <p
                 v-if="selectedWorkingLocation"
                 class="portal-copy portal-copy--small portal-booking-context-summary__location-copy"
               >
-                {{ selectedWorkingLocation.address }} · {{ selectedWorkingLocation.timezone }}
+                {{ selectedWorkingLocation.address }} · {{ timezoneLabel(selectedWorkingLocation.timezone, locale) }}
               </p>
               <p
                 v-if="locationDaySummary"

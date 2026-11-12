@@ -3290,6 +3290,7 @@ test('September 26 client selects multiple sessions before the medical editor an
     expect(detailPage.props.portal.locale).toBe('ru');
     expect(detailPage.props.booking.canCancel, JSON.stringify({ startsAt: detailPage.props.booking.startsAt, expectedDate: fixture.date, status: detailPage.props.booking.statusLabel })).toBe(true);
     await expect(page.getByRole('heading', { name: fixture.serviceName, exact: true })).toBeVisible();
+    page.once('dialog', (dialog) => dialog.accept());
     await page.getByRole('button', { name: 'Отменить', exact: true }).first().click();
     await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
     await page.reload();
@@ -3935,6 +3936,7 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
             contentType: 'text/html',
             body: 'Request could not be completed',
         }));
+        page.once('dialog', (dialog) => dialog.accept());
         await cancelButton.click();
         await expect(page.getByRole('alert')).toHaveText(failure.message);
         await expect(cancelButton).toBeEnabled();
@@ -3942,6 +3944,7 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
     }
 
     await page.route(cancelRoute, (route) => route.abort('failed'));
+    page.once('dialog', (dialog) => dialog.accept());
     await cancelButton.click();
     await expect(page.getByRole('alert')).toHaveText('Связь с сервером прервалась. Обновите страницу, чтобы проверить статус записи; если она ещё активна, повторите отмену.');
     await expect(cancelButton).toBeEnabled();
@@ -3950,6 +3953,7 @@ test('authenticated client can manage an upcoming booking from My bookings', asy
 
     await page.reload();
     await expect(cancelButton).toBeVisible();
+    page.once('dialog', (dialog) => dialog.accept());
     await cancelButton.click();
     await expect(page.getByText('Отменена', { exact: true })).toBeVisible();
     await expect(page.locator('li').filter({ hasText: 'Запись отменена' })).toBeVisible();

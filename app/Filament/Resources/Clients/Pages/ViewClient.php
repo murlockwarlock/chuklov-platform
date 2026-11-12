@@ -1208,7 +1208,7 @@ class ViewClient extends LocalizedViewRecord
 
     private function canResetStagingAccount(): bool
     {
-        return app()->environment(['local', 'staging', 'testing']) && $this->canManageClients();
+        return app()->environment(['local', 'testing']) && $this->canManageClients();
     }
 
     private function unblockSelfBookingAction(): Action
