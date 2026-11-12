@@ -523,6 +523,38 @@ final class FinanceCrmUxTest extends TestCase
         self::assertNotNull(OrganizationCurrencyConfiguration::query()->where('organization_id', $organization->getKey())->first());
     }
 
+    public function test_inactive_service_currency_does_not_block_finance_configuration_save(): void
+    {
+        [$organization, $admin] = $this->financeFixture(
+            serviceCurrency: 'EUR',
+            displayCurrency: 'EUR',
+            singleCurrency: true,
+        );
+        Service::factory()->inactive()->forOrganization($organization)->create([
+            'name' => 'Архивная услуга с устаревшей валютой',
+            'price_matrix' => ['RUB' => 10000],
+        ]);
+
+        app(SaveCurrencyConfiguration::class)->handle($admin, [
+            'base_currency' => 'EUR',
+            'display_currency' => 'EUR',
+            'allowed_currencies' => ['EUR'],
+            'force_single_currency' => false,
+            'rounding_mode' => 'half_even',
+            'rates' => [],
+        ]);
+
+        $configuration = OrganizationCurrencyConfiguration::query()
+            ->where('organization_id', $organization->getKey())
+            ->firstOrFail();
+
+        self::assertSame('half_even', $configuration->rounding_mode->value);
+        self::assertSame(['EUR'], DB::table('organization_allowed_currencies')
+            ->where('organization_id', $organization->getKey())
+            ->pluck('currency')
+            ->all());
+    }
+
     public function test_invalid_persisted_configuration_renders_unavailable_and_cannot_be_overwritten(): void
     {
         [$organization, $admin] = $this->financeFixture(singleCurrency: true);
