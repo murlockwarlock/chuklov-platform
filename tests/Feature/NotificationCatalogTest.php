@@ -52,7 +52,7 @@ final class NotificationCatalogTest extends TestCase
             ->assertSee('Запрос специалиста из AI-компаньона')
             ->assertSee('Включено')
             ->assertSee('Переход по реферальной ссылке')
-            ->assertSee('Выключено')
+            ->assertSee('Требуется настройка')
             ->assertSee('Отправок пока нет');
     }
 
