@@ -18,7 +18,7 @@
         $canCreateBooking = $this->canCreateBooking();
         $calendarDensity = in_array($this->calendarDensity, ['compact', 'normal', 'wide'], true) ? $this->calendarDensity : 'normal';
         $calendarCardClass = match ($calendarDensity) {
-            'compact' => 'p-1 text-[10px]',
+            'compact' => 'p-0 text-[10px]',
             'wide' => 'p-2 text-xs',
             default => 'p-1.5 text-[11px]',
         };
