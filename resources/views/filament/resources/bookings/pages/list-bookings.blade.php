@@ -22,6 +22,7 @@
             'wide' => 'p-2 text-xs',
             default => 'p-1.5 text-[11px]',
         };
+        $calendarCardHeaderGap = $calendarDensity === 'compact' ? 'gap-0' : 'gap-1';
         $calendarGridStyle = 'grid-template-columns: 4rem repeat(7, minmax(var(--journal-day-min-width), 1fr));';
         $densityOptions = [
             'compact' => ['label' => __('Компактно'), 'icon' => 'heroicon-o-arrows-pointing-in'],
@@ -167,7 +168,7 @@
                                         <div draggable="{{ $booking['is_terminal'] ? 'false' : 'true' }}" x-on:dragstart="event.dataTransfer.setData('booking-id', '{{ $booking['id'] }}'); event.dataTransfer.setData('event-version', '{{ $booking['event_version'] }}'); event.dataTransfer.effectAllowed = 'move'" class="absolute z-10 min-w-0 overflow-hidden rounded-md border {{ $calendarCardClass }} leading-tight shadow-sm transition hover:shadow-md {{ $booking['is_terminal'] ? '' : 'cursor-grab active:cursor-grabbing' }} {{ $booking['status_class'] }} {{ $booking['retention_warning'] ? 'ring-2 ring-danger-400 dark:ring-danger-500' : '' }}" style="{{ $this->bookingStyle($booking) }}" aria-label="{{ $booking['specialist'] }}: {{ $booking['time_range'] }}" @if ($booking['released_for_rebooking']) data-testid="journal-released-booking-card" @endif>
                                             <a href="{{ $booking['url'] }}" aria-label="{{ __('Открыть запись') }}" class="absolute inset-0 z-0 rounded-md"></a>
                                             <div class="relative z-10 pointer-events-none">
-                                                <div class="flex min-w-0 items-center gap-1">
+                                                <div class="flex min-w-0 items-center {{ $calendarCardHeaderGap }}">
                                                     <span class="min-w-0 flex-1 {{ $calendarDensity === 'wide' ? 'whitespace-normal break-words' : 'truncate' }} font-semibold" title="{{ $booking['specialist'] }}">{{ $booking['start_time'] }} · {{ $booking['specialist'] }}</span>
                                                     @if ($booking['released_for_rebooking'])
                                                         <a
