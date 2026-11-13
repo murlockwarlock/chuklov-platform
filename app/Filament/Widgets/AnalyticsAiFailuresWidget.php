@@ -2,8 +2,8 @@
 
 namespace App\Filament\Widgets;
 
-use App\Models\User;
 use App\Filament\Support\HasDashboardLoadingPlaceholder;
+use App\Models\User;
 use App\Modules\Analytics\Application\AiFailureAnalytics;
 use App\Modules\Analytics\Application\Data\DashboardPeriod;
 use App\Modules\Organizations\Application\OrganizationAuthorizer;
@@ -17,7 +17,6 @@ use Illuminate\Support\Facades\Auth;
 class AnalyticsAiFailuresWidget extends StatsOverviewWidget
 {
     use HasDashboardLoadingPlaceholder;
-
     use InteractsWithPageFilters;
 
     protected int|string|array $columnSpan = ['default' => 'full', 'lg' => 1];

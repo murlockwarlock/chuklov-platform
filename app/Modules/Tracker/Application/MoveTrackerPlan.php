@@ -40,8 +40,8 @@ final class MoveTrackerPlan
                 ->get()
                 ->filter(static fn (TrackerPlan $candidate): bool => $candidate->currentVersion instanceof TrackerPlanVersion)
                 ->sort(static function (TrackerPlan $left, TrackerPlan $right): int {
-                    $leftVersion = $left->currentVersion;
-                    $rightVersion = $right->currentVersion;
+                    $leftVersion = self::currentVersionForOrdering($left);
+                    $rightVersion = self::currentVersionForOrdering($right);
                     $order = ((int) $leftVersion->display_order) <=> ((int) $rightVersion->display_order);
                     if ($order !== 0) {
                         return $order;
@@ -93,8 +93,23 @@ final class MoveTrackerPlan
                 );
             }
 
-            return $plans->get($currentIndex)->refresh();
+            $selectedPlan = $plans->get($currentIndex);
+            if (! $selectedPlan instanceof TrackerPlan) {
+                throw ValidationException::withMessages(['plan' => 'Выбранный тариф недоступен в этой организации.']);
+            }
+
+            return $selectedPlan->refresh();
         }, attempts: 3);
+    }
+
+    private static function currentVersionForOrdering(TrackerPlan $plan): TrackerPlanVersion
+    {
+        $version = $plan->currentVersion;
+        if (! $version instanceof TrackerPlanVersion) {
+            throw ValidationException::withMessages(['plan' => 'Выбранный тариф недоступен в этой организации.']);
+        }
+
+        return $version;
     }
 
     private function copyVersion(

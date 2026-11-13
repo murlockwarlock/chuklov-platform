@@ -373,6 +373,7 @@ final class WorkingIntervals extends LocalizedPage
     {
         $specialist = $this->selectedSpecialist();
         $timezone = $specialist?->timezone ?: app(OrganizationContext::class)->defaultTimezone();
+
         return __('График задан по времени: ').TimezoneOptions::display($timezone);
     }
 

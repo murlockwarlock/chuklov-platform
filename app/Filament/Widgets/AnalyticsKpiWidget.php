@@ -26,7 +26,6 @@ use Illuminate\Support\Facades\Auth;
 final class AnalyticsKpiWidget extends StatsOverviewWidget
 {
     use HasDashboardLoadingPlaceholder;
-
     use InteractsWithPageFilters;
 
     protected static ?int $sort = 2;

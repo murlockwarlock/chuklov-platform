@@ -2,8 +2,8 @@
 
 namespace App\Filament\Resources\ContentSections\Tables;
 
-use App\Filament\Support\FormValidationFeedback;
 use App\Filament\Resources\ContentSections\ContentSectionResource;
+use App\Filament\Support\FormValidationFeedback;
 use App\Models\User;
 use App\Modules\Content\Application\ContentVideoUrlResolver;
 use App\Modules\Content\Application\SetContentSectionVisibility;

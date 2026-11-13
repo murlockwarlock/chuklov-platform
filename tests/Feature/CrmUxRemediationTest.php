@@ -2,9 +2,8 @@
 
 namespace Tests\Feature;
 
-use App\Filament\Pages\FeedbackConfiguration;
 use App\Filament\Livewire\DatabaseNotifications;
-use App\Filament\Widgets\AnalyticsKpiWidget;
+use App\Filament\Pages\FeedbackConfiguration;
 use App\Filament\Pages\SchedulingConfiguration;
 use App\Filament\Resources\Bookings\Pages\ListBookings;
 use App\Filament\Resources\BroadcastCampaigns\Pages\CreateBroadcastCampaign;
@@ -14,6 +13,8 @@ use App\Filament\Resources\LegalDocuments\Pages\ListLegalDocuments;
 use App\Filament\Resources\NotificationTemplates\Pages\ListNotificationTemplates;
 use App\Filament\Resources\ScenarioActions\Pages\ListScenarioActions;
 use App\Filament\Resources\ScenarioRules\Pages\CreateScenarioRule;
+use App\Filament\Support\TimezoneOptions;
+use App\Filament\Widgets\AnalyticsKpiWidget;
 use App\Models\User;
 use App\Modules\Channels\Application\NotificationChannelRegistry;
 use App\Modules\Feedback\Domain\Models\FeedbackTheme;
@@ -141,7 +142,7 @@ final class CrmUxRemediationTest extends TestCase
         self::assertStringContainsString('onFailure', $feedback);
         self::assertStringContainsString('onError', $feedback);
         self::assertStringContainsString('Введённые значения формы останутся на экране', $feedback);
-        self::assertStringContainsString("resources/js/filament/network-feedback.ts", $viteConfig);
+        self::assertStringContainsString('resources/js/filament/network-feedback.ts', $viteConfig);
     }
 
     public function test_dashboard_lazy_widgets_show_a_visible_loading_state(): void
@@ -201,7 +202,7 @@ final class CrmUxRemediationTest extends TestCase
 
     public function test_crm_timezone_labels_do_not_expose_iana_keys(): void
     {
-        $options = \App\Filament\Support\TimezoneOptions::options(current: 'Asia/Almaty', organization: 'Asia/Almaty');
+        $options = TimezoneOptions::options(current: 'Asia/Almaty', organization: 'Asia/Almaty');
 
         self::assertSame('Алматы (UTC+05:00)', $options['Asia/Almaty']);
         self::assertStringNotContainsString('Asia/Almaty', $options['Asia/Almaty']);

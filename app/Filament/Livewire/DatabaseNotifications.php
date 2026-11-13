@@ -3,8 +3,8 @@
 namespace App\Filament\Livewire;
 
 use App\Modules\Organizations\Application\OrganizationContext;
-use Filament\Notifications\Notification;
 use Filament\Livewire\DatabaseNotifications as FilamentDatabaseNotifications;
+use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Notifications\DatabaseNotification;

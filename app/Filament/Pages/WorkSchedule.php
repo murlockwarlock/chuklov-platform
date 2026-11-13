@@ -392,6 +392,7 @@ final class WorkSchedule extends LocalizedPage
     public function specialistScheduleTimezoneLabel(): string
     {
         $timezone = $this->specialistScheduleTimezone();
+
         return __('График задан по времени: ').TimezoneOptions::display($timezone);
     }
 

@@ -22,7 +22,6 @@ use Illuminate\Support\Facades\Auth;
 class AnalyticsFinanceWidget extends StatsOverviewWidget
 {
     use HasDashboardLoadingPlaceholder;
-
     use InteractsWithPageFilters;
 
     protected static ?int $sort = 5;

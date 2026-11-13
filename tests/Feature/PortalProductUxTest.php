@@ -164,7 +164,7 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString('portal-companion__composer-buttons', $companion);
         self::assertStringContainsString('@keydown="handleComposerKeydown"', $companion);
         self::assertStringContainsString('event.shiftKey', $companion);
-        self::assertStringContainsString("onNetworkError: ()", $companion);
+        self::assertStringContainsString('onNetworkError: ()', $companion);
         self::assertStringContainsString('companion.sendNetworkError', $companion);
         self::assertStringContainsString("window.confirm(t('booking.confirmCancel'))", $bookingShow);
         self::assertStringContainsString('group-required-acceptance', $confirmation);
@@ -205,8 +205,8 @@ class PortalProductUxTest extends TestCase
     {
         $booking = (string) file_get_contents(resource_path('js/Pages/Portal/BookingCreate.vue'));
 
-        self::assertStringContainsString("selected_start_at", $booking);
-        self::assertStringContainsString("booking_step", $booking);
+        self::assertStringContainsString('selected_start_at', $booking);
+        self::assertStringContainsString('booking_step', $booking);
         self::assertStringContainsString('window.history.replaceState', $booking);
         self::assertStringContainsString('localSlotDate', $booking);
         self::assertStringContainsString('onMounted', $booking);
