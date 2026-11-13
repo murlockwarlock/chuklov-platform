@@ -34,6 +34,8 @@ application code. Поэтому branch head может быть новее runt
 | CRM first-time usability | PASS | 60 grouped CRM surfaces; loading, labels, empty states, primary actions, validation and return paths checked |
 | Portal first-time usability | PASS | Critical client flows, empty commerce/content states and mobile layouts checked on code-equivalent staging runtime |
 | Mini App actual Telegram | NOT RUN | Approved interactive Telegram QA identity/browser was unavailable; direct public/protected route probes were run separately |
+| Browser Chromium | PASS | CRM 1440/1024/768 and client 390/360/320 representative flows, including exact final CRM recheck |
+| Browser WebKit | PASS for required representative flows | Client auth-equivalent, booking, specialist, payment boundary, survey, tracker, chat and CRM representative flows; actual Telegram client was not run |
 | HOME VISIT | PASS | Temporary service/specialist/location/schedule fixture, mobile Chromium 390/360 and WebKit 390; cleanup completed |
 | Finance local/manual UX | PASS | Obligations, partial/full manual payment, duplicate click, configuration, receipts/history and reconciliation states checked |
 | AI configuration UX | PASS | Provider/prompt/evaluation/configuration unavailable and failure states checked; real provider execution is external limitation |
@@ -66,6 +68,7 @@ are not counted as separate products.
 | CRM writable/actionable surfaces | 55 | 55/55 meaningful mutation or action lifecycle covered |
 | Portal top-level flows | 23 | 23/23 route/open and first-time meaning covered |
 | Portal writable/action flows | 17 | 17/17 local action lifecycle covered; external payment side effect stopped at safe boundary |
+| Deeply exercised writable surfaces | 72 | CRM 55/55 plus Portal 17/17; each received a real action lifecycle, with distinct invalid/correction coverage by form pattern |
 | Telegram destination families | 2 | Runtime/API and route semantics checked; interactive session NOT RUN |
 | Admin route variants discovered | 137 | Human routes separated from internal/debug endpoints |
 | Portal route/action variants discovered | 78 | Authenticated, public and protected route families included |
@@ -281,6 +284,16 @@ required before implementation.
 
 Remaining counts: `WORTHWHILE = 6`, `COSMETIC = 0`. These proposals are not
 silently promoted into redesign work.
+
+## Owner decisions required
+
+- Medical attachment replacement/remove/versioning policy: current truthful
+  upload/download lifecycle is usable; implementing replacement must preserve
+  protected history and requires the accepted retention policy.
+- Whether broadcast product should expose a separately consented “test only”
+  recipient mode once an eligible synthetic Telegram identity is provisioned.
+- Whether a dedicated restricted-permission staging QA identity should be
+  provisioned for a later browser pass.
 
 ## State, error and adversarial checks
 
