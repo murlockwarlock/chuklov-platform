@@ -1299,7 +1299,7 @@ final class SchedulingJournalProductionPassTest extends TestCase
         $compactCardStyle = $journal->instance()->bookingStyle($overlapStyle);
         self::assertNotSame($normalCardStyle, $compactCardStyle);
         self::assertStringContainsString('- 4px', $normalCardStyle);
-        self::assertStringContainsString('- 18px', $compactCardStyle);
+        self::assertStringContainsString('- 6px', $compactCardStyle);
 
         $journal->call('setCalendarDensity', 'wide')->assertSet('calendarDensity', 'wide');
         self::assertStringContainsString('--journal-day-min-width: 360px;', $journal->html());
