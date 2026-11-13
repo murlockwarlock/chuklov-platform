@@ -209,6 +209,7 @@ class PortalProductUxTest extends TestCase
         self::assertStringContainsString("booking_step", $booking);
         self::assertStringContainsString('window.history.replaceState', $booking);
         self::assertStringContainsString('localSlotDate', $booking);
+        self::assertStringContainsString('onMounted', $booking);
 
         $portalCss = (string) file_get_contents(resource_path('css/app.css'));
 

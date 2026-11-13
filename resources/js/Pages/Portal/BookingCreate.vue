@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { router, useForm, useRemember } from '@inertiajs/vue3';
-import { computed, ref, unref, watch } from 'vue';
+import { computed, onMounted, ref, unref, watch } from 'vue';
 import AppShell from '../../Components/Portal/AppShell.vue';
 import BookingCalendar from '../../Components/Portal/BookingCalendar.vue';
 import BookingChoiceList from '../../Components/Portal/BookingChoiceList.vue';
@@ -362,6 +362,14 @@ watch(selectedStart, (value) => {
 
 watch(bookingStep, (value) => {
     updateBookingSelectionUrl(selectedStart.value, value === 'confirmation' ? 'confirmation' : null);
+});
+
+onMounted(() => {
+    const selection = readBookingSelection();
+
+    if (selection.start !== null && !availableStart(selection.start)) {
+        updateBookingSelectionUrl(null, null);
+    }
 });
 
 const selectedService = computed(() =>
