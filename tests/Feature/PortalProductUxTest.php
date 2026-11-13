@@ -213,6 +213,8 @@ class PortalProductUxTest extends TestCase
         $portalCss = (string) file_get_contents(resource_path('css/app.css'));
 
         self::assertStringContainsString('margin-bottom: calc(5.75rem + env(safe-area-inset-bottom))', $portalCss);
+        self::assertStringContainsString('position: sticky', $portalCss);
+        self::assertStringContainsString('bottom: calc(5.75rem + env(safe-area-inset-bottom))', $portalCss);
     }
 
     public function test_common_client_portal_sources_do_not_expose_raw_translation_keys(): void

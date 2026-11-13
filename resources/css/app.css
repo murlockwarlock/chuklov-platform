@@ -3686,6 +3686,9 @@ select.portal-input[aria-invalid='true'] {
 
 @media (max-width: 47.99rem) {
     .portal-booking-flow__cta {
+        position: sticky;
+        z-index: 5;
+        bottom: calc(5.75rem + env(safe-area-inset-bottom));
         margin-bottom: calc(5.75rem + env(safe-area-inset-bottom));
     }
 }
