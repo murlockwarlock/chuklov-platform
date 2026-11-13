@@ -365,11 +365,13 @@ watch(bookingStep, (value) => {
 });
 
 onMounted(() => {
-    const selection = readBookingSelection();
+    window.setTimeout(() => {
+        const selection = readBookingSelection();
 
-    if (selection.start !== null && !availableStart(selection.start)) {
-        updateBookingSelectionUrl(null, null);
-    }
+        if (selection.start !== null && !availableStart(selection.start)) {
+            updateBookingSelectionUrl(null, null);
+        }
+    }, 0);
 });
 
 const selectedService = computed(() =>
