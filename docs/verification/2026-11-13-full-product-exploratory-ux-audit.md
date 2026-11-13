@@ -9,17 +9,23 @@ inventory и не запускал новый полный аудит с нул�
 реальные UI-контролы, с targeted code inspection только после browser
 reproduction. Owner не использовался как exploratory QA.
 
+После предыдущего отчёта owner обнаружил на реальном Journal UI пропущенный
+REAL BUG: крупная текстовая кнопка rebooking ухудшала читаемость cancelled
+booking cards. Предыдущий Journal PASS поэтому считался неполным. Выполнен
+только bounded Journal regression: compact action, overlap geometry, click
+prefill, Back/reload и narrow responsive states.
+
 ## Идентичность кандидата
 
 | Поле | Значение |
 | --- | --- |
 | Starting SHA | `19d1e084df67f14a0060ced05a0e1496fa2b8905` |
 | Previous audit SHA | `a032c172e2766337d086bf414f725355f4a6a9f5` |
-| Final application SHA | `3aab348815a41a4ef9896400c75173ade1b4dba0` |
+| Final application SHA | `5e09a296b3d5670cae0770ef70f85b0027331bb6` |
 | Repository | `murlockwarlock/chuklov-platform` |
 | Branch | `audit/full-product-exploratory-ux` |
 | Pull request | [PR #77](https://github.com/murlockwarlock/chuklov-platform/pull/77), Draft |
-| Staging exact SHA | `3aab348815a41a4ef9896400c75173ade1b4dba0` |
+| Staging exact SHA | `5e09a296b3d5670cae0770ef70f85b0027331bb6` |
 | Migrations | `Nothing to migrate.` |
 
 `Final application SHA` и `Staging exact SHA` совпадают. После этого runtime
@@ -68,7 +74,7 @@ are not counted as separate products.
 | CRM writable/actionable surfaces | 55 | 55/55 meaningful mutation or action lifecycle covered |
 | Portal top-level flows | 23 | 23/23 route/open and first-time meaning covered |
 | Portal writable/action flows | 17 | 17/17 local action lifecycle covered; external payment side effect stopped at safe boundary |
-| Deeply exercised writable surfaces | 72 | CRM 55/55 plus Portal 17/17; each received a real action lifecycle, with distinct invalid/correction coverage by form pattern |
+| Deeply exercised writable surfaces / total writable surfaces | 72 / 72 | CRM 55/55 plus Portal 17/17; each received a real action lifecycle, with distinct invalid/correction coverage by form pattern |
 | Telegram destination families | 2 | Runtime/API and route semantics checked; interactive session NOT RUN |
 | Admin route variants discovered | 137 | Human routes separated from internal/debug endpoints |
 | Portal route/action variants discovered | 78 | Authenticated, public and protected route families included |
@@ -99,7 +105,7 @@ artificial write.
 
 ### Exact staging candidate
 
-`3aab348815a41a4ef9896400c75173ade1b4dba0` was deployed with the protected
+`5e09a296b3d5670cae0770ef70f85b0027331bb6` was deployed with the protected
 staging flow. Observed:
 
 - health: database, pgvector, Redis and private storage all true;
@@ -115,6 +121,12 @@ staging flow. Observed:
 - exact staff companion network abort: POST requests were aborted in the
   browser, human failure/retry UI appeared, the entered text remained visible,
   and it was absent after reload.
+- exact Journal recheck: three released-for-rebooking cards at the same time
+  remained readable at 1440/1024 in compact, normal and wide density; the 28x28
+  icon action stayed inside each card, did not overlap card text or create page
+  overflow, and remained stable across reload. Click opened Create Booking with
+  the released date/time/specialist prefilled; Back returned to Journal history.
+  Narrow 390/360 checks also passed with the action visible and contained.
 
 The Portal client browser state available for this final candidate was expired.
 The approved client 2 is currently inactive and its email is outside the
@@ -142,7 +154,7 @@ only for an external or access-boundary limitation with a concrete reason.
 | Companion staff side and messages | QA administrator | client companion, Messages | unread/read, takeover, reply, validation, network abort, retry, second reply, reload | PASS | BUG-CRM-005, BUG-CRM-006 |
 | Medical sessions and clinical data | QA administrator/specialist | client sessions | invalid → correction → save → reload, long text, score fields, cancel and protected context | PASS | — |
 | CRM attachments/media | QA administrator | client/session media | upload, invalid/large/wrong type boundary, replace/remove where lifecycle exists, reload and private preview | PASS | — |
-| Bookings and booking journal | QA administrator | `/admin/bookings` | filters, open/edit, create, multiple, cancel/reschedule, same-time overlap, reload/back, 1440/1024 | PASS | BUG-CRM-002 |
+| Bookings and booking journal | QA administrator | `/admin/bookings` | filters, open/edit, create, multiple, cancel/reschedule, released-history rebooking action, 3-way overlap, density states, reload/back, 1440/1024/390/360 | PASS | BUG-CRM-002, BUG-CRM-008 |
 | Scheduling configuration | QA administrator | `/admin/scheduling-configuration` | understand scope, safe change, invalid/correction, save/reload/restore | PASS | — |
 | Work schedule and working intervals | QA administrator | `/admin/work-schedule`, `/admin/working-intervals` | specialist selection, timezone, empty/one/many intervals, overlap validation, reload | PASS | BUG-CRM-002 |
 | Schedule exceptions and unavailable periods | QA administrator | corresponding resources | create/edit, past/future date, invalid range, correction, archive/delete lifecycle, list return | PASS | — |
@@ -253,6 +265,7 @@ rechecked through the affected browser journey.
 | BUG-CRM-005 | REAL BUG | CRM network actions | failed Livewire action left the user without a result or safe retry | global human error banner, retry guidance and loading-control recovery | `CrmUxRemediationTest` | exact staging POST abort PASS; values retained, no write |
 | BUG-CRM-006 | REAL BUG | communications and AI | notification/AI failure text exposed ambiguous or technical meaning | human labels, status explanations, next action and localized validation | notification, scenario and AI focused suites | catalog, template, rule, companion and AI states PASS |
 | BUG-CRM-007 | REAL BUG | configuration ordering | ordinary admin had to understand numeric ordering fields/keys | reorder controls, hidden derived order, PostgreSQL lock/aggregate-safe update | tracker/configuration focused tests | tracker, medical, content and analytics reorder PASS |
+| BUG-CRM-008 | REAL BUG | Booking Journal released history | large `+ Добавить` CTA with `shrink-0` consumed narrow/overlap card width and obscured specialist or booking text | retained the rebooking action as a keyboard/touch-friendly 28x28 `+` icon with human title/ARIA label; reserved flex space and compact `p-0`/`gap-0` geometry keep it inside overlap cards without widening the calendar | `SchedulingJournalProductionPassTest`, E2E Journal assertions | exact staging Chromium 1440/1024, compact/normal/wide, 3 overlapping cards, 390/360, click/prefill/Back/reload PASS |
 | BUG-PORTAL-001 | REAL BUG | booking cancellation | cancel action could be triggered without an explicit confirmation step | confirmation dialog before cancellation | Portal feature/E2E regression | Chromium/WebKit booking detail PASS |
 | BUG-PORTAL-002 | REAL BUG | mobile booking CTA | sticky action could sit under fixed mobile navigation | bottom clearance and sticky CTA placement | Portal product regression | Chromium 390/360 and WebKit 390 PASS |
 | BUG-PORTAL-003 | REAL BUG | booking state retention | selected slot/confirmation step was lost after reload/back transition | URL-backed selection/step persistence and stale-slot validation | `PortalProductUxTest` | OFFICE/ONLINE/HOME reload and return PASS |
@@ -261,10 +274,9 @@ rechecked through the affected browser journey.
 | BUG-PORTAL-006 | REAL BUG | Portal companion | network abort did not give a clear retry state | human error/retry copy, preserved composer state and safe action handling | Portal companion tests | Chromium/WebKit abort/retry/reload PASS |
 
 Result: `BLOCKING found/fixed/open = 1/1/0` and
-`REAL BUG found/fixed/open = 12/12/0` in this consolidated ledger. The first
-pass contributed nine of these records; dashboard loading was explicitly
-reclassified as REAL BUG per the owner instruction, and stale booking history
-cleanup was confirmed and fixed during the second pass. No unresolved
+`REAL BUG found/fixed/open = 13/13/0` in this consolidated ledger. The owner
+found the Journal defect after the earlier report, so the earlier Journal PASS
+was explicitly superseded by BUG-CRM-008 and the bounded regression above. No unresolved
 user-visible BLOCKING or REAL BUG remains in the locally testable scope.
 
 ## Remaining UX proposals
@@ -355,6 +367,10 @@ limitations are not presented as PASS and are not counted as product defects.
 - Temporary HOME VISIT service, specialist assignment, working schedule,
   location-day and location state were restored through normal CRM lifecycle
   actions. No temporary service remained available in Portal.
+- The three synthetic released booking history records used for the Journal
+  overlap proof were cancelled through the normal booking lifecycle and remain
+  visible as cancelled history; no raw delete was used because booking/audit
+  history is not disposable data.
 - Safe synthetic notification template and scenario rule were deactivated after
   their lifecycle checks. Synthetic staff companion messages remain as audit
   history; they were not deleted because message history is an immutable
@@ -371,12 +387,19 @@ limitations are not presented as PASS and are not counted as product defects.
 | --- | --- |
 | Focused browser-remediation suite | PASS: 151 tests, 2,445 assertions |
 | `tests/Feature/NotificationCatalogTest.php` | PASS: 7 tests, 50 assertions after aligning the stale test expectation with `Требуется настройка` |
+| `composer lint` | PASS on the PR-scoped Pint files |
+| PR-specific PHPStan | PASS: `MoveTrackerPlan.php` targeted analysis returned 0 errors; no added-line errors in the new Journal action code |
+| Tracker reorder regression | PASS: `TrackerPlanCrmTest` 10 tests, 68 assertions; payment mapping and purchase fulfillment focused tests also passed |
+| Journal feature regression | PASS: 2 tests, 58 assertions |
 | Local frontend typecheck | PASS |
 | Local frontend build | PASS |
-| Exact staging deploy | PASS: exact SHA above, no migrations |
-| `scripts/staging-smoke.sh` | PASS |
-| Chromium exact final runtime recheck | PASS for CRM dashboard/catalog and network failure; Portal recheck blocked by expired/inactive approved identity |
-| Hosted CI | Run `43350610458`, exact head SHA `3aab348815a41a4ef9896400c75173ade1b4dba0`; `failure` in Quality. The job reported 14 Pint style issues, PHPStan findings and dependency advisories, including files outside the scoped browser fixes. Focused application tests and staging smoke passed separately. CI is supplemental and not browser proof |
+| Exact staging deploy | PASS: exact SHA above, no migrations; first attempt was rolled back by a transient host UDP listener guard and a retry completed successfully |
+| `scripts/staging-smoke.sh` | PASS on exact `5e09a296` |
+| Chromium exact Journal runtime recheck | PASS: 1440/1024 compact/normal/wide, 3-way overlap, 390/360, prefill, Back and reload; no page/console errors |
+| Chromium exact earlier runtime recheck | PASS for CRM dashboard/catalog and network failure; unchanged Portal evidence remains from the immediately preceding code-equivalent runtime because approved client identity was expired/inactive |
+| Hosted CI | Run `43368817358`, exact head SHA `5e09a296b3d5670cae0770ef70f85b0027331bb6`; feature tests, Pint, frontend lint/typecheck/build PASS. Quality remains red only for repository-wide existing PHPStan baseline and Composer audit baseline (13 advisories / 7 packages); PR-specific added-line PHPStan is PASS |
+| Repository-wide PHPStan | Existing baseline / unchanged; not repaired in PR #77 |
+| Composer audit | Existing baseline / unchanged: 13 advisories affecting 7 packages; dependency updates intentionally out of scope |
 
 ## Final decision
 
