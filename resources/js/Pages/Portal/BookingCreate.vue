@@ -371,7 +371,7 @@ onMounted(() => {
         if (selection.start !== null && !availableStart(selection.start)) {
             updateBookingSelectionUrl(null, null);
         }
-    }, 0);
+    }, 50);
 });
 
 const selectedService = computed(() =>
