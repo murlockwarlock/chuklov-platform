@@ -57,6 +57,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Locked;
 use Throwable;
 
 class EditMedicalSession extends LocalizedEditRecord
@@ -71,7 +72,8 @@ class EditMedicalSession extends LocalizedEditRecord
 
     public int $resultFormVersion = 0;
 
-    protected bool $autosaveReady = false;
+    #[Locked]
+    public bool $autosaveReady = false;
 
     protected bool $autosaveInProgress = false;
 
@@ -535,6 +537,7 @@ class EditMedicalSession extends LocalizedEditRecord
             return;
         }
 
+        $this->data = SessionForm::withStableLineageKeys($this->data);
         $this->autosaveInProgress = true;
         try {
             $this->save(false, false);
@@ -660,6 +663,9 @@ class EditMedicalSession extends LocalizedEditRecord
             return parent::handleRecordUpdate($record, $data);
         }
 
+        $data = SessionForm::withStableLineageKeys($data);
+        $this->data = $data;
+
         try {
             $command = UpdateSessionCommand::fromArray(self::normalizeClinical($data));
         } catch (ValidationException $exception) {
@@ -679,6 +685,14 @@ class EditMedicalSession extends LocalizedEditRecord
         } catch (ValidationException $exception) {
             throw $this->formValidationFailure($exception, $formState);
         } catch (Throwable $exception) {
+            if ($this->autosaveInProgress) {
+                throw $this->unexpectedAutosaveFailure($exception, $formState, [
+                    'organization_id' => app(OrganizationContext::class)->id(),
+                    'actor_user_id' => $actor->getKey(),
+                    'entity_id' => (int) $record->getKey(),
+                ]);
+            }
+
             throw $this->unexpectedFormFailure($exception, $formState);
         }
     }

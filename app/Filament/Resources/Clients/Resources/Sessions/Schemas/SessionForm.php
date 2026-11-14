@@ -495,6 +495,31 @@ final class SessionForm
             });
     }
 
+    /** @param array<string, mixed> $state */
+    public static function withStableLineageKeys(array $state): array
+    {
+        foreach (['pains', 'protocol_steps'] as $field) {
+            if (! is_array($state[$field] ?? null)) {
+                continue;
+            }
+
+            foreach ($state[$field] as $key => $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+
+                $lineageKey = $item['lineage_key'] ?? null;
+                if (is_string($lineageKey) && Str::isUuid($lineageKey)) {
+                    continue;
+                }
+
+                $state[$field][$key]['lineage_key'] = (string) Str::uuid();
+            }
+        }
+
+        return $state;
+    }
+
     private static function previousAfterScore(Get $get): mixed
     {
         $state = $get('');

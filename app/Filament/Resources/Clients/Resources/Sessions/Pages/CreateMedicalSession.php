@@ -5,6 +5,7 @@ namespace App\Filament\Resources\Clients\Resources\Sessions\Pages;
 use App\Filament\Resources\Clients\ClientResource;
 use App\Filament\Resources\Clients\Resources\Sessions\MedicalSessionResource;
 use App\Filament\Resources\Clients\Resources\Sessions\Schemas\ClinicalTestProtocol;
+use App\Filament\Resources\Clients\Resources\Sessions\Schemas\SessionForm;
 use App\Filament\Support\InteractsWithFormValidationFeedback;
 use App\Filament\Support\LocalizedCreateRecord;
 use App\Models\User;
@@ -18,6 +19,7 @@ use App\Modules\Sessions\Domain\Models\MedicalSession;
 use Filament\Notifications\Notification;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\Locked;
 use Throwable;
 
 class CreateMedicalSession extends LocalizedCreateRecord
@@ -30,7 +32,8 @@ class CreateMedicalSession extends LocalizedCreateRecord
 
     protected static ?string $breadcrumb = 'Новый сеанс';
 
-    protected bool $autosaveReady = false;
+    #[Locked]
+    public bool $autosaveReady = false;
 
     protected function fillForm(): void
     {
@@ -87,6 +90,7 @@ class CreateMedicalSession extends LocalizedCreateRecord
             return;
         }
 
+        $this->data = SessionForm::withStableLineageKeys($this->data);
         $this->isCreating = true;
         try {
             $data = $this->form->getState();
@@ -112,6 +116,9 @@ class CreateMedicalSession extends LocalizedCreateRecord
         $parent = $this->parentClient();
         $formState = $data;
 
+        $data = SessionForm::withStableLineageKeys($data);
+        $this->data = $data;
+
         unset($data['pain_not_measured'], $data['pain_vas']);
 
         try {
@@ -130,6 +137,14 @@ class CreateMedicalSession extends LocalizedCreateRecord
         } catch (ValidationException $exception) {
             throw $this->formValidationFailure($exception, $formState);
         } catch (Throwable $exception) {
+            if ($this->isCreating) {
+                throw $this->unexpectedAutosaveFailure($exception, $formState, [
+                    'organization_id' => app(OrganizationContext::class)->id(),
+                    'actor_user_id' => $actor->getKey(),
+                    'entity_id' => null,
+                ]);
+            }
+
             throw $this->unexpectedFormFailure($exception, $formState);
         }
     }
