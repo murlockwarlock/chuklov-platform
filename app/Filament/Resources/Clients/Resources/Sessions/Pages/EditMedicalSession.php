@@ -544,8 +544,13 @@ class EditMedicalSession extends LocalizedEditRecord
             Notification::make()->success()->title(__('Изменения сохранены'))->send();
         } catch (ValidationException $exception) {
             Notification::make()->danger()->title(__('Изменения не сохранены'))->body((string) collect($exception->errors())->flatten()->first())->send();
-        } catch (Throwable) {
-            Notification::make()->danger()->title(__('Изменения не сохранены'))->body(__('Исправьте данные и повторите действие.'))->send();
+        } catch (Throwable $exception) {
+            $mapped = $this->unexpectedAutosaveFailure($exception, $this->data, [
+                'organization_id' => app(OrganizationContext::class)->id(),
+                'actor_user_id' => $this->actor()->getKey(),
+                'entity_id' => (int) $this->session()->getKey(),
+            ]);
+            Notification::make()->danger()->title(__('Изменения не сохранены'))->body((string) collect($mapped->errors())->flatten()->first())->send();
         } finally {
             $this->autosaveInProgress = false;
         }

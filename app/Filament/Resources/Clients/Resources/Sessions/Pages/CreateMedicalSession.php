@@ -104,7 +104,12 @@ class CreateMedicalSession extends LocalizedCreateRecord
         } catch (ValidationException $exception) {
             Notification::make()->danger()->title(__('Не удалось сохранить черновик'))->body((string) collect($exception->errors())->flatten()->first())->send();
         } catch (Throwable $exception) {
-            Notification::make()->danger()->title(__('Не удалось сохранить черновик'))->body(__('Исправьте данные и повторите действие.'))->send();
+            $mapped = $this->unexpectedAutosaveFailure($exception, $this->data, [
+                'organization_id' => app(OrganizationContext::class)->id(),
+                'actor_user_id' => $this->actor()->getKey(),
+                'entity_id' => null,
+            ]);
+            Notification::make()->danger()->title(__('Не удалось сохранить черновик'))->body((string) collect($mapped->errors())->flatten()->first())->send();
         } finally {
             $this->isCreating = false;
         }
