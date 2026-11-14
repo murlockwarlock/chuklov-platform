@@ -84,7 +84,7 @@ final class ResetStagingClientAccountTest extends TestCase
         ]);
     }
 
-    public function test_staging_client_card_does_not_expose_the_internal_reset_action(): void
+    public function test_staging_client_card_exposes_the_internal_reset_action_to_authorized_staff(): void
     {
         [, $admin, $client] = $this->fixture();
         $previousEnvironment = app()->environment();
@@ -94,7 +94,7 @@ final class ResetStagingClientAccountTest extends TestCase
         try {
             Livewire::actingAs($admin)
                 ->test(ViewClient::class, ['record' => $client->getKey()])
-                ->assertActionHidden('resetStagingAccount');
+                ->assertActionVisible('resetStagingAccount');
         } finally {
             app()->instance('env', $previousEnvironment);
         }
