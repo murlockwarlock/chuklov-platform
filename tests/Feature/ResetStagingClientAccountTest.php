@@ -48,6 +48,9 @@ final class ResetStagingClientAccountTest extends TestCase
     public function test_authorized_operator_can_reset_a_staging_client_from_the_client_card(): void
     {
         [$organization, $admin, $client] = $this->fixture();
+        config()->set('staging.reset_client_ids', [$client->getKey()]);
+        $previousEnvironment = app()->environment();
+        app()->instance('env', 'staging');
         ClientChannelIdentity::factory()->forClient($client)->create();
         ClientOnboarding::factory()->forClient($client)->create();
         ClientReferralIdentity::forceCreate([
@@ -64,12 +67,16 @@ final class ResetStagingClientAccountTest extends TestCase
         ]);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
-        Livewire::actingAs($admin)
-            ->test(ViewClient::class, ['record' => $client->getKey()])
-            ->assertActionVisible('resetStagingAccount')
-            ->callAction('resetStagingAccount')
-            ->assertNotified('Аккаунт сброшен для повторного теста')
-            ->assertRedirect(ClientResource::getUrl('index'));
+        try {
+            Livewire::actingAs($admin)
+                ->test(ViewClient::class, ['record' => $client->getKey()])
+                ->assertActionVisible('resetStagingAccount')
+                ->callAction('resetStagingAccount')
+                ->assertNotified('Аккаунт сброшен для повторного теста')
+                ->assertRedirect(ClientResource::getUrl('index'));
+        } finally {
+            app()->instance('env', $previousEnvironment);
+        }
 
         self::assertDatabaseMissing('clients', ['id' => $client->getKey()]);
         self::assertDatabaseMissing('client_channel_identities', ['client_id' => $client->getKey()]);
@@ -84,7 +91,7 @@ final class ResetStagingClientAccountTest extends TestCase
         ]);
     }
 
-    public function test_staging_client_card_exposes_the_internal_reset_action_to_authorized_staff(): void
+    public function test_staging_client_card_hides_reset_action_without_an_explicit_qa_allowlist(): void
     {
         [, $admin, $client] = $this->fixture();
         $previousEnvironment = app()->environment();
@@ -94,15 +101,39 @@ final class ResetStagingClientAccountTest extends TestCase
         try {
             Livewire::actingAs($admin)
                 ->test(ViewClient::class, ['record' => $client->getKey()])
-                ->assertActionVisible('resetStagingAccount');
+                ->assertActionHidden('resetStagingAccount');
         } finally {
             app()->instance('env', $previousEnvironment);
         }
     }
 
+    public function test_reset_rejects_a_staging_client_without_an_explicit_qa_allowlist(): void
+    {
+        [$organization, $admin, $client] = $this->fixture();
+        $previousEnvironment = app()->environment();
+        app()->instance('env', 'staging');
+
+        try {
+            $this->expectException(AuthorizationException::class);
+            app(ResetStagingClientAccount::class)->handle($admin, $client);
+        } finally {
+            app()->instance('env', $previousEnvironment);
+        }
+
+        self::assertDatabaseHas('clients', [
+            'organization_id' => $organization->getKey(),
+            'id' => $client->getKey(),
+        ]);
+        self::assertDatabaseMissing('audit_events', [
+            'action' => 'client.staging_account.reset',
+            'target_id' => (string) $client->getKey(),
+        ]);
+    }
+
     public function test_reset_removes_a_client_with_working_history(): void
     {
         [$organization, $admin, $client] = $this->fixture();
+        config()->set('staging.reset_client_ids', [$client->getKey()]);
         $specialist = Specialist::factory()->forOrganization($organization)->create();
         $service = Service::factory()->forOrganization($organization)->create();
         $booking = Booking::factory()
@@ -177,6 +208,7 @@ final class ResetStagingClientAccountTest extends TestCase
     public function test_reset_removes_companion_records_before_their_ai_run(): void
     {
         [$organization, $admin, $client] = $this->fixture();
+        config()->set('staging.reset_client_ids', [$client->getKey()]);
         $conversation = Conversation::factory()->forClient($client)->create([
             'conversation_type' => 'client_companion',
         ]);
@@ -280,6 +312,7 @@ final class ResetStagingClientAccountTest extends TestCase
     {
         [$organization, $admin, $owner] = $this->fixture();
         $clinicalClient = Client::factory()->forOrganization($organization)->create();
+        config()->set('staging.reset_client_ids', [$clinicalClient->getKey()]);
         $patient = PatientProfile::forceCreate([
             'organization_id' => $organization->getKey(),
             'owner_client_id' => $owner->getKey(),
@@ -317,6 +350,7 @@ final class ResetStagingClientAccountTest extends TestCase
     public function test_reset_rejects_a_client_with_purchase_history_and_preserves_it(): void
     {
         [$organization, $admin, $client] = $this->fixture();
+        config()->set('staging.reset_client_ids', [$client->getKey()]);
         $purchaseId = $this->createPurchase($organization, $client);
         Filament::setCurrentPanel(Filament::getPanel('admin'));
 
@@ -339,6 +373,7 @@ final class ResetStagingClientAccountTest extends TestCase
     public function test_reset_rejects_a_client_holding_another_clients_gift_certificate(): void
     {
         [$organization, $admin, $client] = $this->fixture();
+        config()->set('staging.reset_client_ids', [$client->getKey()]);
         $purchaser = Client::factory()->forOrganization($organization)->create();
         $purchaseId = $this->createPurchase($organization, $purchaser);
         $purchaseItemId = DB::table('commerce_purchase_items')->insertGetId([
@@ -401,6 +436,7 @@ final class ResetStagingClientAccountTest extends TestCase
     public function test_unexpected_reset_failure_shows_and_logs_the_same_safe_reference(): void
     {
         [$organization, $admin, $client] = $this->fixture();
+        config()->set('staging.reset_client_ids', [$client->getKey()]);
         DB::table('medical_attachments')->insert([
             'uuid' => (string) Str::uuid(),
             'organization_id' => $organization->getKey(),
