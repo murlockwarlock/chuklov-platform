@@ -278,6 +278,11 @@ const bookingForm = useForm<{
     attribution_source: null,
     attribution_source_detail: '',
 });
+
+watch(() => props.selectedPatientId, (patientId) => {
+    bookingForm.patient_profile_id = patientId;
+}, { immediate: true });
+
 const personalErrors = computed(() => Object.fromEntries(Object.entries(bookingForm.errors)
     .filter(([key]) => key.startsWith('personal_data.')).map(([key, message]) => [key.slice('personal_data.'.length), message])));
 
