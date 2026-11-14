@@ -59,6 +59,21 @@ and Domain layers remain authoritative for tenant scope, authorization,
 idempotency, concurrency, audit, revisions, scheduling, and durable workflows.
 The frontend or Filament form must not become the source of trusted values.
 
+## Human-readable actions and errors
+
+- Every click, submit, upload, send, delete, or navigation action gives visible feedback: pending, success, or a human-readable error.
+- Validate fields and dependent fields together. Show the error beside the relevant field, preserve valid entered values, and let the user correct and retry without filling the form again.
+- Use meaningful action labels and one clear next step. Do not add generic `Открыть`, `Подробнее`, or extra transitions when they do not represent a real user decision.
+- Repeated actions must be safe: the UI communicates the result while the authoritative Application path prevents duplicate records, payments, and sends.
+
+## Visual and responsive acceptance
+
+- The contract applies equally to CRM, Portal, and Telegram Mini App for managers, administrators, specialists, owners, and ordinary clients.
+- Test the rendered interaction at 320, 360, 390, 768, 1024, and 1440 px. There must be no horizontal scrolling, clipped controls, or elements outside the viewport.
+- Check real visual output, not only routes, DOM presence, HTTP status, or successful methods. Reject empty dead ends, unexplained gaps, broken alignment, overlaps, pinned text, poor hierarchy, and inconsistent spacing as `REAL BUG`.
+- Keep a coherent page composition. Do not split one task into dozens of unrelated blocks or redesign a working module only to introduce a new visual style.
+- New CRM objects created for verification use normal human-readable names that explain their business purpose. Do not display `QA`, `synthetic`, `fixture`, raw IDs, enums, JSON, technical keys, or fabricated medical/financial facts as ordinary business data.
+
 ## Portal and responsive behavior
 
 Do not turn internal workflow states into a visible wizard unless the client

@@ -1,10 +1,11 @@
 # Direct staging QA
 
 Use the existing staging acceptance path before proposing new infrastructure or
-asking the owner for credentials. The owner's Mac may serve as a thin control
-plane for SSH and Chromium, Playwright, or WebKit against the real staging URL.
-Run product, runtime, and data checks on staging. Do not start the application,
-Docker, PostgreSQL, Redis, a staging database copy, or heavy suites on the Mac.
+asking the owner for credentials. The Mac is an 8 GB thin control plane for
+editing, Git, SSH, and remote browser control only. Do not run application
+tests, Docker, PostgreSQL, Redis, full builds, heavy linters, browser suites, or
+a staging database copy on the Mac. Staging is the primary and, before
+production exists, the only product acceptance environment.
 
 ## Connection and source identity
 
@@ -20,6 +21,14 @@ deployed revision with the task's authoritative GitHub source. A merge-only SHA
 difference without file changes does not require a redeploy. Use the protected
 staging deployment flow only when a runtime update is needed and authorized.
 
+## Staging evidence and diagnostics
+
+- Use PostgreSQL for staging acceptance. Check migrations, constraints, transactions, concurrent behavior, locks, JSON, dates/time zones, and idempotency where the change touches them.
+- Exercise real CRM, Portal, and Mini App controls, including both sides of the flow: staff action -> client result -> client action -> staff result.
+- Significant operations and errors must be diagnosable in staging logs by safe context: time, organization, action, result, correlation ID, queue/job, and external call. Never expose passwords, tokens, cookies, medical text/files, payment data, or other protected values in logs, screenshots, reports, or queue payloads.
+- Do not call providers directly as acceptance evidence. Keep provider references and error classifications safe and correlate them through the application runtime.
+- Do not call a capability `VERIFIED` without evidence from the exact deployed SHA under test.
+
 ## Existing identities and browser access
 
 Use the `chuklov-staging-qa` skill and the private profile under
@@ -31,6 +40,9 @@ when expired, use the ordinary login form, saved QA password, and fresh enrolled
 TOTP. Preserve reusable browser state after successful login. Never use the owner
 account, create another staff account,
 rotate credentials, disable MFA, or inject server-side sessions as browser proof.
+
+Do not create new QA accounts or infrastructure unless the existing path cannot
+exercise the requested capability and the owner authorizes the exception.
 
 For passwordless Portal acceptance, use a separate synthetic Client and the
 configured staging QA email domain. Request a code through the Portal UI, retrieve
@@ -53,11 +65,15 @@ and retain failed attempts and historical evidence. Do not invent medical text,
 scoring, legal copy, prices, or provider choices.
 
 Keep technical fixtures out of the ordinary operational state. Use human-readable
-illustrative records where helpful. Before removing a synthetic Portal Client,
-verify exact identity, task provenance, dependencies, active jobs, and recoverable
-scope, then use the CRM staging reset lifecycle if safe. Preserve commerce and
-audit evidence when reset is blocked. Never reset the acceptance database or run
-`migrate:fresh`, `db:wipe`, or `TRUNCATE` against staging.
+illustrative records where helpful; ordinary CRM names must not contain `QA`,
+`synthetic`, `fixture`, raw IDs, or invented medical/financial facts. Before
+removing a synthetic Portal Client, verify exact identity, task provenance,
+dependencies, active jobs, and recoverable scope, then use the CRM staging reset
+lifecycle if safe. Preserve commerce and audit evidence when reset is blocked.
+Staging permits necessary schema and record changes, but before any potentially
+destructive action resolve the exact target and create a recoverable backup.
+Never reset the acceptance database or run `migrate:fresh`, `db:wipe`, or
+`TRUNCATE` against staging.
 
 If the direct path fails, diagnose the missing local binary, saved profile,
 connection, or server response first. Report the exact unavailable capability;

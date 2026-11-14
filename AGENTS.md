@@ -59,6 +59,15 @@ Read `.ai/rules/index.md` and every matching rule before editing a path. Use a
 repo skill only when its trigger matches the task; skills add domain procedure,
 not a competing priority system.
 
+## Engineering defaults
+
+- Work at senior-team level: find and understand the existing implementation before extending it.
+- Do not create parallel entities, tables, services, catalogs, authorities, or hidden fallback paths.
+- Keep business rules explicit and centralized. Do not replace missing decisions with heuristics, guesses, or temporary behavior presented as permanent.
+- Add only the smallest abstraction needed at a real boundary. Keep future extension possible without speculative complexity.
+- Keep comments, abstractions, repeated documentation, and defensive checks proportional to the risk and contract.
+- Do not rewrite working modules for a new design or architectural style without an accepted requirement.
+
 ## Delivery modes
 
 `FAST_PATH` is the default for bounded product work:
@@ -83,8 +92,10 @@ data-loss risk. Apply the matching domain skill and evidence gates.
 Missing business data, authored content, thresholds, mappings, formulas,
 medical doctrine, legal copy, and provider credentials do not block building
 the surrounding mechanism. Implement the complete safe mechanism, expose
-business values through normal authorized CRM controls, verify with synthetic
-data, and report the remaining value as required configuration/content.
+business values through normal authorized CRM controls, verify technical
+behavior with controlled human-readable illustrative data, and report the
+remaining value as required configuration/content. Never use fabricated
+medical or financial facts as test data.
 
 Never invent medical doctrine, clinical recommendations, formulas, legal text,
 or authored content. Use disabled or fail-closed behavior when activation
@@ -136,19 +147,20 @@ asking for owner acceptance.
 
 ## Data and environments
 
+- The Mac is an 8 GB workstation and thin control plane only. Use it for editing, Git, SSH, and remote-operation control.
+- Do not run application tests, Docker, PostgreSQL, Redis, full builds, heavy linters, or browser test suites on the Mac. If staging is unavailable, report the capability blocker instead of replacing staging with a local heavy stack unless the owner explicitly changes this rule.
 - PostgreSQL is authoritative. SQLite is local signal only and cannot prove
   constraints, indexes, locks, races, JSON/native types, timestamps,
   transactions, or upsert semantics.
-- DB-sensitive behavior requires PostgreSQL evidence in hosted CI, a remote
-  runner, or authorized staging. Do not duplicate successful evidence locally
-  for ceremony.
-- Staging is the production-equivalent acceptance environment for PostgreSQL,
-  Redis, queues, scheduler, migrations, integrations, and real user paths.
+- Product, runtime, database, browser, and integration testing is performed on
+  staging. Hosted CI is not a substitute for staging acceptance and is used
+  only when a separate repository gate explicitly requires it.
+- Staging is the primary and, before production exists, the only product
+  acceptance environment for PostgreSQL, Redis, queues, scheduler, migrations,
+  integrations, and real user paths.
 - Do not start local PostgreSQL, Redis, workers, scheduler, full Compose, or
-  heavy browser/integration infrastructure by default. Use local lightweight
-  checks; use hosted/remote/staging evidence. A local heavy stack is an
-  explicit exception when remote evidence is unavailable, reproduction needs
-  it, or the owner asks for it.
+  heavy browser/integration infrastructure on the Mac. Use lightweight
+  repository or documentation checks locally and staging for product evidence.
 - Never run destructive resets, wipes, truncations, or `migrate:fresh` against
   the staging acceptance database. Use isolated CI/test databases.
 - `.codex/staging-deploy.md` contains local environment/deploy mechanics only;
@@ -179,6 +191,14 @@ Report only commands actually run and distinguish `PASS`, `VERIFIED`,
 configuration blockers. A user-visible scenario that remains broken keeps the
 task open regardless of green internal tests.
 
+## Action, error, and diagnostic contract
+
+- Every user action produces a visible pending state, successful result, or human-readable error.
+- Validate fields and their dependencies at the authoritative Application boundary and show actionable field errors without discarding entered values.
+- Prevent duplicate records, payments, and sends through idempotent server-side operations; a repeated click must not silently create a second effect.
+- Verify significant journeys as `open -> action -> second action -> result -> reload -> return`, including error -> correction, cancellation, authorization, and 0/1/many states.
+- Significant staging operations and errors must be diagnosable by safe structured context: time, organization, action, result, correlation ID, queue/job, and external call. Never log passwords, tokens, cookies, medical content/files, payment data, or other protected values. The staging procedure defines retrieval and redaction details.
+
 ## Local, hosted, and staging workflow
 
 For direct staging browser/SSH acceptance, follow `docs/operations/staging-qa.md`
@@ -189,7 +209,7 @@ with scheduled E2E; a push does not by itself imply a blocking CI run.
 
 For normal code changes:
 
-1. inspect the affected path and run focused local checks;
+1. inspect the affected path and run only lightweight repository or documentation checks locally; product testing belongs on staging;
 2. push one coherent candidate when remote iteration or evidence is needed;
 3. use authorized staging for focused iteration and batch related fixes when
    staging is the right acceptance boundary;
@@ -206,6 +226,11 @@ blocks when the touched feature or requested release path requires browser
 confidence.
 
 ## Git and release control
+
+Before each task, check the current `main`, the affected PRs, and the exact
+SHAs they reference. Do not assume branch, merge, or deployment state from
+chat context, and do not continue an unrelated PR. Create a dedicated branch
+from the verified current base.
 
 For a large or cross-cutting task, use a branch from the current base and a
 Draft PR. Record starting and final SHAs when a release/status record needs
